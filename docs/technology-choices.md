@@ -46,7 +46,7 @@
 
 ### Flask
 
-- **Used in:** `backend/server.py` — 19 REST API endpoints
+- **Used in:** `backend/server.py` (~70 routes) plus 11 registered Flask blueprints (`chunk_review`, `llm_cost`, `service_status`, `reader`, `api_key`, `search`, `stats`, `feed`, `tool_candidate`, `tool`, `llm_analysis`) — łącznie ~190 endpointów REST
 - **Why Flask (not FastAPI/Django):**
   - Lightweight — minimal overhead for a REST API that delegates to library functions
   - Familiar to the project owner
@@ -86,14 +86,14 @@
 
 ### DynamoDB
 
-- **Used in:** Cloud-local synchronization buffer for incoming documents
-- **Why:** See [ADR-003](./architecture-decisions.md#adr-003-dynamodb-as-cloud-local-synchronization-buffer). Always-available (PAY_PER_REQUEST), buffers documents when RDS is stopped for cost savings.
+- **Used in (2026-07-22):** tylko legacy bridge z ery serverless — kontener `lenie-cloud-bridge` (`backend/library/legacy_aws_pull_service.py`) okresowo pobiera dokumenty z bufora DynamoDB do NAS. Nowe dokumenty nie są już zapisywane do DynamoDB (ścieżka: REST API bezpośrednio do PostgreSQL).
+- **Why (historycznie):** See [ADR-003](./architecture-decisions.md#adr-003-dynamodb-as-cloud-local-synchronization-buffer). Always-available (PAY_PER_REQUEST), buffers documents when RDS is stopped for cost savings.
 
 ## AI / LLM
 
 ### Multi-provider abstraction
 
-- **Providers:** OpenAI (GPT-4o), AWS Bedrock (Titan, Nova), Google Vertex AI (Gemini), CloudFerro (Bielik)
+- **Providers:** OpenAI (GPT-4o), AWS Bedrock (Titan, Nova), Google Vertex AI (Gemini), CloudFerro (Bielik/Sherlock), ARK Labs (embedding)
 - **Used in:** `backend/library/ai.py` — LLM calls; `backend/library/embedding.py` — vector embeddings
 - **Why multi-provider:** No vendor lock-in. Ability to compare quality/cost across providers. Polish-language support (Bielik) not available from all providers.
 - **Embedding models:** OpenAI `text-embedding-ada-002`, AWS Titan Embed v2, BAAI/bge-multilingual-gemma2 (Polish-native). See [ADR-001](./architecture-decisions.md#adr-001-remove-translate-endpoint-and-use-native-language-embeddings) for the native-language embedding decision.
@@ -150,7 +150,7 @@
 ### Multi-backend architecture
 
 - **Backends:** `.env` files (default), HashiCorp Vault, AWS SSM Parameter Store
-- **Used in:** `backend/library/config_loader.py` — unified secrets access
+- **Used in:** `backend/library/config_loader.py` — unified secrets access (fizycznie implementacja w współdzielonym pakiecie `shared_python/unified-config-loader`; `config_loader.py` jest shimem re-eksportującym)
 - **Controlled by:** `SECRETS_BACKEND` env var (`env`, `vault`, `aws`)
 - **Why multi-backend:** Different deployment modes need different secret stores — `.env` for local dev, Vault for Docker/NAS, SSM for AWS serverless.
 
@@ -221,7 +221,7 @@ All run as one-off tools via `uvx` — not installed in project venv.
 
 ### Langfuse
 
-- **Used in:** LLM call tracing and monitoring
+- **Used in:** LLM call tracing and monitoring — zależność zainstalowana, ale integracja jeszcze niewłączona (import zakomentowany); szczegóły: [docs/observability.md](./observability.md)
 - **Why:** Open-source LLM observability platform. Tracks token usage, latency, and cost across all LLM providers.
 
 ### AWS X-Ray (aws-xray-sdk)
@@ -301,7 +301,7 @@ The following tools were **previously configured and tested** but are not curren
 | **GitLab CI** | GitLab runners | Qodana security scanning |
 | **Jenkins** | AWS EC2 | AWS deployment orchestration, Semgrep security |
 
-Configuration files (`.circleci/config.yml`, `.gitlab-ci.yml`, `Jenkinsfile`) remain in the repository as reference for future restoration.
+Configuration files from that era were removed from the repository; see [docs/CICD/](./CICD/) for historical reference configs (Jenkins, GitLab CI, CircleCI). Only CodeQL runs today (`.github/workflows/codeql.yml`).
 
 **Restoration plan:** Prerequisites tracked in [B-70](backlog-reference.md) (IaC complete, secrets accessible, deploy scripts idempotent). Each tool has a dedicated backlog item: [B-71 GitHub Actions](backlog-reference.md), [B-72 CircleCI](backlog-reference.md), [B-73 GitLab CI](backlog-reference.md), [B-74 Jenkins](backlog-reference.md). A single consolidated pipeline is preferred over the previous multi-tool setup.
 

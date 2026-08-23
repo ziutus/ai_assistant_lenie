@@ -1,7 +1,9 @@
 # ADR-003: DynamoDB as Cloud-Local Synchronization Buffer
 
 **Date:** 2025 (initial AWS architecture)
-**Status:** Accepted
+**Status:** Accepted (partially superseded — see note)
+
+> **Note (2026-08-22):** The RDS-on-demand/SQS era this ADR was designed for ended with the 2026-07-02 decommission. DynamoDB survives only as a read-side legacy bridge: the NAS stack periodically pulls the remaining buffer via `lenie-cloud-bridge` (`backend/library/legacy_aws_pull_service.py`, plan: `docs/deployment/nas/dynamodb-sync-to-nas-implementation-plan.md`). New documents go straight to PostgreSQL via the REST API. See `docs/deployment/README.md`.
 
 ### Context
 

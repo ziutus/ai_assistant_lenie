@@ -1,6 +1,6 @@
 # Observability Strategy — Lenie Server 2025
 
-> Last updated: 2026-07-22 | Originally written for version 0.3.13.0
+> Last updated: 2026-08-22 | Originally written for version 0.3.13.0
 
 This document describes the project's logging, tracing, and monitoring strategy across its deployment environments (AWS Lambda, Docker/local). It serves as the standard for current observability practices and a reference for future improvements.
 
@@ -26,7 +26,7 @@ The project has **minimal and fragmented observability**. Logging exists in most
 
 | Component | File | Log Level | Format | Structured? |
 |-----------|------|-----------|--------|-------------|
-| Flask server | `server.py:7,18` | INFO | Default Python (`logging.basicConfig`) | No |
+| Flask server | `server.py:36` | INFO | Default Python (`logging.basicConfig`) | No |
 | YouTube processing | `library/youtube_processing.py:5` | N/A (module logger) | Default Python | No |
 | Language detection | `library/text_detect_language.py:5` | N/A (module logger) | Default Python | No |
 | YouTube file | `library/stalker_youtube_file.py:11` | N/A (module logger) | Default Python | No |
@@ -82,7 +82,7 @@ AWS RUM (Real User Monitoring) was previously integrated but was completely remo
 | Environment | Logging | Tracing | Metrics | Monitoring |
 |-------------|---------|---------|---------|------------|
 | **AWS Lambda** | CloudWatch (JSON via CF LoggingConfig for infra Lambdas — code still uses print(); basic Python logging for app Lambdas) | X-Ray on API GW app only | CloudWatch built-in | CloudWatch alarms (none configured) |
-| **Docker/local** | stdout/stderr (Python logging) | None | `/metrics` stub (returns 500 — view returns None) | None |
+| **Docker/local** | stdout/stderr (Python logging) | None | `/metrics` returns Prometheus-format `lenie_app_info{version}` (app version only, no scrape stack) | None |
 
 ---
 
@@ -170,19 +170,19 @@ All log entries should use JSON format with the following required fields:
 **Current setup:**
 - **Logging**: Python `logging` module outputs to stdout/stderr, captured by Docker container logs (`docker logs lenie-ai-server`)
 - **Tracing**: None
-- **Metrics**: `/metrics` endpoint exists but its implementation is `pass` (returns `None`), which causes Flask to raise a `TypeError` / 500 error (`server.py:695-697`)
-- **Health checks**: Docker Compose does not configure health checks. Flask exposes `/healthz` (`server.py:689-691`) which returns `{"status": "OK"}`, but it is not used by Docker Compose. Kubernetes-specific probes (`/startup`, `/readiness`, `/liveness`) also exist but are unused in Docker.
+- **Metrics**: `/metrics` endpoint returns a minimal Prometheus-format payload — a single `lenie_app_info{version=...}` gauge (`server.py:2988-2993`). No `prometheus_client`, no scrape target, no persistence.
+- **Health checks**: `compose.nas.yaml` defines `healthcheck:` for `lenie-ai-db`, `lenie-minio`, `lenie-vault` and `lenie-ner-service`. Flask exposes `/healthz` (`server.py:2982-2985`) which returns `{"status": "OK"}`, but the backend container itself has no healthcheck wired to it. Kubernetes-style probes (`/startup`, `/readiness`, `/liveness`) also exist but are unused in Docker.
 
 **Gaps:**
 - No structured logging (JSON) — plain text output
 - No request ID tracking
-- `/metrics` endpoint is a stub with no implementation
-- No Docker Compose health check configuration
+- `/metrics` is minimal — single version gauge, no scrape stack
+- Backend container has no Docker healthcheck (db/minio/vault/ner-service do)
 
 **Recommended improvements (future stories):**
 1. Add `python-json-logger` or equivalent for structured JSON output
 2. Generate and propagate request IDs via Flask middleware
-3. Add Docker Compose healthcheck using `/healthz` endpoint
+3. Add a Docker healthcheck to the backend container using the `/healthz` endpoint (db/minio/vault/ner-service already have one)
 
 ---
 
@@ -221,7 +221,7 @@ See also: [ADR-013](./architecture-decisions.md#adr-013-custom-llm-provider-abst
 
 ### Integration Plan
 
-Langfuse is already installed (`pyproject.toml:32`) and configured (`vars-classification.yaml`: `LANGFUSE_HOST`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`). Activation requires:
+Langfuse is already installed (`pyproject.toml:31`) and configured (`vars-classification.yaml`: `LANGFUSE_HOST`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`). Activation requires:
 
 **Step 1 — Uncomment and enable in `openai_my.py`:**
 ```python
@@ -300,8 +300,8 @@ Self-hosting eliminates the 50k units/month limit and keeps all prompt/response 
 | Tool | Location | Status | Decision |
 |------|----------|--------|----------|
 | **aws-xray-sdk** | `pyproject.toml:63` (docker extra), `pyproject.toml:82` (all extra) | Dependency installed in Docker and all extras. **NOT imported or used** in any application code. | **Keep for now** — needed when X-Ray instrumentation is implemented in Lambda application code. Remove if X-Ray approach is abandoned. |
-| **Langfuse** | `pyproject.toml:32` (base dependency), `library/api/openai/openai_my.py:5` (commented import: `# from langfuse.decorators import observe`) | Dependency installed. Import and `@observe()` decorator commented out (line 5, 14). | **Activate** — chosen as LLM observability tool. See [LLM Observability](#llm-observability) section for integration plan. |
-| **Prometheus `/metrics`** | `server.py:695-697` | Endpoint exists but implementation is `pass` (returns `None`, causing Flask 500 error). `prometheus_client` library is **NOT installed**. | **Keep stub** — implement with `prometheus_client` if/when container-level monitoring is set up on the NAS. The route registration ensures the path is reserved for future use. |
+| **Langfuse** | `pyproject.toml:31` (base dependency), `library/api/openai/openai_my.py:6` (commented import: `# from langfuse.decorators import observe`) | Dependency installed. Import and `@observe()` decorator commented out. | **Activate** — chosen as LLM observability tool. See [LLM Observability](#llm-observability) section for integration plan. |
+| **Prometheus `/metrics`** | `server.py:2988-2993` | Endpoint returns a minimal Prometheus-format payload (`lenie_app_info{version=...}` gauge only). `prometheus_client` library is **NOT installed** — payload is hand-built strings. | **Keep minimal** — extend with `prometheus_client` if/when container-level monitoring is set up on the NAS. |
 
 ### Removed Tools
 
