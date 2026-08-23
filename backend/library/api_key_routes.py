@@ -1,7 +1,7 @@
 """Flask blueprint: API-key identity and management (Etap 8).
 
 Endpoints (x-api-key required via the global before_request; management
-endpoints additionally require a SERVICE key — user keys get 403):
+endpoints additionally require a SERVICE key — user and read-only keys get 403):
   GET    /whoami            — identity carried by the presented key
   GET    /api_keys          — [service] list keys (no hashes, prefix only)
   POST   /api_keys          — [service] create key {kind, name, user_id?};

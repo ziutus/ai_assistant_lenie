@@ -1,9 +1,10 @@
 """API-key authentication with an in-process cache (Etap 8).
 
 Keys live in the api_keys table (only SHA-256 hashes; plaintext is shown once
-at creation). Two kinds:
+at creation). Three kinds:
   - service — full access, no reader identity (reader endpoints reject it),
   - user    — full access + carries the reader identity (users.id).
+  - read_only — access is globally limited to GET, HEAD and OPTIONS.
 The legacy shared STALKER_API_KEY fallback was retired in Etap 8 iter. 4 —
 every client now authenticates with its own key row. AuthContext.is_legacy
 is kept (always False) for API/response-shape stability.
@@ -37,14 +38,15 @@ NEGATIVE_TTL_SECONDS = 30
 # cached key does not turn into a DB write per request.
 LAST_USED_WRITE_INTERVAL_SECONDS = 300
 
-VALID_KINDS = ("user", "service")
+VALID_KINDS = ("user", "service", "read_only")
+READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 @dataclass(frozen=True)
 class AuthContext:
     """Resolved identity of a request; stored in flask.g.auth by the middleware."""
 
-    kind: str  # "user" | "service"
+    kind: str  # "user" | "service" | "read_only"
     key_id: int | None  # None for the legacy STALKER_API_KEY fallback
     key_name: str
     user_id: int | None  # only for kind="user"
@@ -118,12 +120,13 @@ def hash_api_key(raw_key: str) -> str:
 def generate_api_key(kind: str) -> tuple[str, str, str]:
     """Return (plaintext, key_hash, key_prefix) for a new key.
 
-    Format: lk_<usr|svc>_<token_urlsafe(32)> — the prefix makes the key kind
+    Format: lk_<usr|svc|ro>_<token_urlsafe(32)> — the prefix makes the key kind
     recognizable in configs and logs without revealing the secret.
     """
     if kind not in VALID_KINDS:
         raise ValueError(f"kind must be one of {VALID_KINDS}, got {kind!r}")
-    plaintext = f"lk_{'usr' if kind == 'user' else 'svc'}_{secrets.token_urlsafe(32)}"
+    kind_prefix = {"user": "usr", "service": "svc", "read_only": "ro"}[kind]
+    plaintext = f"lk_{kind_prefix}_{secrets.token_urlsafe(32)}"
     return plaintext, hash_api_key(plaintext), plaintext[:KEY_PREFIX_LEN]
 
 
@@ -164,6 +167,11 @@ def deactivate_api_key(session, key_id: int) -> ApiKey:
     session.commit()
     invalidate_cache()
     return row
+
+
+def is_read_only_request_allowed(auth: AuthContext, method: str) -> bool:
+    """Return whether a request obeys a read-only key's global scope."""
+    return auth.kind != "read_only" or method.upper() in READ_ONLY_METHODS
 
 
 def resolve_api_key(session_factory, raw_key: str) -> AuthContext | None:

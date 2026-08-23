@@ -23,7 +23,7 @@ def upgrade() -> None:
         """
         CREATE TABLE IF NOT EXISTS api_keys (
             id           SERIAL PRIMARY KEY,
-            kind         VARCHAR(10) NOT NULL CHECK (kind IN ('user', 'service')),
+            kind         VARCHAR(10) NOT NULL CHECK (kind IN ('user', 'service', 'read_only')),
             user_id      INTEGER REFERENCES users(id) ON DELETE CASCADE,
             name         VARCHAR(100) NOT NULL UNIQUE,
             key_hash     CHAR(64) NOT NULL UNIQUE,
