@@ -14,6 +14,10 @@ syntetycznych ani płatnych probe'ach.
 | ARK Labs | Alternatywny dostawca LLM | `library/api/arklabs/`; konfiguracja ARK Labs | Tak, `llm_usage_logs` (LLM) |
 | OpenAI | Opcjonalny dostawca LLM i embeddingów | `library/api/openai/`; `OPENAI_API_KEY` | Tak, `llm_usage_logs` (LLM) |
 | AWS Bedrock / Vertex AI | Opcjonalni dostawcy modeli | adaptery `library/api/aws/`, `library/api/google/` | Tak, `llm_usage_logs` (LLM) |
+| AssemblyAI | Transkrypcja mowy (STT) dla filmów bez napisów | `library/transcript.py` → `library/api/asemblyai/asemblyai_transcript.py`; `ASSEMBLYAI` | Tak, `transcription_usage` (`GET /transcription_usage`) |
+| YouTube (pytubefix) | Metadane i pobieranie filmów | `library/stalker_youtube_file.py`, `library/youtube_processing.py` | Nie — brak dedykowanego rejestru wywołań |
+| Google OAuth | Autoryzacja dostępów do Google (np. Gmail) | `library/google_auth.py` | Nie — brak dedykowanego rejestru wywołań |
+| AWS Comprehend | Wykrywanie języka tekstu | `library/api/aws/text_detect_language_aws.py` | Nie — brak dedykowanego rejestru wywołań |
 | MinIO / S3 | Magazyn obiektów | `library/storage.py` | Kontenerowe healthchecki, poza panelem |
 
 Serwisy lokalne (PostgreSQL, NER, Vault) nie są usługami zewnętrznymi. NER ma

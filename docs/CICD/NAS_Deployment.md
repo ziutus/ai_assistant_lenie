@@ -21,12 +21,20 @@ Full Lenie stack running on a local QNAP NAS for personal use and testing.
 | Frontend React | `lenie-ai-frontend` | `192.168.200.7:5005/lenie-ai-frontend` | 3000 | Main web interface |
 | Admin Panel | `lenie-ai-app2` | `192.168.200.7:5005/lenie-ai-app2` | 3001 | Admin panel (app2) |
 | Backend | `lenie-ai-server` | `192.168.200.7:5005/lenie-ai-server` | 5055 | Flask API server |
-| Slack Bot | `lenie-ai-slack-bot` | `192.168.200.7:5005/lenie-ai-slack-bot` | — | Slack Bot (Socket Mode, no exposed port) |
+| Scheduler worker | `lenie-worker` | `192.168.200.7:5005/lenie-ai-server` | — | `worker.py --scheduler` + job types (`feed_check`, `feed_auto_import`, `feed_daily`, `content_group_suggest`, `entity_enrichment`, `obsidian_reimport`, `tool_candidate_detect`, …) |
+| Document worker | `lenie-document-worker` | `192.168.200.7:5005/lenie-ai-document-worker` | — | `worker.py --types document_prepare` (przygotowanie dokumentów, osobny obraz) |
+| Legacy AWS bridge | `lenie-cloud-bridge` | `192.168.200.7:5005/lenie-ai-server` | — | `worker.py --types legacy_aws_pull` — pobieranie bufora DynamoDB z ery serverless |
+| Migrations (one-shot) | `lenie-migrate` | `192.168.200.7:5005/lenie-ai-server` | — | `alembic upgrade heads` przy starcie stacka (`restart: "no"`) |
 | PostgreSQL | `lenie-ai-db` | `192.168.200.7:5005/lenie-ai-db` | 5434 | PostgreSQL 18 + pgvector |
-| MinIO | `lenie-minio` | `minio/minio:latest` | 9000, 9001 | S3-compatible storage (API + web console) |
+| MinIO | `lenie-minio` | `minio/minio` (pinned digest) | 9000, 9001 | S3-compatible storage (API + web console) |
+| MinIO init (one-shot) | `lenie-minio-init` | `minio/mc` | — | Inicjalizacja bucketa (`restart: "no"`) |
 | Vault | `lenie-vault` | `hashicorp/vault:1.21.3` | 8210 | HashiCorp Vault secrets manager |
+| NER service | `lenie-ner-service` | `192.168.200.7:5005/lenie-ner-service` | — | spaCy Polish NER (internal-only, `http://lenie-ner-service:8090`) |
+| Obsidian sync | `obsidian-headless-sync` | `ghcr.io/belphemur/obsidian-headless-sync-docker:0.0.14` | — | Sync vaulta Obsidian (Epic 42 reimport) |
 | Registry UI | `lenie-registry-ui` | `joxit/docker-registry-ui:latest` | 8550 | Web UI for Docker registry |
 | **Registry** | `lenie-registry` | `registry:2` | 5005 | Private Docker registry (infra) |
+
+Slack Bot (`lenie-ai-slack-bot`) został usunięty 2026-07-22 wraz z serwerem MCP i nie jest już częścią stacka.
 
 All application services are orchestrated via `docker compose` using `compose.nas.yaml`.
 The registry container runs standalone (started once, persists across deployments).
@@ -192,7 +200,7 @@ $DOCKER exec lenie-registry du -sh /var/lib/registry
 
 `infra/docker/nas-deploy.sh` is the older bash equivalent (same steps, same flags in `--flag` form) — kept for Mac/Linux use, not required on Windows anymore.
 
-> **Note:** `slack-bot` and `minio` are not included in the default `all` target — they must be deployed explicitly. MinIO uses the official Docker Hub image, so the build/push step is skipped automatically.
+> **Note:** `minio` is not included in the default `all` target — it must be deployed explicitly. MinIO uses the official Docker Hub image, so the build/push step is skipped automatically.
 
 The script performs these steps for each service:
 
@@ -475,8 +483,9 @@ $DOCKER ps --filter name=lenie
 
 ```bash
 $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-worker
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-document-worker
 $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-db
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-slack-bot
 $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-minio
 $DOCKER logs --tail 50 lenie-vault
 $DOCKER logs --tail 50 lenie-registry

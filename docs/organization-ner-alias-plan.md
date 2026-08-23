@@ -1,6 +1,6 @@
 # Globalny rejestr organizacji i aliasów NER — plan implementacji
 
-> **Status:** DO IMPLEMENTACJI
+> **Status:** ZAIMPLEMENTOWANE (2026-07-23, PR #362 — migracja `e23a1b2c3d4e_create_organizations`, `imports/backfill_organizations.py`, API `/organizations` w `backend/server.py`)
 > **Adresat:** Claude Code
 > **Data:** 2026-07-23
 > **Środowisko docelowe:** NAS (`192.168.200.7`)

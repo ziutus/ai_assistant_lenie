@@ -1,7 +1,9 @@
 # ADR-002: API Gateway as Security Boundary (No NAT Gateway)
 
 **Date:** 2025 (initial AWS architecture)
-**Status:** Accepted
+**Status:** Accepted (dormant — see note)
+
+> **Note (2026-08-22):** The API Gateway/Lambda infrastructure described here was decommissioned on 2026-07-02. Only the `/url_add` Lambda remains, kept for the Chrome extension path; the main API now runs as Flask behind the NAS Docker Compose stack. See `docs/deployment/README.md` and `docs/aws-serverless-restoration.md`.
 
 ### Context
 

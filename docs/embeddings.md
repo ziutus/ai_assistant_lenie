@@ -14,12 +14,13 @@ Embeddings are stored in the `public.document_embeddings` table:
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
-| `langauge` | `varchar(10)` | Language of the embedded text (note: legacy typo, kept for compatibility) |
+| `chunk_id` | `integer` (nullable FK → `document_chunks.id`, ON DELETE SET NULL) | Chunk the embedding was generated from; NULL for non-chunk embeddings (e.g. title+summary link embeddings). Added by `init/16-add-chunk-id-to-embeddings.sql` |
+| `language` | `varchar(10)` | Language of the embedded text. (Column was originally created with the typo `langauge`; renamed to `language` by `init/08-fix-language-typo.sql`) |
 | `text` | `text` | Source-language text that was embedded |
 | `text_original` | `text` | Source text retained for compatibility and display |
 | `embedding` | `vector` | The vector embedding — dimensionless, supports any model |
 | `model` | `varchar(100) NOT NULL` | Name of the embedding model used |
-| `ingested_at` | `timestamp` | When the document entered Lenie (stage 11g rename from created_at; other tables keep their own created_at) |
+| `created_at` | `timestamp DEFAULT CURRENT_TIMESTAMP` | When the embedding row was created. (The 11g rename `created_at → ingested_at` was applied only to the `documents` table — other tables keep their own `created_at`) |
 
 Schema file: [`backend/database/init/04-create-table.sql`](../backend/database/init/04-create-table.sql)
 
@@ -75,12 +76,13 @@ CREATE INDEX idx_emb_bge_m3
 When adding support for a new embedding model:
 
 1. Add the model to `embedding_models` set in [`backend/library/embedding.py`](../backend/library/embedding.py)
-2. Add a new HNSW partial index in [`backend/database/init/04-create-table.sql`](../backend/database/init/04-create-table.sql):
+2. Add a new HNSW partial index in [`backend/database/init/04-create-table.sql`](../backend/database/init/04-create-table.sql) — remember the explicit cast for models with ≤2000 dimensions:
    ```sql
    CREATE INDEX IF NOT EXISTS idx_emb_<short_name>
-     ON public.document_embeddings USING hnsw (embedding vector_cosine_ops)
+     ON public.document_embeddings USING hnsw ((embedding::vector(N)) vector_cosine_ops)
      WHERE model = '<model-name>';
    ```
+   Models with more than 2000 dimensions cannot get an HNSW index (see Limitation below) — note that in the comment at the end of the CREATE INDEX block instead.
 3. For existing databases, run the `CREATE INDEX` statement manually.
 
 ## Similarity Search

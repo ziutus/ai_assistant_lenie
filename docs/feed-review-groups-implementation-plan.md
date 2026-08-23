@@ -1,5 +1,7 @@
 # Plan implementacji wspólnych grup i priorytetów materiałów
 
+> **Status:** ZAIMPLEMENTOWANE (2026-08-14, PR z migracją `f1f2a3b4c5d6_create_content_groups`; kod: `backend/library/content_group_service.py`, `content_group_suggestion_service.py`, CRUD w `backend/library/feed_routes.py`, UI: `ContentGroupsPanel`). Dokument pozostaje jako rekord planu.
+
 ## Cel
 
 Dodać zarządzalne grupy wspólne dla kandydatów z feedu i dokumentów, tak aby:
