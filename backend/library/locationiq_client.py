@@ -102,8 +102,14 @@ def is_plausible_match(query: str, hit: dict) -> bool:
     return _name_similarity(query, display_name) >= MIN_NAME_SIMILARITY
 
 
-def geocode(query: str) -> dict | None:
+def geocode(query: str, countrycodes: str | None = None) -> dict | None:
     """Geocode a place name. Returns the raw first hit, or None on miss/failure.
+
+    `countrycodes` (ISO 3166-1 alpha-2, e.g. "sd") biases LocationIQ's ranking
+    toward that country without touching the query text — appending a country
+    name to `query` itself instead would make is_plausible_match() compare a
+    now-longer query string against short display_name parts and fail (see
+    geocode_aliases.GEOCODE_COUNTRY_HINTS' docstring).
 
     Rate-limited to the free-tier request spacing. Callers must cache results
     (geocode_cache) — this function performs a live API call every time.
@@ -120,6 +126,10 @@ def geocode(query: str) -> dict | None:
         time.sleep(wait)
     _last_request_at = time.monotonic()
 
+    params = {"key": key, "q": query, "format": "json", "limit": 1, "accept-language": "pl,en"}
+    if countrycodes:
+        params["countrycodes"] = countrycodes
+
     try:
         # accept-language=pl: without it display_name comes back in English
         # ("Kyiv, Ukraine"), which made the name-similarity check reject the
@@ -129,7 +139,7 @@ def geocode(query: str) -> dict | None:
             service="locationiq", operation="geocode",
             request_fn=lambda: requests.get(
                 SEARCH_URL,
-                params={"key": key, "q": query, "format": "json", "limit": 1, "accept-language": "pl,en"},
+                params=params,
                 timeout=REQUEST_TIMEOUT_S,
             ),
             # LocationIQ uses 404 for a valid, non-geocodable name.
