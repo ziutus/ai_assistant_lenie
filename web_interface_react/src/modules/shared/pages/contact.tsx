@@ -1,6 +1,6 @@
 import React from "react";
 import axios from "axios";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import type { ContactCategory } from "./contactCategories";
 import type { ContactGroup } from "./contactGroups";
@@ -147,8 +147,14 @@ const ceidgUrlForNip = (nip: string) =>
 const Contact = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isNew = id === "new";
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
+  // Round-tripped from contacts.tsx (`?list=<encoded querystring>`, same
+  // pattern as read.tsx/list.tsx) so "Wróć do listy" restores the search/
+  // filters/pagination the user came from instead of resetting them.
+  const listContext = searchParams.get("list") ?? "";
+  const backToListUrl = `/contacts${listContext ? `?${listContext}` : ""}`;
 
   // Default view is read-only; "Edytuj" switches to the always-editable form
   // that used to be the only view. /contacts/new always starts (and stays)
@@ -279,6 +285,23 @@ const Contact = () => {
     setIsUploadingPhoto(false);
   };
 
+  const handlePhotoRemove = async () => {
+    if (!id || isNew) return;
+    setIsUploadingPhoto(true);
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.delete(`${apiUrl}/contacts/${id}/photo`, { headers });
+      setPhotoUrl(null);
+      setMessage("Usunięto zdjęcie.");
+    } catch (error: any) {
+      console.error("Error removing contact photo", error);
+      setIsError(true);
+      setMessage(`Nie udało się usunąć zdjęcia: ${error.response?.data?.message || error.message}`);
+    }
+    setIsUploadingPhoto(false);
+  };
+
   const addGroup = async () => {
     if (!groupToAdd) return;
     setIsError(false);
@@ -325,7 +348,7 @@ const Contact = () => {
       if (isNew) {
         const response = await axios.post(`${apiUrl}/contacts`, payload, { headers });
         setMessage("Zapisano kontakt.");
-        navigate(`/contacts/${response.data.contact.id}`, { replace: true });
+        navigate(`/contacts/${response.data.contact.id}${listContext ? `?list=${encodeURIComponent(listContext)}` : ""}`, { replace: true });
       } else {
         await axios.patch(`${apiUrl}/contacts/${id}`, payload, { headers });
         setMessage("Zapisano zmiany.");
@@ -347,7 +370,7 @@ const Contact = () => {
     setMessage("");
     try {
       await axios.delete(`${apiUrl}/contacts/${id}`, { headers });
-      navigate("/contacts");
+      navigate(backToListUrl);
     } catch (error: any) {
       console.error("Error deleting contact", error);
       setIsError(true);
@@ -516,6 +539,17 @@ const Contact = () => {
               <button className={"button"} type="button" disabled={isUploadingPhoto} onClick={() => photoInputRef.current?.click()}>
                 {isUploadingPhoto ? "Wysyłanie..." : photoUrl ? "Zmień zdjęcie" : "Dodaj zdjęcie"}
               </button>
+              {photoUrl && (
+                <button
+                  className={"button"}
+                  type="button"
+                  disabled={isUploadingPhoto}
+                  style={{ marginLeft: 6 }}
+                  onClick={handlePhotoRemove}
+                >
+                  Usuń zdjęcie
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -553,7 +587,7 @@ const Contact = () => {
             </div>
           </div>
 
-          <button className={"button"} type="button" style={{ marginTop: 10, alignSelf: "flex-start" }} onClick={() => navigate("/contacts")}>
+          <button className={"button"} type="button" style={{ marginTop: 10, alignSelf: "flex-start" }} onClick={() => navigate(backToListUrl)}>
             ← Wróć do listy
           </button>
         </div>
@@ -658,7 +692,7 @@ const Contact = () => {
               Usuń
             </button>
           )}
-          <button className={"button"} type="button" onClick={() => navigate("/contacts")}>
+          <button className={"button"} type="button" onClick={() => navigate(backToListUrl)}>
             ← Wróć do listy
           </button>
         </div>

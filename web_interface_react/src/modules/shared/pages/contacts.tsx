@@ -1,6 +1,6 @@
 import React from "react";
 import axios from "axios";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import type { ContactCategory } from "./contactCategories";
 import type { ContactGroup } from "./contactGroups";
@@ -25,20 +25,37 @@ const PAGE_SIZE = 50;
 
 const Contacts = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [contacts, setContacts] = React.useState<ContactListItem[]>([]);
   const [categories, setCategories] = React.useState<ContactCategory[]>([]);
   const [groups, setGroups] = React.useState<ContactGroup[]>([]);
-  const [query, setQuery] = React.useState("");
-  const [categoryId, setCategoryId] = React.useState<string>("");
-  const [groupId, setGroupId] = React.useState<string>("");
-  const [offset, setOffset] = React.useState(0);
+  // Filters/offset are seeded from and kept in sync with the URL (same
+  // pattern as list.tsx) so "Wróć do listy" — which round-trips a `list=`
+  // param through the contact detail page — restores exactly what was
+  // being viewed instead of resetting to an empty search.
+  const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
+  const [categoryId, setCategoryId] = React.useState<string>(searchParams.get("category_id") ?? "");
+  const [groupId, setGroupId] = React.useState<string>(searchParams.get("group_id") ?? "");
+  const initialOffset = Number(searchParams.get("offset") ?? "0");
+  const [offset, setOffset] = React.useState(Number.isFinite(initialOffset) && initialOffset > 0 ? initialOffset : 0);
   const [total, setTotal] = React.useState(0);
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
+
+  const filterParams = (offsetArg: number) => {
+    const params: Record<string, string> = {};
+    if (query.trim()) params.q = query.trim();
+    if (categoryId) params.category_id = categoryId;
+    if (groupId) params.group_id = groupId;
+    if (offsetArg) params.offset = String(offsetArg);
+    return params;
+  };
+  const listQueryString = new URLSearchParams(filterParams(offset)).toString();
+  const contactLinkSearch = listQueryString ? `?list=${encodeURIComponent(listQueryString)}` : "";
 
   const fetchCategories = async () => {
     try {
@@ -63,15 +80,13 @@ const Contacts = () => {
     setIsError(false);
     setMessage("");
     try {
-      const params: Record<string, string> = { offset: String(offsetArg), limit: String(PAGE_SIZE) };
-      if (query.trim()) params.q = query.trim();
-      if (categoryId) params.category_id = categoryId;
-      if (groupId) params.group_id = groupId;
+      const params = { ...filterParams(offsetArg), offset: String(offsetArg), limit: String(PAGE_SIZE) };
       const response = await axios.get(`${apiUrl}/contacts`, { params, headers });
       const rows = response.data.contacts ?? [];
       setContacts(rows);
       setOffset(offsetArg);
       setTotal(response.data.total ?? rows.length);
+      setSearchParams(filterParams(offsetArg), { replace: true });
       if (!rows.length) {
         setMessage("Brak kontaktów pasujących do filtrów.");
       }
@@ -86,7 +101,7 @@ const Contacts = () => {
   React.useEffect(() => {
     fetchCategories();
     fetchGroups();
-    fetchContacts(0);
+    fetchContacts(offset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -131,7 +146,7 @@ const Contacts = () => {
           type="button"
           className={"button"}
           style={{ marginLeft: "auto" }}
-          onClick={() => navigate("/contacts/new")}
+          onClick={() => navigate(`/contacts/new${contactLinkSearch}`)}
         >
           + Nowy kontakt
         </button>
@@ -149,7 +164,7 @@ const Contacts = () => {
           <li
             key={contact.id}
             style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}
-            onClick={() => navigate(`/contacts/${contact.id}`)}
+            onClick={() => navigate(`/contacts/${contact.id}${contactLinkSearch}`)}
           >
             <strong>{[contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
             {contact.has_whatsapp_profile && (
