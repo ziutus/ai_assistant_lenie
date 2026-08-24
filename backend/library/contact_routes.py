@@ -381,31 +381,44 @@ def contact_groups_unassign(contact_id: int, group_id: int):
 @bp.get("/contacts")
 def contacts_list():
     session = get_scoped_session()
-    query = select(Contact)
 
+    conditions = []
     category_id = request.args.get("category_id", type=int)
     if category_id is not None:
-        query = query.where(Contact.category_id == category_id)
+        conditions.append(Contact.category_id == category_id)
 
     group_id = request.args.get("group_id", type=int)
     if group_id is not None:
-        query = query.where(Contact.groups.any(ContactGroup.id == group_id))
+        conditions.append(Contact.groups.any(ContactGroup.id == group_id))
 
     q = (request.args.get("q") or "").strip()
     if q:
         phrase = func.unaccent(f"%{q}%")
-        query = query.where(or_(
+        conditions.append(or_(
             func.unaccent(Contact.first_name).ilike(phrase),
             func.unaccent(Contact.last_name).ilike(phrase),
             func.unaccent(func.coalesce(Contact.phone_number, "")).ilike(phrase),
         ))
 
+    total = session.execute(
+        select(func.count()).select_from(Contact).where(*conditions)
+    ).scalar_one()
+
     offset = request.args.get("offset", default=0, type=int)
     limit = min(request.args.get("limit", default=100, type=int), 500)
-    query = query.order_by(Contact.last_name, Contact.first_name).offset(offset).limit(limit)
+    query = (
+        select(Contact).where(*conditions)
+        .order_by(Contact.last_name, Contact.first_name).offset(offset).limit(limit)
+    )
 
     rows = session.execute(query).scalars().all()
-    return jsonify({"status": "success", "contacts": [_contact_dict(row) for row in rows]}), 200
+    return jsonify({
+        "status": "success",
+        "contacts": [_contact_dict(row) for row in rows],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }), 200
 
 
 @bp.get("/contacts/<int:contact_id>")

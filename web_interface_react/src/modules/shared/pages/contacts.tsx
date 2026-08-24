@@ -20,6 +20,8 @@ export interface ContactListItem {
   email: string | null;
 }
 
+const PAGE_SIZE = 50;
+
 const Contacts = () => {
   const navigate = useNavigate();
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
@@ -29,6 +31,8 @@ const Contacts = () => {
   const [query, setQuery] = React.useState("");
   const [categoryId, setCategoryId] = React.useState<string>("");
   const [groupId, setGroupId] = React.useState<string>("");
+  const [offset, setOffset] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
@@ -53,18 +57,20 @@ const Contacts = () => {
     }
   };
 
-  const fetchContacts = async () => {
+  const fetchContacts = async (offsetArg: number = 0) => {
     setIsLoading(true);
     setIsError(false);
     setMessage("");
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = { offset: String(offsetArg), limit: String(PAGE_SIZE) };
       if (query.trim()) params.q = query.trim();
       if (categoryId) params.category_id = categoryId;
       if (groupId) params.group_id = groupId;
       const response = await axios.get(`${apiUrl}/contacts`, { params, headers });
       const rows = response.data.contacts ?? [];
       setContacts(rows);
+      setOffset(offsetArg);
+      setTotal(response.data.total ?? rows.length);
       if (!rows.length) {
         setMessage("Brak kontaktów pasujących do filtrów.");
       }
@@ -79,9 +85,12 @@ const Contacts = () => {
   React.useEffect(() => {
     fetchCategories();
     fetchGroups();
-    fetchContacts();
+    fetchContacts(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const pageStart = total === 0 ? 0 : offset + 1;
+  const pageEnd = offset + contacts.length;
 
   return (
     <div>
@@ -90,7 +99,7 @@ const Contacts = () => {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          fetchContacts();
+          fetchContacts(0);
         }}
         style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}
       >
@@ -164,6 +173,30 @@ const Contacts = () => {
           </li>
         ))}
       </ul>
+
+      {total > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <button
+            type="button"
+            className={"button"}
+            disabled={isLoading || offset === 0}
+            onClick={() => fetchContacts(Math.max(0, offset - PAGE_SIZE))}
+          >
+            ← Poprzednia
+          </button>
+          <span style={{ color: "#667", fontSize: "0.9em" }}>
+            {pageStart}–{pageEnd} z {total}
+          </span>
+          <button
+            type="button"
+            className={"button"}
+            disabled={isLoading || pageEnd >= total}
+            onClick={() => fetchContacts(offset + PAGE_SIZE)}
+          >
+            Następna →
+          </button>
+        </div>
+      )}
 
       <div style={{ marginTop: 14, display: "flex", gap: 16 }}>
         <NavLink to="/contact-categories" style={{ fontSize: "0.9em", color: "#0369a1" }}>
