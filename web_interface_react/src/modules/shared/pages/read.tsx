@@ -13,7 +13,7 @@ import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
 import RelationshipGraph, { type RelationshipGraphData } from "../components/RelationshipGraph/relationshipGraph";
 import { useIsDesktop } from "../hooks/useIsDesktop";
-import { toOpenableSourceUrl } from "../utils/sourceUrl";
+import { isOpenableSourceUrl, toOpenableSourceUrl } from "../utils/sourceUrl";
 import ChapterGroupsPanel from "../components/ChapterGroupsPanel/ChapterGroupsPanel";
 import { buildObsidianNoteUrl } from "../utils/obsidian";
 import {
@@ -1680,11 +1680,11 @@ const Read: React.FC = () => {
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>
 
-      {(docPublishedOn || docIngestedAt || docUrl) && (
+      {(docPublishedOn || docIngestedAt || (docUrl && isOpenableSourceUrl(docUrl))) && (
         <div style={{ fontSize: "0.82em", color: "#64748b", marginBottom: 10, display: "flex", gap: 14, flexWrap: "wrap" }}>
           {docPublishedOn && <span>📅 Opublikowano: {new Date(docPublishedOn).toLocaleDateString("pl-PL")}</span>}
           {docIngestedAt && <span>Dodano do Lenie: {new Date(docIngestedAt).toLocaleDateString("pl-PL")}</span>}
-          {docUrl && (
+          {docUrl && isOpenableSourceUrl(docUrl) && (
             <a href={toOpenableSourceUrl(docUrl)} target="_blank" rel="noreferrer" style={{ color: "#0369a1", wordBreak: "break-all" }}>
               🔗 Oryginał ↗
             </a>
