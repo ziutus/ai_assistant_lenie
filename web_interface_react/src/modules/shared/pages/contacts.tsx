@@ -18,6 +18,7 @@ export interface ContactListItem {
   last_name: string;
   phone_number: string | null;
   email: string | null;
+  has_whatsapp_profile: boolean;
 }
 
 const PAGE_SIZE = 50;
@@ -151,6 +152,9 @@ const Contacts = () => {
             onClick={() => navigate(`/contacts/${contact.id}`)}
           >
             <strong>{[contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+            {contact.has_whatsapp_profile && (
+              <span title="Ma profil sąsiedzki zbudowany z WhatsApp">💬</span>
+            )}
             {contact.phone_number && <span style={{ color: "#667" }}>{contact.phone_number}</span>}
             {contact.email && <span style={{ color: "#667" }}>{contact.email}</span>}
             {contact.groups.length > 0 && (

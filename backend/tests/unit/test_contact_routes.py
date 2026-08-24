@@ -30,7 +30,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         last_name=last_name,
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
-        address=None, birthday=None, pesel=None, notes=None, groups=[],
+        address=None, birthday=None, pesel=None, notes=None, groups=[], whatsapp_profile=None,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),
     )

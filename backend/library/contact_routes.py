@@ -85,6 +85,7 @@ def _contact_dict(row: Contact) -> dict:
         "birthday": row.birthday.isoformat() if row.birthday else None,
         "pesel": row.pesel,
         "notes": row.notes,
+        "has_whatsapp_profile": bool(row.whatsapp_profile),
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
