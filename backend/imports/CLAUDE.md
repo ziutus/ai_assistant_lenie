@@ -22,6 +22,11 @@ imports/
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── organization_descriptions_backfill.py  # One-off: LLM-generated short descriptions for organizations missing one (reader tooltip)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
+├── whatsapp_neighbor_profiles.py  # Build/update per-neighbor social-memory-aid profiles on Contact.whatsapp_profile from a WhatsApp chat export
+├── whatsapp_neighbor_profiles_migrate_to_contacts.py  # One-off: migrate the old Document-based neighbor profiles onto Contact + delete the Documents
+├── google_contacts_import.py # One-off: full import of a Google Contacts CSV export into the private contact book
+├── court_case_contacts_import.py  # One-off: match/import a KRZ court-case creditor list against the private contact book
+├── backfill_krz_tuwima_group.py  # One-off: backfill contact_groups membership for KRZ creditors missed by google_contacts_import.py's name match
 ├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
 ├── youtube_backfill_author.py # One-off: fetch channel name for existing videos missing 'byline'
 └── youtube_batch_analyze.py  # Bielik LLM chunk analysis of an existing document (by ID)
@@ -486,6 +491,16 @@ python imports/select_control_questions.py --id 9204 --chapter 37   # re-run one
 ### `migrate_data_to_cache.py`
 
 One-time migration script: copies UUID-named `.html`/`.txt` files from `imports/data/` (legacy S3 download location) into the `{CACHE_DIR}/markdown/{doc_id}/{doc_id}.ext` convention used by `document_prepare.py`. Looks up `doc_id` by `uuid` in PostgreSQL. Files are **copied**, not moved — use `--delete-source` to remove originals after a successful copy. Supports `--dry-run`, `--source-dir`, `--target-dir`.
+
+### Private contact book imports (`contacts` table, `library/contact_routes.py`)
+
+These write to the private contact book (personal CRM), independent of the NER persons registry.
+
+- **`google_contacts_import.py`** — one-off full import of a Google Contacts CSV export into `contacts`. Strips a hand-appended "- Tuwima Gardens" name suffix into a `contact_groups` membership (unified with the same label already in the CSV's Labels column), maps other Labels to groups (dropping Google's own `* myContacts`/`* starred` bookkeeping), matches existing contacts by normalized name to avoid duplicates. `python imports/google_contacts_import.py --csv "../tmp/contacts.csv" [--apply]`.
+- **`court_case_contacts_import.py`** — one-off: matches/imports a KRZ (Krajowy Rejestr Zadłużników) court-case creditor CSV against the contact book, storing PESEL/derived birthday and case notes; optional `--contacts-csv` phone backfill from the same Google export.
+- **`backfill_krz_tuwima_group.py`** — one-off: adds every KRZ-creditor contact (identified by the "Sprawa Tuwima Gardens (KRZ)" notes marker) to the "Tuwima Gardens Mieszkańcy" `contact_groups` row — covers creditors that `google_contacts_import.py`'s name match missed.
+- **`whatsapp_neighbor_profiles.py`** — builds/updates a structured social-memory-aid profile (occupation, hobbies, pets, recent events, small-talk suggestions — accessibility use case) on `Contact.whatsapp_profile` (JSONB) from a WhatsApp "Export chat" `.txt` file, one LLM-merged profile per sender across chunked history, re-runnable incrementally (per-group watermark stored in `whatsapp_profile.groups`). Matches an existing contact by phone number (reliable) then by normalized name (only when unambiguous — see `feedback_no_merge_unverifiable_contacts.md`), else creates a new one; assigns the resolved `--contact-group` (default "Tuwima Gardens Mieszkańcy"). Optional `--contacts-csv`/`--contacts-suffix` resolve a phone-only WhatsApp sender to a real name, `--owners-csv` matches an apartment. `python imports/whatsapp_neighbor_profiles.py --export "chat.txt" [--apply]`. Superseded an earlier Document-based version (one synthetic `whatsapp://...` Document per neighbor) — that duplicated the place a person's info had to be looked up in.
+- **`whatsapp_neighbor_profiles_migrate_to_contacts.py`** — one-off: migrated the 97 pre-existing Document-based neighbor profiles onto `Contact.whatsapp_profile` and deleted the Documents (2026-08-24). Kept for reference/re-use if another Document-based batch ever needs the same treatment.
 
 ## Running scripts against the NAS production DB (from a dev machine)
 

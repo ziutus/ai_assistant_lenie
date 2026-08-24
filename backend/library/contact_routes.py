@@ -461,6 +461,7 @@ def contacts_get(contact_id: int):
     data["relationships"] = relationships
     data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
     data["organizations"] = [_organization_dict(org) for org in organizations]
+    data["whatsapp_profile"] = row.whatsapp_profile
     return jsonify({"status": "success", "contact": data}), 200
 
 

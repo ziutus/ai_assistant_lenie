@@ -17,6 +17,40 @@ interface ContactRelationship {
   other_contact: { id: number; first_name: string | null; last_name: string };
 }
 
+interface WhatsappFact {
+  wartosc?: string;
+  co?: string;
+  gdzie?: string;
+  kiedy?: string;
+  zrodlo?: string | null;
+}
+
+interface WhatsappProfileFacts {
+  zawod_lub_branza: WhatsappFact | null;
+  miejsce_pracy: WhatsappFact | null;
+  hobby_zainteresowania: WhatsappFact[];
+  zwierzeta: WhatsappFact[];
+  dzieci: WhatsappFact | null;
+  urodziny: WhatsappFact | null;
+  podroze_wakacje: WhatsappFact[];
+  wydarzenia_ostatnie: WhatsappFact[];
+  zaangazowanie_osiedlowe: WhatsappFact | null;
+}
+
+interface WhatsappProfileGroupStats {
+  group_label: string;
+  last_processed_at: string;
+  message_count: number;
+  first_date: string;
+  last_date: string;
+}
+
+interface WhatsappProfile {
+  profile: WhatsappProfileFacts | null;
+  suggestions: string[];
+  groups: Record<string, WhatsappProfileGroupStats>;
+}
+
 type OrgType = "employment" | "jdg" | "board" | "ownership" | "other";
 type OrgStatus = "candidate" | "confirmed" | "rejected";
 
@@ -82,6 +116,7 @@ interface ContactDetail {
   notes: string | null;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
+  whatsapp_profile: WhatsappProfile | null;
 }
 
 const emptyForm = {
@@ -133,6 +168,7 @@ const Contact = () => {
   const [organizations, setOrganizations] = React.useState<ContactOrganization[]>([]);
   const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
   const [showOrgForm, setShowOrgForm] = React.useState(false);
+  const [whatsappProfile, setWhatsappProfile] = React.useState<WhatsappProfile | null>(null);
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
@@ -178,6 +214,7 @@ const Contact = () => {
       setRelationships(contact.relationships ?? []);
       setOrganizations(contact.organizations ?? []);
       setContactGroups(contact.groups ?? []);
+      setWhatsappProfile(contact.whatsapp_profile ?? null);
     } catch (error: any) {
       console.error("Error fetching contact", error);
       setIsError(true);
@@ -193,6 +230,7 @@ const Contact = () => {
     setRelationships([]);
     setOrganizations([]);
     setContactGroups([]);
+    setWhatsappProfile(null);
     loadContact();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -675,6 +713,16 @@ const Contact = () => {
         </div>
       )}
 
+      {!isNew && whatsappProfile && (
+        <div style={{ marginTop: 24 }}>
+          <h3>Profil sąsiedzki (WhatsApp)</h3>
+          <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
+            Budowany i aktualizowany automatycznie z czatów WhatsApp — tylko fakty jawnie napisane przez tę osobę o sobie.
+          </p>
+          <WhatsappProfileView profile={whatsappProfile} />
+        </div>
+      )}
+
       {!isNew && (
         <div style={{ marginTop: 24 }}>
           <h3>Powiązania</h3>
@@ -760,6 +808,88 @@ const Contact = () => {
               <button className={"button"} type="button" onClick={addRelationship}>Dodaj powiązanie</button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const cite = (zrodlo?: string | null) => (zrodlo ? <span style={{ color: "#89a" }}> ({zrodlo})</span> : null);
+
+const WhatsappProfileView = ({ profile: wp }: { profile: WhatsappProfile }) => {
+  const p = wp.profile;
+  const hasFacts = p && (
+    p.zawod_lub_branza || p.miejsce_pracy || p.hobby_zainteresowania?.length || p.zwierzeta?.length ||
+    p.dzieci || p.urodziny || p.podroze_wakacje?.length || p.wydarzenia_ostatnie?.length || p.zaangazowanie_osiedlowe
+  );
+  const groups = Object.values(wp.groups || {});
+
+  return (
+    <div style={{ padding: 8, background: "#f5f7fa", border: "1px solid #d5dde8", borderRadius: 6 }}>
+      {groups.length > 0 && (
+        <div style={{ fontSize: "0.85em", color: "#667", marginBottom: 8 }}>
+          {groups.map((g, i) => (
+            <div key={i}>
+              „{g.group_label}” — {g.message_count} wiadomości (od {g.first_date} do {g.last_date})
+            </div>
+          ))}
+        </div>
+      )}
+      {!hasFacts && <p style={{ color: "#667" }}>Za mało treściwych wiadomości, żeby zbudować profil tej osoby.</p>}
+      {hasFacts && p && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {(p.zawod_lub_branza || p.miejsce_pracy) && (
+            <div>
+              <strong>Czym się zajmuje:</strong>{" "}
+              {[p.zawod_lub_branza?.wartosc, p.miejsce_pracy?.wartosc].filter(Boolean).join(" — ")}
+              {cite((p.zawod_lub_branza || p.miejsce_pracy)?.zrodlo)}
+            </div>
+          )}
+          {p.hobby_zainteresowania?.length > 0 && (
+            <div>
+              <strong>Hobby:</strong>{" "}
+              {p.hobby_zainteresowania.map((t, i) => (
+                <span key={i}>{i > 0 && "; "}{t.wartosc}{cite(t.zrodlo)}</span>
+              ))}
+            </div>
+          )}
+          {p.zwierzeta?.length > 0 && (
+            <div>
+              <strong>Zwierzęta:</strong>{" "}
+              {p.zwierzeta.map((z, i) => (
+                <span key={i}>{i > 0 && "; "}{z.wartosc}{cite(z.zrodlo)}</span>
+              ))}
+            </div>
+          )}
+          {p.dzieci && <div><strong>Rodzina:</strong> {p.dzieci.wartosc}{cite(p.dzieci.zrodlo)}</div>}
+          {p.urodziny && <div><strong>Urodziny:</strong> {p.urodziny.wartosc}{cite(p.urodziny.zrodlo)}</div>}
+          {p.podroze_wakacje?.length > 0 && (
+            <div>
+              <strong>Podróże:</strong>{" "}
+              {p.podroze_wakacje.map((t, i) => (
+                <span key={i}>{i > 0 && "; "}{t.gdzie}{t.kiedy && ` (${t.kiedy})`}{cite(t.zrodlo)}</span>
+              ))}
+            </div>
+          )}
+          {p.wydarzenia_ostatnie?.length > 0 && (
+            <div>
+              <strong>Ostatnie wydarzenia:</strong>{" "}
+              {p.wydarzenia_ostatnie.map((t, i) => (
+                <span key={i}>{i > 0 && "; "}{t.co}{t.kiedy && ` (${t.kiedy})`}{cite(t.zrodlo)}</span>
+              ))}
+            </div>
+          )}
+          {p.zaangazowanie_osiedlowe && (
+            <div><strong>Zaangażowanie osiedlowe:</strong> {p.zaangazowanie_osiedlowe.wartosc}{cite(p.zaangazowanie_osiedlowe.zrodlo)}</div>
+          )}
+        </div>
+      )}
+      {wp.suggestions?.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <strong>Pomysły na rozmowę:</strong>
+          <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
+            {wp.suggestions.map((s, i) => <li key={i}>{s}</li>)}
+          </ul>
         </div>
       )}
     </div>
