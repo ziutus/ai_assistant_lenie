@@ -28,6 +28,18 @@ const obsidianNoteItem = {
   groups: [],
 };
 
+const textItemWithMarkdown = {
+  id: 10430,
+  title: "Wiadomość z tekstem",
+  url: "whatsapp://example/message",
+  document_type: "text",
+  processing_status: "URL_ADDED",
+  processing_error_code: "NONE",
+  has_text_md: true,
+  byline: null,
+  groups: [],
+};
+
 describe("List — obsidian_note row actions", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: () => Promise.resolve({ content_groups: [] }) }));
@@ -52,8 +64,31 @@ describe("List — obsidian_note row actions", () => {
     );
 
     const readLink = await screen.findByRole("link", { name: "Czytaj" });
-    expect(readLink.getAttribute("href")).toBe("/read/10315");
+    expect(readLink.getAttribute("href")).toBe("/read/10315?list=type%3Dobsidian_note");
     expect(screen.getByRole("link", { name: "Chunki" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
+  });
+
+  it("shows Czytaj for a text document with markdown even when its status is URL_ADDED", async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url.endsWith("/document_states")) {
+        return Promise.resolve({ data: { states: ["ALL"], types: ["text"], errors: [] } });
+      }
+      if (url.endsWith("/website_list")) {
+        return Promise.resolve({ data: { websites: [textItemWithMarkdown], all_results_count: 1 } });
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+
+    render(
+      <AuthorizationContext.Provider value={{ ...auth, selectedDocumentType: "text" }}>
+        <MemoryRouter initialEntries={["/list?type=text"]}>
+          <List />
+        </MemoryRouter>
+      </AuthorizationContext.Provider>,
+    );
+
+    expect((await screen.findByRole("link", { name: "Czytaj" })).getAttribute("href")).toBe("/read/10430?list=type%3Dtext");
+    expect(screen.getByRole("link", { name: "Chunki" })).toBeTruthy();
   });
 });

@@ -80,10 +80,12 @@ class TestGetList:
         mock_row.uuid = "uuid-1"
         mock_row.byline = None
         mock_row.obsidian_note_paths = None
+        mock_row.has_text_md = True
 
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
-        session.execute.side_effect = [list_result, missing_notes_result]
+        groups_result = MagicMock(all=MagicMock(return_value=[]))
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result]
 
         result = repo.get_list()
 
@@ -98,6 +100,7 @@ class TestGetList:
         assert result[0]["note"] == "note"
         assert result[0]["collection_id"] == 3
         assert result[0]["uuid"] == "uuid-1"
+        assert result[0]["has_text_md"] is True
         assert result[0]["chunks_missing_obsidian_notes"] == 0
         assert result[0]["chunks_with_obsidian_notes"] == 0
 
@@ -113,7 +116,8 @@ class TestGetList:
         )
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[(1, 3, 2)]))
-        session.execute.side_effect = [list_result, missing_notes_result]
+        groups_result = MagicMock(all=MagicMock(return_value=[]))
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result]
 
         result = repo.get_list()
 
@@ -133,7 +137,8 @@ class TestGetList:
         )
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
-        session.execute.side_effect = [list_result, missing_notes_result]
+        groups_result = MagicMock(all=MagicMock(return_value=[]))
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result]
 
         result = repo.get_list()
 
@@ -257,7 +262,8 @@ class TestGetList:
 
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
-        session.execute.side_effect = [list_result, missing_notes_result]
+        groups_result = MagicMock(all=MagicMock(return_value=[]))
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result]
 
         result = repo.get_list()
 

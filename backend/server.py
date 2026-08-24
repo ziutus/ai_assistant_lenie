@@ -435,6 +435,50 @@ def website_list():
     return response, 200
 
 
+@app.route('/website_list_neighbors', methods=['GET'])
+def website_list_neighbors():
+    """Return adjacent document ids within the same filtered /website_list result."""
+    try:
+        document_id = int(request.args['document_id'])
+        document_type = request.args.get('type', 'ALL')
+        processing_status = request.args.get('processing_status', 'ALL')
+        # The reader receives the shareable /list URL, where the search field
+        # is named ``q``.  Keep ``search_in_document`` for direct API clients.
+        search_in_documents = request.args.get('q', request.args.get('search_in_document', ''))
+        only_missing_obsidian_notes = request.args.get('only_missing_obsidian_notes', '').lower() in ('1', 'true')
+        only_has_obsidian_notes = request.args.get('only_has_obsidian_notes', '').lower() in ('1', 'true')
+        without_embedding = request.args.get('without_embedding', '').lower() in ('1', 'true')
+        topic_group_ids = [int(value) for value in request.args.get('topic_group_ids', '').split(',') if value]
+        priority_group_id = int(request.args['priority_group_id']) if request.args.get('priority_group_id') else None
+        topic_match = request.args.get('topic_match', 'any')
+        sort = request.args.get('sort', 'newest')
+        without_topics = request.args.get('without_topics', '').lower() in ('1', 'true')
+        without_priority = request.args.get('without_priority', '').lower() in ('1', 'true')
+        if len(topic_group_ids) != len(set(topic_group_ids)) or topic_match not in {'any', 'all'} or sort not in {'newest', 'priority'}:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        return {"status": "error", "message": "invalid list navigation filter"}, 400
+
+    repo = DocumentRepository(get_scoped_session())
+    filters = {
+        "document_type": document_type, "processing_status": processing_status,
+        "search_in_documents": search_in_documents, "only_missing_obsidian_notes": only_missing_obsidian_notes,
+        "only_has_obsidian_notes": only_has_obsidian_notes, "without_embedding": without_embedding,
+        "topic_group_ids": topic_group_ids, "topic_match": topic_match, "priority_group_id": priority_group_id,
+        "without_topics": without_topics, "without_priority": without_priority, "sort": sort,
+    }
+    total = repo.get_list(**filters, count=True)
+    ids: list[int] = []
+    for offset in range((total + 99) // 100):
+        ids.extend(row["id"] for row in repo.get_list(**filters, limit=100, offset=offset))
+    try:
+        index = ids.index(document_id)
+    except ValueError:
+        return {"status": "success", "previous_id": None, "next_id": None}
+    return {"status": "success", "previous_id": ids[index - 1] if index else None,
+            "next_id": ids[index + 1] if index + 1 < len(ids) else None}
+
+
 @app.route('/website_count', methods=['GET'])
 def website_count():
     """Return document counts grouped by type in a single query."""

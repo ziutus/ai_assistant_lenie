@@ -89,6 +89,98 @@ class TestWebsiteList:
 
 
 # ---------------------------------------------------------------------------
+# /website_list_neighbors
+# ---------------------------------------------------------------------------
+
+
+class TestWebsiteListNeighbors:
+    def _mock_repo(self, MockRepo, all_ids):
+        """Wire a fake DocumentRepository whose get_list() paginates all_ids
+        exactly like the real ORM-backed one (count=True / limit+offset)."""
+        repo_instance = MagicMock()
+
+        def get_list(**kw):
+            if kw.get("count"):
+                return len(all_ids)
+            limit, offset = kw["limit"], kw["offset"]
+            page = all_ids[offset * limit: offset * limit + limit]
+            return [{"id": doc_id} for doc_id in page]
+
+        repo_instance.get_list.side_effect = get_list
+        MockRepo.return_value = repo_instance
+        return repo_instance
+
+    def test_finds_previous_and_next_across_pages(self, client):
+        # 250 ids spanning three 100-row pages; target sits in the middle page.
+        all_ids = list(range(1000, 750, -1))
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentRepository") as MockRepo:
+                self._mock_repo(MockRepo, all_ids)
+                resp = client.get(
+                    "/website_list_neighbors?document_id=900", headers=API_HEADERS,
+                )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "success"
+        assert data["previous_id"] == 901
+        assert data["next_id"] == 899
+
+    def test_first_result_has_no_previous(self, client):
+        all_ids = [10430, 10429, 10428]
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentRepository") as MockRepo:
+                self._mock_repo(MockRepo, all_ids)
+                resp = client.get(
+                    "/website_list_neighbors?q=S%C4%85siad&document_id=10430",
+                    headers=API_HEADERS,
+                )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["previous_id"] is None
+        assert data["next_id"] == 10429
+
+    def test_q_param_maps_to_search_in_documents(self, client):
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentRepository") as MockRepo:
+                repo_instance = self._mock_repo(MockRepo, [10430])
+                client.get(
+                    "/website_list_neighbors?q=S%C4%85siad&document_id=10430",
+                    headers=API_HEADERS,
+                )
+
+        calls = repo_instance.get_list.call_args_list
+        assert calls[0].kwargs["search_in_documents"] == "Sąsiad"
+
+    def test_document_not_in_filtered_result_returns_nulls(self, client):
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentRepository") as MockRepo:
+                self._mock_repo(MockRepo, [1, 2, 3])
+                resp = client.get(
+                    "/website_list_neighbors?document_id=999", headers=API_HEADERS,
+                )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["previous_id"] is None
+        assert data["next_id"] is None
+
+    def test_requires_document_id(self, client):
+        resp = client.get("/website_list_neighbors", headers=API_HEADERS)
+        assert resp.status_code == 400
+
+    @pytest.mark.parametrize("query", ["document_id=1&sort=bogus", "document_id=1&topic_match=bogus"])
+    def test_rejects_invalid_filters(self, client, query):
+        resp = client.get(f"/website_list_neighbors?{query}", headers=API_HEADERS)
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
 # /website_count
 # ---------------------------------------------------------------------------
 
@@ -537,16 +629,23 @@ class TestWebsiteSave:
 
 
 class TestUrlAdd:
+    """/url_add delegates to DocumentIngestService.ingest() (result.document_id/.status/
+    .missing_raw_html), then loads the document back via session.get(Document, id) to
+    build the response — so tests must stub session.get(), not just the ingest call."""
+
     def test_duplicate_returns_existing_document_details(self, client):
-        from library.document_service import ExistingDocumentError
+        from library.document_ingest_service import IngestResult
 
         mock_session = MagicMock()
-        existing = MagicMock()
-        existing.id = 77
-        existing.text_raw = "<html>stored</html>"
+        existing_doc = MagicMock()
+        existing_doc.id = 77
+        mock_session.get.return_value = existing_doc
         with patch("server.get_scoped_session", return_value=mock_session), \
-             patch("server.DocumentService") as MockDS:
-            MockDS.return_value.create_document.side_effect = ExistingDocumentError(existing)
+             patch("server.DocumentIngestService") as MockIngest, \
+             patch("server.link_matching_feed_items_to_document"):
+            MockIngest.return_value.ingest.return_value = IngestResult(
+                document_id=77, status="already_exists", missing_raw_html=False,
+            )
             resp = client.post("/url_add", json={
                 "url": "https://example.com", "type": "webpage", "html": "<html>new</html>",
             }, headers=API_HEADERS, content_type="application/json")
@@ -560,34 +659,38 @@ class TestUrlAdd:
         }
 
     def test_successful_add(self, client):
-        mock_session = MagicMock()
-        mock_doc = MagicMock()
-        mock_doc.id = 100
-        with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.DocumentService") as MockDS:
-                mock_service = MagicMock()
-                mock_service.create_document.return_value = mock_doc
-                MockDS.return_value = mock_service
+        from library.document_ingest_service import IngestResult
 
-                resp = client.post("/url_add", json={
-                    "url": "https://example.com",
-                    "type": "link",
-                    "title": "Test Link",
-                }, headers=API_HEADERS, content_type="application/json")
+        mock_session = MagicMock()
+        new_doc = MagicMock()
+        new_doc.id = 100
+        mock_session.get.return_value = new_doc
+        with patch("server.get_scoped_session", return_value=mock_session), \
+             patch("server.DocumentIngestService") as MockIngest, \
+             patch("server.link_matching_feed_items_to_document"):
+            mock_ingest = MagicMock()
+            mock_ingest.ingest.return_value = IngestResult(document_id=100, status="added", missing_raw_html=False)
+            MockIngest.return_value = mock_ingest
+
+            resp = client.post("/url_add", json={
+                "url": "https://example.com",
+                "type": "link",
+                "title": "Test Link",
+            }, headers=API_HEADERS, content_type="application/json")
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
         assert data["document_id"] == 100
-        mock_service.create_document.assert_called_once()
+        mock_ingest.ingest.assert_called_once()
 
     def test_missing_required_params(self, client):
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.DocumentService") as MockDS:
-                mock_service = MagicMock()
-                mock_service.create_document.side_effect = ValueError("Missing required parameter(s): 'url' or 'type'")
-                MockDS.return_value = mock_service
+            with patch("server.DocumentIngestService") as MockIngest:
+                mock_ingest = MagicMock()
+                mock_ingest.ingest.side_effect = ValueError("Missing required parameter(s): 'url' or 'type'")
+                MockIngest.return_value = mock_ingest
 
                 resp = client.post("/url_add", json={"url": "https://example.com"},
                                    headers=API_HEADERS, content_type="application/json")
@@ -599,26 +702,30 @@ class TestUrlAdd:
 
     def test_add_link_type(self, client):
         """Verify url_add for link type succeeds (no S3 upload for links)."""
-        mock_session = MagicMock()
-        mock_doc = MagicMock()
-        mock_doc.id = 101
-        with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.DocumentService") as MockDS:
-                mock_service = MagicMock()
-                mock_service.create_document.return_value = mock_doc
-                MockDS.return_value = mock_service
+        from library.document_ingest_service import IngestResult
 
-                resp = client.post("/url_add", json={
-                    "url": "https://example.com/article",
-                    "type": "link",
-                    "title": "An Article",
-                    "source": "manual",
-                }, headers=API_HEADERS, content_type="application/json")
+        mock_session = MagicMock()
+        new_doc = MagicMock()
+        new_doc.id = 101
+        mock_session.get.return_value = new_doc
+        with patch("server.get_scoped_session", return_value=mock_session), \
+             patch("server.DocumentIngestService") as MockIngest, \
+             patch("server.link_matching_feed_items_to_document"):
+            mock_ingest = MagicMock()
+            mock_ingest.ingest.return_value = IngestResult(document_id=101, status="added", missing_raw_html=False)
+            MockIngest.return_value = mock_ingest
+
+            resp = client.post("/url_add", json={
+                "url": "https://example.com/article",
+                "type": "link",
+                "title": "An Article",
+                "source": "manual",
+            }, headers=API_HEADERS, content_type="application/json")
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
-        mock_service.create_document.assert_called_once()
+        mock_ingest.ingest.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
