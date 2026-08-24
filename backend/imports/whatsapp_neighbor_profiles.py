@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build/update per-neighbor profile Documents from a WhatsApp group chat export.
+"""Build/update per-neighbor profiles directly on Contact rows from a WhatsApp
+group chat export.
 
 Purpose: a personal social-memory aid (accessibility use case — recalling who
 neighbors are and what to talk to them about) built from a WhatsApp group
@@ -9,11 +10,12 @@ chat the user is a member of. Two separate layers, deliberately kept apart:
    hobbies, pets, kids-as-a-fact, birthday, trips, recent events, community
    involvement) extracted ONLY from what the person explicitly wrote about
    themselves. No inference, no gossip from other members, nothing sensitive
-   (health, conflicts, money disputes). Re-running this script on a newer
-   export MERGES new facts into the existing stored profile instead of
-   overwriting it — the profile round-trips through an invisible JSON block
-   embedded in the document's text_md (an HTML comment, so it never shows in
-   the rendered note).
+   (health, conflicts, money). Re-running this script on a newer export
+   MERGES new facts into the existing stored profile instead of overwriting
+   it — the profile lives in Contact.whatsapp_profile (JSONB), one dict per
+   group chat under "groups" (own incremental watermark each) plus a single
+   merged "profile"/"suggestions" shared across every group the same contact
+   is active in.
 
 2. SMALL TALK SUGGESTIONS (derived, regenerated every run) — built from the
    current profile. This step is explicitly allowed to draw on general/world
@@ -22,21 +24,28 @@ chat the user is a member of. Two separate layers, deliberately kept apart:
    ("możesz zapytać...") and never invent specific unverifiable claims about
    the person.
 
+Storage note (2026-08-24): earlier versions of this script created a
+separate `Document` ("Sąsiad: ..." title, whatsapp://... synthetic URL) per
+neighbor. That duplicated the place a person's info had to be looked up in
+(Document vs. the private Contact book) — this version writes only to
+Contact, matched by phone number (reliable — WhatsApp always knows the
+sender's number even when a display name is shown) or, failing that, by
+normalized name against the existing contact_categories/contacts book. A
+sender with neither a phone match nor a name match gets a brand-new Contact.
+The one-off migration of the 97 pre-existing whatsapp:// Documents into
+Contact + their deletion is imports/whatsapp_neighbor_profiles_migrate_to_contacts.py.
+
 A sender only visible as a phone number (WhatsApp shows the raw number when
 the person has no profile name set) is optionally resolved to a real name via
 an exported Google Contacts CSV (`--contacts-csv`) — matched by phone digits,
 with a per-community suffix like " - Tuwima Gardens" stripped from the
-contact's last name and placeholder "unknown" entries ignored. When resolved,
-the real name becomes the document title/byline and drives apartment
-matching (`--owners-csv`); either way the phone number itself is recorded in
-the profile content as a **Telefon:** fact, so it's visible/searchable rather
-than only implicit in the document title.
+contact's last name and placeholder "unknown" entries ignored.
 
 Usage:
     cd backend
     python imports/whatsapp_neighbor_profiles.py --export "path/to/chat.txt"                       # dry-run preview
     python imports/whatsapp_neighbor_profiles.py --export "..." --sender "ANETA ANTKOWICZ" -v       # single person
-    python imports/whatsapp_neighbor_profiles.py --export "..." --apply                             # create/update documents
+    python imports/whatsapp_neighbor_profiles.py --export "..." --apply                             # create/update contacts
     python imports/whatsapp_neighbor_profiles.py --export "..." --owners-csv "TG_składka_05_06.csv" --apply
     python imports/whatsapp_neighbor_profiles.py --export "..." --contacts-csv "contacts.csv" --apply
 """
@@ -65,13 +74,6 @@ NOISE_CONTENT = {
 MIN_CONTENT_LEN = 6
 
 DEFAULT_MODEL = "Bielik-11B-v3.0-Instruct"
-
-PROFILE_JSON_MARKER_START = "<!-- lenie-neighbor-profile-json"
-PROFILE_JSON_MARKER_END = "-->"
-PROFILE_FRONT_MATTER_RE = re.compile(
-    re.escape(PROFILE_JSON_MARKER_START) + r"\n(.*?)\n" + re.escape(PROFILE_JSON_MARKER_END),
-    re.DOTALL,
-)
 
 _PROFILE_SHAPE = """{
   "zawod_lub_branza": {"wartosc": "...", "zrodlo": "DD.MM.RRRR, GG:MM"} albo null,
@@ -254,14 +256,6 @@ def messages_to_corpus_text(chunk: list[dict]) -> str:
 
 def is_phone_number(sender: str) -> bool:
     return bool(re.match(r"^\+?[\d\s]{7,}$", sender.strip()))
-
-
-def slugify(value: str) -> str:
-    from unidecode import unidecode
-
-    value = unidecode(value).lower()
-    value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
-    return value or "sasiad"
 
 
 def normalize_name(value: str) -> set[str]:
@@ -524,136 +518,166 @@ def generate_small_talk(sender_name: str, profile: dict | None, model: str) -> l
     return suggestions if isinstance(suggestions, list) else []
 
 
-def load_existing_state(text_md: str | None) -> dict | None:
-    """Read back {"profile": {...}, "last_processed_at": "DD.MM.YYYY, HH:MM"} from a
-    previously rendered document's invisible front-matter block."""
-    if not text_md:
-        return None
-    m = PROFILE_FRONT_MATTER_RE.search(text_md)
-    if not m:
-        return None
-    try:
-        state = json.loads(m.group(1))
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(state, dict):
-        return None
-    # Backward-compat: older documents stored the profile dict directly, with no wrapper.
-    if "profile" not in state and "last_processed_at" not in state:
-        return {"profile": state, "last_processed_at": None}
-    return state
-
-
-def render_markdown(sender_name: str, stats: dict, apartments: list[str] | None, profile: dict | None,
-                     suggestions: list[str], group_label: str, last_processed_at: str | None = None,
-                     phone: str | None = None) -> str:
-    state = {"profile": profile or {}, "last_processed_at": last_processed_at}
-    lines = [
-        PROFILE_JSON_MARKER_START,
-        json.dumps(state, ensure_ascii=False),
-        PROFILE_JSON_MARKER_END,
-        "",
-        f"# Sąsiad: {sender_name}",
-        "",
-    ]
+def format_profile_preview(display_name: str, stats: dict, apartments: list[str] | None, profile: dict | None,
+                            suggestions: list[str], phone: str | None = None) -> str:
+    """Human-readable dry-run preview of what would be written to Contact.whatsapp_profile."""
+    lines = [f"# Sąsiad: {display_name}", ""]
     if apartments:
-        lines.append("**Mieszkanie:** " + "; ".join(apartments))
+        lines.append("Mieszkanie: " + "; ".join(apartments))
     if phone:
-        lines.append(f"**Telefon:** {phone}")
-    lines.append(f"**Wiadomości w grupie:** {stats['message_count']} (od {stats['first_date']} do {stats['last_date']})")
+        lines.append(f"Telefon: {phone}")
+    lines.append(f"Wiadomości w grupie: {stats['message_count']} (od {stats['first_date']} do {stats['last_date']})")
     lines.append("")
 
     has_facts = profile and any(profile.get(k) for k in ALL_PROFILE_FIELDS)
+    if not has_facts:
+        lines.append("(za mało treściwych wiadomości, żeby zbudować profil tej osoby)")
+        return "\n".join(lines)
 
     def cite(zrodlo: str | None) -> str:
-        return f" _(źródło: {zrodlo})_" if zrodlo else ""
+        return f" (źródło: {zrodlo})" if zrodlo else ""
 
-    if has_facts:
-        zawod = profile.get("zawod_lub_branza")
-        miejsce = profile.get("miejsce_pracy")
-        if zawod or miejsce:
-            lines.append("## Czym się zajmuje")
-            bits = [f.get("wartosc", "") for f in (zawod, miejsce) if f]
-            lines.append(" — ".join(bits) + cite((zawod or miejsce).get("zrodlo")))
-            lines.append("")
-        if profile.get("hobby_zainteresowania"):
-            lines.append("## Hobby / zainteresowania")
-            for t in profile["hobby_zainteresowania"]:
-                lines.append(f"- {t.get('wartosc', '')}" + cite(t.get("zrodlo")))
-            lines.append("")
-        if profile.get("zwierzeta"):
-            lines.append("## Zwierzęta")
-            for z in profile["zwierzeta"]:
-                lines.append(f"- {z.get('wartosc', '')}" + cite(z.get("zrodlo")))
-            lines.append("")
-        if profile.get("dzieci"):
-            lines.append("## Rodzina")
-            lines.append(profile["dzieci"].get("wartosc", "") + cite(profile["dzieci"].get("zrodlo")))
-            lines.append("")
-        if profile.get("urodziny"):
-            u = profile["urodziny"]
-            lines.append(f"**Urodziny:** {u.get('wartosc', '')}" + cite(u.get("zrodlo")))
-            lines.append("")
-        if profile.get("podroze_wakacje"):
-            lines.append("## Podróże / wakacje")
-            for p in profile["podroze_wakacje"]:
-                gdzie, kiedy = p.get("gdzie", ""), p.get("kiedy", "")
-                lines.append(f"- {gdzie}" + (f" ({kiedy})" if kiedy else "") + cite(p.get("zrodlo")))
-            lines.append("")
-        if profile.get("wydarzenia_ostatnie"):
-            lines.append("## Ostatnie wydarzenia")
-            for e in profile["wydarzenia_ostatnie"]:
-                co, kiedy = e.get("co", ""), e.get("kiedy", "")
-                lines.append(f"- {co}" + (f" ({kiedy})" if kiedy else "") + cite(e.get("zrodlo")))
-            lines.append("")
-        if profile.get("zaangazowanie_osiedlowe"):
-            z = profile["zaangazowanie_osiedlowe"]
-            lines.append("## Zaangażowanie w sprawy osiedla")
-            lines.append(z.get("wartosc", "") + cite(z.get("zrodlo")))
-            lines.append("")
-        if suggestions:
-            lines.append("## Pomysły na rozmowę")
-            for s in suggestions:
-                lines.append(f"- {s}")
-            lines.append("")
-    else:
-        lines.append("_Za mało treściwych wiadomości, żeby zbudować profil tej osoby._")
-        lines.append("")
-
-    lines.append("---")
-    lines.append(f"*Profil budowany i aktualizowany automatycznie z czatu WhatsApp „{group_label}” — tylko fakty jawnie napisane przez tę osobę, bez wątków wrażliwych. Sekcja „Pomysły na rozmowę” może zawierać ogólne sugestie, nie tylko fakty.*")
+    zawod, miejsce = profile.get("zawod_lub_branza"), profile.get("miejsce_pracy")
+    if zawod or miejsce:
+        bits = [f.get("wartosc", "") for f in (zawod, miejsce) if f]
+        lines.append("Czym się zajmuje: " + " — ".join(bits) + cite((zawod or miejsce).get("zrodlo")))
+    for t in profile.get("hobby_zainteresowania") or []:
+        lines.append(f"Hobby: {t.get('wartosc', '')}" + cite(t.get("zrodlo")))
+    for z in profile.get("zwierzeta") or []:
+        lines.append(f"Zwierzę: {z.get('wartosc', '')}" + cite(z.get("zrodlo")))
+    if profile.get("dzieci"):
+        lines.append("Rodzina: " + profile["dzieci"].get("wartosc", "") + cite(profile["dzieci"].get("zrodlo")))
+    if profile.get("urodziny"):
+        u = profile["urodziny"]
+        lines.append(f"Urodziny: {u.get('wartosc', '')}" + cite(u.get("zrodlo")))
+    for p in profile.get("podroze_wakacje") or []:
+        gdzie, kiedy = p.get("gdzie", ""), p.get("kiedy", "")
+        lines.append(f"Podróż: {gdzie}" + (f" ({kiedy})" if kiedy else "") + cite(p.get("zrodlo")))
+    for e in profile.get("wydarzenia_ostatnie") or []:
+        co, kiedy = e.get("co", ""), e.get("kiedy", "")
+        lines.append(f"Wydarzenie: {co}" + (f" ({kiedy})" if kiedy else "") + cite(e.get("zrodlo")))
+    if profile.get("zaangazowanie_osiedlowe"):
+        z = profile["zaangazowanie_osiedlowe"]
+        lines.append("Zaangażowanie osiedlowe: " + z.get("wartosc", "") + cite(z.get("zrodlo")))
+    if suggestions:
+        lines.append("Pomysły na rozmowę:")
+        for s in suggestions:
+            lines.append(f"  - {s}")
     return "\n".join(lines)
 
 
-def _embed_document(repo, doc, model: str) -> int:
-    """Whole-document split + embed, no chunk_id.
+def load_contact_phone_index(session) -> dict[str, int]:
+    """Existing Contact.phone_number values -> contact id, digits-only with the
+    same full/last-9-digits fallback as load_contacts()."""
+    from sqlalchemy import select
 
-    Same fallback path documents_pipeline.py's _embed_document_from_markdown()
-    and obsidian_reimport_service.py's _embed_note() use for documents with no
-    chunk-analysis run — these profile documents are generated/updated
-    unattended, with nothing to drive an approval-gated chunk pipeline.
+    from library.db.models import Contact
+
+    full: dict[str, int] = {}
+    last9: dict[str, int | None] = {}
+    for c in session.scalars(select(Contact).where(Contact.phone_number.is_not(None))):
+        digits = re.sub(r"\D", "", c.phone_number or "")
+        if len(digits) < 7:
+            continue
+        full[digits] = c.id
+        key9 = digits[-9:]
+        if key9 in last9 and last9[key9] != c.id:
+            last9[key9] = None
+        else:
+            last9.setdefault(key9, c.id)
+    for key9, cid in last9.items():
+        if cid is not None:
+            full.setdefault(key9, cid)
+    return full
+
+
+def load_contact_name_index(session) -> dict[str, int]:
+    """Existing contacts' normalized full-name key -> contact id.
+
+    A key shared by more than one contact (e.g. several bare-first-name-only
+    "Agnieszka"/"Grzegorz" entries with no surname to disambiguate) is
+    dropped rather than pointing at an arbitrary one of them — see
+    feedback_no_merge_unverifiable_contacts.md. Picking "whichever contact
+    happened to be seen first" would silently attach a WhatsApp profile to
+    the wrong real person.
     """
-    from library.lenie_markdown import md_remove_markdown, md_split_for_emb
-    import library.embedding as embedding
+    from sqlalchemy import select
 
-    source = doc.text_md or doc.text or ""
-    if not source:
-        return 0
-    if not doc.language:
-        doc.language = "pl"
+    from library.db.models import Contact
 
-    created = 0
-    for part in md_split_for_emb(source):
-        cleaned = md_remove_markdown(part).strip()
-        if not cleaned:
+    index: dict[str, int | None] = {}
+    for c in session.scalars(select(Contact)):
+        key = " ".join(sorted(normalize_name(f"{c.first_name or ''} {c.last_name}")))
+        if not key:
             continue
-        result = embedding.get_embedding(model=model, text=cleaned)
-        if result.status != "success" or not result.embedding:
-            logger.warning("Embedding failed for document %s: %s", doc.id, result.status)
-            continue
-        repo.embedding_add(doc.id, result.embedding, doc.language, cleaned, cleaned, model)
-        created += 1
-    return created
+        if key in index and index[key] != c.id:
+            index[key] = None  # ambiguous
+        else:
+            index.setdefault(key, c.id)
+    return {k: v for k, v in index.items() if v is not None}
+
+
+def split_display_name(display_name: str) -> tuple[str | None, str]:
+    """First token -> first_name, rest -> last_name. An unresolved phone-number
+    sender (e.g. "+48 668 527 645") is kept whole as last_name instead — splitting
+    it on whitespace would put "+48" in first_name and the rest of the digits in
+    last_name."""
+    display_name = display_name.strip()
+    if is_phone_number(display_name):
+        return None, display_name
+    parts = display_name.split(None, 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return None, display_name
+
+
+def find_or_create_contact(session, display_name: str, phone: str | None, default_category_id: int,
+                            phone_index: dict[str, int], name_index: dict[str, int]):
+    """Match an existing Contact by phone (reliable) then by normalized name, else
+    create a new one. phone_index/name_index are built ONCE from the DB before the
+    run and never updated with contacts created during this run — two distinct
+    senders that happen to share a name (no phone for either) must never be
+    silently merged into one Contact just because they were processed back to
+    back (see feedback_no_merge_unverifiable_contacts.md)."""
+    from library.db.models import Contact
+
+    contact = None
+    if phone:
+        digits = re.sub(r"\D", "", phone)
+        cid = phone_index.get(digits) or phone_index.get(digits[-9:])
+        if cid:
+            contact = session.get(Contact, cid)
+    if contact is None:
+        key = " ".join(sorted(normalize_name(display_name)))
+        cid = name_index.get(key) if key else None
+        if cid:
+            contact = session.get(Contact, cid)
+    is_new = contact is None
+    if contact is None:
+        first_name, last_name = split_display_name(display_name)
+        contact = Contact(category_id=default_category_id, first_name=first_name, last_name=last_name)
+        session.add(contact)
+        session.flush()
+    if phone and not contact.phone_number:
+        contact.phone_number = phone
+    return contact, is_new
+
+
+def update_whatsapp_profile(contact, group_slug: str, group_label: str, profile: dict | None,
+                             suggestions: list[str], stats: dict, new_last_processed_at: str) -> None:
+    state = dict(contact.whatsapp_profile or {})
+    state["profile"] = profile or {}
+    state["suggestions"] = suggestions
+    groups = dict(state.get("groups") or {})
+    groups[group_slug] = {
+        "group_label": group_label,
+        "last_processed_at": new_last_processed_at,
+        "message_count": stats["message_count"],
+        "first_date": stats["first_date"],
+        "last_date": stats["last_date"],
+    }
+    state["groups"] = groups
+    contact.whatsapp_profile = state
 
 
 def main():
@@ -662,9 +686,9 @@ def main():
     parser.add_argument("--owners-csv", default=None, help="Opcjonalny CSV właścicieli mieszkań")
     parser.add_argument("--contacts-csv", default=None, help="Opcjonalny eksport Kontaktów Google (CSV) do rozwiązywania nadawców widocznych jako numer telefonu")
     parser.add_argument("--contacts-suffix", default="Tuwima Gardens", help="Sufiks do usunięcia z nazwiska w --contacts-csv, np. ' - Tuwima Gardens'")
-    parser.add_argument("--group-label", default="Tuwima Gardens - Czat ogólny", help="Etykieta grupy do tytułu/notatki")
-    parser.add_argument("--group-slug", default="tuwima-gardens/czat-ogolny", help="Slug grupy do syntetycznego URL")
-    parser.add_argument("--tags", default="sasiedzi,tuwima-gardens", help="Tagi (przecinek) na dokumentach")
+    parser.add_argument("--group-label", default="Tuwima Gardens - Czat ogólny", help="Etykieta grupy czatu (zapisywana w profilu)")
+    parser.add_argument("--group-slug", default="tuwima-gardens/czat-ogolny", help="Identyfikator grupy czatu (klucz watermarku w whatsapp_profile.groups)")
+    parser.add_argument("--contact-group", default="Tuwima Gardens Mieszkańcy", help="Grupa kontaktów (contact_groups), do której trafiają dopasowani/nowi sąsiedzi")
     parser.add_argument("--source", default="own")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--min-messages", type=int, default=5, help="Pomiń nadawców z mniejszą liczbą treściwych wiadomości")
@@ -672,8 +696,7 @@ def main():
     parser.add_argument("--sender", default=None, help="Przetwórz tylko wskazanych nadawców, po przecinku (dopasowanie dokładne)")
     parser.add_argument("--limit", type=int, default=None, help="Maks. liczba osób do przetworzenia (testy)")
     parser.add_argument("--force", action="store_true", help="Zignoruj zapisany profil/znacznik czasu i przetwórz całą historię od nowa (np. po poprawce promptu)")
-    parser.add_argument("--skip-embeddings", action="store_true", help="Nie generuj embeddingów (szybsze/tańsze testy; dokument nie będzie wtedy w wyszukiwaniu semantycznym)")
-    parser.add_argument("--apply", action="store_true", help="Zapisz/zaktualizuj dokumenty w bazie (domyślnie: tylko podgląd)")
+    parser.add_argument("--apply", action="store_true", help="Zapisz/zaktualizuj kontakty w bazie (domyślnie: tylko podgląd)")
     parser.add_argument("--skip-llm", action="store_true", help="Tylko parsowanie/statystyki, bez wywołań LLM (do testów parsera)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -686,9 +709,9 @@ def main():
     logger.info("Unikalnych nadawców: %d", len(by_sender))
 
     owners = load_owners(args.owners_csv) if args.owners_csv else {}
-    contacts = load_contacts(args.contacts_csv, args.contacts_suffix) if args.contacts_csv else {}
-    if contacts:
-        logger.info("Wczytano %d numerów telefonów z %s", len(contacts), args.contacts_csv)
+    contacts_csv = load_contacts(args.contacts_csv, args.contacts_suffix) if args.contacts_csv else {}
+    if contacts_csv:
+        logger.info("Wczytano %d numerów telefonów z %s", len(contacts_csv), args.contacts_csv)
 
     senders = sorted(by_sender.keys(), key=lambda s: -len(by_sender[s]))
     if args.sender:
@@ -698,19 +721,36 @@ def main():
         senders = senders[: args.limit]
 
     session = None
-    embedding_model = None
+    default_category_id = None
+    contact_group = None
+    phone_index: dict[str, int] = {}
+    name_index: dict[str, int] = {}
     if args.apply:
-        from library.config_loader import load_config
+        from sqlalchemy import select
+
         from library.db.engine import get_session
-        from library.db.models import Document
-        from library.document_repository import DocumentRepository
-        from library.document_service import DocumentService
+        from library.db.models import ContactCategory, ContactGroup
 
         session = get_session()
-        service = DocumentService(session)
-        repo = DocumentRepository(session)
-        if not args.skip_embeddings:
-            embedding_model = load_config().require("EMBEDDING_MODEL")
+        default_category = session.execute(
+            select(ContactCategory).where(ContactCategory.name == "Osoba prywatna")
+        ).scalars().first()
+        if default_category is None:
+            logger.error("Brak kategorii 'Osoba prywatna' w contact_categories — przerywam")
+            session.close()
+            return
+        default_category_id = default_category.id
+
+        contact_group = session.execute(
+            select(ContactGroup).where(ContactGroup.name == args.contact_group)
+        ).scalars().first()
+        if contact_group is None:
+            contact_group = ContactGroup(name=args.contact_group)
+            session.add(contact_group)
+            session.flush()
+
+        phone_index = load_contact_phone_index(session)
+        name_index = load_contact_name_index(session)
 
     created, updated, skipped_short, skipped_no_data, skipped_no_new = 0, 0, 0, 0, 0
 
@@ -722,23 +762,25 @@ def main():
             logger.debug("Pomijam %s: tylko %d treściwych wiadomości", sender, len(real_msgs))
             continue
 
-        resolved_name = resolve_phone_sender(sender, contacts) if contacts and is_phone_number(sender) else None
+        resolved_name = resolve_phone_sender(sender, contacts_csv) if contacts_csv and is_phone_number(sender) else None
         display_name = resolved_name or sender
         phone_for_content = sender if is_phone_number(sender) else None
         apartments = match_owner(display_name, owners) if owners and not is_phone_number(display_name) else None
-        title = f"Sąsiad: {display_name} ({args.group_label})"
-        url = f"whatsapp://{args.group_slug}/osoba/{slugify(sender)}"
 
-        existing_doc = None
+        contact = None
+        contact_is_new = False
         existing_profile = None
         last_processed_at = None
         if args.apply:
-            existing_doc = Document.get_by_url(session, url)
+            contact, contact_is_new = find_or_create_contact(session, display_name, phone_for_content,
+                                                               default_category_id, phone_index, name_index)
+            if contact_group not in contact.groups:
+                contact.groups.append(contact_group)
             if not args.force:
-                existing_state = load_existing_state(existing_doc.text_md if existing_doc else None)
-                if existing_state:
-                    existing_profile = existing_state.get("profile")
-                    last_processed_at = existing_state.get("last_processed_at")
+                group_state = ((contact.whatsapp_profile or {}).get("groups") or {}).get(args.group_slug)
+                if group_state:
+                    existing_profile = (contact.whatsapp_profile or {}).get("profile")
+                    last_processed_at = group_state.get("last_processed_at")
 
         # Incremental import: only feed messages newer than the stored watermark into the
         # LLM — the merge in extract_or_update_profile means older facts aren't lost, this
@@ -777,54 +819,30 @@ def main():
             skipped_no_data += 1
 
         new_last_processed_at = f"{msgs[-1]['date_str']}, {msgs[-1]['time']}"
-        markdown = render_markdown(display_name, stats, apartments, profile, suggestions, args.group_label,
-                                    last_processed_at=new_last_processed_at, phone=phone_for_content)
 
         if not args.apply:
+            preview = format_profile_preview(display_name, stats, apartments, profile, suggestions, phone_for_content)
             print("=" * 70)
-            print(f"[DRY-RUN] {title}")
-            print(f"url={url}")
-            print(markdown)
+            print("[DRY-RUN]")
+            print(preview)
             continue
 
-        note = f"Profil sąsiada budowany/aktualizowany z czatu WhatsApp „{args.group_label}”"
-        if existing_doc:
-            existing_doc.text_md = markdown
-            existing_doc.title = title
-            existing_doc.note = note
-            session.commit()
-            updated += 1
-            logger.info("Zaktualizowano dokument #%d: %s", existing_doc.id, title)
-            if embedding_model:
-                repo.embedding_delete(existing_doc.id, embedding_model)
-                n = _embed_document(repo, existing_doc, embedding_model)
-                session.commit()
-                logger.debug("  embeddingi: %d fragmentów", n)
-        else:
-            doc, status = service.import_document(
-                url=url,
-                document_type="text",
-                title=title,
-                text_md=markdown,
-                byline=display_name,
-                source=args.source,
-                note=note,
-                tags=args.tags,
-            )
+        update_whatsapp_profile(contact, args.group_slug, args.group_label, profile, suggestions, stats, new_last_processed_at)
+        session.commit()
+        if contact_is_new:
             created += 1
-            logger.info("Utworzono dokument #%d: %s", doc.id, title)
-            if embedding_model:
-                n = _embed_document(repo, doc, embedding_model)
-                session.commit()
-                logger.debug("  embeddingi: %d fragmentów", n)
+            logger.info("Utworzono kontakt #%d: %s", contact.id, display_name)
+        else:
+            updated += 1
+            logger.info("Zaktualizowano kontakt #%d: %s", contact.id, display_name)
 
     if session:
         session.close()
 
     print()
     print(f"Nadawców przetworzonych: {len(senders)}")
-    print(f"Utworzono nowych dokumentów: {created}")
-    print(f"Zaktualizowano istniejących dokumentów: {updated}")
+    print(f"Utworzono nowych kontaktów: {created}")
+    print(f"Zaktualizowano istniejących kontaktów: {updated}")
     print(f"Pominięto (za mało wiadomości): {skipped_short}")
     print(f"Pominięto (brak nowych wiadomości od ostatniego importu): {skipped_no_new}")
     print(f"Bez profilu / bez danych: {skipped_no_data}")
