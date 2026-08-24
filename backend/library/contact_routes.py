@@ -18,7 +18,7 @@ bp = Blueprint("contacts", __name__)
 
 _CONTACT_FIELDS = (
     "first_name", "last_name", "phone_number", "email", "linkedin_url",
-    "company", "position", "address", "notes",
+    "company", "position", "address", "pesel", "notes",
 )
 
 _LOOKUP_TYPES = ("phone", "linkedin", "web")
@@ -62,6 +62,7 @@ def _contact_dict(row: Contact) -> dict:
         "position": row.position,
         "address": row.address,
         "birthday": row.birthday.isoformat() if row.birthday else None,
+        "pesel": row.pesel,
         "notes": row.notes,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
