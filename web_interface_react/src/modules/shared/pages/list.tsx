@@ -53,6 +53,7 @@ const List = () => {
   const [copyMessage, setCopyMessage] = React.useState("");
   const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
+  const readerListContext = searchParams.toString();
   const [topicGroupIds, setTopicGroupIds] = React.useState<number[]>(() => (searchParams.get("topic_group_ids") || "").split(",").filter(Boolean).map(Number));
   const [topicMatch, setTopicMatch] = React.useState<"any" | "all">(searchParams.get("topic_match") === "all" ? "all" : "any");
   const [priorityGroupId, setPriorityGroupId] = React.useState<number | undefined>(searchParams.get("priority_group_id") ? Number(searchParams.get("priority_group_id")) : undefined);
@@ -374,7 +375,8 @@ const List = () => {
             // social_media_post text arrives at creation, not through the
             // download pipeline, so it stays at URL_ADDED indefinitely —
             // unlike the other types here, URL_ADDED does NOT mean "no text yet".
-            const hasReadableText = ["social_media_post", "email", "obsidian_note"].includes(item.document_type) ||
+            const hasReadableText = item.has_text_md === true ||
+              ["social_media_post", "email", "obsidian_note"].includes(item.document_type) ||
               (["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status));
             return (
             <li
@@ -419,7 +421,7 @@ const List = () => {
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 10px" }}
-                  to={`/read/${item.id}`}
+                  to={{ pathname: `/read/${item.id}`, search: readerListContext ? `?list=${encodeURIComponent(readerListContext)}` : "" }}
                 >
                   Czytaj
                 </NavLink>

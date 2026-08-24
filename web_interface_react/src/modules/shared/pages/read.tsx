@@ -39,6 +39,11 @@ interface Chapter {
   char_end?: number;
 }
 
+interface ListNeighbors {
+  previous_id: number | null;
+  next_id: number | null;
+}
+
 // Footnote extracted out of the book text (document_references) — rendered
 // as a "Przypisy" section at the end of the chapter, linked from ¹⁸ markers.
 interface ChapterReference {
@@ -987,6 +992,19 @@ const Read: React.FC = () => {
 
   const requestedPosition = Number(searchParams.get("chapter") ?? 1);
   const position = readerCompact ? 1 : requestedPosition;
+  const listContext = searchParams.get("list") ?? "";
+  const listReaderSearch = listContext ? `?list=${encodeURIComponent(listContext)}` : "";
+  const [listNeighbors, setListNeighbors] = React.useState<ListNeighbors | null>(null);
+
+  React.useEffect(() => {
+    if (!listContext) { setListNeighbors(null); return; }
+    const params = new URLSearchParams(listContext);
+    params.set("document_id", id ?? "");
+    void fetch(`${apiUrl}/website_list_neighbors?${params.toString()}`, { headers })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => setListNeighbors(data?.status === "success" ? data : null))
+      .catch(() => setListNeighbors(null));
+  }, [apiUrl, headers, id, listContext]);
 
   // ── Data loading ──
 
@@ -1656,7 +1674,9 @@ const Read: React.FC = () => {
         )}
         <NavLink to={`/chunks/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>Przegląd chunków</NavLink>
         <NavLink to={`/llm-costs?document_id=${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>💰 Koszty LLM</NavLink>
-        <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
+        {listNeighbors?.previous_id && <NavLink to={`/read/${listNeighbors.previous_id}${listReaderSearch}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Poprzedni</NavLink>}
+        {listNeighbors?.next_id && <NavLink to={`/read/${listNeighbors.next_id}${listReaderSearch}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>Następny →</NavLink>}
+        <NavLink to={`/list${listContext ? `?${listContext}` : ""}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>
 

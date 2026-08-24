@@ -39,6 +39,7 @@ class DocumentRepository:
                 Document.ingested_at, Document.processing_status, Document.processing_error_code,
                 Document.note, Document.collection_id, Document.uuid, Document.byline,
                 Document.obsidian_note_paths,
+                (func.length(func.trim(func.coalesce(Document.text_md, ""))) > 0).label("has_text_md"),
             )
 
         # Dynamic filters — column stores enum name strings directly
@@ -162,6 +163,7 @@ class DocumentRepository:
                 "uuid": row.uuid,
                 "byline": row.byline,
                 "obsidian_note_paths": row.obsidian_note_paths or [],
+                "has_text_md": row.has_text_md,
                 "chunks_missing_obsidian_notes": missing,
                 "chunks_with_obsidian_notes": with_notes,
                 "groups": groups_by_doc.get(row.id, {}).get("groups", []),
