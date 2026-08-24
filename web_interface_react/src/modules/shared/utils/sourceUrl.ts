@@ -28,6 +28,13 @@ const obsidianNoteRelativePath = (url: string | undefined): string | null => {
   }
 };
 
+// whatsapp_neighbor_profiles.py stores whatsapp://<group_slug>/osoba/<slug> as
+// a stable dedup identity (see whatsapp_neighbor_profiles.py) -- unlike
+// gmail:// and obsidian://, it has no real openable destination (the source
+// is a local chat export, not a live message), so the reader's "Oryginał"
+// link should not be shown at all for it.
+export const isOpenableSourceUrl = (url: string): boolean => !/^whatsapp:\/\//i.test(url.trim());
+
 export const toOpenableSourceUrl = (url: string, originalUrl?: string): string => {
   const messageId = gmailMessageId(url);
   if (messageId) {

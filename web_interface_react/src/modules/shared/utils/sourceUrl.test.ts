@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { saveObsidianVaultName } from "../services/storage";
-import { toOpenableSourceUrl } from "./sourceUrl";
+import { isOpenableSourceUrl, toOpenableSourceUrl } from "./sourceUrl";
 
 describe("toOpenableSourceUrl", () => {
   beforeEach(() => {
@@ -39,5 +39,20 @@ describe("toOpenableSourceUrl", () => {
   it("does not touch a real obsidian://open?... URL", () => {
     const url = "obsidian://open?vault=personal&file=02-wiedza%2Fk8s";
     expect(toOpenableSourceUrl(url)).toBe(url);
+  });
+});
+
+describe("isOpenableSourceUrl", () => {
+  it("rejects whatsapp:// synthetic dedup identities (no real destination to open)", () => {
+    expect(isOpenableSourceUrl("whatsapp://tuwima-gardens/czat-ogolny/osoba/48_789_341_361")).toBe(false);
+  });
+
+  it("accepts ordinary http(s) URLs", () => {
+    expect(isOpenableSourceUrl("https://example.com/article")).toBe(true);
+  });
+
+  it("accepts gmail:// and obsidian:// URLs, which have real openable targets", () => {
+    expect(isOpenableSourceUrl("gmail://abc123")).toBe(true);
+    expect(isOpenableSourceUrl("obsidian://02-wiedza/k8s.md")).toBe(true);
   });
 });
