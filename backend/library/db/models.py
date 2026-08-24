@@ -2974,6 +2974,7 @@ class Contact(Base):
     position: Mapped[str | None] = mapped_column(String(200))
     address: Mapped[str | None] = mapped_column(Text)
     birthday: Mapped[datetime.date | None] = mapped_column(Date)
+    pesel: Mapped[str | None] = mapped_column(String(11), unique=True)
     notes: Mapped[str | None] = mapped_column(Text)
     google_contact_resource_name: Mapped[str | None] = mapped_column(String(255), unique=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
