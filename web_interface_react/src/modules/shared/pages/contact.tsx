@@ -1,6 +1,6 @@
 import React from "react";
 import axios from "axios";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import type { ContactCategory } from "./contactCategories";
 import type { ContactGroup } from "./contactGroups";
@@ -117,6 +117,7 @@ interface ContactDetail {
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
   whatsapp_profile: WhatsappProfile | null;
+  photo_url: string | null;
 }
 
 const emptyForm = {
@@ -146,9 +147,20 @@ const ceidgUrlForNip = (nip: string) =>
 const Contact = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isNew = id === "new";
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
+  // Round-tripped from contacts.tsx (`?list=<encoded querystring>`, same
+  // pattern as read.tsx/list.tsx) so "Wróć do listy" restores the search/
+  // filters/pagination the user came from instead of resetting them.
+  const listContext = searchParams.get("list") ?? "";
+  const backToListUrl = `/contacts${listContext ? `?${listContext}` : ""}`;
 
+  // Default view is read-only; "Edytuj" switches to the always-editable form
+  // that used to be the only view. /contacts/new always starts (and stays)
+  // in edit mode since there's nothing yet to display read-only.
+  const [mode, setMode] = React.useState<"view" | "edit">(isNew ? "edit" : "view");
+  const [contact, setContact] = React.useState<ContactDetail | null>(null);
   const [form, setForm] = React.useState(emptyForm);
   const [categories, setCategories] = React.useState<ContactCategory[]>([]);
   const [allGroups, setAllGroups] = React.useState<ContactGroup[]>([]);
@@ -158,6 +170,9 @@ const Contact = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
+  const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = React.useState(false);
+  const photoInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [relQuery, setRelQuery] = React.useState("");
   const [relResults, setRelResults] = React.useState<ContactListItem[]>([]);
@@ -190,6 +205,20 @@ const Contact = () => {
     }
   };
 
+  const formFromContact = (c: ContactDetail) => ({
+    category_id: String(c.category_id),
+    first_name: c.first_name ?? "",
+    last_name: c.last_name,
+    phone_number: c.phone_number ?? "",
+    email: c.email ?? "",
+    linkedin_url: c.linkedin_url ?? "",
+    company: c.company ?? "",
+    position: c.position ?? "",
+    address: c.address ?? "",
+    birthday: c.birthday ?? "",
+    notes: c.notes ?? "",
+  });
+
   const loadContact = async () => {
     if (!id || isNew) return;
     setIsLoading(true);
@@ -197,24 +226,14 @@ const Contact = () => {
     setIsError(false);
     try {
       const response = await axios.get(`${apiUrl}/contacts/${id}`, { headers });
-      const contact: ContactDetail = response.data.contact;
-      setForm({
-        category_id: String(contact.category_id),
-        first_name: contact.first_name ?? "",
-        last_name: contact.last_name,
-        phone_number: contact.phone_number ?? "",
-        email: contact.email ?? "",
-        linkedin_url: contact.linkedin_url ?? "",
-        company: contact.company ?? "",
-        position: contact.position ?? "",
-        address: contact.address ?? "",
-        birthday: contact.birthday ?? "",
-        notes: contact.notes ?? "",
-      });
-      setRelationships(contact.relationships ?? []);
-      setOrganizations(contact.organizations ?? []);
-      setContactGroups(contact.groups ?? []);
-      setWhatsappProfile(contact.whatsapp_profile ?? null);
+      const fetched: ContactDetail = response.data.contact;
+      setContact(fetched);
+      setForm(formFromContact(fetched));
+      setRelationships(fetched.relationships ?? []);
+      setOrganizations(fetched.organizations ?? []);
+      setContactGroups(fetched.groups ?? []);
+      setWhatsappProfile(fetched.whatsapp_profile ?? null);
+      setPhotoUrl(fetched.photo_url ?? null);
     } catch (error: any) {
       console.error("Error fetching contact", error);
       setIsError(true);
@@ -226,14 +245,62 @@ const Contact = () => {
   React.useEffect(() => {
     fetchCategories();
     fetchAllGroups();
+    setMode(isNew ? "edit" : "view");
+    setContact(null);
     setForm(emptyForm);
     setRelationships([]);
     setOrganizations([]);
     setContactGroups([]);
     setWhatsappProfile(null);
+    setPhotoUrl(null);
     loadContact();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const cancelEdit = () => {
+    if (contact) {
+      setForm(formFromContact(contact));
+    }
+    setMode("view");
+  };
+
+  const handlePhotoSelected = async (file: File) => {
+    if (!id || isNew) return;
+    setIsUploadingPhoto(true);
+    setIsError(false);
+    setMessage("");
+    try {
+      const data = new FormData();
+      data.append("photo", file);
+      const response = await axios.post(`${apiUrl}/contacts/${id}/photo`, data, {
+        headers: { "x-api-key": `${apiKey}` },
+      });
+      setPhotoUrl(response.data.photo_url ?? null);
+      setMessage("Zapisano zdjęcie.");
+    } catch (error: any) {
+      console.error("Error uploading contact photo", error);
+      setIsError(true);
+      setMessage(`Nie udało się zapisać zdjęcia: ${error.response?.data?.message || error.message}`);
+    }
+    setIsUploadingPhoto(false);
+  };
+
+  const handlePhotoRemove = async () => {
+    if (!id || isNew) return;
+    setIsUploadingPhoto(true);
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.delete(`${apiUrl}/contacts/${id}/photo`, { headers });
+      setPhotoUrl(null);
+      setMessage("Usunięto zdjęcie.");
+    } catch (error: any) {
+      console.error("Error removing contact photo", error);
+      setIsError(true);
+      setMessage(`Nie udało się usunąć zdjęcia: ${error.response?.data?.message || error.message}`);
+    }
+    setIsUploadingPhoto(false);
+  };
 
   const addGroup = async () => {
     if (!groupToAdd) return;
@@ -281,10 +348,12 @@ const Contact = () => {
       if (isNew) {
         const response = await axios.post(`${apiUrl}/contacts`, payload, { headers });
         setMessage("Zapisano kontakt.");
-        navigate(`/contacts/${response.data.contact.id}`, { replace: true });
+        navigate(`/contacts/${response.data.contact.id}${listContext ? `?list=${encodeURIComponent(listContext)}` : ""}`, { replace: true });
       } else {
         await axios.patch(`${apiUrl}/contacts/${id}`, payload, { headers });
         setMessage("Zapisano zmiany.");
+        await loadContact();
+        setMode("view");
       }
     } catch (error: any) {
       console.error("Error saving contact", error);
@@ -301,7 +370,7 @@ const Contact = () => {
     setMessage("");
     try {
       await axios.delete(`${apiUrl}/contacts/${id}`, { headers });
-      navigate("/contacts");
+      navigate(backToListUrl);
     } catch (error: any) {
       console.error("Error deleting contact", error);
       setIsError(true);
@@ -424,7 +493,14 @@ const Contact = () => {
 
   return (
     <div style={{ maxWidth: 560 }}>
-      <h2 style={{ marginBottom: "10px" }}>{isNew ? "Nowy kontakt" : "Kontakt"}</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+        <h2 style={{ margin: 0 }}>{isNew ? "Nowy kontakt" : "Kontakt"}</h2>
+        {!isNew && (
+          <button className={"button"} type="button" onClick={() => (mode === "view" ? setMode("edit") : cancelEdit())}>
+            {mode === "view" ? "✏️ Edytuj" : "← Podgląd"}
+          </button>
+        )}
+      </div>
 
       {isLoading && <div className={"loader"}></div>}
       {message && (
@@ -433,6 +509,89 @@ const Contact = () => {
         </p>
       )}
 
+      {!isNew && (
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 14 }}>
+          <div
+            style={{
+              width: 100, height: 100, borderRadius: 8, background: "#eef1f5", border: "1px solid #d5dde8",
+              display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0,
+            }}
+          >
+            {photoUrl ? (
+              <img src={photoUrl} alt="Zdjęcie kontaktu" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              <span style={{ color: "#98a2b3", fontSize: "0.75em", textAlign: "center", padding: 4 }}>Brak zdjęcia</span>
+            )}
+          </div>
+          {mode === "edit" && (
+            <div>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handlePhotoSelected(file);
+                  e.target.value = "";
+                }}
+              />
+              <button className={"button"} type="button" disabled={isUploadingPhoto} onClick={() => photoInputRef.current?.click()}>
+                {isUploadingPhoto ? "Wysyłanie..." : photoUrl ? "Zmień zdjęcie" : "Dodaj zdjęcie"}
+              </button>
+              {photoUrl && (
+                <button
+                  className={"button"}
+                  type="button"
+                  disabled={isUploadingPhoto}
+                  style={{ marginLeft: 6 }}
+                  onClick={handlePhotoRemove}
+                >
+                  Usuń zdjęcie
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === "view" && contact ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: "1.2em", fontWeight: 600 }}>
+            {[contact.first_name, contact.last_name].filter(Boolean).join(" ")}
+          </div>
+          {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
+          {contact.phone_number && <div><strong>Telefon:</strong> {contact.phone_number}</div>}
+          {contact.email && <div><strong>Email:</strong> {contact.email}</div>}
+          {contact.linkedin_url && (
+            <div><strong>LinkedIn:</strong> <a href={contact.linkedin_url} target="_blank" rel="noreferrer">{contact.linkedin_url}</a></div>
+          )}
+          {contact.company && <div><strong>Firma:</strong> {contact.company}</div>}
+          {contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
+          {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
+          {contact.birthday && <div><strong>Urodziny:</strong> {contact.birthday}</div>}
+          {contact.notes && <div><strong>Notatki:</strong> {contact.notes}</div>}
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ marginBottom: 4 }}>Grupy</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {contactGroups.length === 0 && <span style={{ color: "#667" }}>Brak grup.</span>}
+              {contactGroups.map((g) => (
+                <span
+                  key={g.id}
+                  style={{ fontSize: "0.85em", color: "#0369a1", background: "#e0f2fe", borderRadius: 4, padding: "2px 6px" }}
+                >
+                  {g.name}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <button className={"button"} type="button" style={{ marginTop: 10, alignSelf: "flex-start" }} onClick={() => navigate(backToListUrl)}>
+            ← Wróć do listy
+          </button>
+        </div>
+      ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <label>
           Imię
@@ -533,11 +692,12 @@ const Contact = () => {
               Usuń
             </button>
           )}
-          <button className={"button"} type="button" onClick={() => navigate("/contacts")}>
+          <button className={"button"} type="button" onClick={() => navigate(backToListUrl)}>
             ← Wróć do listy
           </button>
         </div>
       </div>
+      )}
 
       {!isNew && (
         <div style={{ marginTop: 24 }}>
@@ -591,7 +751,7 @@ const Contact = () => {
                         Sprawdź w CEIDG ↗
                       </a>
                     )}
-                    {org.status === "candidate" && (
+                    {mode === "edit" && org.status === "candidate" && (
                       <>
                         <button
                           type="button"
@@ -609,25 +769,27 @@ const Contact = () => {
                         </button>
                       </>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => removeOrganization(org.id)}
-                      style={{ border: "none", background: "none", color: "#a33", cursor: "pointer", padding: 0 }}
-                    >
-                      Usuń
-                    </button>
+                    {mode === "edit" && (
+                      <button
+                        type="button"
+                        onClick={() => removeOrganization(org.id)}
+                        style={{ border: "none", background: "none", color: "#a33", cursor: "pointer", padding: 0 }}
+                      >
+                        Usuń
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
           )}
 
-          {!showOrgForm && (
+          {mode === "edit" && !showOrgForm && (
             <button className={"button"} type="button" onClick={() => setShowOrgForm(true)}>
               + Dodaj organizację
             </button>
           )}
-          {showOrgForm && (
+          {mode === "edit" && showOrgForm && (
             <div style={{ marginTop: 8, padding: 8, background: "#f5f7fa", border: "1px solid #d5dde8", borderRadius: 6 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <select
@@ -735,13 +897,15 @@ const Contact = () => {
                 <li key={r.id} style={{ padding: "4px 0" }}>
                   <strong>{otherName(r.other_contact)}</strong> — {r.relationship_type}
                   {r.note && <span style={{ color: "#667" }}> ({r.note})</span>}
-                  <button
-                    type="button"
-                    onClick={() => removeRelationship(r.id)}
-                    style={{ marginLeft: 8, border: "none", background: "none", color: "#a33", cursor: "pointer" }}
-                  >
-                    ✕
-                  </button>
+                  {mode === "edit" && (
+                    <button
+                      type="button"
+                      onClick={() => removeRelationship(r.id)}
+                      style={{ marginLeft: 8, border: "none", background: "none", color: "#a33", cursor: "pointer" }}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -760,6 +924,7 @@ const Contact = () => {
             </>
           )}
 
+          {mode === "edit" && (
           <div style={{ marginTop: 12, padding: 8, background: "#f5f7fa", border: "1px solid #d5dde8", borderRadius: 6 }}>
             <div style={{ marginBottom: 6, color: "#667", fontSize: "0.9em" }}>Dodaj powiązanie:</div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -808,6 +973,7 @@ const Contact = () => {
               <button className={"button"} type="button" onClick={addRelationship}>Dodaj powiązanie</button>
             </div>
           </div>
+          )}
         </div>
       )}
     </div>
