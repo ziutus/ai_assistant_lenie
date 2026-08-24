@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import type { ContactCategory } from "./contactCategories";
+import type { ContactGroup } from "./contactGroups";
 import type { ContactListItem } from "./contacts";
 
 // Private contact detail/edit panel (`/contacts/:id`, id="new" for
@@ -68,6 +69,7 @@ interface ContactDetail {
   id: number;
   category_id: number;
   category_name: string | null;
+  groups: { id: number; name: string }[];
   first_name: string | null;
   last_name: string;
   phone_number: string | null;
@@ -114,6 +116,9 @@ const Contact = () => {
 
   const [form, setForm] = React.useState(emptyForm);
   const [categories, setCategories] = React.useState<ContactCategory[]>([]);
+  const [allGroups, setAllGroups] = React.useState<ContactGroup[]>([]);
+  const [contactGroups, setContactGroups] = React.useState<{ id: number; name: string }[]>([]);
+  const [groupToAdd, setGroupToAdd] = React.useState<string>("");
   const [relationships, setRelationships] = React.useState<ContactRelationship[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
@@ -140,6 +145,15 @@ const Contact = () => {
     }
   };
 
+  const fetchAllGroups = async () => {
+    try {
+      const response = await axios.get(`${apiUrl}/contact_groups`, { headers });
+      setAllGroups(response.data.contact_groups ?? []);
+    } catch (error: any) {
+      console.error("Error fetching contact groups", error);
+    }
+  };
+
   const loadContact = async () => {
     if (!id || isNew) return;
     setIsLoading(true);
@@ -163,6 +177,7 @@ const Contact = () => {
       });
       setRelationships(contact.relationships ?? []);
       setOrganizations(contact.organizations ?? []);
+      setContactGroups(contact.groups ?? []);
     } catch (error: any) {
       console.error("Error fetching contact", error);
       setIsError(true);
@@ -173,12 +188,42 @@ const Contact = () => {
 
   React.useEffect(() => {
     fetchCategories();
+    fetchAllGroups();
     setForm(emptyForm);
     setRelationships([]);
     setOrganizations([]);
+    setContactGroups([]);
     loadContact();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const addGroup = async () => {
+    if (!groupToAdd) return;
+    setIsError(false);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/contacts/${id}/groups`, { group_id: Number(groupToAdd) }, { headers });
+      setContactGroups(response.data.contact.groups ?? []);
+      setGroupToAdd("");
+    } catch (error: any) {
+      console.error("Error adding contact to group", error);
+      setIsError(true);
+      setMessage(`Nie udało się dodać do grupy: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const removeGroup = async (groupId: number) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      const response = await axios.delete(`${apiUrl}/contacts/${id}/groups/${groupId}`, { headers });
+      setContactGroups(response.data.contact.groups ?? []);
+    } catch (error: any) {
+      console.error("Error removing contact from group", error);
+      setIsError(true);
+      setMessage(`Nie udało się usunąć z grupy: ${error.response?.data?.message || error.message}`);
+    }
+  };
 
   const save = async () => {
     if (!form.last_name.trim()) {
@@ -400,6 +445,46 @@ const Contact = () => {
           Notatki
           <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} style={inputStyle} />
         </label>
+
+        {!isNew && (
+          <div>
+            <div style={{ marginBottom: 4 }}>Grupy</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+              {contactGroups.length === 0 && <span style={{ color: "#667" }}>Brak grup.</span>}
+              {contactGroups.map((g) => (
+                <span
+                  key={g.id}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4, fontSize: "0.85em", color: "#0369a1",
+                    background: "#e0f2fe", borderRadius: 4, padding: "2px 6px",
+                  }}
+                >
+                  {g.name}
+                  <button
+                    type="button"
+                    onClick={() => removeGroup(g.id)}
+                    style={{ border: "none", background: "none", color: "#0369a1", cursor: "pointer", padding: 0, lineHeight: 1 }}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <select value={groupToAdd} onChange={(e) => setGroupToAdd(e.target.value)} style={{ padding: "4px 8px", flex: 1 }}>
+                <option value="">Dodaj do grupy...</option>
+                {allGroups
+                  .filter((g) => !contactGroups.some((cg) => cg.id === g.id))
+                  .map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+              </select>
+              <button className={"button"} type="button" disabled={!groupToAdd} onClick={addGroup}>
+                Dodaj
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 8 }}>
           <button className={"button"} type="button" disabled={isLoading} onClick={save}>

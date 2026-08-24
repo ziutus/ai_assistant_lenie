@@ -2981,6 +2981,9 @@ class Contact(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     category: Mapped["ContactCategory"] = relationship(foreign_keys=[category_id])
+    groups: Mapped[list["ContactGroup"]] = relationship(
+        secondary="contact_group_memberships", back_populates="contacts",
+    )
 
     __table_args__ = (
         Index("idx_contacts_last_name", "last_name"),
@@ -3117,6 +3120,39 @@ class ContactOrganization(Base):
             f"ContactOrganization(id={self.id!r}, contact_id={self.contact_id!r}, "
             f"org_type={self.org_type!r}, organization_name={self.organization_name!r})"
         )
+
+
+class ContactGroup(Base):
+    """User-managed many-to-many group for the private contact book (e.g.
+    "Tuwima Gardens", "Rodzina") — distinct from ContactCategory, which is a
+    single-value type classification per contact.
+    """
+
+    __tablename__ = "contact_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contacts: Mapped[list["Contact"]] = relationship(
+        secondary="contact_group_memberships", back_populates="groups",
+    )
+
+    def __repr__(self) -> str:
+        return f"ContactGroup(id={self.id!r}, name={self.name!r})"
+
+
+class ContactGroupMembership(Base):
+    __tablename__ = "contact_group_memberships"
+
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("contact_groups.id", ondelete="RESTRICT"), primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_contact_group_memberships_group_id", "group_id"),
+    )
 
 
 # The pre-11d before_flush hook that auto-created `sources` rows for

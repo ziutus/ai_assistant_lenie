@@ -11,7 +11,8 @@ from sqlalchemy import func, or_, select
 
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    Contact, ContactCategory, ContactLookupResult, ContactOrganization, ContactRelationship,
+    Contact, ContactCategory, ContactGroup, ContactGroupMembership, ContactLookupResult, ContactOrganization,
+    ContactRelationship,
 )
 
 bp = Blueprint("contacts", __name__)
@@ -47,12 +48,32 @@ def _category_contact_count(session, category_id: int) -> int:
     ).scalar_one()
 
 
+def _group_dict(row: ContactGroup, count: int | None = None) -> dict:
+    data = {
+        "id": row.id,
+        "name": row.name,
+        "description": row.description,
+    }
+    if count is not None:
+        data["count"] = count
+    return data
+
+
+def _group_contact_count(session, group_id: int) -> int:
+    return session.execute(
+        select(func.count()).select_from(ContactGroupMembership).where(
+            ContactGroupMembership.group_id == group_id
+        )
+    ).scalar_one()
+
+
 def _contact_dict(row: Contact) -> dict:
     return {
         "id": row.id,
         "uuid": row.uuid,
         "category_id": row.category_id,
         "category_name": row.category.name if row.category else None,
+        "groups": [{"id": g.id, "name": g.name} for g in row.groups],
         "first_name": row.first_name,
         "last_name": row.last_name,
         "phone_number": row.phone_number,
@@ -218,6 +239,143 @@ def contact_categories_delete(category_id: int):
     return jsonify({"status": "success", "deleted_id": category_id}), 200
 
 
+# --- groups (many-to-many, distinct from the single-value category) -----
+
+@bp.get("/contact_groups")
+def contact_groups_list():
+    session = get_scoped_session()
+    rows = session.execute(select(ContactGroup).order_by(ContactGroup.name)).scalars().all()
+    return jsonify({
+        "status": "success",
+        "contact_groups": [_group_dict(row, _group_contact_count(session, row.id)) for row in rows],
+    }), 200
+
+
+@bp.route("/contact_groups", methods=["POST", "OPTIONS"])
+def contact_groups_add():
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return {"status": "error", "message": "name is required"}, 400
+
+    session = get_scoped_session()
+    row = ContactGroup(name=name, description=(data.get("description") or "").strip() or None)
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error (duplicate name?)"}, 409
+
+    return jsonify({"status": "success", "contact_group": _group_dict(row, 0)}), 200
+
+
+@bp.route("/contact_groups/<int:group_id>", methods=["PATCH", "OPTIONS"])
+def contact_groups_update(group_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    row = session.get(ContactGroup, group_id)
+    if row is None:
+        return {"status": "error", "message": "Group not found"}, 404
+
+    if "name" in data:
+        name = (data.get("name") or "").strip()
+        if not name:
+            return {"status": "error", "message": "name cannot be empty"}, 400
+        row.name = name
+    if "description" in data:
+        row.description = (data.get("description") or "").strip() or None
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error (duplicate name?)"}, 409
+
+    return jsonify({
+        "status": "success",
+        "contact_group": _group_dict(row, _group_contact_count(session, row.id)),
+    }), 200
+
+
+@bp.route("/contact_groups/<int:group_id>", methods=["DELETE", "OPTIONS"])
+def contact_groups_delete(group_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    row = session.get(ContactGroup, group_id)
+    if row is None:
+        return {"status": "error", "message": "Group not found"}, 404
+    used_by = _group_contact_count(session, row.id)
+    if used_by > 0:
+        return jsonify({
+            "status": "error",
+            "message": f"Group is used by {used_by} contacts — remove them from it first",
+        }), 409
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": group_id}), 200
+
+
+@bp.route("/contacts/<int:contact_id>/groups", methods=["POST", "OPTIONS"])
+def contact_groups_assign(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    group_id = data.get("group_id")
+    group = session.get(ContactGroup, group_id) if group_id is not None else None
+    if group is None:
+        return {"status": "error", "message": "group_id not found"}, 400
+
+    if group not in contact.groups:
+        contact.groups.append(group)
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "contact": _contact_dict(contact)}), 200
+
+
+@bp.route("/contacts/<int:contact_id>/groups/<int:group_id>", methods=["DELETE", "OPTIONS"])
+def contact_groups_unassign(contact_id: int, group_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    group = session.get(ContactGroup, group_id)
+    if group is not None and group in contact.groups:
+        contact.groups.remove(group)
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "contact": _contact_dict(contact)}), 200
+
+
 # --- contacts ------------------------------------------------------------
 
 @bp.get("/contacts")
@@ -228,6 +386,10 @@ def contacts_list():
     category_id = request.args.get("category_id", type=int)
     if category_id is not None:
         query = query.where(Contact.category_id == category_id)
+
+    group_id = request.args.get("group_id", type=int)
+    if group_id is not None:
+        query = query.where(Contact.groups.any(ContactGroup.id == group_id))
 
     q = (request.args.get("q") or "").strip()
     if q:
