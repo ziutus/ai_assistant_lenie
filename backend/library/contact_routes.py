@@ -5,9 +5,11 @@ table managed from the UI (like DiscoverySource); contact_relationships is
 directional and single-row (no automatic reciprocal row/label)."""
 
 import datetime
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, or_, select
+from werkzeug.utils import secure_filename
 
 from library.db.engine import get_scoped_session
 from library.db.models import (
@@ -28,6 +30,15 @@ _LOOKUP_STATUSES = ("no_results", "candidate", "confirmed", "rejected")
 _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
 _ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
+
+# Same key convention as document_images.py (documents/<uuid>/images/<n>.<ext>),
+# except a contact has exactly one photo, so the key is fixed per contact —
+# re-uploading with the same extension simply overwrites it in place.
+_PHOTO_ALLOWED_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
+
+
+def _photo_storage_key(contact_uuid: str, extension: str) -> str:
+    return f"contacts/{contact_uuid}/photo{extension}"
 
 
 def _category_dict(row: ContactCategory, count: int | None = None) -> dict:
@@ -463,7 +474,82 @@ def contacts_get(contact_id: int):
     data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
     data["organizations"] = [_organization_dict(org) for org in organizations]
     data["whatsapp_profile"] = row.whatsapp_profile
+    data["photo_url"] = _contact_photo_url(row)
     return jsonify({"status": "success", "contact": data}), 200
+
+
+def _contact_photo_url(row: Contact) -> str | None:
+    if not row.photo_storage_key:
+        return None
+    from library.config_loader import load_config
+    from library.storage import storage_from_config
+
+    return storage_from_config(load_config()).presigned_get_url(row.photo_storage_key)
+
+
+@bp.route("/contacts/<int:contact_id>/photo", methods=["POST", "OPTIONS"])
+def contact_photo_upload(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    uploaded = request.files.get("photo")
+    if uploaded is None or not uploaded.filename:
+        return {"status": "error", "message": "multipart field 'photo' is required"}, 400
+
+    safe_name = secure_filename(uploaded.filename)
+    extension = Path(safe_name).suffix.lower()
+    if extension not in _PHOTO_ALLOWED_EXTENSIONS:
+        formats = ", ".join(sorted(ext.removeprefix(".").upper() for ext in _PHOTO_ALLOWED_EXTENSIONS))
+        return {"status": "error", "message": f"Unsupported file type; allowed: {formats}"}, 400
+
+    data = uploaded.read()
+    if not data:
+        return {"status": "error", "message": "file is empty"}, 400
+
+    from library.config_loader import load_config
+    from library.storage import storage_from_config
+
+    key = _photo_storage_key(contact.uuid, extension)
+    storage = storage_from_config(load_config())
+    storage.put_bytes(key, data, content_type=uploaded.content_type)
+
+    contact.photo_storage_key = key
+    contact.updated_at = datetime.datetime.now()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "photo_url": storage.presigned_get_url(key)}), 200
+
+
+@bp.route("/contacts/<int:contact_id>/photo", methods=["DELETE", "OPTIONS"])
+def contact_photo_delete(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    # The blob itself is left in storage — ObjectStorage has no delete
+    # primitive (same tradeoff as document_images.py's replace functions).
+    contact.photo_storage_key = None
+    contact.updated_at = datetime.datetime.now()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success"}), 200
 
 
 @bp.route("/contacts", methods=["POST", "OPTIONS"])

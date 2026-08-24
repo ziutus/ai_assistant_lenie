@@ -7,6 +7,7 @@ registration needed.
 """
 
 import datetime as dt
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -31,6 +32,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
         address=None, birthday=None, pesel=None, notes=None, groups=[], whatsapp_profile=None,
+        photo_storage_key=None,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),
     )
@@ -600,6 +602,108 @@ class TestContactOrganizationsUpdate:
             "/contact_organizations/999", method="PATCH", json={"status": "confirmed"},
         ):
             response = contact_organizations_update(999)
+
+        assert response[1] == 404
+
+
+class TestContactPhotoUpload:
+    def test_uploads_photo_and_sets_storage_key(self, monkeypatch):
+        from library.contact_routes import contact_photo_upload
+
+        contact = _make_contact(id_=1)
+        session = MagicMock()
+        session.get.return_value = contact
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+
+        fake_storage = MagicMock()
+        fake_storage.presigned_get_url.return_value = "https://minio.local/contacts/photo.jpg?sig=1"
+        monkeypatch.setattr("library.config_loader.load_config", lambda: {})
+        monkeypatch.setattr("library.storage.storage_from_config", lambda cfg: fake_storage)
+
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/photo", method="POST",
+            data={"photo": (BytesIO(b"fake-image-bytes"), "profile.jpg")},
+            content_type="multipart/form-data",
+        ):
+            response = contact_photo_upload(1)
+
+        assert response[1] == 200
+        fake_storage.put_bytes.assert_called_once()
+        stored_key = fake_storage.put_bytes.call_args[0][0]
+        assert stored_key == f"contacts/{contact.uuid}/photo.jpg"
+        assert contact.photo_storage_key == stored_key
+        session.commit.assert_called_once()
+
+    def test_missing_contact_is_404(self, monkeypatch):
+        from library.contact_routes import contact_photo_upload
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/999/photo", method="POST",
+            data={"photo": (BytesIO(b"x"), "a.jpg")}, content_type="multipart/form-data",
+        ):
+            response = contact_photo_upload(999)
+
+        assert response[1] == 404
+
+    def test_missing_file_is_400(self, monkeypatch):
+        from library.contact_routes import contact_photo_upload
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/photo", method="POST", data={}, content_type="multipart/form-data"):
+            response = contact_photo_upload(1)
+
+        assert response[1] == 400
+
+    def test_unsupported_extension_is_400(self, monkeypatch):
+        from library.contact_routes import contact_photo_upload
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/photo", method="POST",
+            data={"photo": (BytesIO(b"x"), "a.pdf")}, content_type="multipart/form-data",
+        ):
+            response = contact_photo_upload(1)
+
+        assert response[1] == 400
+        session.commit.assert_not_called()
+
+
+class TestContactPhotoDelete:
+    def test_clears_storage_key(self, monkeypatch):
+        from library.contact_routes import contact_photo_delete
+
+        contact = _make_contact(id_=1, photo_storage_key="contacts/uuid/photo.jpg")
+        session = MagicMock()
+        session.get.return_value = contact
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/photo", method="DELETE"):
+            response = contact_photo_delete(1)
+
+        assert response[1] == 200
+        assert contact.photo_storage_key is None
+        session.commit.assert_called_once()
+
+    def test_missing_contact_is_404(self, monkeypatch):
+        from library.contact_routes import contact_photo_delete
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/999/photo", method="DELETE"):
+            response = contact_photo_delete(999)
 
         assert response[1] == 404
 
