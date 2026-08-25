@@ -33,7 +33,7 @@ Monorepo, each subproject with its own dependency environment. Most have their o
 | `web_chrome_extension/` | Chrome/Kiwi Manifest v3 extension, primary content-capture path | [web_chrome_extension/CLAUDE.md](web_chrome_extension/CLAUDE.md) |
 | `web_interface_app2/` | Placeholder app (only login works) — not in active use | [web_interface_app2/CLAUDE.md](web_interface_app2/CLAUDE.md) |
 | `web_landing_page/` | Static landing page | `web_landing_page/README.md` |
-| `infra/` | Docker Compose (local + NAS), AWS CloudFormation/Terraform/EKS — AWS paths are historical/dormant, NAS Compose (`infra/docker/compose.nas.yaml`) is what's actually deployed. GCloud Terraform and Kubernetes Kustomize/Helm were removed 2026-07-22 as stale (predated storage abstraction/MinIO/Vault/ner_service); archived at git tags `archive/infra-gcloud` / `archive/infra-kubernetes` |
+| `infra/` | Docker Compose (local + NAS), AWS CloudFormation/Terraform/EKS — AWS paths are historical/dormant, NAS Compose (`infra/docker/compose.nas.yaml`) is what's actually deployed. `infra/gcloud/` — a full app-hosting Terraform experiment, and Kubernetes Kustomize/Helm — were removed 2026-07-22 as stale (predated storage abstraction/MinIO/Vault/ner_service); archived at git tags `archive/infra-gcloud` / `archive/infra-kubernetes`. `infra/gcloud/` was reintroduced 2026-08-25, narrowly scoped to the ADR-023 OpenVPN relay VM — not a revival of the archived experiment; see [infra/gcloud/CLAUDE.md](infra/gcloud/CLAUDE.md) |
 | `docs/` | Architecture docs, ADRs (`docs/adr/`), deployment plans (`docs/deployment/`) |
 
 Each subproject manages its own Python/Node dependencies independently (no shared root lockfile) — `cd` into it before installing/running.
