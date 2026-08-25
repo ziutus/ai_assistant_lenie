@@ -2,6 +2,7 @@ import React from "react";
 import axios from "axios";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import { Pagination } from "../components/Pagination/pagination";
 
 // Person registry browser (NER stage 4): fuzzy search over persons/aliases
 // (GET /persons?q=) and the person -> documents view (GET /person_documents).
@@ -65,13 +66,16 @@ export const PersonHeader = ({ person }: { person: Pick<PersonItem, "canonical_n
 const Persons = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
 
   // ?q= pre-fills the search — unresolved person chips in the reader link here
   const initialQuery = searchParams.get("q") ?? "";
   const [query, setQuery] = React.useState(initialQuery);
   const [persons, setPersons] = React.useState<PersonItem[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [page, setPage] = React.useState(Number(searchParams.get("page")) || 1);
+  const pageSize = 50;
   const [person, setPerson] = React.useState<
     { canonical_name: string; description: string | null; wikidata_qid: string | null } | null
   >(null);
@@ -88,12 +92,15 @@ const Persons = () => {
     "x-api-key": `${apiKey}`,
   };
 
-  const search = async (q: string) => {
+  const search = async (q: string, nextPage = 1) => {
     setIsLoading(true);
     setMessage("");
     try {
-      const response = await axios.get(`${apiUrl}/persons`, { params: q ? { q } : {}, headers });
+      const response = await axios.get(`${apiUrl}/persons`, { params: { ...(q ? { q } : {}), limit: pageSize, offset: (nextPage - 1) * pageSize }, headers });
       setPersons(response.data.persons ?? []);
+      setTotal(response.data.total ?? response.data.persons?.length ?? 0);
+      setPage(nextPage);
+      setSearchParams({ ...(q ? { q } : {}), ...(nextPage > 1 ? { page: String(nextPage) } : {}) }, { replace: true });
       if (!(response.data.persons ?? []).length) {
         setMessage(q ? "Brak osób pasujących do zapytania." : "Rejestr osób jest pusty.");
       }
@@ -105,7 +112,7 @@ const Persons = () => {
   };
 
   React.useEffect(() => {
-    search(initialQuery);
+    search(initialQuery, page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -183,6 +190,9 @@ const Persons = () => {
       {isLoading && <div className={"loader"}></div>}
       {message && <p className={"errorText"}>{message}</p>}
 
+      {!id && <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading} label="osób"
+        onPageChange={nextPage => { void search(query.trim(), nextPage); }} />}
+
       {id && person ? (
         <div style={{ marginBottom: 20, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
           <PersonHeader person={person} />
@@ -254,6 +264,7 @@ const Persons = () => {
           </button>
         </div>
       ) : (
+        <>
         <ul style={{ listStyle: "none", padding: 0 }}>
           {persons.map((p) => (
             <li
@@ -265,6 +276,9 @@ const Persons = () => {
             </li>
           ))}
         </ul>
+        {!id && <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading} label="osób"
+          onPageChange={nextPage => { void search(query.trim(), nextPage); }} />}
+        </>
       )}
     </div>
   );

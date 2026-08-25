@@ -70,6 +70,16 @@ All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. 
 
 ## UX conventions
 
+### Pagination for collection views
+
+Any view that can list more than 50 records must use pagination. The backend
+endpoint must accept `limit` and `offset` and return `total`; preserve both
+the current page and page size in the URL so the view can be shared and
+restored. Reuse `src/modules/shared/components/Pagination/pagination.tsx`
+instead of duplicating navigation controls. Views that intentionally load a
+single document progressively (for example, chunk review) may use a
+"load more" interaction instead.
+
 ### Multi-value filters
 
 When a user can select several values from one category — especially when the
