@@ -8,7 +8,7 @@ import datetime
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from werkzeug.utils import secure_filename
 
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
@@ -426,9 +426,28 @@ def contacts_list():
     if category_id is not None:
         conditions.append(Contact.category_id == category_id)
 
+    # `group_id` remains supported for links saved before group multi-filtering
+    # was introduced.  The group_filter mode mirrors spreadsheet filtering:
+    # selected group IDs and the optional include_ungrouped value form one
+    # inclusive list.  A contact with no group is the equivalent of a blank.
     group_id = request.args.get("group_id", type=int)
-    if group_id is not None:
-        conditions.append(Contact.groups.any(ContactGroup.id == group_id))
+    group_ids = _parse_contact_group_ids(request.args.get("group_ids"))
+    excluded_group_ids = _parse_contact_group_ids(request.args.get("exclude_group_ids"))
+    group_filter_active = (request.args.get("group_filter") or "").strip().lower() in ("1", "true", "yes")
+    include_ungrouped = (request.args.get("include_ungrouped") or "").strip().lower() in ("1", "true", "yes")
+    if group_filter_active:
+        selected_group_conditions = []
+        if group_ids:
+            selected_group_conditions.append(Contact.groups.any(ContactGroup.id.in_(group_ids)))
+        if include_ungrouped:
+            selected_group_conditions.append(~Contact.groups.any())
+        conditions.append(or_(*selected_group_conditions) if selected_group_conditions else false())
+    elif group_id is not None:
+        group_ids.append(group_id)
+        group_ids = list(dict.fromkeys(group_ids))
+        conditions.append(Contact.groups.any(ContactGroup.id.in_(group_ids)))
+    if excluded_group_ids:
+        conditions.append(~Contact.groups.any(ContactGroup.id.in_(excluded_group_ids)))
 
     q = (request.args.get("q") or "").strip()
     if q:
@@ -458,6 +477,21 @@ def contacts_list():
         "offset": offset,
         "limit": limit,
     }), 200
+
+
+def _parse_contact_group_ids(raw: str | None) -> list[int]:
+    """Return unique positive IDs from a comma-separated query parameter."""
+    if not raw:
+        return []
+    ids = []
+    for value in raw.split(","):
+        try:
+            group_id = int(value)
+        except ValueError:
+            continue
+        if group_id > 0 and group_id not in ids:
+            ids.append(group_id)
+    return ids
 
 
 @bp.get("/contacts/<int:contact_id>")
