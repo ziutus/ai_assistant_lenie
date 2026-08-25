@@ -26,7 +26,11 @@ terraform/
 
 The startup script (`data/openvpn-install-startup.sh`) installs OpenVPN via [angristan/openvpn-install](https://github.com/angristan/openvpn-install), pulled fresh from GitHub at boot time (current version is fully CLI-flag driven, no interactive prompts when flags are given). It creates two clients: `nas` (for the NAS's OpenVPN client/dial-out profile) and `demo-laptop` (for testing external access). Output logged to `/var/log/openvpn-relay-startup.log` on the instance.
 
-**Not handled by Terraform** — `192.168.200.0/24` (the NAS's LAN) sits behind a *client* (the NAS), not behind the server, so the installer's `--local-network` flag (which is for networks behind the *server*) doesn't apply. Routing to that subnet (`ccd`/`iroute` on the relay + confirming QNAP QTS forwards traffic correctly) is manual, done once the NAS↔relay tunnel is confirmed up — see the ADR's open items.
+**`--tls-sig crypt` (static key), not the installer's default `crypt-v2` (per-session dynamic key)** — QNAP QVPN Service Center's OpenVPN client cannot renegotiate `crypt-v2` on its own automatic ping-restart reconnect (fails with `TLS Error: could not determine wrapping`), so the connection silently dies every ~4 minutes and needs a manual disconnect/reconnect in the QTS UI. The static key removes the renegotiation step; auto-reconnect confirmed working live 2026-08-25. If you ever regenerate a client `.ovpn` by hand (e.g. via `client add` over SSH) it picks up the server's current mode automatically — the script reads `server.conf`, no manual key-swapping needed.
+
+**Routing to `192.168.200.0/24` (the NAS's LAN)** is baked into the startup script, not the ADR's `--local-network` flag — that flag is for networks behind the *server*, but this subnet sits behind a *client* (the NAS). The script instead writes `ccd/nas` (`iroute` + `push-reset`, so the NAS keeps its own default gateway instead of full-tunneling through GCP) and appends a matching `route` line to `server.conf`. It also punches a hole in the installer's default firewall, which otherwise rejects VPN clients reaching any RFC1918 range including this one.
+
+**Confirmed working** (2026-08-25, live test): NAS dialed out via QVPN Service Center → relay → HTTP request from the relay reached the NAS's Lenie backend (`192.168.200.7:5055`) and got a real application response. ICMP (ping) to the NAS is unreliable through the tunnel — irrelevant to the actual use case, don't use it to judge whether the tunnel is up; use a TCP/HTTP check instead.
 
 ## Usage
 
