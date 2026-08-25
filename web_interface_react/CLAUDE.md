@@ -78,6 +78,12 @@ permanent row of checkboxes. The trigger must say either `Wszystkie
 [kategorie]` or show the count of selected values. The menu provides
 `Zaznacz wszystkie`, `Odznacz wszystkie`, and `Odwróć wybór` actions.
 
+The expandable menu must close when the user clicks outside it. Use a ref on
+the native `<details>` element and a `pointerdown` listener on `document`;
+when the event target is outside an open menu, set its `.open` property to
+`false`. This keeps clicks on its checkboxes and action buttons intact while
+making the filter behave like a standard dropdown.
+
 If the domain has a meaningful empty value, include it as a separate choice,
 for example `(bez tematów)`. Preserve the complete filter state in the URL so
 the filtered view can be shared. This pattern is for multi-value filters, not

@@ -53,6 +53,7 @@ const List = () => {
   );
   const [copyMessage, setCopyMessage] = React.useState("");
   const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
+  const topicsFilterRef = React.useRef<HTMLDetailsElement>(null);
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
   const readerListContext = searchParams.toString();
   const [topicFilterActive, setTopicFilterActive] = React.useState(
@@ -74,6 +75,17 @@ const List = () => {
   React.useEffect(() => {
     void fetch(`${apiUrl}/content_groups`, { headers: { "x-api-key": apiKey || "" } }).then(response => response.json()).then(body => setContentGroups(Array.isArray(body.content_groups) ? body.content_groups : [])).catch(() => undefined);
   }, [apiUrl, apiKey]);
+
+  React.useEffect(() => {
+    const closeTopicsFilterOnOutsideClick = (event: PointerEvent) => {
+      const filter = topicsFilterRef.current;
+      if (filter?.open && !filter.contains(event.target as Node)) {
+        filter.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", closeTopicsFilterOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeTopicsFilterOnOutsideClick);
+  }, []);
 
   const toggleObsidianExpanded = (id: number) => {
     setExpandedObsidian(prev => {
@@ -364,7 +376,7 @@ const List = () => {
           ); }} />
         Without embedding
       </label>
-      <details style={{ position: "relative", display: "inline-block", marginLeft: 12, verticalAlign: "middle" }}>
+      <details ref={topicsFilterRef} style={{ position: "relative", display: "inline-block", marginLeft: 12, verticalAlign: "middle" }}>
         <summary style={{ cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
           {isAllTopicsSelected ? "Wszystkie tematy" : `Tematy: wybrano ${effectiveSelectedTopicValues.length}`}
         </summary>
