@@ -317,6 +317,14 @@ If multiple chunks contributed to the same note, update each chunk separately.
 
 Report the updated `obsidian_note_paths` and `reviewed_at` to confirm success.
 
+**Verify B was actually applied (chunk-based flow only):** re-fetch the run's chunks and confirm every chunk you just processed now shows a non-empty `obsidian_note_paths` (or `status == 'skipped'` if you deliberately left it unnoted):
+
+```powershell
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_run/<RUN_ID>/chunks?lite=1" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
+```
+
+Check the `chunks` array for each `<POSITION>` you worked on this session. If any still has empty `obsidian_note_paths` and status not `skipped`, the B update above was missed (or targeted the wrong `run_id`/`position`) — go back and fix it before moving on. This catches the case where only the document-level path (A) was saved and the chunk-level path (B) was silently skipped, which otherwise leaves the document permanently showing as "częściowo opracowane" in `/list` even though its content is fully covered by notes.
+
 ### Step 7: Update cross-references (if applicable)
 
 If the article topic relates to existing notes (e.g., country files, topic notes), add a brief entry with a link to the new note using `[[Note Name]]` syntax. Also update notes about countries/organizations mentioned in the article (e.g., if the article mentions Russia or China cooperation, update Rosja.md and Chiny.md too).
