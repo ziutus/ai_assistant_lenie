@@ -19,6 +19,7 @@ const NO_TEXT_STATES = ["URL_ADDED", "NEED_TRANSCRIPTION", "TRANSCRIPTION_IN_PRO
 // Mirrors backend's _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES — retry is only safe
 // before a transcript has ever been captured, so it can't clobber reviewed text.
 const YOUTUBE_CAPTIONS_RETRY_STATES = ["TEMPORARY_ERROR", "URL_ADDED", "NEED_TRANSCRIPTION"];
+const WITHOUT_TOPICS_VALUE = "__without_topics__";
 
 const List = () => {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -54,12 +55,21 @@ const List = () => {
   const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
   const readerListContext = searchParams.toString();
-  const [topicGroupIds, setTopicGroupIds] = React.useState<number[]>(() => (searchParams.get("topic_group_ids") || "").split(",").filter(Boolean).map(Number));
+  const [topicFilterActive, setTopicFilterActive] = React.useState(
+    () => searchParams.has("topic_filter") || searchParams.has("topic_group_ids") || searchParams.has("without_topics"),
+  );
+  const [selectedTopicValues, setSelectedTopicValues] = React.useState<string[]>(() => [
+    ...(searchParams.get("topic_group_ids") || "").split(",").filter(Boolean),
+    ...(searchParams.get("without_topics") === "1" ? [WITHOUT_TOPICS_VALUE] : []),
+  ]);
   const [topicMatch, setTopicMatch] = React.useState<"any" | "all">(searchParams.get("topic_match") === "all" ? "all" : "any");
   const [priorityGroupId, setPriorityGroupId] = React.useState<number | undefined>(searchParams.get("priority_group_id") ? Number(searchParams.get("priority_group_id")) : undefined);
   const [groupSort, setGroupSort] = React.useState<"newest" | "priority">(searchParams.get("sort") === "priority" ? "priority" : "newest");
-  const [withoutTopics, setWithoutTopics] = React.useState(searchParams.get("without_topics") === "1");
   const [withoutPriority, setWithoutPriority] = React.useState(searchParams.get("without_priority") === "1");
+  const allTopicValues = [...contentGroups.filter(group => group.kind === "topic").map(group => String(group.id)), WITHOUT_TOPICS_VALUE];
+  const effectiveSelectedTopicValues = topicFilterActive ? selectedTopicValues : allTopicValues;
+  const isAllTopicsSelected = effectiveSelectedTopicValues.length === allTopicValues.length
+    && allTopicValues.every(value => effectiveSelectedTopicValues.includes(value));
 
   React.useEffect(() => {
     void fetch(`${apiUrl}/content_groups`, { headers: { "x-api-key": apiKey || "" } }).then(response => response.json()).then(body => setContentGroups(Array.isArray(body.content_groups) ? body.content_groups : [])).catch(() => undefined);
@@ -90,11 +100,15 @@ const List = () => {
     if (nextPage !== 1) params.page = String(nextPage);
     if (nextPageSize !== 100) params.page_size = String(nextPageSize);
     if (nextWithoutEmbedding) params.without_embedding = "1";
-    if (topicGroupIds.length) params.topic_group_ids = topicGroupIds.join(",");
+    if (topicFilterActive && !isAllTopicsSelected) {
+      params.topic_filter = "1";
+      const selectedTopicIds = effectiveSelectedTopicValues.filter(value => value !== WITHOUT_TOPICS_VALUE);
+      if (selectedTopicIds.length) params.topic_group_ids = selectedTopicIds.join(",");
+      if (effectiveSelectedTopicValues.includes(WITHOUT_TOPICS_VALUE)) params.include_without_topics = "1";
+    }
     if (topicMatch !== "any") params.topic_match = topicMatch;
     if (priorityGroupId) params.priority_group_id = String(priorityGroupId);
     if (groupSort !== "newest") params.sort = groupSort;
-    if (withoutTopics) params.without_topics = "1";
     if (withoutPriority) params.without_priority = "1";
     return params;
   };
@@ -112,7 +126,15 @@ const List = () => {
     ));
     await handleGetList(
       type, state, query, obsidianFilterParams(obsidian), nextPage, nextPageSize,
-      nextWithoutEmbedding, { topicGroupIds: withoutTopics ? [] : topicGroupIds, topicMatch, priorityGroupId: withoutPriority ? undefined : priorityGroupId, withoutTopics, withoutPriority, sort: groupSort },
+      nextWithoutEmbedding, {
+        topicGroupIds: topicFilterActive ? effectiveSelectedTopicValues.filter(value => value !== WITHOUT_TOPICS_VALUE).map(Number) : [],
+        topicFilterActive: topicFilterActive && !isAllTopicsSelected,
+        includeWithoutTopics: topicFilterActive && !isAllTopicsSelected && effectiveSelectedTopicValues.includes(WITHOUT_TOPICS_VALUE),
+        topicMatch,
+        priorityGroupId: withoutPriority ? undefined : priorityGroupId,
+        withoutPriority,
+        sort: groupSort,
+      },
     );
   };
 
@@ -342,16 +364,32 @@ const List = () => {
           ); }} />
         Without embedding
       </label>
-      <fieldset style={{ display: "inline-flex", gap: 8, marginLeft: 12, verticalAlign: "middle" }}>
-        <legend>Tematy</legend>
-        {contentGroups.filter(group => group.kind === "topic").map(group => (
-          <label key={group.id}><input type="checkbox" checked={topicGroupIds.includes(group.id)} onChange={event => setTopicGroupIds(ids => event.target.checked ? [...ids, group.id] : ids.filter(id => id !== group.id))} /> {group.name}</label>
-        ))}
-        <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => setTopicMatch(event.target.value as "any" | "all")}><option value="any">Dowolny temat</option><option value="all">Wszystkie tematy</option></select>
-      </fieldset>
+      <details style={{ position: "relative", display: "inline-block", marginLeft: 12, verticalAlign: "middle" }}>
+        <summary style={{ cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
+          {isAllTopicsSelected ? "Wszystkie tematy" : `Tematy: wybrano ${effectiveSelectedTopicValues.length}`}
+        </summary>
+        <div style={{ position: "absolute", zIndex: 2, background: "white", border: "1px solid #bbb", borderRadius: 3, padding: 10, minWidth: 260, boxShadow: "0 2px 8px #0002" }}>
+          <div style={{ fontSize: "0.85em", fontWeight: 600, marginBottom: 4 }}>Wybierz widoczne tematy:</div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 5 }}>
+            <button type="button" className="button" onClick={() => { setTopicFilterActive(true); setSelectedTopicValues(allTopicValues); }}>Zaznacz wszystkie</button>
+            <button type="button" className="button" onClick={() => { setTopicFilterActive(true); setSelectedTopicValues([]); }}>Odznacz wszystkie</button>
+            <button type="button" className="button" onClick={() => { setTopicFilterActive(true); setSelectedTopicValues(values => allTopicValues.filter(value => !effectiveSelectedTopicValues.includes(value))); }}>Odwróć wybór</button>
+          </div>
+          {contentGroups.filter(group => group.kind === "topic").map(group => (
+            <label key={group.id} style={{ display: "block", whiteSpace: "nowrap" }}>
+              <input type="checkbox" checked={effectiveSelectedTopicValues.includes(String(group.id))}
+                onChange={event => { setTopicFilterActive(true); setSelectedTopicValues(values => event.target.checked ? [...effectiveSelectedTopicValues, String(group.id)] : effectiveSelectedTopicValues.filter(value => value !== String(group.id))); }} /> {group.name}
+            </label>
+          ))}
+          <label style={{ display: "block", whiteSpace: "nowrap", borderTop: "1px solid #ddd", marginTop: 8, paddingTop: 8 }}>
+            <input type="checkbox" checked={effectiveSelectedTopicValues.includes(WITHOUT_TOPICS_VALUE)}
+              onChange={event => { setTopicFilterActive(true); setSelectedTopicValues(values => event.target.checked ? [...effectiveSelectedTopicValues, WITHOUT_TOPICS_VALUE] : effectiveSelectedTopicValues.filter(value => value !== WITHOUT_TOPICS_VALUE)); }} /> (bez tematów)
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Dopasowanie tematów <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => setTopicMatch(event.target.value as "any" | "all")}><option value="any">Dowolny temat</option><option value="all">Wszystkie tematy</option></select></label>
+        </div>
+      </details>
       <label style={{ marginLeft: 12 }}>Priorytet <select value={priorityGroupId || ""} onChange={event => setPriorityGroupId(event.target.value ? Number(event.target.value) : undefined)}><option value="">Wszystkie</option>{contentGroups.filter(group => group.kind === "priority").map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
       <label style={{ marginLeft: 12 }}>Sortowanie <select value={groupSort} onChange={event => setGroupSort(event.target.value as "newest" | "priority")}><option value="priority">Według priorytetu</option><option value="newest">Najnowsze</option></select></label>
-      <label style={{ marginLeft: 12 }}><input type="checkbox" checked={withoutTopics} onChange={event => { setWithoutTopics(event.target.checked); if (event.target.checked) setTopicGroupIds([]); }} /> Bez tematów</label>
       <label style={{ marginLeft: 12 }}><input type="checkbox" checked={withoutPriority} onChange={event => { setWithoutPriority(event.target.checked); if (event.target.checked) setPriorityGroupId(undefined); }} /> Bez priorytetu</label>
       <button type="button" className="button" disabled={isLoading}
         style={{ marginLeft: 12 }} onClick={() => { void copyListLink(); }}>

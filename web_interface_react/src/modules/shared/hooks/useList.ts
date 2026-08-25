@@ -18,7 +18,7 @@ export const useList = () => {
     page = 1,
     pageSize = 100,
     withoutEmbedding = false,
-    groupFilters?: { topicGroupIds?: number[]; topicMatch?: "any" | "all"; priorityGroupId?: number; withoutTopics?: boolean; withoutPriority?: boolean; sort?: "newest" | "priority" },
+    groupFilters?: { topicGroupIds?: number[]; topicFilterActive?: boolean; includeWithoutTopics?: boolean; topicMatch?: "any" | "all"; priorityGroupId?: number; withoutPriority?: boolean; sort?: "newest" | "priority" },
   ) => {
     setIsLoading(true);
     try {
@@ -36,9 +36,10 @@ export const useList = () => {
           limit: pageSize,
           without_embedding: withoutEmbedding || undefined,
           topic_group_ids: groupFilters?.topicGroupIds?.join(",") || undefined,
+          topic_filter: groupFilters?.topicFilterActive || undefined,
+          include_without_topics: groupFilters?.includeWithoutTopics || undefined,
           topic_match: groupFilters?.topicMatch,
           priority_group_id: groupFilters?.priorityGroupId,
-          without_topics: groupFilters?.withoutTopics || undefined,
           without_priority: groupFilters?.withoutPriority || undefined,
           sort: groupFilters?.sort,
         },

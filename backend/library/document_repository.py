@@ -28,7 +28,8 @@ class DocumentRepository:
                  only_has_obsidian_notes: bool = False,
                  without_embedding: bool = False, topic_group_ids: list[int] | None = None,
                  topic_match: str = "any", priority_group_id: int | None = None,
-                 without_topics: bool = False, without_priority: bool = False,
+                 without_topics: bool = False, topic_filter_active: bool = False,
+                 include_without_topics: bool = False, without_priority: bool = False,
                  sort: str = "newest") -> list[dict[str, Any]]:
 
         if count:
@@ -91,22 +92,33 @@ class DocumentRepository:
             ).exists())
 
         topic_group_ids = topic_group_ids or []
+        topic_conditions = []
         if topic_group_ids:
             if topic_match not in {"any", "all"}:
                 raise ValueError("topic_match must be any or all")
             if topic_match == "any":
-                stmt = stmt.where(select(DocumentGroupMembership.document_id).where(
+                topic_conditions.append(select(DocumentGroupMembership.document_id).where(
                     DocumentGroupMembership.document_id == Document.id,
                     DocumentGroupMembership.group_id.in_(topic_group_ids),
                     DocumentGroupMembership.group.has(and_(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))),
                 ).exists())
             else:
+                selected_topics_conditions = []
                 for group_id in topic_group_ids:
-                    stmt = stmt.where(select(DocumentGroupMembership.document_id).where(
+                    selected_topics_conditions.append(select(DocumentGroupMembership.document_id).where(
                         DocumentGroupMembership.document_id == Document.id,
                         DocumentGroupMembership.group_id == group_id,
                         DocumentGroupMembership.group.has(and_(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))),
                     ).exists())
+                topic_conditions.append(and_(*selected_topics_conditions))
+        without_topics_condition = ~select(DocumentGroupMembership.document_id).where(
+            DocumentGroupMembership.document_id == Document.id,
+            DocumentGroupMembership.group.has(and_(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))),
+        ).exists()
+        if topic_filter_active:
+            if include_without_topics:
+                topic_conditions.append(without_topics_condition)
+            stmt = stmt.where(or_(*topic_conditions) if topic_conditions else literal(False))
         if priority_group_id is not None:
             stmt = stmt.where(select(DocumentGroupMembership.document_id).where(
                 DocumentGroupMembership.document_id == Document.id,
@@ -114,10 +126,7 @@ class DocumentRepository:
                 DocumentGroupMembership.group.has(and_(ContentGroup.kind == "priority", ContentGroup.archived_at.is_(None))),
             ).exists())
         if without_topics:
-            stmt = stmt.where(~select(DocumentGroupMembership.document_id).where(
-                DocumentGroupMembership.document_id == Document.id,
-                DocumentGroupMembership.group.has(and_(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))),
-            ).exists())
+            stmt = stmt.where(without_topics_condition)
         if without_priority:
             stmt = stmt.where(~select(DocumentGroupMembership.document_id).where(
                 DocumentGroupMembership.document_id == Document.id,

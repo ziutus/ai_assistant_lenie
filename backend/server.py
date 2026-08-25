@@ -376,10 +376,12 @@ def website_list():
         topic_match = request.args.get('topic_match', 'any')
         sort = request.args.get('sort', 'newest')
         without_topics = request.args.get('without_topics', '').lower() in ('1', 'true')
+        topic_filter_active = request.args.get('topic_filter', '').lower() in ('1', 'true')
+        include_without_topics = request.args.get('include_without_topics', '').lower() in ('1', 'true')
         without_priority = request.args.get('without_priority', '').lower() in ('1', 'true')
         if len(topic_group_ids) != len(set(topic_group_ids)) or topic_match not in {'any', 'all'} or sort not in {'newest', 'priority'}:
             raise ValueError
-        if topic_group_ids and without_topics or priority_group_id and without_priority:
+        if (topic_group_ids and without_topics and not topic_filter_active) or priority_group_id and without_priority:
             raise ValueError
     except (TypeError, ValueError):
         return {"status": "error", "message": "invalid content group filter"}, 400
@@ -410,6 +412,8 @@ def website_list():
         "topic_match": topic_match,
         "priority_group_id": priority_group_id,
         "without_topics": without_topics,
+        "topic_filter_active": topic_filter_active,
+        "include_without_topics": include_without_topics,
         "without_priority": without_priority,
         "sort": sort,
     }
@@ -455,6 +459,8 @@ def website_list_neighbors():
         topic_match = request.args.get('topic_match', 'any')
         sort = request.args.get('sort', 'newest')
         without_topics = request.args.get('without_topics', '').lower() in ('1', 'true')
+        topic_filter_active = request.args.get('topic_filter', '').lower() in ('1', 'true')
+        include_without_topics = request.args.get('include_without_topics', '').lower() in ('1', 'true')
         without_priority = request.args.get('without_priority', '').lower() in ('1', 'true')
         if len(topic_group_ids) != len(set(topic_group_ids)) or topic_match not in {'any', 'all'} or sort not in {'newest', 'priority'}:
             raise ValueError
@@ -467,7 +473,8 @@ def website_list_neighbors():
         "search_in_documents": search_in_documents, "only_missing_obsidian_notes": only_missing_obsidian_notes,
         "only_has_obsidian_notes": only_has_obsidian_notes, "without_embedding": without_embedding,
         "topic_group_ids": topic_group_ids, "topic_match": topic_match, "priority_group_id": priority_group_id,
-        "without_topics": without_topics, "without_priority": without_priority, "sort": sort,
+        "without_topics": without_topics, "topic_filter_active": topic_filter_active,
+        "include_without_topics": include_without_topics, "without_priority": without_priority, "sort": sort,
     }
     total = repo.get_list(**filters, count=True)
     ids: list[int] = []
