@@ -22,7 +22,8 @@ export interface ContactListItem {
   is_archived: boolean;
 }
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 50;
+const PAGE_SIZES = [25, 50, 100];
 const UNGROUPED_VALUE = "__ungrouped__";
 
 const parseIdList = (value: string | null) =>
@@ -35,7 +36,7 @@ const Contacts = () => {
   const [contacts, setContacts] = React.useState<ContactListItem[]>([]);
   const [categories, setCategories] = React.useState<ContactCategory[]>([]);
   const [groups, setGroups] = React.useState<ContactGroup[]>([]);
-  // Filters/offset are seeded from and kept in sync with the URL (same
+  // Filters/pagination are seeded from and kept in sync with the URL (same
   // pattern as list.tsx) so "Wróć do listy" — which round-trips a `list=`
   // param through the contact detail page — restores exactly what was
   // being viewed instead of resetting to an empty search.
@@ -47,8 +48,17 @@ const Contacts = () => {
     ...(searchParams.get("include_ungrouped") === "1" ? [UNGROUPED_VALUE] : []),
   ]);
   const [archived, setArchived] = React.useState<string>(searchParams.get("archived") ?? "");
-  const initialOffset = Number(searchParams.get("offset") ?? "0");
-  const [offset, setOffset] = React.useState(Number.isFinite(initialOffset) && initialOffset > 0 ? initialOffset : 0);
+  // `offset` is retained as a backwards-compatible URL input for links created
+  // before the shared page-based pagination pattern was introduced.
+  const requestedPageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
+  const initialPageSize = PAGE_SIZES.includes(requestedPageSize) ? requestedPageSize : DEFAULT_PAGE_SIZE;
+  const requestedPage = Number(searchParams.get("page") ?? "0");
+  const legacyOffset = Number(searchParams.get("offset") ?? "0");
+  const initialPage = Number.isInteger(requestedPage) && requestedPage > 0
+    ? requestedPage
+    : (Number.isFinite(legacyOffset) && legacyOffset > 0 ? Math.floor(legacyOffset / initialPageSize) + 1 : 1);
+  const [page, setPage] = React.useState(initialPage);
+  const [pageSize, setPageSize] = React.useState(initialPageSize);
   const [total, setTotal] = React.useState(0);
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
@@ -60,7 +70,7 @@ const Contacts = () => {
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
-  const filterParams = (offsetArg: number) => {
+  const filterParams = (pageArg = page, pageSizeArg = pageSize) => {
     const params: Record<string, string> = {};
     if (query.trim()) params.q = query.trim();
     if (categoryId) params.category_id = categoryId;
@@ -71,10 +81,11 @@ const Contacts = () => {
       if (effectiveSelectedGroupValues.includes(UNGROUPED_VALUE)) params.include_ungrouped = "1";
     }
     if (archived) params.archived = archived;
-    if (offsetArg) params.offset = String(offsetArg);
+    if (pageArg !== 1) params.page = String(pageArg);
+    if (pageSizeArg !== DEFAULT_PAGE_SIZE) params.page_size = String(pageSizeArg);
     return params;
   };
-  const listQueryString = new URLSearchParams(filterParams(offset)).toString();
+  const listQueryString = new URLSearchParams(filterParams()).toString();
   const contactLinkSearch = listQueryString ? `?list=${encodeURIComponent(listQueryString)}` : "";
 
   const fetchCategories = async () => {
@@ -95,18 +106,23 @@ const Contacts = () => {
     }
   };
 
-  const fetchContacts = async (offsetArg: number = 0) => {
+  const fetchContacts = async (pageArg = 1, pageSizeArg = pageSize) => {
     setIsLoading(true);
     setIsError(false);
     setMessage("");
     try {
-      const params = { ...filterParams(offsetArg), offset: String(offsetArg), limit: String(PAGE_SIZE) };
+      const params = {
+        ...filterParams(pageArg, pageSizeArg),
+        offset: String((pageArg - 1) * pageSizeArg),
+        limit: String(pageSizeArg),
+      };
       const response = await axios.get(`${apiUrl}/contacts`, { params, headers });
       const rows = response.data.contacts ?? [];
       setContacts(rows);
-      setOffset(offsetArg);
+      setPage(pageArg);
+      setPageSize(pageSizeArg);
       setTotal(response.data.total ?? rows.length);
-      setSearchParams(filterParams(offsetArg), { replace: true });
+      setSearchParams(filterParams(pageArg, pageSizeArg), { replace: true });
       if (!rows.length) {
         setMessage("Brak kontaktów pasujących do filtrów.");
       }
@@ -121,12 +137,51 @@ const Contacts = () => {
   React.useEffect(() => {
     fetchCategories();
     fetchGroups();
-    fetchContacts(offset);
+    fetchContacts(initialPage, initialPageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const pageStart = total === 0 ? 0 : offset + 1;
-  const pageEnd = offset + contacts.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const visiblePages = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .filter((number) => number === 1 || number === totalPages || Math.abs(number - page) <= 2);
+  const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(total, (page - 1) * pageSize + contacts.length);
+  const pagination = (position: "top" | "bottom") => totalPages > 1 ? (
+    <nav
+      aria-label={`Stronicowanie kontaktów (${position === "top" ? "góra" : "dół"})`}
+      style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
+        padding: position === "top" ? "14px 0 8px" : "8px 0 30px" }}
+    >
+      <button type="button" className="button" disabled={isLoading || page <= 1}
+        onClick={() => { void fetchContacts(page - 1); }}>Poprzednia</button>
+      {visiblePages.map((number, index) => {
+        const previous = visiblePages[index - 1];
+        return (
+          <React.Fragment key={number}>
+            {previous && number - previous > 1 && <span>…</span>}
+            <button type="button" className="button" disabled={isLoading || number === page}
+              aria-current={number === page ? "page" : undefined}
+              onClick={() => { void fetchContacts(number); }}
+              style={{ minWidth: 36, opacity: number === page ? .6 : 1 }}>
+              {number}
+            </button>
+          </React.Fragment>
+        );
+      })}
+      <button type="button" className="button" disabled={isLoading || page >= totalPages}
+        onClick={() => { void fetchContacts(page + 1); }}>Następna</button>
+      <label style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 8 }}>
+        Strona
+        <select value={Math.min(page, totalPages)} disabled={isLoading}
+          onChange={(event) => { void fetchContacts(Number(event.target.value)); }}>
+          {Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => (
+            <option key={number} value={number}>{number}</option>
+          ))}
+        </select>
+        z {totalPages}
+      </label>
+    </nav>
+  ) : null;
 
   return (
     <div>
@@ -187,6 +242,17 @@ const Contacts = () => {
           <option value="1">Zarchiwizowane</option>
           <option value="all">Wszystkie</option>
         </select>
+        <label>
+          Wyników na stronę
+          <select
+            value={pageSize}
+            disabled={isLoading}
+            onChange={(e) => { void fetchContacts(1, Number(e.target.value)); }}
+            style={{ marginLeft: 5, padding: "6px 10px" }}
+          >
+            {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>
         <button type="submit" className={"button"} disabled={isLoading}>
           Szukaj
         </button>
@@ -206,6 +272,8 @@ const Contacts = () => {
           {message}
         </p>
       )}
+
+      {pagination("top")}
 
       <ul style={{ listStyle: "none", padding: 0 }}>
         {contacts.map((contact) => (
@@ -247,28 +315,11 @@ const Contacts = () => {
       </ul>
 
       {total > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <button
-            type="button"
-            className={"button"}
-            disabled={isLoading || offset === 0}
-            onClick={() => fetchContacts(Math.max(0, offset - PAGE_SIZE))}
-          >
-            ← Poprzednia
-          </button>
-          <span style={{ color: "#667", fontSize: "0.9em" }}>
-            {pageStart}–{pageEnd} z {total}
-          </span>
-          <button
-            type="button"
-            className={"button"}
-            disabled={isLoading || pageEnd >= total}
-            onClick={() => fetchContacts(offset + PAGE_SIZE)}
-          >
-            Następna →
-          </button>
+        <div style={{ color: "#667", fontSize: "0.9em", marginTop: 10 }}>
+          {pageStart}–{pageEnd} z {total}
         </div>
       )}
+      {pagination("bottom")}
 
       <div style={{ marginTop: 14, display: "flex", gap: 16 }}>
         <NavLink to="/contact-categories" style={{ fontSize: "0.9em", color: "#0369a1" }}>
