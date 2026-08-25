@@ -371,6 +371,10 @@ def contact_groups_assign(contact_id: int):
 
     if group not in contact.groups:
         contact.groups.append(group)
+        record_contact_change(
+            session, contact, "manual_edit", changed_fields=["groups"],
+            note=f"Dodano do grupy „{group.name}”",
+        )
         try:
             session.commit()
         except Exception:
@@ -392,6 +396,10 @@ def contact_groups_unassign(contact_id: int, group_id: int):
     group = session.get(ContactGroup, group_id)
     if group is not None and group in contact.groups:
         contact.groups.remove(group)
+        record_contact_change(
+            session, contact, "manual_edit", changed_fields=["groups"],
+            note=f"Usunięto z grupy „{group.name}”",
+        )
         try:
             session.commit()
         except Exception:
@@ -546,6 +554,7 @@ def contact_photo_upload(contact_id: int):
 
     contact.photo_storage_key = key
     contact.updated_at = datetime.datetime.now()
+    record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
     try:
         session.commit()
     except Exception:
@@ -569,6 +578,7 @@ def contact_photo_delete(contact_id: int):
     # primitive (same tradeoff as document_images.py's replace functions).
     contact.photo_storage_key = None
     contact.updated_at = datetime.datetime.now()
+    record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
     try:
         session.commit()
     except Exception:

@@ -237,6 +237,112 @@ class TestContactsUpdate:
         assert row.is_archived is False
 
 
+class TestContactGroupsAssignment:
+    def test_assign_logs_change(self, monkeypatch):
+        from library.contact_routes import contact_groups_assign
+
+        group = SimpleNamespace(id=5, name="Sąsiedzi")
+        row = _make_contact(groups=[])
+        session = MagicMock()
+        session.get.side_effect = lambda model, id_: row if id_ == 1 else group
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/groups", method="POST", json={"group_id": 5}):
+            response = contact_groups_assign(1)
+
+        assert response[1] == 200
+        assert group in row.groups
+        session.add.assert_called_once()
+        change_log_entry = session.add.call_args[0][0]
+        assert change_log_entry.source == "manual_edit"
+        assert change_log_entry.changed_fields == ["groups"]
+        assert "Sąsiedzi" in change_log_entry.note
+
+    def test_assign_again_is_noop(self, monkeypatch):
+        from library.contact_routes import contact_groups_assign
+
+        group = SimpleNamespace(id=5, name="Sąsiedzi")
+        row = _make_contact(groups=[group])
+        session = MagicMock()
+        session.get.side_effect = lambda model, id_: row if id_ == 1 else group
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/groups", method="POST", json={"group_id": 5}):
+            response = contact_groups_assign(1)
+
+        assert response[1] == 200
+        session.add.assert_not_called()
+
+    def test_unassign_logs_change(self, monkeypatch):
+        from library.contact_routes import contact_groups_unassign
+
+        group = SimpleNamespace(id=5, name="Sąsiedzi")
+        row = _make_contact(groups=[group])
+        session = MagicMock()
+        session.get.side_effect = lambda model, id_: row if id_ == 1 else group
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/groups/5", method="DELETE"):
+            response = contact_groups_unassign(1, 5)
+
+        assert response[1] == 200
+        assert group not in row.groups
+        session.add.assert_called_once()
+        change_log_entry = session.add.call_args[0][0]
+        assert change_log_entry.changed_fields == ["groups"]
+        assert "Sąsiedzi" in change_log_entry.note
+
+
+class TestContactPhotoChangeLog:
+    def test_upload_logs_change(self, monkeypatch):
+        from library.contact_routes import contact_photo_upload
+
+        row = _make_contact(photo_storage_key=None)
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        storage = MagicMock()
+        storage.presigned_get_url.return_value = "http://example.test/photo.jpg"
+        monkeypatch.setitem(
+            __import__("sys").modules, "library.storage",
+            SimpleNamespace(storage_from_config=lambda cfg: storage),
+        )
+        monkeypatch.setitem(
+            __import__("sys").modules, "library.config_loader",
+            SimpleNamespace(load_config=lambda: {}),
+        )
+
+        app = Flask(__name__)
+        data = {"photo": (BytesIO(b"fake-bytes"), "photo.jpg")}
+        with app.test_request_context(
+            "/contacts/1/photo", method="POST", data=data, content_type="multipart/form-data",
+        ):
+            response = contact_photo_upload(1)
+
+        assert response[1] == 200
+        session.add.assert_called_once()
+        change_log_entry = session.add.call_args[0][0]
+        assert change_log_entry.source == "manual_edit"
+        assert change_log_entry.changed_fields == ["photo_storage_key"]
+
+    def test_delete_logs_change(self, monkeypatch):
+        from library.contact_routes import contact_photo_delete
+
+        row = _make_contact(photo_storage_key="contacts/uuid/photo.jpg")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/photo", method="DELETE"):
+            response = contact_photo_delete(1)
+
+        assert response[1] == 200
+        assert row.photo_storage_key is None
+        session.add.assert_called_once()
+        change_log_entry = session.add.call_args[0][0]
+        assert change_log_entry.changed_fields == ["photo_storage_key"]
+
+
 class TestContactsListArchivedFilter:
     def _run(self, monkeypatch, query_string):
         from library.contact_routes import contacts_list

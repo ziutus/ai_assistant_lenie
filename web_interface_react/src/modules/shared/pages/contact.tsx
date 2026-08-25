@@ -119,6 +119,8 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   category_id: "Kategoria",
   is_archived: "Status archiwizacji",
   whatsapp_profile: "Profil WhatsApp",
+  groups: "Grupy",
+  photo_storage_key: "Zdjęcie",
 };
 
 const changeFieldLabel = (field: string) => CHANGE_FIELD_LABELS[field] ?? field;

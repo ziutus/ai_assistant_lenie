@@ -16,9 +16,7 @@ def record_contact_change(
     session, contact: Contact, source: str, changed_fields: list[str] | None = None, note: str | None = None,
 ) -> ContactChangeLog | None:
     """Append one contact_change_log row. No-op (returns None) when there is
-    nothing to record — no changed fields and no note — e.g. a PATCH that
-    only touched groups/photo, which have their own dedicated endpoints and
-    don't go through this helper."""
+    nothing to record — no changed fields and no note."""
     if source not in CONTACT_CHANGE_SOURCES:
         raise ValueError(f"source must be one of {CONTACT_CHANGE_SOURCES}")
     changed_fields = changed_fields or []
