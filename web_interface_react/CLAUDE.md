@@ -68,6 +68,25 @@ web_interface_react/
 
 All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. Unauthenticated users redirected to `/connect`.
 
+## UX conventions
+
+### Multi-value filters
+
+When a user can select several values from one category — especially when the
+list can grow — use a compact, expandable multi-select filter rather than a
+permanent row of checkboxes. The trigger must say either `Wszystkie
+[kategorie]` or show the count of selected values. The menu provides
+`Zaznacz wszystkie`, `Odznacz wszystkie`, and `Odwróć wybór` actions.
+
+If the domain has a meaningful empty value, include it as a separate choice,
+for example `(bez tematów)`. Preserve the complete filter state in the URL so
+the filtered view can be shared. This pattern is for multi-value filters, not
+for every small single-choice control: a native select, radios, or a few
+standalone toggles can remain clearer.
+
+When this pattern is needed in more than one view, extract a shared component
+instead of copying its markup and state handling.
+
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/connect` | `connect.tsx` | Backend connection configuration (API type, URL, key) |
