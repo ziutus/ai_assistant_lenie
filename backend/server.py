@@ -815,8 +815,13 @@ def persons_search():
             sa_select(Person).order_by(Person.created_at.desc()).limit(50)
         ).scalars().all()
 
+    total = len(persons)
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    limit = min(max(request.args.get('limit', 50, type=int), 1), 100)
+    persons = persons[offset:offset + limit]
     return {
         "status": "success",
+        "total": total, "limit": limit, "offset": offset,
         "persons": [
             {
                 "id": p.id, "uuid": p.uuid, "canonical_name": p.canonical_name,
@@ -955,7 +960,10 @@ def information_sources_list():
             InformationSource.domain.ilike(pattern),
             InformationSource.id.in_(alias_match),
         ))
-    rows = session.execute(statement).all()
+    total = session.scalar(select(func.count()).select_from(statement.subquery()))
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    limit = min(max(request.args.get('limit', 50, type=int), 1), 100)
+    rows = session.execute(statement.offset(offset).limit(limit)).all()
     entries = [{
         "id": source.id,
         "canonical_name": source.canonical_name,
@@ -965,13 +973,13 @@ def information_sources_list():
         "aliases": [alias.alias for alias in source.aliases],
         "document_count": count,
     } for source, count in rows]
-    return {"status": "success", "count": len(entries), "entries": entries}, 200
+    return {"status": "success", "count": total, "total": total, "limit": limit, "offset": offset, "entries": entries}, 200
 
 
 @app.route('/information_sources/<int:source_id>/documents', methods=['GET'])
 def information_source_documents(source_id: int):
     """Return documents attributed to one source, optionally filtered by role."""
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from library.db.models import DocumentInformationSource, InformationSource
 
     session = get_scoped_session()
@@ -984,7 +992,10 @@ def information_source_documents(source_id: int):
     role = (request.args.get('role') or '').strip()
     if role:
         statement = statement.where(DocumentInformationSource.role == role)
-    links = session.scalars(statement).all()
+    total = session.scalar(select(func.count()).select_from(statement.subquery()))
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    limit = min(max(request.args.get('limit', 50, type=int), 1), 100)
+    links = session.scalars(statement.offset(offset).limit(limit)).all()
     entries = [{
         "document_id": link.document_id,
         "title": link.document.title,
@@ -999,7 +1010,10 @@ def information_source_documents(source_id: int):
     return {
         "status": "success",
         "source": {"id": source.id, "canonical_name": source.canonical_name, "domain": source.domain},
-        "count": len(entries),
+        "count": total,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
         "entries": entries,
     }, 200
 
@@ -1668,7 +1682,10 @@ def organizations_collection():
             Organization.canonical_name.ilike(pattern),
             Organization.id.in_(alias_match),
         ))
-    rows = session.execute(statement).all()
+    total = session.scalar(select(func.count()).select_from(statement.subquery()))
+    offset = max(request.args.get('offset', 0, type=int), 0)
+    limit = min(max(request.args.get('limit', 50, type=int), 1), 100)
+    rows = session.execute(statement.offset(offset).limit(limit)).all()
     entries = [{
         "id": organization.id,
         "canonical_name": organization.canonical_name,
@@ -1677,7 +1694,7 @@ def organizations_collection():
         "aliases": [alias.alias for alias in organization.aliases],
         "document_count": count,
     } for organization, count in rows]
-    return {"status": "success", "count": len(entries), "entries": entries}, 200
+    return {"status": "success", "count": total, "total": total, "limit": limit, "offset": offset, "entries": entries}, 200
 
 
 @app.route('/organizations/<int:organization_id>', methods=['GET'])

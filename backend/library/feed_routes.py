@@ -590,11 +590,13 @@ def get_items():
         abort(400, "invalid group filter")
     limit = min(max(int(request.args.get("limit", 50)), 1), 200)
     offset = max(int(request.args.get("offset", 0)), 0)
+    total = session.scalar(select(func.count()).select_from(query.subquery()))
     return jsonify(
         {
             "feed_items": [_item_dict(x) for x in session.scalars(query.offset(offset).limit(limit)).all()],
             "limit": limit,
             "offset": offset,
+            "total": total,
         }
     )
 

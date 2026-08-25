@@ -4,6 +4,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
 import { loadFeedReviewFilters, saveFeedReviewFilters } from "../services/storage";
 import type { ContentGroup } from "../../../types";
+import { Pagination } from "../components/Pagination/pagination";
 
 type FeedSource = { id: number; name: string; type: string; disabled: boolean };
 type FeedItem = {
@@ -38,6 +39,9 @@ export default function FeedReview() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = React.useState<FeedItem[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [page, setPage] = React.useState(1);
+  const pageSize = 50;
   const [sources, setSources] = React.useState<FeedSource[]>([]);
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -63,11 +67,11 @@ export default function FeedReview() {
   const status = view === "later" ? "saved_for_later" : "new";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (nextPage = page) => {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ status });
+      const params = new URLSearchParams({ status, limit: String(pageSize), offset: String((nextPage - 1) * pageSize) });
       if (selectedSource) params.set("feed_source_id", selectedSource);
       const [itemsResponse, sourcesResponse, groupsResponse] = await Promise.all([
         fetch(`${apiUrl}/feed_items?${params.toString()}`, { headers }),
@@ -95,6 +99,8 @@ export default function FeedReview() {
         throw new Error(`${detail} (HTTP ${sourcesResponse.status}, ${apiUrl}/feed_sources)`);
       }
       setItems(Array.isArray(itemsData.feed_items) ? itemsData.feed_items as FeedItem[] : []);
+      setTotal(Number(itemsData.total ?? 0));
+      setPage(nextPage);
       setSources(Array.isArray(sourcesData.feed_sources) ? sourcesData.feed_sources as FeedSource[] : []);
       setContentGroups(Array.isArray(groupsData.content_groups) ? groupsData.content_groups as ContentGroup[] : []);
     } catch (cause) {
@@ -104,7 +110,7 @@ export default function FeedReview() {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, headers, selectedSource, status]);
+  }, [apiUrl, headers, page, selectedSource, status]);
 
   React.useEffect(() => { void load(); }, [load]);
 
@@ -134,6 +140,7 @@ export default function FeedReview() {
       ? changes.view === "later" ? "later" : "new"
       : view;
     saveFeedReviewFilters({ feedSourceId: nextSource, view: nextView });
+    setPage(1);
     setSearchParams(next);
   };
 
@@ -210,6 +217,8 @@ export default function FeedReview() {
       </select>
     </label>
     {error && <p className="errorText" role="alert">{error}</p>}
+    <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wpisów feedu"
+      onPageChange={nextPage => { void load(nextPage); }} />
     {!loading && !error && !items.length && <p>{view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
     {items.map(item => {
       const busy = busyItemId === item.id;
@@ -271,5 +280,7 @@ export default function FeedReview() {
         </form>}
       </article>;
     })}
+    <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wpisów feedu"
+      onPageChange={nextPage => { void load(nextPage); }} />
   </section>;
 }

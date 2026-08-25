@@ -2,6 +2,7 @@ import React from "react";
 import axios from "axios";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import { Pagination } from "../components/Pagination/pagination";
 
 // Global organization registry browser (library/organization_registry.py):
 // fuzzy search over organizations/aliases (GET /organizations?q=) and the
@@ -89,13 +90,16 @@ export const OrganizationHeader = ({
 const Organizations = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
 
   // ?q= pre-fills the search — unresolved orgName chips in the reader link here
   const initialQuery = searchParams.get("q") ?? "";
   const [query, setQuery] = React.useState(initialQuery);
   const [organizations, setOrganizations] = React.useState<OrganizationItem[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [page, setPage] = React.useState(Number(searchParams.get("page")) || 1);
+  const pageSize = 50;
   const [organization, setOrganization] = React.useState<
     { id: number; canonical_name: string; description: string | null; organization_type: string | null } | null
   >(null);
@@ -125,13 +129,16 @@ const Organizations = () => {
   };
   const jsonHeaders = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
-  const search = async (q: string) => {
+  const search = async (q: string, nextPage = 1) => {
     setIsLoading(true);
     setMessage("");
     setIsError(false);
     try {
-      const response = await axios.get(`${apiUrl}/organizations`, { params: q ? { q } : {}, headers });
+      const response = await axios.get(`${apiUrl}/organizations`, { params: { ...(q ? { q } : {}), limit: pageSize, offset: (nextPage - 1) * pageSize }, headers });
       setOrganizations(response.data.entries ?? []);
+      setTotal(response.data.total ?? response.data.entries?.length ?? 0);
+      setPage(nextPage);
+      setSearchParams({ ...(q ? { q } : {}), ...(nextPage > 1 ? { page: String(nextPage) } : {}) }, { replace: true });
       if (!(response.data.entries ?? []).length) {
         setMessage(q ? "Brak organizacji pasujących do zapytania." : "Rejestr organizacji jest pusty.");
       }
@@ -144,7 +151,7 @@ const Organizations = () => {
   };
 
   React.useEffect(() => {
-    search(initialQuery);
+    search(initialQuery, page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -623,6 +630,8 @@ const Organizations = () => {
               </button>
             </div>
           )}
+          {!id && <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading} label="organizacji"
+            onPageChange={nextPage => { void search(query.trim(), nextPage); }} />}
           <ul style={{ listStyle: "none", padding: 0 }}>
             {sortedOrganizations.map((o) => (
               <li
@@ -637,6 +646,8 @@ const Organizations = () => {
               </li>
             ))}
           </ul>
+          {!id && <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading} label="organizacji"
+            onPageChange={nextPage => { void search(query.trim(), nextPage); }} />}
         </>
       )}
     </div>

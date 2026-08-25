@@ -2,6 +2,7 @@ import React from "react";
 import axios from "axios";
 import { NavLink, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import { Pagination } from "../components/Pagination/pagination";
 
 interface InformationSource {
   id: number;
@@ -47,36 +48,43 @@ const InformationSources: React.FC = () => {
   const selectedId = Number(params.get("id")) || null;
   const [query, setQuery] = React.useState(params.get("q") ?? "");
   const [sources, setSources] = React.useState<InformationSource[]>([]);
+  const [sourcesTotal, setSourcesTotal] = React.useState(0);
   const [documents, setDocuments] = React.useState<SourceDocument[]>([]);
+  const [documentsTotal, setDocumentsTotal] = React.useState(0);
   const [stats, setStats] = React.useState<PublisherStats | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const headers = React.useMemo(() => ({ "x-api-key": `${apiKey}` }), [apiKey]);
+  const pageSize = 50;
+  const sourcesPage = Math.max(1, Number(params.get("sources_page")) || 1);
+  const documentsPage = Math.max(1, Number(params.get("documents_page")) || 1);
 
   const search = React.useCallback(async (value: string) => {
     setLoading(true); setError("");
     try {
       const response = await axios.get(`${apiUrl}/information_sources`, {
-        params: value.trim() ? { q: value.trim() } : {}, headers,
+        params: { ...(value.trim() ? { q: value.trim() } : {}), limit: pageSize, offset: (sourcesPage - 1) * pageSize }, headers,
       });
       setSources(response.data.entries ?? []);
+      setSourcesTotal(response.data.total ?? response.data.entries?.length ?? 0);
     } catch (e: any) {
       setError(e.response?.data?.message || e.message);
     } finally { setLoading(false); }
-  }, [apiUrl, headers]);
+  }, [apiUrl, headers, sourcesPage]);
 
   React.useEffect(() => { search(params.get("q") ?? ""); }, [params, search]);
 
   React.useEffect(() => {
     if (!selectedId) { setDocuments([]); setStats(null); return; }
     Promise.all([
-      axios.get(`${apiUrl}/information_sources/${selectedId}/documents`, { headers }),
+      axios.get(`${apiUrl}/information_sources/${selectedId}/documents`, { params: { limit: pageSize, offset: (documentsPage - 1) * pageSize }, headers }),
       axios.get(`${apiUrl}/information_sources/${selectedId}/publisher_stats`, { headers }),
     ]).then(([docs, publisher]) => {
       setDocuments(docs.data.entries ?? []);
+      setDocumentsTotal(docs.data.total ?? docs.data.entries?.length ?? 0);
       setStats(publisher.data);
     }).catch((e: any) => setError(e.response?.data?.message || e.message));
-  }, [apiUrl, headers, selectedId]);
+  }, [apiUrl, documentsPage, headers, selectedId]);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -100,6 +108,8 @@ const InformationSources: React.FC = () => {
         <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) minmax(420px, 2fr)", gap: 16 }}>
           <div style={box}>
             <strong>Źródła ({sources.length})</strong>
+            <Pagination page={sourcesPage} pageSize={pageSize} total={sourcesTotal} isLoading={loading} label="źródeł"
+              onPageChange={page => { const next = new URLSearchParams(params); next.set("sources_page", String(page)); setParams(next); }} />
             {sources.map(source => (
               <button key={source.id} onClick={() => {
                 const next: Record<string, string> = { id: String(source.id) };
@@ -114,6 +124,8 @@ const InformationSources: React.FC = () => {
                 {source.domain && <div style={{ fontSize: "0.8em", color: "#64748b" }}>{source.domain}</div>}
               </button>
             ))}
+            <Pagination page={sourcesPage} pageSize={pageSize} total={sourcesTotal} isLoading={loading} label="źródeł"
+              onPageChange={page => { const next = new URLSearchParams(params); next.set("sources_page", String(page)); setParams(next); }} />
           </div>
           <div>
             {!selectedId && <div style={box}>Wybierz źródło, aby zobaczyć dokumenty i statystyki.</div>}
@@ -141,11 +153,15 @@ const InformationSources: React.FC = () => {
               </div>
               <div style={{ ...box, marginTop: 14 }}>
                 <strong>Powiązane dokumenty ({documents.length})</strong>
+                <Pagination page={documentsPage} pageSize={pageSize} total={documentsTotal} isLoading={loading} label="dokumentów źródła"
+                  onPageChange={page => { const next = new URLSearchParams(params); next.set("documents_page", String(page)); setParams(next); }} />
                 {documents.map(doc => <div key={`${doc.document_id}-${doc.role}`} style={{ padding: "10px 0", borderBottom: "1px solid #e2e8f0" }}>
                   <NavLink to={`/read/${doc.document_id}`}>{doc.title || `Dokument #${doc.document_id}`}</NavLink>
                   <div style={{ fontSize: "0.82em", color: "#64748b" }}>{ROLE_LABELS[doc.role] ?? doc.role}</div>
                   {doc.evidence_excerpt && <div style={{ fontSize: "0.86em", marginTop: 3 }}>„{doc.evidence_excerpt}”</div>}
                 </div>)}
+                <Pagination page={documentsPage} pageSize={pageSize} total={documentsTotal} isLoading={loading} label="dokumentów źródła"
+                  onPageChange={page => { const next = new URLSearchParams(params); next.set("documents_page", String(page)); setParams(next); }} />
               </div>
             </>}
           </div>
