@@ -63,6 +63,7 @@ const Contacts = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
+  const groupsFilterRef = React.useRef<HTMLDetailsElement>(null);
   const allGroupValues = [...groups.map((group) => String(group.id)), UNGROUPED_VALUE];
   const effectiveSelectedGroupValues = groupFilterActive ? selectedGroupValues : allGroupValues;
   const isAllGroupsSelected = effectiveSelectedGroupValues.length === allGroupValues.length
@@ -142,6 +143,17 @@ const Contacts = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  React.useEffect(() => {
+    const closeGroupsFilterOnOutsideClick = (event: PointerEvent) => {
+      const filter = groupsFilterRef.current;
+      if (filter?.open && !filter.contains(event.target as Node)) {
+        filter.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", closeGroupsFilterOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeGroupsFilterOnOutsideClick);
+  }, []);
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const visiblePages = Array.from({ length: totalPages }, (_, index) => index + 1)
     .filter((number) => number === 1 || number === totalPages || Math.abs(number - page) <= 2);
@@ -209,7 +221,7 @@ const Contacts = () => {
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
-        <details style={{ position: "relative" }}>
+        <details ref={groupsFilterRef} style={{ position: "relative" }}>
           <summary style={{ cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
             {isAllGroupsSelected ? "Wszystkie grupy" : `Grupy: wybrano ${effectiveSelectedGroupValues.length}`}
           </summary>
