@@ -572,6 +572,9 @@ const Contact = () => {
         </div>
         {!isNew && (
           <div style={{ display: "flex", gap: 8 }}>
+            <button className={"button"} type="button" onClick={() => navigate(backToListUrl)}>
+              ← Wróć do listy
+            </button>
             <button className={"button"} type="button" disabled={isLoading} onClick={toggleArchive}>
               {contact?.is_archived ? "↺ Przywróć z archiwum" : "🗄 Archiwizuj"}
             </button>
@@ -667,9 +670,6 @@ const Contact = () => {
             </div>
           </div>
 
-          <button className={"button"} type="button" style={{ marginTop: 10, alignSelf: "flex-start" }} onClick={() => navigate(backToListUrl)}>
-            ← Wróć do listy
-          </button>
         </div>
       ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -796,9 +796,6 @@ const Contact = () => {
               Usuń
             </button>
           )}
-          <button className={"button"} type="button" onClick={() => navigate(backToListUrl)}>
-            ← Wróć do listy
-          </button>
         </div>
       </div>
       )}
