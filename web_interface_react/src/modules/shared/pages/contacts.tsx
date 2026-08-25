@@ -107,22 +107,23 @@ const Contacts = () => {
   };
 
   const fetchContacts = async (pageArg = 1, pageSizeArg = pageSize) => {
+    const normalizedPage = Math.max(1, pageArg);
     setIsLoading(true);
     setIsError(false);
     setMessage("");
     try {
       const params = {
-        ...filterParams(pageArg, pageSizeArg),
-        offset: String((pageArg - 1) * pageSizeArg),
+        ...filterParams(normalizedPage, pageSizeArg),
+        offset: String((normalizedPage - 1) * pageSizeArg),
         limit: String(pageSizeArg),
       };
       const response = await axios.get(`${apiUrl}/contacts`, { params, headers });
       const rows = response.data.contacts ?? [];
       setContacts(rows);
-      setPage(pageArg);
+      setPage(normalizedPage);
       setPageSize(pageSizeArg);
       setTotal(response.data.total ?? rows.length);
-      setSearchParams(filterParams(pageArg, pageSizeArg), { replace: true });
+      setSearchParams(filterParams(normalizedPage, pageSizeArg), { replace: true });
       if (!rows.length) {
         setMessage("Brak kontaktów pasujących do filtrów.");
       }
@@ -190,7 +191,7 @@ const Contacts = () => {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          fetchContacts(0);
+          fetchContacts(1);
         }}
         style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}
       >
