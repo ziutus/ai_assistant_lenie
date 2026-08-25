@@ -23,6 +23,10 @@ export interface ContactListItem {
 }
 
 const PAGE_SIZE = 50;
+const UNGROUPED_VALUE = "__ungrouped__";
+
+const parseIdList = (value: string | null) =>
+  (value ?? "").split(",").filter((id) => /^\d+$/.test(id));
 
 const Contacts = () => {
   const navigate = useNavigate();
@@ -37,7 +41,11 @@ const Contacts = () => {
   // being viewed instead of resetting to an empty search.
   const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
   const [categoryId, setCategoryId] = React.useState<string>(searchParams.get("category_id") ?? "");
-  const [groupId, setGroupId] = React.useState<string>(searchParams.get("group_id") ?? "");
+  const [groupFilterActive, setGroupFilterActive] = React.useState(() => searchParams.has("group_filter") || searchParams.has("group_ids") || searchParams.has("group_id"));
+  const [selectedGroupValues, setSelectedGroupValues] = React.useState<string[]>(() => [
+    ...parseIdList(searchParams.get("group_ids") ?? searchParams.get("group_id")),
+    ...(searchParams.get("include_ungrouped") === "1" ? [UNGROUPED_VALUE] : []),
+  ]);
   const [archived, setArchived] = React.useState<string>(searchParams.get("archived") ?? "");
   const initialOffset = Number(searchParams.get("offset") ?? "0");
   const [offset, setOffset] = React.useState(Number.isFinite(initialOffset) && initialOffset > 0 ? initialOffset : 0);
@@ -45,6 +53,10 @@ const Contacts = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
+  const allGroupValues = [...groups.map((group) => String(group.id)), UNGROUPED_VALUE];
+  const effectiveSelectedGroupValues = groupFilterActive ? selectedGroupValues : allGroupValues;
+  const isAllGroupsSelected = effectiveSelectedGroupValues.length === allGroupValues.length
+    && allGroupValues.every((value) => effectiveSelectedGroupValues.includes(value));
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
@@ -52,7 +64,12 @@ const Contacts = () => {
     const params: Record<string, string> = {};
     if (query.trim()) params.q = query.trim();
     if (categoryId) params.category_id = categoryId;
-    if (groupId) params.group_id = groupId;
+    if (groupFilterActive && !isAllGroupsSelected) {
+      params.group_filter = "1";
+      const selectedGroupIds = effectiveSelectedGroupValues.filter((value) => value !== UNGROUPED_VALUE);
+      if (selectedGroupIds.length) params.group_ids = selectedGroupIds.join(",");
+      if (effectiveSelectedGroupValues.includes(UNGROUPED_VALUE)) params.include_ungrouped = "1";
+    }
     if (archived) params.archived = archived;
     if (offsetArg) params.offset = String(offsetArg);
     return params;
@@ -136,12 +153,35 @@ const Contacts = () => {
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
-        <select value={groupId} onChange={(e) => setGroupId(e.target.value)} style={{ padding: "6px 10px" }}>
-          <option value="">Wszystkie grupy</option>
-          {groups.map((g) => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
+        <details style={{ position: "relative" }}>
+          <summary style={{ cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
+            {isAllGroupsSelected ? "Wszystkie grupy" : `Grupy: wybrano ${effectiveSelectedGroupValues.length}`}
+          </summary>
+          <div style={{ position: "absolute", zIndex: 2, background: "white", border: "1px solid #bbb", borderRadius: 3, padding: 10, minWidth: 260, boxShadow: "0 2px 8px #0002" }}>
+            <div style={{ fontSize: "0.85em", fontWeight: 600, marginBottom: 4 }}>Wybierz widoczne grupy:</div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 5 }}>
+              <button type="button" className="button" onClick={() => { setGroupFilterActive(true); setSelectedGroupValues(allGroupValues); }}>Zaznacz wszystkie</button>
+              <button type="button" className="button" onClick={() => { setGroupFilterActive(true); setSelectedGroupValues([]); }}>Odznacz wszystkie</button>
+              <button type="button" className="button" onClick={() => { setGroupFilterActive(true); setSelectedGroupValues((values) => allGroupValues.filter((value) => !effectiveSelectedGroupValues.includes(value))); }}>Odwróć wybór</button>
+            </div>
+            {groups.map((g) => (
+              <label key={`include-${g.id}`} style={{ display: "block", whiteSpace: "nowrap" }}>
+                <input
+                  type="checkbox"
+                  checked={effectiveSelectedGroupValues.includes(String(g.id))}
+                  onChange={(e) => { setGroupFilterActive(true); setSelectedGroupValues(e.target.checked ? [...effectiveSelectedGroupValues, String(g.id)] : effectiveSelectedGroupValues.filter((value) => value !== String(g.id))); }}
+                /> {g.name}
+              </label>
+            ))}
+            <label style={{ display: "block", whiteSpace: "nowrap", borderTop: "1px solid #ddd", marginTop: 8, paddingTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={effectiveSelectedGroupValues.includes(UNGROUPED_VALUE)}
+                onChange={(e) => { setGroupFilterActive(true); setSelectedGroupValues(e.target.checked ? [...effectiveSelectedGroupValues, UNGROUPED_VALUE] : effectiveSelectedGroupValues.filter((value) => value !== UNGROUPED_VALUE)); }}
+              /> (bez grupy)
+            </label>
+          </div>
+        </details>
         <select value={archived} onChange={(e) => setArchived(e.target.value)} style={{ padding: "6px 10px" }}>
           <option value="">Aktywne</option>
           <option value="1">Zarchiwizowane</option>

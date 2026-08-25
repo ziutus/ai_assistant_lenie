@@ -369,6 +369,15 @@ class TestContactsListArchivedFilter:
         compiled = self._run(monkeypatch, "?archived=all")
         assert "is_archived" not in compiled
 
+    def test_filters_to_any_selected_contact_group(self, monkeypatch):
+        compiled = self._run(monkeypatch, "?group_ids=3,5")
+        assert "contact_groups.id IN" in compiled
+
+    def test_excludes_contacts_in_selected_contact_group(self, monkeypatch):
+        compiled = self._run(monkeypatch, "?exclude_group_ids=5")
+        assert "NOT" in compiled
+        assert "contact_groups.id IN" in compiled
+
 
 class TestContactsDelete:
     def test_deletes_contact(self, monkeypatch):
