@@ -96,6 +96,7 @@ def _contact_dict(row: Contact) -> dict:
         "birthday": row.birthday.isoformat() if row.birthday else None,
         "pesel": row.pesel,
         "notes": row.notes,
+        "is_archived": row.is_archived,
         "has_whatsapp_profile": bool(row.whatsapp_profile),
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -395,6 +396,12 @@ def contacts_list():
     session = get_scoped_session()
 
     conditions = []
+    archived_filter = (request.args.get("archived") or "").strip().lower()
+    if archived_filter in ("1", "true", "yes"):
+        conditions.append(Contact.is_archived.is_(True))
+    elif archived_filter != "all":
+        conditions.append(Contact.is_archived.is_(False))
+
     category_id = request.args.get("category_id", type=int)
     if category_id is not None:
         conditions.append(Contact.category_id == category_id)
@@ -621,6 +628,8 @@ def contacts_update(contact_id: int):
         if session.get(ContactCategory, category_id) is None:
             return {"status": "error", "message": "category_id not found"}, 400
         row.category_id = category_id
+    if "is_archived" in data:
+        row.is_archived = bool(data.get("is_archived"))
 
     row.updated_at = datetime.datetime.now()
     try:

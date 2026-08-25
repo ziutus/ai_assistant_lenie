@@ -19,6 +19,7 @@ export interface ContactListItem {
   phone_number: string | null;
   email: string | null;
   has_whatsapp_profile: boolean;
+  is_archived: boolean;
 }
 
 const PAGE_SIZE = 50;
@@ -37,6 +38,7 @@ const Contacts = () => {
   const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
   const [categoryId, setCategoryId] = React.useState<string>(searchParams.get("category_id") ?? "");
   const [groupId, setGroupId] = React.useState<string>(searchParams.get("group_id") ?? "");
+  const [archived, setArchived] = React.useState<string>(searchParams.get("archived") ?? "");
   const initialOffset = Number(searchParams.get("offset") ?? "0");
   const [offset, setOffset] = React.useState(Number.isFinite(initialOffset) && initialOffset > 0 ? initialOffset : 0);
   const [total, setTotal] = React.useState(0);
@@ -51,6 +53,7 @@ const Contacts = () => {
     if (query.trim()) params.q = query.trim();
     if (categoryId) params.category_id = categoryId;
     if (groupId) params.group_id = groupId;
+    if (archived) params.archived = archived;
     if (offsetArg) params.offset = String(offsetArg);
     return params;
   };
@@ -139,6 +142,11 @@ const Contacts = () => {
             <option key={g.id} value={g.id}>{g.name}</option>
           ))}
         </select>
+        <select value={archived} onChange={(e) => setArchived(e.target.value)} style={{ padding: "6px 10px" }}>
+          <option value="">Aktywne</option>
+          <option value="1">Zarchiwizowane</option>
+          <option value="all">Wszystkie</option>
+        </select>
         <button type="submit" className={"button"} disabled={isLoading}>
           Szukaj
         </button>
@@ -167,6 +175,11 @@ const Contacts = () => {
             onClick={() => navigate(`/contacts/${contact.id}${contactLinkSearch}`)}
           >
             <strong>{[contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+            {contact.is_archived && (
+              <span style={{ fontSize: "0.8em", color: "#a33", border: "1px solid #e3a", borderRadius: 4, padding: "1px 6px" }}>
+                archiwalny
+              </span>
+            )}
             {contact.has_whatsapp_profile && (
               <span title="Ma profil sąsiedzki zbudowany z WhatsApp">💬</span>
             )}

@@ -2979,6 +2979,7 @@ class Contact(Base):
     google_contact_resource_name: Mapped[str | None] = mapped_column(String(255), unique=True)
     whatsapp_profile: Mapped[dict | None] = mapped_column(JSONB)
     photo_storage_key: Mapped[str | None] = mapped_column(Text)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
@@ -2990,6 +2991,7 @@ class Contact(Base):
     __table_args__ = (
         Index("idx_contacts_last_name", "last_name"),
         Index("idx_contacts_category", "category_id"),
+        Index("idx_contacts_is_archived", "is_archived"),
     )
 
     def __repr__(self) -> str:
