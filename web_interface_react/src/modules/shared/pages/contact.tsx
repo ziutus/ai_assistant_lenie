@@ -85,6 +85,44 @@ const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
   rejected: "odrzucone",
 };
 
+type ChangeSource = "manual_edit" | "google_import" | "linkedin_analysis" | "whatsapp_analysis" | "osint_lookup" | "other";
+
+interface ContactChangeLogEntry {
+  id: number;
+  source: ChangeSource;
+  changed_fields: string[];
+  note: string | null;
+  created_at: string;
+}
+
+const CHANGE_SOURCE_LABELS: Record<ChangeSource, string> = {
+  manual_edit: "Ręczna edycja",
+  google_import: "Import Kontaktów Google",
+  linkedin_analysis: "Analiza LinkedIn",
+  whatsapp_analysis: "Analiza WhatsApp",
+  osint_lookup: "Wyszukiwanie OSINT",
+  other: "Inne",
+};
+
+const CHANGE_FIELD_LABELS: Record<string, string> = {
+  first_name: "Imię",
+  last_name: "Nazwisko",
+  phone_number: "Telefon",
+  email: "Email",
+  linkedin_url: "LinkedIn",
+  company: "Firma",
+  position: "Stanowisko",
+  address: "Adres",
+  birthday: "Urodziny",
+  pesel: "PESEL",
+  notes: "Notatki",
+  category_id: "Kategoria",
+  is_archived: "Status archiwizacji",
+  whatsapp_profile: "Profil WhatsApp",
+};
+
+const changeFieldLabel = (field: string) => CHANGE_FIELD_LABELS[field] ?? field;
+
 const emptyOrgForm = {
   org_type: "jdg" as OrgType,
   organization_name: "",
@@ -117,6 +155,7 @@ interface ContactDetail {
   is_archived: boolean;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
+  change_log: ContactChangeLogEntry[];
   whatsapp_profile: WhatsappProfile | null;
   photo_url: string | null;
 }
@@ -168,6 +207,9 @@ const Contact = () => {
   const [contactGroups, setContactGroups] = React.useState<{ id: number; name: string }[]>([]);
   const [groupToAdd, setGroupToAdd] = React.useState<string>("");
   const [relationships, setRelationships] = React.useState<ContactRelationship[]>([]);
+  const [changeLog, setChangeLog] = React.useState<ContactChangeLogEntry[]>([]);
+  const [changeSource, setChangeSource] = React.useState<ChangeSource>("manual_edit");
+  const [changeNote, setChangeNote] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
@@ -232,6 +274,7 @@ const Contact = () => {
       setForm(formFromContact(fetched));
       setRelationships(fetched.relationships ?? []);
       setOrganizations(fetched.organizations ?? []);
+      setChangeLog(fetched.change_log ?? []);
       setContactGroups(fetched.groups ?? []);
       setWhatsappProfile(fetched.whatsapp_profile ?? null);
       setPhotoUrl(fetched.photo_url ?? null);
@@ -251,6 +294,7 @@ const Contact = () => {
     setForm(emptyForm);
     setRelationships([]);
     setOrganizations([]);
+    setChangeLog([]);
     setContactGroups([]);
     setWhatsappProfile(null);
     setPhotoUrl(null);
@@ -344,6 +388,8 @@ const Contact = () => {
       ...form,
       category_id: form.category_id ? Number(form.category_id) : undefined,
       birthday: form.birthday || null,
+      change_source: changeSource,
+      change_note: changeNote.trim() || undefined,
     };
     try {
       if (isNew) {
@@ -353,6 +399,8 @@ const Contact = () => {
       } else {
         await axios.patch(`${apiUrl}/contacts/${id}`, payload, { headers });
         setMessage("Zapisano zmiany.");
+        setChangeSource("manual_edit");
+        setChangeNote("");
         await loadContact();
         setMode("view");
       }
@@ -713,6 +761,30 @@ const Contact = () => {
           </div>
         )}
 
+        <div style={{ padding: 8, background: "#f5f7fa", border: "1px solid #d5dde8", borderRadius: 6 }}>
+          <div style={{ marginBottom: 6, color: "#667", fontSize: "0.9em" }}>
+            Skąd ta zmiana? (zapisywane w historii kontaktu)
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <select
+              value={changeSource}
+              onChange={(e) => setChangeSource(e.target.value as ChangeSource)}
+              style={{ padding: "4px 8px" }}
+            >
+              {(Object.keys(CHANGE_SOURCE_LABELS) as ChangeSource[]).map((s) => (
+                <option key={s} value={s}>{CHANGE_SOURCE_LABELS[s]}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={changeNote}
+              placeholder="Notatka (opcjonalnie, np. „telefon podany przez sąsiada”)"
+              onChange={(e) => setChangeNote(e.target.value)}
+              style={{ padding: "4px 8px", flex: 1, minWidth: 220 }}
+            />
+          </div>
+        </div>
+
         <div style={{ display: "flex", gap: 8 }}>
           <button className={"button"} type="button" disabled={isLoading} onClick={save}>
             Zapisz
@@ -1003,6 +1075,37 @@ const Contact = () => {
               <button className={"button"} type="button" onClick={addRelationship}>Dodaj powiązanie</button>
             </div>
           </div>
+          )}
+        </div>
+      )}
+
+      {!isNew && (
+        <div style={{ marginTop: 24 }}>
+          <h3>Historia zmian</h3>
+          {changeLog.length === 0 && <p style={{ color: "#667" }}>Brak zapisanej historii.</p>}
+          {changeLog.length > 0 && (
+            <ul style={{ listStyle: "none", padding: 0 }}>
+              {changeLog.map((entry) => (
+                <li
+                  key={entry.id}
+                  style={{
+                    padding: "6px 10px", marginBottom: 6, borderRadius: 6,
+                    background: "#f5f7fa", border: "1px solid #d5dde8", fontSize: "0.9em",
+                  }}
+                >
+                  <div>
+                    <strong>{CHANGE_SOURCE_LABELS[entry.source] ?? entry.source}</strong>
+                    <span style={{ color: "#667" }}> — {new Date(entry.created_at).toLocaleString("pl-PL")}</span>
+                  </div>
+                  {entry.changed_fields.length > 0 && (
+                    <div style={{ color: "#667" }}>
+                      Zmienione pola: {entry.changed_fields.map(changeFieldLabel).join(", ")}
+                    </div>
+                  )}
+                  {entry.note && <div style={{ color: "#667" }}>{entry.note}</div>}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}

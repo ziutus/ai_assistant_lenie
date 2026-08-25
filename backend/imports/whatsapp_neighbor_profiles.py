@@ -728,6 +728,7 @@ def main():
     if args.apply:
         from sqlalchemy import select
 
+        from library.contact_change_log import record_contact_change
         from library.db.engine import get_session
         from library.db.models import ContactCategory, ContactGroup
 
@@ -828,6 +829,13 @@ def main():
             continue
 
         update_whatsapp_profile(contact, args.group_slug, args.group_label, profile, suggestions, stats, new_last_processed_at)
+        changed_fields = ["whatsapp_profile"]
+        if contact_is_new:
+            changed_fields += ["first_name", "last_name", "category_id"]
+        record_contact_change(
+            session, contact, "whatsapp_analysis", changed_fields=changed_fields,
+            note=f"Analiza czatu WhatsApp „{args.group_label}” ({stats['message_count']} wiadomości)",
+        )
         session.commit()
         if contact_is_new:
             created += 1

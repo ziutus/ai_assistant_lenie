@@ -57,12 +57,17 @@ class TestContactsAdd:
             response = contacts_add()
 
         assert response[1] == 200
-        session.add.assert_called_once()
-        added = session.add.call_args[0][0]
+        # Two rows added: the Contact itself, plus a contact_change_log entry
+        # recording the create (default change_source="manual_edit").
+        assert session.add.call_count == 2
+        added = session.add.call_args_list[0][0][0]
         assert added.last_name == "Wojtysiak"
         assert added.first_name == "Adam"
         assert added.phone_number == "+48 725 428 453"
         assert added.category_id == default_category.id
+        change_log_entry = session.add.call_args_list[1][0][0]
+        assert change_log_entry.source == "manual_edit"
+        assert set(change_log_entry.changed_fields) == {"last_name", "first_name", "phone_number"}
         session.commit.assert_called_once()
 
     def test_missing_last_name_is_400(self, monkeypatch):
@@ -92,6 +97,24 @@ class TestContactsAdd:
         assert response[1] == 400
         session.add.assert_not_called()
 
+    def test_rejects_invalid_change_source(self, monkeypatch):
+        from library.contact_routes import contacts_add
+
+        default_category = _make_category()
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = default_category
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts", method="POST",
+            json={"last_name": "Wojtysiak", "change_source": "not_a_real_source"},
+        ):
+            response = contacts_add()
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
 
 class TestContactsUpdate:
     def test_updates_fields(self, monkeypatch):
@@ -110,7 +133,67 @@ class TestContactsUpdate:
         assert response[1] == 200
         assert row.email == "adam@example.com"
         assert row.company == "Acme"
+        session.add.assert_called_once()
+        change_log_entry = session.add.call_args[0][0]
+        assert change_log_entry.source == "manual_edit"
+        assert set(change_log_entry.changed_fields) == {"email", "company"}
         session.commit.assert_called_once()
+
+    def test_no_actual_change_does_not_log(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(email="adam@example.com")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1", method="PATCH", json={"email": "adam@example.com"},
+        ):
+            response = contacts_update(1)
+
+        assert response[1] == 200
+        session.add.assert_not_called()
+
+    def test_custom_change_source_and_note_are_recorded(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(phone_number=None)
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1", method="PATCH",
+            json={
+                "phone_number": "+48 600 000 000",
+                "change_source": "whatsapp_analysis",
+                "change_note": "Podany w czacie osiedlowym",
+            },
+        ):
+            response = contacts_update(1)
+
+        assert response[1] == 200
+        change_log_entry = session.add.call_args[0][0]
+        assert change_log_entry.source == "whatsapp_analysis"
+        assert change_log_entry.note == "Podany w czacie osiedlowym"
+        assert change_log_entry.changed_fields == ["phone_number"]
+
+    def test_rejects_invalid_change_source(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact()
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1", method="PATCH", json={"email": "x@y.com", "change_source": "bogus"},
+        ):
+            response = contacts_update(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
 
     def test_missing_contact_is_404(self, monkeypatch):
         from library.contact_routes import contacts_update
