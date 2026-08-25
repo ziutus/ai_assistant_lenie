@@ -114,6 +114,7 @@ interface ContactDetail {
   address: string | null;
   birthday: string | null;
   notes: string | null;
+  is_archived: boolean;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
   whatsapp_profile: WhatsappProfile | null;
@@ -379,6 +380,23 @@ const Contact = () => {
     setIsLoading(false);
   };
 
+  const toggleArchive = async () => {
+    if (!contact || isNew) return;
+    setIsLoading(true);
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/contacts/${id}`, { is_archived: !contact.is_archived }, { headers });
+      setMessage(contact.is_archived ? "Przywrócono kontakt z archiwum." : "Zarchiwizowano kontakt.");
+      await loadContact();
+    } catch (error: any) {
+      console.error("Error toggling contact archive status", error);
+      setIsError(true);
+      setMessage(`Nie udało się zmienić statusu archiwizacji: ${error.response?.data?.message || error.message}`);
+    }
+    setIsLoading(false);
+  };
+
   const searchRelTargets = async () => {
     try {
       const response = await axios.get(`${apiUrl}/contacts`, {
@@ -494,11 +512,23 @@ const Contact = () => {
   return (
     <div style={{ maxWidth: 560 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-        <h2 style={{ margin: 0 }}>{isNew ? "Nowy kontakt" : "Kontakt"}</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h2 style={{ margin: 0 }}>{isNew ? "Nowy kontakt" : "Kontakt"}</h2>
+          {contact?.is_archived && (
+            <span style={{ fontSize: "0.8em", color: "#a33", border: "1px solid #e3a", borderRadius: 4, padding: "2px 8px" }}>
+              archiwalny
+            </span>
+          )}
+        </div>
         {!isNew && (
-          <button className={"button"} type="button" onClick={() => (mode === "view" ? setMode("edit") : cancelEdit())}>
-            {mode === "view" ? "✏️ Edytuj" : "← Podgląd"}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className={"button"} type="button" disabled={isLoading} onClick={toggleArchive}>
+              {contact?.is_archived ? "↺ Przywróć z archiwum" : "🗄 Archiwizuj"}
+            </button>
+            <button className={"button"} type="button" onClick={() => (mode === "view" ? setMode("edit") : cancelEdit())}>
+              {mode === "view" ? "✏️ Edytuj" : "← Podgląd"}
+            </button>
+          </div>
         )}
       </div>
 

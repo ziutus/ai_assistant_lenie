@@ -32,7 +32,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
         address=None, birthday=None, pesel=None, notes=None, groups=[], whatsapp_profile=None,
-        photo_storage_key=None,
+        photo_storage_key=None, is_archived=False,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),
     )
@@ -123,6 +123,62 @@ class TestContactsUpdate:
             response = contacts_update(999)
 
         assert response[1] == 404
+
+    def test_archives_contact(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(is_archived=False)
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1", method="PATCH", json={"is_archived": True}):
+            response = contacts_update(1)
+
+        assert response[1] == 200
+        assert row.is_archived is True
+        assert response[0].json["contact"]["is_archived"] is True
+
+    def test_unarchives_contact(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(is_archived=True)
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1", method="PATCH", json={"is_archived": False}):
+            response = contacts_update(1)
+
+        assert response[1] == 200
+        assert row.is_archived is False
+
+
+class TestContactsListArchivedFilter:
+    def _run(self, monkeypatch, query_string):
+        from library.contact_routes import contacts_list
+
+        session = MagicMock()
+        session.execute.return_value.scalar_one.return_value = 0
+        session.execute.return_value.scalars.return_value.all.return_value = []
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(f"/contacts{query_string}"):
+            response = contacts_list()
+        assert response[1] == 200
+        return str(session.execute.call_args_list[0][0][0])
+
+    def test_default_excludes_archived(self, monkeypatch):
+        compiled = self._run(monkeypatch, "")
+        assert "is_archived" in compiled
+
+    def test_archived_true_filters_to_archived_only(self, monkeypatch):
+        compiled = self._run(monkeypatch, "?archived=1")
+        assert "is_archived" in compiled
+
+    def test_archived_all_skips_filter(self, monkeypatch):
+        compiled = self._run(monkeypatch, "?archived=all")
+        assert "is_archived" not in compiled
 
 
 class TestContactsDelete:
