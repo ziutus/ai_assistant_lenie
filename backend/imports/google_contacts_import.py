@@ -127,6 +127,7 @@ def main():
     from sqlalchemy import select
 
     from imports.whatsapp_neighbor_profiles import normalize_name
+    from library.contact_change_log import record_contact_change
     from library.db.engine import get_session
     from library.db.models import Contact, ContactCategory, ContactGroup
 
@@ -199,24 +200,36 @@ def main():
                 logger.info("DOPASOWANO #%d %s %s <- %s %s%s", existing.id, existing.first_name, existing.last_name,
                              first_name, last_name, f" (+grupy: {', '.join(new_groups)})" if new_groups else "")
                 if args.apply:
+                    changed_fields = []
                     if email and not existing.email:
                         existing.email = email
+                        changed_fields.append("email")
                     if phone and not existing.phone_number:
                         existing.phone_number = phone
+                        changed_fields.append("phone_number")
                     if company and not existing.company:
                         existing.company = company
+                        changed_fields.append("company")
                     if position and not existing.position:
                         existing.position = position
+                        changed_fields.append("position")
                     if address and not existing.address:
                         existing.address = address
+                        changed_fields.append("address")
                     if birthday and not existing.birthday:
                         existing.birthday = birthday
+                        changed_fields.append("birthday")
                     if notes and (not existing.notes or notes not in existing.notes):
                         existing.notes = f"{existing.notes}\n{notes}" if existing.notes else notes
+                        changed_fields.append("notes")
                     for group_name in group_names:
                         group = get_or_create_group(group_name)
                         if group not in existing.groups:
                             existing.groups.append(group)
+                    record_contact_change(
+                        session, existing, "google_import", changed_fields=changed_fields,
+                        note=f"Uzupełniono puste pola z eksportu Kontaktów Google ({args.csv})" if changed_fields else None,
+                    )
             else:
                 created_n += 1
                 logger.info("NOWY KONTAKT: %s %s%s", first_name or "", last_name,
@@ -238,6 +251,11 @@ def main():
                         contact.groups.append(get_or_create_group(group_name))
                     session.add(contact)
                     session.flush()
+                    record_contact_change(
+                        session, contact, "google_import",
+                        changed_fields=["first_name", "last_name", "category_id"],
+                        note=f"Zaimportowano z eksportu Kontaktów Google ({args.csv})",
+                    )
                     # Deliberately NOT added to existing_by_key: two different people can
                     # share a weak key (e.g. no last name — "Agnieszka" x3), and matching a
                     # later CSV row against a contact created earlier in this same run would

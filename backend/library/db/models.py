@@ -3159,6 +3159,46 @@ class ContactGroupMembership(Base):
     )
 
 
+class ContactChangeLog(Base):
+    """Append-only audit trail for a contact: how it was created/updated and
+    why — 'manual_edit' (UI), 'google_import' (google_contacts_import.py),
+    'whatsapp_analysis' (whatsapp_neighbor_profiles.py), 'linkedin_analysis'
+    (a confirmed ContactLookupResult promoted onto contacts.linkedin_url),
+    'osint_lookup', 'other'. changed_fields lists which Contact columns
+    changed in this event (diffed by the caller before commit); note is an
+    optional free-text reason. Deliberately NOT full row versioning —
+    contacts.updated_at remains the cheap "last touched" timestamp, this
+    table is the readable trail behind it.
+    """
+
+    __tablename__ = "contact_change_log"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('manual_edit', 'google_import', 'linkedin_analysis', "
+            "'whatsapp_analysis', 'osint_lookup', 'other')",
+            name="ck_contact_change_log_source",
+        ),
+        Index("idx_contact_change_log_contact", "contact_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    changed_fields: Mapped[list[str]] = mapped_column(
+        ARRAY(String(50)), nullable=False, server_default=sa_text("'{}'"),
+    )
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"ContactChangeLog(id={self.id!r}, contact_id={self.contact_id!r}, "
+            f"source={self.source!r}, changed_fields={self.changed_fields!r})"
+        )
+
+
 # The pre-11d before_flush hook that auto-created `sources` rows for
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which

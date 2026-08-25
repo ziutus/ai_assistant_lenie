@@ -11,10 +11,11 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func, or_, select
 from werkzeug.utils import secure_filename
 
+from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    Contact, ContactCategory, ContactGroup, ContactGroupMembership, ContactLookupResult, ContactOrganization,
-    ContactRelationship,
+    Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupMembership, ContactLookupResult,
+    ContactOrganization, ContactRelationship,
 )
 
 bp = Blueprint("contacts", __name__)
@@ -135,6 +136,17 @@ def _organization_dict(row: ContactOrganization) -> dict:
         "notes": row.notes,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _change_log_dict(row: ContactChangeLog) -> dict:
+    return {
+        "id": row.id,
+        "contact_id": row.contact_id,
+        "source": row.source,
+        "changed_fields": row.changed_fields or [],
+        "note": row.note,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
     }
 
 
@@ -359,6 +371,10 @@ def contact_groups_assign(contact_id: int):
 
     if group not in contact.groups:
         contact.groups.append(group)
+        record_contact_change(
+            session, contact, "manual_edit", changed_fields=["groups"],
+            note=f"Dodano do grupy „{group.name}”",
+        )
         try:
             session.commit()
         except Exception:
@@ -380,6 +396,10 @@ def contact_groups_unassign(contact_id: int, group_id: int):
     group = session.get(ContactGroup, group_id)
     if group is not None and group in contact.groups:
         contact.groups.remove(group)
+        record_contact_change(
+            session, contact, "manual_edit", changed_fields=["groups"],
+            note=f"Usunięto z grupy „{group.name}”",
+        )
         try:
             session.commit()
         except Exception:
@@ -476,10 +496,17 @@ def contacts_get(contact_id: int):
         .order_by(ContactOrganization.is_current.desc(), ContactOrganization.is_primary.desc())
     ).scalars().all()
 
+    change_log = session.execute(
+        select(ContactChangeLog)
+        .where(ContactChangeLog.contact_id == contact_id)
+        .order_by(ContactChangeLog.created_at.desc())
+    ).scalars().all()
+
     data = _contact_dict(row)
     data["relationships"] = relationships
     data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
     data["organizations"] = [_organization_dict(org) for org in organizations]
+    data["change_log"] = [_change_log_dict(cl) for cl in change_log]
     data["whatsapp_profile"] = row.whatsapp_profile
     data["photo_url"] = _contact_photo_url(row)
     return jsonify({"status": "success", "contact": data}), 200
@@ -527,6 +554,7 @@ def contact_photo_upload(contact_id: int):
 
     contact.photo_storage_key = key
     contact.updated_at = datetime.datetime.now()
+    record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
     try:
         session.commit()
     except Exception:
@@ -550,6 +578,7 @@ def contact_photo_delete(contact_id: int):
     # primitive (same tradeoff as document_images.py's replace functions).
     contact.photo_storage_key = None
     contact.updated_at = datetime.datetime.now()
+    record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
     try:
         session.commit()
     except Exception:
@@ -581,16 +610,26 @@ def contacts_add():
     elif session.get(ContactCategory, category_id) is None:
         return {"status": "error", "message": "category_id not found"}, 400
 
+    change_source = (data.get("change_source") or "manual_edit").strip()
+    if change_source not in CONTACT_CHANGE_SOURCES:
+        return {"status": "error", "message": f"change_source must be one of {CONTACT_CHANGE_SOURCES}"}, 400
+    change_note = (data.get("change_note") or "").strip() or None
+
     row = Contact(category_id=category_id, last_name=last_name)
+    changed_fields = ["last_name"]
     for field in _CONTACT_FIELDS:
         if field == "last_name":
             continue
         if field in data:
             setattr(row, field, (data.get(field) or "").strip() or None)
+            changed_fields.append(field)
     if "birthday" in data:
         row.birthday = data.get("birthday") or None
+        changed_fields.append("birthday")
 
     session.add(row)
+    session.flush()
+    record_contact_change(session, row, change_source, changed_fields=changed_fields, note=change_note)
     try:
         session.commit()
     except Exception:
@@ -611,27 +650,48 @@ def contacts_update(contact_id: int):
     if row is None:
         return {"status": "error", "message": "Contact not found"}, 404
 
+    change_source = (data.get("change_source") or "manual_edit").strip()
+    if change_source not in CONTACT_CHANGE_SOURCES:
+        return {"status": "error", "message": f"change_source must be one of {CONTACT_CHANGE_SOURCES}"}, 400
+    change_note = (data.get("change_note") or "").strip() or None
+    changed_fields = []
+
     if "last_name" in data:
         last_name = (data.get("last_name") or "").strip()
         if not last_name:
             return {"status": "error", "message": "last_name cannot be empty"}, 400
+        if row.last_name != last_name:
+            changed_fields.append("last_name")
         row.last_name = last_name
     for field in _CONTACT_FIELDS:
         if field == "last_name":
             continue
         if field in data:
-            setattr(row, field, (data.get(field) or "").strip() or None)
+            new_value = (data.get(field) or "").strip() or None
+            if getattr(row, field) != new_value:
+                changed_fields.append(field)
+            setattr(row, field, new_value)
     if "birthday" in data:
-        row.birthday = data.get("birthday") or None
+        new_birthday = data.get("birthday") or None
+        old_birthday = row.birthday.isoformat() if row.birthday else None
+        if old_birthday != new_birthday:
+            changed_fields.append("birthday")
+        row.birthday = new_birthday
     if "category_id" in data:
         category_id = data.get("category_id")
         if session.get(ContactCategory, category_id) is None:
             return {"status": "error", "message": "category_id not found"}, 400
+        if row.category_id != category_id:
+            changed_fields.append("category_id")
         row.category_id = category_id
     if "is_archived" in data:
-        row.is_archived = bool(data.get("is_archived"))
+        new_is_archived = bool(data.get("is_archived"))
+        if row.is_archived != new_is_archived:
+            changed_fields.append("is_archived")
+        row.is_archived = new_is_archived
 
     row.updated_at = datetime.datetime.now()
+    record_contact_change(session, row, change_source, changed_fields=changed_fields, note=change_note)
     try:
         session.commit()
     except Exception:
@@ -783,8 +843,12 @@ def contact_lookup_results_update(lookup_result_id: int):
     # trail, contacts.linkedin_url remains the one confirmed profile.
     if row.status == "confirmed" and row.lookup_type == "linkedin" and row.url:
         contact = session.get(Contact, row.contact_id)
-        if contact is not None:
+        if contact is not None and contact.linkedin_url != row.url:
             contact.linkedin_url = row.url
+            record_contact_change(
+                session, contact, "linkedin_analysis", changed_fields=["linkedin_url"],
+                note=f"Potwierdzony wynik OSINT (lookup #{row.id})",
+            )
 
     try:
         session.commit()
