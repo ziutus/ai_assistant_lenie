@@ -185,6 +185,8 @@ This ADR's "DNS: Google Cloud DNS" decision assumed `lenie-ai.eu` itself would m
 
 This is a narrower, cheaper deviation than it looks: the "DNS: Google Cloud DNS" section's cost/reasoning (~$0.20-0.25/month per zone) is unaffected, since `gcloud.lenie-ai.eu` is still a Cloud DNS managed zone — only the parent domain's registrar-level authority stays with Route53.
 
+**Verified end-to-end 2026-08-26**: deployed (PR #584) and confirmed live — the VM was stopped and restarted (getting a new ephemeral IP, `34.118.10.127` → `34.158.231.226`), Cloud DNS updated automatically, and the NAS reconnected via QVPN Service Center using the *same* `.ovpn` profile (pointing at `vpn.gcloud.lenie-ai.eu`) with no manual IP lookup or profile regeneration needed — the actual problem this addendum's design set out to solve. Also start/stop via the new `vpn-relay-control` Cloud Function was exercised live, not just planned. Also codifies the "Start/stop control" section's original API Gateway + Cloud Function design further: only the Cloud Function part shipped so far, deliberately without a public HTTP trigger — see `infra/gcloud/terraform/CLAUDE.md` for the IAM pitfalls hit deploying it in a project with no auto-granted default service account roles, and a startup-script bug (endpoint baked as the ephemeral IP instead of the hostname) that would have silently defeated this whole addendum if left unfixed.
+
 ## Open items for implementation
 
 - Verify current GCloud pricing via the official calculator before
