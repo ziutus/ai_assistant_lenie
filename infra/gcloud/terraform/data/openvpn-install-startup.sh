@@ -25,8 +25,14 @@ chmod +x openvpn-install.sh
 # ping-restart reconnect ("TLS Error: could not determine wrapping"), forcing a manual
 # disconnect/reconnect in the QTS UI every ~4 minutes. The static key has no such renegotiation
 # step, so QNAP's client reconnects on its own. Verified live 2026-08-25.
+#
+# --endpoint is the stable Cloud DNS hostname, not $EXTERNAL_IP - it's baked verbatim into
+# /etc/openvpn/server/client-template.txt and reused for every client generated from this server
+# from now on (including ones added later by hand via `client add`), so using the ephemeral IP
+# here would silently defeat the whole point of the DNS work below: every .ovpn would still need
+# regenerating on every restart.
 ./openvpn-install.sh install \
-  --endpoint "$EXTERNAL_IP" \
+  --endpoint vpn.gcloud.lenie-ai.eu \
   --port 1194 \
   --protocol udp \
   --client-to-client \
