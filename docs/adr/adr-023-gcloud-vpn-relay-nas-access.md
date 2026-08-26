@@ -173,6 +173,20 @@ ADR was written — do that before provisioning.
   becomes unused; no need to remove it, but it should not be re-enabled as
   part of this work (this ADR replaces that approach, not extends it).
 
+## Addendum (2026-08-26): DNS delegation instead of a full domain move to Cloud DNS
+
+Phase 1 (bare VM + OpenVPN server) was implemented and verified end-to-end 2026-08-25 (PR #583) — see `infra/gcloud/terraform/CLAUDE.md` for what actually shipped and the pitfalls hit along the way.
+
+This ADR's "DNS: Google Cloud DNS" decision assumed `lenie-ai.eu` itself would move to Cloud DNS. In practice `lenie-ai.eu` stays in AWS Route53 (hosted zone `Z07906713RCJHAZLQEP4C`) — it still serves the landing page and backs the DynamoDB page-cache (`infra/aws/CLAUDE.md`), and a full domain move is only planned once those migrate too. Instead:
+
+- `gcloud.lenie-ai.eu` is a new **delegated subdomain**: a zone in Google Cloud DNS (`infra/gcloud/terraform/dns.tf`), with a one-time NS record added manually to the Route53 zone pointing at it. That NS record is the *only* touch of AWS in this whole design — added once via `aws route53 change-resource-record-sets`, deliberately kept out of Terraform (no `aws` provider in the otherwise pure-GCP config).
+- Every record under `*.gcloud.lenie-ai.eu` (including `vpn.gcloud.lenie-ai.eu`, the relay's hostname) is served and updated directly through Cloud DNS from then on — no AWS credential exists anywhere in the ongoing automation.
+- The DNS record update itself is done by the **VM's own startup-script** on every boot (reads its own ephemeral external IP from the GCP metadata server), not by the start/stop Cloud Function — keeping the Cloud Function free of any DNS concern and scoped to exactly the "Start/stop control" role this ADR originally described for it.
+
+This is a narrower, cheaper deviation than it looks: the "DNS: Google Cloud DNS" section's cost/reasoning (~$0.20-0.25/month per zone) is unaffected, since `gcloud.lenie-ai.eu` is still a Cloud DNS managed zone — only the parent domain's registrar-level authority stays with Route53.
+
+**Verified end-to-end 2026-08-26**: deployed (PR #584) and confirmed live — the VM was stopped and restarted (getting a new ephemeral IP, `34.118.10.127` → `34.158.231.226`), Cloud DNS updated automatically, and the NAS reconnected via QVPN Service Center using the *same* `.ovpn` profile (pointing at `vpn.gcloud.lenie-ai.eu`) with no manual IP lookup or profile regeneration needed — the actual problem this addendum's design set out to solve. Also start/stop via the new `vpn-relay-control` Cloud Function was exercised live, not just planned. Also codifies the "Start/stop control" section's original API Gateway + Cloud Function design further: only the Cloud Function part shipped so far, deliberately without a public HTTP trigger — see `infra/gcloud/terraform/CLAUDE.md` for the IAM pitfalls hit deploying it in a project with no auto-granted default service account roles, and a startup-script bug (endpoint baked as the ephemeral IP instead of the hostname) that would have silently defeated this whole addendum if left unfixed.
+
 ## Open items for implementation
 
 - Verify current GCloud pricing via the official calculator before

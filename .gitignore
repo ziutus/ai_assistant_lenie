@@ -69,6 +69,8 @@ terraform.rc
 /infra/gcloud/.terraform.lock.hcl
 /infra/gcloud/plan.txt
 /infra/gcloud/plan_destroy.txt
+/infra/gcloud/terraform/data/vpn-relay-control.zip
+/infra/gcloud/terraform/tfplan.bin
 /infra/gcloud/terraform-server/.terraform.lock.hcl
 /Dockerfile.bak
 /Dockerfile.bak.bak

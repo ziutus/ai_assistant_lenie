@@ -149,6 +149,18 @@ nas-release-all: ## Build and push all images to NAS registry
 aws-smoke-test:     ## Run AWS smoke test for URL add flow
 	bash infra/aws/cloudformation/smoke-test-url-add.sh -p lenie -s dev -r us-east-1
 
+# GCloud VPN relay (ADR-023) - start/stop via the vpn-relay-control Cloud Function
+GCLOUD_FUNCTION_REGION ?= europe-central2
+
+gcloud-vpn-start:   ## Start the GCP OpenVPN relay VM
+	gcloud functions call vpn-relay-control --gen2 --region=$(GCLOUD_FUNCTION_REGION) --data='{"action":"start"}'
+
+gcloud-vpn-stop:    ## Stop the GCP OpenVPN relay VM
+	gcloud functions call vpn-relay-control --gen2 --region=$(GCLOUD_FUNCTION_REGION) --data='{"action":"stop"}'
+
+gcloud-vpn-status:  ## Check status of the GCP OpenVPN relay VM
+	gcloud functions call vpn-relay-control --gen2 --region=$(GCLOUD_FUNCTION_REGION) --data='{"action":"status"}'
+
 security-all:   ## Run all security checks
 	@echo "=== Running Semgrep ==="
 	-uvx semgrep --config=auto backend/
