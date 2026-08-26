@@ -3,13 +3,18 @@ set -euxo pipefail
 exec > /var/log/openvpn-relay-startup.log 2>&1
 
 MARKER=/root/.openvpn-relay-startup-done
-if [ -f "$MARKER" ]; then
-  echo "Startup script already completed, skipping."
-  exit 0
-fi
 
 EXTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" \
   "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip")
+
+# Only the OpenVPN install itself is one-time - the marker used to guard the whole script and
+# `exit 0` before reaching this point, which meant nothing below it (including the DNS update)
+# ever ran again after the VM's first boot, since the marker persists on the boot disk across
+# stop/start cycles (the disk isn't recreated). The DNS update below must run every boot, since
+# the external IP is ephemeral and changes on every start.
+if [ -f "$MARKER" ]; then
+  echo "OpenVPN already installed, skipping install."
+else
 
 cd /root
 curl -o openvpn-install.sh https://raw.githubusercontent.com/angristan/openvpn-install/master/openvpn-install.sh
@@ -56,3 +61,27 @@ systemctl restart openvpn-server@server
 
 chmod 644 /root/nas.ovpn /root/demo-laptop.ovpn
 touch "$MARKER"
+
+fi
+
+# Keep the hostname current with the ephemeral IP - runs every boot (unlike the OpenVPN
+# install above), since a new IP is assigned each time the VM starts. Authenticates via the
+# service account attached to this VM (roles/dns.admin scoped to this one zone, see dns.tf) -
+# no credentials stored on the instance.
+if ! command -v gcloud &>/dev/null; then
+  curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+  echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+    >/etc/apt/sources.list.d/google-cloud-sdk.list
+  apt-get update -qq
+  apt-get install -y -qq google-cloud-cli
+fi
+
+DNS_ZONE=gcloud-lenie-ai-eu
+DNS_RECORD=vpn.gcloud.lenie-ai.eu.
+DNS_TTL=60
+
+if gcloud dns record-sets describe "$DNS_RECORD" --zone="$DNS_ZONE" --type=A &>/dev/null; then
+  gcloud dns record-sets update "$DNS_RECORD" --zone="$DNS_ZONE" --type=A --ttl="$DNS_TTL" --rrdatas="$EXTERNAL_IP"
+else
+  gcloud dns record-sets create "$DNS_RECORD" --zone="$DNS_ZONE" --type=A --ttl="$DNS_TTL" --rrdatas="$EXTERNAL_IP"
+fi

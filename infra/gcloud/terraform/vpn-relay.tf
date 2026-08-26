@@ -17,5 +17,10 @@ resource "google_compute_instance" "vpn_relay" {
     access_config {}
   }
 
+  service_account {
+    email  = google_service_account.vpn_relay_vm.email
+    scopes = ["cloud-platform"]
+  }
+
   metadata_startup_script = file("${path.module}/data/openvpn-install-startup.sh")
 }
