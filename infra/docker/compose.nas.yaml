@@ -89,6 +89,10 @@ services:
       OBSIDIAN_VAULT_PATH: /app/obsidian-vault
     volumes:
       - lenie-obsidian-vault-data:/app/obsidian-vault:ro
+      # Host-health snapshot for the worker admission gate (docs/deployment/nas/
+      # host-health-collector.md). Read-only; the QNAP Task Scheduler job owns
+      # writes. Harmless when HOST_ADMISSION_ENABLED is unset (the default).
+      - /share/ContainerNew/lenie-host-health:/run/lenie-host-health:ro
     networks:
       - lenie-net
     depends_on:
@@ -113,6 +117,7 @@ services:
       WORKER_HEARTBEAT_PATH: /tmp/lenie-document-worker-heartbeat
     volumes:
       - lenie-document-work:/app/work
+      - /share/ContainerNew/lenie-host-health:/run/lenie-host-health:ro
     networks:
       - lenie-net
     depends_on:
@@ -136,6 +141,8 @@ services:
       - /share/ContainerNew/lenie-env/.env
     environment:
       WORKER_HEARTBEAT_PATH: /tmp/lenie-cloud-bridge-heartbeat
+    volumes:
+      - /share/ContainerNew/lenie-host-health:/run/lenie-host-health:ro
     networks:
       - lenie-net
     depends_on:
