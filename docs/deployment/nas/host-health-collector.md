@@ -20,6 +20,13 @@ file, so deploying this change is safe on its own. Nothing happens until an
 operator has installed the collector, confirmed the snapshots, and flipped the
 Vault flag. This does **not** change `/readiness` or any API/search behaviour.
 
+**Current state (2026-08-27):** Step 1 is done — `collect-host-health.sh` is
+installed at `/share/ContainerNew/lenie-host-health/` and runs every minute
+via `/etc/config/crontab`, producing valid snapshots. Step 2 (the compose
+mount) is on the branch but not yet deployed — the running workers still need
+a stack redeploy. Step 3 (`HOST_ADMISSION_ENABLED=true` in Vault) is **not**
+done, so the gate is still inert.
+
 ## Snapshot format
 
 `collect-host-health.sh` writes exactly this shape (all byte counts are bytes,
@@ -103,28 +110,11 @@ existing `job start` lines — a deferred claim is the only WARNING this adds.
    reports `0`). `disk_temperatures_c` is `[]` on a NAS without `smartctl`
    (e.g. the TS-453Be) — expected, the gate then skips the temperature check.
 
-3. Register it in **QNAP Task Scheduler**. In QTS 5.2 it is at
-   *Control Panel → System → Task Scheduler* (a top-level entry in the left
-   column of the System group).
-
-   - *Create → Create a Scheduled Script* (older builds: *Create a
-     User-defined Script*).
-   - **Task name**: `lenie-host-health`.
-   - **User**: `admin` (needs read on `/proc`).
-   - **Command**:
-
-     ```sh
-     sh /share/ContainerNew/lenie-host-health/collect-host-health.sh
-     ```
-
-   - **Schedule**: pick *Custom* and enter the cron expression
-     `* * * * *` (every minute). The Daily/Weekly/Monthly presets are not
-     fine-grained enough — use *Custom*.
-   - Save. Select the task → *Run now*, then check *Result* is `0` and
-     `host-health.json` has a fresh `collected_at`.
-
-   **crontab alternative** (this NAS already has `* * * * *` entries, so
-   minute cron works; `/etc/config/crontab` survives reboots):
+3. Schedule it once a minute via **crontab**. QTS has no cron GUI — there is
+   no "Task Scheduler" in Control Panel (verified on QTS 5.2.10) — so edit
+   `/etc/config/crontab` directly. It lives on the config partition and
+   survives reboots; this NAS already runs other `* * * * *` jobs, so
+   minute-level cron works.
 
    ```bash
    ssh admin@192.168.200.7
@@ -134,8 +124,9 @@ existing `job start` lines — a deferred claim is the only WARNING this adds.
    /etc/init.d/crond.sh restart
    ```
 
-   Prefer the Task Scheduler GUI — QTS rewrites `/etc/config/crontab` from the
-   Task Scheduler DB on some config changes, which can drop a hand-added line.
+   `crontab /etc/config/crontab` reloads the table (QTS may re-sort the
+   lines — that is fine); the `crond` restart makes it take effect
+   immediately without waiting for the next reload.
 
 4. Let it run for a few minutes, then verify freshness from a dev machine or
    on the NAS:
