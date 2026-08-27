@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailId = '';
   let detectedEmailPublishedOn = '';
   let detectedEmailImages = [];
-  const debugState = { version: '1.0.55' };
+  const debugState = { version: '1.0.56' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -970,14 +970,20 @@ document.addEventListener('DOMContentLoaded', function () {
         })
         .then(async response => {
           const result = await response.json().catch(() => ({}));
+          const serverLabel = debugState.endpoint_role === 'nas' ? 'NAS' : 'AWS';
+          updateDebug({
+            response_status: response.status,
+            response_result_status: result.status || null,
+            destination_instance: serverLabel,
+            document_id: result.document_id ?? null
+          });
           if (response.status === 409 && result.status === 'already_exists') {
             const suffix = result.missing_raw_html
               ? ' Brakuje mu surowego HTML — możesz użyć opcji jego uzupełnienia.'
               : '';
-            throw new Error(`Dokument jest już w bazie (ID: ${result.document_id}).${suffix}`);
+            throw new Error(`Dokument jest już w bazie ${serverLabel} (ID: ${result.document_id}).${suffix}`);
           }
           if (!response.ok) {
-            const serverLabel = debugState.endpoint_role === 'nas' ? 'NAS' : 'AWS';
             if ([401, 403].includes(response.status)) {
               throw new Error(`${serverLabel} odrzucił autoryzację (HTTP ${response.status}). Sprawdź Klucz API ${serverLabel}.`);
             }
@@ -986,7 +992,21 @@ document.addEventListener('DOMContentLoaded', function () {
           return result;
         })
         .then(result => {
-          alert(result.status === 'queued' ? 'Zgłoszenie zostało przekazane do importu.' : 'Strona została dodana pomyślnie!');
+          const serverLabel = debugState.endpoint_role === 'nas' ? 'NAS' : 'AWS';
+          const hasDocumentId = result.document_id !== undefined && result.document_id !== null;
+          let message;
+          if (result.status === 'queued') {
+            message = `Zgłoszenie przekazano do importu w ${serverLabel}.`;
+            message += hasDocumentId
+              ? `\nID dokumentu: ${result.document_id}`
+              : '\nImport jest asynchroniczny — ID dokumentu nie zostało jeszcze przydzielone.';
+          } else {
+            message = `Strona została dodana do ${serverLabel}.`;
+            message += hasDocumentId
+              ? `\nID dokumentu: ${result.document_id}`
+              : '\nSerwer nie zwrócił ID dokumentu.';
+          }
+          alert(message);
           noteInput.value = '';
           setTimeout(() => window.close(), 500);
         })

@@ -11,6 +11,10 @@ services:
     image: 192.168.200.7:5005/lenie-ai-db:latest
     container_name: lenie-ai-db
     restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 768m
+    cpus: 1.25
+    pids_limit: 256
     ports:
       - "5434:5432"
     environment:
@@ -29,6 +33,10 @@ services:
     image: 192.168.200.7:5005/lenie-ai-server:latest
     container_name: lenie-ai-server
     restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 512m
+    cpus: 0.75
+    pids_limit: 256
     ports:
       - "5055:5000"
     env_file:
@@ -68,6 +76,10 @@ services:
     image: 192.168.200.7:5005/lenie-ai-server:latest
     container_name: lenie-worker
     restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 384m
+    cpus: 0.75
+    pids_limit: 192
     command: ["/app/.venv/bin/python", "worker.py", "--scheduler", "--types", "feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect"]
     env_file:
       - /share/ContainerNew/lenie-env/.env
@@ -89,6 +101,10 @@ services:
     image: 192.168.200.7:5005/lenie-ai-document-worker:latest
     container_name: lenie-document-worker
     restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 512m
+    cpus: 1.0
+    pids_limit: 256
     command: ["/app/.venv/bin/python", "worker.py", "--types", "document_prepare"]
     env_file:
       - /share/ContainerNew/lenie-env/.env
@@ -109,6 +125,12 @@ services:
     image: 192.168.200.7:5005/lenie-ai-server:latest
     container_name: lenie-cloud-bridge
     restart: unless-stopped
+    # The legacy bridge is deliberately retained while its repeated failures
+    # are diagnosed; it shares the host-safety limits of the rest of the stack.
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: 0.25
+    pids_limit: 128
     command: ["/app/.venv/bin/python", "worker.py", "--types", "legacy_aws_pull"]
     env_file:
       - /share/ContainerNew/lenie-env/.env
@@ -126,6 +148,10 @@ services:
     image: 192.168.200.7:5005/lenie-ai-server:latest
     container_name: lenie-migrate
     restart: "no"
+    mem_limit: 1g
+    mem_reservation: 256m
+    cpus: 0.5
+    pids_limit: 128
     # The repository intentionally has independent Alembic branches; upgrade
     # every branch rather than failing when more than one head exists.
     command: ["/app/.venv/bin/alembic", "-c", "/app/alembic.ini", "upgrade", "heads"]
@@ -141,6 +167,10 @@ services:
     image: 192.168.200.7:5005/lenie-ai-frontend:latest
     container_name: lenie-ai-frontend
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.25
+    pids_limit: 128
     ports:
       - "3000:80"
     networks:
@@ -150,6 +180,10 @@ services:
     image: 192.168.200.7:5005/lenie-ai-app2:latest
     container_name: lenie-ai-app2
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.25
+    pids_limit: 128
     ports:
       - "3001:80"
     networks:
@@ -163,6 +197,10 @@ services:
     image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: lenie-minio
     restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 256m
+    cpus: 0.5
+    pids_limit: 128
     ports:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Web console
@@ -187,6 +225,10 @@ services:
     # run on this NAS before pinning — first deploy should be watched.
     image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     restart: "no"
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: 0.1
+    pids_limit: 64
     env_file:
       - /share/ContainerNew/lenie-env/minio.env
     entrypoint: ["/bin/sh", "-c"]
@@ -204,6 +246,10 @@ services:
     image: registry:2
     container_name: lenie-registry
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
+    cpus: 0.25
+    pids_limit: 128
     ports:
       - "5005:5000"
     environment:
@@ -221,6 +267,10 @@ services:
     image: joxit/docker-registry-ui:latest
     container_name: lenie-registry-ui
     restart: unless-stopped
+    mem_limit: 128m
+    mem_reservation: 32m
+    cpus: 0.1
+    pids_limit: 64
     ports:
       - "8550:80"
     environment:
@@ -237,6 +287,10 @@ services:
     image: hashicorp/vault:1.21.3
     container_name: lenie-vault
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: 0.25
+    pids_limit: 128
     ports:
       - "8210:8200"
     cap_add:
@@ -261,6 +315,10 @@ services:
     image: 192.168.200.7:5005/lenie-ner-service:latest
     container_name: lenie-ner-service
     restart: unless-stopped
+    mem_limit: 1536m
+    mem_reservation: 512m
+    cpus: 0.75
+    pids_limit: 256
     # No published port — internal-only, reachable from other containers via lenie-net
     # (http://lenie-ner-service:8090). See ner_service/README.md.
     networks:
@@ -282,6 +340,10 @@ services:
     image: ghcr.io/belphemur/obsidian-headless-sync-docker:0.0.14
     container_name: obsidian-headless-sync
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: 0.25
+    pids_limit: 128
     env_file:
       - /share/ContainerNew/lenie-env/obsidian_headless.env
     volumes:
