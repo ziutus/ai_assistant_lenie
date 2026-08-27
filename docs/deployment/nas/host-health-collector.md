@@ -100,35 +100,42 @@ existing `job start` lines — a deferred claim is the only WARNING this adds.
 
    Confirm the JSON has all six fields and sane values. Run it a second time
    and check `iowait_percent` becomes a real number (the first run always
-   reports `0`).
+   reports `0`). `disk_temperatures_c` is `[]` on a NAS without `smartctl`
+   (e.g. the TS-453Be) — expected, the gate then skips the temperature check.
 
-3. Register it in **QNAP Task Scheduler** (QTS: *Control Panel → System →
-   Task Scheduler*):
+3. Register it in **QNAP Task Scheduler**. In QTS 5.2 it is at
+   *Control Panel → System → Task Scheduler* (a top-level entry in the left
+   column of the System group).
 
-   - *Create → Create a User-defined Script*.
+   - *Create → Create a Scheduled Script* (older builds: *Create a
+     User-defined Script*).
    - **Task name**: `lenie-host-health`.
-   - **User**: `admin` (needs read on `/proc` and, for disk temps, `smartctl`).
-   - **Schedule**: *Custom* → run *Every 1 minute(s)*. If your QTS build only
-     offers hourly/daily granularity in the GUI, use the crontab fallback
-     below instead.
+   - **User**: `admin` (needs read on `/proc`).
    - **Command**:
 
      ```sh
      sh /share/ContainerNew/lenie-host-health/collect-host-health.sh
      ```
 
-   - Save. Select the task → *Run now* → *Results* to confirm exit code `0`.
+   - **Schedule**: pick *Custom* and enter the cron expression
+     `* * * * *` (every minute). The Daily/Weekly/Monthly presets are not
+     fine-grained enough — use *Custom*.
+   - Save. Select the task → *Run now*, then check *Result* is `0` and
+     `host-health.json` has a fresh `collected_at`.
 
-   **crontab fallback** (also the way to make the schedule survive a firmware
-   update — Task Scheduler entries usually do, hand-edited crontabs do not
-   unless written to `/etc/config/crontab`):
+   **crontab alternative** (this NAS already has `* * * * *` entries, so
+   minute cron works; `/etc/config/crontab` survives reboots):
 
    ```bash
    ssh admin@192.168.200.7
-   echo '* * * * * sh /share/ContainerNew/lenie-host-health/collect-host-health.sh' >> /etc/config/crontab
+   grep -q lenie-host-health /etc/config/crontab || \
+     echo '* * * * * sh /share/ContainerNew/lenie-host-health/collect-host-health.sh' >> /etc/config/crontab
    crontab /etc/config/crontab
    /etc/init.d/crond.sh restart
    ```
+
+   Prefer the Task Scheduler GUI — QTS rewrites `/etc/config/crontab` from the
+   Task Scheduler DB on some config changes, which can drop a hand-added line.
 
 4. Let it run for a few minutes, then verify freshness from a dev machine or
    on the NAS:
@@ -163,7 +170,7 @@ these in Vault (`secret/lenie/dev`) with
 | `HOST_ADMISSION_ENABLED` | `false` | set to `true` to turn the gate on |
 | `HOST_HEALTH_PATH` | `/run/lenie-host-health/host-health.json` | container-side path |
 | `HOST_HEALTH_MAX_AGE_SECONDS` | `120` | snapshot older than this ⇒ `host_health_stale` |
-| `WORKER_LOAD_1_MAX` | `2.5` | TS-453Be has 4 cores |
+| `WORKER_LOAD_1_MAX` | `2.5` | TS-453Be has 4 cores. Observed idle baseline is load ~1.8–2.2 with brief spikes past 2.5 (QTS services, Drive Analyzer, QuFirewall), so the `2.5` default is borderline — watch a few snapshots and set this to ~`3.5` so only real contention defers a claim. |
 | `WORKER_MEM_AVAILABLE_MIN_BYTES` | `2147483648` | 2 GiB |
 | `WORKER_SWAP_USED_MAX_BYTES` | `268435456` | 256 MiB |
 | `WORKER_IOWAIT_MAX_PERCENT` | `15` | |
