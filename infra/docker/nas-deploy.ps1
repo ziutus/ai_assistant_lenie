@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("frontend", "app2", "backend", "worker", "document-worker", "db", "minio", "minio-init", "ner-service", "obsidian-headless-sync", "all")]
+    [ValidateSet("frontend", "app2", "backend", "worker", "cloud-bridge", "document-worker", "db", "minio", "minio-init", "ner-service", "obsidian-headless-sync", "all")]
     [string[]]$Service = @("all"),
     [switch]$SkipBuild,
     [switch]$ComposeOnly,
@@ -20,14 +20,16 @@ $ScriptDir = $PSScriptRoot
 $ProjectRoot = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 
 $Definitions = @{
-    # backend, worker and lenie-migrate SHARE one image (lenie-ai-server:latest);
-    # document-worker builds its own tag (adds the markdown extra). A backend
-    # code change must therefore redeploy every consuming service (usually
-    # -Service backend,worker) or one of them keeps running stale code.
+    # backend, worker, cloud-bridge and lenie-migrate SHARE one image
+    # (lenie-ai-server:latest); document-worker builds its own tag (adds the
+    # markdown extra). A backend code change must therefore redeploy every
+    # consuming service (usually -Service backend,worker,cloud-bridge) or one
+    # of them keeps running stale code.
     frontend      = @{ Image = "lenie-ai-frontend:latest"; RegistryImage = "$Registry/lenie-ai-frontend:latest"; Dockerfile = "web_interface_react/Dockerfile"; Compose = "lenie-ai-frontend" }
     app2          = @{ Image = "lenie-ai-app2:latest"; RegistryImage = "$Registry/lenie-ai-app2:latest"; Dockerfile = "web_interface_app2/Dockerfile"; Compose = "lenie-ai-app2" }
     backend       = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-ai-server" }
     worker        = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-worker" }
+    "cloud-bridge" = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-cloud-bridge" }
     "document-worker" = @{ Image = "lenie-ai-document-worker:latest"; RegistryImage = "$Registry/lenie-ai-document-worker:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-document-worker"; BuildArgs = @("--build-arg", "UV_EXTRA_ARGS=--extra docker --extra markdown") }
     db            = @{ Image = "lenie-ai-db:latest"; RegistryImage = "$Registry/lenie-ai-db:latest"; Dockerfile = "infra/docker/Postgresql/Dockerfile"; Compose = "lenie-ai-db" }
     "ner-service" = @{ Image = "lenie-ner-service:latest"; RegistryImage = "$Registry/lenie-ner-service:latest"; Dockerfile = "ner_service/Dockerfile"; Compose = "lenie-ner-service" }
@@ -139,7 +141,7 @@ $ComposeNames = @($Services | ForEach-Object { $Definitions[$_].Compose })
 foreach ($ComposeName in $ComposeNames) {
     Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile pull $ComposeName" } "Pull $ComposeName"
 }
-if ($Services -contains "backend" -or $Services -contains "worker" -or $Services -contains "document-worker") {
+if ($Services -contains "backend" -or $Services -contains "worker" -or $Services -contains "cloud-bridge" -or $Services -contains "document-worker") {
     # lenie-migrate shares the backend image (lenie-ai-server:latest). Pulling the
     # requested service above doesn't guarantee that image is fresh — e.g. a
     # document-worker-only deploy pulls lenie-document-worker (a different image),

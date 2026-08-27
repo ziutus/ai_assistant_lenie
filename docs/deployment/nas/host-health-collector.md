@@ -146,9 +146,16 @@ for `lenie-worker`, `lenie-document-worker` and `lenie-cloud-bridge`:
       - /share/ContainerNew/lenie-host-health:/run/lenie-host-health:ro
 ```
 
-Redeploy the stack (`infra/docker/nas-deploy.ps1` / `.sh`) so the workers pick
-up the mount. Harmless while the gate is still disabled — nothing reads the
-path yet.
+Redeploy so the workers pick up the mount:
+
+```bash
+bash infra/docker/nas-deploy.sh --sync-compose backend worker cloud-bridge document-worker
+```
+
+`backend` rebuilds the `lenie-ai-server` image the workers share; `worker`,
+`cloud-bridge` and `document-worker` are then pulled and recreated with the
+new compose file. Harmless while the gate is still disabled — nothing reads
+the path yet.
 
 ## Step 3 — enable the gate in Vault
 
