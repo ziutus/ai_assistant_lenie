@@ -28,11 +28,16 @@ LOCAL_COMPOSE_FILE="${SCRIPT_DIR}/compose.nas.yaml"
 LOCAL_SITE_RULES_FILE="${PROJECT_ROOT}/backend/data/site_rules.json"
 
 # Service definitions: name | local image | registry image | dockerfile
+# worker / cloud-bridge share the backend image (lenie-ai-server:latest) and
+# have no own Dockerfile entry — a backend code change must be deployed as
+# `backend worker cloud-bridge` so `backend` does the single build and the
+# others just get pulled + recreated.
 declare -A SVC_IMAGE=(
     [frontend]="lenie-ai-frontend:latest"
     [app2]="lenie-ai-app2:latest"
     [backend]="lenie-ai-server:latest"
     [worker]="lenie-ai-server:latest"
+    [cloud-bridge]="lenie-ai-server:latest"
     [document-worker]="lenie-ai-document-worker:latest"
     [db]="lenie-ai-db:latest"
     [ner-service]="lenie-ner-service:latest"
@@ -42,6 +47,7 @@ declare -A SVC_REGISTRY_IMAGE=(
     [app2]="${REGISTRY}/lenie-ai-app2:latest"
     [backend]="${REGISTRY}/lenie-ai-server:latest"
     [worker]="${REGISTRY}/lenie-ai-server:latest"
+    [cloud-bridge]="${REGISTRY}/lenie-ai-server:latest"
     [document-worker]="${REGISTRY}/lenie-ai-document-worker:latest"
     [db]="${REGISTRY}/lenie-ai-db:latest"
     [ner-service]="${REGISTRY}/lenie-ner-service:latest"
@@ -59,6 +65,7 @@ declare -A SVC_COMPOSE_NAME=(
     [app2]="lenie-ai-app2"
     [backend]="lenie-ai-server"
     [worker]="lenie-worker"
+    [cloud-bridge]="lenie-cloud-bridge"
     [document-worker]="lenie-document-worker"
     [db]="lenie-ai-db"
     [minio]="lenie-minio"
@@ -224,10 +231,16 @@ deploy_service() {
     echo -e "${BLUE}  Deploying: ${svc}${NC}"
     echo -e "${BLUE}========================================${NC}"
 
-    # Services without Dockerfile use official images (e.g., minio) — skip build/push
+    # No Dockerfile entry means either an official image (minio) or a service
+    # that reuses another's build (worker/cloud-bridge share lenie-ai-server,
+    # built via `backend`) — nothing to build here, just pull + recreate later.
     if [ -z "${SVC_DOCKERFILE[$svc]:-}" ]; then
-        log "Serwis ${svc} używa oficjalnego obrazu — pomijanie build/push"
-        ok "Deploy ${svc} — obraz z Docker Hub (compose pull)"
+        if [ -n "${SVC_IMAGE[$svc]:-}" ]; then
+            log "Serwis ${svc} współdzieli obraz ${SVC_IMAGE[$svc]} — buduj go przez 'backend'"
+        else
+            log "Serwis ${svc} używa oficjalnego obrazu — pomijanie build/push"
+        fi
+        ok "Deploy ${svc} — rekreacja przy 'compose up' na NAS"
         return
     fi
 
@@ -251,7 +264,7 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-echo "Services: frontend, app2, backend, worker, document-worker, db, minio, ner-service, obsidian-headless-sync, all (default: core services)"
+echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, db, minio, ner-service, obsidian-headless-sync, all (default: core services)"
     echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
     echo "  minio, ner-service and obsidian-headless-sync must be deployed explicitly."
     echo ""
@@ -286,7 +299,7 @@ while [[ $# -gt 0 ]]; do
         --sync-compose)  SYNC_COMPOSE="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|worker|document-worker|db|minio|ner-service|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done
