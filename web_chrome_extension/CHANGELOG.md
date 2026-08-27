@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [1.0.56] - 2026-08-27
+### Dodane
+- Po wysłaniu popup podaje docelową instancję (`NAS` albo `AWS`) oraz ID dokumentu zwrócone przez API.
+- Endpoint AWS zwraca teraz również `document_id` (identyfikator rekordu DynamoDB), zachowując dotychczasowe `submission_id`.
+
 ## [1.0.55] - 2026-08-14
 ### Poprawione
 - Ekstrakcja postów Facebooka i LinkedIn odcina teraz treść posta na granicy paska reakcji/komentarzy (liczniki reakcji, „Most relevant"/„Najtrafniejsze", akcje Like/Comment/Share itp.) dla wszystkich ścieżek ekstrakcji, nie tylko dla dotychczasowego fallbacku — wcześniej pierwszy komentarz potrafił trafić do treści posta.

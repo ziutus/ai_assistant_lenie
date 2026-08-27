@@ -2,7 +2,7 @@
 
 Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. No build step — load unpacked directly from this folder.
 
-**Version**: 1.0.55 | **Manifest**: v3
+**Version**: 1.0.56 | **Manifest**: v3
 
 ## Directory Structure
 
@@ -75,7 +75,7 @@ The endpoint corresponds to `/url_add` in `backend/server.py` (Docker/K8s) or th
 - Validates that at least one endpoint has both a URL and its API key before sending
 - Shows alert with HTTP status and error message on failure
 - Button disabled with "Wysyłam..." (Sending...) text during request
-- Popup auto-closes 500ms after successful submission
+- On success, the popup states the destination instance (NAS/AWS) and returned document ID, then auto-closes after 500ms
 
 ## Permissions
 

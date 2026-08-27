@@ -2,6 +2,8 @@
 
 Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. Supports webpages, links, YouTube videos, movies, individual Facebook or LinkedIn posts, and an open Gmail message.
 
+After a successful send, the popup states whether the request reached NAS or AWS and shows the returned document ID. AWS returns its DynamoDB document ID while the import is queued for later synchronization to NAS.
+
 For a social media post the extension sends only the editable post text. Comments, service UI and page HTML are not imported. If Facebook or LinkedIn hides the post content, paste it into the displayed text field before sending.
 
 For Gmail the extension imports the visible text and sent date of the most recently expanded message in the open conversation. Visible links are kept as `label (URL)` and Gmail redirect URLs are unwrapped locally without opening them. Message-body images are saved as external HTTPS URLs and placed with `[imgN]` markers; 1×1 tracking pixels are ignored. It sends a synthetic `gmail://` identifier, not the Gmail page HTML, and the content remains editable in the popup before sending. It does not scan the inbox or use Google OAuth.
