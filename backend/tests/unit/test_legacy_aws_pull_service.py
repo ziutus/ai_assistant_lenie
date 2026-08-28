@@ -118,6 +118,21 @@ def test_partial_failure_logs_item_identity_and_exception(monkeypatch, caplog):
     assert "RuntimeError: S3 unavailable" in caplog.text
 
 
+def test_missing_identity_is_permanently_skipped_without_blocking_watermark(monkeypatch, caplog):
+    item = {"url": "https://example.test/missing-uuid"}
+    instance, aws_session, _table = service([item], monkeypatch)
+
+    with caplog.at_level("WARNING", logger="library.legacy_aws_pull_service"):
+        result = instance.run({"since": "2026-07-20T10:00:00Z"})
+
+    assert result["invalid"] == 1
+    assert result["skipped"] == 1
+    assert result["errors"] == 0
+    assert Tracker.instances[0].partial is None
+    assert "legacy AWS item skipped permanently uuid=None url=https://example.test/missing-uuid" in caplog.text
+    aws_session.client.assert_not_called()
+
+
 def test_limit_marks_import_partial_without_advancing_watermark(monkeypatch):
     instance, aws_session, _table = service([{"uuid": "u", "url": "https://example.test"}], monkeypatch)
     aws_session.client.return_value.get_object.side_effect = [

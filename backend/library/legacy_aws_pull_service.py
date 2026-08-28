@@ -185,7 +185,7 @@ class LegacyAwsPullService:
         items = self._query_items(table, query_since, started_at)
         if limit:
             items = items[:limit]
-        result = {"found": len(items), "added": 0, "skipped": 0, "refreshed": 0, "errors": 0,
+        result = {"found": len(items), "added": 0, "skipped": 0, "refreshed": 0, "invalid": 0, "errors": 0,
                   "watermark": started_at.isoformat(), "query_since": query_since.isoformat(), "dry_run": dry_run}
         if dry_run:
             return result
@@ -199,7 +199,18 @@ class LegacyAwsPullService:
                 try:
                     external_uuid = item.get("uuid") or item.get("s3_uuid")
                     if not item.get("url") or not external_uuid:
-                        raise ValueError("legacy item is missing url or uuid")
+                        # An item without its identity cannot refer to an S3
+                        # source and can never become importable through a
+                        # retry.  Record it explicitly, then let a complete
+                        # run advance the watermark past this legacy data.
+                        logger.warning(
+                            "legacy AWS item skipped permanently uuid=%s url=%s reason=missing_url_or_uuid",
+                            external_uuid,
+                            item.get("url"),
+                        )
+                        result["invalid"] += 1
+                        result["skipped"] += 1
+                        continue
                     # Local NAS documents may have been created without ever
                     # being copied to the legacy AWS bucket.  For normal
                     # creates, UUID is the idempotency boundary: do not probe
