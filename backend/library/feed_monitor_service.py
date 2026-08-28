@@ -260,6 +260,9 @@ def import_feed_item(
         if promoted:
             from library.document_processing_service import ensure_document_prepare_job
 
+            # commit expired `doc`, which is still the pre-flip LinkDocument
+            # instance — reload a correctly-typed one before touching it.
+            doc = session.get(Document, doc.id)
             ensure_document_prepare_job(session, doc)
         return item, doc
     except Exception:

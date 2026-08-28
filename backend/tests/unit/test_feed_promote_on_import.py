@@ -30,7 +30,9 @@ def _link_doc(**overrides):
 
 def _run(item, doc, *, document_type="webpage"):
     session = MagicMock()
-    session.get.side_effect = lambda model, identifier: item if identifier == 17 else SimpleNamespace(id=9)
+    session.get.side_effect = lambda model, identifier: (
+        item if identifier == 17 else doc if identifier == getattr(doc, "id", None) else SimpleNamespace(id=9)
+    )
     with (
         patch("library.feed_monitor_service.Document.get_by_url", return_value=doc),
         patch("library.feed_monitor_service.DocumentService"),

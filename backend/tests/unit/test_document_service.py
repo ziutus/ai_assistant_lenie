@@ -826,24 +826,23 @@ class TestImportDocument:
 class TestPromoteLinkToWebpage:
     def test_commits_once_and_enqueues_prepare_job(self):
         session = _make_session()
-        doc = _make_doc(document_type="link", text_md=None)
+        link_doc = _make_doc(document_type="link", text_md=None)
+        # After the commit the method re-fetches a correctly-typed instance
+        # (the pre-flip LinkDocument cannot be reloaded against a webpage row).
+        webpage_doc = _make_doc(document_type="webpage", text_md=None)
 
         with (
-            patch.object(Document, "get_by_id", return_value=doc),
+            patch.object(Document, "get_by_id", side_effect=[link_doc, webpage_doc]),
             patch("library.document_promotion.promote_link_to_webpage") as core,
             patch("library.document_processing_service.ensure_document_prepare_job") as ensure_job,
             patch.object(DocumentService, "_get_storage", return_value=MagicMock()),
         ):
-            def _flip(sess, storage, d, html=""):
-                d.document_type = "webpage"
-
-            core.side_effect = _flip
             ensure_job.return_value = MagicMock(id="job-9")
             result = DocumentService(session).promote_link_to_webpage(42, html="<p>x</p>")
 
         core.assert_called_once()
         session.commit.assert_called_once()
-        ensure_job.assert_called_once()
+        ensure_job.assert_called_once_with(session, webpage_doc)
         assert result.document_type == "webpage"
         assert result.processing_job_id == "job-9"
         assert result.already_webpage is False

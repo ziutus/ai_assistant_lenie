@@ -334,6 +334,10 @@ class DocumentService:
         _promote(self.session, self._get_storage(), doc, html=html)
         self.session.commit()
 
+        # The commit expired `doc`, and it is still the pre-flip STI class
+        # (LinkDocument) — reloading it against a row that is now `webpage`
+        # raises ObjectDeletedError. Re-fetch a correctly-typed instance.
+        doc = Document.get_by_id(self.session, int(doc_id))
         job = ensure_document_prepare_job(self.session, doc) if not doc.text_md else None
         return PromotionResult(
             document_id=doc.id,
