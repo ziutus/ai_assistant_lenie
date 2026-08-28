@@ -16,16 +16,17 @@ new job while the host is under pressure.
 
 **The gate is disabled by default.** With `HOST_ADMISSION_ENABLED` unset (or
 `false`) `evaluate()` always returns *allowed* and never touches the snapshot
-file, so deploying this change is safe on its own. Nothing happens until an
-operator has installed the collector, confirmed the snapshots, and flipped the
-Vault flag. This does **not** change `/readiness` or any API/search behaviour.
+file. This does **not** change `/readiness` or any API/search behaviour.
 
-**Current state (2026-08-27):** Step 1 is done — `collect-host-health.sh` is
-installed at `/share/ContainerNew/lenie-host-health/` and runs every minute
-via `/etc/config/crontab`, producing valid snapshots. Step 2 (the compose
-mount) is on the branch but not yet deployed — the running workers still need
-a stack redeploy. Step 3 (`HOST_ADMISSION_ENABLED=true` in Vault) is **not**
-done, so the gate is still inert.
+**Current state (2026-08-28): live on the NAS.** All three steps below are
+done — the collector runs every minute via `/etc/config/crontab`, the
+read-only mount is deployed to `lenie-worker` / `lenie-document-worker` /
+`lenie-cloud-bridge`, and Vault (`secret/lenie/dev`) has
+`HOST_ADMISSION_ENABLED=true` with `WORKER_LOAD_1_MAX=3.5` (all other
+thresholds left at the code defaults). Workers claim jobs normally; the
+in-container `evaluate()` returns `reason=healthy`. To turn the gate back
+off: `vault kv patch secret/lenie/dev HOST_ADMISSION_ENABLED=false` and
+restart the three worker services.
 
 ## Snapshot format
 
