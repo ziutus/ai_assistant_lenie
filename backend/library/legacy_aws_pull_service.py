@@ -6,6 +6,7 @@ conversion and LLM work are deliberately left to the ``document_prepare`` job.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -15,6 +16,9 @@ from sqlalchemy import select
 from library.db.models import Document, ImportLog
 from library.document_ingest_service import DocumentIngestService, IngestRequest
 from library.import_log_tracker import ImportLogTracker
+
+
+logger = logging.getLogger(__name__)
 
 
 class LegacyAwsPullPartialError(RuntimeError):
@@ -217,6 +221,7 @@ class LegacyAwsPullService:
                     else:
                         result["skipped"] += 1
                 except Exception:
+                    logger.exception("legacy AWS item failed uuid=%s url=%s", external_uuid, item.get("url"))
                     result["errors"] += 1
             tracker.set_counts(found=result["found"], added=result["added"] + result["refreshed"],
                                skipped=result["skipped"], error=result["errors"])

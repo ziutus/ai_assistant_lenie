@@ -106,6 +106,18 @@ def test_partial_failure_does_not_finish_successfully(monkeypatch):
     assert Tracker.instances[0].partial == "one or more items failed"
 
 
+def test_partial_failure_logs_item_identity_and_exception(monkeypatch, caplog):
+    item = {"uuid": "broken-uuid", "url": "https://example.test/broken"}
+    instance, aws_session, _table = service([item], monkeypatch)
+    aws_session.client.return_value.get_object.side_effect = RuntimeError("S3 unavailable")
+
+    with pytest.raises(LegacyAwsPullPartialError), caplog.at_level("ERROR", logger="library.legacy_aws_pull_service"):
+        instance.run({"since": "2026-07-20T10:00:00Z"})
+
+    assert "legacy AWS item failed uuid=broken-uuid url=https://example.test/broken" in caplog.text
+    assert "RuntimeError: S3 unavailable" in caplog.text
+
+
 def test_limit_marks_import_partial_without_advancing_watermark(monkeypatch):
     instance, aws_session, _table = service([{"uuid": "u", "url": "https://example.test"}], monkeypatch)
     aws_session.client.return_value.get_object.side_effect = [
