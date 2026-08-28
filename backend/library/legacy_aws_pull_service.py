@@ -198,13 +198,29 @@ class LegacyAwsPullService:
             for item in items:
                 try:
                     external_uuid = item.get("uuid") or item.get("s3_uuid")
-                    if not item.get("url") or not external_uuid:
-                        # An item without its identity cannot refer to an S3
-                        # source and can never become importable through a
-                        # retry.  Record it explicitly, then let a complete
-                        # run advance the watermark past this legacy data.
+                    document_type = item.get("type", "link")
+                    if not item.get("url"):
                         logger.warning(
-                            "legacy AWS item skipped permanently uuid=%s url=%s reason=missing_url_or_uuid",
+                            "legacy AWS item skipped permanently uuid=%s url=%s reason=missing_url",
+                            external_uuid,
+                            item.get("url"),
+                        )
+                        result["invalid"] += 1
+                        result["skipped"] += 1
+                        continue
+                    # Links are pointers, not captured source documents. They
+                    # can be imported without S3 and without a legacy UUID;
+                    # duplicate URLs are handled by DocumentIngestService.
+                    if document_type == "link":
+                        outcome = ingest.ingest(ingest_request_from_item(item), initiated_by_user_id=None)
+                        if outcome.status == "added":
+                            result["added"] += 1
+                        else:
+                            result["skipped"] += 1
+                        continue
+                    if not external_uuid:
+                        logger.warning(
+                            "legacy AWS item skipped permanently uuid=%s url=%s reason=missing_uuid_for_source",
                             external_uuid,
                             item.get("url"),
                         )
