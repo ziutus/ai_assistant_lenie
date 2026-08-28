@@ -3,7 +3,6 @@
 All tests use mocked sessions — no database required.
 """
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest

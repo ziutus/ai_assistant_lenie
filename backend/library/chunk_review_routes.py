@@ -1035,6 +1035,77 @@ def promote_document_to_webpage(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/page_metadata_suggestions", methods=["GET"])
+def page_metadata_suggestions(doc_id: int):
+    """Read-only: what the page's HTML says for title/summary/byline/date/language.
+
+    Never writes. Feeds the "Metadane ze strony" comparison in the article
+    preparation panel so the reviewer can accept individual page values
+    (their own summary otherwise stays authoritative). HTML-only — no LLM;
+    "Znajdź autora"/"Znajdź datę" already cover the LLM route.
+    """
+    from library.article_cleaner import resolve_relative_publication_date
+    from library.article_metadata import extract_article_authors, extract_article_publication_date
+    from library.website.website_download_context import download_raw_html, webpage_raw_parse
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    raw_html = None
+    source = "unavailable"
+    stored_raw = doc.text_raw or ""
+    if "<" in stored_raw and ">" in stored_raw and ("<html" in stored_raw.lower()
+            or "<body" in stored_raw.lower() or "<!doctype" in stored_raw.lower()):
+        raw_html, source = stored_raw, "raw_html_stored"
+    elif doc.url:
+        try:
+            downloaded = download_raw_html(doc.url)
+        except ValueError:
+            downloaded = None
+        if downloaded:
+            raw_html, source = downloaded, "downloaded"
+
+    suggestions: dict = {}
+    if raw_html is not None:
+        parsed = webpage_raw_parse(doc.url or "", raw_html)
+        for field, value in (
+            ("title", parsed.title), ("summary", parsed.summary), ("language", parsed.language),
+        ):
+            if value:
+                suggestions[field] = {"value": value, "method": "html"}
+
+        authors = extract_article_authors(raw_html, doc.url or "")
+        if authors:
+            suggestions["byline"] = {"value": ", ".join(authors), "method": "html"}
+
+        date_str = extract_article_publication_date(raw_html, doc.url or "")
+        method = "html"
+        if not date_str:
+            relative = resolve_relative_publication_date(parsed.text or "", doc.ingested_at)
+            if relative:
+                date_str, method = relative.isoformat(), "relative"
+        if date_str:
+            suggestions["published_on"] = {"value": date_str, "method": method}
+
+    return jsonify({
+        "status": "success",
+        "url": doc.url,
+        "source": source,
+        "suggestions": suggestions,
+        "stored": {
+            "title": doc.title,
+            "summary": doc.summary,
+            "byline": doc.byline,
+            "byline_method": doc.byline_method,
+            "published_on": doc.published_on.isoformat() if doc.published_on else None,
+            "published_on_method": doc.published_on_method,
+            "language": doc.language,
+        },
+    })
+
+
 @bp.route("/document/<int:doc_id>/extract_persons", methods=["POST"])
 def extract_document_persons(doc_id: int):
     """Add people found in a reviewer-selected excerpt to the registry.
