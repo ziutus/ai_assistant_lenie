@@ -99,7 +99,7 @@ def test_watermark_overlap_and_empty_full_success(monkeypatch):
 
 
 def test_partial_failure_does_not_finish_successfully(monkeypatch):
-    instance, aws_session, _table = service([{"uuid": "u", "url": "https://example.test"}], monkeypatch)
+    instance, aws_session, _table = service([{"uuid": "u", "url": "https://example.test", "type": "webpage"}], monkeypatch)
     aws_session.client.return_value.get_object.side_effect = RuntimeError("S3 unavailable")
     with pytest.raises(LegacyAwsPullPartialError):
         instance.run({"since": "2026-07-20T10:00:00Z"})
@@ -107,7 +107,7 @@ def test_partial_failure_does_not_finish_successfully(monkeypatch):
 
 
 def test_partial_failure_logs_item_identity_and_exception(monkeypatch, caplog):
-    item = {"uuid": "broken-uuid", "url": "https://example.test/broken"}
+    item = {"uuid": "broken-uuid", "url": "https://example.test/broken", "type": "webpage"}
     instance, aws_session, _table = service([item], monkeypatch)
     aws_session.client.return_value.get_object.side_effect = RuntimeError("S3 unavailable")
 
@@ -118,19 +118,23 @@ def test_partial_failure_logs_item_identity_and_exception(monkeypatch, caplog):
     assert "RuntimeError: S3 unavailable" in caplog.text
 
 
-def test_missing_identity_is_permanently_skipped_without_blocking_watermark(monkeypatch, caplog):
+def test_link_without_uuid_is_ingested_without_s3(monkeypatch):
     item = {"url": "https://example.test/missing-uuid"}
     instance, aws_session, _table = service([item], monkeypatch)
+    ingest = MagicMock()
+    ingest.ingest.return_value = MagicMock(status="added")
+    monkeypatch.setattr("library.legacy_aws_pull_service.DocumentIngestService", MagicMock(return_value=ingest))
 
-    with caplog.at_level("WARNING", logger="library.legacy_aws_pull_service"):
-        result = instance.run({"since": "2026-07-20T10:00:00Z"})
+    result = instance.run({"since": "2026-07-20T10:00:00Z"})
 
-    assert result["invalid"] == 1
-    assert result["skipped"] == 1
+    assert result["added"] == 1
+    assert result["invalid"] == 0
     assert result["errors"] == 0
     assert Tracker.instances[0].partial is None
-    assert "legacy AWS item skipped permanently uuid=None url=https://example.test/missing-uuid" in caplog.text
     aws_session.client.assert_not_called()
+    request = ingest.ingest.call_args.args[0]
+    assert request.document_type == "link"
+    assert request.external_uuid is None
 
 
 def test_limit_marks_import_partial_without_advancing_watermark(monkeypatch):
