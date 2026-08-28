@@ -998,6 +998,43 @@ def extract_document_publication_date(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/promote_to_webpage", methods=["POST"])
+def promote_document_to_webpage(doc_id: int):
+    """Turn an existing ``link`` document into a ``webpage`` in place.
+
+    Body: ``{"html": "<captured outerHTML>"}`` (optional). Without it the page
+    is downloaded server-side, which fails for paywalled/login pages. The
+    document id, feed-item links, collections and Tematy are preserved; the
+    ``document_prepare`` job then fetches Markdown + runs LLM article
+    extraction.
+    """
+    from library.document_promotion import PromotionError
+    from library.document_service import DocumentService
+
+    data = request.get_json(silent=True) or {}
+    html = data.get("html") or ""
+    if not isinstance(html, str):
+        return jsonify({"status": "error", "message": "html must be a string"}), 400
+
+    session = get_scoped_session()
+    try:
+        result = DocumentService(session).promote_link_to_webpage(doc_id, html=html)
+    except PromotionError as exc:
+        session.rollback()
+        return jsonify({"status": "error", "reason": exc.reason, "message": str(exc)}), 409
+    except ValueError:
+        session.rollback()
+        abort(404, f"Document {doc_id} not found")
+
+    return jsonify({
+        "status": "success",
+        "document_id": result.document_id,
+        "document_type": result.document_type,
+        "processing_job_id": result.processing_job_id,
+        "already_webpage": result.already_webpage,
+    })
+
+
 @bp.route("/document/<int:doc_id>/extract_persons", methods=["POST"])
 def extract_document_persons(doc_id: int):
     """Add people found in a reviewer-selected excerpt to the registry.

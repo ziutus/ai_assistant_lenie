@@ -27,6 +27,8 @@ const Link = () => {
       title: "",
       document_type: "link",
       summary: "",
+      paywall: false,
+      requires_login: false,
       processing_error_code: "",
       processing_status: "",
       next_id: null,
@@ -42,6 +44,7 @@ const Link = () => {
     isError,
     isLoading,
     handleGetPageByUrl,
+    handlePromoteToWebpage,
     handleSaveWebsiteNext,
     handleSaveWebsiteToCorrect,
     handleGetLinkByID,
@@ -61,6 +64,7 @@ const Link = () => {
           handleGetLinkByID={(id: any) => handleGetLinkByID(id, true)}
           handleGetEntryToReview={handleGetEntryToReview}
           handleGetPageByUrl={handleGetPageByUrl}
+          handlePromoteToWebpage={handlePromoteToWebpage}
         />
         <br />
         <FormButtons

@@ -18,6 +18,10 @@ from library.storage import ObjectStorage
 
 DOCUMENT_PREPARE = "document_prepare"
 
+# Below this many characters of cleaned article text the fetched page is treated
+# as an empty / login-wall / anti-bot response rather than a real article.
+_MIN_ARTICLE_CHARS = 200
+
 
 def document_prepare_idempotency_key(document_id: int, document_uuid: str) -> str:
     return f"document_prepare:{document_id}:{document_uuid}"
@@ -33,7 +37,10 @@ def ensure_document_prepare_job(session: Session, document: Document, user_id: i
     key = document_prepare_idempotency_key(document.id, document_uuid)
     existing = session.scalars(select(Job).where(Job.idempotency_key == key)).one_or_none()
     if existing is not None:
-        if existing.status in {"failed", "cancelled"} and not document.text_md:
+        # Re-queue a finished job that produced nothing usable — the recovery
+        # path after a link->webpage promotion whose first fetch hit a login
+        # wall and left the document with no text_md.
+        if existing.status in {"failed", "cancelled", "done"} and not document.text_md:
             existing.status = "queued"
             existing.error = None
             existing.result = None
@@ -128,10 +135,25 @@ class DocumentProcessingService:
             raise RuntimeError("HTML to Markdown conversion failed")
 
         self._progress(job, "llm_extract", document_id)
-        if not article:
-            raise RuntimeError("LLM article extraction returned no result")
 
-        cleaned = clean_article_text(article, document.url)
+        cleaned = clean_article_text(article, document.url) if article else {"text": ""}
+        # A login wall / anti-bot page returns HTTP 200 with markup but no real
+        # article. Surface it as an error on the document (visible on /list)
+        # instead of only failing the job — the user then recaptures via the
+        # browser extension. This also fixes the previously-silent failure for
+        # extension-captured pages that yield nothing.
+        if not article or len((cleaned.get("text") or "").strip()) < _MIN_ARTICLE_CHARS:
+            document.set_processing_status("ERROR")
+            document.set_processing_error_code("ERROR_DOWNLOAD")
+            self.session.commit()
+            return {
+                "document_id": document_id,
+                "markdown_created": False,
+                "llm_extracted": bool(article),
+                "artifacts_uploaded": 0,
+                "content_empty": True,
+            }
+
         document.text_extracted = article
         document.text_md = cleaned["text"]
         if cleaned.get("info_sources"):

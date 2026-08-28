@@ -699,8 +699,17 @@ def import_item(item_id):
         item.reviewed_by_user_id = g.auth.user_id
         item.reviewed_at = dt.datetime.now(dt.timezone.utc)
         session.commit()
+        requested_type = body.get("document_type")
         item = session.get(FeedItem, item_id)
-        return jsonify({"feed_item": _item_dict(item), "document_id": doc.id})
+        return jsonify({
+            "feed_item": _item_dict(item),
+            "document_id": doc.id,
+            "document_type": doc.document_type,
+            # True when webpage content was requested and the document now
+            # carries it (fresh import or in-place promotion); False when a
+            # paywall/login link stayed a bare link.
+            "promoted": requested_type == "webpage" and doc.document_type == "webpage",
+        })
     except ValueError as exc:
         abort(400, str(exc))
     except RuntimeError as exc:

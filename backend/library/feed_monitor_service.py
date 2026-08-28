@@ -216,8 +216,25 @@ def import_feed_item(
                 from library.author_service import set_document_authors
 
                 set_document_authors(session, doc, [mapped_author], method="manual")
+            promoted = False
         else:
             doc = existing
+            promoted = False
+            # "Zaimportuj jako webpage" on a URL already stored as a link:
+            # upgrade it in place instead of silently ignoring the request.
+            if (
+                document_type == "webpage"
+                and doc.document_type == "link"
+                and not doc.paywall
+                and not doc.requires_login
+            ):
+                from library.document_promotion import promote_link_to_webpage
+
+                promote_link_to_webpage(
+                    session, DocumentService(session)._get_storage(), doc,
+                    run_feed_linking=False,
+                )
+                promoted = True
         copy_feed_groups_to_document(session, [item], doc, "feed_import")
         item.status, item.document_id, item.last_error, item.updated_at = (
             "saved_for_later" if keep_for_review else "imported",
@@ -233,9 +250,17 @@ def import_feed_item(
             previous_document_id=previous_document_id, previous_saved_at=previous_saved_at,
             previous_review_reason=previous_review_reason, previous_ignored_pattern=previous_ignored_pattern,
             previous_group_ids=previous_group_ids, user_id=user_id,
-            metadata={"document_type": document_type or "default", "keep_for_review": keep_for_review},
+            metadata={
+                "document_type": document_type or "default",
+                "keep_for_review": keep_for_review,
+                "promoted": promoted,
+            },
         )
         session.commit()
+        if promoted:
+            from library.document_processing_service import ensure_document_prepare_job
+
+            ensure_document_prepare_job(session, doc)
         return item, doc
     except Exception:
         session.rollback()

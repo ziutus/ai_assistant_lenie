@@ -48,6 +48,9 @@ class IngestResult:
     status: str
     processing_job_id: str | None = None
     missing_raw_html: bool = False
+    # Set on an "already_exists" conflict so the caller (browser extension) can
+    # offer to promote a link -> webpage with the HTML it already captured.
+    existing_document_type: str | None = None
 
 
 class DocumentIngestService:
@@ -129,4 +132,5 @@ class DocumentIngestService:
                 "already_exists",
                 job.id if job else None,
                 missing_raw_html=not bool(getattr(doc, "text_raw", None)),
+                existing_document_type=getattr(doc, "document_type", None),
             )

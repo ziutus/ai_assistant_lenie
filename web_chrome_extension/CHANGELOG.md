@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [1.0.56] - 2026-08-28
+### Dodane
+- Gdy dodawana strona istnieje już w bazie jako sam link (HTTP 409), wtyczka automatycznie promuje ją do pełnego dokumentu `webpage`, wysyłając przechwycony HTML — zamiast kończyć komunikatem „Dokument jest już w bazie". Działa też dla `webpage` bez treści (odzysk po nieudanym pobraniu strony za logowaniem).
+
 ## [1.0.55] - 2026-08-14
 ### Poprawione
 - Ekstrakcja postów Facebooka i LinkedIn odcina teraz treść posta na granicy paska reakcji/komentarzy (liczniki reakcji, „Most relevant"/„Najtrafniejsze", akcje Like/Comment/Share itp.) dla wszystkich ścieżek ekstrakcji, nie tylko dla dotychczasowego fallbacku — wcześniej pierwszy komentarz potrafił trafić do treści posta.

@@ -595,6 +595,44 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     }
   };
 
+  // Turn a `link` document into a `webpage` in place: the backend fetches the
+  // page (or fails for a paywall/login page) and queues content extraction.
+  const handlePromoteToWebpage = async (website: any) => {
+    setIsLoading(true);
+    setAutoFlowComplete(false);
+    setMessage("");
+    try {
+      await axios.post(
+        `${apiUrl}/document/${website.id}/promote_to_webpage`,
+        {},
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": `${apiKey}`,
+          },
+        },
+      );
+      setIsError(false);
+      setMessage("Zmieniono w webpage. Trwa pobieranie treści…");
+      // Re-reads /website_get and navigates to /webpage/:id (type is now webpage).
+      await handleGetLinkByID(String(website.id), true);
+    } catch (error: any) {
+      setIsError(true);
+      const reason = error?.response?.data?.reason;
+      setMessage(
+        reason === "paywall"
+          ? "Nie można pobrać: strona jest za paywallem."
+          : reason === "requires_login"
+          ? "Nie można pobrać: strona wymaga logowania."
+          : reason === "download_failed"
+          ? "Nie udało się pobrać treści strony."
+          : `Nie udało się zmienić w webpage: ${error?.message ?? "błąd"}`,
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
 
   return {
     message,
@@ -604,6 +642,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     handleReturnToList,
     handleNextAfterAutoFlow,
     handleGetPageByUrl,
+    handlePromoteToWebpage,
     handleSaveWebsiteNext,
     handleSaveWebsiteToCorrect,
     handleGetLinkByID,

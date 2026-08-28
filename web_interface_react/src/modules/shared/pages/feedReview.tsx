@@ -160,8 +160,15 @@ export default function FeedReview() {
       if (action === "import") {
         const feedItem = data.feed_item as FeedItem | undefined;
         if (feedItem) setItems(current => current.map(item => item.id === id ? { ...item, ...feedItem } : item));
-        const documentType = body && "document_type" in body ? String((body as { document_type?: string }).document_type) : "link";
+        const requestedType = body && "document_type" in body
+          ? String((body as { document_type?: string }).document_type) : "link";
+        // Trust the server's resolved type: "webpage" requested on a URL already
+        // stored as a bare link falls back to "link" when the page is paywalled.
+        const documentType = String(data.document_type ?? requestedType);
         setImportedTypes(current => ({ ...current, [id]: documentType }));
+        if (requestedType === "webpage" && documentType === "link") {
+          setError("Zaimportowano jako link — nie można pobrać treści (paywall lub wymagane logowanie).");
+        }
       } else if (action === "save-for-later" && view === "new") {
         setItems(current => current.map(item => item.id === id ? { ...item, ...data, status: "saved_for_later" } : item));
       } else {

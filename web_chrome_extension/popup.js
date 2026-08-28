@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailId = '';
   let detectedEmailPublishedOn = '';
   let detectedEmailImages = [];
-  const debugState = { version: '1.0.55' };
+  const debugState = { version: '1.0.56' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -881,6 +881,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     chrome.tabs.query({ currentWindow: true, active: true }, function (tabs) {
       const pageUrl = tabs[0]?.url || '';
+      // Set once the backend is chosen so the 409 handler can promote a
+      // pre-existing link -> webpage against the same endpoint.
+      let promoteContext = null;
+      let capturedHtml = '';
       chrome.scripting.executeScript({
         target: { tabId: tabs[0].id },
         func: () => ({
@@ -918,6 +922,7 @@ document.addEventListener('DOMContentLoaded', function () {
             images: isEmail ? detectedEmailImages : undefined,
           };
           data.external_uuid = createExternalUuid();
+          capturedHtml = data.html || '';
           updateDebug({
             send_attempt: true,
             payload_type: data.type,
@@ -956,6 +961,7 @@ document.addEventListener('DOMContentLoaded', function () {
               endpoint_role: config.role,
               fallback_reason: localAvailable ? '' : 'nas_unavailable_before_post'
             });
+            promoteContext = { apiBase: apiBaseFrom(config.url), apiKey: config.apiKey };
             // Do not retry an uncertain POST against the other backend: NAS
             // and AWS have separate databases, so that could create two docs.
             return fetchWithTimeout(config.url, {
@@ -971,6 +977,28 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(async response => {
           const result = await response.json().catch(() => ({}));
           if (response.status === 409 && result.status === 'already_exists') {
+            const canPromote = promoteContext
+              && capturedHtml
+              && ['link', 'webpage'].includes(result.existing_document_type);
+            if (canPromote) {
+              const promoteResponse = await fetchWithTimeout(
+                `${promoteContext.apiBase}/document/${result.document_id}/promote_to_webpage`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-api-key': promoteContext.apiKey },
+                  body: JSON.stringify({ html: capturedHtml }),
+                },
+                REQUEST_TIMEOUT_MS,
+              );
+              const promoteResult = await promoteResponse.json().catch(() => ({}));
+              if (!promoteResponse.ok) {
+                throw new Error(
+                  `Dokument jest już w bazie (ID: ${result.document_id}). `
+                  + `Nie udało się zmienić w webpage: ${promoteResult.message || promoteResponse.status}`,
+                );
+              }
+              return { status: 'promoted' };
+            }
             const suffix = result.missing_raw_html
               ? ' Brakuje mu surowego HTML — możesz użyć opcji jego uzupełnienia.'
               : '';
@@ -986,7 +1014,13 @@ document.addEventListener('DOMContentLoaded', function () {
           return result;
         })
         .then(result => {
-          alert(result.status === 'queued' ? 'Zgłoszenie zostało przekazane do importu.' : 'Strona została dodana pomyślnie!');
+          alert(
+            result.status === 'promoted'
+              ? 'Dokument zmieniono w webpage. Trwa pobieranie treści.'
+              : result.status === 'queued'
+              ? 'Zgłoszenie zostało przekazane do importu.'
+              : 'Strona została dodana pomyślnie!',
+          );
           noteInput.value = '';
           setTimeout(() => window.close(), 500);
         })
