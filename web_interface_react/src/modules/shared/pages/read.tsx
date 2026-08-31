@@ -1432,6 +1432,50 @@ const Read: React.FC = () => {
     setObsidianBrowseHistory([]);
   };
 
+  // A linked note path (Document.obsidian_note_paths / a chunk's) mapped to the
+  // reimported obsidian_note Document, when Lenie has one (the two pilot vault
+  // folders). Lets the "📝 Notatki Obsidian" list offer an in-app preview /
+  // reader link instead of only bouncing to the Obsidian desktop app.
+  const importedNoteByPath = React.useMemo(
+    () => new Map(importedObsidianNotes.map(note => [note.path, note])),
+    [importedObsidianNotes],
+  );
+
+  const previewLinkedObsidianNote = React.useCallback((notePath: string) => {
+    setObsidianBrowseNote(null);
+    setObsidianBrowseHistory([]);
+    setSelectedObsidianNotePath(notePath);
+    setObsidianPanelVisible(true);
+  }, []);
+
+  const renderLinkedObsidianNote = (notePath: string, i: number) => {
+    const imported = importedNoteByPath.get(notePath);
+    const label = notePath.split("/").pop()?.replace(/\.md$/i, "");
+    return (
+      <React.Fragment key={notePath}>
+        {i > 0 && ", "}
+        {imported ? (
+          <>
+            <button
+              type="button"
+              className={styles.linkedNotePreviewButton}
+              onClick={() => previewLinkedObsidianNote(notePath)}
+              title="Pokaż podgląd notatki w panelu obok"
+            >
+              {imported.title || label}
+            </button>
+            {" "}
+            <NavLink to={`/read/${imported.id}`} title="Otwórz notatkę jako artykuł czytnika">⤢</NavLink>
+            {" "}
+            <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>↗</a>
+          </>
+        ) : (
+          <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>{label}</a>
+        )}
+      </React.Fragment>
+    );
+  };
+
   // persist current chapter as reading position
   React.useEffect(() => {
     if (!userId || !content || !progressLoaded) return;
@@ -2202,27 +2246,13 @@ const Read: React.FC = () => {
                   {docObsidianNotePaths.length > 0 && (
                     <div>
                       Notatka dokumentu:{" "}
-                      {docObsidianNotePaths.map((notePath, i) => (
-                        <React.Fragment key={notePath}>
-                          {i > 0 && ", "}
-                          <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
-                            {notePath.split("/").pop()?.replace(/\.md$/i, "")}
-                          </a>
-                        </React.Fragment>
-                      ))}
+                      {docObsidianNotePaths.map((notePath, i) => renderLinkedObsidianNote(notePath, i))}
                     </div>
                   )}
                   {!!content?.chapter_obsidian_note_paths?.length && (
                     <div style={{ marginTop: docObsidianNotePaths.length > 0 ? 4 : 0 }}>
                       Notatka tego rozdziału:{" "}
-                      {content.chapter_obsidian_note_paths.map((notePath, i) => (
-                        <React.Fragment key={notePath}>
-                          {i > 0 && ", "}
-                          <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
-                            {notePath.split("/").pop()?.replace(/\.md$/i, "")}
-                          </a>
-                        </React.Fragment>
-                      ))}
+                      {content.chapter_obsidian_note_paths.map((notePath, i) => renderLinkedObsidianNote(notePath, i))}
                     </div>
                   )}
                 </div>
