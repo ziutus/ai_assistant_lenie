@@ -12,6 +12,7 @@ Session is passed in by the caller, not created here.
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
@@ -33,6 +34,16 @@ class ExistingDocumentError(ValueError):
     def __init__(self, document: Document):
         super().__init__(f"Document for URL already exists: {document.id}")
         self.document = document
+
+
+@dataclass
+class PromotionResult:
+    """Outcome of promoting a link document to a webpage."""
+
+    document_id: int
+    document_type: str
+    processing_job_id: str | None
+    already_webpage: bool
 
 
 class DocumentService:
@@ -298,6 +309,42 @@ class DocumentService:
         if doc is None or doc.url != url:
             raise ValueError("Refresh target does not match URL")
         return self.fill_missing_source_html(url=url, html=html, text=text)
+
+    # ------------------------------------------------------------------
+    # promote_link_to_webpage — turn a link document into a webpage in place
+    # ------------------------------------------------------------------
+
+    def promote_link_to_webpage(self, doc_id: int, html: str = "") -> PromotionResult:
+        """Flip a link document to a webpage and queue content extraction.
+
+        ``html`` is the browser-captured page source; when empty the page is
+        downloaded server-side (fails for paywalled/login pages). The document
+        id, feed-item links and metadata are preserved. Raises ``ValueError``
+        when the document is missing and ``PromotionError`` (with ``.reason``)
+        when promotion cannot proceed.
+        """
+        from library.document_processing_service import ensure_document_prepare_job
+        from library.document_promotion import promote_link_to_webpage as _promote
+
+        doc = Document.get_by_id(self.session, int(doc_id))
+        if doc is None:
+            raise ValueError("Document does not exist")
+
+        already_webpage = doc.document_type == "webpage"
+        _promote(self.session, self._get_storage(), doc, html=html)
+        self.session.commit()
+
+        # The commit expired `doc`, and it is still the pre-flip STI class
+        # (LinkDocument) — reloading it against a row that is now `webpage`
+        # raises ObjectDeletedError. Re-fetch a correctly-typed instance.
+        doc = Document.get_by_id(self.session, int(doc_id))
+        job = ensure_document_prepare_job(self.session, doc) if not doc.text_md else None
+        return PromotionResult(
+            document_id=doc.id,
+            document_type=doc.document_type,
+            processing_job_id=job.id if job else None,
+            already_webpage=already_webpage,
+        )
 
     def save_document(
         self,

@@ -340,6 +340,7 @@ def url_add():
                 'message': f'Document already exists with ID: {doc.id}',
                 'document_id': doc.id,
                 'missing_raw_html': result.missing_raw_html,
+                'existing_document_type': result.existing_document_type,
             }, 409
         return {
             'status': 'success',

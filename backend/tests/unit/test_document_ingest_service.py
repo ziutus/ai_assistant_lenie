@@ -42,14 +42,17 @@ def test_create_without_html_does_not_report_duplicate_missing_html():
 
 def test_duplicate_is_returned_without_rethrowing():
     session = MagicMock()
-    existing = SimpleNamespace(id=7, text_raw=None)
+    existing = SimpleNamespace(id=7, text_raw=None, document_type="link")
     with patch("library.document_ingest_service.DocumentService") as service_cls:
         service_cls.return_value.create_document.side_effect = ExistingDocumentError(existing)
         result = DocumentIngestService(session, storage=MagicMock()).ingest(
             IngestRequest(url="https://example.test", document_type="webpage")
         )
 
-    assert result == result.__class__(7, "already_exists", None, True)
+    assert result.status == "already_exists"
+    assert result.missing_raw_html is True
+    # so the browser extension can offer to promote the link with captured HTML
+    assert result.existing_document_type == "link"
 
 
 def test_duplicate_email_updates_captured_images():

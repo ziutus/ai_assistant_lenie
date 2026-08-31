@@ -13,6 +13,7 @@ interface SharedInputsProps {
   handleGetLinkByID: (id: string) => void;
   handleGetEntryToReview: (values: any) => void;
   handleGetPageByUrl: (url: string) => void;
+  handlePromoteToWebpage?: (values: any) => void;
 }
 
 // Languages the user actually works with — anything else via "inny…"
@@ -173,6 +174,7 @@ const SharedInputs = ({
   handleGetLinkByID,
   handleGetEntryToReview,
   handleGetPageByUrl,
+  handlePromoteToWebpage,
 }: SharedInputsProps) => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [tagSuggestions, setTagSuggestions] = React.useState<string[]>([]);
@@ -323,6 +325,31 @@ const SharedInputs = ({
           read
         </button>
       </div>
+
+      {formik.values.document_type === "link" && handlePromoteToWebpage && (
+        <div style={{ marginTop: "8px" }}>
+          <button
+            type="button"
+            className={"button"}
+            disabled={
+              isLoading ||
+              !formik.values.id ||
+              !!formik.values.paywall ||
+              !!formik.values.requires_login
+            }
+            title={
+              formik.values.paywall
+                ? "Strona jest za paywallem — pobranie treści nie zadziała"
+                : formik.values.requires_login
+                ? "Strona wymaga logowania — pobranie treści nie zadziała"
+                : ""
+            }
+            onClick={() => handlePromoteToWebpage(formik.values)}
+          >
+            Pobierz treść i zmień w webpage
+          </button>
+        </div>
+      )}
 
       {formik.values.canonical_url &&
         formik.values.canonical_url !== formik.values.url && (

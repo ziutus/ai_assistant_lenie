@@ -33,6 +33,8 @@ const Webpage = () => {
       summary: "",
       text: "",
       text_md: "",
+      paywall: false,
+      requires_login: false,
       processing_status: "",
       processing_error_code: "",
       chapter_list: "",
@@ -160,6 +162,27 @@ const Webpage = () => {
           }}>
             Dokument ma embeddingi. Treść i dane pochodne są zablokowane. Aby ją zmienić,
             otwórz dokument ponownie do edycji i wykonaj cały proces od początku.
+          </div>
+        )}
+        {!contentLocked
+          && !formik.values.text_md
+          && formik.values.processing_status === "NEED_CLEAN_MD" && (
+          <div style={{
+            marginBottom: 12, padding: 10, borderRadius: 6,
+            border: "1px solid #93c5fd", background: "#eff6ff", color: "#1e40af",
+          }}>
+            Trwa pobieranie i ekstrakcja treści strony — odśwież za chwilę (przycisk „read"
+            przy polu Document ID).
+          </div>
+        )}
+        {formik.values.processing_error_code === "ERROR_DOWNLOAD" && (
+          <div style={{
+            marginBottom: 12, padding: 10, borderRadius: 6,
+            border: "1px solid #fca5a5", background: "#fef2f2", color: "#991b1b",
+          }}>
+            Nie udało się pobrać treści tej strony (możliwe logowanie lub blokada bota).
+            Otwórz stronę w przeglądarce i prześlij ją wtyczką Lenie — treść zostanie
+            uzupełniona.
           </div>
         )}
         <fieldset disabled={pageBusy || contentLocked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>

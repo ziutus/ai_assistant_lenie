@@ -3,7 +3,6 @@
 All tests use mocked sessions — no database required.
 """
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -822,3 +821,49 @@ class TestImportDocument:
             )
 
         assert status == "added"
+
+
+class TestPromoteLinkToWebpage:
+    def test_commits_once_and_enqueues_prepare_job(self):
+        session = _make_session()
+        link_doc = _make_doc(document_type="link", text_md=None)
+        # After the commit the method re-fetches a correctly-typed instance
+        # (the pre-flip LinkDocument cannot be reloaded against a webpage row).
+        webpage_doc = _make_doc(document_type="webpage", text_md=None)
+
+        with (
+            patch.object(Document, "get_by_id", side_effect=[link_doc, webpage_doc]),
+            patch("library.document_promotion.promote_link_to_webpage") as core,
+            patch("library.document_processing_service.ensure_document_prepare_job") as ensure_job,
+            patch.object(DocumentService, "_get_storage", return_value=MagicMock()),
+        ):
+            ensure_job.return_value = MagicMock(id="job-9")
+            result = DocumentService(session).promote_link_to_webpage(42, html="<p>x</p>")
+
+        core.assert_called_once()
+        session.commit.assert_called_once()
+        ensure_job.assert_called_once_with(session, webpage_doc)
+        assert result.document_type == "webpage"
+        assert result.processing_job_id == "job-9"
+        assert result.already_webpage is False
+
+    def test_skips_job_when_text_md_present(self):
+        session = _make_session()
+        doc = _make_doc(document_type="webpage", text_md="already here")
+
+        with (
+            patch.object(Document, "get_by_id", return_value=doc),
+            patch("library.document_promotion.promote_link_to_webpage"),
+            patch("library.document_processing_service.ensure_document_prepare_job") as ensure_job,
+            patch.object(DocumentService, "_get_storage", return_value=MagicMock()),
+        ):
+            result = DocumentService(session).promote_link_to_webpage(42)
+
+        ensure_job.assert_not_called()
+        assert result.already_webpage is True
+        assert result.processing_job_id is None
+
+    def test_missing_document_raises_value_error(self):
+        with patch.object(Document, "get_by_id", return_value=None):
+            with pytest.raises(ValueError):
+                DocumentService(_make_session()).promote_link_to_webpage(999)
