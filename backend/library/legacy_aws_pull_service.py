@@ -6,6 +6,7 @@ conversion and LLM work are deliberately left to the ``document_prepare`` job.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -15,6 +16,9 @@ from sqlalchemy import select
 from library.db.models import Document, ImportLog
 from library.document_ingest_service import DocumentIngestService, IngestRequest
 from library.import_log_tracker import ImportLogTracker
+
+
+logger = logging.getLogger(__name__)
 
 
 class LegacyAwsPullPartialError(RuntimeError):
@@ -181,7 +185,7 @@ class LegacyAwsPullService:
         items = self._query_items(table, query_since, started_at)
         if limit:
             items = items[:limit]
-        result = {"found": len(items), "added": 0, "skipped": 0, "refreshed": 0, "errors": 0,
+        result = {"found": len(items), "added": 0, "skipped": 0, "refreshed": 0, "invalid": 0, "errors": 0,
                   "watermark": started_at.isoformat(), "query_since": query_since.isoformat(), "dry_run": dry_run}
         if dry_run:
             return result
@@ -194,8 +198,35 @@ class LegacyAwsPullService:
             for item in items:
                 try:
                     external_uuid = item.get("uuid") or item.get("s3_uuid")
-                    if not item.get("url") or not external_uuid:
-                        raise ValueError("legacy item is missing url or uuid")
+                    document_type = item.get("type", "link")
+                    if not item.get("url"):
+                        logger.warning(
+                            "legacy AWS item skipped permanently uuid=%s url=%s reason=missing_url",
+                            external_uuid,
+                            item.get("url"),
+                        )
+                        result["invalid"] += 1
+                        result["skipped"] += 1
+                        continue
+                    # Links are pointers, not captured source documents. They
+                    # can be imported without S3 and without a legacy UUID;
+                    # duplicate URLs are handled by DocumentIngestService.
+                    if document_type == "link":
+                        outcome = ingest.ingest(ingest_request_from_item(item), initiated_by_user_id=None)
+                        if outcome.status == "added":
+                            result["added"] += 1
+                        else:
+                            result["skipped"] += 1
+                        continue
+                    if not external_uuid:
+                        logger.warning(
+                            "legacy AWS item skipped permanently uuid=%s url=%s reason=missing_uuid_for_source",
+                            external_uuid,
+                            item.get("url"),
+                        )
+                        result["invalid"] += 1
+                        result["skipped"] += 1
+                        continue
                     # Local NAS documents may have been created without ever
                     # being copied to the legacy AWS bucket.  For normal
                     # creates, UUID is the idempotency boundary: do not probe
@@ -217,6 +248,7 @@ class LegacyAwsPullService:
                     else:
                         result["skipped"] += 1
                 except Exception:
+                    logger.exception("legacy AWS item failed uuid=%s url=%s", external_uuid, item.get("url"))
                     result["errors"] += 1
             tracker.set_counts(found=result["found"], added=result["added"] + result["refreshed"],
                                skipped=result["skipped"], error=result["errors"])

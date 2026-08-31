@@ -154,6 +154,9 @@ def lambda_handler(event, context):
         'body': json.dumps({
             'status': 'queued',
             'message': 'Document submission queued for import',
+            # This is already the DynamoDB document ID.  Keep submission_id
+            # for clients that adopted the old response field.
+            'document_id': uid,
             'submission_id': uid,
         }),
         'headers': {

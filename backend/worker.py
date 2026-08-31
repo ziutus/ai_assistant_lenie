@@ -12,6 +12,7 @@ from library.db.models import Job, ScheduledTask
 from library.feed_monitor_service import run_check
 from library.job_queue import claim, finish, heartbeat, recover_stale, enqueue, retry
 from library.job_queue import JOB_TYPES
+from library.host_admission import HostAdmissionGate
 
 logger = logging.getLogger("lenie.worker")
 logging.basicConfig(level=logging.INFO)
@@ -198,14 +199,16 @@ def main() -> int:
         logger.error("another worker owns the coordinator lock")
         return 1
     storage = None
+    from library.config_loader import load_config
+
+    config = load_config()
+    admission_gate = HostAdmissionGate(config)
     work_dir = os.getenv("DOCUMENT_WORK_DIR", "/app/work")
     if "document_prepare" in allowed_types:
-        from library.config_loader import load_config
         from library.storage import storage_from_config
 
-        cfg = load_config()
-        storage = storage_from_config(cfg)
-        work_dir = cfg.get("DOCUMENT_WORK_DIR") or work_dir
+        storage = storage_from_config(config)
+        work_dir = config.get("DOCUMENT_WORK_DIR") or work_dir
     if coordinator and "obsidian_reimport" in allowed_types:
         _start_obsidian_watcher()
     while True:
@@ -214,6 +217,11 @@ def main() -> int:
         if coordinator:
             recover_stale(session)
             scheduler(session, dt.datetime.now(dt.timezone.utc))
+        decision = admission_gate.evaluate()
+        if not decision.allowed:
+            logger.warning("job claim deferred reason=%s sleep=%ss", decision.reason, decision.sleep_seconds)
+            time.sleep(decision.sleep_seconds)
+            continue
         job = claim(session, allowed_types)
         if job is None:
             time.sleep(5)

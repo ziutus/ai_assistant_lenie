@@ -99,11 +99,42 @@ def test_watermark_overlap_and_empty_full_success(monkeypatch):
 
 
 def test_partial_failure_does_not_finish_successfully(monkeypatch):
-    instance, aws_session, _table = service([{"uuid": "u", "url": "https://example.test"}], monkeypatch)
+    instance, aws_session, _table = service([{"uuid": "u", "url": "https://example.test", "type": "webpage"}], monkeypatch)
     aws_session.client.return_value.get_object.side_effect = RuntimeError("S3 unavailable")
     with pytest.raises(LegacyAwsPullPartialError):
         instance.run({"since": "2026-07-20T10:00:00Z"})
     assert Tracker.instances[0].partial == "one or more items failed"
+
+
+def test_partial_failure_logs_item_identity_and_exception(monkeypatch, caplog):
+    item = {"uuid": "broken-uuid", "url": "https://example.test/broken", "type": "webpage"}
+    instance, aws_session, _table = service([item], monkeypatch)
+    aws_session.client.return_value.get_object.side_effect = RuntimeError("S3 unavailable")
+
+    with pytest.raises(LegacyAwsPullPartialError), caplog.at_level("ERROR", logger="library.legacy_aws_pull_service"):
+        instance.run({"since": "2026-07-20T10:00:00Z"})
+
+    assert "legacy AWS item failed uuid=broken-uuid url=https://example.test/broken" in caplog.text
+    assert "RuntimeError: S3 unavailable" in caplog.text
+
+
+def test_link_without_uuid_is_ingested_without_s3(monkeypatch):
+    item = {"url": "https://example.test/missing-uuid"}
+    instance, aws_session, _table = service([item], monkeypatch)
+    ingest = MagicMock()
+    ingest.ingest.return_value = MagicMock(status="added")
+    monkeypatch.setattr("library.legacy_aws_pull_service.DocumentIngestService", MagicMock(return_value=ingest))
+
+    result = instance.run({"since": "2026-07-20T10:00:00Z"})
+
+    assert result["added"] == 1
+    assert result["invalid"] == 0
+    assert result["errors"] == 0
+    assert Tracker.instances[0].partial is None
+    aws_session.client.assert_not_called()
+    request = ingest.ingest.call_args.args[0]
+    assert request.document_type == "link"
+    assert request.external_uuid is None
 
 
 def test_limit_marks_import_partial_without_advancing_watermark(monkeypatch):
