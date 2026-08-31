@@ -176,6 +176,90 @@ const SOURCE_ROLE_LABELS: Record<string, string> = {
   data_source: "Źródło danych",
 };
 
+// ── Processing readiness ("Stan przetwarzania") — GET /document/:id/readiness ──
+
+type ReadinessStepState = "done" | "partial" | "todo" | "na";
+
+interface ReadinessStep {
+  key: string;
+  label: string;
+  state: ReadinessStepState;
+  detail: string | null;
+  link: string | null;
+  required: boolean;
+}
+
+interface DocumentReadiness {
+  verdict: "ready" | "needs_work";
+  required_done: number;
+  required_total: number;
+  steps: ReadinessStep[];
+}
+
+const READINESS_STEP_ICON: Record<ReadinessStepState, string> = {
+  done: "✅", partial: "🟡", todo: "⬜", na: "➖",
+};
+
+const READINESS_STEP_COLOR: Record<ReadinessStepState, string> = {
+  done: "#15803d", partial: "#b45309", todo: "#64748b", na: "#94a3b8",
+};
+
+/** Compact ✅/🔧 verdict chip shown next to the document title. */
+function ReadinessBadge({ readiness }: { readiness: DocumentReadiness }): React.ReactElement {
+  const ready = readiness.verdict === "ready";
+  const missing = readiness.required_total - readiness.required_done;
+  const tooltip = readiness.steps
+    .map(s => `${READINESS_STEP_ICON[s.state]} ${s.label}${s.detail ? ` — ${s.detail}` : ""}`)
+    .join("\n");
+  return (
+    <span
+      title={tooltip}
+      style={{
+        fontSize: "0.8em", fontWeight: 700, padding: "2px 9px", borderRadius: 10, cursor: "help",
+        background: ready ? "#dcfce7" : "#fef3c7",
+        color: ready ? "#15803d" : "#b45309",
+      }}
+    >
+      {ready ? "✅ Przetworzony" : `🔧 Wymaga pracy (${missing})`}
+    </span>
+  );
+}
+
+/** Sidebar "Stan przetwarzania" checklist. Missing steps link to where the
+ *  work is done (chunk review or the type's editor); it never triggers
+ *  anything itself. Open by default only when there is work outstanding. */
+function ReadinessPanel({ readiness }: { readiness: DocumentReadiness }): React.ReactElement {
+  return (
+    <details
+      open={readiness.verdict === "needs_work"}
+      style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 12px" }}
+    >
+      <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
+        {readiness.verdict === "ready" ? "✅" : "🔧"} Stan przetwarzania ({readiness.required_done}/{readiness.required_total})
+      </summary>
+      <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0, fontSize: "0.8em", lineHeight: 1.35 }}>
+        {readiness.steps.map(step => (
+          <li key={step.key} style={{ display: "flex", gap: 6, alignItems: "baseline", margin: "4px 0" }}>
+            <span aria-hidden="true">{READINESS_STEP_ICON[step.state]}</span>
+            <span style={{ flex: 1 }}>
+              <span style={{ color: step.state === "na" ? "#94a3b8" : undefined }}>
+                {step.link
+                  ? <NavLink to={step.link} style={{ color: "#0369a1" }}>{step.label}</NavLink>
+                  : step.label}
+              </span>
+              {step.detail && (
+                <span style={{ color: READINESS_STEP_COLOR[step.state], marginLeft: 6 }}>
+                  {step.detail}
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 // ── Minimal markdown rendering (headings, paragraphs, hr, [imgN] figures) ────
 
 // Raw markdown image syntax (web-article text) — still skipped entirely, distinct
@@ -903,6 +987,7 @@ const Read: React.FC = () => {
   const [citedPublications, setCitedPublications] = React.useState<CitedPublicationLink[]>([]);
   const [relationshipGraph, setRelationshipGraph] = React.useState<RelationshipGraphData | null>(null);
   const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
+  const [readiness, setReadiness] = React.useState<DocumentReadiness | null>(null);
   const [docUrl, setDocUrl] = React.useState<string | null>(null);
   const [docPublishedOn, setDocPublishedOn] = React.useState<string | null>(null);
   const [docIngestedAt, setDocIngestedAt] = React.useState<string | null>(null);
@@ -984,7 +1069,7 @@ const Read: React.FC = () => {
   const [pendingNote, setPendingNote] = React.useState<PendingNote | null>(null);
   const [tagQuery, setTagQuery] = React.useState("");
   const [tagResults, setTagResults] = React.useState<UserNote[]>([]);
-  const hasReaderSidebar = chapters.length > 1 || Boolean(userId);
+  const hasReaderSidebar = chapters.length > 1 || Boolean(userId) || readiness !== null;
   const hasObsidianPanel = obsidianNotesLoading || importedObsidianNotes.length > 0;
 
   React.useEffect(() => { saveReaderSidebarVisible(readerSidebarVisible); }, [readerSidebarVisible]);
@@ -1090,6 +1175,19 @@ const Read: React.FC = () => {
       } catch { /* Citations are optional reader enrichment. */ }
     })();
   }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Stan przetwarzania" checklist — refetched after an in-reader entity edit
+  // so the NER step flips without a reload.
+  React.useEffect(() => {
+    setReadiness(null);
+    (async () => {
+      try {
+        const response = await fetch(`${apiUrl}/document/${id}/readiness`, { headers });
+        const data = await response.json();
+        if (data.status === "success") setReadiness(data);
+      } catch { /* The readiness panel is optional reader metadata. */ }
+    })();
+  }, [apiUrl, id, apiKey, entitiesEditVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // verified NER places (stage 3) → point markers on the country map
   const fetchEntities = React.useCallback(async () => {
@@ -1630,6 +1728,7 @@ const Read: React.FC = () => {
             ⚖ Staranność: {docQuality.score}/100
           </span>
         )}
+        {readiness && <ReadinessBadge readiness={readiness} />}
         {hasReaderSidebar && (
           <button
             className={styles.sidebarToggleButton}
@@ -1707,6 +1806,8 @@ const Read: React.FC = () => {
           id="reader-sidebar"
           className={`${styles.tocPanel} ${tocOpen ? styles.tocPanelOpen : ""} ${!readerSidebarVisible ? styles.tocPanelCollapsed : ""}`}
         >
+          {readiness && <ReadinessPanel readiness={readiness} />}
+
           {chapters.length > 1 && <nav style={{
             background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 0",
           }}>
