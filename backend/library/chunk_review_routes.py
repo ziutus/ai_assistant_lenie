@@ -2002,6 +2002,160 @@ def document_enrichment_status(doc_id: int):
     return jsonify({"status": "success", "doc_id": doc_id, "stages": stages})
 
 
+# Reader "Stan przetwarzania" checklist. Which steps count as REQUIRED for the
+# "gotowy" verdict depends on document type — a `link` carries only metadata and
+# never gets a body, an `obsidian_note` is embedded whole with no chunk-analysis/
+# enrichment/quality pipeline (see obsidian_reimport_service.py). Steps outside a
+# type's required set render as "nie dotyczy" rather than an unmet ✗.
+_READINESS_REQUIRED_BY_TYPE = {
+    "webpage": {"content", "chunks", "embeddings", "ner", "enrichment", "quality", "tags"},
+    "link": {"content"},
+    "youtube": {"content", "chunks", "embeddings", "ner", "enrichment", "tags"},
+    "movie": {"content", "chunks", "embeddings", "ner", "enrichment", "tags"},
+    "text": {"content", "chunks", "embeddings", "ner", "enrichment", "tags"},
+    "email": {"content", "chunks", "embeddings", "ner", "enrichment", "tags"},
+    "social_media_post": {"content", "embeddings", "ner", "tags"},
+    "text_message": {"content", "embeddings"},
+    "obsidian_note": {"content", "embeddings", "ner", "tags"},
+}
+_READINESS_DEFAULT_REQUIRED = {"content", "embeddings", "ner", "tags"}
+_READINESS_OPEN_CHUNK_STATUSES = ("pending", "needs_reanalysis", "split_requested", "split")
+
+
+@bp.route("/document/<int:doc_id>/readiness", methods=["GET"])
+def document_readiness(doc_id: int):
+    """Per-stage done/todo checklist + overall verdict for the /read view.
+
+    Lets the reader show at a glance whether a document has been taken all the
+    way through the pipeline (chunks, embeddings, NER, enrichment, quality,
+    tags) or still needs work — and, for each missing step, where to go to
+    finish it. Read-only; every signal is a column/row that already exists.
+    """
+    from library.document_analysis_service import _extract_text
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    doc_type = doc.document_type or ""
+    required = _READINESS_REQUIRED_BY_TYPE.get(doc_type, _READINESS_DEFAULT_REQUIRED)
+    chunks_link = f"/chunks/{doc_id}"
+    editor_link = f"/{doc_type}/{doc_id}" if doc_type in ("webpage", "link", "youtube", "movie", "email") else None
+
+    text, _field = _extract_text(doc, prefer_md=True, min_length=0)
+    text_len = len(text or "")
+
+    run = _latest_run_for_document(session, doc_id)
+    run_total = run_pending = 0
+    if run is not None:
+        run_total = session.scalar(
+            select(func.count()).select_from(DocumentChunk).where(DocumentChunk.run_id == run.id)
+        ) or 0
+        run_pending = session.scalar(
+            select(func.count()).select_from(DocumentChunk).where(
+                DocumentChunk.run_id == run.id,
+                DocumentChunk.status.in_(_READINESS_OPEN_CHUNK_STATUSES),
+            )
+        ) or 0
+
+    embeddings_count = session.scalar(
+        select(func.count()).select_from(DocumentEmbedding).where(DocumentEmbedding.document_id == doc_id)
+    ) or 0
+
+    tags = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+    thematic_tags = [t for t in tags if not t.startswith(("kraj-", "miejsce-"))]
+
+    steps: list[dict] = []
+
+    def add(key: str, label: str, state: str, detail: str | None = None, link: str | None = None) -> None:
+        req = key in required
+        steps.append({
+            "key": key, "label": label,
+            "state": "na" if (not req and state != "done") else state,
+            "detail": detail, "link": link if (state != "done" and req) else None,
+            "required": req,
+        })
+
+    # 1. content
+    if text_len:
+        add("content", "Treść", "done", f"{text_len:,} znaków".replace(",", " "))
+    else:
+        add("content", "Treść", "todo", "brak użytecznego tekstu", editor_link)
+
+    # 2. chunks
+    if run is None:
+        add("chunks", "Analiza chunków", "todo", "brak analizy", chunks_link)
+    elif run.status == "reviewed" and run_pending == 0:
+        add("chunks", "Analiza chunków", "done", f"{run_total} chunków, review zamknięty", chunks_link)
+    else:
+        detail = "review nie zamknięty" if run.status != "reviewed" else f"{run_pending} chunków do przejrzenia"
+        add("chunks", "Analiza chunków", "partial", detail, chunks_link)
+
+    # 3. embeddings
+    if embeddings_count:
+        add("embeddings", "Embeddingi", "done", f"{embeddings_count} wektorów", chunks_link)
+    else:
+        add("embeddings", "Embeddingi", "todo", "brak embeddingów", chunks_link)
+
+    # 4. ner
+    if doc.entities_checked_at is not None:
+        add("ner", "Osoby i miejsca (NER)", "done",
+            f"sprawdzone {doc.entities_checked_at.date().isoformat()}")
+    elif doc.ner_unavailable_at is not None:
+        add("ner", "Osoby i miejsca (NER)", "todo", "usługa NER była niedostępna", editor_link)
+    else:
+        add("ner", "Osoby i miejsca (NER)", "todo", "nie sprawdzono", editor_link)
+
+    # 5. enrichment (oś czasu / tony / okresy / źródła / pytania kontrolne)
+    if doc.enrichment_run_at is not None:
+        add("enrichment", "Wzbogacenie", "done",
+            f"uruchomione {doc.enrichment_run_at.date().isoformat()}")
+    else:
+        add("enrichment", "Wzbogacenie", "todo", "oś czasu / tony / okresy / źródła / pytania", chunks_link)
+
+    # 6. quality (webpage/link only)
+    if isinstance(doc.quality, dict) and doc.quality:
+        score = doc.quality.get("score")
+        add("quality", "Ocena jakości", "done",
+            f"staranność {score}/100" if score is not None else "oceniona")
+    else:
+        add("quality", "Ocena jakości", "todo", "brak oceny", editor_link)
+
+    # 7. thematic tags
+    if thematic_tags:
+        add("tags", "Tagi tematyczne", "done", ", ".join(thematic_tags[:6]))
+    else:
+        add("tags", "Tagi tematyczne", "todo", "brak tagów tematycznych", chunks_link)
+
+    # 8. Obsidian note — informational, never counted toward the verdict
+    note_paths = doc.obsidian_note_paths or []
+    if doc_type == "obsidian_note":
+        steps.append({"key": "obsidian_note", "label": "Notatka Obsidian", "state": "na",
+                      "detail": "dokument jest notatką", "link": None, "required": False})
+    elif note_paths:
+        steps.append({"key": "obsidian_note", "label": "Notatka Obsidian", "state": "done",
+                      "detail": note_paths[0] if len(note_paths) == 1 else f"{len(note_paths)} notatek",
+                      "link": None, "required": False})
+    else:
+        steps.append({"key": "obsidian_note", "label": "Notatka Obsidian", "state": "todo",
+                      "detail": "brak notatki (opcjonalnie)", "link": None, "required": False})
+
+    required_steps = [s for s in steps if s["required"]]
+    done_required = sum(1 for s in required_steps if s["state"] == "done")
+    verdict = "ready" if done_required == len(required_steps) else "needs_work"
+
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "document_type": doc_type,
+        "verdict": verdict,
+        "required_done": done_required,
+        "required_total": len(required_steps),
+        "steps": steps,
+    })
+
+
 @bp.route("/document/<int:doc_id>/enrich", methods=["POST"])
 def enrich_document_stage(doc_id: int):
     """Run one opt-in reader enrichment stage.
