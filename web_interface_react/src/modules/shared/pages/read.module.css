@@ -115,6 +115,18 @@
   font-size: 0.82em;
 }
 
+/* Note title in the "📝 Notatki Obsidian" list — looks like a link but opens
+   the right-hand preview panel instead of navigating. */
+.linkedNotePreviewButton {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: #0369a1;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .synthesisPanel {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
