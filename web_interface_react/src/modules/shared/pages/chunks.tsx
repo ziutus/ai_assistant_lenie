@@ -373,8 +373,9 @@ const SegmentsView: React.FC<{
   absOffset: number;
   splitState: SplitState | undefined;
   removedSpans: string[];
+  showTimestamps: boolean;
   onMarkSplit: (chunkId: number, absIdx: number, ts: string) => void;
-}> = ({ segs, videoId, chunkId, absOffset, splitState, removedSpans, onMarkSplit }) => {
+}> = ({ segs, videoId, chunkId, absOffset, splitState, removedSpans, showTimestamps, onMarkSplit }) => {
   // remove_span cuts an exact substring out of chunk.original_text (e.g. an ad
   // spliced mid-sentence) without touching seg_start/seg_end, so this live
   // segment reconstruction has to re-apply the same cuts here to stay in sync.
@@ -400,17 +401,19 @@ const SegmentsView: React.FC<{
               ...(isMarked ? { background: "#fff7ed", borderLeft: "3px solid #f97316", paddingLeft: 6, borderRadius: 2 } : {}),
             }}
           >
-            <div style={{ fontSize: "0.8em", color: "#94a3b8", marginBottom: 1 }}>
-              {g.isSpeakerChange && <span style={{ marginRight: 4 }}>▶</span>}
-              {ytUrl ? (
-                <a href={ytUrl} target="_blank" rel="noopener noreferrer"
-                  style={{ color: "#c00", fontWeight: "bold", textDecoration: "none" }}>
-                  [{ts}]
-                </a>
-              ) : (
-                <span>[{ts}]</span>
-              )}
-            </div>
+            {(showTimestamps || g.isSpeakerChange) && (
+              <div style={{ fontSize: "0.8em", color: "#94a3b8", marginBottom: 1 }}>
+                {g.isSpeakerChange && <span style={{ marginRight: 4 }}>▶</span>}
+                {showTimestamps && (ytUrl ? (
+                  <a href={ytUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ color: "#c00", fontWeight: "bold", textDecoration: "none" }}>
+                    [{ts}]
+                  </a>
+                ) : (
+                  <span>[{ts}]</span>
+                ))}
+              </div>
+            )}
             <span style={{ fontSize: "0.88em", lineHeight: 1.6 }}>{g.text}</span>
             <button
               onClick={() => onMarkSplit(chunkId, g.absIdx, ts)}
@@ -639,6 +642,10 @@ const Chunks = () => {
   const [useRecleaned, setUseRecleaned] = React.useState(false);
   const [recleaning, setRecleaning] = React.useState(false);
   const [hideAds, setHideAds]       = React.useState(false);
+  // Transcript segment timestamps [mm:ss] are a review aid reconstructed from
+  // the raw transcript (doc.text_raw) — they are NOT part of a chunk's text and
+  // never reach the embeddings. This toggle only hides/shows that overlay.
+  const [showTimestamps, setShowTimestamps] = React.useState(true);
 
   const [showCorrected, setShowCorrected] = React.useState<Record<number, boolean>>({});
   const [topicEdits, setTopicEdits]       = React.useState<Record<number, string>>({});
@@ -2152,6 +2159,7 @@ const Chunks = () => {
                   absOffset={chunk.seg_start ?? 0}
                   splitState={splitSt}
                   removedSpans={chunk.removed_text_spans ?? []}
+                  showTimestamps={showTimestamps}
                   onMarkSplit={markSplit}
                 />
               ) : (
@@ -3073,6 +3081,20 @@ const Chunks = () => {
             style={{ marginLeft: "auto", fontSize: "0.82em", padding: "3px 10px" }}>
             {extractingSpeakers ? "Wykrywam…" : speakers.length > 0 ? `Wykryj ponownie (${speakers.length})` : "Wykryj rozmówców"}
           </button>
+        </div>
+      )}
+
+      {/* Znaczniki czasu transkrypcji — nakładka recenzji, nie treść chunka. */}
+      {!processComplete && !error && segments.length > 0 && (
+        <div style={{ marginBottom: 12, padding: "7px 14px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: "0.8em" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", color: "#334155", whiteSpace: "nowrap" }}>
+            <input type="checkbox" checked={showTimestamps} onChange={e => setShowTimestamps(e.target.checked)} />
+            Znaczniki czasu <span style={{ color: "#c00", fontWeight: "bold" }}>[mm:ss]</span>
+          </label>
+          <span style={{ color: "#64748b", fontStyle: "italic" }}>
+            Znaczniki nie są częścią tekstu chunka ani embeddingów — pochodzą z surowej transkrypcji
+            (<code>text_raw</code>) i służą tylko do przejścia do miejsca w wideo oraz cięcia chunków.
+          </span>
         </div>
       )}
 
