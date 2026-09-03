@@ -1064,7 +1064,12 @@ const Chunks = () => {
       });
       const data = await r.json();
       if (data.status === "success") {
-        setChunks(prev => prev.map(c => c.id === chunkId ? { ...c, ...data.chunk } : c));
+        // PATCH /chunk serializes with has_embeddings=null (it doesn't join the
+        // embeddings table); keep the value we already have so the merge doesn't
+        // drop the chunk out of embeddedCount / processComplete.
+        setChunks(prev => prev.map(c => c.id === chunkId
+          ? { ...c, ...data.chunk, has_embeddings: data.chunk?.has_embeddings ?? c.has_embeddings }
+          : c));
       }
       return data;
     } catch {
@@ -1815,6 +1820,12 @@ const Chunks = () => {
   const noiseCount = chunks.filter(c => c.type === "SZUM").length;
   const classificationSummary = `${tematChunks.length} TEMAT · ${zrodlaCount} ŹRÓDŁA · ${adsCount} REKLAMA · ${noiseCount} SZUM`;
   const processComplete = runStatus === "reviewed" && embeddedCount > 0 && !embedJobId;
+  // TEMAT chunks that neither carry an Obsidian note nor are flagged "not needed"
+  // — the "Y do zrobienia" on /list. Same condition as the pre-completion toolbar
+  // (line ~3098) so both agree.
+  const notelessTematCount = tematChunks.filter(
+    c => !c.obsidian_note_not_needed && (c.obsidian_note_paths?.length ?? 0) === 0,
+  ).length;
 
   // ── User notes: match notes to chunks of the selected run ──
   // Direct match by chunk_id; reader notes (or notes from other runs) fall back
@@ -2991,13 +3002,32 @@ const Chunks = () => {
             <span><strong>{approvedCount}</strong> zatwierdzonych</span>
             <span><strong>{reklamaCount}</strong> poza TEMAT pominiętych</span>
             <span>run <strong>#{selectedRun}</strong></span>
+            {notelessTematCount > 0 && (
+              <span style={{ color: "#7c3aed" }}>
+                📝 <strong>{notelessTematCount}</strong> bez notatki Obsidian
+              </span>
+            )}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 13 }}>
             <NavLink to={`/read/${id}`} className="button" style={{ textDecoration: "none" }}>📖 Czytaj dokument</NavLink>
             <button className="button" onClick={() => setShowCompletedResult(value => !value)}>
               {showCompletedResult ? "Ukryj wynikowe chunki" : "Pokaż wynikowe chunki"}
             </button>
+            {notelessTematCount > 0 && (
+              <button className="button" onClick={markRemainingNotesNotNeeded} disabled={markingNotes}
+                title="Oznacz wszystkie chunki TEMAT bez notatki jako niewymagające notatki Obsidian (nadal się embedują)"
+                style={{ background: "#64748b", color: "#fff", border: "none" }}>
+                {markingNotes ? "Oznaczam…" : "Pozostałe bez notatki"}
+              </button>
+            )}
           </div>
+          {notelessTematCount > 0 && (
+            <p style={{ marginTop: 9, marginBottom: 0, color: "#475569", fontSize: "0.8em" }}>
+              Notatki Obsidian pisze skill <code>/lenie-obsidian-note</code>. Chunki, które notatki nie
+              potrzebują, oznacz „bez notatki" — znikną z licznika „do zrobienia" na liście, a nadal
+              są w indeksie. Rozwiń „Pokaż wynikowe chunki", aby oznaczać pojedynczo.
+            </p>
+          )}
           {showCompletedResult && (
             <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
               {tematChunks.map(chunk => (
@@ -3005,6 +3035,25 @@ const Chunks = () => {
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}>
                     <strong style={{ color: "#334155" }}>#{chunk.position} {chunk.topic || "TEMAT"}</strong>
                     <span style={{ color: "#15803d", fontSize: "0.78em" }}>● w indeksie</span>
+                    {chunk.obsidian_note_paths?.length ? (
+                      <span title={chunk.obsidian_note_paths.join("\n")} style={{ color: "#7c3aed", fontSize: "0.8em" }}>
+                        📝 {chunk.obsidian_note_paths.length === 1
+                          ? chunk.obsidian_note_paths[0].split("/").pop()?.replace(/\.md$/i, "")
+                          : `${chunk.obsidian_note_paths.length} notatek`}
+                      </span>
+                    ) : chunk.obsidian_note_not_needed ? (
+                      <span onClick={() => toggleNoteNotNeeded(chunk)}
+                        title="Chunk oznaczony jako niewymagający notatki Obsidian. Kliknij, aby cofnąć."
+                        style={{ cursor: "pointer", color: "#64748b", fontSize: "0.8em" }}>
+                        🚫📝 bez notatki
+                      </span>
+                    ) : (
+                      <span onClick={() => toggleNoteNotNeeded(chunk)}
+                        title="Oznacz ten chunk jako niewymagający notatki Obsidian (nadal się embedduje)"
+                        style={{ cursor: "pointer", color: "#94a3b8", fontSize: "0.8em" }}>
+                        oznacz: bez notatki
+                      </span>
+                    )}
                     <button type="button" onClick={() => analyzeSelectedRelationships(chunk.id)}
                       disabled={analyzingRelationshipsFor === chunk.id}
                       title="Zaznacz cytat w tekście poniżej, aby otrzymać propozycje relacji źródeł"
