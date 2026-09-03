@@ -1064,7 +1064,12 @@ const Chunks = () => {
       });
       const data = await r.json();
       if (data.status === "success") {
-        setChunks(prev => prev.map(c => c.id === chunkId ? { ...c, ...data.chunk } : c));
+        // PATCH /chunk serializes with has_embeddings=null (it doesn't join the
+        // embeddings table); keep the value we already have so the merge doesn't
+        // drop the chunk out of embeddedCount / processComplete.
+        setChunks(prev => prev.map(c => c.id === chunkId
+          ? { ...c, ...data.chunk, has_embeddings: data.chunk?.has_embeddings ?? c.has_embeddings }
+          : c));
       }
       return data;
     } catch {
