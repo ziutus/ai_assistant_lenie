@@ -3,7 +3,7 @@ import logging
 from typing import Any
 
 from sqlalchemy import Float, and_, delete, func, literal, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from library.db.models import ContentGroup, DocumentAnalysisRun, DocumentChunk, Document, DocumentEmbedding, DocumentGroupMembership
 from library.models.stalker_document_status import StalkerDocumentStatus
@@ -197,26 +197,63 @@ class DocumentRepository:
         return result
 
     @staticmethod
-    def _missing_obsidian_note_chunk_conditions():
-        """TEMAT chunks that still need an Obsidian note: not skipped, no note path
-        recorded yet, and not part of a superseded run (an abandoned run replaced
-        by a newer one of the same scope — its chunks are not work to do)."""
+    def _single_temat_chunk_covered_by_doc_note():
+        """True when this chunk is the document's only note-worthy TEMAT chunk
+        (not skipped, not flagged "note not needed", not on a superseded run)
+        AND the document already carries a document-level Obsidian note. For a
+        one-chunk document the document note *is* the chunk note, so it must not
+        keep showing up as work to do."""
+        sibling = aliased(DocumentChunk)
+        noteworthy_sibling_count = (
+            select(func.count())
+            .select_from(sibling)
+            .where(
+                sibling.document_id == DocumentChunk.document_id,
+                sibling.type == "TEMAT",
+                sibling.status != "skipped",
+                sibling.obsidian_note_not_needed.is_(False),
+                select(DocumentAnalysisRun.id).where(
+                    DocumentAnalysisRun.id == sibling.run_id,
+                    DocumentAnalysisRun.status != "superseded",
+                ).exists(),
+            )
+            .scalar_subquery()
+        )
+        document_has_note = select(Document.id).where(
+            Document.id == DocumentChunk.document_id,
+            func.coalesce(func.jsonb_array_length(Document.obsidian_note_paths), 0) > 0,
+        ).exists()
+        return and_(document_has_note, noteworthy_sibling_count == 1)
+
+    @classmethod
+    def _missing_obsidian_note_chunk_conditions(cls):
+        """TEMAT chunks that still need an Obsidian note: not skipped, not flagged
+        "note not needed", no note path recorded yet, not part of a superseded run
+        (an abandoned run replaced by a newer one of the same scope — its chunks
+        are not work to do), and not already covered by a one-chunk document's
+        document-level note."""
         return (
             DocumentChunk.type == "TEMAT",
             DocumentChunk.status != "skipped",
+            DocumentChunk.obsidian_note_not_needed.is_(False),
             func.coalesce(func.array_length(DocumentChunk.obsidian_note_paths, 1), 0) == 0,
             select(DocumentAnalysisRun.id).where(
                 DocumentAnalysisRun.id == DocumentChunk.run_id,
                 DocumentAnalysisRun.status != "superseded",
             ).exists(),
+            ~cls._single_temat_chunk_covered_by_doc_note(),
         )
 
-    @staticmethod
-    def _has_obsidian_note_chunk_conditions():
-        """TEMAT chunks that already have at least one Obsidian note recorded."""
+    @classmethod
+    def _has_obsidian_note_chunk_conditions(cls):
+        """TEMAT chunks that count as noted: an explicit chunk-level note path, or
+        a one-chunk document whose document-level note covers the sole chunk."""
         return (
             DocumentChunk.type == "TEMAT",
-            func.coalesce(func.array_length(DocumentChunk.obsidian_note_paths, 1), 0) > 0,
+            or_(
+                func.coalesce(func.array_length(DocumentChunk.obsidian_note_paths, 1), 0) > 0,
+                cls._single_temat_chunk_covered_by_doc_note(),
+            ),
         )
 
     def _count_obsidian_note_chunks(self, doc_ids: list[int]) -> dict[int, tuple[int, int]]:

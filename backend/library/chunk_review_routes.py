@@ -414,6 +414,7 @@ def _chunk_to_dict(
         "split_first_type": c.split_first_type,
         "split_second_type": c.split_second_type,
         "obsidian_note_paths": c.obsidian_note_paths or [],
+        "obsidian_note_not_needed": bool(c.obsidian_note_not_needed),
         "removed_text_spans": c.removed_text_spans or [],
         "has_embeddings": bool(has_embeddings) if has_embeddings is not None else None,
         "photo_caption_line_indices": [item["line_index"] for item in caption_candidates],
@@ -2677,6 +2678,65 @@ def update_run(run_id: int):
 
 
 # ---------------------------------------------------------------------------
+# API: POST /analysis_run/<run_id>/mark_notes_not_needed
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>/mark_notes_not_needed", methods=["POST", "OPTIONS"])
+def mark_run_notes_not_needed(run_id: int):
+    """Bulk "no more chunk notes here". Body (JSON, optional): {"value": bool}
+    (default true).
+
+    value=true  → flag every TEMAT chunk of the run that has no Obsidian note
+                  yet as "note not needed" (chunks that already have a note are
+                  left alone — the flag is about work still outstanding).
+    value=false → clear the flag on every TEMAT chunk of the run (undo).
+
+    The flag only removes chunks from the "missing Obsidian notes" counter and
+    filter; approved chunks are still embedded as normal.
+    """
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    value = data.get("value", True)
+    if not isinstance(value, bool):
+        return jsonify({"status": "error", "message": "value must be a boolean"}), 400
+
+    chunks = session.scalars(
+        select(DocumentChunk).where(
+            DocumentChunk.run_id == run_id,
+            DocumentChunk.type == "TEMAT",
+        )
+    ).all()
+
+    changed = 0
+    for chunk in chunks:
+        if value:
+            if chunk.obsidian_note_paths or chunk.obsidian_note_not_needed:
+                continue
+        elif not chunk.obsidian_note_not_needed:
+            continue
+        chunk.obsidian_note_not_needed = value
+        chunk.updated_at = datetime.utcnow()
+        changed += 1
+
+    if changed:
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception("Failed to bulk-update note flags for run %d", run_id)
+            return jsonify({"status": "error", "message": "DB error"}), 500
+
+    return jsonify({"status": "success", "run_id": run_id, "value": value, "chunks_changed": changed})
+
+
+# ---------------------------------------------------------------------------
 # API: DELETE /analysis_run/<run_id>
 # ---------------------------------------------------------------------------
 
@@ -3300,6 +3360,13 @@ def update_chunk(chunk_id: int):
 
     if "topic" in data:
         chunk.topic = data["topic"] or None
+        changed = True
+
+    if "obsidian_note_not_needed" in data:
+        val = data["obsidian_note_not_needed"]
+        if not isinstance(val, bool):
+            return jsonify({"status": "error", "message": "obsidian_note_not_needed must be a boolean"}), 400
+        chunk.obsidian_note_not_needed = val
         changed = True
 
     manually_removed: list[str] = []

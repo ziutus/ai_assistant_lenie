@@ -29,6 +29,7 @@ interface Chunk {
   seg_end: number | null;
   chapter_titles?: string[] | null;
   obsidian_note_paths?: string[];
+  obsidian_note_not_needed?: boolean;
   removed_text_spans?: string[] | null;
   has_embeddings?: boolean | null;
   photo_caption_line_indices?: number[];
@@ -641,6 +642,7 @@ const Chunks = () => {
   const [recleanPreview, setRecleanPreview] = React.useState<RecleanPreview | null>(null);
   const [useRecleaned, setUseRecleaned] = React.useState(false);
   const [recleaning, setRecleaning] = React.useState(false);
+  const [markingNotes, setMarkingNotes] = React.useState(false);
   const [hideAds, setHideAds]       = React.useState(false);
   // Transcript segment timestamps [mm:ss] are a review aid reconstructed from
   // the raw transcript (doc.text_raw) — they are NOT part of a chunk's text and
@@ -1089,6 +1091,39 @@ const Chunks = () => {
   const toggleType = (chunk: Chunk) => {
     const idx = TYPE_CYCLE.indexOf(chunk.type as ChunkType);
     patchChunk(chunk.id, { type: TYPE_CYCLE[(idx + 1) % TYPE_CYCLE.length] });
+  };
+
+  const toggleNoteNotNeeded = (chunk: Chunk) => {
+    patchChunk(chunk.id, { obsidian_note_not_needed: !chunk.obsidian_note_not_needed });
+  };
+
+  const markRemainingNotesNotNeeded = async () => {
+    if (selectedRun === null) return;
+    const pending = chunks.filter(
+      c => c.type === "TEMAT" && !c.obsidian_note_not_needed && (c.obsidian_note_paths?.length ?? 0) === 0,
+    ).length;
+    if (pending === 0) return;
+    if (!window.confirm(`Oznaczyć ${pending} chunków bez notatki jako niewymagające notatki Obsidian?`)) return;
+    setMarkingNotes(true);
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/mark_notes_not_needed`, {
+        method: "POST", headers, body: JSON.stringify({ value: true }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setChunks(prev => prev.map(c => (
+          c.type === "TEMAT" && !c.obsidian_note_not_needed && (c.obsidian_note_paths?.length ?? 0) === 0
+            ? { ...c, obsidian_note_not_needed: true } : c
+        )));
+        setInfo(`Oznaczono ${data.chunks_changed} chunków jako niewymagające notatki.`);
+      } else {
+        setError(data.message || "Nie udało się oznaczyć chunków");
+      }
+    } catch {
+      setError("Błąd zapisu");
+    } finally {
+      setMarkingNotes(false);
+    }
   };
 
   // ── Re-analysis ──
@@ -2006,6 +2041,26 @@ const Chunks = () => {
                     </React.Fragment>
                   ))}
                 </span>
+              )}
+
+              {chunk.type === "TEMAT" && (chunk.obsidian_note_paths?.length ?? 0) === 0 && (
+                chunk.obsidian_note_not_needed ? (
+                  <span
+                    onClick={() => toggleNoteNotNeeded(chunk)}
+                    title="Chunk oznaczony jako niewymagający notatki Obsidian. Kliknij, aby cofnąć."
+                    style={{ cursor: "pointer", color: "#64748b", fontSize: "0.85em" }}
+                  >
+                    🚫📝 bez notatki
+                  </span>
+                ) : (
+                  <span
+                    onClick={() => toggleNoteNotNeeded(chunk)}
+                    title="Oznacz ten chunk jako niewymagający notatki Obsidian (nadal się embedduje)"
+                    style={{ cursor: "pointer", color: "#94a3b8", fontSize: "0.85em" }}
+                  >
+                    oznacz: bez notatki
+                  </span>
+                )
               )}
               {myNotes.length > 0 && (
                 <span
@@ -3040,6 +3095,13 @@ const Chunks = () => {
             <input type="checkbox" checked={filterUnprocessed} onChange={e => setFilterUnprocessed(e.target.checked)} />
             tylko nieopracowane
           </label>
+          {chunks.some(c => c.type === "TEMAT" && !c.obsidian_note_not_needed && (c.obsidian_note_paths?.length ?? 0) === 0) && (
+            <button className="button" onClick={markRemainingNotesNotNeeded} disabled={markingNotes}
+              title="Oznacz wszystkie chunki TEMAT bez notatki jako niewymagające notatki Obsidian (nadal się embedują)"
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#64748b", color: "#fff", border: "none" }}>
+              {markingNotes ? "Oznaczam…" : "Pozostałe bez notatki"}
+            </button>
+          )}
           {sectionView && (
             <button className="button" onClick={switchToFlatFull}
               title="Wczytaj wszystkie chunki i pokaż je jako jedną listę (bez accordionu sekcji)"
