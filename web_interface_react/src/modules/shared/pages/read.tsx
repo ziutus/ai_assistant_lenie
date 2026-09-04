@@ -849,7 +849,7 @@ function renderCalloutBlock(
   );
 }
 
-function renderMarkdown(
+export function renderMarkdown(
   text: string,
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
@@ -927,13 +927,20 @@ function renderMarkdown(
         out.push(list);
         return;
       }
-      const heading = trimmed.match(/^(#{1,6})\s+(.*)$/s);
+      // A heading is a single line. Match only the block's first line — an
+      // Obsidian note commonly omits the blank line between a heading and the
+      // text under it ("## Foo\nhttps://…"), and swallowing that follow-on
+      // text into the <h_> (which an /s-flagged `.*` did) turned a URL line
+      // into part of the bold heading. Anything after the first line is
+      // re-rendered as its own block(s).
+      const nl = trimmed.indexOf("\n");
+      const heading = (nl >= 0 ? trimmed.slice(0, nl) : trimmed).match(/^(#{1,6})\s+(.*)$/);
       if (heading) {
         const level = Math.min(heading[1].length + 1, 6);
         const Tag = `h${level}` as keyof JSX.IntrinsicElements;
         // headings can carry note anchors too (e.g. a quote of the chapter title)
         const { nodes, timelineTint, timelineFound } = renderParagraphWithNotes(
-          heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms, timelineAnchor,
+          heading[2], notes, undefined, highlightTerms, timelineAnchor,
           undefined, undefined, wikiLinks, undefined, onWikiLinkClick,
         );
         out.push(
@@ -945,6 +952,17 @@ function renderMarkdown(
             {nodes}
           </Tag>,
         );
+        const rest = nl >= 0 ? trimmed.slice(nl + 1).trim() : "";
+        if (rest) {
+          out.push(
+            <React.Fragment key={`${key}-rest`}>
+              {renderMarkdown(
+                rest, notes, refs, highlightTerms, timelineAnchor, images, onAnchorClick, wikiLinks, described,
+                onWikiLinkClick,
+              )}
+            </React.Fragment>,
+          );
+        }
         return;
       }
       if (trimmed === "---") {

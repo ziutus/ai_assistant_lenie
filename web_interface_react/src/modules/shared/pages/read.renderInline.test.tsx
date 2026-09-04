@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { renderInline } from "./read";
+import { renderInline, renderMarkdown } from "./read";
 
 const show = (nodes: React.ReactNode) =>
   render(<MemoryRouter><p>{nodes}</p></MemoryRouter>);
@@ -45,5 +45,21 @@ describe("renderInline — nested inline inside bold/italic", () => {
   it("linkifies a bare URL inside *italic*", () => {
     show(renderInline("*zob. https://example.com/i*"));
     expect(screen.getByRole("link").getAttribute("href")).toBe("https://example.com/i");
+  });
+});
+
+describe("renderMarkdown — heading not sharing a blank line with the text below", () => {
+  it("keeps a follow-on line out of the <h_> and renders it as its own block", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <div>{renderMarkdown("## Płatne szkolenia\nhttps://learn.kodekloud.com/x", [])}</div>
+      </MemoryRouter>,
+    );
+    const h = container.querySelector("h3");
+    expect(h?.textContent).toBe("Płatne szkolenia");
+    expect(h?.querySelector("a")).toBeNull();
+    const link = screen.getByRole("link");
+    expect(link.getAttribute("href")).toBe("https://learn.kodekloud.com/x");
+    expect(h?.contains(link)).toBe(false);
   });
 });
