@@ -1,1 +1,1 @@
-export const lenie_version = "0.3.16.6";
+export const lenie_version = "0.3.16.7";
