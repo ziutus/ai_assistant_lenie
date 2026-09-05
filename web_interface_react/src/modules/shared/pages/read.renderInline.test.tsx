@@ -48,6 +48,31 @@ describe("renderInline — nested inline inside bold/italic", () => {
   });
 });
 
+describe("renderMarkdown — single line breaks within a paragraph", () => {
+  it("keeps a single \\n as a real line break instead of flattening it to a space", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <div>{renderMarkdown("Pierwsze zdanie.\nDrugie zdanie.", [])}</div>
+      </MemoryRouter>,
+    );
+    const p = container.querySelector("p");
+    expect(p?.style.whiteSpace).toBe("pre-line");
+    // The underlying text keeps the real newline (only the CSS turns it into
+    // a visual break) — collapsing it to " " would defeat pre-line.
+    expect(p?.textContent).toBe("Pierwsze zdanie.\nDrugie zdanie.");
+    expect(p?.textContent).not.toContain("Pierwsze zdanie. Drugie zdanie.");
+  });
+
+  it("still splits a blank line into two separate <p> blocks", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <div>{renderMarkdown("Akapit pierwszy.\n\nAkapit drugi.", [])}</div>
+      </MemoryRouter>,
+    );
+    expect(container.querySelectorAll("p")).toHaveLength(2);
+  });
+});
+
 describe("renderMarkdown — heading not sharing a blank line with the text below", () => {
   it("keeps a follow-on line out of the <h_> and renders it as its own block", () => {
     const { container } = render(

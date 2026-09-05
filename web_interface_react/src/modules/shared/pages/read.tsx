@@ -831,8 +831,11 @@ function renderCalloutBlock(
   const match = trimmed.match(CALLOUT_RE);
   if (!match) return null;
   const isWarn = match[1] === "WARN";
+  // Keep single line breaks inside the callout body as visual breaks (see the
+  // whiteSpace: "pre-line" comment on the plain-paragraph branch below) rather
+  // than flattening the whole callout into one run-on line.
   const { nodes } = renderParagraphWithNotes(
-    match[2].replace(/\n/g, " "), notes, refs, highlightTerms, timelineAnchor,
+    match[2], notes, refs, highlightTerms, timelineAnchor,
     onAnchorClick, images, wikiLinks, described, onWikiLinkClick,
   );
   return (
@@ -844,7 +847,7 @@ function renderCalloutBlock(
       borderRadius: 8, padding: "10px 14px", margin: "16px 0", lineHeight: 1.6,
     }}>
       <span aria-hidden="true">{isWarn ? "⚠️" : "ℹ️"}</span>
-      <div>{nodes}</div>
+      <div style={{ whiteSpace: "pre-line" }}>{nodes}</div>
     </div>
   );
 }
@@ -887,7 +890,7 @@ export function renderMarkdown(
           );
           out.push(
             <p key={`${key}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
-              lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
+              lineHeight: 1.65, margin: "14px 0", textAlign: "justify", whiteSpace: "pre-line",
               ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
               ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
             }}>
@@ -971,16 +974,25 @@ export function renderMarkdown(
       }
       // footnote / caption lines (superscript digits or "Wykres N.") — smaller font
       const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
-      const paraText = trimmed.replace(/\n/g, " ");
+      // A blank line already starts a new block/paragraph (see the split
+      // above); a single "\n" within a block used to be flattened to a space,
+      // turning short, one-sentence-per-line notes (the common Obsidian
+      // style — see e.g. /read/9613) into one run-on wall of text. Keep the
+      // line breaks in the text passed to note/entity matching (an exact
+      // anchor_quote match still works as long as it doesn't itself straddle
+      // a line break — normalizeWs already covers that case with the
+      // whole-paragraph tint fallback below) and render them as real line
+      // breaks via CSS rather than joining with a space.
+      const paraText = trimmed;
       const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
         paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
         onWikiLinkClick,
       );
       out.push(
         <p key={key} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
-          ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0" }
+          ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0", whiteSpace: "pre-line" }
           : {
-              lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
+              lineHeight: 1.65, margin: "14px 0", textAlign: "justify", whiteSpace: "pre-line",
               ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
               ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
             }}
