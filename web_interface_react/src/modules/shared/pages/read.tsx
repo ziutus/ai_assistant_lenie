@@ -870,7 +870,14 @@ export function renderMarkdown(
       out.push(renderCodeBlock(segment, `code-${segIndex}`));
       return;
     }
-    const blocks = segment.content.split(/\n\s*\n/);
+    // A source document doesn't always put a blank line before a heading
+    // either (as well as after — see the heading-splitting comment below) —
+    // e.g. a list of plain lines followed directly by "### Next section" with
+    // no blank line in between (/read/9613's "Troubleshooting 30%" chapter).
+    // Force every such heading line to start its own block, same as a blank
+    // line would, so it doesn't get swallowed into the previous paragraph.
+    const withHeadingBreaks = segment.content.replace(/\n(?=#{1,6}[ \t]+\S)/g, "\n\n");
+    const blocks = withHeadingBreaks.split(/\n\s*\n/);
     blocks.forEach((block, i) => {
       const key = `${segIndex}-${i}`;
       const trimmed = block.trim();
