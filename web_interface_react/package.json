@@ -1,6 +1,6 @@
 {
   "name": "lenie-ai",
-  "version": "0.3.16.9",
+  "version": "0.3.16.10",
   "private": true,
   "type": "module",
   "dependencies": {

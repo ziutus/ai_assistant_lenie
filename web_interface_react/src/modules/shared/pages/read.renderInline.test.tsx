@@ -71,6 +71,18 @@ describe("renderMarkdown — single line breaks within a paragraph", () => {
     );
     expect(container.querySelectorAll("p")).toHaveLength(2);
   });
+
+  it("splits a heading out of the preceding paragraph even with no blank line before it", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <div>{renderMarkdown("Troubleshoot services and networking\n### Workloads & Scheduling 15%", [])}</div>
+      </MemoryRouter>,
+    );
+    const h4 = container.querySelector("h4");
+    expect(h4?.textContent).toBe("Workloads & Scheduling 15%");
+    const p = container.querySelector("p");
+    expect(p?.textContent).toBe("Troubleshoot services and networking");
+  });
 });
 
 describe("renderMarkdown — heading not sharing a blank line with the text below", () => {
