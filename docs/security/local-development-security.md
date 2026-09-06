@@ -69,6 +69,10 @@ Limitowanie liczby żądań (rate limiting) jest świadomie odłożone — patrz
 zaakceptowany brak, a nie luka do cichego załatania; jego wprowadzenie wymaga
 aktualizacji zakresu tego dokumentu.
 
+Historia znalezisk (który model AI, kiedy, co wykrył) jest w osobnym
+[dzienniku przeglądów AI](ai-review-findings-log.md) — celowym rejestrze
+historycznym, nie opisie stanu bieżącego.
+
 ## Przegląd wyjątków i dokumentacji
 
 Przed rozszerzeniem dostępu właściciel instancji sprawdza każdy wyjątek i zapisuje
