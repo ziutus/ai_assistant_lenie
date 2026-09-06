@@ -39,25 +39,35 @@ Instrukcje techniczne i zastana konfiguracja znajdują się w
 Przechowywanie sekretów opisuje [Secrets Management](secrets-management.md).
 Żadnych wartości rzeczywistych sekretów nie zapisujemy w dokumentacji.
 
-## Błędy aplikacji nie są lokalnymi wyjątkami
+## Inwarianty bezpieczeństwa aplikacji
 
-Przegląd kodu `a80f11bb9874495e1e770ef76f96f14191c5f0b9` wskazał poniższe
-problemy. Ten zapis nie oznacza ich naprawienia; zamknięcie wymaga wskazania zmiany
-i wyniku weryfikacji.
+Niezależnie od uproszczeń infrastrukturalnych z tabeli powyżej, aplikacja
+egzekwuje w kodzie poniższe reguły. Nie są to warunkowe wyjątki: obowiązują
+w każdym profilu wdrożenia i mają pokrycie testami regresyjnymi. Kontekst
+zagrożenia jest realny — operator importuje obce treści, więc przejęty feed lub
+link w newsletterze to wektor do wnętrza sieci, a integracja z kluczem tylko do
+odczytu nie może przypadkiem wywołać operacji zmieniającej dane.
 
-| Problem | Oczekiwane zachowanie po poprawce | Status |
-|---|---|---|
-| Usuwanie dokumentu przez `GET /website_delete`, dostępne dla `read_only` | `GET` i `HEAD` nie usuwają danych; operacja usuwania wymaga prawa zapisu. | Naprawione — endpoint zmieniony na `DELETE` (gate metod blokuje `read_only`). |
-| Feed pobierany bez ochrony SSRF | Początkowy adres i przekierowania nie pozwalają dotrzeć do niedozwolonych celów wewnętrznych; połączenie używa zweryfikowanego celu. | Naprawione — `library/safe_http.py` (DNS rozwiązywany raz, socket przypięty do zweryfikowanego adresu, każde przekierowanie walidowane); wpięte też w pobieranie stron i linków trackingowych. |
-| `OPTIONS /uploads` zwraca metadane bez klucza | Preflight nie wykonuje listowania ani nie ujawnia danych. | Naprawione — `OPTIONS` zwraca puste `204` przed dostępem do storage. |
-| Nieograniczony cache błędnych kluczy API | Wygasłe wpisy są usuwane, a pamięć cache ma ograniczony rozmiar. | Naprawione — limit 10 000 wpisów, przy przepełnieniu usuwane wygasłe, potem najstarszy. |
+- **Klucz `read_only` nie modyfikuje danych.** Metody inne niż `GET`/`HEAD`/`OPTIONS`
+  kończą się `403`. Usunięcie dokumentu wymaga metody `DELETE` i klucza z prawem
+  zapisu (`user`/`service`); żadne `GET`/`HEAD` nie wywołuje skutków biznesowych.
+- **Pobieranie zewnętrznych zasobów jest chronione przed SSRF.** Feedy (RSS/Atom/
+  JSON/YouTube), strony do importu i linki trackingowe z newsletterów przechodzą
+  przez wspólną walidację celu (`backend/library/safe_http.py`): nazwa hosta jest
+  rozwiązywana raz, żądanie i każde przekierowanie mogą trafić wyłącznie na
+  publiczny adres IP, a gniazdo jest przypięte do zweryfikowanego adresu. Loopback,
+  sieci prywatne, link-local, CGNAT i endpointy metadanych infrastruktury są
+  odrzucane. Konfiguracja feedu odrzuca też jawnie wewnętrzne adresy przy zapisie.
+- **Preflight `OPTIONS` jest bez skutków ubocznych.** Nie wykonuje operacji storage
+  ani nie zwraca danych — sama odpowiedź CORS.
+- **Cache uwierzytelniania jest ograniczony.** Liczba wpisów ma górny limit, a
+  wygasłe wpisy są odzyskiwane niezależnie od ponownego odpytania o ten sam klucz,
+  więc rotacja nieznanych kluczy nie rośnie w pamięci ani nie generuje ruchu do bazy.
 
-Wszystkie cztery poprawki są na gałęzi `fix/security-4-issues`; opis zmian i wynik
-weryfikacji: [security-4-fixes-verification.md](security-4-fixes-verification.md).
-
-Zaufany operator nadal importuje obce treści. Przejęty feed może uruchomić SSRF,
-a integracja z kluczem tylko do odczytu może przypadkowo wywołać usuwający endpoint.
-Te poprawki nie wymagają przejścia na model SaaS ani zmiany istniejących ADR-ów.
+Limitowanie liczby żądań (rate limiting) jest świadomie odłożone — patrz
+[plan household](../deployment/nas/multi-user-household.md). To znany,
+zaakceptowany brak, a nie luka do cichego załatania; jego wprowadzenie wymaga
+aktualizacji zakresu tego dokumentu.
 
 ## Przegląd wyjątków i dokumentacji
 
@@ -66,8 +76,5 @@ wynik w dokumentacji wdrożenia: datę, zakres dostępu, właściciela, zabezpie
 oraz termin lub zdarzenie kończące wyjątek. Niespełniony warunek nie jest domyślną
 zgodą na dalsze stosowanie uproszczenia.
 
-Ograniczenie pamięci cache jest poprawką implementacji. Rate limiting żądań jest
-osobną decyzją: [plan household](../deployment/nas/multi-user-household.md)
-świadomie go odkłada. Wprowadzenie go wymaga aktualizacji tego zakresu.
 Nowy ADR jest właściwy dla wyboru docelowego środowiska, zmiany modelu zaufania
 lub nowego komponentu architektury, nie dla każdej poprawki bezpieczeństwa.
