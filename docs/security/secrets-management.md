@@ -2,6 +2,12 @@
 
 This document describes how Project Lenie handles configuration and secrets across different deployment environments.
 
+Environment-specific requirements are defined in the
+[local development security profile](local-development-security.md) and the
+[corporate/cloud production readiness checklist](production-readiness.md).
+Secret storage alone does not validate password strength, remove deployment
+fallbacks, or rotate credentials in an existing database.
+
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
@@ -190,7 +196,7 @@ python scripts/env_to_vault.py sync --env dev --from vault --to ssm --write
 
 ## Variable Classification
 
-All configuration variables are defined in [`scripts/vars-classification.yaml`](../scripts/vars-classification.yaml) — the Single Source of Truth (SSOT) for variable metadata.
+All configuration variables are defined in [`scripts/vars-classification.yaml`](../../scripts/vars-classification.yaml) — the Single Source of Truth (SSOT) for variable metadata.
 
 ### Variable Types
 
