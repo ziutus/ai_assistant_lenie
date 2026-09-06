@@ -483,6 +483,28 @@ This setting is saved in the browser's localStorage.
 
 ## Troubleshooting
 
+### Deploy aborts immediately on the first `docker build` line
+
+Symptom: `nas-deploy.ps1` exits almost instantly with
+
+```
+docker : #0 building with "desktop-linux" instance using docker driver
+    + CategoryInfo          : NotSpecified: (...) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+```
+
+Cause: the script runs under `$ErrorActionPreference = "Stop"`, and `docker
+build` writes its progress to **stderr**. In Windows PowerShell 5.1, redirecting
+a native command's stderr (`.\nas-deploy.ps1 ... 2>&1`, or piping to
+`Tee-Object` after `2>&1`) turns every stderr line into an error record, so the
+very first progress line becomes a terminating error before anything is built or
+pushed. This is **not** a registry or image-transfer problem.
+
+Fix: run the script without `2>&1`. Run it directly (`.\infra\docker\nas-deploy.ps1
+-Service backend,worker`) — PowerShell shows stderr on the console anyway. To
+capture a full log, use `*> deploy.log` (merges all streams without the
+error-record conversion) or `-RedirectStandardOutput`, never `2>&1`.
+
 ### Check container status
 
 ```bash
