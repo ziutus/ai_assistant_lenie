@@ -2,6 +2,12 @@
 
 Full Lenie stack running on a local QNAP NAS for personal use and testing.
 
+> **Security scope:** This runbook describes the local setup, including intentional
+> development shortcuts; it is not a production security baseline. See the
+> [local security profile](../security/local-development-security.md) for their
+> conditions and the [production readiness checklist](../security/production-readiness.md)
+> before exposing the stack to a corporate network or deploying it to cloud.
+
 > **Related docs:** [Docker_Local.md](Docker_Local.md) — local Docker Compose development, [frontend-deployment.md](../frontend-deployment.md) — AWS frontend deployment.
 
 ## Hardware
@@ -116,6 +122,11 @@ $DOCKER run -d --name lenie-registry \
 #### 2. Configure insecure-registries
 
 The registry runs without TLS (HTTP only), so both the PC and NAS must allow it as an insecure registry.
+
+This shortcut supports fast local build/push/pull iterations. It requires restricted
+network access as described in the [local security profile](../security/local-development-security.md).
+An internal registry may also be used in production, but must have transport and
+access controls; do not copy this unauthenticated HTTP setup as a production default.
 
 **PC (Docker Desktop):**
 
@@ -333,6 +344,12 @@ psql -h 192.168.200.7 -p 5434 -U postgres -d lenie-ai
 Password: the compose default `postgres`, unless `NAS_DB_PASSWORD` was set in
 the NAS env file. Database name is **`lenie-ai`** (created by
 `01-create-database.sql` above — not the legacy local-dev name `lenie`).
+
+This describes the initialization fallback, not a verification of the live database
+password. The fallback is suitable only for an isolated disposable test database;
+persistent NAS data requires an individual secret. Changing the Compose variable
+does not establish that an existing database password has been rotated. See the
+[local security profile](../security/local-development-security.md).
 
 Python one-off/backfill scripts (`backend/imports/*.py`) connect through the
 ORM instead of `psql` — for the exact env-var pattern see

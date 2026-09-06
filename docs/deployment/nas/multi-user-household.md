@@ -1,5 +1,11 @@
 # Plan: kilku zaufanych użytkowników na NAS (household)
 
+Powiązane: [lokalne uproszczenia bezpieczeństwa](../../security/local-development-security.md)
+oraz [gotowość wdrożenia firmowego/chmurowego](../../security/production-readiness.md).
+Wyjątki infrastrukturalne są opisane osobno od uprawnień użytkowników. Ograniczenie
+rozmiaru cache autoryzacji jest poprawką implementacji, niezależną od odłożonego
+poniżej rate limitingu żądań.
+
 Status: **realny plan, wdrażany teraz** — w odróżnieniu od [../commercial-multi-tenant-scaling-experiment.md](../commercial-multi-tenant-scaling-experiment.md), który jest czystym eksperymentem myślowym.  
 Powiązane dokumenty: [storage-and-jobs-migration-plan.md](storage-and-jobs-migration-plan.md) · [../federation-experiment.md](../federation-experiment.md)
 
