@@ -59,7 +59,7 @@ class TestWebsiteGetById(unittest.TestCase):
         self.assertEqual(response_json["text"], example_data["text"])
         # self.assertEqual(response_json["paywall"], example_data["paywall"])
 
-        response = self.app.get(f"/website_delete?id={example_data['id']}")
+        response = self.app.delete(f"/website_delete?id={example_data['id']}")
         self.assertEqual(response.status_code, 200)
 
 

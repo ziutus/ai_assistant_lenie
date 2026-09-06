@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 KEY_PREFIX_LEN = 12
 POSITIVE_TTL_SECONDS = 300
 NEGATIVE_TTL_SECONDS = 30
+MAX_CACHE_ENTRIES = 10_000
 # last_used_at is written at most this often per key, so steady traffic on a
 # cached key does not turn into a DB write per request.
 LAST_USED_WRITE_INTERVAL_SECONDS = 300
@@ -73,7 +74,11 @@ class ApiKeyCache(Protocol):
 class InProcessApiKeyCache:
     """Dict + TTL cache; sufficient for the single Flask process on the NAS."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_entries: int = MAX_CACHE_ENTRIES, clock=None) -> None:
+        if max_entries < 1:
+            raise ValueError("max_entries must be positive")
+        self._max_entries = max_entries
+        self._clock = clock or time.monotonic
         self._entries: dict[str, CacheEntry] = {}
         self._lock = threading.Lock()
 
@@ -82,7 +87,7 @@ class InProcessApiKeyCache:
             entry = self._entries.get(key_hash)
             if entry is None:
                 return None
-            if entry.expires_at < time.monotonic():
+            if entry.expires_at <= self._clock():
                 del self._entries[key_hash]
                 return None
             return entry
@@ -90,6 +95,12 @@ class InProcessApiKeyCache:
     def set(self, key_hash: str, entry: CacheEntry) -> None:
         with self._lock:
             self._entries[key_hash] = entry
+            if len(self._entries) > self._max_entries:
+                now = self._clock()
+                self._entries = {key: value for key, value in self._entries.items() if value.expires_at > now}
+                if len(self._entries) > self._max_entries:
+                    oldest = min(self._entries, key=lambda key: self._entries[key].expires_at)
+                    del self._entries[oldest]
 
     def invalidate(self, key_hash: str | None = None) -> None:
         with self._lock:

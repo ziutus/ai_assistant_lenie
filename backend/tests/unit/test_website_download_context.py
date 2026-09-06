@@ -1,9 +1,15 @@
 """Unit tests for SSRF protection in library/website/website_download_context.py."""
-from unittest.mock import MagicMock, patch
+import socket
+from unittest.mock import MagicMock
 
 import pytest
 
+from library import safe_http
+from library.website import website_download_context
 from library.website.website_download_context import download_raw_html, validate_url_target
+
+# Public IP literals keep validate_url_target off the network (no hostname to resolve).
+PUBLIC_IP = "93.184.216.34"
 
 
 class TestValidateUrlTarget:
@@ -40,71 +46,96 @@ class TestValidateUrlTarget:
         validate_url_target("https://1.1.1.1/")
 
 
+def _addresses(*ips, port=443):
+    return [
+        (socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))
+        for ip in ips
+    ]
+
+
+def _urllib3_response(*, status=200, body=b"<html></html>", headers=None):
+    response = MagicMock(status=status, headers=headers or {})
+    response.stream.return_value = [body] if body else []
+    return response
+
+
+@pytest.fixture()
+def pinned(monkeypatch):
+    """Drive safe_get without a real socket: resolver + connection pool are mocked."""
+    resolver = MagicMock(return_value=_addresses(PUBLIC_IP))
+    monkeypatch.setattr(safe_http.socket, "getaddrinfo", resolver)
+    monkeypatch.setattr(safe_http.socket, "socket", MagicMock(return_value=MagicMock()))
+    pool_factory = MagicMock()
+    monkeypatch.setattr(safe_http, "_pinned_pool", pool_factory)
+    pool = pool_factory.return_value.__enter__.return_value
+    return resolver, pool_factory, pool
+
+
 class TestDownloadRawHtml:
-    @patch("library.website.website_download_context.requests.get")
-    def test_downloads_content_with_timeout(self, mock_get):
-        response = MagicMock()
-        response.status_code = 200
-        response.content = b"<html></html>"
-        response.is_redirect = False
-        response.is_permanent_redirect = False
-        mock_get.return_value = response
+    def test_downloads_content(self, pinned):
+        _, _, pool = pinned
+        pool.urlopen.return_value = _urllib3_response(body=b"<html>ok</html>")
+        assert download_raw_html(f"https://{PUBLIC_IP}/page") == b"<html>ok</html>"
+        assert pool.urlopen.call_args.args[0] == "GET"
+        assert pool.urlopen.call_args.kwargs["redirect"] is False
 
-        result = download_raw_html("https://1.1.1.1/page")
+    def test_returns_none_on_error_status(self, pinned):
+        _, _, pool = pinned
+        pool.urlopen.return_value = _urllib3_response(status=404, body=b"nope")
+        assert download_raw_html(f"https://{PUBLIC_IP}/missing") is None
 
-        assert result == b"<html></html>"
-        assert mock_get.call_args.kwargs["timeout"] == 30
-        assert mock_get.call_args.kwargs["allow_redirects"] is False
-
-    @patch("library.website.website_download_context.requests.get")
-    def test_returns_none_on_error_status(self, mock_get):
-        response = MagicMock()
-        response.status_code = 404
-        response.is_redirect = False
-        response.is_permanent_redirect = False
-        mock_get.return_value = response
-
-        assert download_raw_html("https://1.1.1.1/missing") is None
-
-    @patch("library.website.website_download_context.requests.get")
-    def test_rejects_redirect_to_private_address(self, mock_get):
-        response = MagicMock()
-        response.is_redirect = True
-        response.is_permanent_redirect = False
-        response.headers = {"Location": "http://192.168.1.1/internal"}
-        mock_get.return_value = response
-
+    def test_rejects_redirect_to_private_address(self, pinned):
+        _, _, pool = pinned
+        pool.urlopen.return_value = _urllib3_response(status=302, headers={"Location": "http://192.168.1.1/internal"})
         with pytest.raises(ValueError, match="non-public address"):
-            download_raw_html("https://1.1.1.1/redirect")
+            download_raw_html(f"https://{PUBLIC_IP}/redirect")
 
-    @patch("library.website.website_download_context.requests.get")
-    def test_follows_public_redirect(self, mock_get):
-        redirect = MagicMock()
-        redirect.is_redirect = True
-        redirect.is_permanent_redirect = False
-        redirect.headers = {"Location": "https://1.0.0.1/final"}
+    def test_follows_public_redirect(self, pinned):
+        _, _, pool = pinned
+        pool.urlopen.side_effect = [
+            _urllib3_response(status=301, headers={"Location": f"https://{PUBLIC_IP}/final"}),
+            _urllib3_response(body=b"ok"),
+        ]
+        assert download_raw_html(f"https://{PUBLIC_IP}/start") == b"ok"
 
-        final = MagicMock()
-        final.status_code = 200
-        final.content = b"ok"
-        final.is_redirect = False
-        final.is_permanent_redirect = False
-
-        mock_get.side_effect = [redirect, final]
-
-        assert download_raw_html("https://1.1.1.1/start") == b"ok"
-
-    @patch("library.website.website_download_context.requests.get")
-    def test_raises_on_redirect_loop(self, mock_get):
-        response = MagicMock()
-        response.is_redirect = True
-        response.is_permanent_redirect = False
-        response.headers = {"Location": "https://1.1.1.1/loop"}
-        mock_get.return_value = response
-
+    def test_raises_on_redirect_loop(self, pinned):
+        _, _, pool = pinned
+        pool.urlopen.return_value = _urllib3_response(
+            status=302, headers={"Location": f"https://{PUBLIC_IP}/loop"}
+        )
         with pytest.raises(ValueError, match="Too many redirects"):
-            download_raw_html("https://1.1.1.1/loop")
+            download_raw_html(f"https://{PUBLIC_IP}/loop")
 
     def test_rejects_private_url_before_any_request(self):
         with pytest.raises(ValueError, match="non-public address"):
             download_raw_html("http://127.0.0.1:8080/")
+
+    def test_enforces_response_size_cap(self, pinned, monkeypatch):
+        _, _, pool = pinned
+        monkeypatch.setattr(website_download_context, "MAX_HTML_BYTES", 8)
+        pool.urlopen.return_value = _urllib3_response(body=b"x" * 64)
+        with pytest.raises(ValueError, match="size limit"):
+            download_raw_html(f"https://{PUBLIC_IP}/big")
+
+
+def test_dns_rebinding_cannot_redirect_the_socket_inward(monkeypatch):
+    """Host resolves public at validation, internal at connect time — must still connect public."""
+    resolver = MagicMock(side_effect=[_addresses(PUBLIC_IP), _addresses("127.0.0.1")])
+    monkeypatch.setattr(safe_http.socket, "getaddrinfo", resolver)
+    created = []
+
+    def _socket(*_a, **_k):
+        sock = MagicMock()
+        created.append(sock)
+        return sock
+
+    monkeypatch.setattr(safe_http.socket, "socket", _socket)
+
+    parsed = safe_http.validate_public_url("https://example.com/page")
+    with safe_http._pinned_pool(parsed, safe_http._resolve_target(parsed), (3, 7)) as pool:
+        pool._new_conn()._new_conn()  # exercise the pinned socket-creation override
+
+    assert created, "a socket should have been created"
+    for sock in created:
+        sock.connect.assert_called_once_with((PUBLIC_IP, 443))
+    resolver.assert_called_once()  # no second DNS lookup at connect time
