@@ -45,12 +45,15 @@ Przegląd kodu `a80f11bb9874495e1e770ef76f96f14191c5f0b9` wskazał poniższe
 problemy. Ten zapis nie oznacza ich naprawienia; zamknięcie wymaga wskazania zmiany
 i wyniku weryfikacji.
 
-| Problem | Oczekiwane zachowanie po poprawce |
-|---|---|
-| Usuwanie dokumentu przez `GET /website_delete`, dostępne dla `read_only` | `GET` i `HEAD` nie usuwają danych; operacja usuwania wymaga prawa zapisu. |
-| Feed pobierany bez ochrony SSRF | Początkowy adres i przekierowania nie pozwalają dotrzeć do niedozwolonych celów wewnętrznych; połączenie używa zweryfikowanego celu. |
-| `OPTIONS /uploads` zwraca metadane bez klucza | Preflight nie wykonuje listowania ani nie ujawnia danych. |
-| Nieograniczony cache błędnych kluczy API | Wygasłe wpisy są usuwane, a pamięć cache ma ograniczony rozmiar. |
+| Problem | Oczekiwane zachowanie po poprawce | Status |
+|---|---|---|
+| Usuwanie dokumentu przez `GET /website_delete`, dostępne dla `read_only` | `GET` i `HEAD` nie usuwają danych; operacja usuwania wymaga prawa zapisu. | Naprawione — endpoint zmieniony na `DELETE` (gate metod blokuje `read_only`). |
+| Feed pobierany bez ochrony SSRF | Początkowy adres i przekierowania nie pozwalają dotrzeć do niedozwolonych celów wewnętrznych; połączenie używa zweryfikowanego celu. | Naprawione — `library/safe_http.py` (DNS rozwiązywany raz, socket przypięty do zweryfikowanego adresu, każde przekierowanie walidowane); wpięte też w pobieranie stron i linków trackingowych. |
+| `OPTIONS /uploads` zwraca metadane bez klucza | Preflight nie wykonuje listowania ani nie ujawnia danych. | Naprawione — `OPTIONS` zwraca puste `204` przed dostępem do storage. |
+| Nieograniczony cache błędnych kluczy API | Wygasłe wpisy są usuwane, a pamięć cache ma ograniczony rozmiar. | Naprawione — limit 10 000 wpisów, przy przepełnieniu usuwane wygasłe, potem najstarszy. |
+
+Wszystkie cztery poprawki są na gałęzi `fix/security-4-issues`; opis zmian i wynik
+weryfikacji: [security-4-fixes-verification.md](security-4-fixes-verification.md).
 
 Zaufany operator nadal importuje obce treści. Przejęty feed może uruchomić SSRF,
 a integracja z kluczem tylko do odczytu może przypadkowo wywołać usuwający endpoint.

@@ -468,7 +468,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     setIsLoading(true);
 
     try {
-      const response = await axios.get(
+      const response = await axios.delete(
         `${apiUrl}/website_delete`,
         {
           params: {
@@ -564,7 +564,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     console.log("Deleting document with id: " + document_id);
 
     try {
-      const response = await axios.get(
+      const response = await axios.delete(
         `${apiUrl}/website_delete`,
         {
           params: {

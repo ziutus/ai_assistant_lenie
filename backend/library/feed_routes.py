@@ -484,7 +484,11 @@ def get_feed(feed_id):
 def create_feed():
     _service()
     session = get_scoped_session()
-    values = resolve_references(session, request.get_json(silent=True) or {})
+    try:
+        values = resolve_references(session, request.get_json(silent=True) or {})
+    except ValueError as exc:
+        session.rollback()
+        abort(400, str(exc))
     if "name" not in values:
         abort(400, "name is required")
     row = FeedSource(**values)
@@ -512,7 +516,11 @@ def update_feed(feed_id):
             merged["auto_import_after"] = dt.datetime.fromisoformat(merged["auto_import_after"].replace("Z", "+00:00")) if merged["auto_import_after"] else None
         except ValueError:
             abort(400, "auto_import_after must be an ISO timestamp")
-    values = resolve_references(session, merged)
+    try:
+        values = resolve_references(session, merged)
+    except ValueError as exc:
+        session.rollback()
+        abort(400, str(exc))
     values.pop("name", None)
     for key, value in values.items():
         setattr(row, key, value)
