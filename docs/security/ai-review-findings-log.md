@@ -21,7 +21,7 @@ sprawdzano.
 
 ---
 
-## 2026-09-06 — Astra (OpenAI)
+## 2026-09-06 — `gpt-6-astra` (OpenAI), reasoning: medium
 
 Zakres: przegląd `origin/main` @ `a80f11bb9874495e1e770ef76f96f14191c5f0b9`
 z prośbą o oddzielenie błędów kodu od świadomych uproszczeń lokalnego środowiska.
@@ -35,7 +35,7 @@ z prośbą o oddzielenie błędów kodu od świadomych uproszczeń lokalnego śr
 
 Wskazane jako poza zakresem czterech poprawek:
 
-- Ta sama luka DNS rebinding / TOCTOU w starszym `library/website/website_download_context.py` (`validate_url_target` sprawdza DNS, a `requests` rozwiązuje go ponownie przy połączeniu). Zawężone i naprawione w tym samym [PR #609](https://github.com/ziutus/ai_assistant_lenie/pull/609) — konkretny kształt luki doprecyzował model **GPT-5-Codex (OpenAI)** w trakcie implementacji.
+- Ta sama luka DNS rebinding / TOCTOU w starszym `library/website/website_download_context.py` (`validate_url_target` sprawdza DNS, a `requests` rozwiązuje go ponownie przy połączeniu). Zawężone i naprawione w tym samym [PR #609](https://github.com/ziutus/ai_assistant_lenie/pull/609) — konkretny kształt luki doprecyzował model wykonujący implementację (OpenAI Codex).
 - `infra/aws/serverless/lambdas/app-server-db/lambda_function.py` rozsyła usuwanie po ścieżce bez sprawdzania metody HTTP — uśpiony kod AWS, świadomie nie zmieniany.
 - Registry na NAS bez TLS/uwierzytelniania, fallback hasła bazy, ekspozycja portów — sklasyfikowane jako uproszczenia infrastrukturalne, nie błędy kodu (patrz [profil lokalny](local-development-security.md)).
 
