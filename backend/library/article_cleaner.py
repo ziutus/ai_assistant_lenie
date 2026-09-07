@@ -163,10 +163,24 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
            "dalszy ciąg artykułu pod materiałem wideo" in stripped.lower() or \
            "dalsza część artykulu pod video" in stripped.lower():
             continue
-        # "Czytaj także:" + link na tej samej lub następnej linii
-        if stripped.startswith("**Czytaj także:**") or stripped.startswith("**Czytaj również:**"):
+        # Linia rekomendacji "czytaj powiązane" z etykietą w pogrubieniu:
+        # "**Czytaj także:** ...", "* **Polecamy:** ...", "**Czytaj też:** ...",
+        # "* **Przeczytaj:** ...", "**Zobacz też:** ..." — onet i businessinsider
+        # wstawiają je między akapitami i na końcu artykułu.
+        if re.match(
+            r'^(?:\*\s+)?\*\*\s*(?:Czytaj|Przeczytaj|Zobacz|Polecamy)'
+            r'(?:\s+(?:też|także|również|więcej))?\s*:',
+            stripped, re.IGNORECASE,
+        ):
             continue
-        if stripped.startswith("**Zobacz także:**") or stripped.startswith("* **Czytaj więcej:**"):
+        # CTA "przeczytaj cały tekst" — cała linia jest wezwaniem (opcjonalnie
+        # w **, z "!" i/lub markerem [linkN]): "**Przeczytaj cały tekst** [link7]",
+        # "PRZECZYTAJ TEKST [link2]", "Przeczytaj całość artykułu [link0]"
+        if re.match(
+            r'^\*{0,2}(?:Przeczytaj (?:cały tekst|całość(?: artykułu)?|tekst)'
+            r'|PRZECZYTAJ TEKST)[!]?\*{0,2}(?:\s*\[link\d+\])?\s*$',
+            stripped, re.IGNORECASE,
+        ):
             continue
 
         # "Zobacz też" z obrazkiem: [[imgN...] tytuł](url) lub [[imgN...] tytuł [linkN]
@@ -236,6 +250,11 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
             continue
         # CTA rekomendacji: "**PRZECZYTAJ CAŁY TEKST** [linkN]", "**PRZECZYTAJ CAŁY WYWIAD**"
         if re.match(r'^\*\*PRZECZYTAJ CAŁY [^*]+\*\*(?:\s+\[link\d+\])?$', stripped):
+            continue
+        # Gołe wypunktowanie będące w całości odnośnikiem "czytaj powiązane":
+        # "* <nagłówek> [linkN]" (marker [linkN] na samym końcu linii). Onet
+        # wstawia takie listy powiązanych artykułów między akapity i na końcu.
+        if stripped.startswith("* ") and re.search(r'\[link\d+\]\s*$', stripped):
             continue
         cleaned.append(line)
     return cleaned
