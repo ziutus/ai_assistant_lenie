@@ -108,3 +108,30 @@ class TestGetListParameterization:
         """Verify the filter also applies in count mode."""
         result = db_instance.get_list(only_has_obsidian_notes=True, count=True)
         assert result == 0
+
+
+class TestObsidianNoteChunkConditions:
+    """The SQL that decides whether a TEMAT chunk still needs an Obsidian note."""
+
+    def _compiled(self, conditions):
+        from sqlalchemy import and_, select
+
+        from library.db.models import DocumentChunk
+
+        stmt = select(DocumentChunk.id).where(and_(*conditions))
+        return str(stmt.compile(compile_kwargs={"literal_binds": True}))
+
+    def test_missing_conditions_exclude_note_not_needed_flag(self):
+        from library.document_repository import DocumentRepository
+
+        sql = self._compiled(DocumentRepository._missing_obsidian_note_chunk_conditions())
+        assert "obsidian_note_not_needed" in sql
+        # one-chunk-document coverage is subtracted via the document-level note
+        assert "jsonb_array_length" in sql
+
+    def test_has_conditions_accept_single_chunk_document_note(self):
+        from library.document_repository import DocumentRepository
+
+        sql = self._compiled(DocumentRepository._has_obsidian_note_chunk_conditions())
+        assert "jsonb_array_length" in sql
+        assert "obsidian_note_paths" in sql

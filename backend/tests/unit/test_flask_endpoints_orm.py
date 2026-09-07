@@ -387,7 +387,7 @@ class TestWebsiteDelete:
                 mock_service.delete_document.return_value = True
                 MockDS.return_value = mock_service
 
-                resp = client.get("/website_delete?id=42", headers=API_HEADERS)
+                resp = client.delete("/website_delete?id=42", headers=API_HEADERS)
 
         assert resp.status_code == 200
         data = resp.get_json()
@@ -403,11 +403,12 @@ class TestWebsiteDelete:
                 mock_service.delete_document.return_value = False
                 MockDS.return_value = mock_service
 
-                resp = client.get("/website_delete?id=999", headers=API_HEADERS)
+                resp = client.delete("/website_delete?id=999", headers=API_HEADERS)
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["message"] == "Page doesn't exist in database"
+        mock_session.rollback.assert_called_once()
 
     def test_delete_error_rollback(self, client):
         mock_session = MagicMock()
@@ -417,15 +418,114 @@ class TestWebsiteDelete:
                 mock_service.delete_document.side_effect = Exception("DB constraint error")
                 MockDS.return_value = mock_service
 
-                resp = client.get("/website_delete?id=42", headers=API_HEADERS)
+                resp = client.delete("/website_delete?id=42", headers=API_HEADERS)
 
         assert resp.status_code == 500
+        mock_session.rollback.assert_called_once()
         data = resp.get_json()
         assert data["status"] == "error"
 
     def test_delete_missing_id_returns_400(self, client):
-        resp = client.get("/website_delete", headers=API_HEADERS)
+        resp = client.delete("/website_delete", headers=API_HEADERS)
         assert resp.status_code == 400
+
+
+@pytest.fixture()
+def authenticated_security_client():
+    """Exercise the real middleware, mocking only key lookup and persistence."""
+    import server
+    from library.auth import AuthContext
+
+    session = MagicMock()
+    def resolve(_factory, key):
+        if key in {"user", "service", "read_only"}:
+            return AuthContext(key, 1, "test", 1 if key == "user" else None)
+        return None
+
+    with patch.object(server, "get_scoped_session", return_value=session), \
+            patch.object(server, "resolve_api_key", side_effect=resolve):
+        with server.app.test_client() as test_client:
+            yield test_client, session
+
+
+@pytest.mark.parametrize("kind,status", [("read_only", 403), ("user", 200), ("service", 200), (None, 401)])
+@pytest.mark.parametrize("use_json", [False, True])
+def test_delete_auth_matrix(authenticated_security_client, kind, status, use_json):
+    client, session = authenticated_security_client
+    headers = {"x-api-key": kind} if kind else {}
+    args = {"json": {"id": 42}} if use_json else {"query_string": {"id": 42}}
+    with patch("server.DocumentService") as service:
+        service.return_value.delete_document.return_value = True
+        response = client.delete("/website_delete", headers=headers, **args)
+        assert response.status_code == status
+        if status == 200:
+            service.return_value.delete_document.assert_called_once_with(42)
+        else:
+            service.assert_not_called()
+    session.rollback.assert_not_called()
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_delete_safe_methods_are_405(authenticated_security_client, method):
+    client, _ = authenticated_security_client
+    with patch("server.DocumentService") as service:
+        assert client.open("/website_delete?id=42", method=method,
+                           headers={"x-api-key": "read_only"}).status_code == 405
+        service.assert_not_called()
+
+
+@pytest.mark.parametrize("value", [None, True, 1.5, [], {}, "bad", "-1", "0", "9" * 5000])
+def test_delete_bad_ids_never_start_mutation(authenticated_security_client, value):
+    client, session = authenticated_security_client
+    with patch("server.DocumentService") as service:
+        response = client.delete("/website_delete", json={"id": value}, headers={"x-api-key": "user"})
+        assert response.status_code == 400
+        service.assert_not_called()
+        session.commit.assert_not_called()
+
+
+def test_upload_preflight_does_not_list(authenticated_security_client):
+    client, _ = authenticated_security_client
+    with patch("server.list_uploaded_files") as lister, patch("server.storage_from_config") as storage:
+        response = client.options("/uploads?limit=bad")
+        assert response.status_code == 204
+        assert response.data == b""
+        lister.assert_not_called()
+        storage.assert_not_called()
+        assert client.get("/uploads").status_code == 401
+        lister.assert_not_called()
+        lister.return_value = []
+        response = client.get("/uploads", headers={"x-api-key": "user"})
+        assert response.status_code == 200
+        assert response.json == {"uploads": [], "limit": 100}
+        lister.assert_called_once_with(storage.return_value, 100)
+
+
+def test_feed_patch_rejects_internal_url(authenticated_security_client):
+    from library.db.models import FeedSource
+    client, session = authenticated_security_client
+    feed = FeedSource(name="test", type="rss", url="https://example.com/feed")
+    session.get.return_value = feed
+    with patch("library.feed_routes.get_scoped_session", return_value=session):
+        response = client.patch("/feed_sources/1", json={"url": "http://127.0.0.1:8200"},
+                                headers={"x-api-key": "user"})
+    assert response.status_code == 400
+    assert feed.url == "https://example.com/feed"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()
+
+
+def test_email_footer_head_is_read_only(authenticated_security_client):
+    from types import SimpleNamespace
+    client, session = authenticated_security_client
+    session.get.return_value = SimpleNamespace(document_type="email", email_sender="a@example.com")
+    session.scalar.return_value = None
+    response = client.head("/document/42/email_footer_rule", headers={"x-api-key": "read_only"})
+    assert response.status_code == 200
+    assert response.data == b""
+    session.commit.assert_not_called()
+    session.add.assert_not_called()
+    session.delete.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

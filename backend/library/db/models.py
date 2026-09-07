@@ -1218,6 +1218,13 @@ class DocumentChunk(Base):
     obsidian_note_paths: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, server_default=sa_text("'{}'"),
     )
+    # Reviewer flag: this TEMAT chunk is not worth a standalone Obsidian note
+    # (too thin / not interesting). It stays in every other pipeline (still
+    # embedded when approved) but drops out of the "chunks still missing an
+    # Obsidian note" counter and filter.
+    obsidian_note_not_needed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa_text("false"),
+    )
     # Exact substrings a reviewer cut out of original_text (e.g. an ad spliced
     # mid-sentence into a transcript segment) via POST /chunk/<id>/remove_span.
     # Kept around (rather than only mutating original_text) so merge/split can

@@ -89,6 +89,51 @@ class TestGenerateApiKey:
 
 
 class TestInProcessCache:
+    def test_capacity_expiration_and_oldest_eviction(self):
+        now = [0.0]
+        cache = InProcessApiKeyCache(max_entries=3, clock=lambda: now[0])
+        for i in range(20):
+            cache.set(str(i), CacheEntry(None, now[0] + 1))
+            assert len(cache._entries) <= 3
+            now[0] += 2
+        # Reclamation needs no lookup of any expired key.
+        for i in range(3):
+            cache.set(f"live{i}", CacheEntry(None, 100 + i))
+        assert set(cache._entries) == {"live0", "live1", "live2"}
+        cache.set("new", CacheEntry(None, 200))
+        assert set(cache._entries) == {"live1", "live2", "new"}
+
+    def test_injected_clock_hits_and_invalidation(self):
+        now = [10.0]
+        cache = InProcessApiKeyCache(clock=lambda: now[0])
+        ctx = AuthContext("user", 1, "test", 1)
+        cache.set("positive", CacheEntry(ctx, 20))
+        cache.set("negative", CacheEntry(None, 15))
+        assert cache.get("positive").context is ctx
+        assert cache.get("negative").context is None
+        now[0] = 15
+        assert cache.get("negative") is None
+        cache.invalidate("positive")
+        assert cache.get("positive") is None
+        cache.set("other", CacheEntry(ctx, 20))
+        cache.invalidate()
+        assert cache.get("other") is None
+
+    def test_concurrent_operations_stay_bounded(self):
+        from concurrent.futures import ThreadPoolExecutor
+        cache = InProcessApiKeyCache(max_entries=10, clock=lambda: 0)
+        def operate(i):
+            key = str(i)
+            cache.set(key, CacheEntry(None, 100))
+            cache.get(key)
+            if i % 3 == 0:
+                cache.invalidate(key)
+            if i % 17 == 0:
+                cache.invalidate()
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(operate, range(300)))
+        assert len(cache._entries) <= 10
+
     def test_set_get(self):
         cache = InProcessApiKeyCache()
         ctx = AuthContext(kind="service", key_id=1, key_name="x", user_id=None)

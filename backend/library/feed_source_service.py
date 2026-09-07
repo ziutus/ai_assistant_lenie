@@ -3,6 +3,7 @@
 import re
 from sqlalchemy import select
 from library.db.models import FeedSource, Collection, ContentGroup, DiscoverySource
+from library.safe_http import validate_public_url
 
 ALLOWED_TYPES = {"rss", "wordpress", "youtube_channel", "json_api"}
 ALLOWED_STATES = {"URL_ADDED", "READY_FOR_EMBEDDING"}
@@ -17,6 +18,8 @@ def validate_feed_values(values: dict) -> dict:
             raise ValueError("youtube_channel requires channel_id and no url")
     elif not result.get("url") or result.get("channel_id"):
         raise ValueError("this feed type requires url and no channel_id")
+    if result.get("url"):
+        validate_public_url(result["url"])
     author_name = result.get("author_name")
     if author_name is not None:
         if not isinstance(author_name, str) or not author_name.strip() or len(author_name.strip()) > 500:

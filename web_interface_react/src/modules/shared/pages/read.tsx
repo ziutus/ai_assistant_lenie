@@ -329,7 +329,7 @@ const SUP_TO_DIGIT: Record<string, string> = {
 };
 const supToNumber = (sup: string) => sup.split("").map(c => SUP_TO_DIGIT[c] ?? "").join("");
 
-function renderInline(
+export function renderInline(
   text: string,
   refs?: Map<string, ChapterReference>,
   onAnchorClick?: (anchorId: string) => void,
@@ -337,19 +337,21 @@ function renderInline(
   wikiLinks?: Map<string, number>,
   onWikiLinkClick?: (targetId: number) => void,
 ): React.ReactNode[] {
-  // **bold**, *italic*, `code`, [label](anchor:id) jump links, ¹⁸ footnote
-  // markers, a (https://...) URL — e.g. Gmail newsletter items flattened by
-  // email_import.py's html_to_text() from <a href> into "label (url)" — and
-  // an [imgN] marker sitting mid-sentence (Gmail decorative glyphs, e.g. a
-  // 👋 emoji shipped as an <img> — IMG_MARKER in renderMarkdown only catches
-  // a marker that is its own block) — enough for OCR-ed book prose. An
-  // Obsidian [[Title]]/[[Title|Display]]/[[Title#Heading]] wikilink is
-  // resolved against wikiLinks (GET /document/:id/chapter/:pos's wiki_links,
-  // computed fresh server-side every request — see chunk_review_routes.py's
-  // _resolve_wiki_links) rather than at import time, so a link to a note
-  // created/renamed after this note was last imported still resolves.
+  // **bold**, *italic*, `code`, [label](anchor:id) jump links, [label](https://…)
+  // markdown links, a bare https:// URL, a (https://...) URL — e.g. Gmail
+  // newsletter items flattened by email_import.py's html_to_text() from
+  // <a href> into "label (url)" — ¹⁸ footnote markers, and an [imgN] marker
+  // sitting mid-sentence (Gmail decorative glyphs, e.g. a 👋 emoji shipped as
+  // an <img> — IMG_MARKER in renderMarkdown only catches a marker that is its
+  // own block) — enough for OCR-ed book prose and Obsidian notes. An Obsidian
+  // [[Title]]/[[Title|Display]]/[[Title#Heading]] wikilink is resolved against
+  // wikiLinks (GET /document/:id/chapter/:pos's wiki_links, computed fresh
+  // server-side every request — see chunk_review_routes.py's _resolve_wiki_links)
+  // rather than at import time, so a link to a note created/renamed after this
+  // note was last imported still resolves. **bold** / *italic* spans are
+  // re-parsed recursively so a wikilink or URL inside them still renders.
   const parts = text.split(
-    /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[\[[^\]]+\]\]|\[[^\]]+\]\(anchor:[\w-]+\)|\(https?:\/\/[^\s)]+\)|\[img\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g,
+    /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[\[[^\]]+\]\]|\[[^\]]+\]\(anchor:[\w-]+\)|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s)]+|\[img\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g,
   );
   return parts.map((part, i) => {
     const urlInParens = part.match(/^\((https?:\/\/[^\s)]+)\)$/);
@@ -360,6 +362,27 @@ function renderInline(
           (<a href={url} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all", color: "#0369a1" }}>
             {url}
           </a>)
+        </React.Fragment>
+      );
+    }
+    const mdLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+    if (mdLink) {
+      const [, label, url] = mdLink;
+      return (
+        <a key={i} href={url} target="_blank" rel="noreferrer" style={{ color: "#0369a1" }}>
+          {label}
+        </a>
+      );
+    }
+    const bareUrl = part.match(/^(https?:\/\/[^\s)]+?)([.,;:!?]*)$/);
+    if (bareUrl) {
+      const [, url, trailing] = bareUrl;
+      return (
+        <React.Fragment key={i}>
+          <a href={url} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all", color: "#0369a1" }}>
+            {url}
+          </a>
+          {trailing}
         </React.Fragment>
       );
     }
@@ -410,7 +433,13 @@ function renderInline(
         </span>
       );
     }
-    if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return (
+        <strong key={i}>
+          {renderInline(part.slice(2, -2), refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
+        </strong>
+      );
+    }
     if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
       return (
         <code key={i} style={{
@@ -434,7 +463,13 @@ function renderInline(
         </span>
       );
     }
-    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return <em key={i}>{part.slice(1, -1)}</em>;
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      return (
+        <em key={i}>
+          {renderInline(part.slice(1, -1), refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
+        </em>
+      );
+    }
     if (/^[¹²³⁴⁵⁶⁷⁸⁹⁰]+$/.test(part)) {
       const ref = refs?.get(supToNumber(part));
       if (ref) {
@@ -796,8 +831,11 @@ function renderCalloutBlock(
   const match = trimmed.match(CALLOUT_RE);
   if (!match) return null;
   const isWarn = match[1] === "WARN";
+  // Keep single line breaks inside the callout body as visual breaks (see the
+  // whiteSpace: "pre-line" comment on the plain-paragraph branch below) rather
+  // than flattening the whole callout into one run-on line.
   const { nodes } = renderParagraphWithNotes(
-    match[2].replace(/\n/g, " "), notes, refs, highlightTerms, timelineAnchor,
+    match[2], notes, refs, highlightTerms, timelineAnchor,
     onAnchorClick, images, wikiLinks, described, onWikiLinkClick,
   );
   return (
@@ -809,12 +847,12 @@ function renderCalloutBlock(
       borderRadius: 8, padding: "10px 14px", margin: "16px 0", lineHeight: 1.6,
     }}>
       <span aria-hidden="true">{isWarn ? "⚠️" : "ℹ️"}</span>
-      <div>{nodes}</div>
+      <div style={{ whiteSpace: "pre-line" }}>{nodes}</div>
     </div>
   );
 }
 
-function renderMarkdown(
+export function renderMarkdown(
   text: string,
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
@@ -832,7 +870,14 @@ function renderMarkdown(
       out.push(renderCodeBlock(segment, `code-${segIndex}`));
       return;
     }
-    const blocks = segment.content.split(/\n\s*\n/);
+    // A source document doesn't always put a blank line before a heading
+    // either (as well as after — see the heading-splitting comment below) —
+    // e.g. a list of plain lines followed directly by "### Next section" with
+    // no blank line in between (/read/9613's "Troubleshooting 30%" chapter).
+    // Force every such heading line to start its own block, same as a blank
+    // line would, so it doesn't get swallowed into the previous paragraph.
+    const withHeadingBreaks = segment.content.replace(/\n(?=#{1,6}[ \t]+\S)/g, "\n\n");
+    const blocks = withHeadingBreaks.split(/\n\s*\n/);
     blocks.forEach((block, i) => {
       const key = `${segIndex}-${i}`;
       const trimmed = block.trim();
@@ -852,7 +897,7 @@ function renderMarkdown(
           );
           out.push(
             <p key={`${key}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
-              lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
+              lineHeight: 1.65, margin: "14px 0", textAlign: "justify", whiteSpace: "pre-line",
               ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
               ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
             }}>
@@ -892,13 +937,20 @@ function renderMarkdown(
         out.push(list);
         return;
       }
-      const heading = trimmed.match(/^(#{1,6})\s+(.*)$/s);
+      // A heading is a single line. Match only the block's first line — an
+      // Obsidian note commonly omits the blank line between a heading and the
+      // text under it ("## Foo\nhttps://…"), and swallowing that follow-on
+      // text into the <h_> (which an /s-flagged `.*` did) turned a URL line
+      // into part of the bold heading. Anything after the first line is
+      // re-rendered as its own block(s).
+      const nl = trimmed.indexOf("\n");
+      const heading = (nl >= 0 ? trimmed.slice(0, nl) : trimmed).match(/^(#{1,6})\s+(.*)$/);
       if (heading) {
         const level = Math.min(heading[1].length + 1, 6);
         const Tag = `h${level}` as keyof JSX.IntrinsicElements;
         // headings can carry note anchors too (e.g. a quote of the chapter title)
         const { nodes, timelineTint, timelineFound } = renderParagraphWithNotes(
-          heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms, timelineAnchor,
+          heading[2], notes, undefined, highlightTerms, timelineAnchor,
           undefined, undefined, wikiLinks, undefined, onWikiLinkClick,
         );
         out.push(
@@ -910,6 +962,17 @@ function renderMarkdown(
             {nodes}
           </Tag>,
         );
+        const rest = nl >= 0 ? trimmed.slice(nl + 1).trim() : "";
+        if (rest) {
+          out.push(
+            <React.Fragment key={`${key}-rest`}>
+              {renderMarkdown(
+                rest, notes, refs, highlightTerms, timelineAnchor, images, onAnchorClick, wikiLinks, described,
+                onWikiLinkClick,
+              )}
+            </React.Fragment>,
+          );
+        }
         return;
       }
       if (trimmed === "---") {
@@ -918,16 +981,25 @@ function renderMarkdown(
       }
       // footnote / caption lines (superscript digits or "Wykres N.") — smaller font
       const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
-      const paraText = trimmed.replace(/\n/g, " ");
+      // A blank line already starts a new block/paragraph (see the split
+      // above); a single "\n" within a block used to be flattened to a space,
+      // turning short, one-sentence-per-line notes (the common Obsidian
+      // style — see e.g. /read/9613) into one run-on wall of text. Keep the
+      // line breaks in the text passed to note/entity matching (an exact
+      // anchor_quote match still works as long as it doesn't itself straddle
+      // a line break — normalizeWs already covers that case with the
+      // whole-paragraph tint fallback below) and render them as real line
+      // breaks via CSS rather than joining with a space.
+      const paraText = trimmed;
       const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
         paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
         onWikiLinkClick,
       );
       out.push(
         <p key={key} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
-          ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0" }
+          ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0", whiteSpace: "pre-line" }
           : {
-              lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
+              lineHeight: 1.65, margin: "14px 0", textAlign: "justify", whiteSpace: "pre-line",
               ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
               ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
             }}

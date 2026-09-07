@@ -2,6 +2,12 @@
 
 Full Lenie stack running on a local QNAP NAS for personal use and testing.
 
+> **Security scope:** This runbook describes the local setup, including intentional
+> development shortcuts; it is not a production security baseline. See the
+> [local security profile](../security/local-development-security.md) for their
+> conditions and the [production readiness checklist](../security/production-readiness.md)
+> before exposing the stack to a corporate network or deploying it to cloud.
+
 > **Related docs:** [Docker_Local.md](Docker_Local.md) — local Docker Compose development, [frontend-deployment.md](../frontend-deployment.md) — AWS frontend deployment.
 
 ## Hardware
@@ -116,6 +122,11 @@ $DOCKER run -d --name lenie-registry \
 #### 2. Configure insecure-registries
 
 The registry runs without TLS (HTTP only), so both the PC and NAS must allow it as an insecure registry.
+
+This shortcut supports fast local build/push/pull iterations. It requires restricted
+network access as described in the [local security profile](../security/local-development-security.md).
+An internal registry may also be used in production, but must have transport and
+access controls; do not copy this unauthenticated HTTP setup as a production default.
 
 **PC (Docker Desktop):**
 
@@ -334,6 +345,12 @@ Password: the compose default `postgres`, unless `NAS_DB_PASSWORD` was set in
 the NAS env file. Database name is **`lenie-ai`** (created by
 `01-create-database.sql` above — not the legacy local-dev name `lenie`).
 
+This describes the initialization fallback, not a verification of the live database
+password. The fallback is suitable only for an isolated disposable test database;
+persistent NAS data requires an individual secret. Changing the Compose variable
+does not establish that an existing database password has been rotated. See the
+[local security profile](../security/local-development-security.md).
+
 Python one-off/backfill scripts (`backend/imports/*.py`) connect through the
 ORM instead of `psql` — for the exact env-var pattern see
 `backend/imports/CLAUDE.md` ("Running scripts against the NAS production DB").
@@ -465,6 +482,28 @@ Both frontends are SPAs served by nginx. The API backend URL is configured in th
 This setting is saved in the browser's localStorage.
 
 ## Troubleshooting
+
+### Deploy aborts immediately on the first `docker build` line
+
+Symptom: `nas-deploy.ps1` exits almost instantly with
+
+```
+docker : #0 building with "desktop-linux" instance using docker driver
+    + CategoryInfo          : NotSpecified: (...) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+```
+
+Cause: the script runs under `$ErrorActionPreference = "Stop"`, and `docker
+build` writes its progress to **stderr**. In Windows PowerShell 5.1, redirecting
+a native command's stderr (`.\nas-deploy.ps1 ... 2>&1`, or piping to
+`Tee-Object` after `2>&1`) turns every stderr line into an error record, so the
+very first progress line becomes a terminating error before anything is built or
+pushed. This is **not** a registry or image-transfer problem.
+
+Fix: run the script without `2>&1`. Run it directly (`.\infra\docker\nas-deploy.ps1
+-Service backend,worker`) — PowerShell shows stderr on the console anyway. To
+capture a full log, use `*> deploy.log` (merges all streams without the
+error-record conversion) or `-RedirectStandardOutput`, never `2>&1`.
 
 ### Check container status
 

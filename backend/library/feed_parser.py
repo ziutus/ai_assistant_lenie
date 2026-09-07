@@ -13,7 +13,7 @@ from typing import Any
 
 import defusedxml.ElementTree as DET
 import regex as safe_regex
-import requests
+from library.safe_http import safe_get
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
 MEDIA_NS = "http://search.yahoo.com/mrss/"
@@ -115,7 +115,7 @@ def apply_skip_filters(entries: list[dict], feed: dict) -> tuple[list[dict], lis
 
 
 def fetch_entries(feed: dict, *, connect_timeout: float = 10, read_timeout: float = 60) -> list[dict]:
-    response = requests.get(build_feed_url(feed), timeout=(connect_timeout, read_timeout))
+    response = safe_get(build_feed_url(feed), timeout=(connect_timeout, read_timeout))
     response.raise_for_status()
     if feed["type"] == "json_api":
         payload: Any = response.json()

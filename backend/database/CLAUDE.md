@@ -153,6 +153,7 @@ One row per chunk produced by a run.
 | `split_first_type` / `split_second_type` | `varchar(20)` | Resulting types after executing a split |
 | `created_at` / `updated_at` | `timestamp` | Row timestamps |
 | `obsidian_note_paths` | `text[] NOT NULL DEFAULT '{}'` | Vault-relative paths of notes written from this chunk (populated by the `/lenie-obsidian-note` skill) |
+| `obsidian_note_not_needed` | `boolean NOT NULL DEFAULT false` | Reviewer flag: this TEMAT chunk is not worth a standalone Obsidian note. Excluded from the "chunks missing an Obsidian note" counter/filter; still embedded when `approved`. Migration `a7c3e1f9d2b4`. |
 
 ### Table: `public.document_topic_sections`
 
