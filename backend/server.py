@@ -167,6 +167,8 @@ def upload_file():
 @app.route('/uploads', methods=['GET', 'OPTIONS'])
 def list_uploads():
     """List importer-facing files staged in ObjectStorage/MinIO."""
+    if request.method == 'OPTIONS':
+        return '', 204
     try:
         limit = min(max(int(request.args.get("limit", 100)), 1), 200)
     except ValueError:
@@ -2922,17 +2924,25 @@ def website_split_for_embedding():
     }), 200
 
 
-@app.route('/website_delete', methods=['GET'])
+@app.route('/website_delete', methods=['DELETE'])
 def website_delete():
     link_id = request.args.get('id')
-    if not link_id:
-        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
+    if link_id is None:
+        data = request.get_json(silent=True)
+        link_id = data.get('id') if isinstance(data, dict) else None
+    if (isinstance(link_id, bool) or len(str(link_id)) > 10
+            or not str(link_id).isascii() or not str(link_id).isdigit()):
+        return {"status": "error", "message": "id must be a positive integer"}, 400
+    link_id = int(link_id)
+    if not 0 < link_id <= 2147483647:
+        return {"status": "error", "message": "id must be a positive integer"}, 400
 
     session = get_scoped_session()
     service = DocumentService(session)
     try:
         deleted = service.delete_document(int(link_id))
         if not deleted:
+            session.rollback()
             return {"status": "success", "message": "Page doesn't exist in database", "encoding": "utf8"}, 200
         return {"status": "success", "message": "Page has been deleted from database", "encoding": "utf8"}, 200
     except Exception as e:
@@ -2949,7 +2959,7 @@ def email_footer_rule(document_id: int):
     if doc is None or doc.document_type != StalkerDocumentType.email.name:
         return {"status": "error", "message": "Email document not found"}, 404
 
-    if request.method == 'GET':
+    if request.method in ('GET', 'HEAD'):
         sender = normalize_sender_email(doc.email_sender)
         rule = session.scalar(select(EmailFooterRule).where(EmailFooterRule.sender_email == sender)) if sender else None
         return {

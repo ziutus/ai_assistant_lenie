@@ -2,6 +2,11 @@
 
 Ten katalog grupuje dokumenty planistyczne według **etapu/środowiska wdrożenia**, nie według tematu. Podział istnieje po to, żeby nie mylić tego, co jest realnie wdrażane, z tym, co jest nauką architektury w wolnym czasie.
 
+## Bezpieczeństwo środowisk
+
+- [Profil lokalnego środowiska dewelopera](../security/local-development-security.md) — warunkowe uproszczenia NAS, ich uzasadnienie, ryzyko i granice stosowania.
+- [Gotowość do wdrożenia firmowego i chmurowego](../security/production-readiness.md) — wymagania i dowody weryfikacji przed rozszerzeniem dostępu; nie jest to decyzja o migracji ani potwierdzenie wykonania kontroli.
+
 ## Co jest realne
 
 - **[`nas/`](nas/)** — jedyny katalog opisujący coś, co faktycznie działa albo jest aktywnie wdrażane: własny QNAP NAS, dla mnie i kilku zaufanych domowników/znajomych.

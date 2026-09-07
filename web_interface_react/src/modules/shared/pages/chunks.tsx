@@ -1821,8 +1821,7 @@ const Chunks = () => {
   const classificationSummary = `${tematChunks.length} TEMAT · ${zrodlaCount} ŹRÓDŁA · ${adsCount} REKLAMA · ${noiseCount} SZUM`;
   const processComplete = runStatus === "reviewed" && embeddedCount > 0 && !embedJobId;
   // TEMAT chunks that neither carry an Obsidian note nor are flagged "not needed"
-  // — the "Y do zrobienia" on /list. Same condition as the pre-completion toolbar
-  // (line ~3098) so both agree.
+  // — using the same condition as the pre-completion toolbar.
   const notelessTematCount = tematChunks.filter(
     c => !c.obsidian_note_not_needed && (c.obsidian_note_paths?.length ?? 0) === 0,
   ).length;
@@ -3023,7 +3022,7 @@ const Chunks = () => {
           </div>
           {notelessTematCount > 0 && (
             <p style={{ marginTop: 9, marginBottom: 0, color: "#475569", fontSize: "0.8em" }}>
-              Notatki Obsidian pisze skill <code>/lenie-obsidian-note</code>. Chunki, które notatki nie
+              Chunki, które notatki nie
               potrzebują, oznacz „bez notatki" — znikną z licznika „do zrobienia" na liście, a nadal
               są w indeksie. Rozwiń „Pokaż wynikowe chunki", aby oznaczać pojedynczo.
             </p>

@@ -7,8 +7,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from library.safe_http import safe_get
 from library.url_normalization import canonicalize_url
-from library.website.website_download_context import validate_url_target
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +66,11 @@ def _embedded_destination(url: str) -> str | None:
 def resolve_tracking_url(url: str, timeout: int = 5, max_redirects: int = 5) -> str:
     """Resolve a newsletter link and return its canonical destination.
 
-    Every redirect hop is validated before it is requested, preventing an email
-    from using a tracking link to make the importer fetch an internal service.
-    Some providers reject ``HEAD``; in that case a streamed ``GET`` is used
-    solely to obtain the response headers.
+    The fetch goes through ``safe_http.safe_get``: the host is resolved once,
+    every address must be public, the socket is pinned to that address, and each
+    redirect hop is re-validated — so an email cannot use a tracking link to
+    make the importer reach an internal service. Some providers reject ``HEAD``,
+    so a ``GET`` is tried as a fallback.
     """
     if not is_tracking_url(url):
         return url
@@ -78,33 +79,22 @@ def resolve_tracking_url(url: str, timeout: int = 5, max_redirects: int = 5) -> 
         return canonicalize_url(destination)
 
     for method in ("HEAD", "GET"):
-        current_url = url
         try:
-            for _ in range(max_redirects + 1):
-                validate_url_target(current_url)
-                response = requests.request(method, current_url, allow_redirects=False, timeout=timeout, stream=method == "GET")
-                try:
-                    if response.is_redirect or response.is_permanent_redirect:
-                        location = response.headers.get("Location")
-                        if not location:
-                            raise ValueError("Redirect response has no Location header")
-                        current_url = requests.compat.urljoin(current_url, location)
-                        continue
-
-                    if 200 <= response.status_code < 400:
-                        return canonicalize_url(current_url)
-
-                    # A number of newsletter services do not implement HEAD.
-                    if method == "HEAD":
-                        break
-                    raise ValueError(f"GET returned HTTP {response.status_code}")
-                finally:
-                    response.close()
-            else:
-                raise ValueError(f"Too many redirects (>{max_redirects})")
+            response = safe_get(url, method=method, timeout=(timeout, timeout), max_redirects=max_redirects)
         except (requests.RequestException, ValueError) as exc:
             logger.warning("Could not resolve tracking URL %s: %s", url, exc)
+            if method == "HEAD":
+                continue
             return url
+
+        if 200 <= response.status_code < 400:
+            return canonicalize_url(response.url)
+
+        # A number of newsletter services do not implement HEAD.
+        if method == "HEAD":
+            continue
+        logger.warning("Could not resolve tracking URL %s: GET returned HTTP %s", url, response.status_code)
+        return url
 
     return url
 

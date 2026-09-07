@@ -5,15 +5,18 @@ import re
 import socket
 from urllib.parse import urlparse
 
-import requests
 from bs4 import BeautifulSoup
 
+from library.safe_http import safe_get
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
 from library.config_loader import load_config
 
 from library.models.webpage_parse_result import WebPageParseResult
 
 logger = logging.getLogger(__name__)
+
+# Webpages are much larger than feeds; cap the download but leave real headroom.
+MAX_HTML_BYTES = 15 * 1024 * 1024
 
 
 def load_site_rules(file_path: str) -> dict:
@@ -52,17 +55,15 @@ def validate_url_target(url: str) -> None:
 
 
 def download_raw_html(url: str, max_redirects: int = 5) -> bytes | None:
-    # Follow redirects manually so every hop is validated before it is fetched
-    for _ in range(max_redirects + 1):
-        validate_url_target(url)
-        response = requests.get(url, timeout=30, allow_redirects=False)
-        if response.is_redirect or response.is_permanent_redirect:
-            url = requests.compat.urljoin(url, response.headers["Location"])
-            continue
-        if response.status_code == 200:
-            return response.content
-        return None
-    raise ValueError(f"Too many redirects (>{max_redirects}) while fetching {url!r}")
+    # safe_get resolves the host once, refuses any non-public address, pins the
+    # socket to that address (so a later DNS answer can't redirect us inward),
+    # and re-validates every redirect hop. It raises ValueError for a rejected
+    # target or too many redirects.
+    validate_url_target(url)
+    response = safe_get(url, timeout=(10, 30), max_redirects=max_redirects, max_bytes=MAX_HTML_BYTES)
+    if response.status_code == 200:
+        return response.content
+    return None
 
 
 def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -> WebPageParseResult:
