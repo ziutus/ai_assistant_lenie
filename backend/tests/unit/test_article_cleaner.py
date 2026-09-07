@@ -233,6 +233,47 @@ class TestGenericLineCleaning:
         assert "pod materiałem wideo" not in result["text"]
         assert result["text"].count(LONG_PARAGRAPH) == 2
 
+    def test_labeled_recommendation_lines_removed(self):
+        # onet + businessinsider: "**Czytaj też:** ...", "* **Polecamy:** ...".
+        for line, url in [
+            ("**Czytaj też:** **Reforma nadzoru rynków w UE. Berlin wymógł wyłączenie** [link1]",
+             "https://businessinsider.com.pl/x"),
+            ("* **Polecamy:** **Odkrył sekret Nord Stream. Ostrzega Polaków** [link10]",
+             "https://www.onet.pl/informacje/x"),
+            ("* **Przeczytaj:** **Jest nowy sondaż zaufania. Rekord Nawrockiego** [link7]",
+             "https://www.onet.pl/informacje/x"),
+            ("* **Zobacz też:** **Największy park narodowy świata** [link1]",
+             "https://www.onet.pl/informacje/x"),
+            ("* **Czytaj także:** Czego polskie miasta mogą nauczyć się od Londynu? [link1]",
+             "https://www.onet.pl/informacje/x"),
+        ]:
+            text = f"{LONG_PARAGRAPH}\n\n{line}\n\n{LONG_PARAGRAPH}"
+            result = clean_article_text(text, url=url)
+            assert line.split("]")[0] not in result["text"], line
+            assert result["text"].count(LONG_PARAGRAPH) == 2
+
+    def test_bold_label_that_is_not_a_recommendation_kept(self):
+        line = "**Ważne:** rząd przyjął nowe przepisy, które wchodzą w życie od tygodnia."
+        text = f"{LONG_PARAGRAPH}\n\n{line}\n\n{LONG_PARAGRAPH}"
+        assert line in clean_article_text(text, url="https://www.onet.pl/x")["text"]
+
+    def test_przeczytaj_caly_tekst_cta_removed(self):
+        for line in [
+            "**Przeczytaj cały tekst** [link7]",
+            "**Przeczytaj cały tekst!** [link3]",
+            "PRZECZYTAJ TEKST [link2]",
+            "Przeczytaj całość artykułu [link0]",
+        ]:
+            text = f"{LONG_PARAGRAPH}\n\n{line}\n\n{LONG_PARAGRAPH}"
+            result = clean_article_text(text, url="https://www.onet.pl/informacje/x")
+            assert "rzeczytaj" not in result["text"] and "RZECZYTAJ" not in result["text"]
+            assert result["text"].count(LONG_PARAGRAPH) == 2
+
+    def test_przeczytaj_caly_tekst_as_sentence_prefix_kept(self):
+        line = "Przeczytaj cały tekst tej ustawy w Dzienniku Ustaw, tam jest wszystko opisane."
+        text = f"{LONG_PARAGRAPH}\n\n{line}\n\n{LONG_PARAGRAPH}"
+        assert line in clean_article_text(text, url="https://www.onet.pl/x")["text"]
+
     def test_h2_ad_section_removed_until_long_paragraph(self):
         text = (
             f"Wstęp artykułu, który jest dość długi i zawiera ponad osiemdziesiąt znaków treści właściwej.\n\n"
@@ -344,6 +385,23 @@ class TestOnetCleaning:
     def test_onet_single_speed_button_still_removed(self):
         lines = ["x1.5", "Treść artykułu onet."]
         assert _clean_lines_onet(lines) == ["Treść artykułu onet."]
+
+    def test_onet_bare_bulleted_related_link_removed(self):
+        # onet: lista powiązanych artykułów jako gołe wypunktowanie
+        # zakończone markerem [linkN].
+        lines = [
+            '* USA szykują się na czarny scenariusz. Kupią tysiące rakiet [link7]',
+            '* Witold Jurasz: pięć powodów, dlaczego Polska musi wysłać armię [link256]',
+            "Treść artykułu onet.",
+        ]
+        assert _clean_lines_onet(lines) == ["Treść artykułu onet."]
+
+    def test_onet_bullet_with_trailing_prose_after_link_kept(self):
+        lines = [
+            "* Punkt listy z odnośnikiem [link0], po którym następuje jeszcze dalszy tekst.",
+            "* Zwykły punkt listy faktów bez żadnego odnośnika na końcu wiersza.",
+        ]
+        assert _clean_lines_onet(lines) == lines
 
     def test_onet_opracowanie_prefix_requires_following_text(self):
         # "Opracowanie:" bez nazwiska nie powinno paść ofiarą zbyt zachłannego regexu
