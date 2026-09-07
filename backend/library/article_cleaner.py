@@ -114,6 +114,17 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         if re.match(r'^(picture|link)\[\d+\]:', stripped):
             continue
 
+        # Linia-podpis/credit zdjęcia lub wideo z symbolem ©:
+        # "<opis kadru> © East News", "Źródło zdjęć: © Getty Images | Autor",
+        # "... © WP". Konwerter HTML->markdown wstawia je jako osobne linie tuż
+        # przy [imgN]. Prawdziwa proza artykułu praktycznie nigdy nie zawiera
+        # " © " i nie kończy się nazwą agencji bez interpunkcji zdaniowej —
+        # dwa niezależne warunki naraz (obecność " © " ORAZ brak zakończenia
+        # zdaniowego) chronią rzadkie zdanie ze znakiem praw autorskich.
+        if ' © ' in stripped and len(stripped) <= 200 \
+                and not stripped.endswith(('.', '!', '?', ':', '"', '”', '…')):
+            continue
+
         # Markdown horizontal rules (---, ***, ___) — artefakty z konwersji HTML
         if re.match(r'^[-*_]{3,}\s*$', stripped) or stripped == "|":
             continue
