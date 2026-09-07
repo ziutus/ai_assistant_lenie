@@ -255,6 +255,40 @@ class TestGenericLineCleaning:
         assert _detect_h2_ads(text) == set()
 
 
+class TestPhotoCreditCopyrightLine:
+    # Linie-podpisy/credity zdjęć z symbolem © wyciekłe do chunków review —
+    # potwierdzone na tech.wp.pl, wiadomosci.wp.pl, money.pl, o2.pl,
+    # portal.abczdrowie.pl (dok. 419, 415, 9172, 9271, 9175, 9207, 9254).
+    CASES = [
+        ("Wołodymyr Zełenski w Rzeszowie © East News", "https://wiadomosci.wp.pl/x"),
+        ("Su-34, zdjęcie poglądowe © Getty Images | Artyom_Anikeev", "https://tech.wp.pl/x"),
+        ("Porównanie rosyjskich strat osobowych w kolejnych latach wojny © WP", "https://tech.wp.pl/x"),
+        ("Historia Zondacrypto © oprac. własne | money.pl", "https://www.money.pl/x"),
+        ("Rurociągi NATO © NATO | Angelika Sętorek", "https://www.money.pl/x"),
+        ("Źródło wideo: © Associated Press", "https://www.o2.pl/x"),
+        ("Źródło zdjęć: © Facebook, Getty Images, Znany Lekarz", "https://portal.abczdrowie.pl/x"),
+        ("Ewa Ucińska © Znany Lekarz", "https://portal.abczdrowie.pl/x"),
+    ]
+
+    def test_copyright_credit_lines_removed(self):
+        for line, url in self.CASES:
+            text = f"{LONG_PARAGRAPH}\n\n{line}\n\n{LONG_PARAGRAPH}"
+            result = clean_article_text(text, url=url)
+            assert line not in result["text"], line
+            assert result["text"].count(LONG_PARAGRAPH) == 2
+
+    def test_sentence_with_copyright_symbol_kept(self):
+        # Zdanie ze znakiem © kończące się interpunkcją zdaniową zostaje.
+        for line in [
+            "Firma umieszcza znak © w stopce każdej strony swojego serwisu.",
+            "Prawa autorskie © 2024 należą w całości do wydawnictwa i autorów.",
+            "Wszelkie prawa zastrzeżone © — tak brzmiała ostatnia linijka pisma?",
+        ]:
+            text = f"{LONG_PARAGRAPH}\n\n{line}\n\n{LONG_PARAGRAPH}"
+            result = clean_article_text(text, url="https://tech.wp.pl/x")
+            assert line in result["text"], line
+
+
 class TestNormalization:
     def test_nbsp_replaced_and_blank_lines_collapsed(self):
         text = f"Pierwszy\xa0akapit.\n\n\n\n\n{LONG_PARAGRAPH}"
