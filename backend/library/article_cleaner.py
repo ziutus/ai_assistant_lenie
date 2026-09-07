@@ -147,6 +147,7 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
             continue
         # Warianty "Dalsza część artykułu pod wideo" (z kursywą, dwukropkiem)
         if "dalsza część artykułu pod wideo" in stripped.lower() or \
+           "dalsza część artykułu pod materiałem wideo" in stripped.lower() or \
            "dalszy ciąg materiału pod wideo" in stripped.lower() or \
            "dalszy ciąg artykułu pod materiałem wideo" in stripped.lower() or \
            "dalsza część artykulu pod video" in stripped.lower():
@@ -197,8 +198,9 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
             continue
         if stripped.startswith("Zapytaj o więcej Onet Czat z AI"):
             continue
-        # Przyciski prędkości audio playera: x2, x1.75, x1.5, x1.25, x0.75
-        if re.match(r'^x[\d.]+$', stripped):
+        # Przyciski prędkości audio playera: pojedynczo ("x1.5") lub sklejone
+        # w jedną linię przez konwerter ("x2x1.75x1.5x1.25x1x0.75")
+        if re.match(r'^(?:x[\d.]+)+$', stripped):
             continue
         # Wstawki premium: "**1** ### Tytuł [linkN]**2** ### ..."
         if re.match(r'^\*\*\d+\*\*\s+###\s+', stripped):
@@ -466,6 +468,24 @@ def _clean_lines_interia(lines: list[str]) -> list[str]:
         if (_RELATIVE_MINUTES_HOURS_AGO_RE.match(stripped)
                 or _RELATIVE_YESTERDAY_RE.match(stripped)
                 or _RELATIVE_TODAY_RE.match(stripped)):
+            continue
+        # Pasek reakcji rozbity na wypunktowanie ("* Super", "* Hahaha", ...) —
+        # wariant z bulletami, którego nie łapie _INTERIA_REACTIONS_RE
+        # (dopasowanie tylko dokładnej sekwencji 5 etykiet bez prefiksów).
+        if re.match(r'^\*\s+(Lubię to|Super|Hahaha|Szok|Smutny|Zły)$', stripped):
+            continue
+        # Czas trwania osadzonego wideo: "20:27 min", "11:48 min"
+        if re.match(r'^\d{1,2}:\d{2}\s*min$', stripped):
+            continue
+        # CTA "wróć na stronę główną": "Więcej ważnych informacji znajdziesz
+        # na stronie głównej Interii"
+        if "Więcej ważnych informacji znajdziesz na stronie głównej Interii" in stripped:
+            continue
+        # Promo "obserwuj nas w Google" (sklejone z poprzedzającym zdaniem
+        # przez konwerter): "...Dodaj do Google, otwiera się w nowym oknie",
+        # "...Dodaj nas do ulubionych źródeł, otwiera się w nowym oknie"
+        if "otwiera się w nowym oknie" in stripped and (
+                "Dodaj do Google" in stripped or "Dodaj nas do ulubionych" in stripped):
             continue
         cleaned.append(line)
     return cleaned

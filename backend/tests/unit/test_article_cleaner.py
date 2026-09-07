@@ -226,6 +226,13 @@ class TestGenericLineCleaning:
         assert LONG_PARAGRAPH in result["text"]
         assert "Drugi akapit treści." in result["text"]
 
+    def test_dalsza_czesc_pod_materialem_wideo_variant_removed(self):
+        # dok. 358 (businessinsider): wariant "pod materiałem wideo:" z dwukropkiem.
+        text = f"{LONG_PARAGRAPH}\n\nDalsza część artykułu pod materiałem wideo:\n\n{LONG_PARAGRAPH}"
+        result = clean_article_text(text)
+        assert "pod materiałem wideo" not in result["text"]
+        assert result["text"].count(LONG_PARAGRAPH) == 2
+
     def test_h2_ad_section_removed_until_long_paragraph(self):
         text = (
             f"Wstęp artykułu, który jest dość długi i zawiera ponad osiemdziesiąt znaków treści właściwej.\n\n"
@@ -293,6 +300,15 @@ class TestOnetCleaning:
             "Jesteś w strefie",
             "Treść artykułu onet.",
         ]
+        assert _clean_lines_onet(lines) == ["Treść artykułu onet."]
+
+    def test_onet_concatenated_speed_buttons_removed(self):
+        # dok. 9369: przyciski prędkości audio sklejone w jedną linię.
+        lines = ["x2x1.75x1.5x1.25x1x0.75", "Treść artykułu onet."]
+        assert _clean_lines_onet(lines) == ["Treść artykułu onet."]
+
+    def test_onet_single_speed_button_still_removed(self):
+        lines = ["x1.5", "Treść artykułu onet."]
         assert _clean_lines_onet(lines) == ["Treść artykułu onet."]
 
     def test_onet_opracowanie_prefix_requires_following_text(self):
@@ -462,6 +478,53 @@ class TestInteriaCleaning:
             "confidence": 100,
             "extraction_method": "rule",
         }]
+
+    def test_bulleted_reactions_bar_removed(self):
+        # dok. 9208 (motoryzacja.interia.pl): pasek reakcji rozbity na
+        # wypunktowanie — _INTERIA_REACTIONS_RE łapie tylko wariant bez bulletów.
+        lines = [
+            "* Lubię to", "* Super", "* Hahaha", "* Szok", "* Smutny", "* Zły",
+            "Treść artykułu interia.",
+        ]
+        assert _clean_lines_interia(lines) == ["Treść artykułu interia."]
+
+    def test_bulleted_reaction_lookalike_kept(self):
+        # Wypunktowanie zaczynające się od słowa reakcji, ale nie będące
+        # dokładnie etykietą, zostaje.
+        lines = ["* Supermarket przy ulicy Głównej został zamknięty na stałe."]
+        assert _clean_lines_interia(lines) == lines
+
+    def test_embedded_video_duration_removed(self):
+        # dok. 9394 / 9269: "20:27 min", "11:48 min" — czas trwania wideo.
+        lines = ["20:27 min", "11:48 min", "Treść artykułu interia."]
+        assert _clean_lines_interia(lines) == ["Treść artykułu interia."]
+
+    def test_minutes_in_sentence_kept(self):
+        lines = ["Mecz trwał 90 min i zakończył się remisem, co ucieszyło kibiców."]
+        assert _clean_lines_interia(lines) == lines
+
+    def test_back_to_homepage_cta_removed(self):
+        # dok. 418 / 414
+        lines = [
+            "Więcej ważnych informacji znajdziesz na stronie głównej Interii",
+            "Treść artykułu interia.",
+        ]
+        assert _clean_lines_interia(lines) == ["Treść artykułu interia."]
+
+    def test_follow_in_google_cta_removed(self):
+        # dok. 9208 / 9394: promo sklejone z poprzedzającym zdaniem.
+        lines = [
+            "Chcesz częściej widzieć treści Interia Motoryzacja w Google?"
+            "Dodaj nas do ulubionych źródeł, otwiera się w nowym oknie [link3]",
+            "Dołącz do czytelników Interia WydarzeniaDodaj do Google, "
+            "otwiera się w nowym oknie [link0]",
+            "Treść artykułu interia.",
+        ]
+        assert _clean_lines_interia(lines) == ["Treść artykułu interia."]
+
+    def test_google_mention_in_sentence_kept(self):
+        lines = ["Google zainwestował miliard dolarów w nowe centrum danych pod Warszawą."]
+        assert _clean_lines_interia(lines) == lines
 
 
 class TestResolveRelativePublicationDate:
