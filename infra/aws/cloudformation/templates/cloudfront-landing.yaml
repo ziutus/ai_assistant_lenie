@@ -53,6 +53,30 @@ Resources:
         OriginAccessControlOriginType: s3
         Description: 'OAC for landing page S3 bucket'
 
+  # S3 REST origins do not resolve directory indexes. Rewrite static-export
+  # routes such as /about and /about/ to the generated /about/index.html.
+  LandingRouteRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub '${ProjectCode}-${Environment}-landing-route-rewrite'
+      AutoPublish: true
+      FunctionConfig:
+        Comment: 'Rewrite static Next.js export routes to index.html'
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+          if (uri === '/') {
+            request.uri = '/index.html';
+          } else if (uri.endsWith('/')) {
+            request.uri = uri + 'index.html';
+          } else if (!uri.includes('.')) {
+            request.uri = uri + '/index.html';
+          }
+          return request;
+        }
+
   # CloudFront distribution for landing page
   LandingDistribution:
     Type: AWS::CloudFront::Distribution
@@ -83,6 +107,9 @@ Resources:
             - GET
             - HEAD
           Compress: true
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt LandingRouteRewriteFunction.FunctionARN
           # AWS managed CachingOptimized policy
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
         ViewerCertificate:
