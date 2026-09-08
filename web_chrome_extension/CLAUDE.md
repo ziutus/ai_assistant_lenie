@@ -2,7 +2,7 @@
 
 Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. No build step — load unpacked directly from this folder.
 
-**Version**: 1.0.57 | **Manifest**: v3
+**Version**: 1.0.59 | **Manifest**: v3
 
 ## Directory Structure
 
@@ -27,7 +27,9 @@ web_chrome_extension/
 3. **Content extraction** — captures full page text (`innerText`) and HTML (`outerHTML`) via `chrome.scripting.executeScript()`
 4. **Content type classification** — `webpage` (default), `link`, `youtube`, `movie`
 5. **YouTube detection** — auto-switches type to `youtube` when URL matches `youtube.com/watch`, shows chapter list field
-6. **Social media post capture** — auto-switches type to `social_media_post` for Facebook or LinkedIn post URLs, extracts only the post message when available, presents it for editing, sends `social_platform`, and does not send service HTML or comments
+6. **Social media post capture** — auto-switches type to `social_media_post` for Facebook or LinkedIn post URLs, presents editable post text, sends `social_platform`, and does not send service HTML. LinkedIn optionally includes loaded comments through `linkedin-comments.js`, in a separate editable preview appended to the document as its own section. Explicit `replace_social_post` updates an existing LinkedIn capture on NAS only; it invalidates old vectors/summary and requires a new analysis. New captures with comments also support AWS.
+
+   `linkedin-comments.js` targets LinkedIn's current server-driven UI: a comment is `div[componentkey^="CommentComponentReference_urn:li:comment:(urn:li:activity:<ACT>,"]` (the activity id scopes the capture and rejects embedded/recommended posts; the same comment renders 2-3×, deduped by comment id), its body is `[data-testid="expandable-text-box"]` (`textContent`, so the `…more` clamp toggle doesn't truncate it), and replies — not DOM-nested — are told apart by avatar indent. Member/hashtag mentions keep their text but drop their URL. The pre-`componentkey` `.comments-comment-*` DOM is a fallback branch. The popup's own LinkedIn post-text extraction also prefers the non-comment `expandable-text-box` so the post is not confused with a long comment. Tests: `node --test web_chrome_extension/tests/*.test.cjs` (jsdom from `web_interface_react/node_modules`).
 7. **Gmail message capture** — auto-switches type to `email` for an open Gmail message, extracts the most recently expanded message body and its sent date, preserves visible links as `label (URL)` (including locally unwrapped Gmail redirects), and sends it as plain text under a stable `gmail://` identity without Gmail HTML or inbox access
 7. **Source tracking** — dropdown loaded from `GET {apiBase}/sources?active=1` (apiBase = serverUrl minus the `/url_add` suffix), with a "+ Dodaj nowe źródło…" option that creates a source via `POST /sources`. Last selection persisted (`chrome.storage.sync.lastSource`); fetched list cached in `chrome.storage.local.sourcesCache`. Offline / endpoint without `/sources` (AWS Gateway) → cache, then the 4 hardcoded fallback options in popup.html
 8. **Paywall flag** — boolean Yes/No radio buttons

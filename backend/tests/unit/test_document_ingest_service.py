@@ -99,3 +99,23 @@ def test_invalid_operation_is_rejected_before_service_call():
         DocumentIngestService(MagicMock(), storage=MagicMock()).ingest(
             IngestRequest(url="https://example.test", document_type="webpage", operation="bad")
         )
+
+
+def test_replace_social_post_is_explicit_and_returns_updated():
+    with patch("library.document_ingest_service.DocumentService") as service_cls:
+        service_cls.return_value.replace_social_post.return_value = SimpleNamespace(id=42)
+        result = DocumentIngestService(MagicMock()).ingest(IngestRequest(
+            url="https://www.linkedin.com/feed/update/urn:li:activity:123/",
+            document_type="social_media_post", social_platform="linkedin",
+            text="Post and comments", operation="replace_social_post",
+        ))
+        assert result.status == "updated"
+        assert result.document_id == 42
+        service_cls.return_value.create_document.assert_not_called()
+
+
+def test_replace_social_post_rejects_email_request():
+    with pytest.raises(ValueError, match="Only LinkedIn"):
+        DocumentIngestService(MagicMock()).ingest(IngestRequest(
+            url="gmail://123", document_type="email", text="mail", operation="replace_social_post",
+        ))

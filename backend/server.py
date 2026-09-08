@@ -345,7 +345,7 @@ def url_add():
                 'existing_document_type': result.existing_document_type,
             }, 409
         return {
-            'status': 'success',
+            'status': 'updated' if result.status == 'updated' else 'success',
             'message': f'Successfully saved document with ID: {doc.id}',
             'document_id': doc.id
         }, 200

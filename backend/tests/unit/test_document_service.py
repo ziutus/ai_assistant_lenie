@@ -867,3 +867,53 @@ class TestPromoteLinkToWebpage:
         with patch.object(Document, "get_by_id", return_value=None):
             with pytest.raises(ValueError):
                 DocumentService(_make_session()).promote_link_to_webpage(999)
+@pytest.mark.parametrize("existing_type,platform", [("webpage", "linkedin"), ("social_media_post", "facebook")])
+def test_replace_social_post_rejects_other_document_types(existing_type, platform):
+    session = MagicMock()
+    doc = _make_doc(document_type=existing_type, social_platform=platform)
+    with patch.object(Document, "get_by_url", return_value=doc):
+        with pytest.raises(ValueError, match="existing LinkedIn"):
+            DocumentService(session).replace_social_post(doc.url, "new capture")
+    session.commit.assert_not_called()
+
+
+def test_replace_social_post_invalidates_derived_content_and_preserves_metadata():
+    session = MagicMock()
+    doc = _make_doc(document_type="social_media_post", social_platform="linkedin",
+                    text="old", title="Keep title", note="Keep note", embeddings=["old vector"])
+    with patch.object(Document, "get_by_url", return_value=doc):
+        result = DocumentService(session).replace_social_post(doc.url, "Post\n\nComments")
+    assert result is doc
+    assert doc.text == doc.text_raw == "Post\n\nComments"
+    assert doc.document_length == len(doc.text)
+    assert doc.embeddings == []
+    assert doc.summary is None
+    assert doc.entities_checked_at is None
+    assert doc.reviewed_at is None
+    assert doc.title == "Keep title"
+    assert doc.note == "Keep note"
+    doc.set_processing_status.assert_called_once_with("URL_ADDED")
+    session.commit.assert_called_once()
+
+
+def test_replace_social_post_identical_capture_does_not_invalidate_analysis():
+    session = MagicMock()
+    doc = _make_doc(document_type="social_media_post", social_platform="linkedin", text="same")
+    with patch.object(Document, "get_by_url", return_value=doc):
+        DocumentService(session).replace_social_post(doc.url, "same")
+    session.commit.assert_not_called()
+    doc.set_processing_status.assert_not_called()
+
+
+@pytest.mark.parametrize("text", ["", "  ", None])
+def test_replace_social_post_requires_nonempty_text(text):
+    session = MagicMock()
+    with pytest.raises(ValueError, match="text is required"):
+        DocumentService(session).replace_social_post("https://www.linkedin.com/post", text)
+    session.commit.assert_not_called()
+
+
+def test_replace_social_post_requires_existing_document():
+    with patch.object(Document, "get_by_url", return_value=None):
+        with pytest.raises(ValueError, match="existing LinkedIn"):
+            DocumentService(MagicMock()).replace_social_post("https://www.linkedin.com/post", "new")

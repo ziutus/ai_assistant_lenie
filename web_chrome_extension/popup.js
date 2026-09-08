@@ -46,6 +46,61 @@ document.addEventListener('DOMContentLoaded', function () {
   const newSourceNameInput = document.getElementById('newSourceName');
   const addSourceButton = document.getElementById('addSourceButton');
   const refreshExisting = document.getElementById('refreshExisting');
+  const refreshExistingContainer = document.getElementById('refreshExistingContainer');
+  const commentsContainer = document.getElementById('linkedinCommentsContainer');
+  const includeComments = document.getElementById('includeLinkedinComments');
+  const commentsPreview = document.getElementById('linkedinCommentsPreview');
+  const commentsText = document.getElementById('linkedinCommentsText');
+  const commentsStatus = document.getElementById('linkedinCommentsStatus');
+  const replaceSocialPost = document.getElementById('replaceSocialPost');
+  let commentsLoading = false;
+
+  function formatLinkedInComments(comments) {
+    return (comments || []).map((comment) => {
+      const meta = [comment.authorUrl, comment.timestamp].filter(Boolean).join(' · ');
+      const head = `${comment.author}${meta ? ` (${meta})` : ''}`;
+      if (comment.isReply) {
+        const to = comment.replyTo ? ` do: ${comment.replyTo}` : '';
+        return `  ↳ odpowiedź${to} — ${head}\n    ${comment.text.replace(/\n/g, '\n    ')}`;
+      }
+      return `${head}\n${comment.text}`;
+    }).join('\n\n');
+  }
+
+  includeComments.addEventListener('change', async () => {
+    commentsPreview.style.display = includeComments.checked ? 'block' : 'none';
+    if (!includeComments.checked) { replaceSocialPost.checked = false; return; }
+    if (commentsText.value) return;
+    commentsLoading = true;
+    sendButton.disabled = true;
+    commentsStatus.textContent = 'Pobieranie komentarzy…';
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractLinkedInComments });
+      if (!result?.result) throw new Error('Nie udało się odczytać komentarzy.');
+      const { comments = [], warning = '', sort = '' } = result.result;
+      const replies = result.result.replies ?? comments.filter(c => c.isReply).length;
+      const captured = result.result.captured ?? comments.length;
+      const topLevel = result.result.topLevel ?? (comments.length - replies);
+      commentsText.value = formatLinkedInComments(comments);
+      updateDebug({
+        linkedin_comments_captured: captured,
+        linkedin_comments_top_level: topLevel,
+        linkedin_comments_replies: replies,
+        linkedin_comments_sort: sort || null,
+        linkedin_comments_warning: warning || null
+      });
+      const summary = comments.length
+        ? `Pobrano ${captured} wypowiedzi (${topLevel} komentarzy, ${replies} odpowiedzi)${sort ? `, sortowanie: „${sort}"` : ''}. To wyłącznie fragment dyskusji załadowany na stronie.`
+        : '';
+      commentsStatus.textContent = [summary, warning].filter(Boolean).join(' ') || 'Nie pobrano żadnych komentarzy.';
+    } catch (error) {
+      commentsStatus.textContent = error.message;
+    } finally {
+      commentsLoading = false;
+      sendButton.disabled = false;
+    }
+  });
   const debugContainer = document.getElementById('debugContainer');
   const debugOutput = document.getElementById('debugOutput');
   const copyDebugButton = document.getElementById('copyDebugButton');
@@ -59,7 +114,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailId = '';
   let detectedEmailPublishedOn = '';
   let detectedEmailImages = [];
-  const debugState = { version: '1.0.57' };
+  const debugState = { version: '1.0.59' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -293,10 +348,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const isEmail = typeSelect.value === 'email';
     const needsCapturedContent = isSocialPost || isEmail;
     capturedContentContainer.style.display = needsCapturedContent ? 'block' : 'none';
+    commentsContainer.style.display = isSocialPost && detectedSocialPlatform === 'linkedin' ? 'block' : 'none';
     capturedContentLabel.textContent = isEmail ? 'Treść e-maila' : 'Treść posta';
     capturedContentHelp.textContent = isEmail
       ? 'Importowana jest wyłącznie widoczna treść wiadomości, bez interfejsu Gmaila.'
-      : 'Komentarze i elementy interfejsu serwisu nie są importowane.';
+      : 'Treść samego posta. Komentarze LinkedIn możesz dołączyć osobno poniżej.';
+    // "Uzupełnij brakujący surowy HTML" never applies to a social post or an
+    // email (neither sends raw HTML) — hide it rather than show it greyed out,
+    // where it reads as the control for attaching comments.
+    refreshExistingContainer.hidden = needsCapturedContent;
     refreshExisting.disabled = needsCapturedContent;
     if (needsCapturedContent) refreshExisting.checked = false;
     requiresLoginInput.checked = needsCapturedContent;
@@ -394,6 +454,7 @@ document.addEventListener('DOMContentLoaded', function () {
       type_before_detection: typeSelect.value
     });
     if (isSocialPost) {
+      detectedSocialPlatform = socialPlatformForUrl(pageUrl);
       typeSelect.value = 'social_media_post';
       toggleCapturedContentVisibility();
     } else if (isGmailMessage) {
@@ -672,6 +733,32 @@ document.addEventListener('DOMContentLoaded', function () {
            } else if (isLinkedIn) {
             platform = 'linkedin';
             await new Promise(resolve => setTimeout(resolve, 1000));
+            // Server-driven UI: the post body is the one
+            // [data-testid="expandable-text-box"] that is NOT inside a comment
+            // (comment nodes carry a componentkey with urn:li:comment). This
+            // keeps the post text from being confused with a long comment.
+            const sduiBoxes = [...document.querySelectorAll('[data-testid="expandable-text-box"]')]
+              .filter(el => !el.closest('[componentkey*="urn:li:comment:"]') && isVisible(el));
+            const sduiBox = sduiBoxes.sort((a, b) => (b.innerText?.length || 0) - (a.innerText?.length || 0))[0];
+            if (sduiBox) {
+              const bodyCopy = sduiBox.cloneNode(true);
+              bodyCopy.querySelectorAll('button, [role="button"]').forEach(el => el.remove());
+              postText = clean(bodyCopy.innerText);
+              let scope = sduiBox;
+              for (let i = 0; i < 12 && scope.parentElement; i++) {
+                scope = scope.parentElement;
+                if (scope.querySelector('figure, img') && scope.querySelector('a[href*="/in/"], a[href*="/company/"]')) break;
+              }
+              const nameLink = [...scope.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')]
+                .find(a => a.textContent.trim() && (sduiBox.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING));
+              const hidden = nameLink && (nameLink.querySelector('p span[aria-hidden="true"]') || nameLink.querySelector('span[aria-hidden="true"]'));
+              let name = clean((hidden?.textContent || nameLink?.textContent || '').split('\n')[0])
+                .replace(/\s*[•·|]\s*(?:1st|2nd|3rd\+?|Following|Follow|Author|Autor)\s*$/i, '').trim();
+              const nameHalf = name.slice(0, Math.floor(name.length / 2)).trim();
+              if (nameHalf && name === nameHalf + nameHalf) name = nameHalf;
+              author = name;
+              fallbackExtraction = 'sdui_expandable_text_box';
+            }
             const rootSelectors = [
               '[data-urn^="urn:li:activity"]', '[data-urn^="urn:li:share"]',
               '[data-id^="urn:li:activity"]', '[data-id^="urn:li:share"]',
@@ -686,20 +773,24 @@ document.addEventListener('DOMContentLoaded', function () {
               '[data-testid="main-feed-activity-card__commentary"]',
               '[dir="ltr"]'
             ];
-            const root = rootSelectors.map(selector => document.querySelector(selector)).find(Boolean);
+            const activityId = decodeURIComponent(location.href).match(/urn:li:activity:(\d+)/)?.[1]
+              || location.href.match(/activity-(\d+)/)?.[1];
+            const matchingRoot = activityId && document.querySelector(`[data-urn="urn:li:activity:${activityId}"], [data-id="urn:li:activity:${activityId}"]`);
+            const root = matchingRoot || rootSelectors.map(selector => document.querySelector(selector)).find(Boolean);
             const messageCandidates = root
-              ? messageSelectors.flatMap(selector => [...root.querySelectorAll(selector)]).filter(isVisible)
+              ? messageSelectors.flatMap(selector => [...root.querySelectorAll(selector)])
+                .filter(el => isVisible(el) && !el.closest('.comments-comment-item, .comments-comment-entity, .comments-comments-list'))
               : [];
             const message = messageCandidates.sort((left, right) => (right.innerText?.length || 0) - (left.innerText?.length || 0))[0];
-            if (message) {
+            if (!postText && message) {
               postText = clean(message.innerText);
-            } else if (root) {
+            } else if (!postText && root) {
               const copy = root.cloneNode(true);
               copy.querySelectorAll('.social-details-social-activity, .comments-comments-list, .feed-shared-social-action-bar, [aria-label*="comment" i], [aria-label*="komentarz" i], button, [role="button"]').forEach(el => el.remove());
               postText = clean(copy.innerText);
             }
             const authorNode = root?.querySelector('.update-components-actor__name, .feed-shared-actor__name, .update-components-actor__title, a[href*="/in/"] span[aria-hidden="true"], a[href*="/company/"] span[aria-hidden="true"]');
-            author = clean(authorNode?.innerText || '');
+            author = author || clean(authorNode?.innerText || '');
             if (!postText) {
               postText = clean(document.querySelector('meta[property="og:description"]')?.content || document.querySelector('meta[name="description"]')?.content || '');
             }
@@ -896,7 +987,11 @@ document.addEventListener('DOMContentLoaded', function () {
           const { text, html } = result[0].result;
           const isSocialPost = type === 'social_media_post';
           const isEmail = type === 'email';
-          const capturedText = capturedContentTextInput.value.trim();
+          const withComments = isSocialPost && detectedSocialPlatform === 'linkedin' && includeComments.checked;
+          if (commentsLoading) throw new Error('Poczekaj na pobranie komentarzy.');
+          if (withComments && !commentsText.value.trim()) throw new Error('Brak komentarzy. Rozwiń dyskusję i otwórz wtyczkę ponownie albo odznacz dołączanie komentarzy.');
+          const postText = capturedContentTextInput.value.trim();
+          const capturedText = postText + (withComments ? `\n\n## Komentarze z LinkedIn (załadowany fragment dyskusji)\n\n${commentsText.value.trim()}` : '');
           const emailIdentity = detectedEmailId || (() => {
             const match = pageUrl.match(/(?:#|\/)(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i)
               || pageUrl.match(/#search\/[^/?#]+\/([^/?#]+)/i);
@@ -932,7 +1027,7 @@ document.addEventListener('DOMContentLoaded', function () {
             payload_requires_login: data.requires_login,
             payload_published_on: data.published_on || null
           });
-          if ((isSocialPost || isEmail) && !data.text) {
+          if ((isSocialPost || isEmail) && !postText) {
             throw new Error(isEmail
               ? 'Nie znaleziono treści e-maila. Wklej ją do pola Treść e-maila.'
               : 'Nie znaleziono treści posta. Wklej ją do pola Treść posta.');
@@ -943,6 +1038,7 @@ document.addEventListener('DOMContentLoaded', function () {
           if (refreshExisting.checked) {
             data.operation = 'fill_missing_html';
           }
+          if (withComments && replaceSocialPost.checked) data.operation = 'replace_social_post';
 
           return (async () => {
             const configs = endpointConfigs();
@@ -956,6 +1052,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const localAvailable = Boolean(localProbe?.ok);
             const config = localAvailable ? localConfig : awsConfig;
             if (!config) throw new Error('NAS i AWS są niedostępne');
+            if (data.operation === 'replace_social_post' && config.role !== 'nas') {
+              throw new Error('Zastąpienie istniejącego wpisu wymaga dostępnego NAS. Spróbuj ponownie po połączeniu z NAS.');
+            }
             updateDebug({
               selected_endpoint: config.url,
               endpoint_role: config.role,
@@ -1006,7 +1105,9 @@ document.addEventListener('DOMContentLoaded', function () {
               }
               return { status: 'promoted' };
             }
-            const suffix = result.missing_raw_html
+            const suffix = result.existing_document_type === 'social_media_post'
+              ? ' Aby dołączyć komentarze, zaznacz zastąpienie treści istniejącego wpisu (NAS).'
+              : result.missing_raw_html
               ? ' Brakuje mu surowego HTML — możesz użyć opcji jego uzupełnienia.'
               : '';
             throw new Error(`Dokument jest już w bazie ${serverLabel} (ID: ${result.document_id}).${suffix}`);
@@ -1023,7 +1124,9 @@ document.addEventListener('DOMContentLoaded', function () {
           const serverLabel = debugState.endpoint_role === 'nas' ? 'NAS' : 'AWS';
           const hasDocumentId = result.document_id !== undefined && result.document_id !== null;
           let message;
-          if (result.status === 'promoted') {
+          if (result.status === 'updated') {
+            message = `Treść wpisu w ${serverLabel} została zaktualizowana.\nID dokumentu: ${result.document_id}\nUruchom ponownie analizę wpisu, aby uwzględnić komentarze.`;
+          } else if (result.status === 'promoted') {
             message = `Dokument zmieniono w webpage w ${serverLabel}. Trwa pobieranie treści.`;
           } else if (result.status === 'queued') {
             message = `Zgłoszenie przekazano do importu w ${serverLabel}.`;

@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [1.0.59] - 2026-09-08
+### Dodane
+- Opcjonalny import załadowanych komentarzy LinkedIn z autorami (nazwa + link do profilu), znacznikiem czasu, linkami w treści i kontekstem odpowiedzi (do kogo). Osobny edytowalny podgląd pozwala usunąć wybrane wypowiedzi przed wysłaniem; komentarze trafiają do dokumentu jako osobna sekcja pod treścią posta.
+- Jawne zastąpienie treści istniejącego wpisu LinkedIn przez `replace_social_post` w backendzie NAS. Zachowuje metadane, usuwa stare wektory i podsumowanie, wymaga ponownej analizy. Bez automatycznego fallbacku tej operacji do AWS.
+
+### Zmienione
+- Ekstraktor komentarzy i treści posta LinkedIn przepisany pod nowy, sterowany serwerowo interfejs LinkedIn (brak klas `comments-comment-*`; komentarz to `componentkey="CommentComponentReference_urn:li:comment:(urn:li:activity:<ID>,…)"`, treść w `[data-testid="expandable-text-box"]`). Stare selektory zostawiono jako gałąź zapasową dla starego UI.
+- Zakres komentarzy do wpisu wymuszany przez identyfikator aktywności w `componentkey` — komentarze z rekomendowanych/osadzonych wpisów są odrzucane; zduplikowane renderowania tego samego komentarza są scalane.
+- Odpowiedzi rozpoznawane po wcięciu awatara (w nowym UI nie są zagnieżdżone w DOM); podgląd zawsze podaje liczbę pobranych wypowiedzi i ostrzega, że to tylko fragment dyskusji, gdy wpis ma więcej komentarzy niż załadowano.
+- Opcja „Uzupełnij brakujący surowy HTML" jest ukrywana dla postów social i e-maili (nie dotyczy ich), zamiast być pokazywana jako wyszarzona — myliła się z kontrolką dołączania komentarzy.
+
 ## [1.0.57] - 2026-08-31
 ### Dodane
 - Gdy dodawana strona istnieje już w bazie jako sam link (HTTP 409), wtyczka automatycznie promuje ją do pełnego dokumentu `webpage`, wysyłając przechwycony HTML — zamiast kończyć komunikatem „Dokument jest już w bazie". Działa też dla `webpage` bez treści (odzysk po nieudanym pobraniu strony za logowaniem).

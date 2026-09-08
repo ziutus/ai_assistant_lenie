@@ -176,6 +176,35 @@ class DocumentService:
         logger.info("Successfully saved document to database with ID: %s", doc.id)
         return doc
 
+    def replace_social_post(self, url: str, text: str) -> Document:
+        """Replace an explicitly selected existing LinkedIn capture atomically.
+
+        Retain metadata and review history; discard derived search vectors and
+        mark the content for reprocessing. Repeated identical captures are no-ops.
+        """
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("Social post text is required")
+        doc = Document.get_by_url(self.session, url)
+        if doc is None or doc.document_type != "social_media_post" or doc.social_platform != "linkedin":
+            raise ValueError("An existing LinkedIn social post is required")
+        if doc.text == text:
+            return doc
+        doc.text = text
+        doc.text_raw = text
+        doc.text_md = None
+        doc.document_length = len(text)
+        doc.summary = None
+        doc.quality = None
+        doc.entities_checked_at = None
+        doc.ner_unavailable_at = None
+        doc.enrichment_run_at = None
+        doc.reviewed_at = None
+        doc.embeddings.clear()
+        doc.set_processing_status("URL_ADDED")
+        doc.processing_error_code = "NONE"
+        self.session.commit()
+        return doc
+
     def replace_email_images(self, document_id: int, images: list[dict]) -> None:
         """Replace externally hosted images captured from an email body.
 
