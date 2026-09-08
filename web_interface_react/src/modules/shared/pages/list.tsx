@@ -464,6 +464,24 @@ const List = () => {
                   {obsidian.label} {isExpanded ? "▾" : "▸"}
                 </span>
               )}
+              {(item.link_count > 0 || item.proposed_link_count > 0) && (
+                <NavLink
+                  to={item.document_type === "obsidian_note" ? `/read/${item.id}` : `/${item.document_type}/${item.id}`}
+                  title={
+                    `Powiązane dokumenty: ${item.link_count || 0} potwierdzonych`
+                    + (item.proposed_link_count ? `, ${item.proposed_link_count} do przeglądu` : "")
+                  }
+                  style={{
+                    margin: "0 0 0 10px", fontSize: ".82em", fontWeight: 500,
+                    color: item.link_count > 0 ? "#334155" : "#a16207", textDecoration: "none",
+                  }}
+                >
+                  🔗 {item.link_count || 0}
+                  {item.proposed_link_count > 0 && (
+                    <span style={{ color: "#a16207" }}> · {item.proposed_link_count}?</span>
+                  )}
+                </NavLink>
+              )}
               <span style={{ margin: "0 0 0 auto", fontWeight: "500" }}>
                 {item.document_type}
               </span>

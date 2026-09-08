@@ -85,7 +85,7 @@ class TestGetList:
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
         groups_result = MagicMock(all=MagicMock(return_value=[]))
-        session.execute.side_effect = [list_result, missing_notes_result, groups_result]
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result, MagicMock(all=MagicMock(return_value=[]))]
 
         result = repo.get_list()
 
@@ -117,12 +117,33 @@ class TestGetList:
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[(1, 3, 2)]))
         groups_result = MagicMock(all=MagicMock(return_value=[]))
-        session.execute.side_effect = [list_result, missing_notes_result, groups_result]
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result, MagicMock(all=MagicMock(return_value=[]))]
 
         result = repo.get_list()
 
         assert result[0]["chunks_missing_obsidian_notes"] == 3
         assert result[0]["chunks_with_obsidian_notes"] == 2
+
+    def test_document_link_counts_are_attached_per_document(self):
+        session = MagicMock()
+        repo = _make_repo(session)
+
+        mock_row = _make_row(
+            id=7, url="https://example.com", title="Test", document_type="link",
+            ingested_at=datetime.datetime(2026, 1, 15, 10, 30, 0), processing_status="URL_ADDED",
+            processing_error_code=None, note=None, collection_id=None, uuid=None, byline=None,
+            obsidian_note_paths=None,
+        )
+        list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
+        missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
+        groups_result = MagicMock(all=MagicMock(return_value=[]))
+        link_result = MagicMock(all=MagicMock(return_value=[(7, 2, 1)]))
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result, link_result]
+
+        result = repo.get_list()
+
+        assert result[0]["link_count"] == 2
+        assert result[0]["proposed_link_count"] == 1
 
     def test_document_level_obsidian_note_paths_pass_through(self):
         """documents.obsidian_note_paths (set by the /lenie-obsidian-note skill) must also surface."""
@@ -138,7 +159,7 @@ class TestGetList:
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
         groups_result = MagicMock(all=MagicMock(return_value=[]))
-        session.execute.side_effect = [list_result, missing_notes_result, groups_result]
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result, MagicMock(all=MagicMock(return_value=[]))]
 
         result = repo.get_list()
 
@@ -263,7 +284,7 @@ class TestGetList:
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
         groups_result = MagicMock(all=MagicMock(return_value=[]))
-        session.execute.side_effect = [list_result, missing_notes_result, groups_result]
+        session.execute.side_effect = [list_result, missing_notes_result, groups_result, MagicMock(all=MagicMock(return_value=[]))]
 
         result = repo.get_list()
 

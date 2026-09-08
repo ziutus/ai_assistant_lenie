@@ -5,7 +5,10 @@ from typing import Any
 from sqlalchemy import Float, and_, delete, func, literal, or_, select
 from sqlalchemy.orm import Session, aliased
 
-from library.db.models import ContentGroup, DocumentAnalysisRun, DocumentChunk, Document, DocumentEmbedding, DocumentGroupMembership
+from library.db.models import (
+    ContentGroup, DocumentAnalysisRun, DocumentChunk, Document, DocumentEmbedding, DocumentGroupMembership,
+    DocumentLink,
+)
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
@@ -155,6 +158,7 @@ class DocumentRepository:
         doc_ids = [row.id for row in rows]
         obsidian_notes_by_doc = self._count_obsidian_note_chunks(doc_ids)
         groups_by_doc = self._load_document_groups(doc_ids)
+        link_counts_by_doc = self._count_document_links(doc_ids)
 
         result = []
         for row in rows:
@@ -175,10 +179,33 @@ class DocumentRepository:
                 "has_text_md": row.has_text_md,
                 "chunks_missing_obsidian_notes": missing,
                 "chunks_with_obsidian_notes": with_notes,
+                "link_count": link_counts_by_doc.get(row.id, (0, 0))[0],
+                "proposed_link_count": link_counts_by_doc.get(row.id, (0, 0))[1],
                 "groups": groups_by_doc.get(row.id, {}).get("groups", []),
                 "effective_priority_rank": groups_by_doc.get(row.id, {}).get("effective_priority_rank"),
             })
         return result
+
+    def _count_document_links(self, doc_ids: list[int]) -> dict[int, tuple[int, int]]:
+        """Per document: (confirmed link count, proposed link count) across both
+        endpoints (library/document_links_service.py)."""
+        if not doc_ids:
+            return {}
+        from_side = select(
+            DocumentLink.from_document_id.label("doc_id"), DocumentLink.status.label("status"),
+        ).where(DocumentLink.from_document_id.in_(doc_ids), DocumentLink.status != "rejected")
+        to_side = select(
+            DocumentLink.to_document_id.label("doc_id"), DocumentLink.status.label("status"),
+        ).where(DocumentLink.to_document_id.in_(doc_ids), DocumentLink.status != "rejected")
+        endpoints = from_side.union_all(to_side).subquery()
+        rows = self.session.execute(
+            select(
+                endpoints.c.doc_id,
+                func.count().filter(endpoints.c.status == "confirmed"),
+                func.count().filter(endpoints.c.status == "proposed"),
+            ).where(endpoints.c.doc_id.in_(doc_ids)).group_by(endpoints.c.doc_id)
+        ).all()
+        return {doc_id: (confirmed, proposed) for doc_id, confirmed, proposed in rows}
 
     def _load_document_groups(self, doc_ids: list[int]) -> dict[int, dict[str, Any]]:
         if not doc_ids:

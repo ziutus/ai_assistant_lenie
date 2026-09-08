@@ -2,7 +2,7 @@
 
 React 18 single-page application for managing documents and running AI operations (text correction, embedding, similarity search). Built with **Vite** and **TypeScript**.
 
-**App version**: 0.3.17.0 | **Package version**: 0.3.17.0
+**App version**: 0.3.17.1 | **Package version**: 0.3.17.0
 
 ## Directory Structure
 
@@ -108,7 +108,7 @@ instead of copying its markup and state handling.
 |-------|------|---------|
 | `/connect` | `connect.tsx` | Backend connection configuration (API type, URL, key) |
 | `/` | — | Redirects to `/list` |
-| `/list` | `list.tsx` | Browse documents with type/state/text filters |
+| `/list` | `list.tsx` | Browse documents with type/state/text filters. Each row shows a `🔗 N` badge (from `/website_list`'s `link_count`/`proposed_link_count`) when the document has `document_links` — amber `· N?` for links still awaiting review; the badge links to the document's editor (or `/read` for `obsidian_note`) where `DocumentLinksPanel` lives. |
 | `/search` | `search.tsx` | Stage 9 complete: natural `POST /search`, visible interpretation, editable/removable topic/filter chips, corrected explicit re-search without LLM, feedback, and shareable `mode=explicit&criteria=<JSON>` URLs that replay explicit criteria without Bielik. |
 | `/link/:id?` | `link.tsx` | Edit link documents (metadata only) |
 | `/webpage/:id?` | `webpage.tsx` | Edit webpages with AI tools (split, clean) |
