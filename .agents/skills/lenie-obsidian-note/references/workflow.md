@@ -52,9 +52,10 @@ Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_runs?doc_id=<ARTICLE_
 Zwraca `{"doc_id", "runs": [{"id", "mode", "status", "scope", "model", "created_at", "chunk_count", "temat_count", "analyzed_count", "approved_count", "workflow_stage"}, ...]}` — identyfikator runu to pole `id`.
 
 - Brak runów: przejdź do pełnego tekstu.
-- Jeden użyteczny run: wybierz go.
+- Jeden run z `analyzed_count > 0`: wybierz go.
+- Jeden run z `analyzed_count == 0` (split-only, chunki bez `topic`/`summary`): przejdź do pełnego tekstu, ale zapamiętaj jego `id` — w synchronizacji bazy trzeba wpisać ścieżki notatek w chunki `TEMAT` tego runu.
 - Wiele runów: pokaż identyfikator, tryb, zakres, model, datę i liczniki. Zaproponuj run z największą liczbą przeanalizowanych chunków; remis rozstrzygnij liczbą `approved`.
-- Run bez przeanalizowanych chunków traktuj jako niegotowy do pisania notatek.
+- Run bez przeanalizowanych chunków traktuj jako niegotowy do pisania notatek (ale jego chunki `TEMAT` nadal wymagają wpisu ścieżki notatki — patrz „Synchronizacja bazy").
 
 Pełny tekst pobieraj tylko wtedy, gdy brak użytecznych chunków:
 
@@ -125,8 +126,8 @@ Wykonaj ją dopiero po skutecznym zapisie plików:
 
 - dodaj względne ścieżki notatek do `WebDocument.obsidian_note_paths` bez duplikatów;
 - ustaw `reviewed_at` tylko jeśli nie było ustawione;
-- dla każdego użytego chunka dodaj ścieżki do `DocumentChunk.obsidian_note_paths` bez duplikatów;
-- ustaw status chunka na `approved` tylko po zapisaniu odpowiadającej notatki;
+- dla każdego chunka, którego treść pokrywa napisana notatka, dodaj ścieżki do `DocumentChunk.obsidian_note_paths` bez duplikatów — dotyczy to też ścieżki pełnotekstowej: jeśli dokument ma run analizy (nawet z `analyzed_count == 0`, o ile nie jest `superseded`), wpisz ścieżki notatek we wszystkie chunki `TEMAT` tego runu, których treść notatki obejmują — inaczej `/list` na stałe pokazuje dokument jako „częściowo opracowane";
+- status chunka podnoś do `approved` tylko dla chunków faktycznie opracowanych z zapisaną notatką — nie podnoś statusu chunka nieanalizowanego (bez `topic`/`summary`) tylko dlatego, że notatka dokumentowa pokrywa jego treść;
 - wykonaj zmiany w jednej transakcji bazy i wycofaj ją przy błędzie;
 - nie cofaj automatycznie poprawnie zapisanych plików; zgłoś rozbieżność i zaproponuj naprawę.
 

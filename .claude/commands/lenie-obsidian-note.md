@@ -50,7 +50,8 @@ Returns JSON: `{"doc_id", "runs": [{"id", "mode", "status", "scope", "model", "c
 
 **Interpret the result:**
 - Empty `runs` array → proceed to **Step 1c** (fetch full text)
-- **One run** → auto-select its `id` as `<RUN_ID>`, proceed straight to **Step 2a**
+- **One run, `analyzed_count > 0`** → auto-select its `id` as `<RUN_ID>`, proceed straight to **Step 2a**
+- **One run, `analyzed_count == 0`** (split-only / never analyzed — chunks have no `topic`/`summary`) → it is not usable for note-writing, so fetch the full text (**Step 1c** → **Step 2b**). Keep its `id` as `<RUN_ID>` — Step 6-B still has to stamp the note paths onto this run's `TEMAT` chunks, or `/list` shows the document as "częściowo opracowane" forever.
 - **Multiple runs** → this is typically a book (chapter runs) or a document re-analyzed several times. Show the list to the user (id, mode, scope, temat/analyzed/approved counts). A run with `analyzed_count=0` is a `split_only` run — chunks exist but have no topic/summary yet, not usable for note-writing on its own (even if `approved_count` is non-zero — that can happen for stale/aborted runs where chunks were approved before topics were ever generated). Propose the run with the highest `analyzed_count` as the default (break ties by `approved_count`), but let the user pick a different `RUN_ID` (e.g. a specific chapter). Once a `RUN_ID` is chosen, proceed to **Step 2a**.
 
 **Fetch chunks + topic sections for the chosen run** (used by Step 2a — also re-run this after the user picks a different `RUN_ID` from the multi-run list above):
@@ -289,7 +290,7 @@ session.close()
 "@
 ```
 
-**B) `DocumentChunk` — update when note was created from a specific chunk (chunk-based flow):**
+**B) `DocumentChunk` — update whenever a chunk's content is covered by a note you wrote (chunk-based flow AND full-text flow):**
 
 For each chunk whose content was used to create/update an Obsidian note, save the note path in `chunk.obsidian_note_paths` so future listing shows which chunks already have notes:
 
@@ -313,11 +314,36 @@ session.close()
 If one chunk contributed to multiple notes, append all relevant paths.
 If multiple chunks contributed to the same note, update each chunk separately.
 
+**Full-text flow (Step 2b / Step 1c) — do NOT skip B.** If you wrote the notes from the full text but the document *also* has an analysis run — **even a split-only / `analyzed_count=0` run, as long as it is not `superseded`** — its `TEMAT` chunks keep counting as "missing an Obsidian note" in `/list` (→ document stuck at "📝 częściowo opracowane") until a path is recorded on each. This is the exact case that bit doc 10471. After saving the document-level paths (A), write the same note paths onto every `TEMAT` chunk of that run whose content your notes cover — normally **all of them** for a short article:
+
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python -c @"
+from library.db.engine import get_session
+from library.db.models import DocumentChunk
+NOTE_PATHS = ['relative/path/to/note-a.md', 'relative/path/to/note-b.md']
+session = get_session()
+chunks = session.query(DocumentChunk).filter_by(run_id=<RUN_ID>).all()
+for chunk in chunks:
+    if chunk.type != 'TEMAT':
+        continue
+    cur = list(chunk.obsidian_note_paths or [])
+    for p in NOTE_PATHS:
+        if p not in cur:
+            cur.append(p)
+    chunk.obsidian_note_paths = cur
+    print(f'chunk #{chunk.position}: {chunk.obsidian_note_paths}')
+session.commit()
+session.close()
+"@
+```
+
+Leave a chunk untouched only if its content is genuinely NOT reflected in any note you wrote (e.g. you deliberately covered only part of a long document) — that chunk is real outstanding work. **Do NOT set `chunk.status = 'approved'`** on a chunk that was never analyzed (no `topic`/`summary`) just because a document-level note covers it — only add the path.
+
 **For multi-note sessions (YouTube chunks):** do both A and B after each note is saved, or batch all at once at the end of the session.
 
 Report the updated `obsidian_note_paths` and `reviewed_at` to confirm success.
 
-**Verify B was actually applied (chunk-based flow only):** re-fetch the run's chunks and confirm every chunk you just processed now shows a non-empty `obsidian_note_paths` (or `status == 'skipped'` if you deliberately left it unnoted):
+**Verify B was actually applied (whenever the document has any non-superseded run):** re-fetch the run's chunks and confirm every `TEMAT` chunk your notes cover now shows a non-empty `obsidian_note_paths` (or `status == 'skipped'` if you deliberately left it unnoted):
 
 ```powershell
 Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_run/<RUN_ID>/chunks?lite=1" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
