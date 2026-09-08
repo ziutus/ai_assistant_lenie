@@ -62,13 +62,19 @@ class DocumentIngestService:
 
     def ingest(self, request: IngestRequest, initiated_by_user_id: int | None = None) -> IngestResult:
         del initiated_by_user_id  # Reserved for the queue contract in PR 2.
-        if request.operation not in {"create", "fill_missing_html"}:
+        if request.operation not in {"create", "fill_missing_html", "replace_social_post"}:
             raise ValueError("Invalid operation")
         if not request.url or not request.document_type:
             raise ValueError("Missing required parameter(s): 'url' or 'type'")
 
         service = self.document_service
         try:
+            if request.operation == "replace_social_post":
+                if request.document_type != "social_media_post" or request.social_platform != "linkedin":
+                    raise ValueError("Only LinkedIn social posts can be replaced")
+                doc = service.replace_social_post(request.url, request.text)
+                return IngestResult(doc.id, "updated")
+
             if request.operation == "fill_missing_html":
                 doc = service.fill_missing_source_html(
                     url=request.url,
