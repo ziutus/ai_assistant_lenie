@@ -15,6 +15,7 @@ import RelationshipGraph, { type RelationshipGraphData } from "../components/Rel
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import { isOpenableSourceUrl, toOpenableSourceUrl } from "../utils/sourceUrl";
 import ChapterGroupsPanel from "../components/ChapterGroupsPanel/ChapterGroupsPanel";
+import DocumentLinksPanel from "../components/DocumentLinksPanel/documentLinksPanel";
 import { buildObsidianNoteUrl } from "../utils/obsidian";
 import {
   loadReaderSidebarVisible, saveReaderSidebarVisible,
@@ -1923,6 +1924,8 @@ const Read: React.FC = () => {
           className={`${styles.tocPanel} ${tocOpen ? styles.tocPanelOpen : ""} ${!readerSidebarVisible ? styles.tocPanelCollapsed : ""}`}
         >
           {readiness && <ReadinessPanel readiness={readiness} />}
+
+          {id && <DocumentLinksPanel docId={id} compact />}
 
           {chapters.length > 1 && <nav style={{
             background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 0",

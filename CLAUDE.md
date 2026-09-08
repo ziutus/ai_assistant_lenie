@@ -89,6 +89,7 @@ cd ner_service && .venv/Scripts/python -m pytest tests/ -q
 - **Multi-user model**: household trust model (`docs/deployment/nas/multi-user-household.md`) — shared document library, `kind=user` per person, no per-workspace data isolation. This is deliberately simpler than the (separate, thought-experiment-only) commercial multi-tenant model in `docs/deployment/commercial-multi-tenant-scaling-experiment.md`.
 - **NER / entities**: `backend/library/entity_service.py`, `backend/library/person_registry.py` — person canonicalization, aliases, manual-review queue, `ner_exclusions` false-positive suppression. Backed by `ner_service/` over the internal Docker network.
 - **Search**: hybrid (explicit filters + embeddings + LLM query parsing) — see `docs/search-hybrid.md` for the current design and known regressions/fixes.
+- **Document-to-document links**: `document_links` table + `backend/library/document_links_service.py` ([ADR-026](docs/adr/adr-026-document-to-document-links.md)) — a typed, directed relation between two library documents (e.g. a LinkedIn post `discusses` the GitHub repo it is about). Deliberately narrower than collections or `content_groups` (Tematy): an explicit pair, not a bucket. Auto-detection proposes `references` links from verbatim URL mentions; humans confirm.
 - **`source` vs `byline`** on documents: `source` = how you discovered it (newsletter, friend, own), `byline` = who created it (author/channel). See `backend/CLAUDE.md` for the full explanation — a common source of confusion.
 
 ## Conventions

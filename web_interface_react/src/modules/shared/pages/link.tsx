@@ -4,6 +4,7 @@ import { useManageLLM } from "../hooks/useManageLLM";
 import SharedInputs from "../components/SharedInputs/sharedInputs";
 import { useParams } from "react-router-dom";
 import FormButtons from "../components/FormButtons/formButtons";
+import DocumentLinksPanel from "../components/DocumentLinksPanel/documentLinksPanel";
 import { AuthorizationContext } from '../context/authorizationContext';
 
 const Link = () => {
@@ -77,6 +78,7 @@ const Link = () => {
           handleDeleteDocumentNext={handleDeleteDocumentNext}
         />
       </form>
+      {id && <DocumentLinksPanel docId={id} />}
     </div>
   );
 };

@@ -353,6 +353,24 @@ Replace-per-document semantics (like `document_entities`), but the two sources a
 
 **Index:** `document_id`.
 
+### Table: `public.document_links`
+
+Typed, directed link between two library documents ([ADR-026](../../docs/adr/adr-026-document-to-document-links.md), `library/document_links_service.py`). One row per `(from_document_id, to_document_id, relation)`; the reader renders it from both endpoints with side-specific phrasing.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | |
+| `from_document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE) — subject of the relation |
+| `to_document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE) — object of the relation |
+| `relation` | `varchar(30) NOT NULL` | Code-side vocabulary: `references`, `discusses`, `summarizes`, `updates`, `translates`, `responds_to`, `related`, `duplicates` |
+| `note` | `text` | Optional human annotation (≤500 chars) |
+| `status` | `varchar(20) NOT NULL DEFAULT 'confirmed'` | `proposed` (auto-detected, awaits accept) / `confirmed` / `rejected` (kept so the detector does not re-propose) |
+| `detection_method` | `varchar(20) NOT NULL DEFAULT 'manual'` | `manual` / `url_mention` / `llm` |
+| `created_by_user_id` | `integer` | FK → `users.id` (`SET NULL`) |
+| `created_at` / `decided_at` | `timestamp` | |
+
+**Constraints:** `CHECK (from_document_id <> to_document_id)`, `UNIQUE (from_document_id, to_document_id, relation)`. **Indexes:** `(from_document_id, status)`, `(to_document_id, status)`.
+
 ### Table: `public.infra_geometries`
 
 Overpass API lookup cache for linear infrastructure (`library/overpass_client.py`) — same philosophy as `geocode_cache`: one live call ever per distinct query string, clean misses cached as `resolved=false` (transport failures are NOT cached). Populated during `POST /website_entities` for place entities the geocoder checked but rejected ("Baltic Pipe" has no point hit but has an OSM route).

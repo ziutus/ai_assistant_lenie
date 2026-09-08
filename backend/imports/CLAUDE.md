@@ -17,6 +17,7 @@ imports/
 ├── extract_references.py     # Extract book footnotes from text_md into document_references
 ├── extract_time_periods.py   # Classify the historical period a document is about (per chapter for books)
 ├── extract_tones.py          # Classify emotional tone + language register per chapter
+├── detect_document_links.py  # Backfill: propose `references` document_links from verbatim URL mentions (dry-run by default, --apply, --id)
 ├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
