@@ -9,6 +9,7 @@
 - Ekstraktor komentarzy i treści posta LinkedIn przepisany pod nowy, sterowany serwerowo interfejs LinkedIn (brak klas `comments-comment-*`; komentarz to `componentkey="CommentComponentReference_urn:li:comment:(urn:li:activity:<ID>,…)"`, treść w `[data-testid="expandable-text-box"]`). Stare selektory zostawiono jako gałąź zapasową dla starego UI.
 - Zakres komentarzy do wpisu wymuszany przez identyfikator aktywności w `componentkey` — komentarze z rekomendowanych/osadzonych wpisów są odrzucane; zduplikowane renderowania tego samego komentarza są scalane.
 - Odpowiedzi rozpoznawane po wcięciu awatara (w nowym UI nie są zagnieżdżone w DOM); podgląd zawsze podaje liczbę pobranych wypowiedzi i ostrzega, że to tylko fragment dyskusji, gdy wpis ma więcej komentarzy niż załadowano.
+- Opcja „Uzupełnij brakujący surowy HTML" jest ukrywana dla postów social i e-maili (nie dotyczy ich), zamiast być pokazywana jako wyszarzona — myliła się z kontrolką dołączania komentarzy.
 
 ## [1.0.57] - 2026-08-31
 ### Dodane

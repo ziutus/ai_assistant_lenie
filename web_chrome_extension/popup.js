@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const newSourceNameInput = document.getElementById('newSourceName');
   const addSourceButton = document.getElementById('addSourceButton');
   const refreshExisting = document.getElementById('refreshExisting');
+  const refreshExistingContainer = document.getElementById('refreshExistingContainer');
   const commentsContainer = document.getElementById('linkedinCommentsContainer');
   const includeComments = document.getElementById('includeLinkedinComments');
   const commentsPreview = document.getElementById('linkedinCommentsPreview');
@@ -352,6 +353,10 @@ document.addEventListener('DOMContentLoaded', function () {
     capturedContentHelp.textContent = isEmail
       ? 'Importowana jest wyłącznie widoczna treść wiadomości, bez interfejsu Gmaila.'
       : 'Treść samego posta. Komentarze LinkedIn możesz dołączyć osobno poniżej.';
+    // "Uzupełnij brakujący surowy HTML" never applies to a social post or an
+    // email (neither sends raw HTML) — hide it rather than show it greyed out,
+    // where it reads as the control for attaching comments.
+    refreshExistingContainer.hidden = needsCapturedContent;
     refreshExisting.disabled = needsCapturedContent;
     if (needsCapturedContent) refreshExisting.checked = false;
     requiresLoginInput.checked = needsCapturedContent;

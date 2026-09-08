@@ -55,6 +55,13 @@ async function popup({ nasAvailable = true } = {}) {
   return { dom, el, include, send, requests, alerts, w };
 }
 
+test('the raw-HTML top-up option is hidden for a social post, not shown greyed out', async () => {
+  const p = await popup();
+  try {
+    assert.equal(p.el('refreshExistingContainer').hidden, true);
+  } finally { p.dom.window.close(); }
+});
+
 test('opt-in preview is editable and explicit replacement sends comments to NAS', async () => {
   const p = await popup();
   try {
