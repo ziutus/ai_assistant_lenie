@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [1.0.58] - 2026-09-08
+## [1.0.59] - 2026-09-08
 ### Dodane
 - Opcjonalny import załadowanych komentarzy LinkedIn z autorami (nazwa + link do profilu), znacznikiem czasu, linkami w treści i kontekstem odpowiedzi (do kogo). Osobny edytowalny podgląd pozwala usunąć wybrane wypowiedzi przed wysłaniem; komentarze trafiają do dokumentu jako osobna sekcja pod treścią posta.
 - Jawne zastąpienie treści istniejącego wpisu LinkedIn przez `replace_social_post` w backendzie NAS. Zachowuje metadane, usuwa stare wektory i podsumowanie, wymaga ponownej analizy. Bez automatycznego fallbacku tej operacji do AWS.

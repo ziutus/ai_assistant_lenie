@@ -6,7 +6,7 @@ After a successful send, the popup states whether the request reached NAS or AWS
 
 For a social media post the extension sends the editable post text, without service UI or page HTML. If Facebook or LinkedIn hides the post content, paste it into the displayed text field before sending.
 
-### LinkedIn comments (1.0.58)
+### LinkedIn comments (1.0.59)
 
 1. Open the individual post. Load the comments and expand the replies you want to capture on LinkedIn before opening the extension — the extension does not scroll or click on your behalf.
 2. Select **Dołącz komentarze z LinkedIn**. Review the separate editable comments field; remove any unwanted comments there. Each entry keeps the author name and profile link, the relative timestamp, in-body links, and — for replies — who it answers; replies are shown indented under `↳`.
