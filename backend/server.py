@@ -32,6 +32,7 @@ from library.tool_recommendation_routes import bp as tool_recommendation_bp
 from library.tool_routes import bp as tool_bp
 from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.contact_routes import bp as contact_bp
+from library.document_links_routes import bp as document_links_bp
 from library.youtube_processing import process_youtube_url, parse_chapters_from_description
 from library.stalker_youtube_file import StalkerYoutubeFile
 from library.storage import storage_from_config
@@ -117,6 +118,7 @@ app.register_blueprint(tool_recommendation_bp)
 app.register_blueprint(tool_bp)
 app.register_blueprint(llm_analysis_bp)
 app.register_blueprint(contact_bp)
+app.register_blueprint(document_links_bp)
 start_analysis_worker()
 
 
@@ -1254,7 +1256,7 @@ def document_relationship_graph(doc_id: int):
     keys and document links, rather than asking the reader to infer relations
     from matching display names.
     """
-    from sqlalchemy import select
+    from sqlalchemy import or_, select
     from library.db.models import (
         CitedPublication, DocumentCitedPublication, DocumentInformationSource,
         DocumentOrganization, DocumentSourceRelationship, Organization,
@@ -1391,6 +1393,38 @@ def document_relationship_graph(doc_id: int):
             "type": relation.predicate,
             "evidence_excerpt": relation.evidence_excerpt,
             "confidence": relation.confidence,
+        })
+
+    # Confirmed document-to-document links (library/document_links_service.py).
+    # These connect two Document nodes directly rather than the entity graph
+    # above, so a reader immediately sees "this post discusses that repo".
+    from library.db.models import DocumentLink
+    from library.document_links_service import RELATIONS as _LINK_RELATIONS
+
+    document_links = session.scalars(select(DocumentLink).where(
+        DocumentLink.status == "confirmed",
+        or_(DocumentLink.from_document_id == doc_id, DocumentLink.to_document_id == doc_id),
+    )).all()
+    for link in document_links:
+        for endpoint in (link.from_document, link.to_document):
+            if endpoint is None:
+                continue
+            node_id = f"document:{endpoint.id}"
+            add_node({
+                "id": node_id,
+                "type": "document",
+                "label": endpoint.title or endpoint.url,
+                "href": f"/read/{endpoint.id}",
+                "external_url": endpoint.url,
+                "is_self": endpoint.id == doc_id,
+            })
+        forward_label = _LINK_RELATIONS.get(link.relation, (link.relation, link.relation))[0]
+        edges.append({
+            "id": f"document_link:{link.id}",
+            "source": f"document:{link.from_document_id}",
+            "target": f"document:{link.to_document_id}",
+            "type": forward_label,
+            "relation": link.relation,
         })
 
     return {"status": "success", "nodes": nodes, "edges": edges}, 200

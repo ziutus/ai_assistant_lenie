@@ -2,7 +2,7 @@
 
 React 18 single-page application for managing documents and running AI operations (text correction, embedding, similarity search). Built with **Vite** and **TypeScript**.
 
-**App version**: 0.3.16.11 | **Package version**: 0.3.16.11
+**App version**: 0.3.17.0 | **Package version**: 0.3.17.0
 
 ## Directory Structure
 
@@ -34,6 +34,7 @@ web_interface_react/
 │   │   │   ├── Select/                 # Reusable select dropdown
 │   │   │   ├── SharedInputs/           # Common document form fields
 │   │   │   ├── EntitiesPanel/          # NER persons/places chips + refresh button (GET/POST /website_entities)
+│   │   │   ├── DocumentLinksPanel/     # "Powiązane dokumenty" — typed links to other documents (GET/POST /document/:id/links + detect, PATCH/DELETE /document_links/:id); on link/webpage/social_media_post editors + reader sidebar (compact prop)
 │   │   │   ├── TagsInput/              # Chip editor over the CSV tags field (suggestions from GET /tags)
 │   │   │   └── FormButtons/            # Save/delete action buttons
 │   │   ├── pages/

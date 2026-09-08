@@ -2421,6 +2421,51 @@ class DocumentSourceRelationship(Base):
     document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
 
+class DocumentLink(Base):
+    """A typed, directed relation between two library documents.
+
+    Example: a LinkedIn post (``from``) ``discusses`` the GitHub repo it is
+    about (``to``). Stored once per (from, to, relation); the reader shows it
+    from both endpoints with side-specific phrasing (see
+    ``library/document_links_service.RELATIONS``). ``status`` is ``confirmed``
+    for a link a human created and ``proposed`` for one the URL-mention
+    detector suggested (``detection_method='url_mention'``) — a proposed link
+    needs a one-click accept before it counts.
+    """
+
+    __tablename__ = "document_links"
+    __table_args__ = (
+        CheckConstraint("from_document_id <> to_document_id", name="ck_document_links_distinct"),
+        UniqueConstraint("from_document_id", "to_document_id", "relation", name="uq_document_links_edge"),
+        Index("idx_document_links_from", "from_document_id", "status"),
+        Index("idx_document_links_to", "to_document_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    to_document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    relation: Mapped[str] = mapped_column(String(30), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="confirmed")
+    detection_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+    from_document: Mapped["Document"] = relationship(foreign_keys=[from_document_id])
+    to_document: Mapped["Document"] = relationship(foreign_keys=[to_document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentLink(id={self.id!r}, from={self.from_document_id!r}, "
+            f"to={self.to_document_id!r}, relation={self.relation!r}, status={self.status!r})"
+        )
+
+
 class User(Base):
     """Reader identity (household trust model).
 

@@ -5,6 +5,7 @@ import SharedInputs from "../components/SharedInputs/sharedInputs";
 import InputsForAllExceptLink from "../components/SharedInputs/InputsForAllExceptLink";
 import { useParams, NavLink } from "react-router-dom";
 import FormButtons from "../components/FormButtons/formButtons";
+import DocumentLinksPanel from "../components/DocumentLinksPanel/documentLinksPanel";
 import { AuthorizationContext } from '../context/authorizationContext';
 import axios from "axios";
 
@@ -229,6 +230,7 @@ const Webpage = () => {
         )}
         </fieldset>
       </form>
+      {id && <DocumentLinksPanel docId={id} />}
     </div>
   );
 };
