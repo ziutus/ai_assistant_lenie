@@ -24,6 +24,7 @@ const obsidianNoteItem = {
   document_type: "obsidian_note",
   processing_status: "EMBEDDING_EXIST",
   processing_error_code: "NONE",
+  has_text_md: true,
   byline: null,
   groups: [],
 };
