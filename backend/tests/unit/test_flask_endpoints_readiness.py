@@ -118,7 +118,30 @@ class TestObsidianNote:
         assert _step(body, "enrichment")["state"] == "na"
         assert _step(body, "quality")["state"] == "na"
         assert _step(body, "obsidian_note")["state"] == "na"
-        assert body["required_total"] == 4  # content, embeddings, ner, tags
+        assert body["required_total"] == 2  # content, embeddings
+        assert _step(body, "quality")["detail"] == "nie dotyczy tego typu dokumentu"
+
+    @pytest.mark.parametrize("checked_at", [None, datetime.datetime(2026, 9, 8)])
+    def test_embedded_note_is_ready_without_optional_metadata(self, monkeypatch, checked_at):
+        doc = _make_doc(document_type="obsidian_note", entities_checked_at=checked_at)
+        client = _client(monkeypatch, doc, scalars=[1])
+        body = client.get("/document/10455/readiness").get_json()
+
+        assert body["verdict"] == "ready"
+        assert body["required_done"] == body["required_total"] == 2
+        assert _step(body, "ner")["required"] is False
+        assert _step(body, "ner")["state"] == ("done" if checked_at else "todo")
+        assert _step(body, "tags")["required"] is False
+        assert _step(body, "tags")["state"] == "todo"
+
+    @pytest.mark.parametrize("text_md,embeddings", [("", 1), (LONG_TEXT, 0)])
+    def test_missing_content_or_embeddings_still_needs_work(self, monkeypatch, text_md, embeddings):
+        doc = _make_doc(document_type="obsidian_note", text_md=text_md)
+        client = _client(monkeypatch, doc, scalars=[embeddings])
+        body = client.get("/document/10455/readiness").get_json()
+
+        assert body["verdict"] == "needs_work"
+        assert body["required_done"] == 1
 
 
 class TestMissingDocument:

@@ -2007,7 +2007,7 @@ def document_enrichment_status(doc_id: int):
 # "gotowy" verdict depends on document type — a `link` carries only metadata and
 # never gets a body, an `obsidian_note` is embedded whole with no chunk-analysis/
 # enrichment/quality pipeline (see obsidian_reimport_service.py). Steps outside a
-# type's required set render as "nie dotyczy" rather than an unmet ✗.
+# type's required set are either optional metadata or not applicable.
 _READINESS_REQUIRED_BY_TYPE = {
     "webpage": {"content", "chunks", "embeddings", "ner", "enrichment", "quality", "tags"},
     "link": {"content"},
@@ -2017,8 +2017,9 @@ _READINESS_REQUIRED_BY_TYPE = {
     "email": {"content", "chunks", "embeddings", "ner", "enrichment", "tags"},
     "social_media_post": {"content", "embeddings", "ner", "tags"},
     "text_message": {"content", "embeddings"},
-    "obsidian_note": {"content", "embeddings", "ner", "tags"},
+    "obsidian_note": {"content", "embeddings"},
 }
+_READINESS_OPTIONAL_BY_TYPE = {"obsidian_note": {"ner", "tags"}}
 _READINESS_DEFAULT_REQUIRED = {"content", "embeddings", "ner", "tags"}
 _READINESS_OPEN_CHUNK_STATUSES = ("pending", "needs_reanalysis", "split_requested", "split")
 
@@ -2041,6 +2042,7 @@ def document_readiness(doc_id: int):
 
     doc_type = doc.document_type or ""
     required = _READINESS_REQUIRED_BY_TYPE.get(doc_type, _READINESS_DEFAULT_REQUIRED)
+    optional = _READINESS_OPTIONAL_BY_TYPE.get(doc_type, set())
     chunks_link = f"/chunks/{doc_id}"
     editor_link = f"/{doc_type}/{doc_id}" if doc_type in ("webpage", "link", "youtube", "movie", "email") else None
 
@@ -2071,9 +2073,12 @@ def document_readiness(doc_id: int):
 
     def add(key: str, label: str, state: str, detail: str | None = None, link: str | None = None) -> None:
         req = key in required
+        if not req and key not in optional and state != "done":
+            state = "na"
+            detail = "nie dotyczy tego typu dokumentu"
         steps.append({
             "key": key, "label": label,
-            "state": "na" if (not req and state != "done") else state,
+            "state": state,
             "detail": detail, "link": link if (state != "done" and req) else None,
             "required": req,
         })
