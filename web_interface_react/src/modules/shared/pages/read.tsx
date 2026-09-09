@@ -205,12 +205,20 @@ const READINESS_STEP_COLOR: Record<ReadinessStepState, string> = {
   done: "#15803d", partial: "#b45309", todo: "#64748b", na: "#94a3b8",
 };
 
+function readinessStepLabel(step: ReadinessStep): string {
+  return `${step.label}${!step.required && step.state !== "na" ? " (opcjonalnie)" : ""}`;
+}
+
+function readinessStepIcon(step: ReadinessStep): string {
+  return !step.required && step.state === "todo" ? "➖" : READINESS_STEP_ICON[step.state];
+}
+
 /** Compact ✅/🔧 verdict chip shown next to the document title. */
 function ReadinessBadge({ readiness }: { readiness: DocumentReadiness }): React.ReactElement {
   const ready = readiness.verdict === "ready";
   const missing = readiness.required_total - readiness.required_done;
   const tooltip = readiness.steps
-    .map(s => `${READINESS_STEP_ICON[s.state]} ${s.label}${s.detail ? ` — ${s.detail}` : ""}`)
+    .map(s => `${readinessStepIcon(s)} ${readinessStepLabel(s)}${s.detail ? ` — ${s.detail}` : ""}`)
     .join("\n");
   return (
     <span
@@ -241,12 +249,12 @@ function ReadinessPanel({ readiness }: { readiness: DocumentReadiness }): React.
       <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0, fontSize: "0.8em", lineHeight: 1.35 }}>
         {readiness.steps.map(step => (
           <li key={step.key} style={{ display: "flex", gap: 6, alignItems: "baseline", margin: "4px 0" }}>
-            <span aria-hidden="true">{READINESS_STEP_ICON[step.state]}</span>
+            <span aria-hidden="true">{readinessStepIcon(step)}</span>
             <span style={{ flex: 1 }}>
               <span style={{ color: step.state === "na" ? "#94a3b8" : undefined }}>
                 {step.link
-                  ? <NavLink to={step.link} style={{ color: "#0369a1" }}>{step.label}</NavLink>
-                  : step.label}
+                  ? <NavLink to={step.link} style={{ color: "#0369a1" }}>{readinessStepLabel(step)}</NavLink>
+                  : readinessStepLabel(step)}
               </span>
               {step.detail && (
                 <span style={{ color: READINESS_STEP_COLOR[step.state], marginLeft: 6 }}>
