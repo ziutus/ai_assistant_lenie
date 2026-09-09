@@ -12,7 +12,7 @@ import of hundreds of notes).
 Story 42.2 adds change detection: each file's content is hashed (SHA-256,
 not mtime — Obsidian Sync does not guarantee mtime survives cross-device
 sync) and compared against ``Document.obsidian_source_hash`` from the
-previous run. An unchanged file is skipped entirely; a changed file updates
+previous run. An unchanged file with complete embeddings is skipped; a changed file updates
 the existing ``Document`` in place (never a duplicate) and re-embeds only
 that note, discarding its stale embeddings first.
 
@@ -37,15 +37,17 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from pathlib import Path
 
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
 from library.content_group_suggestion_service import request_suggestions
-from library.db.models import Document, Job
+from library.db.models import Document, DocumentEmbedding, Job
 from library.document_repository import DocumentRepository
 from library.document_service import DocumentService
 from library.job_queue import heartbeat
@@ -164,7 +166,6 @@ def _embed_note(repo: DocumentRepository, doc, model: str) -> int:
     defaults chunks to status="pending" and would block an unattended import
     of hundreds of notes on a non-existent auto-approval mechanism.
     """
-    from library.lenie_markdown import md_remove_markdown, md_split_for_emb
     import library.embedding as embedding
 
     source = doc.text_md or doc.text or ""
@@ -174,17 +175,30 @@ def _embed_note(repo: DocumentRepository, doc, model: str) -> int:
         doc.language = "pl"
 
     created = 0
-    for part in md_split_for_emb(source):
-        cleaned = md_remove_markdown(part).strip()
-        if not cleaned:
-            continue
+    for cleaned in _embedding_parts(source):
         result = embedding.get_embedding(model=model, text=cleaned)
         if result.status != "success" or not result.embedding:
-            logger.warning("obsidian_reimport: embedding failed for document %s: %s", doc.id, result.status)
-            continue
+            raise RuntimeError(f"Embedding failed for document {doc.id}: {result.status}")
         repo.embedding_add(doc.id, result.embedding, doc.language, cleaned, cleaned, model)
         created += 1
     return created
+
+
+def _embedding_parts(source: str) -> list[str]:
+    from library.lenie_markdown import md_remove_markdown, md_split_for_emb
+
+    return [cleaned for part in md_split_for_emb(source) if (cleaned := md_remove_markdown(part).strip())]
+
+
+def _has_complete_embeddings(session: Session, doc_id: int, model: str, parts: list[str]) -> bool:
+    # Compare the actual fragments, including duplicates, rather than accepting
+    # one surviving vector from a legacy partially successful import.
+    stored = session.scalars(select(DocumentEmbedding.text).where(
+        DocumentEmbedding.document_id == doc_id,
+        DocumentEmbedding.model == model,
+        DocumentEmbedding.embedding.is_not(None),
+    )).all()
+    return Counter(stored) == Counter(parts)
 
 
 def _reimport_one_note(
@@ -217,16 +231,26 @@ def _reimport_one_note(
     # this column existed (Story 42.1) -- never equals a real hash,
     # so they fall through to the "changed" branch on the first run
     # after deploy (a one-time backfill re-embed, not a bug).
-    if existing is not None and existing.obsidian_source_hash == content_hash:
-        return "skipped"
-
     body, fm_tags = _parse_frontmatter(content)
 
     try:
+        if existing is not None and existing.obsidian_source_hash == content_hash:
+            parts = _embedding_parts(body)
+            if _has_complete_embeddings(session, existing.id, model, parts):
+                # Repairs legacy URL_ADDED rows without paying to embed them
+                # again. Empty/frontmatter-only notes have nothing to index.
+                status = "EMBEDDING_EXIST" if parts else "DOCUMENT_INTO_DATABASE"
+                if existing.processing_status != status or existing.processing_error_code is not None:
+                    existing.processing_status = status
+                    existing.processing_error_code = None
+                    session.commit()
+                return "skipped"
+
         if existing is None:
             doc, _outcome = service.import_document(
                 url=url,
                 document_type="obsidian_note",
+                processing_status="READY_FOR_EMBEDDING",
                 skip_if_exists=True,
                 title=note_path.stem,
                 text=body,
@@ -244,8 +268,13 @@ def _reimport_one_note(
             # search would return both the old and new versions.
             repo.embedding_delete(doc.id, model)
 
+        doc.processing_status = "READY_FOR_EMBEDDING"
+        created = _embed_note(repo, doc, model)
+        doc.processing_status = "EMBEDDING_EXIST" if created else "DOCUMENT_INTO_DATABASE"
+        doc.processing_error_code = None
+        # Only a complete attempt can mark this source version as processed.
+        # Rollback also restores old vectors deleted above if any part fails.
         doc.obsidian_source_hash = content_hash
-        _embed_note(repo, doc, model)
         session.commit()
     except Exception:
         logger.exception("obsidian_reimport: import/update failed for %s", note_path)

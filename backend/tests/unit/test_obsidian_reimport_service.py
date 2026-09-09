@@ -17,6 +17,8 @@ from library.obsidian_reimport_service import (
     _normalize_obsidian_tag,
     _note_url,
     _parse_frontmatter,
+    _reimport_one_note,
+    _has_complete_embeddings,
     execute_obsidian_reimport,
 )
 from library.models.embedding_result import EmbeddingResult
@@ -44,6 +46,8 @@ def _make_doc(doc_id=101, obsidian_source_hash=None, tags=None):
     doc.language = None
     doc.obsidian_source_hash = obsidian_source_hash
     doc.tags = tags
+    doc.processing_status = "EMBEDDING_EXIST"
+    doc.processing_error_code = None
     return doc
 
 
@@ -148,12 +152,15 @@ class TestExecuteObsidianReimport:
         call_kwargs = mock_service_cls.return_value.import_document.call_args.kwargs
         assert call_kwargs["url"] == "obsidian://02-wiedza/Informatyka/kubernetes-podstawy.md"
         assert call_kwargs["document_type"] == "obsidian_note"
+        assert call_kwargs["processing_status"] == "READY_FOR_EMBEDDING"
         assert call_kwargs["skip_if_exists"] is True
         assert call_kwargs["title"] == "kubernetes-podstawy"
 
         mock_repo_cls.return_value.embedding_add.assert_called()
         mock_repo_cls.return_value.embedding_delete.assert_not_called()
         assert doc.obsidian_source_hash == get_hash("# Kubernetes\n\nPodstawy orkiestracji.")
+        assert doc.processing_status == "EMBEDDING_EXIST"
+        assert doc.processing_error_code is None
         assert summary == {"scanned": 1, "created": 1, "updated": 0, "skipped": 0, "failed": 0}
 
     def test_new_note_frontmatter_tags_stripped_from_text_and_passed_as_tags(self, tmp_path):
@@ -193,6 +200,7 @@ class TestExecuteObsidianReimport:
 
         existing_doc = _make_doc(obsidian_source_hash=get_hash(content))
         session = MagicMock()
+        session.scalars.return_value.all.return_value = [content]
         job = MagicMock(id="job-2", parameters={})
 
         with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
@@ -416,3 +424,129 @@ class TestJobTypeRegistration:
         from library.job_queue import JOB_TYPES
 
         assert "obsidian_reimport" in JOB_TYPES
+
+
+class TestEmbeddingRecovery:
+    def test_completeness_requires_matching_model_document_and_all_duplicate_fragments(self):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+        from library.db.models import DocumentEmbedding
+
+        engine = create_engine("sqlite://")
+        DocumentEmbedding.__table__.create(engine)
+        with Session(engine) as session:
+            session.add_all([
+                DocumentEmbedding(document_id=1, model="active", text="same", embedding=[0.1]),
+                DocumentEmbedding(document_id=1, model="old", text="same", embedding=[0.1]),
+                DocumentEmbedding(document_id=2, model="active", text="same", embedding=[0.1]),
+                DocumentEmbedding(document_id=1, model="active", text="same", embedding=None),
+            ])
+            session.commit()
+            assert not _has_complete_embeddings(session, 1, "active", ["same", "same"])
+            session.add(DocumentEmbedding(document_id=1, model="active", text="same", embedding=[0.2]))
+            session.commit()
+            assert _has_complete_embeddings(session, 1, "active", ["same", "same"])
+        engine.dispose()
+
+    def test_failed_replacement_preserves_previous_vectors_in_database(self, tmp_path):
+        from sqlalchemy import create_engine, select
+        from sqlalchemy.orm import Session
+        from library.db.models import DocumentEmbedding
+        from library.document_repository import DocumentRepository
+
+        engine = create_engine("sqlite://")
+        DocumentEmbedding.__table__.create(engine)
+        note = tmp_path / "note.md"
+        note.write_text("new content", encoding="utf-8")
+        doc = _make_doc(obsidian_source_hash="old-hash")
+        with Session(engine) as session:
+            session.add(DocumentEmbedding(document_id=doc.id, model="model", text="old content", embedding=[0.1]))
+            session.commit()
+            with patch("library.obsidian_reimport_service.Document.get_by_url", return_value=doc), \
+                 patch("library.obsidian_reimport_service._embedding_parts", return_value=["first", "second"]), \
+                 patch("library.embedding.get_embedding", side_effect=[
+                     EmbeddingResult(text="first", embedding=[0.2], status="success"),
+                     RuntimeError("provider unavailable"),
+                 ]):
+                assert _reimport_one_note(session, MagicMock(), DocumentRepository(session), "model", tmp_path, note) == "failed"
+            assert session.scalars(select(DocumentEmbedding.text)).all() == ["old content"]
+        engine.dispose()
+
+    @pytest.mark.parametrize("stored", [["first", "second"], ["first"], [], ["wrong", "second"]])
+    def test_legacy_status_repaired_only_after_all_fragments_verified(self, tmp_path, stored):
+        note = tmp_path / "note.md"
+        content = "first\nsecond"
+        note.write_text(content, encoding="utf-8")
+        doc = _make_doc(obsidian_source_hash=get_hash(content))
+        doc.processing_status = "URL_ADDED"
+        session, service, repo = MagicMock(), MagicMock(), MagicMock()
+        session.scalars.return_value.all.return_value = stored
+        with patch("library.obsidian_reimport_service.Document.get_by_url", return_value=doc), \
+             patch("library.obsidian_reimport_service._embedding_parts", return_value=["first", "second"]), \
+             patch("library.embedding.get_embedding", return_value=EmbeddingResult(
+                 text="piece", embedding=[0.1, 0.2], status="success",
+             )) as embed, \
+             patch("library.obsidian_reimport_service.request_suggestions"):
+            outcome = _reimport_one_note(session, service, repo, "model", tmp_path, note)
+
+        assert doc.processing_status == "EMBEDDING_EXIST"
+        assert doc.processing_error_code is None
+        session.commit.assert_called_once()
+        if stored == ["first", "second"]:
+            assert outcome == "skipped"
+            embed.assert_not_called()
+            repo.embedding_delete.assert_not_called()
+        else:
+            assert outcome == "updated"
+            assert embed.call_count == 2
+            repo.embedding_delete.assert_called_once_with(doc.id, "model")
+
+    @pytest.mark.parametrize("failure", [
+        EmbeddingResult(text="second", embedding=[], status="error"),
+        EmbeddingResult(text="second", embedding=[], status="success"),
+        RuntimeError("provider unavailable"),
+    ])
+    @pytest.mark.parametrize("new_note", [False, True])
+    def test_partial_failure_rolls_back_and_unchanged_file_is_retried(self, tmp_path, failure, new_note):
+        note = tmp_path / "note.md"
+        note.write_text("new content", encoding="utf-8")
+        doc = _make_doc(obsidian_source_hash=None if new_note else "old-hash")
+        original_hash = doc.obsidian_source_hash
+        session, service, repo = MagicMock(), MagicMock(), MagicMock()
+        service.import_document.return_value = (doc, "added")
+        success = EmbeddingResult(text="piece", embedding=[0.1, 0.2], status="success")
+        with patch("library.obsidian_reimport_service.Document.get_by_url", return_value=None if new_note else doc) as get_doc, \
+             patch("library.obsidian_reimport_service._embedding_parts", return_value=["first", "second"]), \
+             patch("library.embedding.get_embedding", side_effect=[success, failure, success, success]) as embed, \
+             patch("library.obsidian_reimport_service.request_suggestions") as suggestions:
+            assert _reimport_one_note(session, service, repo, "model", tmp_path, note) == "failed"
+            session.rollback.assert_called_once()
+            session.commit.assert_not_called()
+            suggestions.assert_not_called()
+            assert doc.obsidian_source_hash == original_hash
+
+            # import_document commits new rows before embedding; the next run
+            # must retry that existing row even though the file hasn't changed.
+            get_doc.return_value = doc
+            assert _reimport_one_note(session, service, repo, "model", tmp_path, note) == "updated"
+
+        assert embed.call_count == 4
+        assert doc.obsidian_source_hash == get_hash("new content")
+        assert doc.processing_status == "EMBEDDING_EXIST"
+        session.commit.assert_called_once()
+
+    def test_frontmatter_only_note_is_imported_without_claiming_embeddings_exist(self, tmp_path):
+        note = tmp_path / "note.md"
+        content = "---\ntags: [linux]\n---\n"
+        note.write_text(content, encoding="utf-8")
+        doc = _make_doc(obsidian_source_hash="old-hash")
+        session, service, repo = MagicMock(), MagicMock(), MagicMock()
+        session.scalars.return_value.all.return_value = []
+        with patch("library.obsidian_reimport_service.Document.get_by_url", return_value=doc), \
+             patch("library.embedding.get_embedding") as embed, \
+             patch("library.obsidian_reimport_service.request_suggestions"):
+            assert _reimport_one_note(session, service, repo, "model", tmp_path, note) == "updated"
+            assert _reimport_one_note(session, service, repo, "model", tmp_path, note) == "skipped"
+        assert doc.processing_status == "DOCUMENT_INTO_DATABASE"
+        assert doc.obsidian_source_hash == get_hash(content)
+        embed.assert_not_called()

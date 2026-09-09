@@ -443,7 +443,7 @@ const List = () => {
                 {(item.title && item.title.length > 10) ? item.url.substring(0, 50) + '...' : item.url}
               </a>
               <span> {item.processing_status}
-                {item.processing_error_code !== 'NONE' && ` | ${item.processing_error_code}`}
+                {item.processing_error_code && item.processing_error_code !== 'NONE' && ` | ${item.processing_error_code}`}
               </span>
               {obsidian && (
                 <span
