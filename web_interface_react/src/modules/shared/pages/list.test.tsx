@@ -92,4 +92,29 @@ describe("List — obsidian_note row actions", () => {
     expect((await screen.findByRole("link", { name: "Czytaj" })).getAttribute("href")).toBe("/read/10430?list=type%3Dtext");
     expect(screen.getByRole("link", { name: "Chunki" })).toBeTruthy();
   });
+
+  it.each([null, undefined, "NONE", "EMBEDDING_ERROR"])("renders status with error code %s", async (errorCode) => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url.endsWith("/document_states")) {
+        return Promise.resolve({ data: { states: ["ALL"], types: ["obsidian_note"], errors: [] } });
+      }
+      if (url.endsWith("/website_list")) {
+        return Promise.resolve({ data: {
+          websites: [{ ...obsidianNoteItem, processing_error_code: errorCode }], all_results_count: 1,
+        } });
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+    render(
+      <AuthorizationContext.Provider value={auth}>
+        <MemoryRouter initialEntries={["/list?type=obsidian_note"]}>
+          <List />
+        </MemoryRouter>
+      </AuthorizationContext.Provider>,
+    );
+    const status = await screen.findByText(/EMBEDDING_EXIST/);
+    expect(status.textContent?.trim()).toBe(
+      errorCode === "EMBEDDING_ERROR" ? "EMBEDDING_EXIST | EMBEDDING_ERROR" : "EMBEDDING_EXIST",
+    );
+  });
 });
