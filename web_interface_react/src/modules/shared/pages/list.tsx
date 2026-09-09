@@ -11,11 +11,6 @@ import { loadListFilters, saveListFilters } from "../services/storage";
 import { markCaptionsFetching } from "../utils/youtubeCaptionsFetchStatus";
 import type { ContentGroup } from "../../../types";
 
-// States where a document has no usable text yet — showing "Czytaj"/"Chunki" there
-// would just open an empty page. Mirrors the backend's YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES
-// (minus TEMPORARY_ERROR's overlap) plus TRANSCRIPTION_IN_PROGRESS.
-const NO_TEXT_STATES = ["URL_ADDED", "NEED_TRANSCRIPTION", "TRANSCRIPTION_IN_PROGRESS", "TEMPORARY_ERROR"];
-
 // Mirrors backend's _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES — retry is only safe
 // before a transcript has ever been captured, so it can't clobber reviewed text.
 const YOUTUBE_CAPTIONS_RETRY_STATES = ["TEMPORARY_ERROR", "URL_ADDED", "NEED_TRANSCRIPTION"];
@@ -422,12 +417,7 @@ const List = () => {
           data.map((item: any) => {
             const obsidian = obsidianSummary(item);
             const isExpanded = expandedObsidian.has(item.id);
-            // social_media_post text arrives at creation, not through the
-            // download pipeline, so it stays at URL_ADDED indefinitely —
-            // unlike the other types here, URL_ADDED does NOT mean "no text yet".
-            const hasReadableText = item.has_text_md === true ||
-              ["social_media_post", "email", "obsidian_note"].includes(item.document_type) ||
-              (["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status));
+            const hasReadableText = item.has_text_md === true;
             return (
             <li
               key={item.id}
@@ -485,7 +475,7 @@ const List = () => {
               <span style={{ margin: "0 0 0 auto", fontWeight: "500" }}>
                 {item.document_type}
               </span>
-              {hasReadableText && (
+              {hasReadableText ? (
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 10px" }}
@@ -493,6 +483,15 @@ const List = () => {
                 >
                   Czytaj
                 </NavLink>
+              ) : (
+                <span
+                  style={{ margin: "0 0 0 10px" }}
+                  title="Brak treści do czytania"
+                >
+                  <button type="button" className="button" disabled>
+                    Czytaj
+                  </button>
+                </span>
               )}
               {/* obsidian_note is read-only (imported from the vault, edited in Obsidian itself) — no /obsidian_note/:id editor route exists. */}
               {item.document_type !== "obsidian_note" && (
