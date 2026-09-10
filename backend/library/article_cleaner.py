@@ -156,12 +156,15 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
             continue
         if re.match(r'^Ogl[aą]daj\s*$', stripped) or re.match(r'^\d{2}:\d{2}$', stripped):
             continue
-        # Warianty "Dalsza część artykułu pod wideo" (z kursywą, dwukropkiem)
-        if "dalsza część artykułu pod wideo" in stripped.lower() or \
-           "dalsza część artykułu pod materiałem wideo" in stripped.lower() or \
-           "dalszy ciąg materiału pod wideo" in stripped.lower() or \
-           "dalszy ciąg artykułu pod materiałem wideo" in stripped.lower() or \
-           "dalsza część artykulu pod video" in stripped.lower():
+        # Warianty "Dalsza część / Dalszy ciąg [artykułu|tekstu|materiału] pod
+        # [materiałem] wideo" — portalowa wstawka "czytaj dalej pod filmem".
+        # Tolerancyjna na kursywę *...*, dwukropek i kropkę na końcu; onet/forbes
+        # używa wariantu "Dalsza część tekstu pod materiałem wideo."
+        if re.search(
+            r'dalsz[ay] (?:część|ciąg) (?:artyku[łl]u|tekstu|materia[łl]u) '
+            r'pod (?:materia[łl]em )?(?:wideo|video|filmem)',
+            stripped.lower(),
+        ):
             continue
         # Linia rekomendacji "czytaj powiązane" z etykietą w pogrubieniu:
         # "**Czytaj także:** ...", "* **Polecamy:** ...", "**Czytaj też:** ...",

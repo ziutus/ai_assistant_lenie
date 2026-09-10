@@ -233,6 +233,14 @@ class TestGenericLineCleaning:
         assert "pod materiałem wideo" not in result["text"]
         assert result["text"].count(LONG_PARAGRAPH) == 2
 
+    def test_dalsza_czesc_tekstu_pod_materialem_wideo_variant_removed(self):
+        # dok. 10480 (onet/forbes): wariant "tekstu" zamiast "artykułu",
+        # w kursywie *...* i z kropką na końcu.
+        text = f"{LONG_PARAGRAPH}\n\n*Dalsza część tekstu pod materiałem wideo.*\n\n{LONG_PARAGRAPH}"
+        result = clean_article_text(text)
+        assert "pod materiałem wideo" not in result["text"]
+        assert result["text"].count(LONG_PARAGRAPH) == 2
+
     def test_labeled_recommendation_lines_removed(self):
         # onet + businessinsider: "**Czytaj też:** ...", "* **Polecamy:** ...".
         for line, url in [
