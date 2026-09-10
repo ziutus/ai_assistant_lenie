@@ -1,7 +1,8 @@
+import { BrowseTelemetry, type BrowseContext } from "../utils/browseTelemetry";
 import React from "react";
 import axios from "axios";
 import { AuthorizationContext } from "../context/authorizationContext";
-import { buildExplicitSearchPayload } from "../utils/searchCriteria";
+import { buildExplicitSearchPayload, SEARCH_FILTER_KEYS } from "../utils/searchCriteria";
 
 export interface SearchInterpretation {
   query: string | null;
@@ -51,6 +52,11 @@ export const buildNaturalSearchPayload = (naturalQuery: string, limit: string, o
 });
 
 export const useSearch = () => {
+  const telemetryRef = React.useRef<BrowseTelemetry>();
+  telemetryRef.current ??= new BrowseTelemetry(Object.fromEntries(
+    [...SEARCH_FILTER_KEYS, "query", "sort", "page_size"].map(key => [key, "default"]),
+  ));
+  const telemetry = telemetryRef.current;
   const [message, setMessage] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
@@ -60,18 +66,20 @@ export const useSearch = () => {
   const [feedbackMessage, setFeedbackMessage] = React.useState("");
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
 
-  const handleSearch = React.useCallback(async (naturalQuery: string, limit: string, offset = 0) => {
+  const handleSearch = React.useCallback(async (naturalQuery: string, limit: string, offset = 0, context?: BrowseContext) => {
     setIsLoading(true);
     setIsError(false);
     setMessage("");
     try {
       const response = await axios.post<SearchResponse>(
         `${apiUrl}/search`,
-        buildNaturalSearchPayload(naturalQuery, limit, offset),
+        { ...buildNaturalSearchPayload(naturalQuery, limit, offset),
+          telemetry: context ?? telemetry.next(offset ? "page_change" : "submit", "natural") },
         { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` } },
       );
       setSearchResponse(response.data);
       setOriginSearchId(response.data.search_id);
+      for (const key of [...SEARCH_FILTER_KEYS, "sort"] as const) telemetry.origins[key] = "ai";
       setResults(response.data.results ?? []);
     } catch (error: any) {
       const apiMessage = error.response?.data?.message;
@@ -83,14 +91,15 @@ export const useSearch = () => {
   }, [apiKey, apiUrl]);
 
   const handleExplicitSearch = React.useCallback(async (
-    criteria: SearchInterpretation, limit: string, offset = 0,
+    criteria: SearchInterpretation, limit: string, offset = 0, context?: BrowseContext,
   ) => {
     setIsLoading(true);
     setIsError(false);
     setMessage("");
     try {
       const response = await axios.post<SearchResponse>(`${apiUrl}/search`,
-        { ...buildExplicitSearchPayload(criteria, limit), ...(offset ? { offset } : {}) }, {
+        { ...buildExplicitSearchPayload(criteria, limit), ...(offset ? { offset } : {}),
+          telemetry: context ?? telemetry.next(offset ? "page_change" : "submit", "explicit") }, {
           headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` },
         });
       setSearchResponse(response.data);
@@ -107,12 +116,12 @@ export const useSearch = () => {
 
   const sendFeedback = React.useCallback(async (
     verdict: "correct" | "partially_correct" | "incorrect",
-    correctedQuery?: SearchInterpretation,
+    correctedQuery?: SearchInterpretation, context?: BrowseContext,
   ) => {
     if (originSearchId == null) return false;
     try {
       await axios.post(`${apiUrl}/search/${originSearchId}/feedback`, {
-        verdict,
+        verdict, telemetry: context ?? telemetry.next("correction", "natural", false),
         ...(correctedQuery ? { corrected_query: correctedQuery } : {}),
       }, { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` } });
       setFeedbackMessage(verdict === "correct" ? "Dziękujemy za potwierdzenie."
@@ -135,7 +144,7 @@ export const useSearch = () => {
   }, []);
 
   return {
-    isError, isLoading, results, searchResponse, message,
+    telemetry, isError, isLoading, results, searchResponse, message,
     originSearchId, feedbackMessage,
     handleSearch, handleExplicitSearch, sendFeedback, clearSearch,
   };

@@ -21,6 +21,12 @@ HEARTBEAT_PATH = "/tmp/lenie-worker-heartbeat"
 
 
 def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> dict:
+    if job.type == "retention_sweep":
+        from library.browse_events import delete_expired_browse_events
+        from library.search.audit_repository import delete_expired_interpretations
+
+        return {"browse_events": delete_expired_browse_events(),
+                "interpretations": delete_expired_interpretations()}
     if job.type == "feed_check":
         return run_check(job.parameters.get("feed_source_id"))
     if job.type == "feed_check_all":
@@ -91,9 +97,9 @@ def scheduler(session, now: dt.datetime) -> None:
     for task in session.scalars(select(ScheduledTask)).all():
         if not task.enabled or not _is_due(task, now):
             continue
-        if task.id == "feed_daily":
+        if task.id in {"feed_daily", "retention_sweep"}:
             local = now.astimezone(ZoneInfo(task.timezone))
-            enqueue(session, "feed_daily", idempotency_key=f"feed_daily:{local.date().isoformat()}")
+            enqueue(session, task.id, idempotency_key=f"{task.id}:{local.date().isoformat()}")
         elif task.id == "legacy_aws_pull":
             _schedule_legacy_aws_pull(session, now, task)
         elif task.id == "obsidian_reimport":
@@ -170,7 +176,7 @@ def main() -> int:
     parser.add_argument("--healthcheck", action="store_true")
     parser.add_argument(
         "--types",
-        default="feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect",
+        default="feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect,retention_sweep",
         help="comma-separated job types handled by this worker",
     )
     parser.add_argument("--scheduler", action="store_true")

@@ -1,3 +1,4 @@
+import { BrowseTelemetry, listOrigins, type BrowseAction } from "../utils/browseTelemetry";
 import React from "react";
 import { useList } from "../hooks/useList";
 import { useDocumentStates } from "../hooks/useDocumentStates";
@@ -18,6 +19,9 @@ const WITHOUT_TOPICS_VALUE = "__without_topics__";
 
 const List = () => {
     const [searchParams, setSearchParams] = useSearchParams();
+    const telemetry = React.useRef<BrowseTelemetry>();
+    telemetry.current ??= new BrowseTelemetry(listOrigins(searchParams));
+    const tel = telemetry.current;
     const { isLoading, isError, data, message, handleGetList, dataAllLength } = useList();
     const { states: fetchedStates, types: fetchedTypes } = useDocumentStates();
 
@@ -123,7 +127,7 @@ const List = () => {
   const loadPage = async (
     nextPage: number, type = selectedDocumentType, state = selectedDocumentState,
     query = searchInDocument, obsidian = obsidianFilter, nextPageSize = pageSize,
-    nextWithoutEmbedding = withoutEmbedding,
+    nextWithoutEmbedding = withoutEmbedding, action: BrowseAction = "page_change",
   ) => {
     setPage(nextPage);
     setPageSize(nextPageSize);
@@ -141,7 +145,7 @@ const List = () => {
         priorityGroupId: withoutPriority ? undefined : priorityGroupId,
         withoutPriority,
         sort: groupSort,
-      },
+      }, tel.next(action, searchType),
     );
   };
 
@@ -155,7 +159,7 @@ const List = () => {
     setSelectedDocumentType(type);
     setSelectedDocumentState(state);
     setSearchInDocument(query);
-    void loadPage(page, type, state, query, obsidianFilter, pageSize, withoutEmbedding);
+    void loadPage(page, type, state, query, obsidianFilter, pageSize, withoutEmbedding, "initial_load");
     // URL parameters are intentionally read once; later changes go through loadPage().
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -163,31 +167,35 @@ const List = () => {
   const { handleDeleteDocument, handleYoutubeRetryCaptions, message: manageMessage, isLoading: isRetrying } = useManageLLM({ formik, selectedDocumentType, selectedDocumentState });
 
   const handleTypeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+          tel.manual("document_type");
           setSelectedDocumentType(event.target.value);
-          void loadPage(1, event.target.value);
+          void loadPage(1, event.target.value, selectedDocumentState, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "filter_change");
   };
 
   const handleDocumentStateChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+          tel.manual("processing_status");
           setSelectedDocumentState(event.target.value);
-          void loadPage(1, selectedDocumentType, event.target.value);
+          void loadPage(1, selectedDocumentType, event.target.value, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "filter_change");
   };
 
   const handleObsidianFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
           const filter = event.target.value as "none" | "missing" | "has";
+          tel.manual("only_missing_obsidian_notes", "only_has_obsidian_notes");
           setObsidianFilter(filter);
           saveListFilters({ obsidianFilter: filter });
-          void loadPage(1, selectedDocumentType, selectedDocumentState, searchInDocument, filter);
+          void loadPage(1, selectedDocumentType, selectedDocumentState, searchInDocument, filter, pageSize, withoutEmbedding, "filter_change");
   };
 
   const clearSearch = () => {
+    tel.manual("query");
     setSearchInDocument("");
-    void loadPage(1, selectedDocumentType, selectedDocumentState, "");
+    void loadPage(1, selectedDocumentType, selectedDocumentState, "", obsidianFilter, pageSize, withoutEmbedding, "clear");
   };
 
   const handleDocumentDeleteOnThisPage = async (document_id: string | number) => {
     console.log("handleDocumentDeleteOnThisPage, page id: " + document_id);
     await handleDeleteDocument(String(document_id));
-    void loadPage(page);
+    void loadPage(page, selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "refresh");
   };
 
   const handleRetryCaptionsOnThisPage = async (document_id: string | number) => {
@@ -197,7 +205,7 @@ const List = () => {
     } finally {
       markCaptionsFetching(document_id, false);
     }
-    void loadPage(page);
+    void loadPage(page, selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "refresh");
   };
 
   const copyListLink = async () => {
@@ -308,7 +316,7 @@ const List = () => {
         name="search"
         size={40}
         value={searchInDocument}
-        onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchInDocument(event.target.value)}
+        onChange={(event: React.ChangeEvent<HTMLInputElement>) => { tel.manual("query"); setSearchInDocument(event.target.value); }}
         disabled={isLoading}
       />
 
@@ -319,7 +327,7 @@ const List = () => {
           name="search_type"
           value="strict"
           checked={searchType === 'strict'}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchType(event.target.value)}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => { tel.manual("requested_mode"); setSearchType(event.target.value); }}
           disabled={isLoading}
         />
         <label htmlFor="strict">Strict</label>
@@ -330,7 +338,7 @@ const List = () => {
           name="search_type"
           value="similar"
           checked={searchType === 'similar'}
-          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setSearchType(event.target.value)}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => { tel.manual("requested_mode"); setSearchType(event.target.value); }}
           disabled={isLoading}
         />
         <label htmlFor="similar">Similar</label>
@@ -338,7 +346,7 @@ const List = () => {
         disabled={isLoading}
         className={"button"}
         type={"button"}
-        onClick={() => { void loadPage(1); }}
+        onClick={() => { void loadPage(1, selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "submit"); }}
       >
         Search
       </button>
@@ -359,15 +367,15 @@ const List = () => {
       </select>
       <label htmlFor="page_size" style={{ marginLeft: 12 }}> Wyników na stronę: </label>
       <select id="page_size" value={pageSize} disabled={isLoading}
-        onChange={event => { void loadPage(1, selectedDocumentType, selectedDocumentState,
-          searchInDocument, obsidianFilter, Number(event.target.value)); }}>
+        onChange={event => { tel.manual("page_size"); void loadPage(1, selectedDocumentType, selectedDocumentState,
+          searchInDocument, obsidianFilter, Number(event.target.value), withoutEmbedding, "page_size_change"); }}>
         {[25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
       </select>
       <label style={{ marginLeft: 12 }}>
         <input type="checkbox" checked={withoutEmbedding} disabled={isLoading}
-          onChange={event => { void loadPage(
+          onChange={event => { tel.manual("without_embedding"); void loadPage(
             1, selectedDocumentType, selectedDocumentState, searchInDocument,
-            obsidianFilter, pageSize, event.target.checked,
+            obsidianFilter, pageSize, event.target.checked, "filter_change",
           ); }} />
         Without embedding
       </label>
@@ -378,26 +386,26 @@ const List = () => {
         <div style={{ position: "absolute", zIndex: 2, background: "white", border: "1px solid #bbb", borderRadius: 3, padding: 10, minWidth: 260, boxShadow: "0 2px 8px #0002" }}>
           <div style={{ fontSize: "0.85em", fontWeight: 600, marginBottom: 4 }}>Wybierz widoczne tematy:</div>
           <div style={{ display: "flex", gap: 6, marginBottom: 5 }}>
-            <button type="button" className="button" onClick={() => { setTopicFilterActive(true); setSelectedTopicValues(allTopicValues); }}>Zaznacz wszystkie</button>
-            <button type="button" className="button" onClick={() => { setTopicFilterActive(true); setSelectedTopicValues([]); }}>Odznacz wszystkie</button>
-            <button type="button" className="button" onClick={() => { setTopicFilterActive(true); setSelectedTopicValues(values => allTopicValues.filter(value => !effectiveSelectedTopicValues.includes(value))); }}>Odwróć wybór</button>
+            <button type="button" className="button" onClick={() => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues(allTopicValues); }}>Zaznacz wszystkie</button>
+            <button type="button" className="button" onClick={() => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues([]); }}>Odznacz wszystkie</button>
+            <button type="button" className="button" onClick={() => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues(values => allTopicValues.filter(value => !effectiveSelectedTopicValues.includes(value))); }}>Odwróć wybór</button>
           </div>
           {contentGroups.filter(group => group.kind === "topic").map(group => (
             <label key={group.id} style={{ display: "block", whiteSpace: "nowrap" }}>
               <input type="checkbox" checked={effectiveSelectedTopicValues.includes(String(group.id))}
-                onChange={event => { setTopicFilterActive(true); setSelectedTopicValues(values => event.target.checked ? [...effectiveSelectedTopicValues, String(group.id)] : effectiveSelectedTopicValues.filter(value => value !== String(group.id))); }} /> {group.name}
+                onChange={event => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues(values => event.target.checked ? [...effectiveSelectedTopicValues, String(group.id)] : effectiveSelectedTopicValues.filter(value => value !== String(group.id))); }} /> {group.name}
             </label>
           ))}
           <label style={{ display: "block", whiteSpace: "nowrap", borderTop: "1px solid #ddd", marginTop: 8, paddingTop: 8 }}>
             <input type="checkbox" checked={effectiveSelectedTopicValues.includes(WITHOUT_TOPICS_VALUE)}
-              onChange={event => { setTopicFilterActive(true); setSelectedTopicValues(values => event.target.checked ? [...effectiveSelectedTopicValues, WITHOUT_TOPICS_VALUE] : effectiveSelectedTopicValues.filter(value => value !== WITHOUT_TOPICS_VALUE)); }} /> (bez tematów)
+              onChange={event => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues(values => event.target.checked ? [...effectiveSelectedTopicValues, WITHOUT_TOPICS_VALUE] : effectiveSelectedTopicValues.filter(value => value !== WITHOUT_TOPICS_VALUE)); }} /> (bez tematów)
           </label>
-          <label style={{ display: "block", marginTop: 8 }}>Dopasowanie tematów <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => setTopicMatch(event.target.value as "any" | "all")}><option value="any">Dowolny temat</option><option value="all">Wszystkie tematy</option></select></label>
+          <label style={{ display: "block", marginTop: 8 }}>Dopasowanie tematów <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => { tel.manual("topic_match"); setTopicMatch(event.target.value as "any" | "all"); }}><option value="any">Dowolny temat</option><option value="all">Wszystkie tematy</option></select></label>
         </div>
       </details>
-      <label style={{ marginLeft: 12 }}>Priorytet <select value={priorityGroupId || ""} onChange={event => setPriorityGroupId(event.target.value ? Number(event.target.value) : undefined)}><option value="">Wszystkie</option>{contentGroups.filter(group => group.kind === "priority").map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-      <label style={{ marginLeft: 12 }}>Sortowanie <select value={groupSort} onChange={event => setGroupSort(event.target.value as "newest" | "priority")}><option value="priority">Według priorytetu</option><option value="newest">Najnowsze</option></select></label>
-      <label style={{ marginLeft: 12 }}><input type="checkbox" checked={withoutPriority} onChange={event => { setWithoutPriority(event.target.checked); if (event.target.checked) setPriorityGroupId(undefined); }} /> Bez priorytetu</label>
+      <label style={{ marginLeft: 12 }}>Priorytet <select value={priorityGroupId || ""} onChange={event => { tel.manual("priority_group_id"); setPriorityGroupId(event.target.value ? Number(event.target.value) : undefined); }}><option value="">Wszystkie</option>{contentGroups.filter(group => group.kind === "priority").map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+      <label style={{ marginLeft: 12 }}>Sortowanie <select value={groupSort} onChange={event => { tel.manual("sort"); setGroupSort(event.target.value as "newest" | "priority"); }}><option value="priority">Według priorytetu</option><option value="newest">Najnowsze</option></select></label>
+      <label style={{ marginLeft: 12 }}><input type="checkbox" checked={withoutPriority} onChange={event => { tel.manual("without_priority", "priority_group_id"); setWithoutPriority(event.target.checked); if (event.target.checked) setPriorityGroupId(undefined); }} /> Bez priorytetu</label>
       <button type="button" className="button" disabled={isLoading}
         style={{ marginLeft: 12 }} onClick={() => { void copyListLink(); }}>
         Kopiuj link

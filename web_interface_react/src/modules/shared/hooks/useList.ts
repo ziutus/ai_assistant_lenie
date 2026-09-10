@@ -1,3 +1,4 @@
+import { type BrowseContext, listTelemetryParams } from "../utils/browseTelemetry";
 import axios from "axios";
 import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
@@ -19,6 +20,7 @@ export const useList = () => {
     pageSize = 100,
     withoutEmbedding = false,
     groupFilters?: { topicGroupIds?: number[]; topicFilterActive?: boolean; includeWithoutTopics?: boolean; topicMatch?: "any" | "all"; priorityGroupId?: number; withoutPriority?: boolean; sort?: "newest" | "priority" },
+    telemetry?: BrowseContext,
   ) => {
     setIsLoading(true);
     try {
@@ -27,6 +29,7 @@ export const useList = () => {
           "x-api-key": `${apiKey}`,
         },
         params: {
+          ...listTelemetryParams(telemetry),
           type,
           processing_status: documentState,
           search_in_document: searchInDocument,
