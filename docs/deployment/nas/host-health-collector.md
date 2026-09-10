@@ -84,6 +84,18 @@ healthcheck stays green.
 `reason=healthy` (allowed) is logged only at debug/normal claim time via the
 existing `job start` lines — a deferred claim is the only WARNING this adds.
 
+## Ad-hoc health check from a dev machine
+
+[`infra/docker/nas-health.sh`](../../../infra/docker/nas-health.sh) (PowerShell
+wrapper: `nas-health.ps1`; `make nas-health`) is a one-shot diagnostic run from
+a workstation, not on the NAS. It probes network reachability and every HTTP
+endpoint, then over SSH reports load vs. core count, memory/swap, disk usage,
+OOM/panic traces in the current boot's `dmesg`, per-container status /
+`RestartCount` / `OOMKilled`, `docker stats`, and reads this
+`host-health.json` snapshot — flagging it against the same thresholds the gate
+uses and warning when it is stale (collector cron dead). Exit code `0` healthy,
+`1` warnings, `2` critical or NAS unreachable.
+
 ## Step 1 — install the collector on the QNAP host
 
 1. Copy the script onto the NAS, next to the other Lenie compose assets:
