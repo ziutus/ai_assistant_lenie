@@ -1,4 +1,4 @@
-from library.browse_event_routes import browse_execution
+from library.browse_event_transport import browse_execution
 from flask import Flask, Response, g, request, abort, jsonify
 from flask_cors import CORS
 import logging

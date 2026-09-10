@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from imports.browse_events_report import aggregate_events
-from library import browse_event_routes as transport
+from library import browse_event_transport as transport
 from library import browse_events as recorder
 from library.browse_events import (
     delete_expired_browse_events,
