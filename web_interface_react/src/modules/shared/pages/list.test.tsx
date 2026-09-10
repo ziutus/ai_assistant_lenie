@@ -137,7 +137,10 @@ describe("List telemetry", () => {
       <MemoryRouter initialEntries={["/list?type=obsidian_note"]}><List /></MemoryRouter>
     </AuthorizationContext.Provider>);
     await waitFor(() => expect(mockedGet.mock.calls.some(([url]) => url.endsWith("/website_list"))).toBe(true));
-    const params = () => mockedGet.mock.calls.filter(([url]) => url.endsWith("/website_list")).at(-1)![1].params;
+    const params = () => {
+      const calls = mockedGet.mock.calls.filter(([url]) => url.endsWith("/website_list"));
+      return calls[calls.length - 1][1].params;
+    };
     const first = params();
     expect(first._tel_action).toBe("initial_load");
     expect(JSON.parse(first._tel_criteria_origin)).toMatchObject({
