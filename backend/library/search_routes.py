@@ -8,7 +8,7 @@ import logging
 
 from flask import Blueprint, g, jsonify, request
 
-from library.browse_event_routes import browse_execution
+from library.browse_event_transport import browse_execution
 
 from library.db.engine import get_scoped_session
 from library.publisher_registry import resolve_publisher

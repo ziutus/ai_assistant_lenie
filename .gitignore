@@ -112,3 +112,6 @@ planowanie_slack_part_2.txt
 # Artefakty BMad (brainstorming, plany, notatki) - prywatne, patrz lenie-bmad-private
 _bmad-output/
 
+
+# pytest scratch output (per-session throwaway dirs/logs)
+backend/test-output/
