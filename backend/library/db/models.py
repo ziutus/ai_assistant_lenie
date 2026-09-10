@@ -1339,6 +1339,36 @@ class DocumentRemovedLine(Base):
         return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
 
 
+class CleanupRule(Base):
+    """Reguła usuwania linii z artykułu wraz z pochodzeniem i licznikiem trafień."""
+
+    __tablename__ = "cleanup_rules"
+    __table_args__ = (
+        CheckConstraint("scope IN ('global', 'domain')", name="ck_cleanup_rules_scope"),
+        CheckConstraint("match_type IN ('literal_line', 'contains', 'regex')", name="ck_cleanup_rules_match_type"),
+        Index("ix_cleanup_rules_active_scope", "active", "scope"),
+        Index("ix_cleanup_rules_domain", "domain"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(10), nullable=False)
+    domain: Mapped[str | None] = mapped_column(String(255))
+    match_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    pattern: Mapped[str] = mapped_column(Text, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    note: Mapped[str | None] = mapped_column(Text)
+    source_removed_line_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_removed_lines.id", ondelete="SET NULL"),
+    )
+    created_by: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now(),
+    )
+    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    last_hit_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+
 class EmailFooterRule(Base):
     """One opt-in, exact trailing-footer rule per normalized sender address."""
 
