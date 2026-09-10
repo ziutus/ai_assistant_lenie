@@ -91,6 +91,10 @@ docker-clean:   ## Remove old Docker images matching 'lenie'
 # NAS registry (private Docker registry at 192.168.200.7:5005)
 NAS_REGISTRY ?= 192.168.200.7:5005
 
+nas-health: ## Snapshot stanu NAS-a (siec, endpointy, load, RAM, kontenery, OOM w dmesg)
+	chmod +x infra/docker/nas-health.sh
+	infra/docker/nas-health.sh $(ARGS)
+
 nas-build-server: ## Build backend image for NAS registry
 	docker build -t $(NAS_REGISTRY)/lenie-ai-server:latest -f backend/Dockerfile .
 
