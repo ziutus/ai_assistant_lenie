@@ -11,7 +11,7 @@ Workflow jest przeznaczony do prowadzonej w rozmowie analizy przez Claude Code l
 | Status | Znaczenie |
 |---|---|
 | `pending` | Rekord nie został jeszcze rozstrzygnięty. |
-| `rule_added` | Na podstawie rekordu dodano lub rozszerzono regułę i test. |
+| `rule_added` | Dodano wiersz `cleanup_rules` (referencja `cleanup_rules:<id>`) albo wdrożono zmianę reguły w kodzie z testem. |
 | `already_covered` | Istniejąca reguła już obejmuje ten przypadek; nie jest potrzebna zmiana. |
 | `rejected` | Tekst nie nadaje się na regułę, np. jest treścią artykułu lub przypadkiem zbyt specyficznym. |
 
@@ -21,8 +21,8 @@ Statusy końcowe zapobiegają analizowaniu tych samych rekordów w kolejnych roz
 
 1. Nie zakładaj, że ręcznie usunięty tekst jest szumem na każdej stronie portalu.
 2. Preferuj regułę ograniczoną do domeny lub sekcji serwisu. Reguła globalna wymaga dowodów z wielu niezależnych portali.
-3. Proste, stabilne stringi i regexy umieszczaj w `backend/data/site_rules.json`.
-4. Logikę kontekstową, zależną od sąsiednich linii albo struktury treści, umieszczaj w `backend/library/article_cleaner.py`.
+3. Dla całej linii równej stałej frazie (`literal_line`) lub zawierającej stabilną frazę (`contains`, minimum 12 znaków) preferuj wiersz `cleanup_rules` przez `review_removed_lines.py --promote-rule`, bez PR i deployu.
+4. Logikę kontekstową, zależną od sąsiednich linii albo struktury treści, oraz ryzykowne regexy pozostaw w `backend/library/article_cleaner.py` z testami. Regex w tabeli przechodzi bramkę walidacji: kotwica, limit długości i czasu dopasowania oraz brak trafień w korpus poprawnej prozy.
 5. Reguła nie może usuwać poprawnej treści artykułu. Dodaj przypadek pozytywny i regresyjny pokazujący tekst, który ma pozostać.
 6. Grupuj powtarzające się wzorce. Nie twórz osobnej reguły dla każdej różnicy w interpunkcji, dacie lub tytule zajawki.
 7. Nie oznaczaj rekordów jako rozstrzygnięte przed wdrożeniem i przejściem testów.
@@ -70,6 +70,7 @@ Dla każdego kandydata:
 2. Połącz identyczne lub strukturalnie podobne linie w jeden wzorzec.
 3. Policz liczbę dokumentów i portali, na których wzorzec wystąpił.
 4. Sprawdź aktualne reguły:
+   - aktywne wiersze `cleanup_rules` (`GET /cleanup_rules?active=1`),
    - `backend/data/site_rules.json`,
    - `backend/library/article_cleaner.py`,
    - `backend/data/pages_analyze/*.regex`, jeśli problem dotyczy pełnej ekstrakcji artykułu.
@@ -84,6 +85,18 @@ Przed edycją przedstaw użytkownikowi krótki raport:
 Jeśli użytkownik zlecił od razu pełne wykonanie, raport może być częścią aktualizacji w trakcie pracy; nie wymaga osobnej zgody, o ile reguła jest dobrze ograniczona i testowalna.
 
 ## Etap 3: implementacja reguły
+
+Preferowana ścieżka prostych fraz: po sprawdzeniu kontekstu, zakresu domeny i przykładów poprawnej treści promuj kandydata do wiersza:
+
+```powershell
+python scripts/review_removed_lines.py --promote-rule --removed-line-id 101 `
+  --scope domain --domain www.onet.pl --match-type literal_line `
+  --pattern "Dalsza część tekstu pod materiałem wideo." --note "Zweryfikowana wstawka między akapitami"
+```
+
+Skrypt atomowo tworzy regułę i ustawia `rule_added`, `reviewed_at` oraz `rule_reference=cleanup_rules:<id>`; wypisuje tę referencję. Reguła zaczyna działać najpóźniej po wygaśnięciu cache (około 60 sekund). Błędną regułę wyłącz przez `PATCH /cleanup_rules/<id>` z `{"active": false}`. Zapis API wymaga klucza service. Nie oznaczaj ponownie tego kandydata przez `--mark`.
+
+Dla zmian wymagających kodu lub pliku `site_rules.json`:
 
 1. Utwórz feature branch.
 2. Zmień właściwy plik reguł lub cleaner.
@@ -115,8 +128,8 @@ $env:PYTHONPATH='.'
 .\.venv\Scripts\python.exe scripts\review_removed_lines.py `
   --mark 101,102,103 `
   --status rule_added `
-  --reference "data/site_rules.json:o2.pl" `
-  --note "Usuwanie bloku playera; test test_site_rules_o2.py"
+  --reference "cleanup_rules:42" `
+  --note "Dodatkowe rekordy objęte zweryfikowaną regułą 42"
 ```
 
 Istniejąca reguła już obsługuje przypadek:
@@ -141,12 +154,14 @@ Kandydat odrzucony:
 Wymagania:
 
 - `--mark` przyjmuje identyfikatory wierszy `document_removed_lines`, nie `document_id` ani `run_id`.
-- `rule_added` wymaga `--reference`.
-- W `--reference` podawaj stabilną lokalizację, np. `data/site_rules.json:o2.pl` lub `article_cleaner.py:_clean_lines_wp`.
+- `--mark --status rule_added` wymaga `--reference`; `--promote-rule` ustawia ją automatycznie.
+- W `--reference` podawaj stabilną lokalizację, np. `cleanup_rules:42`, `data/site_rules.json:o2.pl` lub `article_cleaner.py:_clean_lines_wp`.
 - W `--note` wpisz decyzję, zakres i test albo numer PR.
 - Rekordy nieobjęte zmianą pozostają `pending`.
 
 ## Etap 5: PR, deploy i kontrola
+
+Dla wierszy `cleanup_rules` PR i deploy nie są wymagane: zweryfikuj przykładowy dokument po odświeżeniu cache i sprawdź `hit_count`/`last_hit_at`. Okresowo uruchamiaj `PYTHONPATH=. python imports/dump_cleanup_rules.py`, aby utrzymywać przeglądalny snapshot `tests/fixtures/cleanup_rules.json` w repo. Poniższe kroki dotyczą zmian w kodzie lub plikach reguł.
 
 1. Zrób commit i PR zgodnie z zasadami repozytorium.
 2. Poczekaj na checki i wykonaj merge dopiero po ich przejściu.
@@ -160,8 +175,7 @@ Wymagania:
 Analiza partii jest ukończona, gdy:
 
 - każdy rozpatrywany rekord ma świadomą decyzję albo celowo pozostaje `pending`,
-- każda nowa reguła ma test regresyjny,
+- każda nowa reguła została sprawdzona na przykładzie szumu i poprawnej treści; zmiany kodu mają test regresyjny,
 - baza zawiera `review_status`, `reviewed_at`, `review_note` i właściwe `rule_reference`,
-- zmiany są zapisane w repozytorium,
-- stan produkcyjny i repozytorium nie rozjeżdżają się.
-
+- zmiany kodu są zapisane w repozytorium, a reguły tabeli w bazie wraz z pochodzeniem,
+- okresowy dump tabeli do fixtury pozwala przeglądać reguły w repozytorium.

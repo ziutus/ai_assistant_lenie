@@ -13,6 +13,7 @@ import re
 
 from library.article_extractor import _detect_portal, _find_footer_line, _find_start_line
 from library.article_quality import photo_caption_candidates
+from library.cleanup_rules import _bump_hit_counts, host_from_url, load_active_rules, match_line_rules
 from library.lenie_markdown import links_correct, md_square_brackets_in_one_line
 
 _IMG_MARKER_RE = re.compile(r'^\[img(\d+)(?::\s*[^\]]*)?\]\s*$')
@@ -73,7 +74,17 @@ def _is_adjacent_tag_links_line(line: str) -> bool:
     return all(_is_portal_internal_link(url) for url in urls)
 
 
-def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
+def _matches_cleanup_rule(stripped, rules, host, hit_ids) -> bool:
+    """Zapamiętaj identyfikator pierwszej reguły usuwającej linię."""
+    rule = match_line_rules(stripped, host, rules)
+    if rule is None:
+        return False
+    if hit_ids is not None:
+        hit_ids.add(rule.id)
+    return True
+
+
+def _clean_lines_generic(lines: list[str], h2_ad_titles: set, rules=(), host=None, hit_ids=None) -> list[str]:
     """Generyczne czyszczenie linia po linii — wspólne dla wszystkich portali."""
     cleaned = []
     skip_section = False
@@ -137,6 +148,9 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         if stripped.isdigit():
             continue
 
+        if _matches_cleanup_rule(stripped, rules, host, hit_ids):
+            continue
+
         # Frazy portalowe wspólne
         if stripped in ("Dalszy ciąg materiału pod wideo", "REKLAMAKONIEC REKLAMY",
                         "REKLAMA", "KONIEC REKLAMY", "Lubię to", "[ ]", "Rozwiń", "Zwiń",
@@ -195,7 +209,7 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
     return cleaned
 
 
-def _clean_lines_onet(lines: list[str]) -> list[str]:
+def _clean_lines_onet(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Czyszczenie specyficzne dla onet.pl/fakt.pl."""
     skip = {
         "Posłuchaj artykułu", "Skróć artykuł", "- x1 +", "x1", "Obserwuj",
@@ -259,6 +273,8 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
         # wstawia takie listy powiązanych artykułów między akapity i na końcu.
         if stripped.startswith("* ") and re.search(r'\[link\d+\]\s*$', stripped):
             continue
+        if _matches_cleanup_rule(stripped, rules, host, hit_ids):
+            continue
         cleaned.append(line)
     return cleaned
 
@@ -289,7 +305,7 @@ def _remove_author_bio_paragraph(lines: list[str]) -> list[str]:
     return [line for k, line in enumerate(lines) if k not in drop]
 
 
-def _clean_lines_money(lines: list[str]) -> list[str]:
+def _clean_lines_money(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Czyszczenie specyficzne dla money.pl."""
     lines = _remove_author_bio_paragraph(lines)
     skip_exact = {"Skomentuj", "Notowania", "Udostępnij", "Słuchaj", "Kopiuj link"}
@@ -326,11 +342,13 @@ def _clean_lines_money(lines: list[str]) -> list[str]:
         # "Zobacz też" — linia z [imgN: tytuł] i link do innego artykułu money.pl
         if re.match(r'^\[?\[img\d+:.*\].*money\.pl/', stripped):
             continue
+        if _matches_cleanup_rule(stripped, rules, host, hit_ids):
+            continue
         cleaned.append(line)
     return cleaned
 
 
-def _clean_lines_wp(lines: list[str]) -> list[str]:
+def _clean_lines_wp(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Czyszczenie specyficzne dla wp.pl/o2.pl/tech.wp.pl."""
     lines = _remove_author_bio_paragraph(lines)
     skip_exact = {"Skomentuj", "Słuchaj", "Udostępnij", "Kopiuj link",
@@ -400,13 +418,19 @@ def _clean_lines_wp(lines: list[str]) -> list[str]:
         # Reklamy z gigantycznym tracking URL (>300 znaków)
         if stripped.startswith("[") and stripped.endswith(")") and len(stripped) > 300:
             continue
+        if _matches_cleanup_rule(stripped, rules, host, hit_ids):
+            continue
         cleaned.append(line)
     return cleaned
 
 
-def _clean_lines_ithardware(lines: list[str]) -> list[str]:
+def _clean_lines_ithardware(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Usuń kontrolki osadzonego playera ITHardware bez globalnych reguł Play/ad."""
-    return [line for line in lines if line.strip() not in {"Play", "ad"}]
+    return [
+        line for line in lines
+        if line.strip() not in {"Play", "ad"}
+        and not _matches_cleanup_rule(line.strip(), rules, host, hit_ids)
+    ]
 
 
 # Menu sekcji nagłówka strony interia.pl — ten sam blok na każdej stronie
@@ -488,7 +512,7 @@ _RELATIVE_YESTERDAY_RE = re.compile(r'^wczoraj,\s*(\d{1,2}):(\d{2})$', re.IGNORE
 _RELATIVE_TODAY_RE = re.compile(r'^dzi(?:s|ś|siaj),\s*(\d{1,2}):(\d{2})$', re.IGNORECASE)
 
 
-def _clean_lines_interia(lines: list[str]) -> list[str]:
+def _clean_lines_interia(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Czyszczenie specyficzne dla interia.pl (wydarzenia/biznes/motoryzacja/...)."""
     skip_exact = {"Udostępnij", "Odsłuchaj artykuł", "W skrócie", "Zobacz również:"}
     cleaned = []
@@ -519,6 +543,8 @@ def _clean_lines_interia(lines: list[str]) -> list[str]:
         # "...Dodaj nas do ulubionych źródeł, otwiera się w nowym oknie"
         if "otwiera się w nowym oknie" in stripped and (
                 "Dodaj do Google" in stripped or "Dodaj nas do ulubionych" in stripped):
+            continue
+        if _matches_cleanup_rule(stripped, rules, host, hit_ids):
             continue
         cleaned.append(line)
     return cleaned
@@ -555,7 +581,7 @@ def resolve_relative_publication_date(
     return None
 
 
-def _clean_lines_bankier(lines: list[str]) -> list[str]:
+def _clean_lines_bankier(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Czyszczenie specyficzne dla bankier.pl.
 
     Breadcrumb i podmenu sekcji różnią się treścią per kategoria artykułu
@@ -601,11 +627,13 @@ def _clean_lines_bankier(lines: list[str]) -> list[str]:
         if re.match(r'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$', stripped):
             continue
 
+        if _matches_cleanup_rule(stripped, rules, host, hit_ids):
+            continue
         cleaned.append(line)
     return cleaned
 
 
-def _clean_lines_gazeta(lines: list[str]) -> list[str]:
+def _clean_lines_gazeta(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Usuń śródtekstowe karty rekomendacji Gazeta.pl, zachowując dalszy artykuł."""
     cleaned = []
     in_recommendation = False
@@ -633,6 +661,8 @@ def _clean_lines_gazeta(lines: list[str]) -> list[str]:
             else:
                 continue
 
+        if _matches_cleanup_rule(stripped, rules, host, hit_ids):
+            continue
         cleaned.append(line)
 
     return cleaned
@@ -761,6 +791,9 @@ def _strip_leading_onet_ai_summary(text: str) -> str:
 
 def clean_article_text(text: str, url: str = "") -> dict:
     """Wyczyść wyekstrahowany markdown. Zwraca dict: {text, links, images}."""
+    rules = load_active_rules()
+    host = host_from_url(url)
+    hit_ids = set()
     extracted_links = []
     extracted_images = []
     info_sources = []
@@ -905,25 +938,28 @@ def clean_article_text(text: str, url: str = "") -> dict:
 
     # 8. Czyszczenie linia po linii: generyczne + per-portal
     lines = text.splitlines()
-    lines = _clean_lines_generic(lines, h2_ad_titles)
+    lines = _clean_lines_generic(lines, h2_ad_titles, rules, host, hit_ids)
 
     if portal == "onet":
-        lines = _clean_lines_onet(lines)
+        lines = _clean_lines_onet(lines, rules, host, hit_ids)
     elif portal == "money":
-        lines = _clean_lines_money(lines)
+        lines = _clean_lines_money(lines, rules, host, hit_ids)
     elif portal == "wp":
-        lines = _clean_lines_wp(lines)
+        lines = _clean_lines_wp(lines, rules, host, hit_ids)
     elif portal == "gazeta":
-        lines = _clean_lines_gazeta(lines)
+        lines = _clean_lines_gazeta(lines, rules, host, hit_ids)
     elif portal == "bankier":
-        lines = _clean_lines_bankier(lines)
+        lines = _clean_lines_bankier(lines, rules, host, hit_ids)
     elif portal == "interia":
-        lines = _clean_lines_interia(lines)
+        lines = _clean_lines_interia(lines, rules, host, hit_ids)
     elif "ithardware.pl" in url.lower():
-        lines = _clean_lines_ithardware(lines)
+        lines = _clean_lines_ithardware(lines, rules, host, hit_ids)
 
     text = "\n".join(lines)
     text = re.sub(r'\n{3,}', '\n\n', text)
+
+    if hit_ids:
+        _bump_hit_counts(hit_ids)
 
     return {
         "text": text.strip(),

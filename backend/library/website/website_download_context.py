@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from library.cleanup_rules import _bump_hit_counts, host_from_url, load_active_rules, match_line_rules
 from library.safe_http import safe_get
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
 from library.config_loader import load_config
@@ -128,6 +129,21 @@ def webpage_text_clean(url: str, content: str):
         content = content.replace(data_string, "")
     for regex in global_rules.get("remove_string_regexp", []):
         content = remove_text_regex(content, regex)
+
+    rules = load_active_rules()
+    host = host_from_url(url)
+    hit_ids = set()
+    if rules:
+        kept = []
+        for line in content.splitlines(keepends=True):
+            rule = match_line_rules(line.strip(), host, rules)
+            if rule is not None:
+                hit_ids.add(rule.id)
+            else:
+                kept.append(line)
+        content = "".join(kept)
+    if hit_ids:
+        _bump_hit_counts(hit_ids)
 
     content = re.sub(r'\n[^\S\n]+\n', '\n\n', content)
     content = re.sub(r'\n{2,}', '\n\n', content)
