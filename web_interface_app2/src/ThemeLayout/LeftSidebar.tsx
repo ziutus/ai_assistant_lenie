@@ -53,7 +53,7 @@ const LeftSidebar = () => {
                             <div className="icon">
                                 <img src={icons01} alt="icons" />
                             </div>
-                            <p>Links List</p>
+                            <p>Documents List</p>
                         </Link>
                         <Link to="/link" className={`single-menu openuptip ${location.pathname === "/link" ? "active" : ""
                         }`}>

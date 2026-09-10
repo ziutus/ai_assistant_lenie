@@ -22,7 +22,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
       </div>
       <div className={classes.linksContent} onClick={closeMenuOnMobile}>
         <NavLink to="/list" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
-          Links List
+          Documents List
         </NavLink>
         <button
           className={classes.link}
