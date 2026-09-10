@@ -9,7 +9,6 @@ from sqlalchemy import select
 
 from library.ai import ai_ask
 from library.config_loader import load_config
-from library.content_group_service import get_active_groups
 from library.db.models import (
     ContentGroup,
     ContentGroupSuggestion,

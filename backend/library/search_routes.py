@@ -6,7 +6,9 @@ from dataclasses import fields
 from datetime import date, datetime
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+
+from library.browse_event_routes import browse_execution
 
 from library.db.engine import get_scoped_session
 from library.publisher_registry import resolve_publisher
@@ -122,12 +124,17 @@ def parse_search():
 
 
 @bp.post("/search")
+@browse_execution("search")
 def execute_search():
     try:
-        search_request = _request_from_json(_json_object())
+        search_request = _request_from_json({key: value for key, value in _json_object().items() if key != "telemetry"})
     except SearchQueryValidationError as exc:
         return jsonify({"status": "error", "field": exc.field, "message": str(exc)}), 400
 
+    g.browse_event.update(
+        execution_mode="natural" if search_request.is_natural else "explicit",
+        page_size=search_request.limit, offset=search_request.offset,
+    )
     if search_request.is_natural:
         parse_result = parse_search_query(search_request.natural_query)
         parsed = parse_result.parsed_query
@@ -151,8 +158,14 @@ def execute_search():
             "error_code": None,
         }
 
+    applied = parsed_query_to_dict(parsed)
+    g.browse_event.update(
+        filters={key: applied[key] for key in _FILTER_FIELDS}, effective_query=parsed.query,
+        sort=sort.value, interpretation_log_id=response["search_id"],
+    )
     ambiguities = _ambiguities(get_scoped_session(), parsed)
     if parsed.clarification_required or ambiguities:
+        g.browse_event.update(execution_mode="clarification", filters={}, effective_query=None)
         response.update({
             "results": [],
             "pagination": {
@@ -187,10 +200,11 @@ def execute_search():
 
 
 @bp.post("/search/<int:search_id>/feedback")
+@browse_execution("search", correction=True)
 def search_feedback(search_id: int):
     try:
         payload = _json_object()
-        unknown = set(payload) - {"verdict", "comment", "corrected_query"}
+        unknown = set(payload) - {"verdict", "comment", "corrected_query", "telemetry"}
         if unknown:
             raise SearchQueryValidationError("body", f"unknown fields: {', '.join(sorted(unknown))}")
         corrected = payload.get("corrected_query")
@@ -204,6 +218,14 @@ def search_feedback(search_id: int):
     except (SearchQueryValidationError, TypeError, ValueError) as exc:
         field = exc.field if isinstance(exc, SearchQueryValidationError) else "corrected_query"
         return jsonify({"status": "error", "field": field, "message": str(exc)}), 400
+    if feedback.corrected_query:
+        applied = parsed_query_to_dict(feedback.corrected_query)
+        g.browse_event.update(
+            filters={key: applied[key] for key in _FILTER_FIELDS},
+            query_text=corrected.get("query"), effective_query=feedback.corrected_query.query,
+            sort=feedback.corrected_query.sort.value,
+        )
     if not record_feedback(search_id, feedback):
         return jsonify({"status": "error", "message": "Search interpretation not found"}), 404
+    g.browse_event["interpretation_log_id"] = search_id
     return jsonify({"status": "success", "search_id": search_id}), 200

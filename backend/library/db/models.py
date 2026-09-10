@@ -11,6 +11,7 @@ Provides:
 import datetime
 import decimal
 import logging
+import uuid
 
 from sqlalchemy import (
     BigInteger,
@@ -30,7 +31,7 @@ from sqlalchemy import (
     select,
     text as sa_text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship, validates
 from sqlalchemy.types import UserDefinedType
 
@@ -383,7 +384,7 @@ class Job(Base):
     initiated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True)
     __table_args__ = (
-        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest','document_prepare','entity_enrichment','legacy_aws_pull','obsidian_reimport','tool_candidate_detect')", name="ck_jobs_type"),
+        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest','document_prepare','entity_enrichment','legacy_aws_pull','obsidian_reimport','tool_candidate_detect','retention_sweep')", name="ck_jobs_type"),
     )
 
 
@@ -2700,6 +2701,56 @@ class SearchInterpretationLog(Base):
             f"SearchInterpretationLog(id={self.id!r}, status={self.status!r}, "
             f"fallback_used={self.fallback_used!r}, created_at={self.created_at!r})"
         )
+
+
+class DocumentBrowseEvent(Base):
+    """UI-driven executions; independent audit transaction and 90-day retention."""
+
+    __tablename__ = "document_browse_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    browse_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    schema_version: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=sa_text("1"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=sa_text("NOW() + INTERVAL '90 days'"),
+    )
+    source_view: Mapped[str] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(Text)
+    query_text: Mapped[str | None] = mapped_column(Text)
+    effective_query: Mapped[str | None] = mapped_column(Text)
+    requested_mode: Mapped[str] = mapped_column(Text)
+    execution_mode: Mapped[str] = mapped_column(Text)
+    filters: Mapped[dict] = mapped_column(JSONB)
+    changed_fields: Mapped[list] = mapped_column(JSONB)
+    criteria_origin: Mapped[dict] = mapped_column(JSONB)
+    sort: Mapped[str] = mapped_column(Text)
+    page_size: Mapped[int] = mapped_column(Integer)
+    offset: Mapped[int] = mapped_column(Integer)
+    returned_count: Mapped[int | None] = mapped_column(Integer)
+    total_count: Mapped[int | None] = mapped_column(Integer)
+    has_more: Mapped[bool | None] = mapped_column(Boolean)
+    outcome: Mapped[str] = mapped_column(Text)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    interpretation_log_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("search_interpretation_logs.id", ondelete="SET NULL"),
+    )
+
+    __table_args__ = (
+        CheckConstraint("source_view IN ('document_list', 'search')", name="ck_document_browse_events_source_view"),
+        CheckConstraint(
+            "action IN ('initial_load','submit','filter_change','sort_change','page_change',"
+            "'page_size_change','clear','refresh','correction')", name="ck_document_browse_events_action",
+        ),
+        CheckConstraint(
+            "outcome IN ('success','error','clarification_required')", name="ck_document_browse_events_outcome",
+        ),
+        Index("idx_document_browse_events_created", "created_at"),
+        Index("idx_document_browse_events_expires", "expires_at"),
+        Index("idx_document_browse_events_source_created", "source_view", "created_at"),
+    )
 
 
 class LlmPricing(Base):

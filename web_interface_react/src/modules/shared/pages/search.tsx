@@ -1,3 +1,4 @@
+import { BrowseTelemetry } from "../utils/browseTelemetry";
 import React from 'react';
 import { useFormik } from 'formik';
 import { useSearchParams } from 'react-router-dom';
@@ -7,13 +8,18 @@ import Select from '../components/Select/select';
 import { SearchInterpretationPanel } from '../components/SearchInterpretationPanel';
 import { SearchCriteriaEditor } from '../components/SearchCriteriaEditor';
 import { type SearchInterpretation, useSearch } from '../hooks/useSearch';
-import { emptySearchCriteria, explicitSearchParams, parseExplicitCriteria } from '../utils/searchCriteria';
+import { SEARCH_FILTER_KEYS, emptySearchCriteria, explicitSearchParams, parseExplicitCriteria } from '../utils/searchCriteria';
 
 const ALLOWED_LIMITS = ['5', '10', '30', '50'];
 const DEFAULT_LIMIT = '10';
 
 const Search = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const advancedTelemetryRef = React.useRef<BrowseTelemetry>();
+  advancedTelemetryRef.current ??= new BrowseTelemetry(Object.fromEntries(
+    [...SEARCH_FILTER_KEYS, "query", "sort", "page_size"].map(key => [key, "default"]),
+  ));
+  const advancedTelemetry = advancedTelemetryRef.current;
   const initialQuery = searchParams.get('q') ?? '';
   const limitParam = searchParams.get('limit') ?? DEFAULT_LIMIT;
   const initialLimit = ALLOWED_LIMITS.includes(limitParam) ? limitParam : DEFAULT_LIMIT;
@@ -29,7 +35,7 @@ const Search = () => {
     initialExplicitCriteria ?? emptySearchCriteria(),
   );
   const {
-    handleSearch,
+    telemetry, handleSearch,
     handleExplicitSearch,
     sendFeedback,
     clearSearch,
@@ -65,10 +71,14 @@ const Search = () => {
   React.useEffect(() => {
     if (!initialSearchDone.current && initialExplicitCriteria) {
       initialSearchDone.current = true;
-      void handleExplicitSearch(initialExplicitCriteria, initialLimit);
+      [...SEARCH_FILTER_KEYS, "query", "sort"].forEach(key => { advancedTelemetry.origins[key] = "url"; });
+      if (searchParams.has("limit")) advancedTelemetry.origins.page_size = "url";
+      void handleExplicitSearch(initialExplicitCriteria, initialLimit, 0, advancedTelemetry.next("initial_load", "explicit"));
     } else if (!initialSearchDone.current && initialQuery) {
       initialSearchDone.current = true;
-      void handleSearch(initialQuery, initialLimit);
+      telemetry.origins.query = "url";
+      if (searchParams.has("limit")) telemetry.origins.page_size = "url";
+      void handleSearch(initialQuery, initialLimit, 0, telemetry.next("initial_load", "natural"));
     }
   }, [handleExplicitSearch, handleSearch, initialExplicitCriteria, initialQuery, initialLimit]);
 
@@ -86,14 +96,22 @@ const Search = () => {
     if (!draftCriteria) return;
     setPageOffset(0);
     setSubmittedQuery(draftCriteria.query ?? '');
-    const searched = await handleExplicitSearch(draftCriteria, formik.values.searchLimit);
+    const context = telemetry.next("correction", "explicit");
+    const searched = await handleExplicitSearch(draftCriteria, formik.values.searchLimit, 0, context);
     if (searched) {
       setSearchParams(explicitSearchParams(draftCriteria, formik.values.searchLimit));
-      if (originSearchId != null) await sendFeedback('partially_correct', draftCriteria);
+      if (originSearchId != null) await sendFeedback('partially_correct', draftCriteria, { ...telemetry.next('correction', 'explicit'), changed_fields: context.changed_fields });
+    }
+  };
+
+  const trackEdit = (before: SearchInterpretation | null, after: SearchInterpretation, tracker = telemetry) => {
+    for (const key of [...SEARCH_FILTER_KEYS, "query", "sort"] as const) {
+      if (JSON.stringify(before?.[key]) !== JSON.stringify(after[key])) tracker.manual(key);
     }
   };
 
   const switchToAdvanced = () => {
+    if (!advancedCriteria.query && formik.values.search.trim()) advancedTelemetry.manual('query');
     setSearchMode('advanced');
     setAdvancedCriteria(current =>
       current.query ? current : { ...current, query: formik.values.search.trim() || null },
@@ -103,7 +121,7 @@ const Search = () => {
   const submitAdvanced = async () => {
     setPageOffset(0);
     setSubmittedQuery(advancedCriteria.query ?? '');
-    const searched = await handleExplicitSearch(advancedCriteria, formik.values.searchLimit);
+    const searched = await handleExplicitSearch(advancedCriteria, formik.values.searchLimit, 0, advancedTelemetry.next("submit", "explicit"));
     if (searched) setSearchParams(explicitSearchParams(advancedCriteria, formik.values.searchLimit));
   };
 
@@ -111,10 +129,10 @@ const Search = () => {
     const offset = Math.max(0, nextOffset);
     const searched =
       searchMode === 'advanced'
-        ? await handleExplicitSearch(advancedCriteria, formik.values.searchLimit, offset)
+        ? await handleExplicitSearch(advancedCriteria, formik.values.searchLimit, offset, advancedTelemetry.next("page_change", "explicit"))
         : draftCriteria
-          ? await handleExplicitSearch(draftCriteria, formik.values.searchLimit, offset)
-          : await handleSearch(submittedQuery, formik.values.searchLimit, offset);
+          ? await handleExplicitSearch(draftCriteria, formik.values.searchLimit, offset, telemetry.next("page_change", searchMode === "natural" ? "natural" : "explicit"))
+          : await handleSearch(submittedQuery, formik.values.searchLimit, offset, telemetry.next("page_change", searchMode === "natural" ? "natural" : "explicit"));
     if (searched !== false) setPageOffset(offset);
   };
 
@@ -237,7 +255,7 @@ const Search = () => {
                 disabled={isLoading}
                 value={formik.values.search}
                 label="Czego szukasz?"
-                onChange={formik.handleChange}
+                onChange={event => { telemetry.manual(event.target.name === "search" ? "query" : "page_size"); formik.handleChange(event); }}
                 id="search"
                 name="search"
                 type="text"
@@ -247,7 +265,7 @@ const Search = () => {
               disabled={isLoading}
               value={formik.values.searchLimit}
               label="Liczba wyników"
-              onChange={formik.handleChange}
+              onChange={event => { telemetry.manual(event.target.name === "search" ? "query" : "page_size"); formik.handleChange(event); }}
               id="searchLimit"
               name="searchLimit"
               type="text"
@@ -276,7 +294,7 @@ const Search = () => {
               disabled={isLoading}
               value={formik.values.searchLimit}
               label="Liczba wyników"
-              onChange={formik.handleChange}
+              onChange={event => { advancedTelemetry.manual(event.target.name === "search" ? "query" : "page_size"); formik.handleChange(event); }}
               id="searchLimitAdvanced"
               name="searchLimit"
               type="text"
@@ -294,7 +312,7 @@ const Search = () => {
           <SearchCriteriaEditor
             criteria={advancedCriteria}
             disabled={isLoading}
-            onChange={setAdvancedCriteria}
+            onChange={value => { trackEdit(advancedCriteria, value, advancedTelemetry); setAdvancedCriteria(value); }}
             onApply={() => {
               void submitAdvanced();
             }}
@@ -316,7 +334,7 @@ const Search = () => {
         <SearchCriteriaEditor
           criteria={draftCriteria}
           disabled={isLoading}
-          onChange={setDraftCriteria}
+          onChange={value => { trackEdit(draftCriteria, value); setDraftCriteria(value); }}
           onApply={() => {
             void applyCorrection();
           }}

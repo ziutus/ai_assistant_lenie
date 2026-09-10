@@ -2,7 +2,9 @@
 
 React 18 single-page application for managing documents and running AI operations (text correction, embedding, similarity search). Built with **Vite** and **TypeScript**.
 
-**App version**: 0.3.17.1 | **Package version**: 0.3.17.0
+**App version**: 0.3.17.2 | **Package version**: 0.3.17.2
+
+2026-09-10 (0.3.17.2): added piggyback browse telemetry to Document List and Search, with per-tab sessions and criterion provenance.
 
 ## Directory Structure
 

@@ -5,7 +5,7 @@ import logging
 import re
 from urllib.parse import urlparse
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 
 from library.db.models import (
     DocumentEntity,

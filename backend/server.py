@@ -1,3 +1,4 @@
+from library.browse_event_routes import browse_execution
 from flask import Flask, Response, g, request, abort, jsonify
 from flask_cors import CORS
 import logging
@@ -367,6 +368,7 @@ def url_add():
 
 
 @app.route('/website_list', methods=['GET'])
+@browse_execution('document_list')
 def website_list():
     logging.debug("Getting list of websites")
     logging.debug(request.form)
@@ -424,6 +426,14 @@ def website_list():
         "without_priority": without_priority,
         "sort": sort,
     }
+    g.browse_event.update(
+        filters={key: value for key, value in list_kwargs.items()
+                 if key not in {"limit", "offset", "sort", "search_in_documents"}},
+        query_text=search_in_documents, effective_query=search_in_documents,
+        sort=sort, page_size=limit, offset=(page - 1) * limit,
+    )
+    if not topic_filter_active:
+        g.browse_event["filters"].update(topic_group_ids=[], include_without_topics=False, topic_match="any")
     try:
         websites_list = repo.get_list(**list_kwargs)
     except ValueError as exc:
