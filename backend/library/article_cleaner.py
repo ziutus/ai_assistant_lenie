@@ -789,13 +789,61 @@ def _strip_leading_onet_ai_summary(text: str) -> str:
     return "\n".join(lines[:idx] + lines[j:])
 
 
+_SKIP_IMAGE_URL_PATTERNS = [
+    "onetmobilemainpage/emotion/",
+    "onetmobilemainpage/onet30/subServiceLogos/",
+]
+
+
+def extract_inline_images(text: str) -> tuple[str, list[dict]]:
+    """Zamień inline ![alt](url) na markery [imgN], zwróć (tekst, obrazki).
+
+    Pomija emotki, ikony portalu, tracking pixele i duplikaty URL — te same
+    reguły co krok 3 clean_article_text(). Wydzielone jako osobna funkcja,
+    żeby backfille (np. imports/strip_webpage_images_backfill.py) mogły
+    czyścić już zapisane text_md tą samą logiką bez przechodzenia przez
+    cały pipeline czyszczenia artykułu (footer/linki/reguły per-portal).
+
+    Nie dołącza podpisów/credit — to robi _attach_image_captions() osobno,
+    bo wymaga kontekstu (url, dalsze czyszczenie tekstu).
+    """
+    extracted_images: list[dict] = []
+    seen_image_urls = set()
+
+    def replace_image(m):
+        alt = m.group(1).strip()
+        img_url = m.group(2).strip()
+        # Artefakty z konwersji HTML: obrazki z pustym URL → usuń
+        if not img_url:
+            return ""
+        # Pomijaj emotki, ikony portalu i bannery reklamowe
+        if any(p in img_url for p in _SKIP_IMAGE_URL_PATTERNS):
+            return ""
+        if alt and alt.lower().startswith("misja ai"):
+            return ""
+        # Pomijaj duplikaty (ten sam URL)
+        if img_url in seen_image_urls:
+            return ""
+        seen_image_urls.add(img_url)
+        # Pomijaj obrazki bez alt i bez rozszerzenia (prawdopodobnie tracking pixel)
+        if not alt and not any(img_url.lower().endswith(ext) for ext in ('.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp')):
+            return ""
+        idx = len(extracted_images)
+        extracted_images.append({"alt": alt, "url": img_url})
+        return f"[img{idx}: {alt}]" if alt else f"[img{idx}]"
+
+    text = re.sub(r'!\[([^\]]*)\]\(([^)]*)\)', replace_image, text)
+    # Linki owijające markery img: [[imgN]](url) → [imgN]
+    text = re.sub(r'\[(\[img\d+[^\]]*\])\]\([^)]+\)', lambda m: m.group(1), text)
+    return text, extracted_images
+
+
 def clean_article_text(text: str, url: str = "") -> dict:
     """Wyczyść wyekstrahowany markdown. Zwraca dict: {text, links, images}."""
     rules = load_active_rules()
     host = host_from_url(url)
     hit_ids = set()
     extracted_links = []
-    extracted_images = []
     info_sources = []
     portal = _detect_portal(url)
 
@@ -831,39 +879,9 @@ def clean_article_text(text: str, url: str = "") -> dict:
     # 2. Wykryj H2+obrazek wstawki PRZED usuwaniem obrazków
     h2_ad_titles = _detect_h2_ads(text)
 
-    # 3. Wyodrębnij obrazki → markery [imgN]
-    # Pomijaj emotki, ikony, tracking pixele, duplikaty
-    _skip_image_patterns = [
-        "onetmobilemainpage/emotion/",
-        "onetmobilemainpage/onet30/subServiceLogos/",
-    ]
-    _seen_image_urls = set()
-
-    def replace_image(m):
-        alt = m.group(1).strip()
-        img_url = m.group(2).strip()
-        # Artefakty z konwersji HTML: obrazki z pustym URL → usuń
-        if not img_url:
-            return ""
-        # Pomijaj emotki, ikony portalu i bannery reklamowe
-        if any(p in img_url for p in _skip_image_patterns):
-            return ""
-        if alt and alt.lower().startswith("misja ai"):
-            return ""
-        # Pomijaj duplikaty (ten sam URL)
-        if img_url in _seen_image_urls:
-            return ""
-        _seen_image_urls.add(img_url)
-        # Pomijaj obrazki bez alt i bez rozszerzenia (prawdopodobnie tracking pixel)
-        if not alt and not any(img_url.lower().endswith(ext) for ext in ('.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp')):
-            return ""
-        idx = len(extracted_images)
-        extracted_images.append({"alt": alt, "url": img_url})
-        return f"[img{idx}: {alt}]" if alt else f"[img{idx}]"
-
-    text = re.sub(r'!\[([^\]]*)\]\(([^)]*)\)', replace_image, text)
-    # Linki owijające markery img: [[imgN]](url) → [imgN]
-    text = re.sub(r'\[(\[img\d+[^\]]*\])\]\([^)]+\)', lambda m: m.group(1), text)
+    # 3. Wyodrębnij obrazki → markery [imgN] (pomija emotki, ikony, tracking
+    # pixele, duplikaty — patrz extract_inline_images())
+    text, extracted_images = extract_inline_images(text)
 
     # 3b. Skojarz podpisy/credity z markerami, zanim dalsze czyszczenie
     # zdąży usunąć linię podpisu z tekstu.
