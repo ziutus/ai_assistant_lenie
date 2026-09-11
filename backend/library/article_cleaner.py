@@ -810,6 +810,16 @@ def extract_inline_images(text: str) -> tuple[str, list[dict]]:
     extracted_images: list[dict] = []
     seen_image_urls = set()
 
+    # Zepsute/lazy-load placeholdery jako data: URI (dosłowne "base64..." —
+    # nigdy nie renderują się jako prawdziwe zdjęcie) czasem mają w alt tekście
+    # zagnieżdżone nawiasy kwadratowe (np. tytuł artykułu "[WYWIAD]" w karcie
+    # rekomendacji), co psuje główny, jednopoziomowy regex poniżej. Wycinamy
+    # je osobno, ograniczając się świadomie tylko do data: URI — nigdy do
+    # prawdziwych URL-i zdjęć — żeby nie dotknąć fragmentów kodu w artykułach,
+    # które akurat cytują "data:image/..." jako przykład (nie zaczynają się
+    # od "![").
+    text = re.sub(r'!\[(?:(?!\]\().)*?\]\(data:image[^)]*\)', '', text, flags=re.DOTALL)
+
     def replace_image(m):
         alt = m.group(1).strip()
         img_url = m.group(2).strip()

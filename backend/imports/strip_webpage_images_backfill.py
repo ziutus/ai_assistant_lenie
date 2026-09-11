@@ -93,16 +93,16 @@ def main():
         changed = 0
         total_images = 0
         for doc in docs:
-            before_len = len(doc.text_md or "")
-            new_text, images = extract_inline_images(doc.text_md or "")
-            if not images:
+            before_text = doc.text_md or ""
+            new_text, images = extract_inline_images(before_text)
+            if new_text == before_text:
                 continue  # coarse LIKE prefilter false positive (e.g. lone "![" with no matching image)
 
             changed += 1
             total_images += len(images)
             logging.info(
-                "doc #%s (%s): %d image(s) stripped, %s -> %s chars",
-                doc.id, doc.document_type, len(images), f"{before_len:,}", f"{len(new_text):,}",
+                "doc #%s (%s): %d image(s) extracted (+ any junk placeholders dropped), %s -> %s chars",
+                doc.id, doc.document_type, len(images), f"{len(before_text):,}", f"{len(new_text):,}",
             )
             if args.verbose:
                 for img in images:
