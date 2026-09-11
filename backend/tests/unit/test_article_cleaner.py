@@ -99,6 +99,34 @@ class TestImageExtraction:
         assert result["images"] == [{"alt": "Opis zdjęcia", "url": "https://example.com/foto.jpg"}]
         assert "[img0: Opis zdjęcia]" in result["text"]
 
+    def test_broken_data_uri_placeholder_with_bracketed_title_removed(self):
+        # Karta rekomendacji "Zobacz też" z zepsutym/lazy-load placeholderem
+        # (dosłowne "..." zamiast base64 — nigdy się nie wyrenderuje) i
+        # nawiasem kwadratowym w tytule artykułu (np. "[WYWIAD]"), który psuje
+        # jednopoziomowy regex głównego przypadku. Znaleziono na żywo w doc
+        # 1651 (gazetaprawna.pl) — patrz imports/strip_webpage_images_backfill.py.
+        text = (
+            f"{LONG_PARAGRAPH}\n\n"
+            "[![Tytuł artykułu [WYWIAD]](data:image/gif;base64...)\n\n"
+            "Tytuł artykułu [WYWIAD]](https://example.com/inny-artykul.html)"
+        )
+        result = clean_article_text(text)
+        assert result["images"] == []
+        assert "data:image" not in result["text"]
+
+    def test_data_uri_inside_code_sample_untouched(self):
+        # "data:image" w bloku kodu (przykład CSS/HTML/JS w artykule
+        # technicznym) nie zaczyna się od "![" — to nie jest tag obrazka,
+        # tylko treść artykułu, i nie wolno go usuwać (znalezione na żywo w
+        # dok. 3716/4502/7311 — artykuły *o* base64/CSS, nie zepsute zdjęcia).
+        text = (
+            f"{LONG_PARAGRAPH}\n\n```\n"
+            "content: url(\"data:image/svg+xml,%3Csvg%3E%3C/svg%3E\");\n"
+            "```\n\n" + LONG_PARAGRAPH
+        )
+        result = clean_article_text(text)
+        assert "data:image/svg+xml" in result["text"]
+
     def test_standalone_image_line_preserved_for_quality_and_collected(self):
         text = f"{LONG_PARAGRAPH}\n\n![Opis zdjęcia](https://example.com/foto.jpg)\n\nDrugi akapit."
         result = clean_article_text(text)

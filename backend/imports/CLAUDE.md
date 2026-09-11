@@ -20,6 +20,7 @@ imports/
 ├── detect_document_links.py  # Backfill: propose `references` document_links from verbatim URL mentions (dry-run by default, --apply, --id)
 ├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
+├── strip_webpage_images_backfill.py  # One-off: strip raw inline images (incl. base64) out of text_md for webpage/link documents
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── organization_descriptions_backfill.py  # One-off: LLM-generated short descriptions for organizations missing one (reader tooltip)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
@@ -352,6 +353,29 @@ python imports/fix_place_tags.py            # dry-run (default)
 python imports/fix_place_tags.py --apply    # write changes
 python imports/fix_place_tags.py --id 9216  # single document
 ```
+
+### `strip_webpage_images_backfill.py`
+
+One-off backfill: `library/article_cleaner.py`'s `clean_article_text()` has always replaced inline `![alt](url)` markdown images with `[imgN]` markers (persisting the URL to `document_images`), but only at import/re-analysis time — some `webpage`/`link` documents never went through it and still carried raw image markdown (including base64 `data:image/...` URIs) straight in `text_md`, feeding chunk analysis, the whole-document embedding fallback, and NER extraction with unnecessary noise. Uses `library.article_cleaner.extract_inline_images()` (the same regex/skip-pattern logic `clean_article_text()` uses internally, factored out for reuse) rather than the full cleanup pipeline, so this only ever touches images — never footers/links/portal-specific rules. Deliberately scoped to `document_type IN ('webpage', 'link')` only — **never** `obsidian_note` (images there matter) or `email` (article cleanup is never applied to emails). Run on the NAS DB 2026-09-11: 925 of 967 candidates updated, 13488 images moved into `document_images`; base64 documents dropped from 72 to 7, then (after fixing a bug where a junk placeholder deleted-with-no-alt never counted as an "extracted image" and so was skipped, and adding a targeted rule for broken `data:image` placeholders wrapped in a bracket-containing title — see `extract_inline_images()`) to 3. The remaining 3 (`link` docs about base64/CSS/JS themselves) are genuine code samples containing the literal string "data:image" — not `![...]()` markdown image syntax — correctly left untouched. Two of the fixed documents (audiopen.ai, an Instagram profile) had *only* a broken placeholder as their entire `text_md`; after cleanup they're empty — their content extraction had already failed, this just surfaced it.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, only when `--apply` is passed.
+
+**Running:**
+```bash
+cd backend
+python imports/strip_webpage_images_backfill.py                       # dry-run (default)
+python imports/strip_webpage_images_backfill.py --apply
+python imports/strip_webpage_images_backfill.py --id 10482
+python imports/strip_webpage_images_backfill.py --apply --limit 20 --delay 0.5
+python imports/strip_webpage_images_backfill.py --only-base64 --apply # the worst offenders first
+```
+
+**Arguments:**
+- `--apply` — write to the database (default: dry-run only)
+- `--id N` — process a single document by id (refuses if its `document_type` isn't `webpage`/`link`)
+- `--limit N` — max number of documents to process
+- `--only-base64` — restrict to documents with a `data:image` URI in `text_md`
+- `--delay SECONDS` — sleep after each commit, to go easy on the NAS (default: 0.2)
 
 ### `organization_descriptions_backfill.py`
 
