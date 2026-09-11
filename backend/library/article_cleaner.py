@@ -795,6 +795,35 @@ _SKIP_IMAGE_URL_PATTERNS = [
 ]
 
 
+def _strip_broken_data_uri_image_cards(text: str) -> str:
+    """Usuń ![...](data:image...), nawet gdy alt zawiera zagnieżdżone [...].
+
+    Celowo bez cofania regexowego (backtracking) — wariant z negative
+    lookahead na każdy znak (`(?:(?!\\]\\().)*?`) dostał od CodeQL ostrzeżenie
+    polynomial-ReDoS na wejściu z wieloma powtórzeniami "![". Zamiast tego
+    proste skanowanie str.find() — liniowe, bez cofania.
+    """
+    marker = "](data:image"
+    parts = []
+    i = 0
+    while True:
+        start = text.find("![", i)
+        if start == -1:
+            parts.append(text[i:])
+            break
+        marker_pos = text.find(marker, start)
+        end_paren = text.find(")", marker_pos) if marker_pos != -1 else -1
+        if marker_pos == -1 or end_paren == -1:
+            # Brak dopasowania (np. "![" niezwiązane z data: URI) — zostaw
+            # ten fragment i szukaj dalej od razu za "![".
+            parts.append(text[i:start + 2])
+            i = start + 2
+            continue
+        parts.append(text[i:start])
+        i = end_paren + 1
+    return "".join(parts)
+
+
 def extract_inline_images(text: str) -> tuple[str, list[dict]]:
     """Zamień inline ![alt](url) na markery [imgN], zwróć (tekst, obrazki).
 
@@ -818,7 +847,7 @@ def extract_inline_images(text: str) -> tuple[str, list[dict]]:
     # prawdziwych URL-i zdjęć — żeby nie dotknąć fragmentów kodu w artykułach,
     # które akurat cytują "data:image/..." jako przykład (nie zaczynają się
     # od "![").
-    text = re.sub(r'!\[(?:(?!\]\().)*?\]\(data:image[^)]*\)', '', text, flags=re.DOTALL)
+    text = _strip_broken_data_uri_image_cards(text)
 
     def replace_image(m):
         alt = m.group(1).strip()
