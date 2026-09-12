@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy import false, func, or_, select
+from sqlalchemy.orm import aliased
 from werkzeug.utils import secure_filename
 
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
@@ -470,13 +471,59 @@ def contacts_list():
     )
 
     rows = session.execute(query).scalars().all()
+    relationships_by_contact = _load_contact_relationships_summary(session, [row.id for row in rows])
+    contacts_out = []
+    for row in rows:
+        data = _contact_dict(row)
+        data["relationships"] = relationships_by_contact.get(row.id, [])
+        contacts_out.append(data)
+
     return jsonify({
         "status": "success",
-        "contacts": [_contact_dict(row) for row in rows],
+        "contacts": contacts_out,
         "total": total,
         "offset": offset,
         "limit": limit,
     }), 200
+
+
+def _load_contact_relationships_summary(session, contact_ids: list[int]) -> dict[int, list[dict]]:
+    """Lightweight per-contact relationships for the /contacts list view — just
+    enough to render a chip (type + other person's name), unlike
+    _relationship_dict's full nested contact object used by the detail page."""
+    if not contact_ids:
+        return {}
+
+    result: dict[int, list[dict]] = {cid: [] for cid in contact_ids}
+    other = aliased(Contact)
+
+    outgoing = session.execute(
+        select(ContactRelationship.contact_id, ContactRelationship.relationship_type,
+               other.first_name, other.last_name)
+        .join(other, other.id == ContactRelationship.related_contact_id)
+        .where(ContactRelationship.contact_id.in_(contact_ids))
+    ).all()
+    for contact_id, relationship_type, first_name, last_name in outgoing:
+        result[contact_id].append({
+            "relationship_type": relationship_type,
+            "direction": "outgoing",
+            "other_name": " ".join(filter(None, [first_name, last_name])),
+        })
+
+    incoming = session.execute(
+        select(ContactRelationship.related_contact_id, ContactRelationship.relationship_type,
+               other.first_name, other.last_name)
+        .join(other, other.id == ContactRelationship.contact_id)
+        .where(ContactRelationship.related_contact_id.in_(contact_ids))
+    ).all()
+    for contact_id, relationship_type, first_name, last_name in incoming:
+        result[contact_id].append({
+            "relationship_type": relationship_type,
+            "direction": "incoming",
+            "other_name": " ".join(filter(None, [first_name, last_name])),
+        })
+
+    return result
 
 
 def _parse_contact_group_ids(raw: str | None) -> list[int]:
