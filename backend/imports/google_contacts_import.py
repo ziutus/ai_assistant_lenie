@@ -153,11 +153,26 @@ def main():
         session.close()
         return
 
+    # Name-based matching is only safe when BOTH sides have a real first+last
+    # name — a bare last_name (first_name is NULL, e.g. a neighbor whose
+    # surname was never known) is a "weak" key that different people can
+    # share (see feedback_no_merge_unverifiable_contacts.md: several
+    # "Aneta"/"Edyta"/"Magdalena"/"Tomasz" contacts already exist from
+    # earlier unrelated imports with no surname on file). Matching a new
+    # CSV row with the same bare first name against one of those would
+    # silently merge two different people and discard one of their phone
+    # numbers, so weak-keyed existing contacts are excluded from this map;
+    # a same-bare-name CSV row always creates its own new Contact instead
+    # unless corroborated by a phone match below.
     existing_by_key: dict[str, Contact] = {}
+    existing_by_phone: dict[str, Contact] = {}
     for c in session.scalars(select(Contact)):
-        key = " ".join(sorted(normalize_name(f"{c.first_name or ''} {c.last_name}")))
-        if key:
-            existing_by_key.setdefault(key, c)
+        if c.phone_number:
+            existing_by_phone.setdefault(c.phone_number.strip(), c)
+        if c.first_name:
+            key = " ".join(sorted(normalize_name(f"{c.first_name} {c.last_name}")))
+            if key:
+                existing_by_key.setdefault(key, c)
 
     group_by_name: dict[str, ContactGroup] = {
         g.name.lower(): g for g in session.scalars(select(ContactGroup))
@@ -204,7 +219,12 @@ def main():
                     logger.warning("Zduplikowany wpis w CSV (ta sama osoba wystąpiła %d razy): %s %s",
                                     seen_keys[key], first_name, last_name)
 
-            existing = existing_by_key.get(key)
+            # Phone number is a reliable identity signal regardless of name
+            # quality; a bare-first-name key is only trusted when the row
+            # itself also has a real first_name (a "strong" key on both sides).
+            existing = existing_by_phone.get(phone.strip()) if phone else None
+            if existing is None and first_name:
+                existing = existing_by_key.get(key)
 
             if existing:
                 matched_n += 1
