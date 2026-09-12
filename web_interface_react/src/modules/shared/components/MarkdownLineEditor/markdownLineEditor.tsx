@@ -1,7 +1,7 @@
 import React from "react";
 import axios from "axios";
 import { AuthorizationContext } from "../../context/authorizationContext";
-import { computeChunkLineRanges, type ChunkForPreview } from "../../utils/chunkBoundaries";
+import { canMergeChunkRanges, chunkLocalSplitLines, computeChunkLineRanges, type ChunkForPreview } from "../../utils/chunkBoundaries";
 
 const chunkColor = (type: string) => ({
   TEMAT: "#22c55e", REKLAMA: "#f97316", SZUM: "#94a3b8", ZRODLA: "#3b82f6",
@@ -13,8 +13,12 @@ const emptyMarks = (): Record<MarkKind, Set<number>> => ({
   author: new Set(), date: new Set(), sources: new Set(), links: new Set(), ads: new Set(), persons: new Set(),
 });
 
-const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks }: {
+const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks, onRefreshChunks, onChangeChunkType, onMergeChunk, onSplitChunk }: {
   formik: any; disabled: boolean; chunks?: ChunkForPreview[]; onRequestChunks?: () => Promise<void>;
+  onRefreshChunks?: () => Promise<void>;
+  onChangeChunkType?: (id: number, type: string) => Promise<void>;
+  onMergeChunk?: (id: number) => Promise<void>;
+  onSplitChunk?: (id: number, splitAtLines: number[]) => Promise<void>;
 }) => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const value: string = formik.values.text_md || formik.values.text || "";
@@ -23,8 +27,39 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks }: {
   const [showChunkPreview, setShowChunkPreview] = React.useState(false);
   const [loadingChunks, setLoadingChunks] = React.useState(false);
   const [chunkError, setChunkError] = React.useState("");
+  const [pendingSplits, setPendingSplits] = React.useState<Record<number, Set<number>>>({});
+  const [mutatingChunk, setMutatingChunk] = React.useState(false);
+  const mutationInFlight = React.useRef(false);
+  // Global line selections become obsolete whenever the document text changes.
+  React.useEffect(() => { setPendingSplits({}); }, [value]);
+  const mutateChunk = async (action: () => Promise<void>) => {
+    if (!showChunkPreview || disabled || mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    setMutatingChunk(true);
+    setChunkError("");
+    let saved = false;
+    try {
+      await action();
+      saved = true;
+      setPendingSplits({});
+      await onRefreshChunks?.();
+    } catch {
+      setChunkError(saved
+        ? "Zapisano zmianę, ale nie udało się odświeżyć chunków. Wyłącz i włącz podgląd, aby ponowić pobieranie."
+        : "Nie udało się zmienić chunka. Spróbuj ponownie.");
+    } finally {
+      mutationInFlight.current = false;
+      setMutatingChunk(false);
+    }
+  };
+  const toggleSplit = (id: number, line: number) => setPendingSplits(previous => {
+    const points = new Set(previous[id]);
+    if (points.has(line)) points.delete(line);
+    else points.add(line);
+    return { ...previous, [id]: points };
+  });
   const toggleChunkPreview = async () => {
-    if (loadingChunks) return;
+    if (loadingChunks || mutationInFlight.current) return;
     setChunkError("");
     if (!showChunkPreview && onRequestChunks) {
       setLoadingChunks(true);
@@ -162,22 +197,15 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks }: {
         <button type="button" className="button" onClick={() => setCompactLabels(current => !current)}>
           {compactLabels ? "Pełne nazwy przycisków" : "Skróty przycisków"}
         </button>
-        {(!!chunks?.length || !!onRequestChunks) && (
-          // A plain <button> would be disabled by the ancestor <fieldset
-          // disabled={contentLocked}> on webpage.tsx along with every real
-          // editing control — but this toggle only reveals a read-only
-          // overlay (borders/badges on plain <div>s, unaffected by
-          // fieldset) and never mutates the document, so it must stay
-          // usable on an already-embedded (locked) document too. A <span>
-          // isn't form-associated, so native fieldset disabling doesn't
-          // apply to it.
-          <span
-            role="button" tabIndex={loadingChunks ? -1 : 0} className="button"
-            aria-pressed={showChunkPreview} aria-disabled={loadingChunks}
-            style={{ cursor: loadingChunks ? "default" : "pointer", opacity: loadingChunks ? 0.6 : 1 }}
-            onClick={toggleChunkPreview}
-            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleChunkPreview(); } }}
-          >
+        {(chunks !== undefined || !!onRequestChunks || showChunkPreview) && (
+          <span role="button" tabIndex={0} className="button" aria-disabled={loadingChunks || mutatingChunk}
+            aria-pressed={showChunkPreview} onClick={toggleChunkPreview}
+            onKeyDown={event => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                void toggleChunkPreview();
+              }
+            }}>
             {loadingChunks ? "Pobieram chunki…" : showChunkPreview ? "Skryj podział na chunki" : "Pokaż podział na chunki"}
           </span>
         )}
@@ -227,8 +255,11 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks }: {
             {lines.map((line, index) => {
               const range = showChunkPreview ? ranges.find(range => range.startLine <= index && index <= range.endLine) : undefined;
               const chunk = range && chunks ? chunks[range.chunkIndex] : undefined;
+              const nextRange = range ? ranges[ranges.indexOf(range) + 1] : undefined;
+              const splitPoints = chunk ? pendingSplits[chunk.id] : undefined;
               return (
-              <div key={`${index}-${line.slice(0, 30)}`} style={{
+              <React.Fragment key={`${index}-${line.slice(0, 30)}`}>
+              <div style={{
                 display: "grid", gridTemplateColumns: `${showChunkPreview && ranges.length ? "120px" : "46px"} repeat(9, ${compactLabels ? "34px" : "auto"}) minmax(280px, 1fr)`, gap: 5,
                 alignItems: "start", padding: "3px 6px", borderBottom: "1px solid #f1f5f9",
                 borderLeft: chunk ? `4px solid ${chunkColor(chunk.type)}` : undefined,
@@ -236,13 +267,37 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks }: {
               }}>
                 <span style={{ color: "#94a3b8", textAlign: "right", paddingTop: 3 }}>
                   {chunk && range && range.startLine === index && (
+                    <>
                     <span title={`chunk #${range.chunkIndex + 1} — ${chunk.type} — ${chunk.status}`}
                       style={{ display: "inline-block", borderRadius: 8, padding: "1px 3px", fontSize: 10,
                         color: chunkColor(chunk.type), border: `1px solid ${chunkColor(chunk.type)}`, marginRight: 3 }}>
                       #{range.chunkIndex + 1} {chunk.type}
                     </span>
+                    {onChangeChunkType && <button type="button" disabled={disabled || mutatingChunk}
+                      onClick={() => void mutateChunk(() => onChangeChunkType(chunk.id, chunk.type === "TEMAT" ? "SZUM" : "TEMAT"))}>
+                      {chunk.type === "TEMAT" ? "Wylacz z analizy" : "Wlacz jako TEMAT"}
+                    </button>}
+                    {!!splitPoints?.size && onSplitChunk && <>
+                      <button type="button" disabled={disabled || mutatingChunk}
+                        onClick={() => void mutateChunk(() => onSplitChunk(chunk.id, chunkLocalSplitLines(splitPoints, range)))}>
+                        Zastosuj podzial ({splitPoints.size})
+                      </button>
+                      <button type="button" disabled={disabled || mutatingChunk}
+                        onClick={() => setPendingSplits(previous => ({ ...previous, [chunk.id]: new Set<number>() }))}>
+                        Anuluj
+                      </button>
+                    </>}
+                    </>
                   )}
                   {index + 1}
+                  {chunk && range && index > range.startLine && onSplitChunk && (
+                    <button type="button" title="Podziel chunk przed tą linią"
+                      aria-label={`Podziel chunk przed linią ${index + 1}`} aria-pressed={splitPoints?.has(index) ?? false}
+                      disabled={disabled || mutatingChunk} onClick={() => toggleSplit(chunk.id, index)}
+                      style={{ background: splitPoints?.has(index) ? "#bfdbfe" : undefined }}>
+                      &#9986;
+                    </button>
+                  )}
                 </span>
                 <button type="button" title="Usuń linię" onClick={() => removeLine(index)}>{label("×", "Usuń")}</button>
                 <button type="button" title="Usuń wszystko przed tą linią" onClick={() => keepFrom(index)}>{label("⇤", "Początek")}</button>
@@ -257,6 +312,15 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks }: {
                   {line || <em style={{ color: "#cbd5e1" }}>pusta linia</em>}
                 </span>
               </div>
+              {chunk && range && index === range.endLine && onMergeChunk && canMergeChunkRanges(range, nextRange, chunks ?? []) && (
+                <div style={{ padding: "3px 6px" }}>
+                  <button type="button" disabled={disabled || mutatingChunk}
+                    onClick={() => void mutateChunk(() => onMergeChunk(chunk.id))}>
+                    &#128279; Scal z nastepnym
+                  </button>
+                </div>
+              )}
+              </React.Fragment>
               );
             })}
           </div>

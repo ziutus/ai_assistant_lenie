@@ -1,4 +1,5 @@
 export interface ChunkForPreview {
+  id: number;
   position: number;
   type: string;
   status: string;
@@ -28,4 +29,17 @@ export function computeChunkLineRanges(lines: string[], chunks: ChunkForPreview[
     }
   });
   return ranges;
+}
+
+// Both document lines and backend positions must be adjacent: an unmatched
+// chunk must never cause merge_with_next to target an invisible successor.
+export function canMergeChunkRanges(first: ChunkLineRange, next: ChunkLineRange | undefined, chunks: ChunkForPreview[]): boolean {
+  return !!next && first.endLine + 1 === next.startLine
+    && first.chunkIndex + 1 === next.chunkIndex
+    && chunks[first.chunkIndex].position + 1 === chunks[next.chunkIndex].position;
+}
+
+export function chunkLocalSplitLines(points: Set<number>, range: ChunkLineRange): number[] {
+  return [...points].filter(line => line > range.startLine && line <= range.endLine)
+    .map(line => line - range.startLine).sort((a, b) => a - b);
 }
