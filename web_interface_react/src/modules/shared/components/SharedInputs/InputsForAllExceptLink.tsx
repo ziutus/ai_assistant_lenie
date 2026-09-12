@@ -14,17 +14,32 @@ const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolea
   const [chunks, setChunks] = React.useState<ChunkForPreview[] | null>(null);
   const runId = formik.values.analysis_run_id;
   const requestChunks = async () => {
-    if (!runId || chunks !== null) return;
+    if (!runId) return;
+    setChunks(null);
     const response = await axios.get<{ chunks: Array<Omit<ChunkForPreview, "original_text"> & { original_text?: string | null }> }>(
       `${apiUrl}/analysis_run/${runId}/chunks`, { headers: { "x-api-key": `${apiKey ?? ""}` } },
     );
-    setChunks(response.data.chunks.map(({ position, type, status, original_text }) => ({
-      position, type, status, original_text: original_text ?? "",
+    setChunks(response.data.chunks.map(({ id, position, type, status, original_text }) => ({
+      id, position, type, status, original_text: original_text ?? "",
     })));
+  };
+  const headers = { "x-api-key": `${apiKey ?? ""}` };
+  const changeChunkType = async (id: number, type: string) => {
+    await axios.patch(`${apiUrl}/chunk/${id}`, { type }, { headers });
+  };
+  const mergeChunk = async (id: number) => {
+    await axios.post(`${apiUrl}/chunk/${id}/merge_with_next`, undefined, { headers });
+  };
+  const splitChunk = async (id: number, splitAtLines: number[]) => {
+    await axios.post(`${apiUrl}/chunk/${id}/execute_split`, { split_at_lines: splitAtLines }, { headers });
   };
   return <MarkdownLineEditor formik={formik} disabled={disabled}
     chunks={runId ? chunks ?? undefined : undefined}
-    onRequestChunks={runId && chunks === null ? requestChunks : undefined} />;
+    onRequestChunks={runId && chunks === null ? requestChunks : undefined}
+    onRefreshChunks={requestChunks}
+    onChangeChunkType={runId ? changeChunkType : undefined}
+    onMergeChunk={runId ? mergeChunk : undefined}
+    onSplitChunk={runId ? splitChunk : undefined} />;
 };
 
 interface InputsForAllExceptLinkProps {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeChunkLineRanges, type ChunkForPreview } from "./chunkBoundaries";
+import { canMergeChunkRanges, chunkLocalSplitLines, computeChunkLineRanges, type ChunkForPreview } from "./chunkBoundaries";
 
 const chunk = (original_text: string, position = 0): ChunkForPreview => ({
-  original_text, position, type: "TEMAT", status: "approved",
+  id: position + 1, original_text, position, type: "TEMAT", status: "approved",
 });
 
 describe("computeChunkLineRanges", () => {
@@ -42,5 +42,22 @@ describe("computeChunkLineRanges", () => {
     expect(computeChunkLineRanges(["a", " a", "", "b"], [chunk("a\n\n"), chunk(" a\n\n"), chunk("b\r")])).toEqual([
       { chunkIndex: 1, startLine: 1, endLine: 2 },
     ]);
+  });
+});
+
+describe("chunk boundary actions", () => {
+  const first = { chunkIndex: 0, startLine: 5, endLine: 7 };
+  const next = { chunkIndex: 1, startLine: 8, endLine: 9 };
+  it("offers merge only for contiguous lines and consecutive backend chunks", () => {
+    const chunks = [chunk("a", 0), chunk("b", 1), chunk("c", 2)];
+    expect(canMergeChunkRanges(first, next, chunks)).toBe(true);
+    expect(canMergeChunkRanges(first, undefined, chunks)).toBe(false);
+    expect(canMergeChunkRanges(first, { ...next, startLine: 9 }, chunks)).toBe(false);
+    expect(canMergeChunkRanges(first, { ...next, chunkIndex: 2 }, chunks)).toBe(false);
+    expect(canMergeChunkRanges(first, next, [chunk("a", 0), chunk("b", 2)])).toBe(false);
+  });
+  it("converts global split points to sorted local indices, excluding the start and outside lines", () => {
+    expect(chunkLocalSplitLines(new Set([7, 5, 6, 4, 8]), first)).toEqual([1, 2]);
+    expect(chunkLocalSplitLines(new Set(), first)).toEqual([]);
   });
 });
