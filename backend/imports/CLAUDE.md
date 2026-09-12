@@ -36,6 +36,10 @@ imports/
 
 ## Scripts
 
+| Script | Purpose | DB Access |
+|--------|---------|-----------|
+| `rebuild_image_catalog_from_extracted.py` | One-document pilot: reconstruct missing URL image catalog from original `text_extracted` | ORM (SQLAlchemy); reads in dry-run, writes only with `--apply` |
+
 ### `check_pdf_text_layer.py`
 
 Diagnostic for the book-PDF-import workflow: extracts text page-by-page with `pypdf` and reports what fraction of pages come back empty/near-empty. A high empty-page ratio means the PDF is scanned images with no embedded text layer and needs OCR (`test_code/ocr_mistral.py`, Mistral OCR API); a low ratio means the text layer can be used directly (no OCR cost/latency needed) before running it through `book_normalize.py` / `extract_references.py` and the rest of the chapter-based analysis pipeline. **Does not touch the Lenie database.**
@@ -376,6 +380,24 @@ python imports/strip_webpage_images_backfill.py --only-base64 --apply # the wors
 - `--limit N` — max number of documents to process
 - `--only-base64` — restrict to documents with a `data:image` URI in `text_md`
 - `--delay SECONDS` — sleep after each commit, to go easy on the NAS (default: 0.2)
+
+### `rebuild_image_catalog_from_extracted.py`
+
+One-off pilot: reconstructs missing URL-sourced `document_images` from the original raw markdown in `text_extracted`, using `library.article_cleaner.extract_inline_images()`. Discards the transformed text and never modifies `text_md` or `text_extracted`; no source HTML is fetched or re-extracted. Processes exactly one required document ID. Refuses missing documents, types other than `webpage`/`link`, empty snapshots, existing image rows with `storage_key IS NULL`, or any `document_analysis_runs`, `document_chunks`, or `document_embeddings` for that document. Analysis data requires a separate reviewed procedure. Refusal returns exit code `1`; a successful dry-run/write or a snapshot with no images returns `0`. Storage-backed image rows are left untouched.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`. Reads in both modes; only `--apply` calls `replace_document_images()` and commits.
+
+**Running:**
+```bash
+cd backend
+python imports/rebuild_image_catalog_from_extracted.py --id 10482          # dry-run (default)
+python imports/rebuild_image_catalog_from_extracted.py --id 10482 --apply  # write changes
+```
+
+**Arguments:**
+- `--id N` — required document id (single-document pilot, no bulk mode)
+- `--apply` — write to the database (default: dry-run only, reports image URLs/alts and counts)
+- `-v` / `--verbose` — enable debug logging
 
 ### `organization_descriptions_backfill.py`
 
