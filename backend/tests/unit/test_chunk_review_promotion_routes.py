@@ -130,6 +130,36 @@ def test_page_metadata_suggestions_missing_doc_404(client):
     assert resp.status_code == 404
 
 
+def test_document_images_marks_local_vs_url_source(client):
+    client.session.get.return_value = SimpleNamespace(id=42)
+
+    storage_img = SimpleNamespace(
+        position=0, url=None, caption_text="Rysunek 1", alt_text=None,
+        page_number=3, chapter_position=1, storage_key="documents/uuid/images/0.png",
+    )
+    url_img = SimpleNamespace(
+        position=1, url="https://example.test/photo.jpg", caption_text=None,
+        alt_text="Zdjęcie", page_number=None, chapter_position=None, storage_key=None,
+    )
+    query = MagicMock()
+    query.filter.return_value.order_by.return_value.all.return_value = [storage_img, url_img]
+    client.session.query.return_value = query
+
+    with (
+        patch("library.config_loader.load_config", return_value={}),
+        patch("library.storage.storage_from_config") as storage_factory,
+    ):
+        storage_factory.return_value.presigned_get_url.return_value = "https://minio.example/presigned"
+        resp = client.get("/document/42/images")
+
+    assert resp.status_code == 200
+    items = resp.get_json()["images"]
+    assert items[0]["is_local"] is True
+    assert items[0]["url"] == "https://minio.example/presigned"
+    assert items[1]["is_local"] is False
+    assert items[1]["url"] == "https://example.test/photo.jpg"
+
+
 @pytest.mark.parametrize("marker", ["[img0]", "[img0: Photo]"])
 def test_reclean_preview_preserves_existing_images(client, marker):
     from library.db.models import DocumentImage

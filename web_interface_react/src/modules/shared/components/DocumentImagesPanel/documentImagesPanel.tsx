@@ -14,6 +14,7 @@ export interface DocumentImageItem {
   alt_text: string | null;
   page_number: number | null;
   chapter_position: number | null;
+  is_local: boolean;
 }
 
 interface Props {
@@ -78,17 +79,29 @@ const DocumentImagesPanel: React.FC<Props> = ({ docId }) => {
               {images.map((img, idx) => (
                 <figure key={`${img.position ?? idx}`} style={{ width: 160, margin: 0 }}>
                   {img.url ? (
-                    <a href={img.url} target="_blank" rel="noreferrer">
-                      <img
-                        src={img.url}
-                        alt={img.alt_text ?? ""}
-                        loading="lazy"
+                    <div style={{ position: "relative" }}>
+                      <a href={img.url} target="_blank" rel="noreferrer">
+                        <img
+                          src={img.url}
+                          alt={img.alt_text ?? ""}
+                          loading="lazy"
+                          style={{
+                            width: "100%", height: 110, objectFit: "cover",
+                            borderRadius: 4, border: "1px solid #cbd5e1", background: "#fff",
+                          }}
+                        />
+                      </a>
+                      <span
+                        title={img.is_local ? "Kopia w storage (MinIO)" : "Zewnętrzny URL (poza Lenie)"}
                         style={{
-                          width: "100%", height: 110, objectFit: "cover",
-                          borderRadius: 4, border: "1px solid #cbd5e1", background: "#fff",
+                          position: "absolute", top: 4, left: 4, fontSize: "0.72em",
+                          padding: "1px 5px", borderRadius: 4, color: "#fff",
+                          background: img.is_local ? "rgba(22,101,52,0.85)" : "rgba(30,41,59,0.75)",
                         }}
-                      />
-                    </a>
+                      >
+                        {img.is_local ? "📦 storage" : "🔗 zewnętrzny"}
+                      </span>
+                    </div>
                   ) : (
                     <div style={{
                       width: "100%", height: 110, borderRadius: 4, border: "1px dashed #cbd5e1",
