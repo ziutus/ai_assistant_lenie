@@ -132,6 +132,31 @@ class TestScopeChapterRun:
         with pytest.raises(ValueError, match="out of range"):
             service.create_run(doc_id=77, model="m", mode="article", scope_chapter=42)
 
+    @pytest.mark.parametrize("marker", ["[img0]", "[img0: Photo]"])
+    def test_reclean_preserves_existing_images(self, monkeypatch, session, book_env, marker):
+        from library.db.models import DocumentImage
+
+        existing = DocumentImage(document_id=77, position=0, url="https://example.test/photo.jpg")
+        catalog = [existing]
+
+        def execute(statement):
+            if getattr(statement, "is_delete", False) and statement.table.name == "document_images":
+                catalog.clear()
+            return MagicMock()
+
+        session.execute.side_effect = execute
+        doc = FakeBookDoc()
+        doc.text_md = "An article paragraph with enough text for cleanup. " * 5 + "\n\n" + marker
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda *_a, **_kw: [])
+
+        DocumentAnalysisService(session).create_run(
+            doc_id=77, model="m", mode="article", split_only=True, reclean=True,
+        )
+
+        assert any(isinstance(item, DocumentChunk) for item in session.added)
+        assert catalog == [existing]
+
     def test_reclean_applies_current_footer_rules_before_split(self, monkeypatch, session, book_env):
         class WpDoc(FakeBookDoc):
             text_md = None
