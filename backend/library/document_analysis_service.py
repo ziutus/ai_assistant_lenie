@@ -601,6 +601,11 @@ class DocumentAnalysisService:
                 replace_document_images(session, doc.id, cleaned["images"])
             log(f"reclean: {original_length:,} -> {len(text):,} chars (source unchanged)")
 
+        if not is_transcript and getattr(doc, "document_type", None) in ("webpage", "link"):
+            from library.article_cleaner import strip_image_markers
+
+            text = strip_image_markers(text)
+
         scope: str | None = None
         author_bio = None
         author_bio_position = None
