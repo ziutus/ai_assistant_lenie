@@ -1688,10 +1688,13 @@ def document_obsidian_note_by_id(doc_id: int):
 
 @bp.route("/document/<int:doc_id>/images", methods=["GET"])
 def document_images(doc_id: int):
-    """Full list of a document's storage-backed images (book PDF illustrations).
+    """Full list of a document's images — storage-backed (book PDF illustrations)
+    and/or url-sourced (webpage/link, article_cleaner.py's document_images).
 
     Same item shape as the "images" field of GET /document/<id>/chapter/<pos>,
-    minus "inline" (no single chapter's text to check markers against here).
+    minus "inline" (no single chapter's text to check markers against here),
+    plus "is_local": True when the image was pulled from ObjectStorage
+    (storage_key set) rather than left at its original remote URL.
     Diagnostic/editor use — the reader itself only ever calls the per-chapter
     endpoint above.
     """
@@ -1721,6 +1724,7 @@ def document_images(doc_id: int):
                 "alt_text": img.alt_text,
                 "page_number": img.page_number,
                 "chapter_position": img.chapter_position,
+                "is_local": img.storage_key is not None,
             }
             for img in images
         ],
