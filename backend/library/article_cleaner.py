@@ -17,6 +17,21 @@ from library.cleanup_rules import _bump_hit_counts, host_from_url, load_active_r
 from library.lenie_markdown import links_correct, md_square_brackets_in_one_line
 
 _IMG_MARKER_RE = re.compile(r'^\[img(\d+)(?::\s*[^\]]*)?\]\s*$')
+_IMG_MARKER_INLINE_RE = re.compile(r'\[img\d+(?::\s*[^\]]*)?\]')
+
+
+def strip_image_markers(text: str) -> str:
+    """Remove [imgN]/[imgN: alt] markers from already-cleaned text.
+
+    Used to keep image markers out of chunk splitting, NER and embedding
+    input for webpage/link documents once extract_inline_images() has
+    already moved the image data into document_images — the marker itself
+    carries no information those pipelines need.
+    """
+    text = _IMG_MARKER_INLINE_RE.sub('', text)
+    text = re.sub(r'[ \t]+\n', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 def _detect_h2_ads(text: str) -> set:
