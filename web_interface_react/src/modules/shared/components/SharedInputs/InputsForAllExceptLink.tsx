@@ -4,6 +4,28 @@ import ArticlePreparationPanel from "../ArticlePreparationPanel/articlePreparati
 import MarkdownLineEditor from "../MarkdownLineEditor/markdownLineEditor";
 import ArticleSourceComparison from "../ArticleSourceComparison/articleSourceComparison";
 import EntitiesPanel from "../EntitiesPanel/entitiesPanel";
+import axios from "axios";
+import { AuthorizationContext } from "../../context/authorizationContext";
+import type { ChunkForPreview } from "../../utils/chunkBoundaries";
+
+// Mounted only in the webpage branch; its key resets the cache on document/run changes.
+const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolean }) => {
+  const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [chunks, setChunks] = React.useState<ChunkForPreview[] | null>(null);
+  const runId = formik.values.analysis_run_id;
+  const requestChunks = async () => {
+    if (!runId || chunks !== null) return;
+    const response = await axios.get<{ chunks: Array<Omit<ChunkForPreview, "original_text"> & { original_text?: string | null }> }>(
+      `${apiUrl}/analysis_run/${runId}/chunks`, { headers: { "x-api-key": `${apiKey ?? ""}` } },
+    );
+    setChunks(response.data.chunks.map(({ position, type, status, original_text }) => ({
+      position, type, status, original_text: original_text ?? "",
+    })));
+  };
+  return <MarkdownLineEditor formik={formik} disabled={disabled}
+    chunks={runId ? chunks ?? undefined : undefined}
+    onRequestChunks={runId && chunks === null ? requestChunks : undefined} />;
+};
 
 interface InputsForAllExceptLinkProps {
   formik: any;
@@ -32,7 +54,8 @@ const InputsForAllExceptLink = ({
           gap: 14,
           alignItems: "start",
         }}>
-          <MarkdownLineEditor formik={formik} disabled={isLoading} />
+          <WebpageLineEditor key={`${formik.values.id}-${formik.values.analysis_run_id}`}
+            formik={formik} disabled={isLoading} />
           <ArticleSourceComparison formik={formik} />
         </div>
       ) : formik.values.text_md && (

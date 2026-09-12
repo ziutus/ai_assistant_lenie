@@ -1,6 +1,11 @@
 import React from "react";
 import axios from "axios";
 import { AuthorizationContext } from "../../context/authorizationContext";
+import { computeChunkLineRanges, type ChunkForPreview } from "../../utils/chunkBoundaries";
+
+const chunkColor = (type: string) => ({
+  TEMAT: "#22c55e", REKLAMA: "#f97316", SZUM: "#94a3b8", ZRODLA: "#3b82f6",
+}[type] ?? "#64748b");
 
 type MarkKind = "author" | "date" | "sources" | "links" | "ads" | "persons";
 
@@ -8,10 +13,27 @@ const emptyMarks = (): Record<MarkKind, Set<number>> => ({
   author: new Set(), date: new Set(), sources: new Set(), links: new Set(), ads: new Set(), persons: new Set(),
 });
 
-const MarkdownLineEditor = ({ formik, disabled }: { formik: any; disabled: boolean }) => {
+const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks }: {
+  formik: any; disabled: boolean; chunks?: ChunkForPreview[]; onRequestChunks?: () => Promise<void>;
+}) => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const value: string = formik.values.text_md || formik.values.text || "";
-  const lines: string[] = value.split("\n");
+  const lines = React.useMemo(() => value.split("\n"), [value]);
+  const ranges = React.useMemo(() => computeChunkLineRanges(lines, chunks ?? []), [lines, chunks]);
+  const [showChunkPreview, setShowChunkPreview] = React.useState(false);
+  const [loadingChunks, setLoadingChunks] = React.useState(false);
+  const [chunkError, setChunkError] = React.useState("");
+  const toggleChunkPreview = async () => {
+    if (loadingChunks) return;
+    setChunkError("");
+    if (!showChunkPreview && onRequestChunks) {
+      setLoadingChunks(true);
+      try { await onRequestChunks(); }
+      catch { setChunkError("Nie udało się pobrać chunków. Spróbuj ponownie."); return; }
+      finally { setLoadingChunks(false); }
+    }
+    setShowChunkPreview(current => !current);
+  };
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(value);
   const [marks, setMarks] = React.useState<Record<MarkKind, Set<number>>>(emptyMarks);
@@ -140,7 +162,14 @@ const MarkdownLineEditor = ({ formik, disabled }: { formik: any; disabled: boole
         <button type="button" className="button" onClick={() => setCompactLabels(current => !current)}>
           {compactLabels ? "Pełne nazwy przycisków" : "Skróty przycisków"}
         </button>
+        {(!!chunks?.length || !!onRequestChunks) && (
+          <button type="button" className="button" disabled={loadingChunks}
+            aria-pressed={showChunkPreview} onClick={toggleChunkPreview}>
+            {loadingChunks ? "Pobieram chunki…" : showChunkPreview ? "Skryj podział na chunki" : "Pokaż podział na chunki"}
+          </button>
+        )}
       </div>
+      {chunkError && <div role="alert" style={{ marginBottom: 8 }}>{chunkError}</div>}
       {editing ? (
         <div>
           <textarea value={draft} disabled={disabled} onChange={e => setDraft(e.target.value)}
@@ -173,14 +202,35 @@ const MarkdownLineEditor = ({ formik, disabled }: { formik: any; disabled: boole
             <button type="button" onClick={() => setMarks(emptyMarks())}>{label("0", "Wyczyść zaznaczenia")}</button>
           </div>
           {message && <div style={{ marginBottom: 8 }}>{message}</div>}
+          {showChunkPreview && !!chunks?.length && ranges.length < chunks.length && (
+            <div style={{ marginBottom: 8, fontSize: "0.85em", color: "#64748b" }}>
+              {chunks.length - ranges.length} z {chunks.length} chunków nie udało się dopasować do aktualnego tekstu (tekst zmienił się od czasu analizy).
+            </div>
+          )}
+          {showChunkPreview && chunks?.length === 0 && (
+            <div style={{ marginBottom: 8, fontSize: "0.85em", color: "#64748b" }}>Brak chunków w tej analizie.</div>
+          )}
           <div style={{ border: "1px solid #e2e8f0", borderRadius: 5, maxHeight: "68vh", overflow: "auto" }}>
-            {lines.map((line, index) => (
+            {lines.map((line, index) => {
+              const range = showChunkPreview ? ranges.find(range => range.startLine <= index && index <= range.endLine) : undefined;
+              const chunk = range && chunks ? chunks[range.chunkIndex] : undefined;
+              return (
               <div key={`${index}-${line.slice(0, 30)}`} style={{
-                display: "grid", gridTemplateColumns: compactLabels ? "46px repeat(9, 34px) minmax(280px, 1fr)" : "46px repeat(9, auto) minmax(280px, 1fr)", gap: 5,
+                display: "grid", gridTemplateColumns: `${showChunkPreview && ranges.length ? "120px" : "46px"} repeat(9, ${compactLabels ? "34px" : "auto"}) minmax(280px, 1fr)`, gap: 5,
                 alignItems: "start", padding: "3px 6px", borderBottom: "1px solid #f1f5f9",
+                borderLeft: chunk ? `4px solid ${chunkColor(chunk.type)}` : undefined,
                 background: marked("persons", index) ? "#fef3c7" : marked("author", index) ? "#f3e8ff" : marked("date", index) ? "#dbeafe" : marked("sources", index) ? "#ede9fe" : marked("links", index) ? "#dcfce7" : marked("ads", index) ? "#fee2e2" : index % 2 ? "#fafafa" : "white",
               }}>
-                <span style={{ color: "#94a3b8", textAlign: "right", paddingTop: 3 }}>{index + 1}</span>
+                <span style={{ color: "#94a3b8", textAlign: "right", paddingTop: 3 }}>
+                  {chunk && range && range.startLine === index && (
+                    <span title={`chunk #${range.chunkIndex + 1} — ${chunk.type} — ${chunk.status}`}
+                      style={{ display: "inline-block", borderRadius: 8, padding: "1px 3px", fontSize: 10,
+                        color: chunkColor(chunk.type), border: `1px solid ${chunkColor(chunk.type)}`, marginRight: 3 }}>
+                      #{range.chunkIndex + 1} {chunk.type}
+                    </span>
+                  )}
+                  {index + 1}
+                </span>
                 <button type="button" title="Usuń linię" onClick={() => removeLine(index)}>{label("×", "Usuń")}</button>
                 <button type="button" title="Usuń wszystko przed tą linią" onClick={() => keepFrom(index)}>{label("⇤", "Początek")}</button>
                 <button type="button" title="Usuń wszystko po tej linii" onClick={() => keepThrough(index)}>{label("⇥", "Koniec")}</button>
@@ -194,7 +244,8 @@ const MarkdownLineEditor = ({ formik, disabled }: { formik: any; disabled: boole
                   {line || <em style={{ color: "#cbd5e1" }}>pusta linia</em>}
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
