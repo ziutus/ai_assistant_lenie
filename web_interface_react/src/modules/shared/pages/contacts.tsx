@@ -316,10 +316,21 @@ const Contacts = () => {
                 {contact.relationships.map((r, index) => (
                   <span
                     key={index}
-                    title={r.direction === "incoming" ? `${r.other_name} — ${r.relationship_type} — Ty` : undefined}
+                    title={
+                      r.direction === "outgoing"
+                        ? `${[contact.first_name, contact.last_name].filter(Boolean).join(" ")} → ${r.relationship_type} → ${r.other_name}`
+                        : `${r.other_name} → ${r.relationship_type} → ${[contact.first_name, contact.last_name].filter(Boolean).join(" ")} (czyli ta osoba jest „${r.relationship_type}" dla ${r.other_name})`
+                    }
                     style={{ fontSize: "0.8em", color: "#7c3aed", background: "#f3e8ff", borderRadius: 4, padding: "1px 6px" }}
                   >
-                    👥 {r.relationship_type}: {r.other_name}
+                    {/* Direction matters for correct reading: relationship_type describes the OTHER
+                        person on an outgoing row ("żona: Anna" = "[my] wife: Anna"), but describes
+                        THIS contact on an incoming row — showing it the same way would misleadingly
+                        read as "Artur: żona" on Anna's own row. Word order + arrow disambiguate
+                        without guessing Polish case inflection (żona/mąż). */}
+                    {r.direction === "outgoing"
+                      ? <>👥 {r.relationship_type}: {r.other_name}</>
+                      : <>👥 {r.other_name} → {r.relationship_type}</>}
                   </span>
                 ))}
               </span>
