@@ -845,7 +845,9 @@ def reclean_preview(doc_id: int):
         doc.quality = None
         doc.entities_checked_at = None
         doc.ner_unavailable_at = None
-        replace_document_images(session, doc.id, cleaned["images"])
+        # Empty extraction from already-cleaned text must not clear the catalog.
+        if cleaned["images"]:
+            replace_document_images(session, doc.id, cleaned["images"])
         if cleaned.get("info_sources"):
             from library.information_provenance import refresh_rule_based_sources
 

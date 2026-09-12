@@ -128,3 +128,33 @@ def test_page_metadata_suggestions_missing_doc_404(client):
     client.session.get.return_value = None
     resp = client.get("/document/999/page_metadata_suggestions")
     assert resp.status_code == 404
+
+
+@pytest.mark.parametrize("marker", ["[img0]", "[img0: Photo]"])
+def test_reclean_preview_preserves_existing_images(client, marker):
+    from library.db.models import DocumentImage
+
+    existing = DocumentImage(document_id=42, position=0, url="https://example.test/photo.jpg")
+    catalog = [existing]
+
+    def execute(statement):
+        if getattr(statement, "is_delete", False) and statement.table.name == "document_images":
+            catalog.clear()
+        return MagicMock()
+
+    client.session.execute.side_effect = execute
+    client.session.get.return_value = SimpleNamespace(
+        id=42, document_type="webpage", url="https://example.test/article",
+        text_md=("An article paragraph with enough text for deterministic cleanup. " * 5
+                 + "\n\n" + marker),
+    )
+    with (
+        patch("library.document_editing.document_has_embeddings", return_value=False),
+        patch.object(crr, "_site_rules_file_status", return_value={"ok": True}),
+    ):
+        response = client.post("/document/42/reclean_preview", json={"save": True})
+
+    assert response.status_code == 200
+    assert response.get_json()["saved"] is True
+    client.session.commit.assert_called_once()
+    assert catalog == [existing]
