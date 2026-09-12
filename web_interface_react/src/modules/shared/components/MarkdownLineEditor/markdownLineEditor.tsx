@@ -13,8 +13,9 @@ const emptyMarks = (): Record<MarkKind, Set<number>> => ({
   author: new Set(), date: new Set(), sources: new Set(), links: new Set(), ads: new Set(), persons: new Set(),
 });
 
-const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks, onRefreshChunks, onChangeChunkType, onMergeChunk, onSplitChunk }: {
+const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestChunks, onRefreshChunks, onChangeChunkType, onMergeChunk, onSplitChunk }: {
   formik: any; disabled: boolean; chunks?: ChunkForPreview[]; onRequestChunks?: () => Promise<void>;
+  chunksStale?: boolean;
   onRefreshChunks?: () => Promise<void>;
   onChangeChunkType?: (id: number, type: string) => Promise<void>;
   onMergeChunk?: (id: number) => Promise<void>;
@@ -34,6 +35,7 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks, onRefre
   React.useEffect(() => { setPendingSplits({}); }, [value]);
   const mutateChunk = async (action: () => Promise<void>) => {
     if (!showChunkPreview || disabled || mutationInFlight.current) return;
+    if (chunksStale && !window.confirm("Tekst dokumentu zmienił się od ostatniego wczytania chunków. Ta akcja użyje zapisanej wcześniej treści chunka, nie najnowszych zmian w tekście na ekranie. Kontynuować?")) return;
     mutationInFlight.current = true;
     setMutatingChunk(true);
     setChunkError("");
