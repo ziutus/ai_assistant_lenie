@@ -9,6 +9,12 @@ import type { ContactGroup } from "./contactGroups";
 // of the NER persons registry (persons.tsx/organizations.tsx), see
 // backend/library/contact_routes.py.
 
+export interface ContactRelationshipSummary {
+  relationship_type: string;
+  direction: "outgoing" | "incoming";
+  other_name: string;
+}
+
 export interface ContactListItem {
   id: number;
   category_id: number;
@@ -20,6 +26,7 @@ export interface ContactListItem {
   email: string | null;
   has_whatsapp_profile: boolean;
   is_archived: boolean;
+  relationships: ContactRelationshipSummary[];
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -303,6 +310,19 @@ const Contacts = () => {
             )}
             {contact.has_whatsapp_profile && (
               <span title="Ma profil sąsiedzki zbudowany z WhatsApp">💬</span>
+            )}
+            {contact.relationships.length > 0 && (
+              <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {contact.relationships.map((r, index) => (
+                  <span
+                    key={index}
+                    title={r.direction === "incoming" ? `${r.other_name} — ${r.relationship_type} — Ty` : undefined}
+                    style={{ fontSize: "0.8em", color: "#7c3aed", background: "#f3e8ff", borderRadius: 4, padding: "1px 6px" }}
+                  >
+                    👥 {r.relationship_type}: {r.other_name}
+                  </span>
+                ))}
+              </span>
             )}
             {contact.phone_number && <span style={{ color: "#667" }}>{contact.phone_number}</span>}
             {contact.email && <span style={{ color: "#667" }}>{contact.email}</span>}
