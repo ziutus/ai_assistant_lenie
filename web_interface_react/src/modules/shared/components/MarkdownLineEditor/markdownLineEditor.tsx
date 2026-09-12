@@ -163,10 +163,23 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks }: {
           {compactLabels ? "Pełne nazwy przycisków" : "Skróty przycisków"}
         </button>
         {(!!chunks?.length || !!onRequestChunks) && (
-          <button type="button" className="button" disabled={loadingChunks}
-            aria-pressed={showChunkPreview} onClick={toggleChunkPreview}>
+          // A plain <button> would be disabled by the ancestor <fieldset
+          // disabled={contentLocked}> on webpage.tsx along with every real
+          // editing control — but this toggle only reveals a read-only
+          // overlay (borders/badges on plain <div>s, unaffected by
+          // fieldset) and never mutates the document, so it must stay
+          // usable on an already-embedded (locked) document too. A <span>
+          // isn't form-associated, so native fieldset disabling doesn't
+          // apply to it.
+          <span
+            role="button" tabIndex={loadingChunks ? -1 : 0} className="button"
+            aria-pressed={showChunkPreview} aria-disabled={loadingChunks}
+            style={{ cursor: loadingChunks ? "default" : "pointer", opacity: loadingChunks ? 0.6 : 1 }}
+            onClick={toggleChunkPreview}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleChunkPreview(); } }}
+          >
             {loadingChunks ? "Pobieram chunki…" : showChunkPreview ? "Skryj podział na chunki" : "Pokaż podział na chunki"}
-          </button>
+          </span>
         )}
       </div>
       {chunkError && <div role="alert" style={{ marginBottom: 8 }}>{chunkError}</div>}
