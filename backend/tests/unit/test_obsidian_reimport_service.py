@@ -26,7 +26,7 @@ from library.text_functions import get_hash
 
 
 def _make_vault(tmp_path):
-    for subfolder in PILOT_SUBFOLDERS:
+    for subfolder, _is_private in PILOT_SUBFOLDERS:
         (tmp_path / subfolder).mkdir(parents=True, exist_ok=True)
     return tmp_path
 
@@ -45,6 +45,7 @@ def _make_doc(doc_id=101, obsidian_source_hash=None, tags=None):
     doc.text_md = "Treść notatki"
     doc.language = None
     doc.obsidian_source_hash = obsidian_source_hash
+    doc.is_private = False
     doc.tags = tags
     doc.processing_status = "EMBEDDING_EXIST"
     doc.processing_error_code = None
@@ -126,14 +127,16 @@ class TestMergeTags:
 
 
 class TestExecuteObsidianReimport:
-    def test_new_note_creates_document_and_embeddings(self, tmp_path):
+    @pytest.mark.parametrize("subfolder,is_private", PILOT_SUBFOLDERS)
+    @pytest.mark.parametrize("single_note", [False, True])
+    def test_new_note_creates_document_and_embeddings(self, tmp_path, subfolder, is_private, single_note):
         vault = _make_vault(tmp_path)
-        note = vault / "02-wiedza/Informatyka/kubernetes-podstawy.md"
+        note = vault / subfolder / "kubernetes-podstawy.md"
         note.write_text("# Kubernetes\n\nPodstawy orkiestracji.", encoding="utf-8")
 
         doc = _make_doc()
         session = MagicMock()
-        job = MagicMock(id="job-1", parameters={})
+        job = MagicMock(id="job-1", parameters={"relative_path": note.relative_to(vault).as_posix()} if single_note else {})
 
         with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
              patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
@@ -150,7 +153,9 @@ class TestExecuteObsidianReimport:
 
         mock_service_cls.return_value.import_document.assert_called_once()
         call_kwargs = mock_service_cls.return_value.import_document.call_args.kwargs
-        assert call_kwargs["url"] == "obsidian://02-wiedza/Informatyka/kubernetes-podstawy.md"
+        assert call_kwargs["url"] == f"obsidian://{subfolder}/kubernetes-podstawy.md"
+        assert call_kwargs["is_private"] is is_private
+        assert doc.is_private is is_private
         assert call_kwargs["document_type"] == "obsidian_note"
         assert call_kwargs["processing_status"] == "READY_FOR_EMBEDDING"
         assert call_kwargs["skip_if_exists"] is True
@@ -369,6 +374,7 @@ class TestSingleNoteReimport:
         mock_service_cls.return_value.import_document.assert_called_once()
         call_kwargs = mock_service_cls.return_value.import_document.call_args.kwargs
         assert call_kwargs["url"] == "obsidian://02-wiedza/Informatyka/kubernetes-podstawy.md"
+        assert call_kwargs["is_private"] is False
         assert summary == {"scanned": 1, "created": 1, "updated": 0, "skipped": 0, "failed": 0}
 
     def test_relative_path_missing_file_is_reported_failed(self, tmp_path):
@@ -468,7 +474,7 @@ class TestEmbeddingRecovery:
                      EmbeddingResult(text="first", embedding=[0.2], status="success"),
                      RuntimeError("provider unavailable"),
                  ]):
-                assert _reimport_one_note(session, MagicMock(), DocumentRepository(session), "model", tmp_path, note) == "failed"
+                assert _reimport_one_note(session, MagicMock(), DocumentRepository(session), "model", tmp_path, note, False) == "failed"
             assert session.scalars(select(DocumentEmbedding.text)).all() == ["old content"]
         engine.dispose()
 
@@ -487,7 +493,7 @@ class TestEmbeddingRecovery:
                  text="piece", embedding=[0.1, 0.2], status="success",
              )) as embed, \
              patch("library.obsidian_reimport_service.request_suggestions"):
-            outcome = _reimport_one_note(session, service, repo, "model", tmp_path, note)
+            outcome = _reimport_one_note(session, service, repo, "model", tmp_path, note, False)
 
         assert doc.processing_status == "EMBEDDING_EXIST"
         assert doc.processing_error_code is None
@@ -519,7 +525,7 @@ class TestEmbeddingRecovery:
              patch("library.obsidian_reimport_service._embedding_parts", return_value=["first", "second"]), \
              patch("library.embedding.get_embedding", side_effect=[success, failure, success, success]) as embed, \
              patch("library.obsidian_reimport_service.request_suggestions") as suggestions:
-            assert _reimport_one_note(session, service, repo, "model", tmp_path, note) == "failed"
+            assert _reimport_one_note(session, service, repo, "model", tmp_path, note, False) == "failed"
             session.rollback.assert_called_once()
             session.commit.assert_not_called()
             suggestions.assert_not_called()
@@ -528,7 +534,7 @@ class TestEmbeddingRecovery:
             # import_document commits new rows before embedding; the next run
             # must retry that existing row even though the file hasn't changed.
             get_doc.return_value = doc
-            assert _reimport_one_note(session, service, repo, "model", tmp_path, note) == "updated"
+            assert _reimport_one_note(session, service, repo, "model", tmp_path, note, False) == "updated"
 
         assert embed.call_count == 4
         assert doc.obsidian_source_hash == get_hash("new content")
@@ -545,8 +551,26 @@ class TestEmbeddingRecovery:
         with patch("library.obsidian_reimport_service.Document.get_by_url", return_value=doc), \
              patch("library.embedding.get_embedding") as embed, \
              patch("library.obsidian_reimport_service.request_suggestions"):
-            assert _reimport_one_note(session, service, repo, "model", tmp_path, note) == "updated"
-            assert _reimport_one_note(session, service, repo, "model", tmp_path, note) == "skipped"
+            assert _reimport_one_note(session, service, repo, "model", tmp_path, note, False) == "updated"
+            assert _reimport_one_note(session, service, repo, "model", tmp_path, note, False) == "skipped"
         assert doc.processing_status == "DOCUMENT_INTO_DATABASE"
         assert doc.obsidian_source_hash == get_hash(content)
         embed.assert_not_called()
+
+
+@pytest.mark.parametrize("is_private", [True, False])
+@pytest.mark.parametrize("unchanged", [True, False])
+def test_reimport_synchronizes_privacy(tmp_path, is_private, unchanged):
+    note = tmp_path / "note.md"
+    note.write_text("body", encoding="utf-8")
+    doc = _make_doc(obsidian_source_hash=get_hash("body") if unchanged else None)
+    doc.is_private = not is_private
+    session, service, repo = MagicMock(), MagicMock(), MagicMock()
+    with patch("library.obsidian_reimport_service.Document.get_by_url", return_value=doc), \
+         patch("library.obsidian_reimport_service._has_complete_embeddings", return_value=True), \
+         patch("library.obsidian_reimport_service._embed_note", return_value=1), \
+         patch("library.obsidian_reimport_service.request_suggestions"):
+        result = _reimport_one_note(session, service, repo, "model", tmp_path, note, is_private)
+    assert result == ("skipped" if unchanged else "updated")
+    assert doc.is_private is is_private
+    session.commit.assert_called_once()

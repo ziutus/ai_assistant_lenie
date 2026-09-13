@@ -658,6 +658,8 @@ class Document(Base):
     # edited one without trusting Obsidian Sync's file mtime, which is not
     # guaranteed to survive cross-device sync.
     obsidian_source_hash: Mapped[str | None] = mapped_column(String(64))
+    # Personal-data warning for user content, distinct from source paywall/requires_login.
+    is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     # Short LLM-generated retrieval aliases, e.g. "audyt NDA, sprawdzenie umowy".
     # Separate from the controlled thematic taxonomy in ``tags``.
     search_terms: Mapped[str | None] = mapped_column(Text)
@@ -962,6 +964,7 @@ class Document(Base):
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "obsidian_note_paths": self.obsidian_note_paths or [],
             "quality": self.quality,
+            "is_private": self.is_private,
         }
 
 
@@ -3291,6 +3294,37 @@ class ContactGroupMembership(Base):
     __table_args__ = (
         Index("idx_contact_group_memberships_group_id", "group_id"),
     )
+
+
+class ContactGroupEvent(Base):
+    """A personal life event tied to a contact group.
+
+    A journal note can describe multiple events, and an event need not have
+    a note yet. Group-level only for now, without per-attendee tracking.
+    """
+
+    __tablename__ = "contact_group_events"
+    __table_args__ = (
+        Index("idx_contact_group_events_group_id", "group_id"),
+        Index("idx_contact_group_events_event_date", "event_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("contact_groups.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    source_document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True,
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    group: Mapped["ContactGroup"] = relationship(foreign_keys=[group_id])
+    source_document: Mapped["Document | None"] = relationship(foreign_keys=[source_document_id])
+
+    def __repr__(self) -> str:
+        return f"ContactGroupEvent(id={self.id!r}, group_id={self.group_id!r}, title={self.title!r})"
 
 
 class ContactChangeLog(Base):

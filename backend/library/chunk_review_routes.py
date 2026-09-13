@@ -1568,6 +1568,7 @@ def document_chapter(doc_id: int, position: int):
         "position": position,
         "title": title,
         "text": chapter_text,
+        "is_private": doc.is_private,
         "chapter_total": chapter_total,
         "references": references,
         "images": images,

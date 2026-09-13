@@ -1070,3 +1070,164 @@ class TestContactThumbnails:
                 assert _contact_dict(_make_contact(id_=id_, photo_thumbnail_storage_key=f"{id_}.jpg"))["photo_thumbnail_url"] is None
         factory.assert_called_once()
         assert storage.presigned_get_url.call_count == 2
+
+
+class TestContactGroupEvents:
+    @pytest.fixture
+    def event_session(self, monkeypatch):
+        from library.db.models import ContactGroupEvent
+
+        session = MagicMock()
+        event = ContactGroupEvent(
+            id=7, group_id=3, title="Meeting", event_date=dt.date(2026, 9, 1),
+            created_at=dt.datetime(2026, 9, 1), updated_at=dt.datetime(2026, 9, 1),
+        )
+        session.get.return_value = event
+        session.execute.return_value.scalars.return_value.all.return_value = [event]
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        return session, event
+
+    def test_get_group_and_events(self, event_session):
+        from library.contact_routes import contact_groups_get, contact_group_events_list
+
+        session, event = event_session
+        session.get.return_value = SimpleNamespace(id=3, name="Parents", description=None)
+        session.execute.return_value.scalar_one.return_value = 2
+        with Flask(__name__).test_request_context():
+            response, status = contact_groups_get(3)
+            assert status == 200
+            assert response.json["contact_group"]["count"] == 2
+            assert response.json["contact_group"]["events"][0]["id"] == event.id
+            response, status = contact_group_events_list(3)
+            assert status == 200
+            assert response.json["events"][0]["event_date"] == "2026-09-01"
+
+    def test_post(self, event_session):
+        from library.contact_routes import contact_group_events_add
+        from library.db.models import Document
+
+        session, _ = event_session
+        document = Document(id=8, title="Journal")
+        session.get.side_effect = lambda model, ident: document if model is Document else SimpleNamespace(id=3)
+        with Flask(__name__).test_request_context(method="POST", json={
+            "title": " Meeting ", "event_date": "2026-09-13", "summary": "Notes", "source_document_id": 8,
+        }):
+            response, status = contact_group_events_add(3)
+        assert status == 200
+        assert response.json["event"]["source_document_title"] == "Journal"
+        added = session.add.call_args.args[0]
+        assert added.title == "Meeting"
+        assert added.group_id == 3
+        assert added.event_date == dt.date(2026, 9, 13)
+        session.commit.assert_called_once()
+
+    def test_patch_and_delete(self, event_session):
+        from library.contact_routes import contact_group_events_update, contact_group_events_delete
+
+        session, event = event_session
+        with Flask(__name__).test_request_context(method="PATCH", json={
+            "title": "Updated", "event_date": "2026-09-12", "summary": None, "source_document_id": None,
+        }):
+            response, status = contact_group_events_update(7)
+        assert status == 200
+        assert response.json["event"]["title"] == "Updated"
+        assert event.event_date == dt.date(2026, 9, 12)
+        assert event.updated_at > dt.datetime(2026, 9, 1)
+        with Flask(__name__).test_request_context(method="DELETE"):
+            response, status = contact_group_events_delete(7)
+        assert status == 200
+        session.delete.assert_called_once_with(event)
+
+    @pytest.mark.parametrize("payload", [
+        {}, {"title": ""}, {"title": 4}, {"title": "x" * 256},
+        {"title": "OK", "event_date": "2026-02-30"},
+        {"title": "OK", "event_date": 123},
+        {"title": "OK", "event_date": "2026-09-13", "source_document_id": True},
+        {"title": "OK", "event_date": "2026-09-13", "summary": []}, ["invalid"],
+    ])
+    def test_invalid_post(self, event_session, payload):
+        from library.contact_routes import contact_group_events_add
+
+        session, _ = event_session
+        with Flask(__name__).test_request_context(method="POST", json=payload):
+            assert contact_group_events_add(3)[1] == 400
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("payload", [{"title": " "}, {"event_date": None}, {"source_document_id": []}])
+    def test_invalid_patch_is_atomic(self, event_session, payload):
+        from library.contact_routes import contact_group_events_update
+
+        session, event = event_session
+        with Flask(__name__).test_request_context(method="PATCH", json={"summary": "changed", **payload}):
+            assert contact_group_events_update(7)[1] == 400
+        assert event.summary is None
+        session.commit.assert_not_called()
+
+    def test_unknown_document(self, event_session):
+        from library.contact_routes import contact_group_events_add
+        from library.db.models import Document
+
+        session, _ = event_session
+        session.get.side_effect = lambda model, ident: None if model is Document else SimpleNamespace(id=3)
+        with Flask(__name__).test_request_context(method="POST", json={
+            "title": "OK", "event_date": "2026-09-13", "source_document_id": 999,
+        }):
+            assert contact_group_events_add(3)[1] == 400
+
+    @pytest.mark.parametrize("name,method", [
+        ("contact_groups_get", "GET"), ("contact_group_events_list", "GET"),
+        ("contact_group_events_add", "POST"), ("contact_group_events_update", "PATCH"),
+        ("contact_group_events_delete", "DELETE"),
+    ])
+    def test_missing_record(self, event_session, name, method):
+        from library import contact_routes
+
+        session, _ = event_session
+        session.get.return_value = None
+        with Flask(__name__).test_request_context(method=method, json={}):
+            assert getattr(contact_routes, name)(999)[1] == 404
+
+    def test_db_failure_rolls_back(self, event_session):
+        from library.contact_routes import contact_group_events_delete
+
+        session, _ = event_session
+        session.commit.side_effect = RuntimeError("DB failed")
+        with Flask(__name__).test_request_context(method="DELETE"):
+            assert contact_group_events_delete(7)[1] == 500
+        session.rollback.assert_called_once()
+
+
+    def test_contact_overview_joins_all_groups_and_caps_events(self, event_session):
+        from library.contact_routes import contacts_get
+        from library.db.models import ContactGroupEvent
+        from sqlalchemy.dialects import postgresql
+
+        session, event = event_session
+        event.group = None
+        # Simple namespaces match the existing endpoint-test convention.
+        events = [SimpleNamespace(
+            id=index, group_id=index, title="Meeting", event_date=dt.date(2026, 9, index),
+            summary=None, source_document_id=None, source_document=None,
+            created_at=None, updated_at=None, group=SimpleNamespace(name=f"Group {index}"),
+        ) for index in (3, 2)]
+        session.get.return_value = _make_contact()
+        captured = []
+
+        def execute(query):
+            result = MagicMock()
+            if query.column_descriptions[0].get("entity") is ContactGroupEvent:
+                captured.append(str(query.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})))
+                result.scalars.return_value.all.return_value = events
+            else:
+                result.all.return_value = []
+                result.scalars.return_value.all.return_value = []
+            return result
+
+        session.execute.side_effect = execute
+        with Flask(__name__).test_request_context():
+            response, status = contacts_get(1)
+        assert status == 200
+        assert [row["group_name"] for row in response.json["contact"]["group_events"]] == ["Group 3", "Group 2"]
+        assert "contact_group_memberships.contact_id = 1" in captured[0]
+        assert "ORDER BY contact_group_events.event_date DESC" in captured[0]
+        assert "LIMIT 20" in captured[0]

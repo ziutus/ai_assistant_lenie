@@ -67,7 +67,12 @@ OBSIDIAN_REIMPORT = "obsidian_reimport"
 # constant with the wrong, shortened name, so the folder was silently
 # skipped (a "configured subfolder missing" warning) from day one. Fixed in
 # Story 42.2 after NAS verification surfaced it.
-PILOT_SUBFOLDERS = ("02-wiedza/Informatyka", "02-wiedza/Geopolityka i polityka")
+# The root journal folder is private and carries a personal-data warning.
+PILOT_SUBFOLDERS: tuple[tuple[str, bool], ...] = (
+    ("02-wiedza/Informatyka", False),
+    ("02-wiedza/Geopolityka i polityka", False),
+    ("journal", True),
+)
 
 
 # Obsidian requires front matter to open on the file's very first line --
@@ -202,7 +207,8 @@ def _has_complete_embeddings(session: Session, doc_id: int, model: str, parts: l
 
 
 def _reimport_one_note(
-    session: Session, service: DocumentService, repo: DocumentRepository, model: str, vault_path: Path, note_path: Path
+    session: Session, service: DocumentService, repo: DocumentRepository, model: str, vault_path: Path, note_path: Path,
+    is_private: bool,
 ) -> str:
     """Read, hash-compare and, if needed, (re)import a single note.
 
@@ -240,7 +246,9 @@ def _reimport_one_note(
                 # Repairs legacy URL_ADDED rows without paying to embed them
                 # again. Empty/frontmatter-only notes have nothing to index.
                 status = "EMBEDDING_EXIST" if parts else "DOCUMENT_INTO_DATABASE"
-                if existing.processing_status != status or existing.processing_error_code is not None:
+                if (existing.processing_status != status or existing.processing_error_code is not None
+                        or existing.is_private != is_private):
+                    existing.is_private = is_private
                     existing.processing_status = status
                     existing.processing_error_code = None
                     session.commit()
@@ -256,6 +264,7 @@ def _reimport_one_note(
                 text=body,
                 text_md=body,
                 source="own",
+                is_private=is_private,
                 tags=_merge_tags(None, fm_tags),
             )
         else:
@@ -268,6 +277,7 @@ def _reimport_one_note(
             # search would return both the old and new versions.
             repo.embedding_delete(doc.id, model)
 
+        doc.is_private = is_private
         doc.processing_status = "READY_FOR_EMBEDDING"
         created = _embed_note(repo, doc, model)
         doc.processing_status = "EMBEDDING_EXIST" if created else "DOCUMENT_INTO_DATABASE"
@@ -294,17 +304,17 @@ def _reimport_one_note(
     return "created" if existing is None else "updated"
 
 
-def _resolve_note_path(vault_path: Path, relative_path: str) -> Path | None:
+def _resolve_note_path(vault_path: Path, relative_path: str) -> tuple[Path, bool] | None:
     """Resolve a watcher-supplied relative path, refusing anything outside
     the configured pilot subfolders (defence in depth against a path-
     traversal payload reaching this far -- the watcher only ever emits
     paths it observed under those subfolders itself)."""
     candidate = (vault_path / relative_path).resolve()
     vault_resolved = vault_path.resolve()
-    for subfolder in PILOT_SUBFOLDERS:
+    for subfolder, is_private in PILOT_SUBFOLDERS:
         allowed_root = (vault_resolved / subfolder).resolve()
         if candidate == allowed_root or allowed_root in candidate.parents:
-            return candidate
+            return candidate, is_private
     logger.warning("obsidian_reimport: relative_path outside pilot subfolders: %s", relative_path)
     return None
 
@@ -331,15 +341,16 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
 
     relative_path = job.parameters.get("relative_path") if job.parameters else None
     if relative_path:
-        note_path = _resolve_note_path(vault_path, relative_path)
-        if note_path is None or not note_path.is_file():
+        resolved = _resolve_note_path(vault_path, relative_path)
+        if resolved is None or not resolved[0].is_file():
             counts["failed"] = 1
             return counts
+        note_path, is_private = resolved
         counts["scanned"] = 1
-        counts[_reimport_one_note(session, service, repo, model, vault_path, note_path)] += 1
+        counts[_reimport_one_note(session, service, repo, model, vault_path, note_path, is_private)] += 1
         return counts
 
-    for subfolder in PILOT_SUBFOLDERS:
+    for subfolder, is_private in PILOT_SUBFOLDERS:
         folder = vault_path / subfolder
         if not folder.is_dir():
             logger.warning("obsidian_reimport: configured subfolder missing: %s", folder)
@@ -347,7 +358,7 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
 
         for note_path in sorted(folder.rglob("*.md")):
             counts["scanned"] += 1
-            counts[_reimport_one_note(session, service, repo, model, vault_path, note_path)] += 1
+            counts[_reimport_one_note(session, service, repo, model, vault_path, note_path, is_private)] += 1
             heartbeat(session, job.id, dict(counts))
 
     return counts

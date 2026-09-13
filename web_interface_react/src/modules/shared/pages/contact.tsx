@@ -1,8 +1,9 @@
 import React from "react";
 import axios from "axios";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import type { ContactCategory } from "./contactCategories";
+import type { ContactGroupEvent } from "./contactGroupDetail";
 import type { ContactGroup } from "./contactGroups";
 import type { ContactListItem } from "./contacts";
 
@@ -157,6 +158,7 @@ interface ContactDetail {
   is_archived: boolean;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
+  group_events: (ContactGroupEvent & { group_name: string })[];
   change_log: ContactChangeLogEntry[];
   whatsapp_profile: WhatsappProfile | null;
   photo_url: string | null;
@@ -873,6 +875,16 @@ const Contact = () => {
 
       {!isNew && (
         <div style={{ marginTop: 24 }}>
+          {!!contact?.group_events?.length && <section style={{ marginBottom: 24 }}>
+            <h3>Wydarzenia grupy</h3>
+            <ul>
+              {contact.group_events.map(event => <li key={event.id}>
+                <time dateTime={event.event_date}>{event.event_date}</time>{" — "}
+                <NavLink to={`/contact_groups/${event.group_id}`}>{event.group_name}</NavLink>{" — "}
+                {event.title}
+              </li>)}
+            </ul>
+          </section>}
           <h3>Organizacje (etat, JDG, funkcje...)</h3>
           <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
             Jedna osoba może mieć kilka afiliacji naraz — np. etat gdzie indziej i osobną JDG do optymalizacji
