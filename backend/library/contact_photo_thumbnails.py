@@ -14,7 +14,22 @@ def _photo_thumbnail_storage_key(contact_uuid: str, photo_storage_key: str | Non
 
 
 def generate_photo_thumbnail(data: bytes) -> bytes:
-    """Encode the first frame as an upright, aspect-preserving JPEG <= 256px."""
+    """Encode the first frame as an upright, aspect-preserving JPEG <= 256px.
+
+    When a face can be detected (optional `imaging` extra, see
+    `library/face_detection.py`), the source is first cropped to a square
+    around the largest face — otherwise a tall full-body photo shrinks the
+    face down to a speck instead of filling the thumbnail. Falls back to the
+    plain whole-image thumbnail whenever no face is found, the extra isn't
+    installed, or detection fails for any reason.
+    """
+    try:
+        from library.face_detection import crop_around_largest_face
+        face_crop = crop_around_largest_face(data)
+    except Exception:
+        face_crop = None
+    if face_crop is not None:
+        data = face_crop
     with Image.open(BytesIO(data)) as source:
         source.seek(0)
         image = ImageOps.exif_transpose(source)
