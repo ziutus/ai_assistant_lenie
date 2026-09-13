@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canMergeChunkRanges, chunkLocalSplitLines, computeChunkLineRanges, type ChunkForPreview } from "./chunkBoundaries";
+import { canMergeChunkRanges, canMoveBoundaryTo, chunkLocalSplitLines, computeChunkLineRanges, computeMergedSplitIndex, type ChunkForPreview } from "./chunkBoundaries";
 
 const chunk = (original_text: string, position = 0): ChunkForPreview => ({
   id: position + 1, original_text, position, type: "TEMAT", status: "approved",
@@ -59,5 +59,24 @@ describe("chunk boundary actions", () => {
   it("converts global split points to sorted local indices, excluding the start and outside lines", () => {
     expect(chunkLocalSplitLines(new Set([7, 5, 6, 4, 8]), first)).toEqual([1, 2]);
     expect(chunkLocalSplitLines(new Set(), first)).toEqual([]);
+  });
+  it("computes the merged split index inside the first chunk", () => {
+    expect(computeMergedSplitIndex(6, first, next)).toBe(1);
+  });
+  it("includes the inserted blank line for targets inside the second chunk", () => {
+    expect(computeMergedSplitIndex(8, first, next)).toBe(4);
+    expect(computeMergedSplitIndex(9, first, next)).toBe(5);
+  });
+  it.each([5, 9])("rejects the outer edge %i", line => {
+    expect(canMoveBoundaryTo(line, first, next)).toBe(false);
+  });
+  it.each([6, 8])("allows the line just inside either edge %i", line => {
+    expect(canMoveBoundaryTo(line, first, next)).toBe(true);
+  });
+  it("allows the current boundary", () => {
+    expect(canMoveBoundaryTo(next.startLine, first, next)).toBe(true);
+  });
+  it.each([4, 10])("rejects targets outside the pair %i", line => {
+    expect(canMoveBoundaryTo(line, first, next)).toBe(false);
   });
 });

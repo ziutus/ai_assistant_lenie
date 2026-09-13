@@ -43,3 +43,16 @@ export function chunkLocalSplitLines(points: Set<number>, range: ChunkLineRange)
   return [...points].filter(line => line > range.startLine && line <= range.endLine)
     .map(line => line - range.startLine).sort((a, b) => a - b);
 }
+
+export function computeMergedSplitIndex(chosenGlobalLine: number, first: ChunkLineRange, second: ChunkLineRange): number {
+  const firstLen = first.endLine - first.startLine + 1;
+  return chosenGlobalLine >= first.startLine && chosenGlobalLine <= first.endLine
+    ? chosenGlobalLine - first.startLine
+    : firstLen + 1 + (chosenGlobalLine - second.startLine);
+}
+
+export function canMoveBoundaryTo(chosenGlobalLine: number, first: ChunkLineRange, second: ChunkLineRange): boolean {
+  return chosenGlobalLine !== first.startLine && chosenGlobalLine !== second.endLine
+    && ((chosenGlobalLine >= first.startLine && chosenGlobalLine <= first.endLine)
+      || (chosenGlobalLine >= second.startLine && chosenGlobalLine <= second.endLine));
+}
