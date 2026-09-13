@@ -3106,8 +3106,14 @@ class ContactPhoto(Base):
 class Contact(Base):
     """Private contact book entry — independent of the NER persons registry
     (library/person_registry.py): a contact here may never appear in any
-    document. google_contact_resource_name is a placeholder for a future
-    Google Contacts sync (no sync logic exists yet).
+    document. google_contact_resource_name/google_etag are placeholders for
+    a future Google Contacts (People API) sync — no sync logic exists yet;
+    etag is Google's own per-resource version stamp, required by the API to
+    detect concurrent edits before writing a contact back. phone_number and
+    email stay single-value "headline" fields (unchanged); ContactPhone and
+    ContactEmail below are the structured, multi-row picture a real sync
+    needs, mirroring the existing company/position-vs-ContactOrganization
+    split.
     """
 
     __tablename__ = "contacts"
@@ -3130,6 +3136,7 @@ class Contact(Base):
     pesel: Mapped[str | None] = mapped_column(String(11), unique=True)
     notes: Mapped[str | None] = mapped_column(Text)
     google_contact_resource_name: Mapped[str | None] = mapped_column(String(255), unique=True)
+    google_etag: Mapped[str | None] = mapped_column(String(255))
     whatsapp_profile: Mapped[dict | None] = mapped_column(JSONB)
     languages: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     nationality: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
@@ -3294,10 +3301,71 @@ class ContactOrganization(Base):
         )
 
 
+class ContactPhone(Base):
+    """One phone number for a contact. contacts.phone_number stays the
+    single-value "headline" number (unchanged, still shown in list views);
+    this table is the structured, multi-row picture — same split as
+    contacts.company/position vs ContactOrganization above. Exists so a
+    future Google Contacts sync can receive People API's phoneNumbers[]
+    without the lossy collapsing imports/google_contacts_import.py does
+    today (it keeps only the first non-empty phone from a CSV export with
+    several). No sync logic reads/writes this table yet.
+    """
+
+    __tablename__ = "contact_phones"
+    __table_args__ = (
+        CheckConstraint("label IN ('mobile', 'home', 'work', 'other')", name="ck_contact_phones_label"),
+        Index("idx_contact_phones_contact", "contact_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    label: Mapped[str] = mapped_column(String(20), nullable=False, server_default="other")
+    value: Mapped[str] = mapped_column(String(30), nullable=False)
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+
+    def __repr__(self) -> str:
+        return f"ContactPhone(id={self.id!r}, contact_id={self.contact_id!r}, label={self.label!r})"
+
+
+class ContactEmail(Base):
+    """One email address for a contact — same headline-vs-detail split as
+    ContactPhone; contacts.email stays the single-value headline field."""
+
+    __tablename__ = "contact_emails"
+    __table_args__ = (
+        CheckConstraint("label IN ('home', 'work', 'other')", name="ck_contact_emails_label"),
+        Index("idx_contact_emails_contact", "contact_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    label: Mapped[str] = mapped_column(String(20), nullable=False, server_default="other")
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+
+    def __repr__(self) -> str:
+        return f"ContactEmail(id={self.id!r}, contact_id={self.contact_id!r}, label={self.label!r})"
+
+
 class ContactGroup(Base):
     """User-managed many-to-many group for the private contact book (e.g.
     "Tuwima Gardens", "Rodzina") — distinct from ContactCategory, which is a
-    single-value type classification per contact.
+    single-value type classification per contact. google_group_resource_name
+    is a placeholder for a future Google Contacts sync: Google's contactGroups
+    are their own top-level resource (own resourceName/etag), so a group
+    created locally needs its Google counterpart's resourceName recorded
+    here once created via People API — no sync logic exists yet.
     """
 
     __tablename__ = "contact_groups"
@@ -3305,6 +3373,7 @@ class ContactGroup(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
+    google_group_resource_name: Mapped[str | None] = mapped_column(String(255), unique=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     contacts: Mapped[list["Contact"]] = relationship(
