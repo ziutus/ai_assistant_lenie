@@ -38,6 +38,16 @@ def patched_recorder(**kwargs):
 
 
 class TestParameterPropagation:
+    def test_vision_request_is_audited_without_image_payload(self):
+        with patched_sherlock() as completion, patched_recorder() as recorder:
+            ai_ask("Opis", model="google/gemma-4-31B-it", image_base64="PRIVATE_IMAGE_BASE64",
+                   image_media_type="image/png", operation="contact_photo_description")
+        assert completion.call_args.kwargs["image_base64"] == "PRIVATE_IMAGE_BASE64"
+        recorder.assert_called_once()
+        assert recorder.call_args.kwargs["provider"] == "cloudferro"
+        assert recorder.call_args.kwargs["operation"] == "contact_photo_description"
+        assert "PRIVATE_IMAGE_BASE64" not in str(recorder.call_args)
+
     def test_forwards_generation_parameters_to_sherlock_for_bielik(self):
         with patched_sherlock() as mock_completion, patched_recorder():
             ai_ask(

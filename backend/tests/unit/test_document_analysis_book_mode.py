@@ -24,6 +24,15 @@ from library.document_analysis_service import DocumentAnalysisService, _slice_ch
 from library.text_functions import detect_chapters  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def isolated_external_services(monkeypatch):
+    """Chapter tests must never read workstation secrets or contact NAS/LLMs."""
+    from library.config_loader import Config
+    monkeypatch.setattr("library.config_loader.load_config", lambda: Config({"STORAGE_BACKEND": "local"}))
+    monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(das, "generate_embeddings_from_run", lambda *_args, **_kwargs: {})
+
+
 BOOK_TEXT = (
     "Strona tytułowa książki testowej. " + "w" * 80 + "\n\n"
     "# Rozdział 1: Geneza\n\n" + "Zdanie z rozdziału pierwszego. " * 10 + "\n\n"
@@ -104,6 +113,7 @@ def book_env(monkeypatch, session):
     )
     monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: [])
     monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
+    monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: [])
     return analyzed
 
 

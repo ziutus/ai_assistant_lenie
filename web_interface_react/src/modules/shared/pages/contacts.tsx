@@ -21,7 +21,8 @@ export interface ContactListItem {
   category_name: string | null;
   groups: { id: number; name: string }[];
   first_name: string | null;
-  last_name: string;
+  last_name: string | null;
+  display_name?: string;
   phone_number: string | null;
   email: string | null;
   photo_thumbnail_url?: string | null;
@@ -316,7 +317,7 @@ const Contacts = () => {
                   </span>
                 )}
               </span>
-              <strong style={{ overflowWrap: "anywhere" }}>{[contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+              <strong style={{ overflowWrap: "anywhere" }}>{contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
             </span>
             {contact.is_archived && (
               <span style={{ fontSize: "0.8em", color: "#a33", border: "1px solid #e3a", borderRadius: 4, padding: "1px 6px" }}>
@@ -333,8 +334,8 @@ const Contacts = () => {
                     key={index}
                     title={
                       r.direction === "outgoing"
-                        ? `${[contact.first_name, contact.last_name].filter(Boolean).join(" ")} → ${r.relationship_type} → ${r.other_name}`
-                        : `${r.other_name} → ${r.relationship_type} → ${[contact.first_name, contact.last_name].filter(Boolean).join(" ")} (czyli ta osoba jest „${r.relationship_type}" dla ${r.other_name})`
+                        ? `${contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")} → ${r.relationship_type} → ${r.other_name}`
+                        : `${r.other_name} → ${r.relationship_type} → ${contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")} (czyli ta osoba jest „${r.relationship_type}" dla ${r.other_name})`
                     }
                     style={{ fontSize: "0.8em", color: "#7c3aed", background: "#f3e8ff", borderRadius: 4, padding: "1px 6px" }}
                   >

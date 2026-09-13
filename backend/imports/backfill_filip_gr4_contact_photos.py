@@ -12,7 +12,8 @@ unmatched files are reported and skipped rather than guessed.
 
 Uses the same storage path as the REST photo upload
 (POST /contacts/<id>/photo, contact_routes.py): ObjectStorage.put_bytes()
-under contacts/<uuid>/photo<ext>, then Contact.photo_storage_key.
+under an immutable contacts/<uuid>/photos/<photo-uuid><ext> key, with a
+ContactPhoto metadata row and a best-effort thumbnail.
 
 Usage:
     cd backend
@@ -28,6 +29,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -56,7 +58,9 @@ def main():
     from library.contact_change_log import record_contact_change
     from library.config_loader import load_config
     from library.db.engine import get_session
-    from library.db.models import Contact, ContactGroup
+    from library.db.models import Contact, ContactGroup, ContactPhoto
+    from library.contact_names import contact_display_name
+    from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
     from library.storage import storage_from_config
 
     session = get_session()
@@ -69,9 +73,9 @@ def main():
 
     by_name: dict[str, Contact] = {}
     for c in group.contacts:
-        key = _normalize(f"{c.first_name or ''} {c.last_name}")
+        key = _normalize(contact_display_name(c))
         by_name[key] = c
-        if not c.first_name:
+        if not c.first_name and c.last_name:
             by_name[_normalize(c.last_name)] = c
 
     storage = storage_from_config(load_config())
@@ -110,12 +114,21 @@ def main():
         if args.apply:
             data = path.read_bytes()
             content_type = mimetypes.guess_type(path.name)[0]
-            storage_key = f"contacts/{contact.uuid}/photo{extension}"
+            storage_key = f"contacts/{contact.uuid}/photos/{uuid4()}{extension}"
             storage.put_bytes(storage_key, data, content_type=content_type)
+            session.add(ContactPhoto(storage_key=storage_key, user_description_revision=0, ai_descriptions={}))
+            session.flush()
             contact.photo_storage_key = storage_key
+            contact.photo_thumbnail_storage_key = None
+            try:
+                thumbnail_key = _photo_thumbnail_storage_key(contact.uuid, storage_key)
+                storage.put_bytes(thumbnail_key, generate_photo_thumbnail(data), content_type="image/jpeg")
+                contact.photo_thumbnail_storage_key = thumbnail_key
+            except Exception:
+                logger.warning("Nie udało się utworzyć miniatury kontaktu #%d", contact.id)
             contact.updated_at = datetime.datetime.now()
             record_contact_change(
-                session, contact, "manual_edit", changed_fields=["photo_storage_key"],
+                session, contact, "manual_edit", changed_fields=["photo_storage_key", "photo_thumbnail_storage_key"],
                 note=f"Zdjęcie profilowe dodane z {path.name} (backfill_filip_gr4_contact_photos.py)",
             )
 

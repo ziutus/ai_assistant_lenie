@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Backfill missing contact photo thumbnails, sequentially with one commit per contact.
 
 Usage (from backend):
@@ -42,7 +42,7 @@ def backfill(session, storage, *, apply=False, contact_id=None, limit=None):
                 continue
             thumbnail = generate_photo_thumbnail(storage.get_bytes(contact.photo_storage_key))
             if apply:
-                key = _photo_thumbnail_storage_key(contact.uuid)
+                key = _photo_thumbnail_storage_key(contact.uuid, contact.photo_storage_key)
                 storage.put_bytes(key, thumbnail, content_type="image/jpeg")
                 contact.photo_thumbnail_storage_key = key
                 session.commit()

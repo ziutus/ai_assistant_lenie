@@ -7,6 +7,12 @@ from PIL import Image
 from library.contact_photo_thumbnails import generate_photo_thumbnail
 
 
+def test_shared_photo_thumbnail_is_tied_to_image_not_contact():
+    from library.contact_photo_thumbnails import _photo_thumbnail_storage_key
+    assert _photo_thumbnail_storage_key("parent", "shared.jpg") == _photo_thumbnail_storage_key("child", "shared.jpg")
+    assert _photo_thumbnail_storage_key("parent", "replacement.jpg") != _photo_thumbnail_storage_key("parent", "shared.jpg")
+
+
 def image_bytes(mode="RGB", size=(800, 400), format="PNG", **kwargs):
     output = BytesIO()
     Image.new(mode, size).save(output, format=format, **kwargs)
@@ -62,4 +68,4 @@ def test_backfill_continues_after_bad_original_and_only_writes_on_apply(apply):
     session.rollback.assert_called_once()
     assert storage.put_bytes.call_count == int(apply)
     assert session.commit.call_count == int(apply)
-    assert contacts[2].photo_thumbnail_storage_key == ("contacts/2/photo_thumb.jpg" if apply else None)
+    assert contacts[2].photo_thumbnail_storage_key == ("2.png.thumb.jpg" if apply else None)

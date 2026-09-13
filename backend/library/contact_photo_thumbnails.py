@@ -5,7 +5,11 @@ from io import BytesIO
 from PIL import Image, ImageOps
 
 
-def _photo_thumbnail_storage_key(contact_uuid: str) -> str:
+def _photo_thumbnail_storage_key(contact_uuid: str, photo_storage_key: str | None = None) -> str:
+    # A shared photo's thumbnail must remain stable when one contact replaces
+    # its photo. Keep the one-argument convention for existing callers.
+    if photo_storage_key:
+        return f"{photo_storage_key}.thumb.jpg"
     return f"contacts/{contact_uuid}/photo_thumb.jpg"
 
 
