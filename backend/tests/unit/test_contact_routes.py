@@ -1128,6 +1128,8 @@ class TestContactThumbnails:
             factory.assert_not_called()
             for id_ in (1, 2):
                 assert _contact_dict(_make_contact(id_=id_, photo_thumbnail_storage_key=f"{id_}.jpg"))["photo_thumbnail_url"] is None
+        factory.assert_called_once()
+        assert storage.presigned_get_url.call_count == 2
 
 
 @pytest.mark.parametrize("path,method,helper", [
@@ -1145,8 +1147,6 @@ def test_photo_and_family_endpoints_explicitly_serialize_json(monkeypatch, path,
     response = app.test_client().open(path, method=method, json={})
     assert response.mimetype == "application/json"
     assert response.get_json() == body
-        factory.assert_called_once()
-        assert storage.presigned_get_url.call_count == 2
 
 
 class TestContactGroupEvents:
