@@ -89,6 +89,18 @@ const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
   rejected: "odrzucone",
 };
 
+type CefrLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+const LANGUAGE_LEVELS: CefrLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"];
+
+interface ContactLanguage {
+  language: string;
+  native: boolean;
+  level: CefrLevel | null;
+}
+
+const languageSummary = (lang: ContactLanguage) =>
+  lang.native ? `${lang.language} (native speaker)` : lang.level ? `${lang.language} (${lang.level})` : lang.language;
+
 type ChangeSource = "manual_edit" | "google_import" | "linkedin_analysis" | "whatsapp_analysis" | "osint_lookup" | "other";
 
 interface ContactChangeLogEntry {
@@ -121,6 +133,7 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   birthday: "Urodziny",
   pesel: "PESEL",
   notes: "Notatki",
+  languages: "Języki",
   category_id: "Kategoria",
   is_archived: "Status archiwizacji",
   whatsapp_profile: "Profil WhatsApp",
@@ -163,6 +176,7 @@ interface ContactDetail {
   address: string | null;
   birthday: string | null;
   notes: string | null;
+  languages: ContactLanguage[];
   is_archived: boolean;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
@@ -186,6 +200,7 @@ const emptyForm = {
   address: "",
   birthday: "",
   notes: "",
+  languages: [] as ContactLanguage[],
 };
 
 const otherName = (other: { first_name: string | null; last_name: string | null; display_name?: string }) =>
@@ -252,6 +267,9 @@ const Contact = () => {
   const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
   const [showOrgForm, setShowOrgForm] = React.useState(false);
   const [whatsappProfile, setWhatsappProfile] = React.useState<WhatsappProfile | null>(null);
+  const [langForm, setLangForm] = React.useState<{ language: string; native: boolean; level: CefrLevel | "" }>({
+    language: "", native: false, level: "",
+  });
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
@@ -286,6 +304,7 @@ const Contact = () => {
     address: c.address ?? "",
     birthday: c.birthday ?? "",
     notes: c.notes ?? "",
+    languages: c.languages ?? [],
   });
 
   const loadContact = async () => {
@@ -607,6 +626,20 @@ const Contact = () => {
     }
   };
 
+  const addLanguage = () => {
+    const language = langForm.language.trim();
+    if (!language) return;
+    const entry: ContactLanguage = {
+      language, native: langForm.native, level: langForm.native ? null : (langForm.level || null),
+    };
+    setForm({ ...form, languages: [...form.languages, entry] });
+    setLangForm({ language: "", native: false, level: "" });
+  };
+
+  const removeLanguage = (index: number) => {
+    setForm({ ...form, languages: form.languages.filter((_, i) => i !== index) });
+  };
+
   const inputStyle: React.CSSProperties = { padding: "6px 10px", width: "100%", boxSizing: "border-box" };
   const outgoing = relationships.filter((r) => r.direction === "outgoing");
   const incoming = relationships.filter((r) => r.direction === "incoming");
@@ -757,6 +790,9 @@ const Contact = () => {
           {contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
           {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
           {contact.birthday && <div><strong>Urodziny:</strong> {contact.birthday}</div>}
+          {contact.languages.length > 0 && (
+            <div><strong>Języki:</strong> {contact.languages.map(languageSummary).join(", ")}</div>
+          )}
           {contact.notes && <div><strong>Notatki:</strong> {contact.notes}</div>}
 
           <div style={{ marginTop: 10 }}>
@@ -826,6 +862,62 @@ const Contact = () => {
             ))}
           </select>
         </label>
+        <div>
+          <div style={{ marginBottom: 4 }}>Języki</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+            {form.languages.length === 0 && <span style={{ color: "#667" }}>Brak języków.</span>}
+            {form.languages.map((lang, index) => (
+              <span
+                key={`${lang.language}-${index}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 4, fontSize: "0.85em", color: "#0369a1",
+                  background: "#e0f2fe", borderRadius: 4, padding: "2px 6px",
+                }}
+              >
+                {languageSummary(lang)}
+                <button
+                  type="button"
+                  onClick={() => removeLanguage(index)}
+                  style={{ border: "none", background: "none", color: "#0369a1", cursor: "pointer", padding: 0, lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <input
+              type="text"
+              placeholder="Język (np. angielski)"
+              value={langForm.language}
+              onChange={(e) => setLangForm({ ...langForm, language: e.target.value })}
+              style={{ padding: "4px 8px", flex: 1, minWidth: 140 }}
+            />
+            <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={langForm.native}
+                onChange={(e) => setLangForm({ ...langForm, native: e.target.checked, level: "" })}
+              />
+              native speaker
+            </label>
+            {!langForm.native && (
+              <select
+                value={langForm.level}
+                onChange={(e) => setLangForm({ ...langForm, level: e.target.value as CefrLevel | "" })}
+                style={{ padding: "4px 8px" }}
+              >
+                <option value="">(poziom nieznany)</option>
+                {LANGUAGE_LEVELS.map((level) => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
+              </select>
+            )}
+            <button className={"button"} type="button" disabled={!langForm.language.trim()} onClick={addLanguage}>
+              Dodaj
+            </button>
+          </div>
+        </div>
         <label>
           Notatki
           <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} style={inputStyle} />

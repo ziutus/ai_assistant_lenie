@@ -3131,6 +3131,7 @@ class Contact(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     google_contact_resource_name: Mapped[str | None] = mapped_column(String(255), unique=True)
     whatsapp_profile: Mapped[dict | None] = mapped_column(JSONB)
+    languages: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     photo_storage_key: Mapped[str | None] = mapped_column(ForeignKey("contact_photos.storage_key"))
     photo_thumbnail_storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))

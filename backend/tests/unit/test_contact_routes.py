@@ -33,7 +33,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
         address=None, birthday=None, pesel=None, notes=None, groups=[], whatsapp_profile=None,
-        photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
+        languages=[], photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),
     )
@@ -139,6 +139,31 @@ class TestContactsAdd:
 
         assert response[1] == 400
         session.add.assert_not_called()
+
+    def test_creates_contact_with_languages(self, monkeypatch):
+        from library.contact_routes import contacts_add
+
+        default_category = _make_category()
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = default_category
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts", method="POST",
+            json={
+                "last_name": "Wojtysiak",
+                "languages": [{"language": "polski", "native": True}, {"language": "niemiecki", "level": "b2"}],
+            },
+        ):
+            response = contacts_add()
+
+        assert response[1] == 200
+        added = session.add.call_args_list[0][0][0]
+        assert added.languages == [
+            {"language": "polski", "native": True, "level": None},
+            {"language": "niemiecki", "native": False, "level": "B2"},
+        ]
 
 
 class TestContactsUpdate:
@@ -260,6 +285,82 @@ class TestContactsUpdate:
 
         assert response[1] == 200
         assert row.is_archived is False
+
+    def test_sets_languages(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact()
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1", method="PATCH",
+            json={"languages": [
+                {"language": "polski", "native": True},
+                {"language": "angielski", "native": False, "level": "c1"},
+            ]},
+        ):
+            response, status = contacts_update(1)
+
+        assert status == 200
+        assert row.languages == [
+            {"language": "polski", "native": True, "level": None},
+            {"language": "angielski", "native": False, "level": "C1"},
+        ]
+        assert response.json["contact"]["languages"] == row.languages
+        change_log_entry = session.add.call_args[0][0]
+        assert change_log_entry.changed_fields == ["languages"]
+
+    def test_rejects_invalid_language_level(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact()
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1", method="PATCH",
+            json={"languages": [{"language": "angielski", "level": "fluent"}]},
+        ):
+            response = contacts_update(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+    def test_rejects_language_entry_without_language_name(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact()
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1", method="PATCH", json={"languages": [{"native": True}]},
+        ):
+            response = contacts_update(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+    def test_unchanged_languages_does_not_log(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(languages=[{"language": "polski", "native": True, "level": None}])
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1", method="PATCH",
+            json={"languages": [{"language": "polski", "native": True}]},
+        ):
+            response = contacts_update(1)
+
+        assert response[1] == 200
+        session.add.assert_not_called()
 
 
 class TestContactGroupsAssignment:
