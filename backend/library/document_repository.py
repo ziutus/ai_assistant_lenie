@@ -179,6 +179,7 @@ class DocumentRepository:
                 "has_text_md": row.has_text_md,
                 "chunks_missing_obsidian_notes": missing,
                 "chunks_with_obsidian_notes": with_notes,
+                "is_private": row.is_private,
                 "link_count": link_counts_by_doc.get(row.id, (0, 0))[0],
                 "proposed_link_count": link_counts_by_doc.get(row.id, (0, 0))[1],
                 "groups": groups_by_doc.get(row.id, {}).get("groups", []),

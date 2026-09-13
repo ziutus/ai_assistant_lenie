@@ -40,6 +40,7 @@ class FakeBookDoc:
     tags = "geopolityka,kraj-polska,kraj-niemcy"
     document_type = "text"
     url = None
+    is_private = False
     quality = None
     published_on = None
     ingested_at = None
@@ -391,6 +392,13 @@ class TestCompactReaderChapters:
 
 
 class TestChapterContentEndpoint:
+    @pytest.mark.parametrize("is_private", [True, False])
+    def test_privacy_in_chapter_response(self, client, monkeypatch, is_private):
+        monkeypatch.setattr(FakeBookDoc, "is_private", is_private)
+        response = client.get("/document/77/chapter/1")
+        assert response.status_code == 200
+        assert response.get_json()["is_private"] is is_private
+
     def test_returns_chapter_text_with_nav(self, client):
         resp = client.get("/document/77/chapter/2")
         data = resp.get_json()
@@ -654,6 +662,7 @@ class FakeTranscriptDoc:
     published_on = None
     ingested_at = None
     obsidian_note_paths: list = []
+    is_private = False
 
 
 @pytest.fixture
