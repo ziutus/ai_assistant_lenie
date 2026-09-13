@@ -65,6 +65,25 @@ def _normalize_languages(value) -> list[dict]:
         normalized.append({"language": language, "native": native, "level": level})
     return normalized
 
+
+def _normalize_nationality(value) -> list[str]:
+    """Validate/normalize the `nationality` payload: a list of plain
+    strings (dual/multiple citizenship is common, so this is not a single
+    value)."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("nationality must be a list")
+    normalized = []
+    for entry in value:
+        if not isinstance(entry, str):
+            raise ValueError("each nationality entry must be a string")
+        entry = entry.strip()
+        if not entry:
+            raise ValueError("each nationality entry must be non-empty")
+        normalized.append(entry)
+    return normalized
+
 # Immutable keys preserve descriptions and other contacts sharing the old photo.
 _PHOTO_ALLOWED_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
 
@@ -184,6 +203,7 @@ def _contact_dict(row: Contact) -> dict:
         "pesel": row.pesel,
         "notes": row.notes,
         "languages": row.languages or [],
+        "nationality": row.nationality or [],
         "is_archived": row.is_archived,
         "has_whatsapp_profile": bool(row.whatsapp_profile),
         "photo_thumbnail_url": _contact_photo_thumbnail_url(row),
@@ -1008,6 +1028,12 @@ def contacts_add():
         except ValueError as e:
             return {"status": "error", "message": str(e)}, 400
         changed_fields.append("languages")
+    if "nationality" in data:
+        try:
+            row.nationality = _normalize_nationality(data.get("nationality"))
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}, 400
+        changed_fields.append("nationality")
 
     session.add(row)
     session.flush()
@@ -1076,6 +1102,14 @@ def contacts_update(contact_id: int):
         if (row.languages or []) != new_languages:
             changed_fields.append("languages")
         row.languages = new_languages
+    if "nationality" in data:
+        try:
+            new_nationality = _normalize_nationality(data.get("nationality"))
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}, 400
+        if (row.nationality or []) != new_nationality:
+            changed_fields.append("nationality")
+        row.nationality = new_nationality
     if "is_archived" in data:
         new_is_archived = bool(data.get("is_archived"))
         if row.is_archived != new_is_archived:

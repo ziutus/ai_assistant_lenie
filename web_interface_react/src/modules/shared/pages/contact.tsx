@@ -134,6 +134,7 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   pesel: "PESEL",
   notes: "Notatki",
   languages: "Języki",
+  nationality: "Narodowość",
   category_id: "Kategoria",
   is_archived: "Status archiwizacji",
   whatsapp_profile: "Profil WhatsApp",
@@ -177,6 +178,7 @@ interface ContactDetail {
   birthday: string | null;
   notes: string | null;
   languages: ContactLanguage[];
+  nationality: string[];
   is_archived: boolean;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
@@ -201,6 +203,7 @@ const emptyForm = {
   birthday: "",
   notes: "",
   languages: [] as ContactLanguage[],
+  nationality: [] as string[],
 };
 
 const otherName = (other: { first_name: string | null; last_name: string | null; display_name?: string }) =>
@@ -270,6 +273,7 @@ const Contact = () => {
   const [langForm, setLangForm] = React.useState<{ language: string; native: boolean; level: CefrLevel | "" }>({
     language: "", native: false, level: "",
   });
+  const [nationalityInput, setNationalityInput] = React.useState("");
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
@@ -305,6 +309,7 @@ const Contact = () => {
     birthday: c.birthday ?? "",
     notes: c.notes ?? "",
     languages: c.languages ?? [],
+    nationality: c.nationality ?? [],
   });
 
   const loadContact = async () => {
@@ -640,6 +645,17 @@ const Contact = () => {
     setForm({ ...form, languages: form.languages.filter((_, i) => i !== index) });
   };
 
+  const addNationality = () => {
+    const value = nationalityInput.trim();
+    if (!value || form.nationality.includes(value)) return;
+    setForm({ ...form, nationality: [...form.nationality, value] });
+    setNationalityInput("");
+  };
+
+  const removeNationality = (index: number) => {
+    setForm({ ...form, nationality: form.nationality.filter((_, i) => i !== index) });
+  };
+
   const inputStyle: React.CSSProperties = { padding: "6px 10px", width: "100%", boxSizing: "border-box" };
   const outgoing = relationships.filter((r) => r.direction === "outgoing");
   const incoming = relationships.filter((r) => r.direction === "incoming");
@@ -790,6 +806,9 @@ const Contact = () => {
           {contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
           {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
           {contact.birthday && <div><strong>Urodziny:</strong> {contact.birthday}</div>}
+          {contact.nationality.length > 0 && (
+            <div><strong>Narodowość:</strong> {contact.nationality.join(", ")}</div>
+          )}
           {contact.languages.length > 0 && (
             <div><strong>Języki:</strong> {contact.languages.map(languageSummary).join(", ")}</div>
           )}
@@ -862,6 +881,43 @@ const Contact = () => {
             ))}
           </select>
         </label>
+        <div>
+          <div style={{ marginBottom: 4 }}>Narodowość</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+            {form.nationality.length === 0 && <span style={{ color: "#667" }}>Brak.</span>}
+            {form.nationality.map((value, index) => (
+              <span
+                key={`${value}-${index}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 4, fontSize: "0.85em", color: "#0369a1",
+                  background: "#e0f2fe", borderRadius: 4, padding: "2px 6px",
+                }}
+              >
+                {value}
+                <button
+                  type="button"
+                  onClick={() => removeNationality(index)}
+                  style={{ border: "none", background: "none", color: "#0369a1", cursor: "pointer", padding: 0, lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="text"
+              placeholder="Narodowość (np. polska)"
+              value={nationalityInput}
+              onChange={(e) => setNationalityInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addNationality(); } }}
+              style={{ padding: "4px 8px", flex: 1 }}
+            />
+            <button className={"button"} type="button" disabled={!nationalityInput.trim()} onClick={addNationality}>
+              Dodaj
+            </button>
+          </div>
+        </div>
         <div>
           <div style={{ marginBottom: 4 }}>Języki</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
