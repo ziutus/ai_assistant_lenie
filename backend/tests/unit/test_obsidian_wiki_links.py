@@ -106,6 +106,7 @@ def _make_note(doc_id=9922) -> Document:
     doc.title = "jq"
     doc.url = "obsidian://02-wiedza/Informatyka/narzedzia_cli/jq.md"
     doc.tags = "wiedza-informatyka,linux"
+    doc.is_private = False
     doc.quality = None
     doc.published_on = None
     doc.ingested_at = None

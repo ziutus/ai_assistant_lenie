@@ -145,7 +145,8 @@ Wdrożenie wymaga backendu i frontendu z tymi zmianami oraz migracji:
 
 - `e93b71d6a204`: metadane opisów, przeniesienie istniejących kluczy zdjęć
   do nowej tabeli i klucz obcy. Nie pobiera ani nie przenosi plików.
-  Następuje po migracji miniatur `8b07952a8f81` z `main`.
+  Następuje po migracjach miniatur, wydarzeń grup i prywatnych dokumentów
+  (`108d63e61a8f`) z równoległej pracy nad kontaktami.
 - `f04c82e7b315`: nazwy robocze, opcjonalne nazwisko i potwierdzenia operacji
   tworzenia rodziny.
 

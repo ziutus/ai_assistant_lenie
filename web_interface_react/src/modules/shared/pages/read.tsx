@@ -68,6 +68,7 @@ interface ChapterImage {
 }
 
 interface ChapterContent {
+  is_private: boolean;
   position: number;
   title: string;
   text: string;
@@ -1835,6 +1836,12 @@ const Read: React.FC = () => {
 
   return (
     <div>
+      {(content?.is_private || allChapters?.some(ch => ch.is_private)) && (
+        <div role="alert" style={{ background: "#fef3c7", color: "#92400e", border: "2px solid #f59e0b",
+          padding: "14px 18px", borderRadius: 6, fontWeight: 700, marginBottom: 16 }}>
+          ⚠️ Ten dokument zawiera dane osobowe — nie pokazuj podczas prezentacji ani osobom trzecim.
+        </div>
+      )}
       <NavLink to={`/entities/${id}`} style={{ float: "right", fontSize: "0.85em", color: "#0369a1" }}>
         Encje (NER)
       </NavLink>
