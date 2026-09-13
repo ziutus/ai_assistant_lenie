@@ -265,6 +265,7 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
                 display: "grid", gridTemplateColumns: `${showChunkPreview && ranges.length ? "120px" : "46px"} repeat(9, ${compactLabels ? "34px" : "auto"}) minmax(280px, 1fr)`, gap: 5,
                 alignItems: "start", padding: "3px 6px", borderBottom: "1px solid #f1f5f9",
                 borderLeft: chunk ? `4px solid ${chunkColor(chunk.type)}` : undefined,
+                borderTop: chunk && range && range.startLine === index ? `2px solid ${chunkColor(chunk.type)}` : undefined,
                 background: marked("persons", index) ? "#fef3c7" : marked("author", index) ? "#f3e8ff" : marked("date", index) ? "#dbeafe" : marked("sources", index) ? "#ede9fe" : marked("links", index) ? "#dcfce7" : marked("ads", index) ? "#fee2e2" : index % 2 ? "#fafafa" : "white",
               }}>
                 <span style={{ color: "#94a3b8", textAlign: "right", paddingTop: 3 }}>
