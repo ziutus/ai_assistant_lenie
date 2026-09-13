@@ -3,8 +3,10 @@
 import base64
 import datetime as dt
 import logging
+from io import BytesIO
 
 import filetype
+from PIL import Image, ImageOps
 from library.ai import SHERLOCK_VISION_MODELS, ai_ask
 from library.config_loader import load_config
 from library.contact_change_log import record_contact_change
@@ -14,6 +16,29 @@ from library.storage import storage_from_config
 logger = logging.getLogger(__name__)
 MAX_DESCRIPTION_LENGTH = 12000
 MAX_IMAGE_BYTES = 5_000_000
+# Leave room for base64 expansion and the prompt below Sherlock's gateway limit.
+MAX_VISION_IMAGE_BYTES = 500_000
+
+
+def prepare_vision_image(data: bytes) -> bytes:
+    """Create an upright JPEG for inference without changing the stored original."""
+    with Image.open(BytesIO(data)) as source:
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+        rgba = image.convert("RGBA")
+        rgb = Image.new("RGB", rgba.size, "white")
+        rgb.paste(rgba, mask=rgba.getchannel("A"))
+        while True:
+            for quality in (85, 70, 55):
+                output = BytesIO()
+                rgb.save(output, format="JPEG", quality=quality)
+                encoded = output.getvalue()
+                if len(encoded) <= MAX_VISION_IMAGE_BYTES:
+                    return encoded
+            rgb = rgb.resize((max(1, rgb.width * 3 // 4), max(1, rgb.height * 3 // 4)),
+                             Image.Resampling.LANCZOS)
+
+
 VISUAL_PROMPT = """Opisz po polsku widoczną zawartość zdjęcia jako pomoc w przypominaniu
 sobie sytuacji i osób. Podaj liczbę widocznych osób, ich położenie względem
 lewej i prawej strony zdjęcia, ubiór, czynności i otoczenie. Nie identyfikuj
@@ -97,11 +122,12 @@ def generate_description(session, contact_id, body):
         kind = filetype.guess(image)
         if kind is None or kind.mime not in ("image/jpeg", "image/png"):
             return _error("Opis AI obsługuje zdjęcia JPEG i PNG.", 415)
+        image = prepare_vision_image(image)
         response = ai_ask(
             "Opisz załączone zdjęcie.", model=model, max_token_count=1200, temperature=0.1,
             system_prompt=VISUAL_PROMPT,
             operation="contact_photo_description",
-            image_base64=base64.b64encode(image).decode("ascii"), image_media_type=kind.mime,
+            image_base64=base64.b64encode(image).decode("ascii"), image_media_type="image/jpeg",
         )
         description = response.response_text
         if not isinstance(description, str) or not description.strip():

@@ -1,9 +1,11 @@
 """Independent model results, user edits, and races around shared photos."""
 
 from types import SimpleNamespace
+from io import BytesIO
 from unittest.mock import MagicMock
 
 import pytest
+from PIL import Image
 
 from library import contact_photos as photos
 from library.db.models import Contact
@@ -18,7 +20,9 @@ def setup(monkeypatch):
     session.get.side_effect = lambda model, key, **kw: contact if model is Contact else photo
     monkeypatch.setattr(photos, "load_config", lambda: {"CLOUDFERRO_SHERLOCK_KEY": "test"})
     storage = MagicMock()
-    storage.get_bytes.return_value = b"\x89PNG\r\n\x1a\n" + b"x" * 30
+    image = BytesIO()
+    Image.new("RGB", (32, 24), "white").save(image, format="PNG")
+    storage.get_bytes.return_value = image.getvalue()
     monkeypatch.setattr(photos, "storage_from_config", lambda cfg: storage)
     ask = MagicMock(return_value=SimpleNamespace(response_text="Cztery osoby na zdjęciu.", usage=None))
     monkeypatch.setattr(photos, "ai_ask", ask)
@@ -54,7 +58,7 @@ def test_two_models_and_regeneration_preserve_user_knowledge(setup):
     assert photo.user_description_revision == 3
     for call in ask.call_args_list:
         assert "To bliźnięta" not in str(call)
-        assert call.kwargs["image_media_type"] == "image/png"
+        assert call.kwargs["image_media_type"] == "image/jpeg"
         assert call.kwargs["operation"] == "contact_photo_description"
 
 
@@ -131,3 +135,29 @@ def test_clear_description_preserves_model_results(setup):
     _, photo, session, _ = setup
     assert photos.update_description(session, 1, payload(photo, user_description="", user_description_revision=3))[1] == 200
     assert photo.user_description is None
+
+
+def test_vision_image_fits_gateway_and_preserves_original():
+    import random
+    original = BytesIO()
+    Image.frombytes("RGB", (1800, 1200), random.Random(42).randbytes(1800 * 1200 * 3)).save(
+        original, format="PNG")
+    data = original.getvalue()
+    encoded = photos.prepare_vision_image(data)
+    assert len(encoded) <= photos.MAX_VISION_IMAGE_BYTES
+    assert original.getvalue() == data
+    with Image.open(BytesIO(encoded)) as image:
+        assert image.format == "JPEG"
+        assert max(image.size) <= 1600
+        assert image.width / image.height == pytest.approx(1.5, abs=0.01)
+
+
+def test_vision_image_corrects_orientation_and_flattens_transparency():
+    original = BytesIO()
+    source = Image.new("RGBA", (40, 20), (0, 0, 0, 0))
+    exif = Image.Exif()
+    exif[274] = 6
+    source.save(original, format="PNG", exif=exif)
+    with Image.open(BytesIO(photos.prepare_vision_image(original.getvalue()))) as image:
+        assert image.size == (20, 40)
+        assert image.getpixel((10, 10)) == (255, 255, 255)
