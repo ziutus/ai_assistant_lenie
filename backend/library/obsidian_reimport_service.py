@@ -71,7 +71,7 @@ OBSIDIAN_REIMPORT = "obsidian_reimport"
 PILOT_SUBFOLDERS: tuple[tuple[str, bool], ...] = (
     ("02-wiedza/Informatyka", False),
     ("02-wiedza/Geopolityka i polityka", False),
-    ("journal", True),
+    ("Journal", True),
 )
 
 
