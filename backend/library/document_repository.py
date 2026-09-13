@@ -42,7 +42,7 @@ class DocumentRepository:
                 Document.id, Document.url, Document.title, Document.document_type,
                 Document.ingested_at, Document.processing_status, Document.processing_error_code,
                 Document.note, Document.collection_id, Document.uuid, Document.byline,
-                Document.obsidian_note_paths,
+                Document.obsidian_note_paths, Document.is_private,
                 (func.length(func.trim(func.coalesce(Document.text_md, ""))) > 0).label("has_text_md"),
             )
 
