@@ -3084,6 +3084,22 @@ class ContactCategory(Base):
         return f"ContactCategory(id={self.id!r}, name={self.name!r})"
 
 
+class ContactPhoto(Base):
+    """One immutable image file, with independently maintained descriptions.
+
+    Several contacts can reference the same photo. Replacing a contact's photo
+    must create a new storage key so it cannot change another person's photo.
+    """
+
+    __tablename__ = "contact_photos"
+
+    storage_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    user_description: Mapped[str | None] = mapped_column(Text)
+    user_description_revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    ai_descriptions: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa_text("'{}'::jsonb"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class Contact(Base):
     """Private contact book entry — independent of the NER persons registry
     (library/person_registry.py): a contact here may never appear in any
@@ -3099,7 +3115,8 @@ class Contact(Base):
     )
     category_id: Mapped[int] = mapped_column(ForeignKey("contact_categories.id"), nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(100))
-    last_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    last_name: Mapped[str | None] = mapped_column(String(100))
+    display_label: Mapped[str | None] = mapped_column(String(200))
     phone_number: Mapped[str | None] = mapped_column(String(30))
     email: Mapped[str | None] = mapped_column(String(255))
     linkedin_url: Mapped[str | None] = mapped_column(Text)
@@ -3111,7 +3128,7 @@ class Contact(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     google_contact_resource_name: Mapped[str | None] = mapped_column(String(255), unique=True)
     whatsapp_profile: Mapped[dict | None] = mapped_column(JSONB)
-    photo_storage_key: Mapped[str | None] = mapped_column(Text)
+    photo_storage_key: Mapped[str | None] = mapped_column(ForeignKey("contact_photos.storage_key"))
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -3129,6 +3146,18 @@ class Contact(Base):
 
     def __repr__(self) -> str:
         return f"Contact(id={self.id!r}, last_name={self.last_name!r})"
+
+
+class ContactFamilyCreation(Base):
+    """Idempotency and provenance for an explicitly requested family batch."""
+
+    __tablename__ = "contact_family_creations"
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    request_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    result: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
 class ContactRelationship(Base):

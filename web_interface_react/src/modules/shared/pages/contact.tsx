@@ -5,6 +5,8 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import type { ContactCategory } from "./contactCategories";
 import type { ContactGroup } from "./contactGroups";
 import type { ContactListItem } from "./contacts";
+import ContactPhotoDescriptions, { type ContactPhotoData } from "../components/ContactPhotoDescriptions";
+import ContactFamilyForm from "../components/ContactFamilyForm";
 
 // Private contact detail/edit panel (`/contacts/:id`, id="new" for
 // creation) — see backend/library/contact_routes.py.
@@ -14,7 +16,7 @@ interface ContactRelationship {
   direction: "outgoing" | "incoming";
   relationship_type: string;
   note: string | null;
-  other_contact: { id: number; first_name: string | null; last_name: string };
+  other_contact: { id: number; first_name: string | null; last_name: string | null; display_name?: string };
 }
 
 interface WhatsappFact {
@@ -107,6 +109,7 @@ const CHANGE_SOURCE_LABELS: Record<ChangeSource, string> = {
 const CHANGE_FIELD_LABELS: Record<string, string> = {
   first_name: "Imię",
   last_name: "Nazwisko",
+  display_label: "Nazwa robocza",
   phone_number: "Telefon",
   email: "Email",
   linkedin_url: "LinkedIn",
@@ -121,6 +124,8 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   whatsapp_profile: "Profil WhatsApp",
   groups: "Grupy",
   photo_storage_key: "Zdjęcie",
+  photo_user_description: "Twój opis zdjęcia",
+  photo_ai_description: "Opis zdjęcia AI",
 };
 
 const changeFieldLabel = (field: string) => CHANGE_FIELD_LABELS[field] ?? field;
@@ -145,7 +150,9 @@ interface ContactDetail {
   category_name: string | null;
   groups: { id: number; name: string }[];
   first_name: string | null;
-  last_name: string;
+  last_name: string | null;
+  display_label: string | null;
+  display_name: string;
   phone_number: string | null;
   email: string | null;
   linkedin_url: string | null;
@@ -160,12 +167,14 @@ interface ContactDetail {
   change_log: ContactChangeLogEntry[];
   whatsapp_profile: WhatsappProfile | null;
   photo_url: string | null;
+  photo: ContactPhotoData | null;
 }
 
 const emptyForm = {
   category_id: "",
   first_name: "",
   last_name: "",
+  display_label: "",
   phone_number: "",
   email: "",
   linkedin_url: "",
@@ -176,8 +185,8 @@ const emptyForm = {
   notes: "",
 };
 
-const otherName = (other: { first_name: string | null; last_name: string }) =>
-  [other.first_name, other.last_name].filter(Boolean).join(" ");
+const otherName = (other: { first_name: string | null; last_name: string | null; display_name?: string }) =>
+  other.display_name || [other.first_name, other.last_name].filter(Boolean).join(" ");
 
 // CEIDG (Centralna Ewidencja i Informacja o Działalności Gospodarczej) — the
 // official Polish government JDG register, the authoritative source to
@@ -216,6 +225,7 @@ const Contact = () => {
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
   const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
+  const [photo, setPhoto] = React.useState<ContactPhotoData | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = React.useState(false);
   const photoInputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -253,7 +263,8 @@ const Contact = () => {
   const formFromContact = (c: ContactDetail) => ({
     category_id: String(c.category_id),
     first_name: c.first_name ?? "",
-    last_name: c.last_name,
+    last_name: c.last_name ?? "",
+    display_label: c.display_label ?? "",
     phone_number: c.phone_number ?? "",
     email: c.email ?? "",
     linkedin_url: c.linkedin_url ?? "",
@@ -280,6 +291,7 @@ const Contact = () => {
       setContactGroups(fetched.groups ?? []);
       setWhatsappProfile(fetched.whatsapp_profile ?? null);
       setPhotoUrl(fetched.photo_url ?? null);
+      setPhoto(fetched.photo ?? null);
     } catch (error: any) {
       console.error("Error fetching contact", error);
       setIsError(true);
@@ -300,6 +312,7 @@ const Contact = () => {
     setContactGroups([]);
     setWhatsappProfile(null);
     setPhotoUrl(null);
+    setPhoto(null);
     loadContact();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -323,6 +336,7 @@ const Contact = () => {
         headers: { "x-api-key": `${apiKey}` },
       });
       setPhotoUrl(response.data.photo_url ?? null);
+      setPhoto(response.data.photo ?? null);
       setMessage("Zapisano zdjęcie.");
     } catch (error: any) {
       console.error("Error uploading contact photo", error);
@@ -340,6 +354,7 @@ const Contact = () => {
     try {
       await axios.delete(`${apiUrl}/contacts/${id}/photo`, { headers });
       setPhotoUrl(null);
+      setPhoto(null);
       setMessage("Usunięto zdjęcie.");
     } catch (error: any) {
       console.error("Error removing contact photo", error);
@@ -378,9 +393,9 @@ const Contact = () => {
   };
 
   const save = async () => {
-    if (!form.last_name.trim()) {
+    if (![form.first_name, form.last_name, form.display_label].some((value) => value.trim())) {
       setIsError(true);
-      setMessage("Nazwisko jest wymagane.");
+      setMessage("Podaj imię, nazwisko lub nazwę roboczą.");
       return;
     }
     setIsLoading(true);
@@ -601,7 +616,9 @@ const Contact = () => {
             }}
           >
             {photoUrl ? (
-              <img src={photoUrl} alt="Zdjęcie kontaktu" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <a href={photoUrl} target="_blank" rel="noreferrer" title="Otwórz całe zdjęcie" style={{ width: "100%", height: "100%" }}>
+                <img src={photoUrl} alt="Zdjęcie kontaktu — otwórz pełny rozmiar" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              </a>
             ) : (
               <span style={{ color: "#98a2b3", fontSize: "0.75em", textAlign: "center", padding: 4 }}>Brak zdjęcia</span>
             )}
@@ -638,10 +655,16 @@ const Contact = () => {
         </div>
       )}
 
+      {!isNew && id && photo && <ContactPhotoDescriptions key={`${id}:${photo.storage_key}`}
+        photo={photo} contactId={id} apiUrl={apiUrl} apiKey={`${apiKey}`} onChange={setPhoto} />}
+      {!isNew && id && photo && contact && <ContactFamilyForm key={`family:${id}:${photo.storage_key}`}
+        photo={photo} contactId={id} contactName={otherName(contact)} apiUrl={apiUrl} apiKey={`${apiKey}`}
+        groups={allGroups} onCreated={() => { void loadContact(); }} />}
+
       {mode === "view" && contact ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: "1.2em", fontWeight: 600 }}>
-            {[contact.first_name, contact.last_name].filter(Boolean).join(" ")}
+            {otherName(contact)}
           </div>
           {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
           {contact.phone_number && <div><strong>Telefon:</strong> {contact.phone_number}</div>}
@@ -678,8 +701,12 @@ const Contact = () => {
           <input type="text" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} style={inputStyle} />
         </label>
         <label>
-          Nazwisko *
+          Nazwisko
           <input type="text" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} style={inputStyle} />
+        </label>
+        <label>
+          Nazwa robocza (gdy nie znasz imienia ani nazwiska)
+          <input type="text" maxLength={200} value={form.display_label} onChange={(e) => setForm({ ...form, display_label: e.target.value })} style={inputStyle} />
         </label>
         <label>
           Telefon
@@ -996,7 +1023,7 @@ const Contact = () => {
             <ul style={{ listStyle: "none", padding: 0 }}>
               {outgoing.map((r) => (
                 <li key={r.id} style={{ padding: "4px 0" }}>
-                  <strong>{otherName(r.other_contact)}</strong> — {r.relationship_type}
+                  <a href={`/contacts/${r.other_contact.id}`}><strong>{otherName(r.other_contact)}</strong></a> — {r.relationship_type}
                   {r.note && <span style={{ color: "#667" }}> ({r.note})</span>}
                   {mode === "edit" && (
                     <button
@@ -1017,7 +1044,7 @@ const Contact = () => {
               <ul style={{ listStyle: "none", padding: 0 }}>
                 {incoming.map((r) => (
                   <li key={r.id} style={{ padding: "4px 0" }}>
-                    <strong>{otherName(r.other_contact)}</strong> — {r.relationship_type}
+                    <a href={`/contacts/${r.other_contact.id}`}><strong>{otherName(r.other_contact)}</strong></a> — ten kontakt jest dla tej osoby: {r.relationship_type}
                     {r.note && <span style={{ color: "#667" }}> ({r.note})</span>}
                   </li>
                 ))}
@@ -1052,7 +1079,7 @@ const Contact = () => {
               >
                 <option value="">Wybierz kontakt...</option>
                 {relResults.map((c) => (
-                  <option key={c.id} value={c.id}>{[c.first_name, c.last_name].filter(Boolean).join(" ")}</option>
+                  <option key={c.id} value={c.id}>{otherName(c)}</option>
                 ))}
               </select>
             )}

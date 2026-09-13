@@ -15,7 +15,8 @@ export interface ContactListItem {
   category_name: string | null;
   groups: { id: number; name: string }[];
   first_name: string | null;
-  last_name: string;
+  last_name: string | null;
+  display_name?: string;
   phone_number: string | null;
   email: string | null;
   has_whatsapp_profile: boolean;
@@ -295,7 +296,7 @@ const Contacts = () => {
             style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}
             onClick={() => navigate(`/contacts/${contact.id}${contactLinkSearch}`)}
           >
-            <strong>{[contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+            <strong>{contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
             {contact.is_archived && (
               <span style={{ fontSize: "0.8em", color: "#a33", border: "1px solid #e3a", borderRadius: 4, padding: "1px 6px" }}>
                 archiwalny

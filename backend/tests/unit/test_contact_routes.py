@@ -29,6 +29,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         category=category or _make_category(),
         first_name=first_name,
         last_name=last_name,
+        display_label=None,
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
         address=None, birthday=None, pesel=None, notes=None, groups=[], whatsapp_profile=None,
@@ -70,17 +71,41 @@ class TestContactsAdd:
         assert set(change_log_entry.changed_fields) == {"last_name", "first_name", "phone_number"}
         session.commit.assert_called_once()
 
-    def test_missing_last_name_is_400(self, monkeypatch):
+    def test_missing_all_names_is_400(self, monkeypatch):
         from library.contact_routes import contacts_add
 
         session = MagicMock()
         monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
         app = Flask(__name__)
-        with app.test_request_context("/contacts", method="POST", json={"first_name": "Adam"}):
+        with app.test_request_context("/contacts", method="POST", json={}):
             response = contacts_add()
 
         assert response[1] == 400
         session.add.assert_not_called()
+
+    def test_creates_unnamed_contact_with_label(self, monkeypatch):
+        from library.contact_routes import contacts_add
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = _make_category()
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/contacts", method="POST", json={"display_label": "Dziecko 1"}):
+            response, status = contacts_add()
+        assert status == 200
+        assert response.json["contact"]["display_name"] == "Dziecko 1"
+        assert response.json["contact"]["last_name"] is None
+
+    def test_later_name_preserves_contact_id(self, monkeypatch):
+        from library.contact_routes import contacts_update
+        row = _make_contact(id_=7, first_name=None, last_name=None, display_label="Dziecko 1")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/contacts/7", method="PATCH", json={"first_name": "Jan"}):
+            response, status = contacts_update(7)
+        assert status == 200
+        assert response.json["contact"]["id"] == 7
+        assert response.json["contact"]["display_name"] == "Jan"
+        assert row.display_label == "Dziecko 1"
 
     def test_unknown_category_id_is_400(self, monkeypatch):
         from library.contact_routes import contacts_add
@@ -320,8 +345,8 @@ class TestContactPhotoChangeLog:
             response = contact_photo_upload(1)
 
         assert response[1] == 200
-        session.add.assert_called_once()
-        change_log_entry = session.add.call_args[0][0]
+        assert session.add.call_count == 2  # photo metadata plus contact audit
+        change_log_entry = session.add.call_args_list[-1][0][0]
         assert change_log_entry.source == "manual_edit"
         assert change_log_entry.changed_fields == ["photo_storage_key"]
 
@@ -861,6 +886,29 @@ class TestContactOrganizationsUpdate:
 
 
 class TestContactPhotoUpload:
+    def test_replacement_does_not_overwrite_shared_photo(self, monkeypatch):
+        from library.contact_routes import contact_photo_upload
+        from library.db.models import ContactPhoto
+        old_key = "contacts/shared/photo.jpg"
+        contact = _make_contact(photo_storage_key=old_key)
+        session = MagicMock()
+        session.get.return_value = contact
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        storage = MagicMock()
+        storage.presigned_get_url.return_value = "https://example.test/new-photo"
+        monkeypatch.setattr("library.config_loader.load_config", lambda: {})
+        monkeypatch.setattr("library.storage.storage_from_config", lambda cfg: storage)
+        with Flask(__name__).test_request_context("/contacts/1/photo", method="POST",
+                data={"photo": (BytesIO(b"image"), "photo.jpg")}, content_type="multipart/form-data"):
+            response, status = contact_photo_upload(1)
+        assert status == 200
+        assert contact.photo_storage_key != old_key
+        assert storage.put_bytes.call_args.args[0] != old_key
+        created = session.add.call_args_list[0].args[0]
+        assert isinstance(created, ContactPhoto)
+        assert created.user_description is None and created.ai_descriptions == {}
+        session.delete.assert_not_called()
+
     def test_uploads_photo_and_sets_storage_key(self, monkeypatch):
         from library.contact_routes import contact_photo_upload
 
@@ -885,7 +933,8 @@ class TestContactPhotoUpload:
         assert response[1] == 200
         fake_storage.put_bytes.assert_called_once()
         stored_key = fake_storage.put_bytes.call_args[0][0]
-        assert stored_key == f"contacts/{contact.uuid}/photo.jpg"
+        assert stored_key.startswith(f"contacts/{contact.uuid}/photos/")
+        assert stored_key.endswith(".jpg")
         assert contact.photo_storage_key == stored_key
         session.commit.assert_called_once()
 

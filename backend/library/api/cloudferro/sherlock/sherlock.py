@@ -12,7 +12,9 @@ REQUEST_TIMEOUT_S = 90.0
 def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v3.0-Instruct",
                             max_tokens=1000, temperature: float = 0.1,
                             system_prompt: str | None = None,
-                            response_format: dict | None = None) -> AiResponse:
+                            response_format: dict | None = None,
+                            image_base64: str | None = None,
+                            image_media_type: str = "image/jpeg") -> AiResponse:
     """One chat completion against CloudFerro Sherlock.
 
     system_prompt is sent as a separate system-role message, never
@@ -35,7 +37,15 @@ def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v3.0-Instruct"
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
+    content = prompt
+    if image_base64 is not None:
+        if image_media_type not in ("image/jpeg", "image/png"):
+            raise ValueError("Vision requests support JPEG and PNG")
+        content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:{image_media_type};base64,{image_base64}"}},
+        ]
+    messages.append({"role": "user", "content": content})
 
     extra_args = {}
     if response_format is not None:

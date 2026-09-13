@@ -6,15 +6,17 @@ directional and single-row (no automatic reciprocal row/label)."""
 
 import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy import false, func, or_, select
 from werkzeug.utils import secure_filename
 
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
+from library.contact_names import contact_display_name, validate_contact_name
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupMembership, ContactLookupResult,
+    Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupMembership, ContactLookupResult,
     ContactOrganization, ContactRelationship,
 )
 
@@ -22,7 +24,7 @@ bp = Blueprint("contacts", __name__)
 
 _CONTACT_FIELDS = (
     "first_name", "last_name", "phone_number", "email", "linkedin_url",
-    "company", "position", "address", "pesel", "notes",
+    "company", "position", "address", "pesel", "notes", "display_label",
 )
 
 _LOOKUP_TYPES = ("phone", "linkedin", "web")
@@ -32,14 +34,12 @@ _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
 _ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
 
-# Same key convention as document_images.py (documents/<uuid>/images/<n>.<ext>),
-# except a contact has exactly one photo, so the key is fixed per contact —
-# re-uploading with the same extension simply overwrites it in place.
+# Immutable keys preserve descriptions and other contacts sharing the old photo.
 _PHOTO_ALLOWED_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
 
 
 def _photo_storage_key(contact_uuid: str, extension: str) -> str:
-    return f"contacts/{contact_uuid}/photo{extension}"
+    return f"contacts/{contact_uuid}/photos/{uuid4()}{extension}"
 
 
 def _category_dict(row: ContactCategory, count: int | None = None) -> dict:
@@ -88,6 +88,8 @@ def _contact_dict(row: Contact) -> dict:
         "groups": [{"id": g.id, "name": g.name} for g in row.groups],
         "first_name": row.first_name,
         "last_name": row.last_name,
+        "display_label": row.display_label,
+        "display_name": contact_display_name(row),
         "phone_number": row.phone_number,
         "email": row.email,
         "linkedin_url": row.linkedin_url,
@@ -162,6 +164,7 @@ def _relationship_dict(rel: ContactRelationship, other: Contact, direction: str)
             "id": other.id,
             "first_name": other.first_name,
             "last_name": other.last_name,
+            "display_name": contact_display_name(other),
         },
     }
 
@@ -442,8 +445,9 @@ def contacts_list():
         if include_ungrouped:
             selected_group_conditions.append(~Contact.groups.any())
         conditions.append(or_(*selected_group_conditions) if selected_group_conditions else false())
-    elif group_id is not None:
-        group_ids.append(group_id)
+    elif group_id is not None or group_ids:
+        if group_id is not None:
+            group_ids.append(group_id)
         group_ids = list(dict.fromkeys(group_ids))
         conditions.append(Contact.groups.any(ContactGroup.id.in_(group_ids)))
     if excluded_group_ids:
@@ -455,6 +459,7 @@ def contacts_list():
         conditions.append(or_(
             func.unaccent(Contact.first_name).ilike(phrase),
             func.unaccent(Contact.last_name).ilike(phrase),
+            func.unaccent(Contact.display_label).ilike(phrase),
             func.unaccent(func.coalesce(Contact.phone_number, "")).ilike(phrase),
         ))
 
@@ -466,7 +471,8 @@ def contacts_list():
     limit = min(request.args.get("limit", default=100, type=int), 500)
     query = (
         select(Contact).where(*conditions)
-        .order_by(Contact.last_name, Contact.first_name).offset(offset).limit(limit)
+        .order_by(func.coalesce(Contact.last_name, Contact.first_name, Contact.display_label),
+                  Contact.first_name, Contact.id).offset(offset).limit(limit)
     )
 
     rows = session.execute(query).scalars().all()
@@ -543,6 +549,8 @@ def contacts_get(contact_id: int):
     data["change_log"] = [_change_log_dict(cl) for cl in change_log]
     data["whatsapp_profile"] = row.whatsapp_profile
     data["photo_url"] = _contact_photo_url(row)
+    from library.contact_photos import photo_dict
+    data["photo"] = photo_dict(session.get(ContactPhoto, row.photo_storage_key)) if row.photo_storage_key else None
     return jsonify({"status": "success", "contact": data}), 200
 
 
@@ -586,16 +594,20 @@ def contact_photo_upload(contact_id: int):
     storage = storage_from_config(load_config())
     storage.put_bytes(key, data, content_type=uploaded.content_type)
 
-    contact.photo_storage_key = key
-    contact.updated_at = datetime.datetime.now()
-    record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
+    photo = ContactPhoto(storage_key=key, user_description_revision=0, ai_descriptions={})
     try:
+        session.add(photo)
+        session.flush()
+        contact.photo_storage_key = key
+        contact.updated_at = datetime.datetime.now()
+        record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
         session.commit()
     except Exception:
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
 
-    return jsonify({"status": "success", "photo_url": storage.presigned_get_url(key)}), 200
+    from library.contact_photos import photo_dict
+    return jsonify({"status": "success", "photo_url": storage.presigned_get_url(key), "photo": photo_dict(photo)}), 200
 
 
 @bp.route("/contacts/<int:contact_id>/photo", methods=["DELETE", "OPTIONS"])
@@ -609,7 +621,7 @@ def contact_photo_delete(contact_id: int):
         return {"status": "error", "message": "Contact not found"}, 404
 
     # The blob itself is left in storage — ObjectStorage has no delete
-    # primitive (same tradeoff as document_images.py's replace functions).
+    # primitive. Shared photo metadata and the file remain for other contacts.
     contact.photo_storage_key = None
     contact.updated_at = datetime.datetime.now()
     record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
@@ -628,9 +640,10 @@ def contacts_add():
         return {"status": "OK"}, 200
 
     data = request.get_json(silent=True) or {}
-    last_name = (data.get("last_name") or "").strip()
-    if not last_name:
-        return {"status": "error", "message": "last_name is required"}, 400
+    name_error = validate_contact_name(data)
+    if name_error:
+        return {"status": "error", "message": name_error}, 400
+    last_name = (data.get("last_name") or "").strip() or None
 
     category_id = data.get("category_id")
     session = get_scoped_session()
@@ -684,6 +697,10 @@ def contacts_update(contact_id: int):
     if row is None:
         return {"status": "error", "message": "Contact not found"}, 404
 
+    name_error = validate_contact_name(data, row)
+    if name_error:
+        return {"status": "error", "message": name_error}, 400
+
     change_source = (data.get("change_source") or "manual_edit").strip()
     if change_source not in CONTACT_CHANGE_SOURCES:
         return {"status": "error", "message": f"change_source must be one of {CONTACT_CHANGE_SOURCES}"}, 400
@@ -691,9 +708,7 @@ def contacts_update(contact_id: int):
     changed_fields = []
 
     if "last_name" in data:
-        last_name = (data.get("last_name") or "").strip()
-        if not last_name:
-            return {"status": "error", "message": "last_name cannot be empty"}, 400
+        last_name = (data.get("last_name") or "").strip() or None
         if row.last_name != last_name:
             changed_fields.append("last_name")
         row.last_name = last_name
@@ -754,6 +769,30 @@ def contacts_delete(contact_id: int):
 
 
 # --- relationships ---------------------------------------------------------
+
+@bp.route("/contacts/<int:contact_id>/photo/description", methods=["PATCH", "OPTIONS"])
+def contact_photo_description_update(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_photos import update_description
+    return update_description(get_scoped_session(), contact_id, request.get_json(silent=True))
+
+
+@bp.route("/contacts/<int:contact_id>/photo/describe", methods=["POST", "OPTIONS"])
+def contact_photo_describe(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_photos import generate_description
+    return generate_description(get_scoped_session(), contact_id, request.get_json(silent=True))
+
+
+@bp.route("/contacts/<int:contact_id>/family", methods=["POST", "OPTIONS"])
+def contact_family_create(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_families import create_family
+    return create_family(get_scoped_session(), contact_id, request.get_json(silent=True))
+
 
 @bp.route("/contacts/<int:contact_id>/relationships", methods=["POST", "OPTIONS"])
 def contact_relationships_add(contact_id: int):
