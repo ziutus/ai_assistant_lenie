@@ -1,5 +1,6 @@
 import React from "react";
 import axios from "axios";
+import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 
 // Contact group lookup (table `contact_groups`, GET/POST/PATCH/DELETE
@@ -185,6 +186,7 @@ const ContactGroups = () => {
             ) : (
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                 <strong>{group.name}</strong>
+                <NavLink to={`/contact_groups/${group.id}`}>Szczegóły</NavLink>
                 <span style={{ color: "#667" }}>×{group.count}</span>
                 {group.description && <span style={{ color: "#667" }}>{group.description}</span>}
                 <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>

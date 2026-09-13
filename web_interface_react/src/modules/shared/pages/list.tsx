@@ -462,6 +462,10 @@ const List = () => {
                   {obsidian.label} {isExpanded ? "▾" : "▸"}
                 </span>
               )}
+              {item.is_private && <span
+                title="Zawiera dane osobowe — nie pokazywać w prezentacjach"
+                style={{ marginLeft: 6, padding: "2px 6px", borderRadius: 4, background: "#fef3c7" }}
+              >🔒</span>}
               {(item.link_count > 0 || item.proposed_link_count > 0) && (
                 <NavLink
                   to={item.document_type === "obsidian_note" ? `/read/${item.id}` : `/${item.document_type}/${item.id}`}

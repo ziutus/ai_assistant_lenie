@@ -186,11 +186,11 @@ class TestWebDocumentColumns:
         "text_extracted", "transcript_needed", "reviewed_at",
         "obsidian_note_paths", "video_description", "ner_unavailable_at",
         "quality", "canonical_url", "enrichment_run_at", "entities_checked_at",
-        "email_sender", "search_terms", "obsidian_source_hash",
+        "email_sender", "search_terms", "obsidian_source_hash", "is_private",
     }
 
     def test_column_count(self):
-        assert len(_column_names(Document)) == 43
+        assert len(_column_names(Document)) == 44
 
     def test_all_column_names(self):
         assert _column_names(Document) == self.EXPECTED_COLUMNS
@@ -537,14 +537,14 @@ class TestValidate:
 # ---------------------------------------------------------------------------
 
 class TestDict:
-    def test_dict_has_39_keys(self):
+    def test_dict_has_43_keys(self):
         doc = _make_doc(
             title="Test",
             processing_error_code="NONE",
         )
         doc.ingested_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert len(result) == 40
+        assert len(result) == 43
 
     def test_dict_keys(self):
         doc = _make_doc(
@@ -562,7 +562,7 @@ class TestDict:
             "ai_summary_needed", "byline", "byline_method", "note", "uuid", "collection_id",
             "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
-            "quality",
+            "quality", "email_sender", "search_terms", "is_private",
         }
         assert set(result.keys()) == expected_keys
 

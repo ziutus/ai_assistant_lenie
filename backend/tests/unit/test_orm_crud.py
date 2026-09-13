@@ -443,7 +443,7 @@ class TestDictCompatibility:
             "text_raw", "transcript_job_id", "ai_summary_needed", "byline",
             "byline_method", "note", "uuid", "collection_id", "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
-            "quality",
+            "quality", "email_sender", "search_terms", "is_private",
         }
         assert set(d.keys()) == expected_keys
 

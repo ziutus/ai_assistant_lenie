@@ -10,15 +10,15 @@ from pathlib import Path
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import false, func, or_, select
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, joinedload
 from werkzeug.utils import secure_filename
 
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
 from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupMembership, ContactLookupResult,
-    ContactOrganization, ContactRelationship,
+    Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLookupResult,
+    ContactOrganization, ContactRelationship, Document,
 )
 
 bp = Blueprint("contacts", __name__)
@@ -73,6 +73,59 @@ def _group_dict(row: ContactGroup, count: int | None = None) -> dict:
     if count is not None:
         data["count"] = count
     return data
+
+
+def _event_dict(row: ContactGroupEvent) -> dict:
+    return {
+        "id": row.id,
+        "group_id": row.group_id,
+        "title": row.title,
+        "event_date": row.event_date.isoformat(),
+        "summary": row.summary,
+        "source_document_id": row.source_document_id,
+        "source_document_title": row.source_document.title if row.source_document else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _event_values(session, data, partial=False) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError("JSON object required")
+    values = {}
+    if not partial or "title" in data:
+        title = data.get("title")
+        if not isinstance(title, str) or not title.strip() or len(title.strip()) > 255:
+            raise ValueError("title must be a non-empty string of at most 255 characters")
+        values["title"] = title.strip()
+    if not partial or "event_date" in data:
+        try:
+            values["event_date"] = datetime.date.fromisoformat(data.get("event_date"))
+        except (ValueError, TypeError):
+            raise ValueError("event_date must be a valid ISO date") from None
+    if "summary" in data:
+        summary = data["summary"]
+        if summary is not None and not isinstance(summary, str):
+            raise ValueError("summary must be a string or null")
+        values["summary"] = summary.strip() or None if summary is not None else None
+    if "source_document_id" in data:
+        doc_id = data["source_document_id"]
+        if doc_id is not None and (type(doc_id) is not int or doc_id <= 0):
+            raise ValueError("source_document_id must be a positive integer or null")
+        document = session.get(Document, doc_id) if doc_id is not None else None
+        if doc_id is not None and document is None:
+            raise ValueError("source_document_id not found")
+        values["source_document_id"] = doc_id
+        values["source_document"] = document
+    return values
+
+
+def _group_events(session, group_id):
+    return session.execute(
+        select(ContactGroupEvent).options(joinedload(ContactGroupEvent.source_document))
+        .where(ContactGroupEvent.group_id == group_id)
+        .order_by(ContactGroupEvent.event_date.desc(), ContactGroupEvent.id.desc())
+    ).scalars().all()
 
 
 def _group_contact_count(session, group_id: int) -> int:
@@ -279,6 +332,88 @@ def contact_groups_list():
         "status": "success",
         "contact_groups": [_group_dict(row, _group_contact_count(session, row.id)) for row in rows],
     }), 200
+
+
+@bp.get("/contact_groups/<int:group_id>")
+def contact_groups_get(group_id: int):
+    session = get_scoped_session()
+    row = session.get(ContactGroup, group_id)
+    if row is None:
+        return {"status": "error", "message": "Group not found"}, 404
+    data = _group_dict(row, _group_contact_count(session, group_id))
+    data["events"] = [_event_dict(event) for event in _group_events(session, group_id)]
+    return jsonify({"status": "success", "contact_group": data}), 200
+
+
+@bp.get("/contact_groups/<int:group_id>/events")
+def contact_group_events_list(group_id: int):
+    session = get_scoped_session()
+    if session.get(ContactGroup, group_id) is None:
+        return {"status": "error", "message": "Group not found"}, 404
+    return jsonify({"status": "success", "events": [
+        _event_dict(event) for event in _group_events(session, group_id)
+    ]}), 200
+
+
+@bp.route("/contact_groups/<int:group_id>/events", methods=["POST", "OPTIONS"])
+def contact_group_events_add(group_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    if session.get(ContactGroup, group_id) is None:
+        return {"status": "error", "message": "Group not found"}, 404
+    try:
+        values = _event_values(session, request.get_json(silent=True))
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+    row = ContactGroupEvent(group_id=group_id, **values)
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "event": _event_dict(row)}), 200
+
+
+@bp.route("/contact_group_events/<int:event_id>", methods=["PATCH", "OPTIONS"])
+def contact_group_events_update(event_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    row = session.get(ContactGroupEvent, event_id)
+    if row is None:
+        return {"status": "error", "message": "Event not found"}, 404
+    try:
+        values = _event_values(session, request.get_json(silent=True), partial=True)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+    for key, value in values.items():
+        setattr(row, key, value)
+    row.updated_at = datetime.datetime.now()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "event": _event_dict(row)}), 200
+
+
+@bp.route("/contact_group_events/<int:event_id>", methods=["DELETE", "OPTIONS"])
+def contact_group_events_delete(event_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    row = session.get(ContactGroupEvent, event_id)
+    if row is None:
+        return {"status": "error", "message": "Event not found"}, 404
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": event_id}), 200
 
 
 @bp.route("/contact_groups", methods=["POST", "OPTIONS"])
@@ -588,6 +723,15 @@ def contacts_get(contact_id: int):
     ).scalars().all()
 
     data = _contact_dict(row)
+    # Deliberately cap the contact overview at the 20 most recent group events.
+    group_events = session.execute(
+        select(ContactGroupEvent)
+        .join(ContactGroupMembership, ContactGroupMembership.group_id == ContactGroupEvent.group_id)
+        .where(ContactGroupMembership.contact_id == contact_id)
+        .options(joinedload(ContactGroupEvent.group), joinedload(ContactGroupEvent.source_document))
+        .order_by(ContactGroupEvent.event_date.desc(), ContactGroupEvent.id.desc()).limit(20)
+    ).scalars().all()
+    data["group_events"] = [{**_event_dict(event), "group_name": event.group.name} for event in group_events]
     data["relationships"] = relationships
     data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
     data["organizations"] = [_organization_dict(org) for org in organizations]

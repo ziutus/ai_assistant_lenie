@@ -127,7 +127,7 @@ def start_watcher(session_factory: Callable[[], Session], vault_path: Path) -> O
     handler = DebouncedReimportHandler(session_factory, vault_path)
     observer = Observer()
     watched_any = False
-    for subfolder in PILOT_SUBFOLDERS:
+    for subfolder, _is_private in PILOT_SUBFOLDERS:
         folder = vault_path / subfolder
         if not folder.is_dir():
             logger.warning("obsidian_vault_watcher: configured subfolder missing: %s", folder)
