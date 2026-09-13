@@ -38,6 +38,56 @@ _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
 _ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
 
+_LANGUAGE_LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
+
+
+def _normalize_languages(value) -> tuple[list[dict] | None, str | None]:
+    """Validate/normalize the `languages` payload: a list of
+    {"language": str, "native": bool, "level": str|None} entries. `level` is
+    a CEFR code and only meaningful when not native (native clears it).
+    Returns (normalized, None) on success or (None, error_message) on
+    failure — same convention as validate_contact_name — rather than
+    raising, so an API error response never carries exception text."""
+    if value is None:
+        return [], None
+    if not isinstance(value, list):
+        return None, "languages must be a list"
+    normalized = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            return None, "each languages entry must be an object"
+        language = (entry.get("language") or "").strip()
+        if not language:
+            return None, "each languages entry requires a non-empty language"
+        native = bool(entry.get("native"))
+        level = (entry.get("level") or "").strip().upper() or None
+        if level and level not in _LANGUAGE_LEVELS:
+            return None, f"level must be one of {_LANGUAGE_LEVELS}"
+        if native:
+            level = None
+        normalized.append({"language": language, "native": native, "level": level})
+    return normalized, None
+
+
+def _normalize_nationality(value) -> tuple[list[str] | None, str | None]:
+    """Validate/normalize the `nationality` payload: a list of plain
+    strings (dual/multiple citizenship is common, so this is not a single
+    value). Returns (normalized, None) or (None, error_message), same
+    convention as _normalize_languages."""
+    if value is None:
+        return [], None
+    if not isinstance(value, list):
+        return None, "nationality must be a list"
+    normalized = []
+    for entry in value:
+        if not isinstance(entry, str):
+            return None, "each nationality entry must be a string"
+        entry = entry.strip()
+        if not entry:
+            return None, "each nationality entry must be non-empty"
+        normalized.append(entry)
+    return normalized, None
+
 # Immutable keys preserve descriptions and other contacts sharing the old photo.
 _PHOTO_ALLOWED_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
 
@@ -156,6 +206,8 @@ def _contact_dict(row: Contact) -> dict:
         "birthday": row.birthday.isoformat() if row.birthday else None,
         "pesel": row.pesel,
         "notes": row.notes,
+        "languages": row.languages or [],
+        "nationality": row.nationality or [],
         "is_archived": row.is_archived,
         "has_whatsapp_profile": bool(row.whatsapp_profile),
         "photo_thumbnail_url": _contact_photo_thumbnail_url(row),
@@ -974,6 +1026,18 @@ def contacts_add():
     if "birthday" in data:
         row.birthday = data.get("birthday") or None
         changed_fields.append("birthday")
+    if "languages" in data:
+        new_languages, error = _normalize_languages(data.get("languages"))
+        if error:
+            return {"status": "error", "message": error}, 400
+        row.languages = new_languages
+        changed_fields.append("languages")
+    if "nationality" in data:
+        new_nationality, error = _normalize_nationality(data.get("nationality"))
+        if error:
+            return {"status": "error", "message": error}, 400
+        row.nationality = new_nationality
+        changed_fields.append("nationality")
 
     session.add(row)
     session.flush()
@@ -1034,6 +1098,20 @@ def contacts_update(contact_id: int):
         if row.category_id != category_id:
             changed_fields.append("category_id")
         row.category_id = category_id
+    if "languages" in data:
+        new_languages, error = _normalize_languages(data.get("languages"))
+        if error:
+            return {"status": "error", "message": error}, 400
+        if (row.languages or []) != new_languages:
+            changed_fields.append("languages")
+        row.languages = new_languages
+    if "nationality" in data:
+        new_nationality, error = _normalize_nationality(data.get("nationality"))
+        if error:
+            return {"status": "error", "message": error}, 400
+        if (row.nationality or []) != new_nationality:
+            changed_fields.append("nationality")
+        row.nationality = new_nationality
     if "is_archived" in data:
         new_is_archived = bool(data.get("is_archived"))
         if row.is_archived != new_is_archived:
