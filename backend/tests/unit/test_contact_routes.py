@@ -1308,3 +1308,184 @@ class TestContactGroupEvents:
         assert "contact_group_memberships.contact_id = 1" in captured[0]
         assert "ORDER BY contact_group_events.event_date DESC" in captured[0]
         assert "LIMIT 20" in captured[0]
+
+
+@pytest.fixture
+def photo_history_setup(monkeypatch):
+    from library.db.models import Contact
+
+    contact = _make_contact()
+    prefix = f"contacts/{contact.uuid}/"
+    photo = SimpleNamespace(
+        storage_key=prefix + "photo.png", created_at=dt.datetime(2026, 9, 1),
+        user_description="Poprzednie zdjęcie", user_description_revision=2,
+        ai_descriptions={"model": {"text": "Opis zdjęcia"}},
+    )
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: contact if model is Contact else photo
+    monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+    monkeypatch.setattr("library.config_loader.load_config", lambda: {})
+    storage = MagicMock()
+    storage.presigned_get_url.side_effect = lambda key: f"https://storage.test/{key}"
+    storage.exists.return_value = True
+    monkeypatch.setattr("library.storage.storage_from_config", lambda cfg: storage)
+    return contact, photo, session, storage
+
+
+class TestContactPhotoHistory:
+    def test_history_order_prefix_metadata_and_thumbnails(self, photo_history_setup):
+        from library.contact_routes import contact_photo_history, _photo_thumbnail_storage_key
+        from library.contact_photos import photo_dict
+
+        contact, legacy, session, storage = photo_history_setup
+        newest = SimpleNamespace(**{**vars(legacy), "storage_key": f"contacts/{contact.uuid}/photos/new.png",
+                                    "created_at": dt.datetime(2026, 9, 2)})
+        contact.photo_storage_key = newest.storage_key
+        session.execute.return_value.scalars.return_value.all.return_value = [newest, legacy]
+        storage.exists.side_effect = [True, False]
+        with Flask(__name__).test_request_context():
+            response, status = contact_photo_history(contact.id)
+        assert status == 200
+        statement = session.execute.call_args.args[0]
+        compiled = statement.compile()
+        assert list(compiled.params.values()) == [f"contacts/{contact.uuid}/%"]
+        assert "contact_photos.storage_key LIKE" in str(compiled)
+        assert "ORDER BY contact_photos.created_at DESC" in str(compiled)
+        history = response.json["history"]
+        assert [item["storage_key"] for item in history] == [newest.storage_key, legacy.storage_key]
+        assert [item["is_current"] for item in history] == [True, False]
+        assert history[0]["created_at"] == newest.created_at.isoformat()
+        for item, photo in zip(history, [newest, legacy]):
+            assert {key: item[key] for key in photo_dict(photo)} == photo_dict(photo)
+            assert item["photo_url"] == f"https://storage.test/{photo.storage_key}"
+        thumb_key = _photo_thumbnail_storage_key(contact.uuid, newest.storage_key)
+        assert history[0]["thumbnail_url"] == f"https://storage.test/{thumb_key}"
+        assert history[1]["thumbnail_url"] is None
+        assert storage.exists.call_count == 2
+        storage.get_bytes.assert_not_called()
+
+    def test_empty_history(self, photo_history_setup):
+        from library.contact_routes import contact_photo_history
+
+        contact, _, session, _ = photo_history_setup
+        session.execute.return_value.scalars.return_value.all.return_value = []
+        with Flask(__name__).test_request_context():
+            response, status = contact_photo_history(contact.id)
+        assert status == 200
+        assert response.json == {"status": "success", "history": []}
+
+
+class TestContactPhotoRestore:
+    @pytest.mark.parametrize("body", [{}, {"storage_key": None}, {"storage_key": 123}, [], None])
+    def test_invalid_body(self, photo_history_setup, body):
+        from library.contact_routes import contact_photo_restore
+
+        contact, _, session, _ = photo_history_setup
+        with Flask(__name__).test_request_context(method="POST", json=body):
+            assert contact_photo_restore(contact.id)[1] == 400
+        session.commit.assert_not_called()
+
+    def test_rejects_other_contact_prefix(self, photo_history_setup):
+        from library.contact_routes import contact_photo_restore
+
+        contact, _, session, storage = photo_history_setup
+        with Flask(__name__).test_request_context(method="POST", json={
+            "storage_key": "contacts/22222222-2222-2222-2222-222222222222/photos/other.png",
+        }):
+            assert contact_photo_restore(contact.id)[1] == 400
+        assert session.get.call_count == 1
+        session.commit.assert_not_called()
+        storage.exists.assert_not_called()
+
+    def test_unknown_photo(self, photo_history_setup):
+        from library.contact_routes import contact_photo_restore
+        from library.db.models import Contact
+
+        contact, _, session, _ = photo_history_setup
+        session.get.side_effect = lambda model, key: contact if model is Contact else None
+        with Flask(__name__).test_request_context(method="POST", json={
+            "storage_key": f"contacts/{contact.uuid}/photos/missing.png",
+        }):
+            assert contact_photo_restore(contact.id)[1] == 404
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("thumbnail", ["existing", "regenerate", "failure"])
+    def test_restore_updates_contact_and_records_change(self, photo_history_setup, thumbnail):
+        from PIL import Image
+        from library.contact_routes import contact_photo_restore, _photo_thumbnail_storage_key
+        from library.contact_photos import photo_dict
+        from library.db.models import ContactChangeLog
+
+        contact, photo, session, storage = photo_history_setup
+        previous_updated = contact.updated_at
+        storage.exists.return_value = thumbnail == "existing"
+        original = BytesIO()
+        Image.new("RGB", (32, 24), "white").save(original, format="PNG")
+        storage.get_bytes.return_value = original.getvalue()
+        if thumbnail == "failure":
+            storage.get_bytes.side_effect = RuntimeError("Storage unavailable")
+        with Flask(__name__).test_request_context(method="POST", json={"storage_key": photo.storage_key}):
+            response, status = contact_photo_restore(contact.id)
+        assert status == 200
+        assert response.json == {"status": "success", "photo_url": f"https://storage.test/{photo.storage_key}",
+                                 "photo": photo_dict(photo)}
+        assert contact.photo_storage_key == photo.storage_key
+        thumb_key = _photo_thumbnail_storage_key(contact.uuid, photo.storage_key)
+        assert contact.photo_thumbnail_storage_key == (None if thumbnail == "failure" else thumb_key)
+        assert contact.updated_at > previous_updated
+        change = session.add.call_args.args[0]
+        assert isinstance(change, ContactChangeLog)
+        assert change.contact_id == contact.id
+        assert change.source == "manual_edit"
+        assert change.changed_fields == ["photo_storage_key", "photo_thumbnail_storage_key"]
+        assert change.note == "Przywrócono poprzednie zdjęcie z historii."
+        session.commit.assert_called_once()
+        if thumbnail == "existing":
+            storage.get_bytes.assert_not_called()
+            storage.put_bytes.assert_not_called()
+        elif thumbnail == "regenerate":
+            storage.get_bytes.assert_called_once_with(photo.storage_key)
+            assert storage.put_bytes.call_args.args[0] == thumb_key
+            assert storage.put_bytes.call_args.kwargs == {"content_type": "image/jpeg"}
+            with Image.open(BytesIO(storage.put_bytes.call_args.args[1])) as image:
+                assert image.format == "JPEG"
+
+    def test_current_photo_is_noop(self, photo_history_setup):
+        from library.contact_routes import contact_photo_restore
+
+        contact, photo, session, storage = photo_history_setup
+        contact.photo_storage_key = photo.storage_key
+        previous_updated = contact.updated_at
+        with Flask(__name__).test_request_context(method="POST", json={"storage_key": photo.storage_key}):
+            response, status = contact_photo_restore(contact.id)
+        assert status == 200
+        assert response.json["photo"]["storage_key"] == photo.storage_key
+        assert contact.updated_at == previous_updated
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+        storage.exists.assert_not_called()
+
+    def test_db_failure_rolls_back(self, photo_history_setup):
+        from library.contact_routes import contact_photo_restore
+
+        contact, photo, session, _ = photo_history_setup
+        session.commit.side_effect = RuntimeError("DB unavailable")
+        with Flask(__name__).test_request_context(method="POST", json={"storage_key": photo.storage_key}):
+            response, status = contact_photo_restore(contact.id)
+        assert (response, status) == ({"status": "error", "message": "DB error"}, 500)
+        session.rollback.assert_called_once()
+
+
+@pytest.mark.parametrize("route_name", ["contact_photo_history", "contact_photo_restore"])
+def test_photo_history_routes_missing_contact_and_options(monkeypatch, route_name):
+    from library import contact_routes
+
+    session = MagicMock()
+    session.get.return_value = None
+    monkeypatch.setattr(contact_routes, "get_scoped_session", lambda: session)
+    route = getattr(contact_routes, route_name)
+    with Flask(__name__).test_request_context(method="OPTIONS"):
+        assert route(999) == ({"status": "OK"}, 200)
+    session.get.assert_not_called()
+    with Flask(__name__).test_request_context():
+        assert route(999) == ({"status": "error", "message": "Contact not found"}, 404)

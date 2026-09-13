@@ -826,6 +826,89 @@ def contact_photo_upload(contact_id: int):
     return jsonify({"status": "success", "photo_url": storage.presigned_get_url(key), "photo": photo_dict(photo)}), 200
 
 
+@bp.route("/contacts/<int:contact_id>/photo/history", methods=["GET", "OPTIONS"])
+def contact_photo_history(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    from library.config_loader import load_config
+    from library.contact_photos import photo_dict
+    from library.storage import storage_from_config
+
+    storage = storage_from_config(load_config())
+    rows = session.execute(
+        select(ContactPhoto).where(ContactPhoto.storage_key.like(f"contacts/{contact.uuid}/%"))
+        .order_by(ContactPhoto.created_at.desc())
+    ).scalars().all()
+    history = []
+    for row in rows:
+        thumb_key = _photo_thumbnail_storage_key(contact.uuid, row.storage_key)
+        history.append({
+            **photo_dict(row),
+            "created_at": row.created_at.isoformat(),
+            "is_current": row.storage_key == contact.photo_storage_key,
+            "photo_url": storage.presigned_get_url(row.storage_key),
+            "thumbnail_url": storage.presigned_get_url(thumb_key) if storage.exists(thumb_key) else None,
+        })
+    return jsonify({"status": "success", "history": history}), 200
+
+
+@bp.route("/contacts/<int:contact_id>/photo/restore", methods=["POST", "OPTIONS"])
+def contact_photo_restore(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("storage_key"), str):
+        return {"status": "error", "message": "storage_key is required and must be a string"}, 400
+    key = data["storage_key"]
+    if not key.startswith(f"contacts/{contact.uuid}/"):
+        return {"status": "error", "message": "Photo does not belong to this contact"}, 400
+    photo = session.get(ContactPhoto, key)
+    if photo is None:
+        return {"status": "error", "message": "Photo not found"}, 404
+
+    from library.config_loader import load_config
+    from library.contact_photos import photo_dict
+    from library.storage import storage_from_config
+
+    storage = storage_from_config(load_config())
+    if key != contact.photo_storage_key:
+        thumb_key = _photo_thumbnail_storage_key(contact.uuid, key)
+        try:
+            if not storage.exists(thumb_key):
+                photo_bytes = storage.get_bytes(key)
+                thumb_bytes = generate_photo_thumbnail(photo_bytes)
+                storage.put_bytes(thumb_key, thumb_bytes, content_type="image/jpeg")
+        except Exception:
+            thumb_key = None
+            logger.warning("Could not generate/store photo thumbnail for contact %s", contact_id, exc_info=True)
+        try:
+            contact.photo_storage_key = key
+            contact.photo_thumbnail_storage_key = thumb_key
+            contact.updated_at = datetime.datetime.now()
+            record_contact_change(
+                session, contact, "manual_edit", changed_fields=["photo_storage_key", "photo_thumbnail_storage_key"],
+                note="Przywrócono poprzednie zdjęcie z historii.",
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "photo_url": storage.presigned_get_url(key), "photo": photo_dict(photo)}), 200
+
+
 @bp.route("/contacts/<int:contact_id>/photo", methods=["DELETE", "OPTIONS"])
 def contact_photo_delete(contact_id: int):
     if request.method == "OPTIONS":

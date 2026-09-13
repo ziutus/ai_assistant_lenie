@@ -7,6 +7,7 @@ import type { ContactGroupEvent } from "./contactGroupDetail";
 import type { ContactGroup } from "./contactGroups";
 import type { ContactListItem } from "./contacts";
 import ContactPhotoDescriptions, { type ContactPhotoData } from "../components/ContactPhotoDescriptions";
+import ContactPhotoHistory from "../components/ContactPhotoHistory";
 import ContactFamilyForm from "../components/ContactFamilyForm";
 
 // Private contact detail/edit panel (`/contacts/:id`, id="new" for
@@ -704,6 +705,8 @@ const Contact = () => {
 
       {!isNew && id && photo && <ContactPhotoDescriptions key={`${id}:${photo.storage_key}`}
         photo={photo} contactId={id} apiUrl={apiUrl} apiKey={`${apiKey}`} onChange={setPhoto} />}
+      {!isNew && id && <ContactPhotoHistory key={id} contactId={id} apiUrl={apiUrl} apiKey={`${apiKey}`}
+        onRestored={(url, updatedPhoto) => { setPhotoUrl(url); setPhoto(updatedPhoto); }} />}
       {!isNew && id && photo && contact && <ContactFamilyForm key={`family:${id}:${photo.storage_key}`}
         photo={photo} contactId={id} contactName={otherName(contact)} apiUrl={apiUrl} apiKey={`${apiKey}`}
         groups={allGroups} onCreated={() => { void loadContact(); }} />}
