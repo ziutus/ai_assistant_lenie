@@ -65,6 +65,14 @@ notion = [
     "notion-client>=2.2.0,<3",
 ]
 
+imaging = [
+    # Pinned below 5.0: that release dropped the bundled Haar cascade data
+    # files and the CascadeClassifier API this module relies on (verified
+    # 2026-09-13 — cv2.data ships no XML files and cv2.CascadeClassifier no
+    # longer exists in opencv-python-headless==5.0.0.93).
+    "opencv-python-headless>=4.9,<5",
+]
+
 docker = [
     "requests",
     "beautifulsoup4",

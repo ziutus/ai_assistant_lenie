@@ -39,10 +39,26 @@ Only the first two categories get split into their own contact by default. For t
 
 ### Step 3: Crop
 
-Use the backend venv's Pillow (already a dependency, `library/contact_photos.py` uses it):
+**First, get precise face positions instead of eyeballing them.** `backend/imports/detect_faces.py` (`library/face_detection.py`, OpenCV Haar cascade, optional dependency) prints every detected face as a pixel bounding box:
 
 ```bash
-cd "C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend" && .venv/Scripts/python.exe -c "
+cd "C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend"
+uv sync --extra imaging          # once per venv — installs opencv-python-headless
+.venv/Scripts/python.exe imports/detect_faces.py "<path>\original.png"
+```
+
+Returns `{"count": N, "faces": [{"x", "y", "w", "h"}, ...]}`, sorted left to right. Match each returned face to a person from Step 2 by its `x`/`y` position (compare against what you saw in the photo). Verified in practice: reliably finds both faces in a two-adult photo; in a busier photo with children it can miss one (small/turned/blurred face) — that's fine, it's an aid for precision, not a hard requirement, and Step 2's "ask before creating child contacts" already handles the person a missed face would belong to.
+
+**Derive crop boundaries from face centers**, one boundary per adjacent pair of *selected* faces (the ones you're actually splitting out — skip faces you're not creating a contact for, e.g. an unconfirmed bystander):
+- face center = `x + w/2`
+- boundary between two adjacent people = midpoint of their two centers
+- leftmost person's crop starts at image `x=0`, rightmost person's crop ends at image `x=width`
+- full image height for every crop (`y0=0, y1=height`) — matches the casual "cropped phone photo" look established in real sessions; don't try to tightly bound vertically around just the face
+
+If `detect_faces.py` isn't usable (dependency not installed, or a face-detection edge case — profile view, obstruction) fall back to picking boundaries by eye from the downloaded image; a generous full-height rectangular crop around each person is enough, some overlap/background/other-person spillover at the edges is acceptable.
+
+```bash
+.venv/Scripts/python.exe -c "
 from PIL import Image
 img = Image.open(r'<path>\original.png')
 w, h = img.size
@@ -51,7 +67,7 @@ crop_a.save(r'<path>\person_a.png')
 "
 ```
 
-Pick boundaries by eye from the downloaded image (there is no face-detection step in this skill — a generous full-height rectangular crop around each person is enough, some overlap/background/other-person spillover at the edges is acceptable, matching what a manually cropped phone photo looks like). **Always view each crop with Read before uploading it** — if a crop looks bad (cuts off a face, wrong person centered), adjust the box and re-crop rather than uploading a bad result.
+**Always view each crop with Read before uploading it** — if a crop looks bad (cuts off a face, wrong person centered), adjust the box and re-crop rather than uploading a bad result.
 
 ### Step 4: Upload the anchor's own crop
 
