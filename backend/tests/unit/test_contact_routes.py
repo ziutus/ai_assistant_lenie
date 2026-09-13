@@ -32,7 +32,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
         address=None, birthday=None, pesel=None, notes=None, groups=[], whatsapp_profile=None,
-        photo_storage_key=None, is_archived=False,
+        photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),
     )
@@ -323,7 +323,7 @@ class TestContactPhotoChangeLog:
         session.add.assert_called_once()
         change_log_entry = session.add.call_args[0][0]
         assert change_log_entry.source == "manual_edit"
-        assert change_log_entry.changed_fields == ["photo_storage_key"]
+        assert change_log_entry.changed_fields == ["photo_storage_key", "photo_thumbnail_storage_key"]
 
     def test_delete_logs_change(self, monkeypatch):
         from library.contact_routes import contact_photo_delete
@@ -340,7 +340,7 @@ class TestContactPhotoChangeLog:
         assert row.photo_storage_key is None
         session.add.assert_called_once()
         change_log_entry = session.add.call_args[0][0]
-        assert change_log_entry.changed_fields == ["photo_storage_key"]
+        assert change_log_entry.changed_fields == ["photo_storage_key", "photo_thumbnail_storage_key"]
 
 
 class TestContactsListArchivedFilter:
@@ -937,7 +937,8 @@ class TestContactPhotoDelete:
     def test_clears_storage_key(self, monkeypatch):
         from library.contact_routes import contact_photo_delete
 
-        contact = _make_contact(id_=1, photo_storage_key="contacts/uuid/photo.jpg")
+        contact = _make_contact(id_=1, photo_storage_key="contacts/uuid/photo.jpg",
+                                photo_thumbnail_storage_key="contacts/uuid/photo_thumb.jpg")
         session = MagicMock()
         session.get.return_value = contact
         monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
@@ -947,6 +948,7 @@ class TestContactPhotoDelete:
 
         assert response[1] == 200
         assert contact.photo_storage_key is None
+        assert contact.photo_thumbnail_storage_key is None
         session.commit.assert_called_once()
 
     def test_missing_contact_is_404(self, monkeypatch):
@@ -987,3 +989,84 @@ class TestContactOrganizationsDelete:
             response = contact_organizations_delete(999)
 
         assert response[1] == 404
+
+
+class TestContactThumbnails:
+    @pytest.mark.parametrize("bad_image,storage_error", [(False, False), (True, False), (False, True)])
+    def test_upload_thumbnail_is_best_effort(self, monkeypatch, bad_image, storage_error):
+        from PIL import Image
+        from library.contact_routes import contact_photo_upload
+
+        contact = _make_contact(photo_thumbnail_storage_key="old-thumb.jpg")
+        session = MagicMock()
+        session.get.return_value = contact
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        storage = MagicMock()
+        storage.presigned_get_url.return_value = "https://example.test/photo"
+        if storage_error:
+            storage.put_bytes.side_effect = [None, OSError("storage unavailable")]
+        monkeypatch.setattr("library.config_loader.load_config", lambda: {})
+        monkeypatch.setattr("library.storage.storage_from_config", lambda cfg: storage)
+        output = BytesIO()
+        Image.new("RGBA", (800, 400)).save(output, format="PNG")
+        data = b"corrupt" if bad_image else output.getvalue()
+        with Flask(__name__).test_request_context(
+            "/contacts/1/photo", method="POST", content_type="multipart/form-data",
+            data={"photo": (BytesIO(data), "profile.png")},
+        ):
+            response, status = contact_photo_upload(1)
+        assert status == 200
+        assert contact.photo_storage_key == f"contacts/{contact.uuid}/photo.png"
+        assert storage.put_bytes.call_args_list[0].args[1] == data
+        session.commit.assert_called_once()
+        if bad_image or storage_error:
+            assert contact.photo_thumbnail_storage_key is None
+        else:
+            assert contact.photo_thumbnail_storage_key == f"contacts/{contact.uuid}/photo_thumb.jpg"
+            call = storage.put_bytes.call_args_list[1]
+            assert call.kwargs["content_type"] == "image/jpeg"
+            with Image.open(BytesIO(call.args[1])) as thumbnail:
+                assert thumbnail.size == (256, 128)
+                assert thumbnail.format == "JPEG"
+
+    def test_thumbnail_urls_in_list_and_detail(self, monkeypatch):
+        from library.contact_routes import contacts_list, contacts_get
+
+        contact = _make_contact(photo_thumbnail_storage_key="contacts/uuid/photo_thumb.jpg")
+        session = MagicMock()
+        session.get.return_value = contact
+        session.execute.return_value.scalar_one.return_value = 1
+        session.execute.return_value.scalars.return_value.all.return_value = [contact]
+        session.execute.return_value.all.return_value = []
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.contact_routes._load_contact_relationships_summary", lambda *args: {})
+        storage = MagicMock()
+        storage.presigned_get_url.return_value = "https://example.test/thumb"
+        factory = MagicMock(return_value=storage)
+        monkeypatch.setattr("library.config_loader.load_config", lambda: {})
+        monkeypatch.setattr("library.storage.storage_from_config", factory)
+        with Flask(__name__).test_request_context("/contacts"):
+            response, status = contacts_list()
+            assert status == 200
+            assert response.get_json()["contacts"][0]["photo_thumbnail_url"] == "https://example.test/thumb"
+        session.execute.return_value.scalars.return_value.all.return_value = []
+        with Flask(__name__).test_request_context("/contacts/1"):
+            response, status = contacts_get(1)
+            assert status == 200
+            assert response.get_json()["contact"]["photo_thumbnail_url"] == "https://example.test/thumb"
+
+    def test_null_thumbnail_needs_no_storage_and_reuses_client(self, monkeypatch):
+        from library.contact_routes import _contact_dict
+
+        storage = MagicMock()
+        storage.presigned_get_url.return_value = None
+        factory = MagicMock(return_value=storage)
+        monkeypatch.setattr("library.config_loader.load_config", lambda: {})
+        monkeypatch.setattr("library.storage.storage_from_config", factory)
+        with Flask(__name__).test_request_context("/contacts"):
+            assert _contact_dict(_make_contact())["photo_thumbnail_url"] is None
+            factory.assert_not_called()
+            for id_ in (1, 2):
+                assert _contact_dict(_make_contact(id_=id_, photo_thumbnail_storage_key=f"{id_}.jpg"))["photo_thumbnail_url"] is None
+        factory.assert_called_once()
+        assert storage.presigned_get_url.call_count == 2

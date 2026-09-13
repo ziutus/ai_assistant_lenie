@@ -24,6 +24,7 @@ export interface ContactListItem {
   last_name: string;
   phone_number: string | null;
   email: string | null;
+  photo_thumbnail_url?: string | null;
   has_whatsapp_profile: boolean;
   is_archived: boolean;
   relationships: ContactRelationshipSummary[];
@@ -299,10 +300,24 @@ const Contacts = () => {
         {contacts.map((contact) => (
           <li
             key={contact.id}
-            style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}
+            style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}
             onClick={() => navigate(`/contacts/${contact.id}${contactLinkSearch}`)}
           >
-            <strong>{[contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <span style={{ width: 36, height: 36, flexShrink: 0, borderRadius: "50%", overflow: "hidden",
+                background: "#eef1f5", color: "#526174", border: "1px solid #d5dde8",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>
+                {contact.photo_thumbnail_url ? (
+                  <img src={contact.photo_thumbnail_url} alt="Zdjęcie kontaktu" loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span title="Brak miniatury zdjęcia">
+                    {[contact.first_name, contact.last_name].map(name => name?.trim().charAt(0) ?? "").join("").toUpperCase() || "?"}
+                  </span>
+                )}
+              </span>
+              <strong style={{ overflowWrap: "anywhere" }}>{[contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+            </span>
             {contact.is_archived && (
               <span style={{ fontSize: "0.8em", color: "#a33", border: "1px solid #e3a", borderRadius: 4, padding: "1px 6px" }}>
                 archiwalny
