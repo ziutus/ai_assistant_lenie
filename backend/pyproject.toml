@@ -95,6 +95,9 @@ docker = [
     "pgvector>=0.3.0",
     "alembic>=1.13",
     "watchdog>=4.0",
+    # Face-aware contact photo thumbnails (library/face_detection.py) — see
+    # the `imaging` extra above for the version pin rationale.
+    "opencv-python-headless>=4.9,<5",
 ]
 
 all = [
@@ -135,6 +138,7 @@ all = [
     "pgvector>=0.3.0",
     "alembic>=1.13",
     "watchdog>=4.0",
+    "opencv-python-headless>=4.9,<5",
 ]
 
 [build-system]

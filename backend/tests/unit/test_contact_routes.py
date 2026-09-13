@@ -1647,7 +1647,69 @@ class TestContactPhotoRestore:
         session.rollback.assert_called_once()
 
 
-@pytest.mark.parametrize("route_name", ["contact_photo_history", "contact_photo_restore"])
+class TestContactPhotoRegenerateThumbnail:
+    def test_no_photo_returns_404(self, photo_history_setup):
+        from library.contact_routes import contact_photo_regenerate_thumbnail
+
+        contact, _, session, _ = photo_history_setup
+        contact.photo_storage_key = None
+        with Flask(__name__).test_request_context(method="POST"):
+            response, status = contact_photo_regenerate_thumbnail(contact.id)
+        assert status == 404
+        session.commit.assert_not_called()
+
+    def test_regenerates_in_place_and_updates_key_when_missing(self, photo_history_setup, monkeypatch):
+        from library.contact_routes import contact_photo_regenerate_thumbnail, _photo_thumbnail_storage_key
+
+        contact, photo, session, storage = photo_history_setup
+        contact.photo_storage_key = photo.storage_key
+        contact.photo_thumbnail_storage_key = None
+        previous_updated = contact.updated_at
+        storage.get_bytes.return_value = b"original-photo-bytes"
+        monkeypatch.setattr("library.contact_routes.generate_photo_thumbnail", lambda data: b"new-thumb-bytes")
+        with Flask(__name__).test_request_context(method="POST"):
+            response, status = contact_photo_regenerate_thumbnail(contact.id)
+        assert status == 200
+        thumb_key = _photo_thumbnail_storage_key(contact.uuid, photo.storage_key)
+        assert response.json == {"status": "success", "photo_thumbnail_url": f"https://storage.test/{thumb_key}"}
+        storage.get_bytes.assert_called_once_with(photo.storage_key)
+        storage.put_bytes.assert_called_once_with(thumb_key, b"new-thumb-bytes", content_type="image/jpeg")
+        assert contact.photo_thumbnail_storage_key == thumb_key
+        assert contact.updated_at > previous_updated
+        session.commit.assert_called_once()
+
+    def test_no_db_write_when_key_already_current(self, photo_history_setup, monkeypatch):
+        from library.contact_routes import contact_photo_regenerate_thumbnail, _photo_thumbnail_storage_key
+
+        contact, photo, session, storage = photo_history_setup
+        contact.photo_storage_key = photo.storage_key
+        contact.photo_thumbnail_storage_key = _photo_thumbnail_storage_key(contact.uuid, photo.storage_key)
+        previous_updated = contact.updated_at
+        storage.get_bytes.return_value = b"original-photo-bytes"
+        monkeypatch.setattr("library.contact_routes.generate_photo_thumbnail", lambda data: b"new-thumb-bytes")
+        with Flask(__name__).test_request_context(method="POST"):
+            response, status = contact_photo_regenerate_thumbnail(contact.id)
+        assert status == 200
+        storage.put_bytes.assert_called_once()
+        assert contact.updated_at == previous_updated
+        session.commit.assert_not_called()
+
+    def test_processing_failure_returns_502(self, photo_history_setup, monkeypatch):
+        from library.contact_routes import contact_photo_regenerate_thumbnail
+
+        contact, photo, session, storage = photo_history_setup
+        contact.photo_storage_key = photo.storage_key
+        storage.get_bytes.side_effect = RuntimeError("storage unavailable")
+        with Flask(__name__).test_request_context(method="POST"):
+            response, status = contact_photo_regenerate_thumbnail(contact.id)
+        assert status == 502
+        storage.put_bytes.assert_not_called()
+        session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "route_name", ["contact_photo_history", "contact_photo_restore", "contact_photo_regenerate_thumbnail"],
+)
 def test_photo_history_routes_missing_contact_and_options(monkeypatch, route_name):
     from library import contact_routes
 

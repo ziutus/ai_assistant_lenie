@@ -878,6 +878,50 @@ def contact_photo_upload(contact_id: int):
     return jsonify({"status": "success", "photo_url": storage.presigned_get_url(key), "photo": photo_dict(photo)}), 200
 
 
+@bp.route("/contacts/<int:contact_id>/photo/regenerate_thumbnail", methods=["POST", "OPTIONS"])
+def contact_photo_regenerate_thumbnail(contact_id: int):
+    """Re-encode the thumbnail for the contact's CURRENT photo in place —
+    same deterministic storage key, no new immutable photo version. Useful
+    after an improvement to generate_photo_thumbnail() (e.g. face-aware
+    cropping) that should apply to an already-uploaded photo without
+    re-uploading identical pixels as a spurious new history entry."""
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    if not contact.photo_storage_key:
+        return {"status": "error", "message": "Kontakt nie ma zdjęcia."}, 404
+
+    from library.config_loader import load_config
+    from library.storage import storage_from_config
+
+    storage = storage_from_config(load_config())
+    try:
+        photo_bytes = storage.get_bytes(contact.photo_storage_key)
+        thumbnail = generate_photo_thumbnail(photo_bytes)
+    except Exception:
+        logger.warning("Could not regenerate thumbnail for contact %s", contact_id, exc_info=True)
+        return {"status": "error", "message": "Nie udało się przetworzyć zdjęcia."}, 502
+
+    thumb_key = _photo_thumbnail_storage_key(contact.uuid, contact.photo_storage_key)
+    storage.put_bytes(thumb_key, thumbnail, content_type="image/jpeg")
+    if contact.photo_thumbnail_storage_key != thumb_key:
+        contact.photo_thumbnail_storage_key = thumb_key
+        contact.updated_at = datetime.datetime.now()
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            return {"status": "error", "message": "DB error"}, 500
+    else:
+        session.rollback()
+
+    return jsonify({"status": "success", "photo_thumbnail_url": storage.presigned_get_url(thumb_key)}), 200
+
+
 @bp.route("/contacts/<int:contact_id>/photo/history", methods=["GET", "OPTIONS"])
 def contact_photo_history(contact_id: int):
     if request.method == "OPTIONS":
