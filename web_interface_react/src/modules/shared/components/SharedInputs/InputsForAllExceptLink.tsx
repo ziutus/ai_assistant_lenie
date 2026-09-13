@@ -31,10 +31,11 @@ const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolea
     await axios.patch(`${apiUrl}/chunk/${id}`, { type }, { headers });
   };
   const mergeChunk = async (id: number) => {
-    await axios.post(`${apiUrl}/chunk/${id}/merge_with_next`, undefined, { headers });
+    const response = await axios.post<{ chunk: ChunkForPreview }>(`${apiUrl}/chunk/${id}/merge_with_next`, undefined, { headers });
+    return response.data.chunk;
   };
-  const splitChunk = async (id: number, splitAtLines: number[]) => {
-    await axios.post(`${apiUrl}/chunk/${id}/execute_split`, { split_at_lines: splitAtLines }, { headers });
+  const splitChunk = async (id: number, splitAtLines: number[], splitTypes?: string[]) => {
+    await axios.post(`${apiUrl}/chunk/${id}/execute_split`, { split_at_lines: splitAtLines, split_types: splitTypes }, { headers });
   };
   return <MarkdownLineEditor formik={formik} disabled={disabled}
     chunks={runId ? chunks ?? undefined : undefined}

@@ -31,10 +31,11 @@ export function computeChunkLineRanges(lines: string[], chunks: ChunkForPreview[
   return ranges;
 }
 
-// Both document lines and backend positions must be adjacent: an unmatched
+// Document ranges may be separated only by blank lines; backend positions must be adjacent: an unmatched
 // chunk must never cause merge_with_next to target an invisible successor.
-export function canMergeChunkRanges(first: ChunkLineRange, next: ChunkLineRange | undefined, chunks: ChunkForPreview[]): boolean {
-  return !!next && first.endLine + 1 === next.startLine
+export function canMergeChunkRanges(first: ChunkLineRange, next: ChunkLineRange | undefined, chunks: ChunkForPreview[], lines: string[]): boolean {
+  return !!next && first.endLine < next.startLine
+    && lines.slice(first.endLine + 1, next.startLine).every(line => line.trim() === "")
     && first.chunkIndex + 1 === next.chunkIndex
     && chunks[first.chunkIndex].position + 1 === chunks[next.chunkIndex].position;
 }
@@ -42,4 +43,17 @@ export function canMergeChunkRanges(first: ChunkLineRange, next: ChunkLineRange 
 export function chunkLocalSplitLines(points: Set<number>, range: ChunkLineRange): number[] {
   return [...points].filter(line => line > range.startLine && line <= range.endLine)
     .map(line => line - range.startLine).sort((a, b) => a - b);
+}
+
+export function computeMergedSplitIndex(chosenGlobalLine: number, first: ChunkLineRange, second: ChunkLineRange): number {
+  const firstLen = first.endLine - first.startLine + 1;
+  return chosenGlobalLine >= first.startLine && chosenGlobalLine <= first.endLine
+    ? chosenGlobalLine - first.startLine
+    : firstLen + 1 + (chosenGlobalLine - second.startLine);
+}
+
+export function canMoveBoundaryTo(chosenGlobalLine: number, first: ChunkLineRange, second: ChunkLineRange): boolean {
+  return chosenGlobalLine !== first.startLine && chosenGlobalLine !== second.endLine
+    && ((chosenGlobalLine >= first.startLine && chosenGlobalLine <= first.endLine)
+      || (chosenGlobalLine >= second.startLine && chosenGlobalLine <= second.endLine));
 }

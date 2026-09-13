@@ -1,7 +1,9 @@
 import React from "react";
 import axios from "axios";
 import { AuthorizationContext } from "../../context/authorizationContext";
-import { canMergeChunkRanges, chunkLocalSplitLines, computeChunkLineRanges, type ChunkForPreview } from "../../utils/chunkBoundaries";
+import { canMergeChunkRanges, canMoveBoundaryTo, chunkLocalSplitLines, computeChunkLineRanges, computeMergedSplitIndex, type ChunkForPreview } from "../../utils/chunkBoundaries";
+
+class MergedButSplitFailed extends Error {}
 
 const chunkColor = (type: string) => ({
   TEMAT: "#22c55e", REKLAMA: "#f97316", SZUM: "#94a3b8", ZRODLA: "#3b82f6",
@@ -18,8 +20,8 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
   chunksStale?: boolean;
   onRefreshChunks?: () => Promise<void>;
   onChangeChunkType?: (id: number, type: string) => Promise<void>;
-  onMergeChunk?: (id: number) => Promise<void>;
-  onSplitChunk?: (id: number, splitAtLines: number[]) => Promise<void>;
+  onMergeChunk?: (id: number) => Promise<ChunkForPreview>;
+  onSplitChunk?: (id: number, splitAtLines: number[], splitTypes?: string[]) => Promise<void>;
 }) => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const value: string = formik.values.text_md || formik.values.text || "";
@@ -29,10 +31,16 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
   const [loadingChunks, setLoadingChunks] = React.useState(false);
   const [chunkError, setChunkError] = React.useState("");
   const [pendingSplits, setPendingSplits] = React.useState<Record<number, Set<number>>>({});
+  const [movingBoundary, setMovingBoundary] = React.useState<{
+    firstChunkId: number; secondChunkId: number; targetLine?: number;
+  } | null>(null);
+  const [hoveredMoveLine, setHoveredMoveLine] = React.useState<number | null>(null);
+  const firstMoveRange = movingBoundary ? ranges.find(range => chunks?.[range.chunkIndex].id === movingBoundary.firstChunkId) : undefined;
+  const secondMoveRange = movingBoundary ? ranges.find(range => chunks?.[range.chunkIndex].id === movingBoundary.secondChunkId) : undefined;
   const [mutatingChunk, setMutatingChunk] = React.useState(false);
   const mutationInFlight = React.useRef(false);
   // Global line selections become obsolete whenever the document text changes.
-  React.useEffect(() => { setPendingSplits({}); }, [value]);
+  React.useEffect(() => { setPendingSplits({}); setMovingBoundary(null); setHoveredMoveLine(null); }, [value]);
   const mutateChunk = async (action: () => Promise<void>) => {
     if (!showChunkPreview || disabled || mutationInFlight.current) return;
     if (chunksStale && !window.confirm("Tekst dokumentu zmienił się od ostatniego wczytania chunków. Ta akcja użyje zapisanej wcześniej treści chunka, nie najnowszych zmian w tekście na ekranie. Kontynuować?")) return;
@@ -44,8 +52,18 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
       await action();
       saved = true;
       setPendingSplits({});
+      setMovingBoundary(null);
       await onRefreshChunks?.();
-    } catch {
+    } catch (error) {
+      if (error instanceof MergedButSplitFailed) {
+        setPendingSplits({});
+        setMovingBoundary(null);
+        let message = "Scalenie powiodło się, ale podział nie. Ponów podział ręcznie, zaznaczając punkty podziału scalonego chunka.";
+        try { await onRefreshChunks?.(); }
+        catch { message += " Nie udało się odświeżyć chunków. Wyłącz i włącz podgląd, aby ponowić pobieranie."; }
+        setChunkError(message);
+        return;
+      }
       setChunkError(saved
         ? "Zapisano zmianę, ale nie udało się odświeżyć chunków. Wyłącz i włącz podgląd, aby ponowić pobieranie."
         : "Nie udało się zmienić chunka. Spróbuj ponownie.");
@@ -53,6 +71,23 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
       mutationInFlight.current = false;
       setMutatingChunk(false);
     }
+  };
+  const moveBoundary = () => {
+    if (!movingBoundary || movingBoundary.targetLine === undefined || !firstMoveRange || !secondMoveRange
+      || !chunks || !onMergeChunk || !onSplitChunk
+      || !canMergeChunkRanges(firstMoveRange, secondMoveRange, chunks, lines)
+      || !canMoveBoundaryTo(movingBoundary.targetLine, firstMoveRange, secondMoveRange)) return;
+    const splitIndex = computeMergedSplitIndex(movingBoundary.targetLine, firstMoveRange, secondMoveRange);
+    const splitTypes = [chunks[firstMoveRange.chunkIndex].type, chunks[secondMoveRange.chunkIndex].type];
+    void mutateChunk(async () => {
+      const merged = await onMergeChunk(movingBoundary.firstChunkId);
+      try {
+        // Use the response text: merge inserts a blank line and strips outer whitespace.
+        const mergedLines = merged.original_text.split("\n");
+        if (splitIndex <= 0 || splitIndex >= mergedLines.length) throw new Error("Invalid merged split index");
+        await onSplitChunk(merged.id, [splitIndex], splitTypes);
+      } catch { throw new MergedButSplitFailed(); }
+    });
   };
   const toggleSplit = (id: number, line: number) => setPendingSplits(previous => {
     const points = new Set(previous[id]);
@@ -69,6 +104,8 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
       catch { setChunkError("Nie udało się pobrać chunków. Spróbuj ponownie."); return; }
       finally { setLoadingChunks(false); }
     }
+    setMovingBoundary(null);
+    setHoveredMoveLine(null);
     setShowChunkPreview(current => !current);
   };
   const [editing, setEditing] = React.useState(false);
@@ -259,9 +296,19 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
               const chunk = range && chunks ? chunks[range.chunkIndex] : undefined;
               const nextRange = range ? ranges[ranges.indexOf(range) + 1] : undefined;
               const splitPoints = chunk ? pendingSplits[chunk.id] : undefined;
+              const canSelectMove = showChunkPreview && !disabled && !mutatingChunk && !!firstMoveRange && !!secondMoveRange
+                && canMoveBoundaryTo(index, firstMoveRange, secondMoveRange);
               return (
               <React.Fragment key={`${index}-${line.slice(0, 30)}`}>
-              <div style={{
+              <div onClick={event => {
+                if (canSelectMove && !(event.target as HTMLElement).closest("button")) {
+                  setMovingBoundary(previous => previous ? { ...previous, targetLine: index } : null);
+                }
+              }} onMouseEnter={() => { if (canSelectMove) setHoveredMoveLine(index); }}
+                onMouseLeave={() => setHoveredMoveLine(null)} style={{
+                cursor: canSelectMove ? "pointer" : undefined,
+                boxShadow: canSelectMove && (movingBoundary?.targetLine === index || hoveredMoveLine === index)
+                  ? `inset 0 0 0 1000px ${movingBoundary?.targetLine === index ? "#bfdbfe88" : "#dbeafe66"}` : undefined,
                 display: "grid", gridTemplateColumns: `${showChunkPreview && ranges.length ? "120px" : "46px"} repeat(9, ${compactLabels ? "34px" : "auto"}) minmax(280px, 1fr)`, gap: 5,
                 alignItems: "start", padding: "3px 6px", borderBottom: "1px solid #f1f5f9",
                 borderLeft: chunk ? `4px solid ${chunkColor(chunk.type)}` : undefined,
@@ -315,12 +362,27 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
                   {line || <em style={{ color: "#cbd5e1" }}>pusta linia</em>}
                 </span>
               </div>
-              {chunk && range && index === range.endLine && onMergeChunk && canMergeChunkRanges(range, nextRange, chunks ?? []) && (
+              {chunk && range && index === range.endLine && onMergeChunk && canMergeChunkRanges(range, nextRange, chunks ?? [], lines) && (
                 <div style={{ padding: "3px 6px" }}>
                   <button type="button" disabled={disabled || mutatingChunk}
-                    onClick={() => void mutateChunk(() => onMergeChunk(chunk.id))}>
+                    onClick={() => void mutateChunk(async () => { await onMergeChunk(chunk.id); })}>
                     &#128279; Scal z nastepnym
                   </button>
+                  {onSplitChunk && nextRange && chunks && (
+                    movingBoundary?.firstChunkId === chunk.id ? <>
+                      <span style={{ fontSize: "0.85em", margin: "0 6px" }}>Wybierz linię początku drugiej części.</span>
+                      {movingBoundary.targetLine !== undefined && <button type="button" disabled={disabled || mutatingChunk}
+                        onClick={moveBoundary}>Zastosuj przesuniecie</button>}
+                      <button type="button" disabled={disabled || mutatingChunk}
+                        onClick={() => { setMovingBoundary(null); setHoveredMoveLine(null); }}>Anuluj</button>
+                    </> : <button type="button" disabled={disabled || mutatingChunk}
+                      onClick={() => {
+                        setMovingBoundary({ firstChunkId: chunk.id, secondChunkId: chunks[nextRange.chunkIndex].id });
+                        setHoveredMoveLine(null);
+                      }}>
+                      &#8597; Przesun granice
+                    </button>
+                  )}
                 </div>
               )}
               </React.Fragment>
