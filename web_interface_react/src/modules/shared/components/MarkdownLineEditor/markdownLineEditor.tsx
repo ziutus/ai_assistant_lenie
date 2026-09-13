@@ -75,7 +75,7 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
   const moveBoundary = () => {
     if (!movingBoundary || movingBoundary.targetLine === undefined || !firstMoveRange || !secondMoveRange
       || !chunks || !onMergeChunk || !onSplitChunk
-      || !canMergeChunkRanges(firstMoveRange, secondMoveRange, chunks)
+      || !canMergeChunkRanges(firstMoveRange, secondMoveRange, chunks, lines)
       || !canMoveBoundaryTo(movingBoundary.targetLine, firstMoveRange, secondMoveRange)) return;
     const splitIndex = computeMergedSplitIndex(movingBoundary.targetLine, firstMoveRange, secondMoveRange);
     const splitTypes = [chunks[firstMoveRange.chunkIndex].type, chunks[secondMoveRange.chunkIndex].type];
@@ -362,7 +362,7 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
                   {line || <em style={{ color: "#cbd5e1" }}>pusta linia</em>}
                 </span>
               </div>
-              {chunk && range && index === range.endLine && onMergeChunk && canMergeChunkRanges(range, nextRange, chunks ?? []) && (
+              {chunk && range && index === range.endLine && onMergeChunk && canMergeChunkRanges(range, nextRange, chunks ?? [], lines) && (
                 <div style={{ padding: "3px 6px" }}>
                   <button type="button" disabled={disabled || mutatingChunk}
                     onClick={() => void mutateChunk(async () => { await onMergeChunk(chunk.id); })}>

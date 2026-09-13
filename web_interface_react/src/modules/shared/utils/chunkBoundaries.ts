@@ -31,10 +31,11 @@ export function computeChunkLineRanges(lines: string[], chunks: ChunkForPreview[
   return ranges;
 }
 
-// Both document lines and backend positions must be adjacent: an unmatched
+// Document ranges may be separated only by blank lines; backend positions must be adjacent: an unmatched
 // chunk must never cause merge_with_next to target an invisible successor.
-export function canMergeChunkRanges(first: ChunkLineRange, next: ChunkLineRange | undefined, chunks: ChunkForPreview[]): boolean {
-  return !!next && first.endLine + 1 === next.startLine
+export function canMergeChunkRanges(first: ChunkLineRange, next: ChunkLineRange | undefined, chunks: ChunkForPreview[], lines: string[]): boolean {
+  return !!next && first.endLine < next.startLine
+    && lines.slice(first.endLine + 1, next.startLine).every(line => line.trim() === "")
     && first.chunkIndex + 1 === next.chunkIndex
     && chunks[first.chunkIndex].position + 1 === chunks[next.chunkIndex].position;
 }

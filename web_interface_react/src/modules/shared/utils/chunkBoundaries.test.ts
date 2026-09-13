@@ -48,13 +48,31 @@ describe("computeChunkLineRanges", () => {
 describe("chunk boundary actions", () => {
   const first = { chunkIndex: 0, startLine: 5, endLine: 7 };
   const next = { chunkIndex: 1, startLine: 8, endLine: 9 };
+  const lines = ["intro", "intro", "intro", "intro", "intro", "a", "b", "c", "d", "e"];
   it("offers merge only for contiguous lines and consecutive backend chunks", () => {
     const chunks = [chunk("a", 0), chunk("b", 1), chunk("c", 2)];
-    expect(canMergeChunkRanges(first, next, chunks)).toBe(true);
-    expect(canMergeChunkRanges(first, undefined, chunks)).toBe(false);
-    expect(canMergeChunkRanges(first, { ...next, startLine: 9 }, chunks)).toBe(false);
-    expect(canMergeChunkRanges(first, { ...next, chunkIndex: 2 }, chunks)).toBe(false);
-    expect(canMergeChunkRanges(first, next, [chunk("a", 0), chunk("b", 2)])).toBe(false);
+    expect(canMergeChunkRanges(first, next, chunks, lines)).toBe(true);
+    expect(canMergeChunkRanges(first, undefined, chunks, lines)).toBe(false);
+    expect(canMergeChunkRanges(first, { ...next, startLine: 9 }, chunks, lines)).toBe(false);
+    expect(canMergeChunkRanges(first, { ...next, chunkIndex: 2 }, chunks, lines)).toBe(false);
+    expect(canMergeChunkRanges(first, next, [chunk("a", 0), chunk("b", 2)], lines)).toBe(false);
+  });
+  it("allows a single empty or whitespace-only line between chunks", () => {
+    for (const blank of ["", " \t "]) {
+      const documentLines = [...lines.slice(0, 8), blank, ...lines.slice(8)];
+      expect(canMergeChunkRanges(first, { ...next, startLine: 9, endLine: 10 },
+        [chunk("a\nb\nc", 0), chunk("d\ne", 1)], documentLines)).toBe(true);
+    }
+  });
+  it("rejects a gap containing orphaned non-whitespace content", () => {
+    const documentLines = [...lines.slice(0, 8), "", "orphaned content", " \t", ...lines.slice(8)];
+    expect(canMergeChunkRanges(first, { ...next, startLine: 11, endLine: 12 },
+      [chunk("a\nb\nc", 0), chunk("d\ne", 1)], documentLines)).toBe(false);
+  });
+  it("allows two consecutive blank lines between chunks", () => {
+    const documentLines = [...lines.slice(0, 8), "", " \t ", ...lines.slice(8)];
+    expect(canMergeChunkRanges(first, { ...next, startLine: 10, endLine: 11 },
+      [chunk("a\nb\nc", 0), chunk("d\ne", 1)], documentLines)).toBe(true);
   });
   it("converts global split points to sorted local indices, excluding the start and outside lines", () => {
     expect(chunkLocalSplitLines(new Set([7, 5, 6, 4, 8]), first)).toEqual([1, 2]);
