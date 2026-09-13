@@ -993,7 +993,8 @@ def contact_photo_description_update(contact_id: int):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     from library.contact_photos import update_description
-    return update_description(get_scoped_session(), contact_id, request.get_json(silent=True))
+    payload, status = update_description(get_scoped_session(), contact_id, request.get_json(silent=True))
+    return jsonify(payload), status
 
 
 @bp.route("/contacts/<int:contact_id>/photo/describe", methods=["POST", "OPTIONS"])
@@ -1001,7 +1002,8 @@ def contact_photo_describe(contact_id: int):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     from library.contact_photos import generate_description
-    return generate_description(get_scoped_session(), contact_id, request.get_json(silent=True))
+    payload, status = generate_description(get_scoped_session(), contact_id, request.get_json(silent=True))
+    return jsonify(payload), status
 
 
 @bp.route("/contacts/<int:contact_id>/family", methods=["POST", "OPTIONS"])
@@ -1009,7 +1011,8 @@ def contact_family_create(contact_id: int):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     from library.contact_families import create_family
-    return create_family(get_scoped_session(), contact_id, request.get_json(silent=True))
+    payload, status = create_family(get_scoped_session(), contact_id, request.get_json(silent=True))
+    return jsonify(payload), status
 
 
 @bp.route("/contacts/<int:contact_id>/relationships", methods=["POST", "OPTIONS"])

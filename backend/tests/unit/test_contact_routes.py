@@ -1128,6 +1128,23 @@ class TestContactThumbnails:
             factory.assert_not_called()
             for id_ in (1, 2):
                 assert _contact_dict(_make_contact(id_=id_, photo_thumbnail_storage_key=f"{id_}.jpg"))["photo_thumbnail_url"] is None
+
+
+@pytest.mark.parametrize("path,method,helper", [
+    ("/contacts/1/photo/description", "PATCH", "library.contact_photos.update_description"),
+    ("/contacts/1/photo/describe", "POST", "library.contact_photos.generate_description"),
+    ("/contacts/1/family", "POST", "library.contact_families.create_family"),
+])
+def test_photo_and_family_endpoints_explicitly_serialize_json(monkeypatch, path, method, helper):
+    from library.contact_routes import bp
+    body = {"text": "<script>alert('untrusted text')</script>"}
+    monkeypatch.setattr(helper, lambda *_args: (body, 200))
+    monkeypatch.setattr("library.contact_routes.get_scoped_session", MagicMock)
+    app = Flask(__name__)
+    app.register_blueprint(bp)
+    response = app.test_client().open(path, method=method, json={})
+    assert response.mimetype == "application/json"
+    assert response.get_json() == body
         factory.assert_called_once()
         assert storage.presigned_get_url.call_count == 2
 
