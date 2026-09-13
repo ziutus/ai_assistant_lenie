@@ -12,6 +12,8 @@ import type { ChunkForPreview } from "../../utils/chunkBoundaries";
 const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolean }) => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [chunks, setChunks] = React.useState<ChunkForPreview[] | null>(null);
+  const value: string = formik.values.text_md || formik.values.text || "";
+  const chunksTextSnapshot = React.useRef<string>(value);
   const runId = formik.values.analysis_run_id;
   const requestChunks = async () => {
     if (!runId) return;
@@ -19,6 +21,7 @@ const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolea
     const response = await axios.get<{ chunks: Array<Omit<ChunkForPreview, "original_text"> & { original_text?: string | null }> }>(
       `${apiUrl}/analysis_run/${runId}/chunks`, { headers: { "x-api-key": `${apiKey ?? ""}` } },
     );
+    chunksTextSnapshot.current = value;
     setChunks(response.data.chunks.map(({ id, position, type, status, original_text }) => ({
       id, position, type, status, original_text: original_text ?? "",
     })));
@@ -35,6 +38,7 @@ const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolea
   };
   return <MarkdownLineEditor formik={formik} disabled={disabled}
     chunks={runId ? chunks ?? undefined : undefined}
+    chunksStale={value !== chunksTextSnapshot.current}
     onRequestChunks={runId && chunks === null ? requestChunks : undefined}
     onRefreshChunks={requestChunks}
     onChangeChunkType={runId ? changeChunkType : undefined}

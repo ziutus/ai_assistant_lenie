@@ -13,8 +13,9 @@ const emptyMarks = (): Record<MarkKind, Set<number>> => ({
   author: new Set(), date: new Set(), sources: new Set(), links: new Set(), ads: new Set(), persons: new Set(),
 });
 
-const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks, onRefreshChunks, onChangeChunkType, onMergeChunk, onSplitChunk }: {
+const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestChunks, onRefreshChunks, onChangeChunkType, onMergeChunk, onSplitChunk }: {
   formik: any; disabled: boolean; chunks?: ChunkForPreview[]; onRequestChunks?: () => Promise<void>;
+  chunksStale?: boolean;
   onRefreshChunks?: () => Promise<void>;
   onChangeChunkType?: (id: number, type: string) => Promise<void>;
   onMergeChunk?: (id: number) => Promise<void>;
@@ -34,6 +35,7 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks, onRefre
   React.useEffect(() => { setPendingSplits({}); }, [value]);
   const mutateChunk = async (action: () => Promise<void>) => {
     if (!showChunkPreview || disabled || mutationInFlight.current) return;
+    if (chunksStale && !window.confirm("Tekst dokumentu zmienił się od ostatniego wczytania chunków. Ta akcja użyje zapisanej wcześniej treści chunka, nie najnowszych zmian w tekście na ekranie. Kontynuować?")) return;
     mutationInFlight.current = true;
     setMutatingChunk(true);
     setChunkError("");
@@ -263,6 +265,7 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, onRequestChunks, onRefre
                 display: "grid", gridTemplateColumns: `${showChunkPreview && ranges.length ? "120px" : "46px"} repeat(9, ${compactLabels ? "34px" : "auto"}) minmax(280px, 1fr)`, gap: 5,
                 alignItems: "start", padding: "3px 6px", borderBottom: "1px solid #f1f5f9",
                 borderLeft: chunk ? `4px solid ${chunkColor(chunk.type)}` : undefined,
+                borderTop: chunk && range && range.startLine === index ? `2px solid ${chunkColor(chunk.type)}` : undefined,
                 background: marked("persons", index) ? "#fef3c7" : marked("author", index) ? "#f3e8ff" : marked("date", index) ? "#dbeafe" : marked("sources", index) ? "#ede9fe" : marked("links", index) ? "#dcfce7" : marked("ads", index) ? "#fee2e2" : index % 2 ? "#fafafa" : "white",
               }}>
                 <span style={{ color: "#94a3b8", textAlign: "right", paddingTop: 3 }}>
