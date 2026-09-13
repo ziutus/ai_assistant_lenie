@@ -541,6 +541,18 @@ python imports/select_control_questions.py --id 9204 --chapter 37   # re-run one
 
 One-time migration script: copies UUID-named `.html`/`.txt` files from `imports/data/` (legacy S3 download location) into the `{CACHE_DIR}/markdown/{doc_id}/{doc_id}.ext` convention used by `document_prepare.py`. Looks up `doc_id` by `uuid` in PostgreSQL. Files are **copied**, not moved — use `--delete-source` to remove originals after a successful copy. Supports `--dry-run`, `--source-dir`, `--target-dir`.
 
+### `detect_faces.py`
+
+Standalone tool: detects faces in an image and prints pixel bounding boxes as JSON. **Does not touch the Lenie database.** Uses OpenCV's Haar cascade (`library/face_detection.py`, optional dependency — `uv sync --extra imaging`, pinned `opencv-python-headless>=4.9,<5` since 5.0 dropped the bundled Haar cascade data and the `CascadeClassifier` API entirely, verified 2026-09-13). Used by the `/lenie-contact-photo-split` skill (`.claude/commands/lenie-contact-photo-split.md`) to get precise crop boundaries when splitting a multi-person contact photo, instead of eyeballing coordinates — a two-adult photo detects both faces reliably; a busier family photo with small/turned/blurred children's faces may miss one, which is fine since the skill already asks the user before creating contacts for children rather than assuming.
+
+**Running:**
+```bash
+cd backend
+uv sync --extra imaging                              # once, installs opencv-python-headless
+python imports/detect_faces.py path/to/photo.png
+python imports/detect_faces.py path/to/photo.png --min-size 60   # raise the minimum face box side (default 40px)
+```
+
 ### Private contact book imports (`contacts` table, `library/contact_routes.py`)
 
 These write to the private contact book (personal CRM), independent of the NER persons registry.
