@@ -29,6 +29,36 @@ def db_instance(mock_session):
     return DocumentRepository(session=mock_session)
 
 
+@pytest.mark.parametrize("is_private", [False, True])
+def test_nonempty_list_reads_privacy_from_selected_columns(monkeypatch, is_private):
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session
+    from library.document_repository import DocumentRepository
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE documents (
+                id INTEGER PRIMARY KEY, url TEXT, title TEXT, document_type TEXT,
+                ingested_at DATETIME, processing_status TEXT, processing_error_code TEXT,
+                note TEXT, collection_id INTEGER, uuid TEXT, byline TEXT,
+                obsidian_note_paths JSON, text_md TEXT, is_private BOOLEAN
+            )
+        """))
+        connection.execute(text("""
+            INSERT INTO documents (id, document_type, ingested_at, is_private)
+            VALUES (1, 'webpage', '2026-09-13 12:00:00', :is_private)
+        """), {"is_private": is_private})
+    with Session(engine) as session:
+        repo = DocumentRepository(session)
+        for helper in ("_count_obsidian_note_chunks", "_load_document_groups", "_count_document_links"):
+            monkeypatch.setattr(repo, helper, lambda ids: {})
+        result = repo.get_list(document_type="webpage")
+        assert len(result) == 1
+        assert result[0]["is_private"] is is_private
+    engine.dispose()
+
+
 class TestGetListCollectionFilter:
     """Tests for the collection_id filter in get_list()."""
 
