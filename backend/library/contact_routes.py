@@ -5,14 +5,16 @@ table managed from the UI (like DiscoverySource); contact_relationships is
 directional and single-row (no automatic reciprocal row/label)."""
 
 import datetime
+import logging
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import aliased
 from werkzeug.utils import secure_filename
 
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
+from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
 from library.db.engine import get_scoped_session
 from library.db.models import (
     Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupMembership, ContactLookupResult,
@@ -20,6 +22,7 @@ from library.db.models import (
 )
 
 bp = Blueprint("contacts", __name__)
+logger = logging.getLogger(__name__)
 
 _CONTACT_FIELDS = (
     "first_name", "last_name", "phone_number", "email", "linkedin_url",
@@ -100,6 +103,7 @@ def _contact_dict(row: Contact) -> dict:
         "notes": row.notes,
         "is_archived": row.is_archived,
         "has_whatsapp_profile": bool(row.whatsapp_profile),
+        "photo_thumbnail_url": _contact_photo_thumbnail_url(row),
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -593,6 +597,18 @@ def contacts_get(contact_id: int):
     return jsonify({"status": "success", "contact": data}), 200
 
 
+def _contact_photo_thumbnail_url(row: Contact) -> str | None:
+    if not row.photo_thumbnail_storage_key:
+        return None
+    from library.config_loader import load_config
+    from library.storage import storage_from_config
+
+    # Reuse the signing client across up to 500 contacts in this request.
+    if "contact_photo_storage" not in g:
+        g.contact_photo_storage = storage_from_config(load_config())
+    return g.contact_photo_storage.presigned_get_url(row.photo_thumbnail_storage_key)
+
+
 def _contact_photo_url(row: Contact) -> str | None:
     if not row.photo_storage_key:
         return None
@@ -634,8 +650,17 @@ def contact_photo_upload(contact_id: int):
     storage.put_bytes(key, data, content_type=uploaded.content_type)
 
     contact.photo_storage_key = key
+    contact.photo_thumbnail_storage_key = None
+    try:
+        thumbnail = generate_photo_thumbnail(data)
+        thumbnail_key = _photo_thumbnail_storage_key(contact.uuid)
+        storage.put_bytes(thumbnail_key, thumbnail, content_type="image/jpeg")
+        contact.photo_thumbnail_storage_key = thumbnail_key
+    except Exception:
+        logger.warning("Could not generate/store photo thumbnail for contact %s", contact_id, exc_info=True)
     contact.updated_at = datetime.datetime.now()
-    record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
+    record_contact_change(session, contact, "manual_edit",
+                          changed_fields=["photo_storage_key", "photo_thumbnail_storage_key"])
     try:
         session.commit()
     except Exception:
@@ -658,8 +683,10 @@ def contact_photo_delete(contact_id: int):
     # The blob itself is left in storage — ObjectStorage has no delete
     # primitive (same tradeoff as document_images.py's replace functions).
     contact.photo_storage_key = None
+    contact.photo_thumbnail_storage_key = None
     contact.updated_at = datetime.datetime.now()
-    record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key"])
+    record_contact_change(session, contact, "manual_edit",
+                          changed_fields=["photo_storage_key", "photo_thumbnail_storage_key"])
     try:
         session.commit()
     except Exception:
