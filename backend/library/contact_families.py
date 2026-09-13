@@ -93,6 +93,7 @@ def create_family(session, contact_id, body):
                 display_label=(data.get("display_label") or "").strip() or None,
                 notes=source,
                 photo_storage_key=photo.storage_key if body.get("share_photo") else None,
+                photo_thumbnail_storage_key=root.photo_thumbnail_storage_key if body.get("share_photo") else None,
             )
             session.add(row)
             session.flush()

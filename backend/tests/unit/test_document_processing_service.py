@@ -60,12 +60,17 @@ def test_execute_materializes_html_runs_pipeline_and_uploads_artifacts(tmp_path)
         Path(cache_dir, "artifact.json").write_text("{}", encoding="utf-8")
         return "RAW MARKDOWN", "ARTICLE"
 
+    images = [{"url": "https://example.test/photo.jpg", "alt": "Photo"}]
+    session = Session()
+
     with (
         patch("library.document_processing_service.extract_article", fake_extract),
-        patch("library.document_processing_service.clean_article_text", return_value={"text": clean_text}),
+        patch("library.document_processing_service.clean_article_text", return_value={"text": clean_text, "images": images}),
+        patch("library.document_images.replace_document_images") as replace_images,
     ):
-        result = DocumentProcessingService(Session(), storage, str(tmp_path)).execute(job)
+        result = DocumentProcessingService(session, storage, str(tmp_path)).execute(job)
 
+    replace_images.assert_called_once_with(session, 12, images)
     assert result["markdown_created"] is True
     assert result["llm_extracted"] is True
     assert result["artifacts_uploaded"] == 2  # materialized HTML + fake artifact

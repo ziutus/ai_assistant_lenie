@@ -3,7 +3,7 @@
 from alembic import op
 
 revision = "e93b71d6a204"
-down_revision = "c4a8d2b1f5e6"
+down_revision = "8b07952a8f81"
 branch_labels = None
 depends_on = None
 

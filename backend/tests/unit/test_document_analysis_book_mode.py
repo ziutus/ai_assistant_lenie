@@ -107,6 +107,28 @@ def book_env(monkeypatch, session):
 
 
 class TestScopeChapterRun:
+    @pytest.mark.parametrize("document_type", ["webpage", "link"])
+    def test_image_markers_removed_without_reclean(self, monkeypatch, session, book_env, document_type):
+        doc = FakeBookDoc()
+        doc.document_type = document_type
+        original = "# Article\n\n" + "An article paragraph. " * 10 + "[img0]\n\nMore prose [img1: caption]here."
+        doc.text_md = original
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+        refresh = MagicMock(return_value=[])
+        monkeypatch.setattr("library.entity_service.refresh_document_entities", refresh)
+
+        DocumentAnalysisService(session).create_run(
+            doc_id=77, model="m", mode="article", split_only=True, reclean=False,
+        )
+
+        chunks = [item for item in session.added if isinstance(item, DocumentChunk)]
+        assert chunks
+        assert all("[img" not in chunk.original_text for chunk in chunks)
+        refresh.assert_called_once()
+        assert "[img" not in refresh.call_args.args[2]
+        assert doc.text_md == original
+        assert doc.text is None
+
     def test_scope_chapter_analyzes_only_that_chapter(self, session, book_env):
         service = DocumentAnalysisService(session)
         run = service.create_run(doc_id=77, model="m", mode="article", scope_chapter=3)
@@ -131,6 +153,31 @@ class TestScopeChapterRun:
         service = DocumentAnalysisService(session)
         with pytest.raises(ValueError, match="out of range"):
             service.create_run(doc_id=77, model="m", mode="article", scope_chapter=42)
+
+    @pytest.mark.parametrize("marker", ["[img0]", "[img0: Photo]"])
+    def test_reclean_preserves_existing_images(self, monkeypatch, session, book_env, marker):
+        from library.db.models import DocumentImage
+
+        existing = DocumentImage(document_id=77, position=0, url="https://example.test/photo.jpg")
+        catalog = [existing]
+
+        def execute(statement):
+            if getattr(statement, "is_delete", False) and statement.table.name == "document_images":
+                catalog.clear()
+            return MagicMock()
+
+        session.execute.side_effect = execute
+        doc = FakeBookDoc()
+        doc.text_md = "An article paragraph with enough text for cleanup. " * 5 + "\n\n" + marker
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda *_a, **_kw: [])
+
+        DocumentAnalysisService(session).create_run(
+            doc_id=77, model="m", mode="article", split_only=True, reclean=True,
+        )
+
+        assert any(isinstance(item, DocumentChunk) for item in session.added)
+        assert catalog == [existing]
 
     def test_reclean_applies_current_footer_rules_before_split(self, monkeypatch, session, book_env):
         class WpDoc(FakeBookDoc):

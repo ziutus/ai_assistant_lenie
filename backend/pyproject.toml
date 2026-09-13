@@ -45,6 +45,7 @@ dependencies = [
     "regex>=2026.5.9",
     "pymupdf>=1.28.0",
     "watchdog>=4.0",
+    "pillow>=11.0",
 ]
 
 [project.optional-dependencies]

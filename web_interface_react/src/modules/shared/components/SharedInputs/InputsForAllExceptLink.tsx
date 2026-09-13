@@ -4,6 +4,48 @@ import ArticlePreparationPanel from "../ArticlePreparationPanel/articlePreparati
 import MarkdownLineEditor from "../MarkdownLineEditor/markdownLineEditor";
 import ArticleSourceComparison from "../ArticleSourceComparison/articleSourceComparison";
 import EntitiesPanel from "../EntitiesPanel/entitiesPanel";
+import axios from "axios";
+import { AuthorizationContext } from "../../context/authorizationContext";
+import type { ChunkForPreview } from "../../utils/chunkBoundaries";
+
+// Mounted only in the webpage branch; its key resets the cache on document/run changes.
+const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolean }) => {
+  const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [chunks, setChunks] = React.useState<ChunkForPreview[] | null>(null);
+  const value: string = formik.values.text_md || formik.values.text || "";
+  const chunksTextSnapshot = React.useRef<string>(value);
+  const runId = formik.values.analysis_run_id;
+  const requestChunks = async () => {
+    if (!runId) return;
+    setChunks(null);
+    const response = await axios.get<{ chunks: Array<Omit<ChunkForPreview, "original_text"> & { original_text?: string | null }> }>(
+      `${apiUrl}/analysis_run/${runId}/chunks`, { headers: { "x-api-key": `${apiKey ?? ""}` } },
+    );
+    chunksTextSnapshot.current = value;
+    setChunks(response.data.chunks.map(({ id, position, type, status, original_text }) => ({
+      id, position, type, status, original_text: original_text ?? "",
+    })));
+  };
+  const headers = { "x-api-key": `${apiKey ?? ""}` };
+  const changeChunkType = async (id: number, type: string) => {
+    await axios.patch(`${apiUrl}/chunk/${id}`, { type }, { headers });
+  };
+  const mergeChunk = async (id: number) => {
+    const response = await axios.post<{ chunk: ChunkForPreview }>(`${apiUrl}/chunk/${id}/merge_with_next`, undefined, { headers });
+    return response.data.chunk;
+  };
+  const splitChunk = async (id: number, splitAtLines: number[], splitTypes?: string[]) => {
+    await axios.post(`${apiUrl}/chunk/${id}/execute_split`, { split_at_lines: splitAtLines, split_types: splitTypes }, { headers });
+  };
+  return <MarkdownLineEditor formik={formik} disabled={disabled}
+    chunks={runId ? chunks ?? undefined : undefined}
+    chunksStale={value !== chunksTextSnapshot.current}
+    onRequestChunks={runId && chunks === null ? requestChunks : undefined}
+    onRefreshChunks={requestChunks}
+    onChangeChunkType={runId ? changeChunkType : undefined}
+    onMergeChunk={runId ? mergeChunk : undefined}
+    onSplitChunk={runId ? splitChunk : undefined} />;
+};
 
 interface InputsForAllExceptLinkProps {
   formik: any;
@@ -32,7 +74,8 @@ const InputsForAllExceptLink = ({
           gap: 14,
           alignItems: "start",
         }}>
-          <MarkdownLineEditor formik={formik} disabled={isLoading} />
+          <WebpageLineEditor key={`${formik.values.id}-${formik.values.analysis_run_id}`}
+            formik={formik} disabled={isLoading} />
           <ArticleSourceComparison formik={formik} />
         </div>
       ) : formik.values.text_md && (

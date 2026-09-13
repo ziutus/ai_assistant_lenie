@@ -590,12 +590,21 @@ class DocumentAnalysisService:
         # rules at ingestion/edit time; portal heuristics would be unsafe.
         if reclean and getattr(doc, "document_type", None) != "email":
             from library.article_cleaner import clean_article_text
+            from library.document_images import replace_document_images
 
             original_length = len(text)
-            text = clean_article_text(text, getattr(doc, "url", "") or "")["text"]
+            cleaned = clean_article_text(text, getattr(doc, "url", "") or "")
+            text = cleaned["text"]
             if not text:
                 raise ValueError(f"Document {doc_id} is empty after deterministic cleanup")
+            if cleaned["images"]:
+                replace_document_images(session, doc.id, cleaned["images"])
             log(f"reclean: {original_length:,} -> {len(text):,} chars (source unchanged)")
+
+        if not is_transcript and getattr(doc, "document_type", None) in ("webpage", "link"):
+            from library.article_cleaner import strip_image_markers
+
+            text = strip_image_markers(text)
 
         scope: str | None = None
         author_bio = None

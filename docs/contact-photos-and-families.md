@@ -34,6 +34,12 @@ widoczna przy każdym z nich. Wymiana fotografii tworzy nowy, unikalny klucz
 pliku i pusty rekord opisów. Odpięcie zdjęcia od jednego kontaktu nie usuwa
 pliku ani wspólnych opisów. Nie zmieniamy mechanizmu `document_images`.
 
+Integracja z miniaturami i podglądem z `main`: lista nadal pokazuje miniatury,
+a kliknięcie zdjęcia otwiera powiększony podgląd. Nowe miniatury mają klucz
+zależny od konkretnego pliku zdjęcia, aby wymiana zdjęcia rodzica nie zmieniała
+miniatury przy dzieciach korzystających ze starego zdjęcia. Nazwy robocze są
+wyświetlane również na oznaczeniach relacji na liście kontaktów.
+
 `user_description` i jego wersja są niezależne od `ai_descriptions` — mapy
 najnowszych wyników poszczególnych modeli. Ponowne generowanie zastępuje wynik
 tylko wybranego modelu; nie jest to historia wszystkich generowań.
@@ -139,6 +145,7 @@ Wdrożenie wymaga backendu i frontendu z tymi zmianami oraz migracji:
 
 - `e93b71d6a204`: metadane opisów, przeniesienie istniejących kluczy zdjęć
   do nowej tabeli i klucz obcy. Nie pobiera ani nie przenosi plików.
+  Następuje po migracji miniatur `8b07952a8f81` z `main`.
 - `f04c82e7b315`: nazwy robocze, opcjonalne nazwisko i potwierdzenia operacji
   tworzenia rodziny.
 

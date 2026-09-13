@@ -9,6 +9,12 @@ import type { ContactGroup } from "./contactGroups";
 // of the NER persons registry (persons.tsx/organizations.tsx), see
 // backend/library/contact_routes.py.
 
+export interface ContactRelationshipSummary {
+  relationship_type: string;
+  direction: "outgoing" | "incoming";
+  other_name: string;
+}
+
 export interface ContactListItem {
   id: number;
   category_id: number;
@@ -19,8 +25,10 @@ export interface ContactListItem {
   display_name?: string;
   phone_number: string | null;
   email: string | null;
+  photo_thumbnail_url?: string | null;
   has_whatsapp_profile: boolean;
   is_archived: boolean;
+  relationships: ContactRelationshipSummary[];
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -293,10 +301,24 @@ const Contacts = () => {
         {contacts.map((contact) => (
           <li
             key={contact.id}
-            style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}
+            style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}
             onClick={() => navigate(`/contacts/${contact.id}${contactLinkSearch}`)}
           >
-            <strong>{contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <span style={{ width: 36, height: 36, flexShrink: 0, borderRadius: "50%", overflow: "hidden",
+                background: "#eef1f5", color: "#526174", border: "1px solid #d5dde8",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>
+                {contact.photo_thumbnail_url ? (
+                  <img src={contact.photo_thumbnail_url} alt="Zdjęcie kontaktu" loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span title="Brak miniatury zdjęcia">
+                    {[contact.first_name, contact.last_name].map(name => name?.trim().charAt(0) ?? "").join("").toUpperCase() || "?"}
+                  </span>
+                )}
+              </span>
+              <strong style={{ overflowWrap: "anywhere" }}>{contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+            </span>
             {contact.is_archived && (
               <span style={{ fontSize: "0.8em", color: "#a33", border: "1px solid #e3a", borderRadius: 4, padding: "1px 6px" }}>
                 archiwalny
@@ -304,6 +326,30 @@ const Contacts = () => {
             )}
             {contact.has_whatsapp_profile && (
               <span title="Ma profil sąsiedzki zbudowany z WhatsApp">💬</span>
+            )}
+            {contact.relationships.length > 0 && (
+              <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {contact.relationships.map((r, index) => (
+                  <span
+                    key={index}
+                    title={
+                      r.direction === "outgoing"
+                        ? `${contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")} → ${r.relationship_type} → ${r.other_name}`
+                        : `${r.other_name} → ${r.relationship_type} → ${contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")} (czyli ta osoba jest „${r.relationship_type}" dla ${r.other_name})`
+                    }
+                    style={{ fontSize: "0.8em", color: "#7c3aed", background: "#f3e8ff", borderRadius: 4, padding: "1px 6px" }}
+                  >
+                    {/* Direction matters for correct reading: relationship_type describes the OTHER
+                        person on an outgoing row ("żona: Anna" = "[my] wife: Anna"), but describes
+                        THIS contact on an incoming row — showing it the same way would misleadingly
+                        read as "Artur: żona" on Anna's own row. Word order + arrow disambiguate
+                        without guessing Polish case inflection (żona/mąż). */}
+                    {r.direction === "outgoing"
+                      ? <>👥 {r.relationship_type}: {r.other_name}</>
+                      : <>👥 {r.other_name} → {r.relationship_type}</>}
+                  </span>
+                ))}
+              </span>
             )}
             {contact.phone_number && <span style={{ color: "#667" }}>{contact.phone_number}</span>}
             {contact.email && <span style={{ color: "#667" }}>{contact.email}</span>}

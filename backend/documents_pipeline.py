@@ -376,6 +376,11 @@ def _embed_document_from_markdown(session, websites, doc, model):
         print(f"WARNING: document {doc.id} has no text_md/text, skipping")
         return False
 
+    if doc.document_type == "webpage":
+        from library.article_cleaner import strip_image_markers
+
+        source = strip_image_markers(source)
+
     if not doc.language:
         doc.language = "pl"
 

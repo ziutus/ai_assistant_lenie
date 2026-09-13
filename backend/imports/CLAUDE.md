@@ -29,12 +29,18 @@ imports/
 ├── google_contacts_import.py # One-off: full import of a Google Contacts CSV export into the private contact book
 ├── court_case_contacts_import.py  # One-off: match/import a KRZ court-case creditor list against the private contact book
 ├── backfill_krz_tuwima_group.py  # One-off: backfill contact_groups membership for KRZ creditors missed by google_contacts_import.py's name match
+├── fix_filip_gr4_false_name_matches.py  # One-off: undo a bare-first-name false merge from the Filip gr4 import
+├── backfill_filip_gr4_contact_photos.py  # One-off: upload Filip gr4 group members' profile photos
 ├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
 ├── youtube_backfill_author.py # One-off: fetch channel name for existing videos missing 'byline'
 └── youtube_batch_analyze.py  # Bielik LLM chunk analysis of an existing document (by ID)
 ```
 
 ## Scripts
+
+| Script | Purpose | DB Access |
+|--------|---------|-----------|
+| `rebuild_image_catalog_from_extracted.py` | One-document pilot: reconstruct missing URL image catalog from original `text_extracted` | ORM (SQLAlchemy); reads in dry-run, writes only with `--apply` |
 
 ### `check_pdf_text_layer.py`
 
@@ -377,6 +383,24 @@ python imports/strip_webpage_images_backfill.py --only-base64 --apply # the wors
 - `--only-base64` — restrict to documents with a `data:image` URI in `text_md`
 - `--delay SECONDS` — sleep after each commit, to go easy on the NAS (default: 0.2)
 
+### `rebuild_image_catalog_from_extracted.py`
+
+One-off pilot: reconstructs missing URL-sourced `document_images` from the original raw markdown in `text_extracted`, using `library.article_cleaner.extract_inline_images()`. Discards the transformed text and never modifies `text_md` or `text_extracted`; no source HTML is fetched or re-extracted. Processes exactly one required document ID. Refuses missing documents, types other than `webpage`/`link`, empty snapshots, existing image rows with `storage_key IS NULL`, or any `document_analysis_runs`, `document_chunks`, or `document_embeddings` for that document. Analysis data requires a separate reviewed procedure. Refusal returns exit code `1`; a successful dry-run/write or a snapshot with no images returns `0`. Storage-backed image rows are left untouched.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`. Reads in both modes; only `--apply` calls `replace_document_images()` and commits.
+
+**Running:**
+```bash
+cd backend
+python imports/rebuild_image_catalog_from_extracted.py --id 10482          # dry-run (default)
+python imports/rebuild_image_catalog_from_extracted.py --id 10482 --apply  # write changes
+```
+
+**Arguments:**
+- `--id N` — required document id (single-document pilot, no bulk mode)
+- `--apply` — write to the database (default: dry-run only, reports image URLs/alts and counts)
+- `-v` / `--verbose` — enable debug logging
+
 ### `organization_descriptions_backfill.py`
 
 One-off backfill for `Organization.description` (global organization registry, `library/db/models.py`) — shown as a tooltip and ℹ️ marker on organization chips in the reader (`EntitiesPanel.tsx`/`read.tsx`, `GET /website_entities`'s `organization_description` field). For each organization missing a description, asks the tagging LLM (`TAGGING_MODEL` config, default Bielik) for one short Polish sentence; skips (never guesses) an organization the model answers "NIEZNANA" for, so an ambiguous/obscure name doesn't get a wrong tooltip shown to every future reader. New organizations resolved after this backfill (or edited by a human) can also get their `description` set directly via `PATCH /organizations/<id>` from the reader's "Edytuj" mode.
@@ -521,11 +545,13 @@ One-time migration script: copies UUID-named `.html`/`.txt` files from `imports/
 
 These write to the private contact book (personal CRM), independent of the NER persons registry.
 
-- **`google_contacts_import.py`** — one-off full import of a Google Contacts CSV export into `contacts`. Strips a hand-appended "- Tuwima Gardens" name suffix into a `contact_groups` membership (unified with the same label already in the CSV's Labels column), maps other Labels to groups (dropping Google's own `* myContacts`/`* starred` bookkeeping), matches existing contacts by normalized name to avoid duplicates. `python imports/google_contacts_import.py --csv "../tmp/contacts.csv" [--apply]`.
+- **`google_contacts_import.py`** — import of a Google Contacts CSV export into `contacts`. Strips a hand-appended name suffix (`--suffix-text`, default "Tuwima Gardens") into a `contact_groups` membership named `--suffix-group` (default "Tuwima Gardens Mieszkańcy"; unified with the same label already in the CSV's Labels column) — the suffix match isn't anchored to end-of-string, so extra trailing text (e.g. "- Filip gr 4 mama Hugo") keeps its hint rather than losing it. Maps other Labels to groups (dropping Google's own `* myContacts`/`* starred` bookkeeping), matches existing contacts by normalized name to avoid duplicates. Re-run per CSV export with a different group: `python imports/google_contacts_import.py --csv "../tmp/contacts.csv" [--apply]` (Tuwima Gardens defaults), or `python imports/google_contacts_import.py --csv "../tmp/contacts_filip.csv" --suffix-text "Filip gr 4" --suffix-group "Przedszkole - Filip gr. 4" [--apply]` (any other one-off group).
 - **`court_case_contacts_import.py`** — one-off: matches/imports a KRZ (Krajowy Rejestr Zadłużników) court-case creditor CSV against the contact book, storing PESEL/derived birthday and case notes; optional `--contacts-csv` phone backfill from the same Google export.
 - **`backfill_krz_tuwima_group.py`** — one-off: adds every KRZ-creditor contact (identified by the "Sprawa Tuwima Gardens (KRZ)" notes marker) to the "Tuwima Gardens Mieszkańcy" `contact_groups` row — covers creditors that `google_contacts_import.py`'s name match missed.
 - **`whatsapp_neighbor_profiles.py`** — builds/updates a structured social-memory-aid profile (occupation, hobbies, pets, recent events, small-talk suggestions — accessibility use case) on `Contact.whatsapp_profile` (JSONB) from a WhatsApp "Export chat" `.txt` file, one LLM-merged profile per sender across chunked history, re-runnable incrementally (per-group watermark stored in `whatsapp_profile.groups`). Matches an existing contact by phone number (reliable) then by normalized name (only when unambiguous — see `feedback_no_merge_unverifiable_contacts.md`), else creates a new one; assigns the resolved `--contact-group` (default "Tuwima Gardens Mieszkańcy"). Optional `--contacts-csv`/`--contacts-suffix` resolve a phone-only WhatsApp sender to a real name, `--owners-csv` matches an apartment. `python imports/whatsapp_neighbor_profiles.py --export "chat.txt" [--apply]`. Superseded an earlier Document-based version (one synthetic `whatsapp://...` Document per neighbor) — that duplicated the place a person's info had to be looked up in.
 - **`whatsapp_neighbor_profiles_migrate_to_contacts.py`** — one-off: migrated the 97 pre-existing Document-based neighbor profiles onto `Contact.whatsapp_profile` and deleted the Documents (2026-08-24). Kept for reference/re-use if another Document-based batch ever needs the same treatment.
+- **`fix_filip_gr4_false_name_matches.py`** — one-off correction: `google_contacts_import.py`'s pre-fix weak-key name matching had merged 4 bare-first-name rows ("Aneta", "Edyta", "Magdalena", "Tomasz") from the Filip gr4 CSV onto unrelated pre-existing contacts sharing that first name from an earlier, unrelated import — different phone numbers confirmed they're different people. Removes the wrongly-added "Przedszkole - Filip gr. 4" membership from the 4 existing contacts and creates 4 new ones with the CSV's own phone numbers instead. Hardcodes the specific contact IDs/names involved — not a general-purpose tool, kept for the audit trail.
+- **`backfill_filip_gr4_contact_photos.py`** — one-off: uploads profile photos for "Przedszkole - Filip gr. 4" members from a local directory of image files named `"<bare name>.<ext>"` or `"<bare name> - Filip gr 4.<ext>"` (same convention `google_contacts_import.py` strips), matched case-insensitively against the group's contacts. Uses the same storage path as `POST /contacts/<id>/photo` (`ObjectStorage.put_bytes()` under `contacts/<uuid>/photo<ext>`) — **run it where `library.storage.storage_from_config()` resolves to the real backend storage** (inside the `lenie-ai-server` container on the NAS, or with `STORAGE_BACKEND=minio` + matching credentials exported locally), not from a bare dev-machine shell, which silently defaults to `LocalStorage` under `/app/data` on whatever machine ran it and writes a `photo_storage_key` the real backend can never read. `python imports/backfill_filip_gr4_contact_photos.py --dir "../tmp/filip-gr-4" [--apply]`.
 
 ## Running scripts against the NAS production DB (from a dev machine)
 

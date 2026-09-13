@@ -845,7 +845,9 @@ def reclean_preview(doc_id: int):
         doc.quality = None
         doc.entities_checked_at = None
         doc.ner_unavailable_at = None
-        replace_document_images(session, doc.id, cleaned["images"])
+        # Empty extraction from already-cleaned text must not clear the catalog.
+        if cleaned["images"]:
+            replace_document_images(session, doc.id, cleaned["images"])
         if cleaned.get("info_sources"):
             from library.information_provenance import refresh_rule_based_sources
 
@@ -1686,10 +1688,13 @@ def document_obsidian_note_by_id(doc_id: int):
 
 @bp.route("/document/<int:doc_id>/images", methods=["GET"])
 def document_images(doc_id: int):
-    """Full list of a document's storage-backed images (book PDF illustrations).
+    """Full list of a document's images — storage-backed (book PDF illustrations)
+    and/or url-sourced (webpage/link, article_cleaner.py's document_images).
 
     Same item shape as the "images" field of GET /document/<id>/chapter/<pos>,
-    minus "inline" (no single chapter's text to check markers against here).
+    minus "inline" (no single chapter's text to check markers against here),
+    plus "is_local": True when the image was pulled from ObjectStorage
+    (storage_key set) rather than left at its original remote URL.
     Diagnostic/editor use — the reader itself only ever calls the per-chapter
     endpoint above.
     """
@@ -1719,6 +1724,7 @@ def document_images(doc_id: int):
                 "alt_text": img.alt_text,
                 "page_number": img.page_number,
                 "chapter_position": img.chapter_position,
+                "is_local": img.storage_key is not None,
             }
             for img in images
         ],

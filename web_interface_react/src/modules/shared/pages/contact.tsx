@@ -226,6 +226,8 @@ const Contact = () => {
   const [isError, setIsError] = React.useState(false);
   const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
   const [photo, setPhoto] = React.useState<ContactPhotoData | null>(null);
+  const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = React.useState(false);
+  const photoPreviewCloseRef = React.useRef<HTMLButtonElement | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = React.useState(false);
   const photoInputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -316,6 +318,30 @@ const Contact = () => {
     loadContact();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  React.useEffect(() => {
+    setIsPhotoPreviewOpen(false);
+  }, [id, photoUrl]);
+
+  React.useEffect(() => {
+    if (!isPhotoPreviewOpen || !photoUrl) return;
+    const previousFocus = document.activeElement;
+    photoPreviewCloseRef.current?.focus();
+    const handlePreviewKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsPhotoPreviewOpen(false);
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        photoPreviewCloseRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handlePreviewKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handlePreviewKeyDown);
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    };
+  }, [isPhotoPreviewOpen, photoUrl]);
 
   const cancelEdit = () => {
     if (contact) {
@@ -616,9 +642,20 @@ const Contact = () => {
             }}
           >
             {photoUrl ? (
-              <a href={photoUrl} target="_blank" rel="noreferrer" title="Otwórz całe zdjęcie" style={{ width: "100%", height: "100%" }}>
-                <img src={photoUrl} alt="Zdjęcie kontaktu — otwórz pełny rozmiar" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-              </a>
+              <button
+                type="button"
+                aria-label="Powiększ zdjęcie kontaktu"
+                aria-haspopup="dialog"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsPhotoPreviewOpen(true);
+                }}
+                onMouseEnter={(event) => { event.currentTarget.style.opacity = "0.85"; }}
+                onMouseLeave={(event) => { event.currentTarget.style.opacity = "1"; }}
+                style={{ width: "100%", height: "100%", padding: 0, border: "none", background: "none", cursor: "pointer", transition: "opacity 150ms ease" }}
+              >
+                <img src={photoUrl} alt="Zdjęcie kontaktu" style={{ display: "block", width: "100%", height: "100%", objectFit: "contain" }} />
+              </button>
             ) : (
               <span style={{ color: "#98a2b3", fontSize: "0.75em", textAlign: "center", padding: 4 }}>Brak zdjęcia</span>
             )}
@@ -660,6 +697,37 @@ const Contact = () => {
       {!isNew && id && photo && contact && <ContactFamilyForm key={`family:${id}:${photo.storage_key}`}
         photo={photo} contactId={id} contactName={otherName(contact)} apiUrl={apiUrl} apiKey={`${apiKey}`}
         groups={allGroups} onCreated={() => { void loadContact(); }} />}
+      {isPhotoPreviewOpen && photoUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Podgląd zdjęcia kontaktu"
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsPhotoPreviewOpen(false);
+          }}
+          style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0, 0, 0, 0.8)", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <img
+            src={photoUrl}
+            alt="Zdjęcie kontaktu"
+            onClick={(event) => event.stopPropagation()}
+            style={{ maxWidth: "90vw", maxHeight: "90vh", objectFit: "contain" }}
+          />
+          <button
+            ref={photoPreviewCloseRef}
+            type="button"
+            aria-label="Zamknij podgląd zdjęcia"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsPhotoPreviewOpen(false);
+            }}
+            style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, border: "none", borderRadius: 8, background: "rgba(0, 0, 0, 0.6)", color: "#fff", fontSize: 24, cursor: "pointer" }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {mode === "view" && contact ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

@@ -12,7 +12,7 @@ def family():
     parent_group = ContactGroup(id=17, name="Rodzice")
     children_group = ContactGroup(id=18, name="Grupa przedszkolna")
     root = Contact(id=493, first_name="Anna", last_name="Przykładowa", category_id=1,
-                   photo_storage_key="photo.png", groups=[parent_group])
+                   photo_storage_key="photo.png", photo_thumbnail_storage_key="old-shared-thumb.jpg", groups=[parent_group])
     peer = Contact(id=10, first_name="Filip", category_id=1)
     photo = ContactPhoto(storage_key="photo.png", user_description="Bliźnięta.", ai_descriptions={})
     session = MagicMock()
@@ -50,6 +50,7 @@ def test_family_is_atomic_with_twins_peer_and_shared_photo(family):
     assert len(contacts) == 3
     assert all(row.first_name is None and row.last_name is None for row in contacts)
     assert all(row.photo_storage_key == "photo.png" for row in contacts)
+    assert all(row.photo_thumbnail_storage_key == "old-shared-thumb.jpg" for row in contacts)
     assert [g.id for g in contacts[0].groups] == [17]
     assert all([g.id for g in row.groups] == [18] for row in contacts[1:])
     relations = [row for row in rows if isinstance(row, ContactRelationship)]

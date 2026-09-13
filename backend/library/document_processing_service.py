@@ -161,6 +161,10 @@ class DocumentProcessingService:
 
             refresh_rule_based_sources(self.session, document, cleaned["info_sources"])
 
+        from library.document_images import replace_document_images
+
+        replace_document_images(self.session, document_id, cleaned.get("images", []))
+
         self._progress(job, "upload_artifacts", document_id)
         artifacts_uploaded = self._upload_artifacts(scratch, document_id)
         self.session.commit()

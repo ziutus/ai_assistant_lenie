@@ -19,6 +19,7 @@ from library.article_cleaner import (
     _strip_interia_blizej_swiata,
     clean_article_text,
     resolve_relative_publication_date,
+    strip_image_markers,
 )
 from library.article_extractor import _detect_portal, extract_article_by_markers
 
@@ -26,6 +27,22 @@ LONG_PARAGRAPH = (
     "To jest długi akapit właściwej treści artykułu, który ma zdecydowanie ponad "
     "osiemdziesiąt znaków i powinien zostać zachowany po czyszczeniu."
 )
+
+
+class TestStripImageMarkers:
+    def test_bare_marker_on_own_line(self):
+        assert strip_image_markers("Before.\n\n[img0] \t\n\nAfter.") == "Before.\n\nAfter."
+
+    def test_caption_marker_mid_sentence(self):
+        assert strip_image_markers("Before [img0: some caption]after.") == "Before after."
+
+    def test_multiple_markers_preserve_markdown(self):
+        text = "# Title\n\n[img0]\n\n**Bold** [img12: caption]*italic*.\n\n[link](https://example.test)"
+        assert strip_image_markers(text) == "# Title\n\n**Bold** *italic*.\n\n[link](https://example.test)"
+
+    def test_normal_prose_and_markdown_unchanged(self):
+        text = "# Title\n\nNormal **prose** with [a link](https://example.test).\n\n- List item"
+        assert strip_image_markers(text) == text
 
 
 class TestGazetaExtraction:
