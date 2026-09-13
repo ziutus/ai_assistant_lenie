@@ -190,6 +190,14 @@ const emptyForm = {
 const otherName = (other: { first_name: string | null; last_name: string | null; display_name?: string }) =>
   other.display_name || [other.first_name, other.last_name].filter(Boolean).join(" ");
 
+// group_events arrives sorted event_date desc, id desc (see GET /contacts/:id
+// in contact_routes.py) — the first entry is always the most recent one.
+const latestGroupEvent = (events: (ContactGroupEvent & { group_name: string })[] | undefined) =>
+  events && events.length > 0 ? events[0] : null;
+
+const groupEventHintText = (event: ContactGroupEvent & { group_name: string }) =>
+  `${event.group_name}: „${event.title}” (${event.event_date})`;
+
 // CEIDG (Centralna Ewidencja i Informacja o Działalności Gospodarczej) — the
 // official Polish government JDG register, the authoritative source to
 // verify a sole-proprietorship candidate against (vs. the aggregator
@@ -901,6 +909,17 @@ const Contact = () => {
         <div style={{ marginTop: 24 }}>
           {!!contact?.group_events?.length && <section style={{ marginBottom: 24 }}>
             <h3>Wydarzenia grupy</h3>
+            {/* Without a whatsapp_profile there's no "Pomysły na rozmowę" section to
+                fold this into (see WhatsappProfileView below) — show the same hint
+                standalone so it isn't lost for contacts never analysed via WhatsApp. */}
+            {!whatsappProfile && (() => {
+              const latest = latestGroupEvent(contact.group_events);
+              return latest && (
+                <p style={{ background: "#eef6ff", padding: "8px 10px", borderRadius: 6, marginBottom: 8 }}>
+                  💬 Pomysł na rozmowę: {groupEventHintText(latest)}
+                </p>
+              );
+            })()}
             <ul>
               {contact.group_events.map(event => <li key={event.id}>
                 <time dateTime={event.event_date}>{event.event_date}</time>{" — "}
@@ -1089,7 +1108,7 @@ const Contact = () => {
           <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
             Budowany i aktualizowany automatycznie z czatów WhatsApp — tylko fakty jawnie napisane przez tę osobę o sobie.
           </p>
-          <WhatsappProfileView profile={whatsappProfile} />
+          <WhatsappProfileView profile={whatsappProfile} latestGroupEvent={latestGroupEvent(contact?.group_events)} />
         </div>
       )}
 
@@ -1221,7 +1240,10 @@ const Contact = () => {
 
 const cite = (zrodlo?: string | null) => (zrodlo ? <span style={{ color: "#89a" }}> ({zrodlo})</span> : null);
 
-const WhatsappProfileView = ({ profile: wp }: { profile: WhatsappProfile }) => {
+const WhatsappProfileView = ({ profile: wp, latestGroupEvent: latestEvent }: {
+  profile: WhatsappProfile;
+  latestGroupEvent?: (ContactGroupEvent & { group_name: string }) | null;
+}) => {
   const p = wp.profile;
   const hasFacts = p && (
     p.zawod_lub_branza || p.miejsce_pracy || p.hobby_zainteresowania?.length || p.zwierzeta?.length ||
@@ -1289,10 +1311,16 @@ const WhatsappProfileView = ({ profile: wp }: { profile: WhatsappProfile }) => {
           )}
         </div>
       )}
-      {wp.suggestions?.length > 0 && (
+      {(wp.suggestions?.length > 0 || latestEvent) && (
         <div style={{ marginTop: 10 }}>
           <strong>Pomysły na rozmowę:</strong>
           <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
+            {latestEvent && (
+              <li>
+                💬 {groupEventHintText(latestEvent)}{" "}
+                (<NavLink to={`/contact_groups/${latestEvent.group_id}`}>szczegóły grupy</NavLink>)
+              </li>
+            )}
             {wp.suggestions.map((s, i) => <li key={i}>{s}</li>)}
           </ul>
         </div>
