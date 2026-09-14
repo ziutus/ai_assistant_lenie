@@ -26,6 +26,7 @@ import Contact from "./modules/shared/pages/contact";
 import ContactCategories from "./modules/shared/pages/contactCategories";
 import ContactGroups from "./modules/shared/pages/contactGroups";
 import ContactGroupDetail from "./modules/shared/pages/contactGroupDetail";
+import ContactEvents from "./modules/shared/pages/contactEvents";
 import InformationSources from "./modules/shared/pages/informationSources";
 import LlmCosts from "./modules/shared/pages/llmCosts";
 import ServiceStatus from "./modules/shared/pages/serviceStatus";
@@ -84,6 +85,7 @@ function App() {
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/contacts" element={<Contacts />} />
+                  <Route path="/contact-events" element={<ContactEvents />} />
                   <Route path="/contacts/:id" element={<Contact />} />
                   <Route path="/contact-categories" element={<ContactCategories />} />
                   <Route path="/contact-groups" element={<ContactGroups />} />

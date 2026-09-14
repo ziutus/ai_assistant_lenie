@@ -6,7 +6,9 @@ import type { ContactGroup } from "./contactGroups";
 
 export interface ContactGroupEvent {
   id: number;
-  group_id: number;
+  group_id: number | null;
+  group_name: string | null;
+  participants: { id: number; first_name: string | null; last_name: string | null; display_name: string }[];
   title: string;
   event_date: string;
   summary: string | null;

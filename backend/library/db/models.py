@@ -3144,6 +3144,9 @@ class Contact(Base):
     groups: Mapped[list["ContactGroup"]] = relationship(
         secondary="contact_group_memberships", back_populates="contacts",
     )
+    events: Mapped[list["ContactGroupEvent"]] = relationship(
+        secondary="contact_event_participants", back_populates="participants", passive_deletes=True,
+    )
 
     __table_args__ = (
         Index("idx_contacts_last_name", "last_name"),
@@ -3328,11 +3331,23 @@ class ContactGroupMembership(Base):
     )
 
 
+class ContactEventParticipant(Base):
+    __tablename__ = "contact_event_participants"
+
+    event_id: Mapped[int] = mapped_column(ForeignKey("contact_group_events.id", ondelete="CASCADE"), primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_contact_event_participants_contact_id", "contact_id"),
+    )
+
+
 class ContactGroupEvent(Base):
-    """A personal life event tied to a contact group.
+    """A personal life event scoped to a group, specific contact participants, or both.
 
     A journal note can describe multiple events, and an event need not have
-    a note yet. Group-level only for now, without per-attendee tracking.
+    a note yet.
     """
 
     __tablename__ = "contact_group_events"
@@ -3342,7 +3357,7 @@ class ContactGroupEvent(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    group_id: Mapped[int] = mapped_column(ForeignKey("contact_groups.id", ondelete="CASCADE"), nullable=False)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("contact_groups.id", ondelete="CASCADE"), nullable=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     event_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text)
@@ -3352,7 +3367,11 @@ class ContactGroupEvent(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
-    group: Mapped["ContactGroup"] = relationship(foreign_keys=[group_id])
+    group: Mapped["ContactGroup | None"] = relationship(foreign_keys=[group_id])
+    participants: Mapped[list["Contact"]] = relationship(
+        secondary="contact_event_participants", back_populates="events", passive_deletes=True,
+        order_by="Contact.id",
+    )
     source_document: Mapped["Document | None"] = relationship(foreign_keys=[source_document_id])
 
     def __repr__(self) -> str:
