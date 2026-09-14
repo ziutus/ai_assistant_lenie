@@ -540,6 +540,67 @@ class TestContactPhotoChangeLog:
         assert change_log_entry.changed_fields == ["photo_storage_key", "photo_thumbnail_storage_key"]
 
 
+class TestContactsUpcomingBirthdays:
+    def _run(self, monkeypatch, query_string="", rows=()):
+        from library import contact_routes
+
+        class FixedDate(dt.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 12, 15)
+
+        monkeypatch.setattr(contact_routes, "datetime", SimpleNamespace(date=FixedDate))
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.all.return_value = rows
+        monkeypatch.setattr(contact_routes, "get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context(f"/contacts/upcoming_birthdays{query_string}"):
+            response = contact_routes.contacts_upcoming_birthdays()
+        assert response.status_code == 200
+        assert response.json["status"] == "success"
+        statement = session.execute.call_args[0][0]
+        return response.json["upcoming_birthdays"], str(statement.whereclause)
+
+    def test_default_window_includes_today_and_day_30_excludes_day_31_and_sorts(self, monkeypatch):
+        entries, where = self._run(monkeypatch, rows=[
+            _make_contact(id_=1, birthday_month=1, birthday_day=14),
+            _make_contact(id_=2, birthday=dt.date(1990, 1, 15)),
+            _make_contact(id_=3, birthday_month=12, birthday_day=15),
+            _make_contact(id_=4, birthday=dt.date(1990, 12, 20)),
+            _make_contact(id_=5),
+        ])
+        assert [entry["contact_id"] for entry in entries] == [3, 4, 1]
+        assert [entry["days_until"] for entry in entries] == [0, 5, 30]
+        assert "contacts.birthday IS NOT NULL OR contacts.birthday_month IS NOT NULL AND contacts.birthday_day IS NOT NULL" in where
+
+    @pytest.mark.parametrize("query, predicate", [
+        ("", "contacts.is_archived IS false"),
+        ("?archived=1", "contacts.is_archived IS true"),
+        ("?archived=true", "contacts.is_archived IS true"),
+        ("?archived=yes", "contacts.is_archived IS true"),
+        ("?archived=%20TRUE%20", "contacts.is_archived IS true"),
+        ("?archived=0", "contacts.is_archived IS false"),
+        ("?archived=all", None),
+    ])
+    def test_archived_sql_filter_matches_contacts_list(self, monkeypatch, query, predicate):
+        _, where = self._run(monkeypatch, query)
+        if predicate is None:
+            assert "is_archived" not in where
+        else:
+            assert predicate in where
+
+    @pytest.mark.parametrize("days, expected", [
+        ("0", [1]), ("-10", [1]), ("5", [1, 2]),
+        ("invalid", [1, 2]), ("365", [1, 2, 3]), ("999", [1, 2, 3]),
+    ])
+    def test_days_parsing_and_clamping(self, monkeypatch, days, expected):
+        entries, _ = self._run(monkeypatch, f"?days={days}", rows=[
+            _make_contact(id_=1, birthday_month=12, birthday_day=16),
+            _make_contact(id_=2, birthday_month=12, birthday_day=20),
+            _make_contact(id_=3, birthday_month=12, birthday_day=14),
+        ])
+        assert [entry["contact_id"] for entry in entries] == expected
+
+
 class TestContactsListArchivedFilter:
     def test_relationship_chips_use_placeholder_names(self):
         from library.contact_routes import _load_contact_relationships_summary

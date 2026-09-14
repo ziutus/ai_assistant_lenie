@@ -14,6 +14,7 @@ from sqlalchemy import false, func, or_, select
 from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
+from library.contact_birthdays import upcoming_birthday_entry
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
 from library.contact_names import contact_display_name, validate_contact_name
 from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
@@ -678,6 +679,31 @@ def contact_groups_unassign(contact_id: int, group_id: int):
 
 
 # --- contacts ------------------------------------------------------------
+
+@bp.get("/contacts/upcoming_birthdays")
+def contacts_upcoming_birthdays():
+    session = get_scoped_session()
+    days = max(1, min(request.args.get("days", default=30, type=int), 365))
+    conditions = [or_(
+        Contact.birthday.is_not(None),
+        Contact.birthday_month.is_not(None) & Contact.birthday_day.is_not(None),
+    )]
+    archived_filter = (request.args.get("archived") or "").strip().lower()
+    if archived_filter in ("1", "true", "yes"):
+        conditions.append(Contact.is_archived.is_(True))
+    elif archived_filter != "all":
+        conditions.append(Contact.is_archived.is_(False))
+
+    rows = session.execute(select(Contact).where(*conditions)).scalars().all()
+    today = datetime.date.today()
+    entries = []
+    for row in rows:
+        entry = upcoming_birthday_entry(row, today)
+        if entry is not None and 0 <= entry["days_until"] <= days:
+            entries.append(entry)
+    entries.sort(key=lambda entry: entry["days_until"])
+    return jsonify({"status": "success", "upcoming_birthdays": entries})
+
 
 @bp.get("/contacts")
 def contacts_list():
