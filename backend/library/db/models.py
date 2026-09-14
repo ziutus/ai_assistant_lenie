@@ -3129,6 +3129,7 @@ class Contact(Base):
     birthday: Mapped[datetime.date | None] = mapped_column(Date)
     pesel: Mapped[str | None] = mapped_column(String(11), unique=True)
     notes: Mapped[str | None] = mapped_column(Text)
+    private_notes: Mapped[str | None] = mapped_column(Text)
     google_contact_resource_name: Mapped[str | None] = mapped_column(String(255), unique=True)
     whatsapp_profile: Mapped[dict | None] = mapped_column(JSONB)
     languages: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))

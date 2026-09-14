@@ -187,6 +187,7 @@ def _group_contact_count(session, group_id: int) -> int:
 
 
 def _contact_dict(row: Contact) -> dict:
+    auth = getattr(g, "auth", None)
     return {
         "id": row.id,
         "uuid": row.uuid,
@@ -206,6 +207,7 @@ def _contact_dict(row: Contact) -> dict:
         "birthday": row.birthday.isoformat() if row.birthday else None,
         "pesel": row.pesel,
         "notes": row.notes,
+        "private_notes": row.private_notes if auth and auth.kind == "service" else None,
         "languages": row.languages or [],
         "nationality": row.nationality or [],
         "is_archived": row.is_archived,
@@ -1067,6 +1069,10 @@ def contacts_add():
         if field in data:
             setattr(row, field, (data.get(field) or "").strip() or None)
             changed_fields.append(field)
+    auth = getattr(g, "auth", None)
+    if "private_notes" in data and auth and auth.kind == "service":
+        row.private_notes = (data.get("private_notes") or "").strip() or None
+        changed_fields.append("private_notes")
     if "birthday" in data:
         row.birthday = data.get("birthday") or None
         changed_fields.append("birthday")
@@ -1129,6 +1135,12 @@ def contacts_update(contact_id: int):
             if getattr(row, field) != new_value:
                 changed_fields.append(field)
             setattr(row, field, new_value)
+    auth = getattr(g, "auth", None)
+    if "private_notes" in data and auth and auth.kind == "service":
+        new_private_notes = (data.get("private_notes") or "").strip() or None
+        if row.private_notes != new_private_notes:
+            changed_fields.append("private_notes")
+        row.private_notes = new_private_notes
     if "birthday" in data:
         new_birthday = data.get("birthday") or None
         old_birthday = row.birthday.isoformat() if row.birthday else None

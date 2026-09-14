@@ -15,7 +15,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from flask import Flask
+from flask import Flask, g
 
 
 def _make_category(id_=1, name="Osoba prywatna"):
@@ -32,7 +32,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         display_label=None,
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
-        address=None, birthday=None, pesel=None, notes=None, groups=[], whatsapp_profile=None,
+        address=None, birthday=None, pesel=None, notes=None, private_notes=None, groups=[], whatsapp_profile=None,
         languages=[], nationality=[], photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),
@@ -1722,3 +1722,79 @@ def test_photo_history_routes_missing_contact_and_options(monkeypatch, route_nam
     session.get.assert_not_called()
     with Flask(__name__).test_request_context():
         assert route(999) == ({"status": "error", "message": "Contact not found"}, 404)
+
+
+class TestContactPrivateNotes:
+    @pytest.mark.parametrize("kind", ["service", "user", "read_only", None])
+    @pytest.mark.parametrize("value, normalized", [("  vault note  ", "vault note"), ("  ", None), (None, None)])
+    def test_post_private_notes_permissions(self, monkeypatch, kind, value, normalized):
+        from library.contact_routes import contacts_add
+
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = _make_category()
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context(
+            "/contacts", method="POST",
+            json={"last_name": "Example", "notes": "public note", "private_notes": value},
+        ):
+            if kind is not None:
+                g.auth = SimpleNamespace(kind=kind)
+            response, status = contacts_add()
+
+        assert status == 200
+        row = session.add.call_args_list[0][0][0]
+        expected = normalized if kind == "service" else None
+        assert row.private_notes == expected
+        assert response.json["contact"]["private_notes"] == expected
+        assert row.notes == "public note"
+        change = session.add.call_args_list[1][0][0]
+        assert ("private_notes" in change.changed_fields) == (kind == "service")
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("kind", ["service", "user", "read_only", None])
+    def test_get_private_notes_permissions(self, monkeypatch, kind):
+        from library.contact_routes import contacts_get
+
+        row = _make_contact(private_notes="vault note")
+        session = MagicMock()
+        session.get.return_value = row
+        session.execute.return_value.all.return_value = []
+        session.execute.return_value.scalars.return_value.all.return_value = []
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/contacts/1"):
+            if kind is not None:
+                g.auth = SimpleNamespace(kind=kind)
+            response, status = contacts_get(1)
+
+        assert status == 200
+        assert response.json["contact"]["private_notes"] == ("vault note" if kind == "service" else None)
+        assert row.private_notes == "vault note"
+
+    @pytest.mark.parametrize("kind", ["service", "user", "read_only", None])
+    @pytest.mark.parametrize("value, normalized", [
+        ("  updated note  ", "updated note"), ("  ", None), (None, None), ("  vault note  ", "vault note"),
+    ])
+    def test_patch_private_notes_permissions(self, monkeypatch, kind, value, normalized):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(private_notes="vault note")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context(
+            "/contacts/1", method="PATCH", json={"private_notes": value, "notes": "public update"},
+        ):
+            if kind is not None:
+                g.auth = SimpleNamespace(kind=kind)
+            response, status = contacts_update(1)
+
+        assert status == 200
+        assert row.private_notes == (normalized if kind == "service" else "vault note")
+        assert response.json["contact"]["private_notes"] == (normalized if kind == "service" else None)
+        assert row.notes == response.json["contact"]["notes"] == "public update"
+        change = session.add.call_args[0][0]
+        expected_fields = {"notes"}
+        if kind == "service" and normalized != "vault note":
+            expected_fields.add("private_notes")
+        assert set(change.changed_fields) == expected_fields
+        session.commit.assert_called_once()
