@@ -182,7 +182,7 @@ interface ContactDetail {
   is_archived: boolean;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
-  group_events: (ContactGroupEvent & { group_name: string })[];
+  events: ContactGroupEvent[];
   change_log: ContactChangeLogEntry[];
   whatsapp_profile: WhatsappProfile | null;
   photo_url: string | null;
@@ -209,13 +209,15 @@ const emptyForm = {
 const otherName = (other: { first_name: string | null; last_name: string | null; display_name?: string }) =>
   other.display_name || [other.first_name, other.last_name].filter(Boolean).join(" ");
 
-// group_events arrives sorted event_date desc, id desc (see GET /contacts/:id
+// events arrives sorted event_date desc, id desc (see GET /contacts/:id
 // in contact_routes.py) — the first entry is always the most recent one.
-const latestGroupEvent = (events: (ContactGroupEvent & { group_name: string })[] | undefined) =>
+const latestEvent = (events: ContactGroupEvent[] | undefined) =>
   events && events.length > 0 ? events[0] : null;
 
-const groupEventHintText = (event: ContactGroupEvent & { group_name: string }) =>
-  `${event.group_name}: „${event.title}” (${event.event_date})`;
+const eventHintText = (event: ContactGroupEvent) =>
+  event.group_name
+    ? `${event.group_name}: „${event.title}” (${event.event_date})`
+    : `„${event.title}” (${event.event_date})`;
 
 // CEIDG (Centralna Ewidencja i Informacja o Działalności Gospodarczej) — the
 // official Polish government JDG register, the authoritative source to
@@ -1058,24 +1060,30 @@ const Contact = () => {
 
       {!isNew && (
         <div style={{ marginTop: 24 }}>
-          {!!contact?.group_events?.length && <section style={{ marginBottom: 24 }}>
-            <h3>Wydarzenia grupy</h3>
+          {!!contact?.events?.length && <section style={{ marginBottom: 24 }}>
+            <h3>Wydarzenia</h3>
             {/* Without a whatsapp_profile there's no "Pomysły na rozmowę" section to
                 fold this into (see WhatsappProfileView below) — show the same hint
                 standalone so it isn't lost for contacts never analysed via WhatsApp. */}
             {!whatsappProfile && (() => {
-              const latest = latestGroupEvent(contact.group_events);
+              const latest = latestEvent(contact.events);
               return latest && (
                 <p style={{ background: "#eef6ff", padding: "8px 10px", borderRadius: 6, marginBottom: 8 }}>
-                  💬 Pomysł na rozmowę: {groupEventHintText(latest)}
+                  💬 Pomysł na rozmowę: {eventHintText(latest)}
                 </p>
               );
             })()}
             <ul>
-              {contact.group_events.map(event => <li key={event.id}>
+              {contact.events.map(event => <li key={event.id}>
                 <time dateTime={event.event_date}>{event.event_date}</time>{" — "}
-                <NavLink to={`/contact_groups/${event.group_id}`}>{event.group_name}</NavLink>{" — "}
+                {event.group_id !== null && <><NavLink to={`/contact_groups/${event.group_id}`}>{event.group_name}</NavLink>{" — "}</>}
                 {event.title}
+                {event.participants.filter(participant => String(participant.id) !== id).map(participant => (
+                  <NavLink key={participant.id} to={`/contacts/${participant.id}`}
+                    style={{ display: "inline-block", marginLeft: 6, padding: "2px 8px", borderRadius: 12, background: "#eef2ff" }}>
+                    {participant.display_name}
+                  </NavLink>
+                ))}
               </li>)}
             </ul>
           </section>}
@@ -1259,7 +1267,7 @@ const Contact = () => {
           <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
             Budowany i aktualizowany automatycznie z czatów WhatsApp — tylko fakty jawnie napisane przez tę osobę o sobie.
           </p>
-          <WhatsappProfileView profile={whatsappProfile} latestGroupEvent={latestGroupEvent(contact?.group_events)} />
+          <WhatsappProfileView profile={whatsappProfile} latestEvent={latestEvent(contact?.events)} />
         </div>
       )}
 
@@ -1391,9 +1399,9 @@ const Contact = () => {
 
 const cite = (zrodlo?: string | null) => (zrodlo ? <span style={{ color: "#89a" }}> ({zrodlo})</span> : null);
 
-const WhatsappProfileView = ({ profile: wp, latestGroupEvent: latestEvent }: {
+const WhatsappProfileView = ({ profile: wp, latestEvent }: {
   profile: WhatsappProfile;
-  latestGroupEvent?: (ContactGroupEvent & { group_name: string }) | null;
+  latestEvent?: ContactGroupEvent | null;
 }) => {
   const p = wp.profile;
   const hasFacts = p && (
@@ -1468,8 +1476,10 @@ const WhatsappProfileView = ({ profile: wp, latestGroupEvent: latestEvent }: {
           <ul style={{ margin: "4px 0 0 0", paddingLeft: 20 }}>
             {latestEvent && (
               <li>
-                💬 {groupEventHintText(latestEvent)}{" "}
-                (<NavLink to={`/contact_groups/${latestEvent.group_id}`}>szczegóły grupy</NavLink>)
+                💬 {eventHintText(latestEvent)}
+                {latestEvent.group_id !== null && <>
+                  {" "}(<NavLink to={`/contact_groups/${latestEvent.group_id}`}>szczegóły grupy</NavLink>)
+                </>}
               </li>
             )}
             {wp.suggestions.map((s, i) => <li key={i}>{s}</li>)}

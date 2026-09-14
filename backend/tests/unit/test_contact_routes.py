@@ -1352,11 +1352,11 @@ class TestContactGroupEvents:
 
     def test_post(self, event_session):
         from library.contact_routes import contact_group_events_add
-        from library.db.models import Document
+        from library.db.models import ContactGroup, Document
 
         session, _ = event_session
         document = Document(id=8, title="Journal")
-        session.get.side_effect = lambda model, ident: document if model is Document else SimpleNamespace(id=3)
+        session.get.side_effect = lambda model, ident: document if model is Document else ContactGroup(id=3, name="Parents")
         with Flask(__name__).test_request_context(method="POST", json={
             "title": " Meeting ", "event_date": "2026-09-13", "summary": "Notes", "source_document_id": 8,
         }):
@@ -1456,7 +1456,7 @@ class TestContactGroupEvents:
         events = [SimpleNamespace(
             id=index, group_id=index, title="Meeting", event_date=dt.date(2026, 9, index),
             summary=None, source_document_id=None, source_document=None,
-            created_at=None, updated_at=None, group=SimpleNamespace(name=f"Group {index}"),
+            created_at=None, updated_at=None, group=SimpleNamespace(name=f"Group {index}"), participants=[],
         ) for index in (3, 2)]
         session.get.return_value = _make_contact()
         captured = []
@@ -1475,7 +1475,7 @@ class TestContactGroupEvents:
         with Flask(__name__).test_request_context():
             response, status = contacts_get(1)
         assert status == 200
-        assert [row["group_name"] for row in response.json["contact"]["group_events"]] == ["Group 3", "Group 2"]
+        assert [row["group_name"] for row in response.json["contact"]["events"]] == ["Group 3", "Group 2"]
         assert "contact_group_memberships.contact_id = 1" in captured[0]
         assert "ORDER BY contact_group_events.event_date DESC" in captured[0]
         assert "LIMIT 20" in captured[0]
@@ -1798,3 +1798,198 @@ class TestContactPrivateNotes:
             expected_fields.add("private_notes")
         assert set(change.changed_fields) == expected_fields
         session.commit.assert_called_once()
+class TestContactEventParticipants:
+    @pytest.fixture
+    def event_client(self, monkeypatch):
+        from library.contact_routes import bp
+        from library.db.models import Contact, ContactGroup, ContactGroupEvent
+
+        contacts = {
+            1: Contact(id=1, first_name="Anna", last_name="Nowak"),
+            2: Contact(id=2, first_name=None, last_name=None, display_label="Dziecko 1"),
+            3: Contact(id=3, first_name="Jan", last_name="Nowak"),
+        }
+        group = ContactGroup(id=3, name="Rodzina")
+        event = ContactGroupEvent(id=7, group_id=3, group=group, title="Urodziny",
+                                  event_date=dt.date(2026, 9, 13), participants=[contacts[1]])
+        session = MagicMock()
+        records = {Contact: contacts, ContactGroup: {3: group}, ContactGroupEvent: {7: event}}
+        session.get.side_effect = lambda model, ident: records.get(model, {}).get(ident)
+        session.execute.return_value.scalars.return_value.all.return_value = [event]
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        app.register_blueprint(bp)
+        return app.test_client(), session, event, contacts
+
+    def test_create_participant_only_deduplicates_and_uses_display_name(self, event_client):
+        client, session, _, contacts = event_client
+        response = client.post("/contact_events", json={
+            "title": " Urodziny ", "event_date": "2026-09-13", "participant_contact_ids": [2, 2, 1],
+        })
+        assert response.status_code == 200
+        event = response.json["event"]
+        assert event["group_id"] is None
+        assert event["group_name"] is None
+        assert event["participants"] == [
+            {"id": 2, "first_name": None, "last_name": None, "display_name": "Dziecko 1"},
+            {"id": 1, "first_name": "Anna", "last_name": "Nowak", "display_name": "Anna Nowak"},
+        ]
+        added = session.add.call_args.args[0]
+        assert added.participants == [contacts[2], contacts[1]]
+        assert added in contacts[2].events
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("payload", [{}, {"group_id": None}, {"participant_contact_ids": []},
+                                         {"group_id": None, "participant_contact_ids": []}])
+    def test_create_requires_group_or_participant(self, event_client, payload):
+        client, session, _, _ = event_client
+        response = client.post("/contact_events", json={"title": "Urodziny", "event_date": "2026-09-13", **payload})
+        assert response.status_code == 400
+        assert "co najmniej jednym kontaktem" in response.json["message"]
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("path", ["/contact_events", "/contact_groups/3/events"])
+    def test_create_with_group_and_participants(self, event_client, path):
+        client, session, _, _ = event_client
+        response = client.post(path, json={
+            "title": "Urodziny", "event_date": "2026-09-13", "group_id": 3, "participant_contact_ids": [1, 2],
+        })
+        assert response.status_code == 200
+        assert response.json["event"]["group_name"] == "Rodzina"
+        assert [c["id"] for c in response.json["event"]["participants"]] == [1, 2]
+        session.commit.assert_called_once()
+
+    def test_group_url_takes_precedence(self, event_client):
+        client, _, _, _ = event_client
+        response = client.post("/contact_groups/3/events", json={
+            "title": "Urodziny", "event_date": "2026-09-13", "group_id": None,
+        })
+        assert response.status_code == 200
+        assert response.json["event"]["group_id"] == 3
+
+    def test_list_includes_group_and_participant_summaries(self, event_client):
+        client, _, _, _ = event_client
+        response = client.get("/contact_events")
+        assert response.status_code == 200
+        assert response.json["events"][0]["group_name"] == "Rodzina"
+        assert response.json["events"][0]["participants"][0]["display_name"] == "Anna Nowak"
+
+    def test_patch_replaces_participants_and_detaches_group(self, event_client):
+        client, session, event, contacts = event_client
+        response = client.patch("/contact_group_events/7", json={"group_id": None, "participant_contact_ids": [2, 3, 2]})
+        assert response.status_code == 200
+        assert response.json["event"]["group_id"] is None
+        assert response.json["event"]["group_name"] is None
+        assert event.participants == [contacts[2], contacts[3]]
+        assert event.title == "Urodziny"
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("initial_group,initial_participants,payload", [
+        (3, [1], {"group_id": None, "participant_contact_ids": []}),
+        (3, [], {"group_id": None}),
+        (None, [1], {"participant_contact_ids": []}),
+    ])
+    def test_patch_cannot_remove_last_scope(self, event_client, initial_group, initial_participants, payload):
+        client, session, event, contacts = event_client
+        event.group_id = initial_group
+        event.participants = [contacts[ident] for ident in initial_participants]
+        response = client.patch("/contact_group_events/7", json={"title": "Changed", **payload})
+        assert response.status_code == 400
+        assert "co najmniej jednym kontaktem" in response.json["message"]
+        assert event.title == "Urodziny"
+        assert event.group_id == initial_group
+        assert [contact.id for contact in event.participants] == initial_participants
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("payload", [{"group_id": None}, {"participant_contact_ids": []}, {"summary": "Notes"}])
+    def test_patch_preserves_omitted_scope(self, event_client, payload):
+        client, _, event, _ = event_client
+        response = client.patch("/contact_group_events/7", json=payload)
+        assert response.status_code == 200
+        assert event.group_id == payload.get("group_id", 3)
+        assert [contact.id for contact in event.participants] == payload.get("participant_contact_ids", [1])
+
+    @pytest.mark.parametrize("payload", [
+        {"group_id": True}, {"group_id": "3"}, {"group_id": 999}, {"group_id": 0},
+        {"participant_contact_ids": None}, {"participant_contact_ids": "1"},
+        {"participant_contact_ids": [True]}, {"participant_contact_ids": [1.5]},
+        {"participant_contact_ids": [0]}, {"participant_contact_ids": [1, 999]},
+    ])
+    @pytest.mark.parametrize("method", ["post", "patch"])
+    def test_rejects_invalid_scope_atomically(self, event_client, payload, method):
+        client, session, event, contacts = event_client
+        path = "/contact_events" if method == "post" else "/contact_group_events/7"
+        response = getattr(client, method)(path, json={"title": "Changed", "event_date": "2026-09-13", **payload})
+        assert response.status_code == 400
+        assert event.title == "Urodziny"
+        assert event.participants == [contacts[1]]
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("query", ["contact_id=bad", "group_id=0", "contact_id=", "group_id=1.5"])
+    def test_invalid_list_filter(self, event_client, query):
+        client, session, _, _ = event_client
+        assert client.get(f"/contact_events?{query}").status_code == 400
+        session.execute.assert_not_called()
+
+    @pytest.mark.parametrize("extra_events", [0, 25])
+    def test_contact_event_union_order_limit_and_list_filters(self, event_client, extra_events):
+        from sqlalchemy import Column, Date, Integer, MetaData, Table, create_engine
+        from library.db.models import ContactGroupEvent
+
+        client, session, _, _ = event_client
+        # Execute the endpoint's actual filtering/ordering/limit against a small
+        # SQLite fixture; unrelated contact detail queries still use the mock.
+        engine = create_engine("sqlite://")
+        metadata = MetaData()
+        event_table = Table("contact_group_events", metadata, Column("id", Integer, primary_key=True),
+                            Column("group_id", Integer), Column("event_date", Date))
+        memberships = Table("contact_group_memberships", metadata, Column("contact_id", Integer), Column("group_id", Integer))
+        participants = Table("contact_event_participants", metadata, Column("event_id", Integer), Column("contact_id", Integer))
+        metadata.create_all(engine)
+        # 1: group only; 2: participant only; 3: both; 4: unrelated.
+        rows = [dict(id=ident, group_id=group_id, event_date=dt.date(2026, 9, 13))
+                for ident, group_id in [(1, 3), (2, None), (3, 3), (4, 4)]]
+        rows += [dict(id=ident, group_id=3, event_date=dt.date(2026, 9, 12)) for ident in range(5, 5 + extra_events)]
+        events = {row["id"]: ContactGroupEvent(**row, title="Meeting") for row in rows}
+        session.get.side_effect = None
+        session.get.return_value = _make_contact()
+        with engine.begin() as connection:
+            connection.execute(event_table.insert(), rows)
+            connection.execute(memberships.insert(), [{"contact_id": 1, "group_id": 3}])
+            connection.execute(participants.insert(), [{"event_id": ident, "contact_id": 1} for ident in (2, 3)])
+
+            def execute(query):
+                result = MagicMock()
+                if query.column_descriptions[0].get("entity") is ContactGroupEvent:
+                    ids = connection.execute(query.with_only_columns(ContactGroupEvent.id)).scalars().all()
+                    result.scalars.return_value.all.return_value = [events[ident] for ident in ids]
+                else:
+                    result.all.return_value = []
+                    result.scalars.return_value.all.return_value = []
+                return result
+
+            session.execute.side_effect = execute
+            expected = [3, 2, 1] + list(reversed(range(5, 5 + extra_events)))
+            response = client.get("/contacts/1")
+            assert response.status_code == 200
+            assert "group_events" not in response.json["contact"]
+            assert [event["id"] for event in response.json["contact"]["events"]] == expected[:20]
+            assert [event["id"] for event in client.get("/contact_events?contact_id=1").json["events"]] == expected
+            assert [event["id"] for event in client.get("/contact_events?contact_id=1&group_id=3").json["events"]] == [
+                ident for ident in expected if ident != 2
+            ]
+            assert [event["id"] for event in client.get("/contact_events?group_id=4").json["events"]] == [4]
+            assert [event["id"] for event in client.get("/contact_events").json["events"]] == [4] + expected
+        engine.dispose()
+
+    def test_participant_association_schema(self):
+        from library.db.models import ContactEventParticipant, ContactGroupEvent
+
+        table = ContactEventParticipant.__table__
+        assert set(table.primary_key.columns.keys()) == {"event_id", "contact_id"}
+        assert {fk.ondelete for fk in table.foreign_keys} == {"CASCADE"}
+        assert any([column.name for column in index.columns] == ["contact_id"] for index in table.indexes)
+        assert not table.c.created_at.nullable
+        assert table.c.created_at.server_default is not None
+        assert ContactGroupEvent.__table__.c.group_id.nullable

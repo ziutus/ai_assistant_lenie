@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import false, func, or_, select
-from sqlalchemy.orm import aliased, joinedload
+from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
@@ -20,7 +20,7 @@ from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, gener
 from library.db.engine import get_scoped_session
 from library.db.models import (
     Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLookupResult,
-    ContactOrganization, ContactRelationship, Document,
+    ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
 )
 
 bp = Blueprint("contacts", __name__)
@@ -129,6 +129,13 @@ def _event_dict(row: ContactGroupEvent) -> dict:
     return {
         "id": row.id,
         "group_id": row.group_id,
+        "group_name": row.group.name if row.group else None,
+        "participants": [{
+            "id": contact.id,
+            "first_name": contact.first_name,
+            "last_name": contact.last_name,
+            "display_name": contact_display_name(contact),
+        } for contact in row.participants],
         "title": row.title,
         "event_date": row.event_date.isoformat(),
         "summary": row.summary,
@@ -139,7 +146,7 @@ def _event_dict(row: ContactGroupEvent) -> dict:
     }
 
 
-def _event_values(session, data, partial=False) -> dict:
+def _event_values(session, data, partial=False, row=None) -> dict:
     if not isinstance(data, dict):
         raise ValueError("JSON object required")
     values = {}
@@ -167,14 +174,56 @@ def _event_values(session, data, partial=False) -> dict:
             raise ValueError("source_document_id not found")
         values["source_document_id"] = doc_id
         values["source_document"] = document
+    if "group_id" in data:
+        group_id = data["group_id"]
+        if group_id is not None and (type(group_id) is not int or group_id <= 0):
+            raise ValueError("group_id must be a positive integer or null")
+        group = session.get(ContactGroup, group_id) if group_id is not None else None
+        if group_id is not None and group is None:
+            raise ValueError("group_id not found")
+        values["group_id"] = group_id
+        values["group"] = group
+    if "participant_contact_ids" in data:
+        ids = data["participant_contact_ids"]
+        if not isinstance(ids, list) or any(type(ident) is not int or ident <= 0 for ident in ids):
+            raise ValueError("participant_contact_ids must be a list of positive integers")
+        participants = []
+        for ident in dict.fromkeys(ids):
+            contact = session.get(Contact, ident)
+            if contact is None:
+                raise ValueError(f"participant_contact_ids: contact {ident} not found")
+            participants.append(contact)
+        values["participants"] = participants
+    group_id = values.get("group_id", row.group_id if partial and row is not None else None)
+    participants = values.get("participants", row.participants if partial and row is not None else [])
+    if group_id is None and not participants:
+        raise ValueError("Wydarzenie musi być powiązane z grupą lub co najmniej jednym kontaktem")
     return values
+
+
+def _events_query(contact_id=None, group_id=None):
+    query = select(ContactGroupEvent).options(
+        joinedload(ContactGroupEvent.group), joinedload(ContactGroupEvent.source_document),
+        selectinload(ContactGroupEvent.participants),
+    )
+    if contact_id is not None:
+        # Subqueries avoid duplicate events when both forms of membership match.
+        query = query.where(or_(
+            ContactGroupEvent.group_id.in_(select(ContactGroupMembership.group_id).where(
+                ContactGroupMembership.contact_id == contact_id,
+            )),
+            ContactGroupEvent.id.in_(select(ContactEventParticipant.event_id).where(
+                ContactEventParticipant.contact_id == contact_id,
+            )),
+        ))
+    if group_id is not None:
+        query = query.where(ContactGroupEvent.group_id == group_id)
+    return query.order_by(ContactGroupEvent.event_date.desc(), ContactGroupEvent.id.desc())
 
 
 def _group_events(session, group_id):
     return session.execute(
-        select(ContactGroupEvent).options(joinedload(ContactGroupEvent.source_document))
-        .where(ContactGroupEvent.group_id == group_id)
-        .order_by(ContactGroupEvent.event_date.desc(), ContactGroupEvent.id.desc())
+        _events_query(group_id=group_id)
     ).scalars().all()
 
 
@@ -412,18 +461,38 @@ def contact_group_events_list(group_id: int):
     ]}), 200
 
 
+@bp.get("/contact_events")
+def contact_events_list():
+    filters = {}
+    for name in ("contact_id", "group_id"):
+        if name in request.args:
+            try:
+                filters[name] = int(request.args[name])
+                if filters[name] <= 0:
+                    raise ValueError
+            except ValueError:
+                return {"status": "error", "message": f"{name} must be a positive integer"}, 400
+    session = get_scoped_session()
+    rows = session.execute(_events_query(**filters)).scalars().all()
+    return jsonify({"status": "success", "events": [_event_dict(row) for row in rows]}), 200
+
+
+@bp.route("/contact_events", methods=["POST", "OPTIONS"])
 @bp.route("/contact_groups/<int:group_id>/events", methods=["POST", "OPTIONS"])
-def contact_group_events_add(group_id: int):
+def contact_group_events_add(group_id: int | None = None):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     session = get_scoped_session()
-    if session.get(ContactGroup, group_id) is None:
+    if group_id is not None and session.get(ContactGroup, group_id) is None:
         return {"status": "error", "message": "Group not found"}, 404
     try:
-        values = _event_values(session, request.get_json(silent=True))
+        data = request.get_json(silent=True)
+        if group_id is not None and isinstance(data, dict):
+            data = {**data, "group_id": group_id}
+        values = _event_values(session, data)
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}, 400
-    row = ContactGroupEvent(group_id=group_id, **values)
+    row = ContactGroupEvent(**values)
     session.add(row)
     try:
         session.commit()
@@ -442,7 +511,7 @@ def contact_group_events_update(event_id: int):
     if row is None:
         return {"status": "error", "message": "Event not found"}, 404
     try:
-        values = _event_values(session, request.get_json(silent=True), partial=True)
+        values = _event_values(session, request.get_json(silent=True), partial=True, row=row)
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}, 400
     for key, value in values.items():
@@ -783,15 +852,10 @@ def contacts_get(contact_id: int):
     ).scalars().all()
 
     data = _contact_dict(row)
-    # Deliberately cap the contact overview at the 20 most recent group events.
-    group_events = session.execute(
-        select(ContactGroupEvent)
-        .join(ContactGroupMembership, ContactGroupMembership.group_id == ContactGroupEvent.group_id)
-        .where(ContactGroupMembership.contact_id == contact_id)
-        .options(joinedload(ContactGroupEvent.group), joinedload(ContactGroupEvent.source_document))
-        .order_by(ContactGroupEvent.event_date.desc(), ContactGroupEvent.id.desc()).limit(20)
-    ).scalars().all()
-    data["group_events"] = [{**_event_dict(event), "group_name": event.group.name} for event in group_events]
+    # Cap group and participant events at 20 to keep the contact overview compact;
+    # the standalone events list exposes the complete history.
+    events = session.execute(_events_query(contact_id=contact_id).limit(20)).scalars().all()
+    data["events"] = [_event_dict(event) for event in events]
     data["relationships"] = relationships
     data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
     data["organizations"] = [_organization_dict(org) for org in organizations]
