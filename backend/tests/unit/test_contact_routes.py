@@ -33,6 +33,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
         address=None, birthday=None, pesel=None, notes=None, private_notes=None, groups=[], whatsapp_profile=None,
+        birthday_month=None, birthday_day=None,
         languages=[], nationality=[], photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),
@@ -1722,6 +1723,136 @@ def test_photo_history_routes_missing_contact_and_options(monkeypatch, route_nam
     session.get.assert_not_called()
     with Flask(__name__).test_request_context():
         assert route(999) == ({"status": "error", "message": "Contact not found"}, 404)
+
+
+class TestContactBirthdayPair:
+    @pytest.fixture(params=["POST", "PATCH"])
+    def birthday_request(self, monkeypatch, request):
+        from library.contact_routes import contacts_add, contacts_update
+
+        row = _make_contact()
+        session = MagicMock()
+        session.get.return_value = row
+        session.execute.return_value.scalars.return_value.first.return_value = _make_category()
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+
+        def send(data):
+            with Flask(__name__).test_request_context(
+                "/contacts" if request.param == "POST" else "/contacts/1",
+                method=request.param, json={"last_name": row.last_name, **data},
+            ):
+                return contacts_add() if request.param == "POST" else contacts_update(1)
+
+        return send, session, row
+
+    @pytest.mark.parametrize("month, day", [(1, 31), (2, 29), (4, 30), (6, 30), (9, 30), (11, 30), (12, 31)])
+    def test_valid_pair(self, birthday_request, month, day):
+        send, session, _ = birthday_request
+        response, status = send({"birthday_month": month, "birthday_day": day})
+        assert status == 200
+        assert response.json["contact"]["birthday_month"] == month
+        assert response.json["contact"]["birthday_day"] == day
+        assert response.json["contact"]["birthday"] is None
+        change = session.add.call_args_list[-1][0][0]
+        assert {"birthday_month", "birthday_day"} <= set(change.changed_fields)
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("data", [
+        {"birthday_month": 4}, {"birthday_day": 20},
+        {"birthday_month": None}, {"birthday_day": None},
+        {"birthday_month": 4, "birthday_day": None},
+        {"birthday_month": None, "birthday_day": 20},
+    ])
+    def test_incomplete_pair_rejected(self, birthday_request, data):
+        send, session, row = birthday_request
+        assert send(data) == ({
+            "status": "error", "message": "birthday_month and birthday_day must be provided together",
+        }, 400)
+        assert row.birthday_month is None and row.birthday_day is None
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("month, day, field", [
+        (0, 1, "birthday_month"), (13, 1, "birthday_month"),
+        (1, 0, "birthday_day"), (1, 32, "birthday_day"),
+        (4, 31, "birthday_day"), (6, 31, "birthday_day"),
+        (9, 31, "birthday_day"), (11, 31, "birthday_day"), (2, 30, "birthday_day"),
+        ("4", 1, "birthday_month"), (True, 1, "birthday_month"), (1.5, 1, "birthday_month"),
+        (1, "2", "birthday_day"), (1, False, "birthday_day"), (1, 2.5, "birthday_day"),
+    ])
+    def test_invalid_pair_rejected(self, birthday_request, month, day, field):
+        send, session, _ = birthday_request
+        response, status = send({"birthday_month": month, "birthday_day": day})
+        assert status == 400
+        assert response["status"] == "error"
+        assert field in response["message"]
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+
+    def test_null_pair(self, birthday_request):
+        send, session, row = birthday_request
+        row.birthday_month, row.birthday_day = 2, 29
+        response, status = send({"birthday_month": None, "birthday_day": None})
+        assert status == 200
+        assert response.json["contact"]["birthday_month"] is None
+        assert response.json["contact"]["birthday_day"] is None
+        change = session.add.call_args_list[-1][0][0]
+        assert {"birthday_month", "birthday_day"} <= set(change.changed_fields)
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("data, expected, changed", [
+        ({"birthday_month": 3}, (3, 29), ["birthday_month"]),
+        ({"birthday_day": 28}, (2, 28), ["birthday_day"]),
+        ({"birthday_month": 2, "birthday_day": 29}, (2, 29), []),
+        ({}, (2, 29), []),
+    ])
+    def test_update_existing_pair(self, monkeypatch, data, expected, changed):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(birthday_month=2, birthday_day=29, birthday=dt.date(2000, 2, 29))
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/contacts/1", method="PATCH", json=data):
+            response, status = contacts_update(1)
+        assert status == 200
+        assert (row.birthday_month, row.birthday_day) == expected
+        assert response.json["contact"]["birthday"] == "2000-02-29"
+        if changed:
+            assert session.add.call_args[0][0].changed_fields == changed
+        else:
+            session.add.assert_not_called()
+
+    @pytest.mark.parametrize("data", [
+        {"birthday_month": 4}, {"birthday_month": None}, {"birthday_day": None},
+    ])
+    def test_update_validates_merged_pair(self, monkeypatch, data):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(birthday_month=1, birthday_day=31)
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/contacts/1", method="PATCH", json=data):
+            response, status = contacts_update(1)
+        assert status == 400
+        assert response["status"] == "error"
+        assert (row.birthday_month, row.birthday_day) == (1, 31)
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("kind", ["service", "user", "read_only", None])
+    @pytest.mark.parametrize("month, day", [(2, 29), (None, None)])
+    def test_dict_birthday_pair_is_public(self, kind, month, day):
+        from library.contact_routes import _contact_dict
+
+        row = _make_contact(birthday_month=month, birthday_day=day, private_notes="vault note")
+        with Flask(__name__).test_request_context():
+            if kind is not None:
+                g.auth = SimpleNamespace(kind=kind)
+            result = _contact_dict(row)
+        assert result["birthday_month"] == month
+        assert result["birthday_day"] == day
+        assert result["private_notes"] == ("vault note" if kind == "service" else None)
 
 
 class TestContactPrivateNotes:

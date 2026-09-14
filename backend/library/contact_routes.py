@@ -254,6 +254,8 @@ def _contact_dict(row: Contact) -> dict:
         "position": row.position,
         "address": row.address,
         "birthday": row.birthday.isoformat() if row.birthday else None,
+        "birthday_month": row.birthday_month,
+        "birthday_day": row.birthday_day,
         "pesel": row.pesel,
         "notes": row.notes,
         "private_notes": row.private_notes if auth and auth.kind == "service" else None,
@@ -1097,6 +1099,27 @@ def contact_photo_delete(contact_id: int):
     return jsonify({"status": "success"}), 200
 
 
+def _validate_birthday_pair(data, row=None):
+    fields = ("birthday_month", "birthday_day")
+    if not any(field in data for field in fields):
+        return None
+    pair_error = "birthday_month and birthday_day must be provided together"
+    if any(field not in data and getattr(row, field, None) is None for field in fields):
+        return pair_error
+    month = data.get("birthday_month", getattr(row, "birthday_month", None))
+    day = data.get("birthday_day", getattr(row, "birthday_day", None))
+    if month is None and day is None:
+        return None
+    if month is None or day is None:
+        return pair_error
+    if type(month) is not int or not 1 <= month <= 12:
+        return "birthday_month must be an integer between 1 and 12"
+    max_day = 29 if month == 2 else 30 if month in (4, 6, 9, 11) else 31
+    if type(day) is not int or not 1 <= day <= max_day:
+        return f"birthday_day must be an integer between 1 and {max_day} for month {month}"
+    return None
+
+
 @bp.route("/contacts", methods=["POST", "OPTIONS"])
 def contacts_add():
     if request.method == "OPTIONS":
@@ -1107,6 +1130,10 @@ def contacts_add():
     if name_error:
         return {"status": "error", "message": name_error}, 400
     last_name = (data.get("last_name") or "").strip() or None
+
+    birthday_error = _validate_birthday_pair(data)
+    if birthday_error:
+        return {"status": "error", "message": birthday_error}, 400
 
     category_id = data.get("category_id")
     session = get_scoped_session()
@@ -1140,6 +1167,10 @@ def contacts_add():
     if "birthday" in data:
         row.birthday = data.get("birthday") or None
         changed_fields.append("birthday")
+    for field in ("birthday_month", "birthday_day"):
+        if field in data:
+            setattr(row, field, data[field])
+            changed_fields.append(field)
     if "languages" in data:
         new_languages, error = _normalize_languages(data.get("languages"))
         if error:
@@ -1180,6 +1211,10 @@ def contacts_update(contact_id: int):
     if name_error:
         return {"status": "error", "message": name_error}, 400
 
+    birthday_error = _validate_birthday_pair(data, row)
+    if birthday_error:
+        return {"status": "error", "message": birthday_error}, 400
+
     change_source = (data.get("change_source") or "manual_edit").strip()
     if change_source not in CONTACT_CHANGE_SOURCES:
         return {"status": "error", "message": f"change_source must be one of {CONTACT_CHANGE_SOURCES}"}, 400
@@ -1211,6 +1246,11 @@ def contacts_update(contact_id: int):
         if old_birthday != new_birthday:
             changed_fields.append("birthday")
         row.birthday = new_birthday
+    for field in ("birthday_month", "birthday_day"):
+        if field in data:
+            if getattr(row, field) != data[field]:
+                changed_fields.append(field)
+            setattr(row, field, data[field])
     if "category_id" in data:
         category_id = data.get("category_id")
         if session.get(ContactCategory, category_id) is None:
