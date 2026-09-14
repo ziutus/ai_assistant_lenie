@@ -275,8 +275,6 @@ def open_questions(op):
         questions.append("OPEN #497 Grzegorz Kocian/Kocjan: retain spelling; review")
     if op["action"] == "new_contact_exception":
         questions.append("OPEN new Filip / #116 Anna Szymańska: exception-contact review")
-    if op.get("people") == ["Kaśka", "Franek", "Hanka", "Marek"]:
-        questions.append("OPEN new Franek / Kaśka: no relationship row; review")
     if op.get("people") == ["Leon", "Marcelina"]:
         questions.append("OPEN Arkadiusz / new Marcelina: no Arkadiusz contact; review")
     return questions
@@ -570,6 +568,7 @@ def run_import(session, spec, sources, apply=False):
         link(by_stem["Filip"]["path"], 0, "id:116", 0, "matka")
     for op in operations:
         if op.get("people") == ["Kaśka", "Franek", "Hanka", "Marek"] and op.get("note"):
+            link(op["path"], 0, op["path"], 1, "syn")
             link(op["path"], 0, op["path"], 2, "córka")
             link(op["path"], 0, op["path"], 3, "mąż")
         if op.get("people") == ["Marcin", "Emilia", "Julka"] and op.get("note"):
