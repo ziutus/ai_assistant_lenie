@@ -133,6 +133,12 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           Wydarzenia
         </NavLink>
         <NavLink
+          to="/contact-birthdays"
+          className={({ isActive }) => isActive ? classes.activeLink : classes.link}
+        >
+          Urodziny
+        </NavLink>
+        <NavLink
           to="/sources"
           className={({ isActive }) =>
             isActive ? classes.activeLink : classes.link
