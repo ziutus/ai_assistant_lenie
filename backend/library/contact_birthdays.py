@@ -43,6 +43,7 @@ def upcoming_birthday_entry(contact, today: datetime.date) -> dict | None:
     return {
         "contact_id": contact.id,
         "display_name": contact_display_name(contact),
+        "groups": [{"id": group.id, "name": group.name} for group in contact.groups],
         "birthday_month": month,
         "birthday_day": day,
         "has_year": has_year,

@@ -10,7 +10,7 @@ from library.contact_birthdays import birthday_source, next_occurrence, upcoming
 
 def _contact(**extra):
     defaults = dict(id=7, first_name="Anna", last_name="Nowak", display_label=None,
-                    birthday=None, birthday_month=None, birthday_day=None)
+                    birthday=None, birthday_month=None, birthday_day=None, groups=[])
     defaults.update(extra)
     return SimpleNamespace(**defaults)
 
@@ -20,8 +20,15 @@ def test_same_year_full_birthday_entry():
     assert upcoming_birthday_entry(contact, dt.date(2026, 9, 14)) == {
         "contact_id": 7, "display_name": "Anna Nowak", "birthday_month": 9,
         "birthday_day": 20, "has_year": True, "next_occurrence": "2026-09-20",
-        "days_until": 6, "turning_age": 36,
+        "days_until": 6, "turning_age": 36, "groups": [],
     }
+
+
+def test_groups_are_serialized():
+    group = SimpleNamespace(id=3, name="Rodzina")
+    contact = _contact(birthday_month=9, birthday_day=20, groups=[group])
+    entry = upcoming_birthday_entry(contact, dt.date(2026, 9, 14))
+    assert entry["groups"] == [{"id": 3, "name": "Rodzina"}]
 
 
 def test_december_to_january_wraparound_without_birth_year():

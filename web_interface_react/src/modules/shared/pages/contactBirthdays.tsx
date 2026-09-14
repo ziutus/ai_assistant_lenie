@@ -6,6 +6,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 interface UpcomingBirthday {
   contact_id: number;
   display_name: string;
+  groups: { id: number; name: string }[];
   birthday_month: number;
   birthday_day: number;
   has_year: boolean;
@@ -19,6 +20,7 @@ const months = [
   "lipca", "sierpnia", "września", "października", "listopada", "grudnia",
 ];
 const rowStyle: React.CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
+const chipStyle: React.CSSProperties = { display: "inline-block", padding: "2px 8px", borderRadius: 12, background: "#eef2ff" };
 const ageLabel = (age: number) => {
   const years = age === 1 ? "rok" : age % 10 >= 2 && age % 10 <= 4 && (age % 100 < 12 || age % 100 > 14) ? "lata" : "lat";
   return `(kończy ${age} ${years})`;
@@ -65,6 +67,11 @@ const ContactBirthdays = () => {
             {birthday.turning_age !== null && ` ${ageLabel(birthday.turning_age)}`}
           </span>
         </div>
+        {birthday.groups.length > 0 && <div style={{ ...rowStyle, marginTop: 6 }}>
+          {birthday.groups.map(group => <NavLink key={group.id} style={chipStyle} to={`/contact_groups/${group.id}`}>
+            {group.name}
+          </NavLink>)}
+        </div>}
       </li>)}
     </ul>
     {!isLoading && !isError && !birthdays.length && <p style={{ color: "#667" }}>Brak urodzin w ciągu najbliższych {days} dni.</p>}
