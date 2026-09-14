@@ -7,7 +7,7 @@ the ORM (`imports/google_contacts_import.py`, `imports/whatsapp_neighbor_profile
 from library.db.models import Contact, ContactChangeLog
 
 CONTACT_CHANGE_SOURCES = (
-    "manual_edit", "google_import", "linkedin_analysis",
+    "manual_edit", "google_import", "obsidian_import", "linkedin_analysis",
     "whatsapp_analysis", "osint_lookup", "other",
 )
 
