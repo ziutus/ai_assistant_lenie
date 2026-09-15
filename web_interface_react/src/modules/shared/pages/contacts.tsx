@@ -116,14 +116,20 @@ const Contacts = () => {
     }
   };
 
-  const fetchContacts = async (pageArg = 1, pageSizeArg = pageSize) => {
+  // searchParamsOverride lets a caller (handleClearFilters) request an
+  // explicit filter set instead of the one derived from current state —
+  // state updates from setQuery/setCategoryId/etc. haven't landed yet by
+  // the time fetchContacts runs in the same handler, so filterParams()
+  // would still read the pre-reset values from this closure.
+  const fetchContacts = async (pageArg = 1, pageSizeArg = pageSize, searchParamsOverride?: Record<string, string>) => {
     const normalizedPage = Math.max(1, pageArg);
     setIsLoading(true);
     setIsError(false);
     setMessage("");
     try {
+      const requestSearchParams = searchParamsOverride ?? filterParams(normalizedPage, pageSizeArg);
       const params = {
-        ...filterParams(normalizedPage, pageSizeArg),
+        ...requestSearchParams,
         offset: String((normalizedPage - 1) * pageSizeArg),
         limit: String(pageSizeArg),
       };
@@ -133,7 +139,7 @@ const Contacts = () => {
       setPage(normalizedPage);
       setPageSize(pageSizeArg);
       setTotal(response.data.total ?? rows.length);
-      setSearchParams(filterParams(normalizedPage, pageSizeArg), { replace: true });
+      setSearchParams(requestSearchParams, { replace: true });
       if (!rows.length) {
         setMessage("Brak kontaktów pasujących do filtrów.");
       }
@@ -143,6 +149,15 @@ const Contacts = () => {
       setMessage(`Nie udało się pobrać kontaktów: ${error.response?.data?.message || error.message}`);
     }
     setIsLoading(false);
+  };
+
+  const handleClearFilters = () => {
+    setQuery("");
+    setCategoryId("");
+    setArchived("");
+    setGroupFilterActive(false);
+    setSelectedGroupValues([]);
+    void fetchContacts(1, DEFAULT_PAGE_SIZE, {});
   };
 
   React.useEffect(() => {
@@ -277,6 +292,9 @@ const Contacts = () => {
         </label>
         <button type="submit" className={"button"} disabled={isLoading}>
           Szukaj
+        </button>
+        <button type="button" className={"button"} disabled={isLoading} onClick={handleClearFilters}>
+          Wyczyść filtry
         </button>
         <button
           type="button"
