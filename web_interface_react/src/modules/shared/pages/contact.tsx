@@ -226,6 +226,25 @@ const eventHintText = (event: ContactGroupEvent) =>
 const ceidgUrlForNip = (nip: string) =>
   `https://aplikacja.ceidg.gov.pl/ceidg/ceidg.public.ui/searchdetails.aspx?Nip=${encodeURIComponent(nip.replace(/[^0-9]/g, ""))}`;
 
+// Free-text fields (contact/organization notes) sometimes carry a raw URL
+// typed by hand (e.g. "Facebook: https://..."). Render it as a clickable
+// link instead of plain text, same trailing-punctuation handling as
+// read.tsx's renderInline bareUrl case — kept separate here since that
+// function also does markdown/wikilink/footnote parsing this plain text
+// doesn't need.
+const linkifyPlainText = (text: string): React.ReactNode[] =>
+  text.split(/(https?:\/\/[^\s)]+)/g).map((part, i) => {
+    const match = part.match(/^(https?:\/\/[^\s)]+?)([.,;:!?]*)$/);
+    if (!match) return <React.Fragment key={i}>{part}</React.Fragment>;
+    const [, url, trailing] = match;
+    return (
+      <React.Fragment key={i}>
+        <a href={url} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{url}</a>
+        {trailing}
+      </React.Fragment>
+    );
+  });
+
 const Contact = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -814,7 +833,7 @@ const Contact = () => {
           {contact.languages.length > 0 && (
             <div><strong>Języki:</strong> {contact.languages.map(languageSummary).join(", ")}</div>
           )}
-          {contact.notes && <div><strong>Notatki:</strong> {contact.notes}</div>}
+          {contact.notes && <div><strong>Notatki:</strong> {linkifyPlainText(contact.notes)}</div>}
 
           <div style={{ marginTop: 10 }}>
             <div style={{ marginBottom: 4 }}>Grupy</div>
@@ -1124,7 +1143,7 @@ const Contact = () => {
                     </div>
                   )}
                   {org.address && <div style={{ fontSize: "0.85em", color: "#667" }}>{org.address}</div>}
-                  {org.notes && <div style={{ fontSize: "0.85em", color: "#667" }}>{org.notes}</div>}
+                  {org.notes && <div style={{ fontSize: "0.85em", color: "#667" }}>{linkifyPlainText(org.notes)}</div>}
                   <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center" }}>
                     {org.nip && (
                       <a
