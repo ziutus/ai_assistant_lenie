@@ -1283,6 +1283,161 @@ class TestContactOrganizationsDelete:
         assert response[1] == 404
 
 
+def _make_link(id_=1, contact_id=1, link_type="facebook", url="https://facebook.com/example", label=None, **extra):
+    defaults = dict(
+        contact_id=contact_id, link_type=link_type, url=url, label=label,
+        created_at=dt.datetime(2026, 9, 16, 12, 0),
+        updated_at=dt.datetime(2026, 9, 16, 12, 0),
+    )
+    defaults.update(extra)
+    return SimpleNamespace(id=id_, **defaults)
+
+
+class TestContactLinksAdd:
+    def test_adds_facebook_link(self, monkeypatch):
+        from library.contact_routes import contact_links_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/links", method="POST",
+            json={"link_type": "facebook", "url": "https://facebook.com/example"},
+        ):
+            response = contact_links_add(1)
+
+        assert response[1] == 200
+        session.add.assert_called_once()
+        added = session.add.call_args[0][0]
+        assert added.contact_id == 1
+        assert added.link_type == "facebook"
+        assert added.url == "https://facebook.com/example"
+        assert added.label is None
+
+    def test_missing_contact_is_404(self, monkeypatch):
+        from library.contact_routes import contact_links_add
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/999/links", method="POST",
+            json={"link_type": "facebook", "url": "https://facebook.com/example"},
+        ):
+            response = contact_links_add(999)
+
+        assert response[1] == 404
+        session.add.assert_not_called()
+
+    def test_invalid_link_type_is_400(self, monkeypatch):
+        from library.contact_routes import contact_links_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/links", method="POST",
+            json={"link_type": "tiktok", "url": "https://tiktok.com/@example"},
+        ):
+            response = contact_links_add(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+    def test_missing_url_is_400(self, monkeypatch):
+        from library.contact_routes import contact_links_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/links", method="POST", json={"link_type": "website"},
+        ):
+            response = contact_links_add(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+
+class TestContactLinksUpdate:
+    def test_updates_url_and_label(self, monkeypatch):
+        from library.contact_routes import contact_links_update
+
+        session = MagicMock()
+        session.get.return_value = _make_link(id_=6)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_links/6", method="PATCH",
+            json={"url": "https://facebook.com/other", "label": "Profil prywatny"},
+        ):
+            response = contact_links_update(6)
+
+        assert response[1] == 200
+        row = session.get.return_value
+        assert row.url == "https://facebook.com/other"
+        assert row.label == "Profil prywatny"
+
+    def test_invalid_link_type_is_400(self, monkeypatch):
+        from library.contact_routes import contact_links_update
+
+        session = MagicMock()
+        session.get.return_value = _make_link(id_=6)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_links/6", method="PATCH", json={"link_type": "myspace"},
+        ):
+            response = contact_links_update(6)
+
+        assert response[1] == 400
+
+    def test_missing_link_is_404(self, monkeypatch):
+        from library.contact_routes import contact_links_update
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_links/999", method="PATCH", json={"url": "https://example.com"},
+        ):
+            response = contact_links_update(999)
+
+        assert response[1] == 404
+
+
+class TestContactLinksDelete:
+    def test_deletes_link(self, monkeypatch):
+        from library.contact_routes import contact_links_delete
+
+        session = MagicMock()
+        session.get.return_value = _make_link(id_=6)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_links/6", method="DELETE"):
+            response = contact_links_delete(6)
+
+        assert response[1] == 200
+        session.delete.assert_called_once()
+
+    def test_missing_link_is_404(self, monkeypatch):
+        from library.contact_routes import contact_links_delete
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_links/999", method="DELETE"):
+            response = contact_links_delete(999)
+
+        assert response[1] == 404
+
+
 class TestContactThumbnails:
     @pytest.mark.parametrize("bad_image,storage_error", [(False, False), (True, False), (False, True)])
     def test_upload_thumbnail_is_best_effort(self, monkeypatch, bad_image, storage_error):
