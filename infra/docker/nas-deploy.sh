@@ -89,7 +89,12 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 # --- Functions ---
 nas_ssh() {
-    ssh -o ConnectTimeout=5 "${NAS_USER}@${NAS_HOST}" "$@"
+    # BatchMode disables any interactive prompt (host key confirmation, password/
+    # passphrase fallback) so a stale known_hosts entry or agent hiccup fails fast
+    # with an SSH error instead of hanging silently until an external timeout
+    # kills the whole multi-service deploy mid-way (e.g. after the migration
+    # runner but before later services in the list get pulled/recreated).
+    ssh -o ConnectTimeout=5 -o BatchMode=yes "${NAS_USER}@${NAS_HOST}" "$@"
 }
 
 nas_docker() {
@@ -187,18 +192,18 @@ deploy_on_nas() {
     log "Pulling i restartowanie na NAS..."
 
     if [ -n "$services_to_pull" ]; then
-        # Pull only specified services
-        for svc in $services_to_pull; do
-            local compose_name="${SVC_COMPOSE_NAME[$svc]}"
-            log "Pull: ${compose_name}..."
-            nas_docker "compose -f ${NAS_COMPOSE_FILE} pull ${compose_name}"
-        done
-        # Recreate only the specified services
+        # One pull call for every requested service instead of one SSH round-trip
+        # per service — fewer round-trips means less total wall-clock time, which
+        # matters because a slow/hanging step earlier in a multi-service deploy
+        # (build, push, migration) can eat into an external caller's timeout and
+        # leave later services never pulled/recreated.
         local compose_names=""
         for svc in $services_to_pull; do
             compose_names="${compose_names} ${SVC_COMPOSE_NAME[$svc]}"
         done
-        nas_docker "compose -f ${NAS_COMPOSE_FILE} up -d ${compose_names}"
+        log "Pull:${compose_names}..."
+        nas_docker "compose -f ${NAS_COMPOSE_FILE} pull${compose_names}"
+        nas_docker "compose -f ${NAS_COMPOSE_FILE} up -d${compose_names}"
     else
         # Pull and deploy everything
         nas_docker "compose -f ${NAS_COMPOSE_FILE} pull"
@@ -345,7 +350,12 @@ else
     # pushed to the registry above (compose only pulls the *requested* services
     # further down, in deploy_on_nas, which runs AFTER this step).
     nas_docker "compose -f ${NAS_COMPOSE_FILE} pull lenie-migrate"
-    nas_docker "compose -f ${NAS_COMPOSE_FILE} run --rm lenie-migrate"
+    # -T disables TTY allocation — `docker compose run` attaches one by default,
+    # which can hang waiting on stdin over this non-interactive SSH session
+    # instead of failing fast, silently eating the rest of the deploy's time
+    # budget (later services in a multi-service run then never get pulled/
+    # recreated, with no error printed).
+    nas_docker "compose -f ${NAS_COMPOSE_FILE} run --rm -T lenie-migrate"
     ok "Migracje zakończone"
     deploy_on_nas "$SERVICES"
     show_status
