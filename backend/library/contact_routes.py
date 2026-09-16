@@ -41,6 +41,8 @@ _ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_u
 
 _LINK_TYPES = ("facebook", "instagram", "twitter", "website", "other")
 
+_GENDER_VALUES = ("male", "female", "other")
+
 _LANGUAGE_LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
 
 
@@ -248,6 +250,7 @@ def _contact_dict(row: Contact) -> dict:
         "groups": [{"id": g.id, "name": g.name} for g in row.groups],
         "first_name": row.first_name,
         "last_name": row.last_name,
+        "gender": row.gender,
         "display_label": row.display_label,
         "display_name": contact_display_name(row),
         "phone_number": row.phone_number,
@@ -1169,6 +1172,15 @@ def _validate_birthday_pair(data, row=None):
     return None
 
 
+def _validate_gender(data) -> str | None:
+    if "gender" not in data:
+        return None
+    gender = data.get("gender")
+    if gender is not None and gender not in _GENDER_VALUES:
+        return f"gender must be one of {_GENDER_VALUES} or null"
+    return None
+
+
 @bp.route("/contacts", methods=["POST", "OPTIONS"])
 def contacts_add():
     if request.method == "OPTIONS":
@@ -1183,6 +1195,10 @@ def contacts_add():
     birthday_error = _validate_birthday_pair(data)
     if birthday_error:
         return {"status": "error", "message": birthday_error}, 400
+
+    gender_error = _validate_gender(data)
+    if gender_error:
+        return {"status": "error", "message": gender_error}, 400
 
     category_id = data.get("category_id")
     session = get_scoped_session()
@@ -1220,6 +1236,9 @@ def contacts_add():
         if field in data:
             setattr(row, field, data[field])
             changed_fields.append(field)
+    if "gender" in data:
+        row.gender = data.get("gender")
+        changed_fields.append("gender")
     if "languages" in data:
         new_languages, error = _normalize_languages(data.get("languages"))
         if error:
@@ -1264,6 +1283,10 @@ def contacts_update(contact_id: int):
     if birthday_error:
         return {"status": "error", "message": birthday_error}, 400
 
+    gender_error = _validate_gender(data)
+    if gender_error:
+        return {"status": "error", "message": gender_error}, 400
+
     change_source = (data.get("change_source") or "manual_edit").strip()
     if change_source not in CONTACT_CHANGE_SOURCES:
         return {"status": "error", "message": f"change_source must be one of {CONTACT_CHANGE_SOURCES}"}, 400
@@ -1300,6 +1323,11 @@ def contacts_update(contact_id: int):
             if getattr(row, field) != data[field]:
                 changed_fields.append(field)
             setattr(row, field, data[field])
+    if "gender" in data:
+        new_gender = data.get("gender")
+        if row.gender != new_gender:
+            changed_fields.append("gender")
+        row.gender = new_gender
     if "category_id" in data:
         category_id = data.get("category_id")
         if session.get(ContactCategory, category_id) is None:
