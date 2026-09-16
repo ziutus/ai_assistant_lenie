@@ -20,6 +20,7 @@ export interface ContactListItem {
   category_id: number;
   category_name: string | null;
   groups: { id: number; name: string }[];
+  interests?: { id: number; name: string }[];
   first_name: string | null;
   last_name: string | null;
   display_name?: string;
@@ -44,6 +45,9 @@ const Contacts = () => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [contacts, setContacts] = React.useState<ContactListItem[]>([]);
   const [categories, setCategories] = React.useState<ContactCategory[]>([]);
+  const [interests, setInterests] = React.useState<ContactGroup[]>([]);
+  const [interestIds, setInterestIds] = React.useState<string[]>(() => parseIdList(searchParams.get("interest_ids")));
+  const [excludedInterestIds, setExcludedInterestIds] = React.useState<string[]>(() => parseIdList(searchParams.get("exclude_interest_ids")));
   const [groups, setGroups] = React.useState<ContactGroup[]>([]);
   // Filters/pagination are seeded from and kept in sync with the URL (same
   // pattern as list.tsx) so "Wróć do listy" — which round-trips a `list=`
@@ -90,6 +94,8 @@ const Contacts = () => {
       if (selectedGroupIds.length) params.group_ids = selectedGroupIds.join(",");
       if (effectiveSelectedGroupValues.includes(UNGROUPED_VALUE)) params.include_ungrouped = "1";
     }
+    if (interestIds.length) params.interest_ids = interestIds.join(",");
+    if (excludedInterestIds.length) params.exclude_interest_ids = excludedInterestIds.join(",");
     if (archived) params.archived = archived;
     if (pageArg !== 1) params.page = String(pageArg);
     if (pageSizeArg !== DEFAULT_PAGE_SIZE) params.page_size = String(pageSizeArg);
@@ -152,6 +158,8 @@ const Contacts = () => {
   };
 
   const handleClearFilters = () => {
+    setInterestIds([]);
+    setExcludedInterestIds([]);
     setQuery("");
     setCategoryId("");
     setArchived("");
@@ -163,6 +171,8 @@ const Contacts = () => {
   React.useEffect(() => {
     fetchCategories();
     fetchGroups();
+    axios.get(`${apiUrl}/contact_interests`, { headers }).then(response => setInterests(response.data.contact_interests ?? []))
+      .catch(() => { setIsError(true); setMessage("Nie udało się pobrać zainteresowań."); });
     fetchContacts(initialPage, initialPageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -245,6 +255,15 @@ const Contacts = () => {
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
+        <details>
+          <summary>Hobby i zainteresowania ({interestIds.length}; wykluczone: {excludedInterestIds.length})</summary>
+          {interests.map(interest => <div key={interest.id}>
+            <label><input type="checkbox" checked={interestIds.includes(String(interest.id))} onChange={e =>
+              setInterestIds(e.target.checked ? [...interestIds, String(interest.id)] : interestIds.filter(id => id !== String(interest.id)))} />{interest.name}</label>
+            <label><input type="checkbox" checked={excludedInterestIds.includes(String(interest.id))} onChange={e =>
+              setExcludedInterestIds(e.target.checked ? [...excludedInterestIds, String(interest.id)] : excludedInterestIds.filter(id => id !== String(interest.id)))} />Wyklucz</label>
+          </div>)}
+        </details>
         <details ref={groupsFilterRef} style={{ position: "relative" }}>
           <summary style={{ cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
             {isAllGroupsSelected ? "Wszystkie grupy" : `Grupy: wybrano ${effectiveSelectedGroupValues.length}`}
@@ -371,6 +390,13 @@ const Contacts = () => {
             )}
             {contact.phone_number && <span style={{ color: "#667" }}>{contact.phone_number}</span>}
             {contact.email && <span style={{ color: "#667" }}>{contact.email}</span>}
+            {(contact.interests ?? []).map(interest => <button key={`interest-${interest.id}`} type="button"
+              style={{ background: "#ecfdf5", border: 0, borderRadius: 12, padding: "2px 8px", cursor: "pointer" }}
+              onClick={event => {
+                event.stopPropagation(); setInterestIds([String(interest.id)]); setExcludedInterestIds([]);
+                const params = filterParams(1); delete params.exclude_interest_ids; params.interest_ids = String(interest.id);
+                void fetchContacts(1, pageSize, params);
+              }}>{interest.name}</button>)}
             {contact.groups.length > 0 && (
               <span style={{ marginLeft: "auto", display: "flex", gap: 4, flexWrap: "wrap" }}>
                 {contact.groups.map((g) => (

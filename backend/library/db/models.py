@@ -3148,6 +3148,9 @@ class Contact(Base):
     groups: Mapped[list["ContactGroup"]] = relationship(
         secondary="contact_group_memberships", back_populates="contacts",
     )
+    interests: Mapped[list["ContactInterest"]] = relationship(
+        secondary="contact_interest_memberships", back_populates="contacts",
+    )
     events: Mapped[list["ContactGroupEvent"]] = relationship(
         secondary="contact_event_participants", back_populates="participants", passive_deletes=True,
     )
@@ -3364,6 +3367,36 @@ class ContactGroupMembership(Base):
     )
 
 
+class ContactInterest(Base):
+    """Shared interest dictionary for the private contact book."""
+
+    __tablename__ = "contact_interests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contacts: Mapped[list["Contact"]] = relationship(
+        secondary="contact_interest_memberships", back_populates="interests",
+    )
+
+    def __repr__(self) -> str:
+        return f"ContactInterest(id={self.id!r}, name={self.name!r})"
+
+
+class ContactInterestMembership(Base):
+    __tablename__ = "contact_interest_memberships"
+
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), primary_key=True)
+    interest_id: Mapped[int] = mapped_column(ForeignKey("contact_interests.id", ondelete="RESTRICT"), primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_contact_interest_memberships_interest_id", "interest_id"),
+    )
+
+
 class ContactEventParticipant(Base):
     __tablename__ = "contact_event_participants"
 
@@ -3455,3 +3488,26 @@ class ContactChangeLog(Base):
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which
 # auto-creates unknown names via DiscoverySource.ensure().
+
+
+class ContactEducation(Base):
+    """Education entries in the private contact book."""
+
+    __tablename__ = "contact_education"
+    __table_args__ = (
+        CheckConstraint("degree IN ('bachelor', 'engineer', 'master', 'doctor', 'other')",
+                        name="ck_contact_education_degree"),
+        CheckConstraint("end_date >= start_date", name="ck_contact_education_dates"),
+        Index("idx_contact_education_contact", "contact_id"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    institution: Mapped[str] = mapped_column(String(255), nullable=False)
+    field_of_study: Mapped[str | None] = mapped_column(String(255))
+    degree: Mapped[str | None] = mapped_column(String(20))
+    start_date: Mapped[datetime.date | None] = mapped_column(Date)
+    end_date: Mapped[datetime.date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])

@@ -10,7 +10,7 @@ from library.contact_birthdays import birthday_source, next_occurrence, upcoming
 
 def _contact(**extra):
     defaults = dict(id=7, first_name="Anna", last_name="Nowak", display_label=None,
-                    birthday=None, birthday_month=None, birthday_day=None, groups=[])
+                    birthday=None, birthday_month=None, birthday_day=None, groups=[], interests=[])
     defaults.update(extra)
     return SimpleNamespace(**defaults)
 

@@ -21,6 +21,7 @@ from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, gener
 from library.db.engine import get_scoped_session
 from library.db.models import (
     Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
+    ContactEducation, ContactInterest, ContactInterestMembership,
     ContactLookupResult, ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
 )
 
@@ -248,6 +249,7 @@ def _contact_dict(row: Contact) -> dict:
         "category_id": row.category_id,
         "category_name": row.category.name if row.category else None,
         "groups": [{"id": g.id, "name": g.name} for g in row.groups],
+        "interests": [{"id": i.id, "name": i.name} for i in row.interests],
         "first_name": row.first_name,
         "last_name": row.last_name,
         "gender": row.gender,
@@ -745,6 +747,12 @@ def contacts_list():
     group_id = request.args.get("group_id", type=int)
     group_ids = _parse_contact_group_ids(request.args.get("group_ids"))
     excluded_group_ids = _parse_contact_group_ids(request.args.get("exclude_group_ids"))
+    interest_ids = _parse_contact_group_ids(request.args.get("interest_ids"))
+    excluded_interest_ids = _parse_contact_group_ids(request.args.get("exclude_interest_ids"))
+    if interest_ids:
+        conditions.append(Contact.interests.any(ContactInterest.id.in_(interest_ids)))
+    if excluded_interest_ids:
+        conditions.append(~Contact.interests.any(ContactInterest.id.in_(excluded_interest_ids)))
     group_filter_active = (request.args.get("group_filter") or "").strip().lower() in ("1", "true", "yes")
     include_ungrouped = (request.args.get("include_ungrouped") or "").strip().lower() in ("1", "true", "yes")
     if group_filter_active:
@@ -1781,3 +1789,269 @@ def contact_links_delete(link_id: int):
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
     return jsonify({"status": "success", "deleted_id": link_id}), 200
+
+
+def _interest_dict(row: ContactInterest, count: int | None = None) -> dict:
+    data = {
+        "id": row.id,
+        "name": row.name,
+        "description": row.description,
+    }
+    if count is not None:
+        data["count"] = count
+    return data
+
+
+
+
+def _interest_contact_count(session, interest_id: int) -> int:
+    return session.execute(
+        select(func.count()).select_from(ContactInterestMembership).where(
+            ContactInterestMembership.interest_id == interest_id
+        )
+    ).scalar_one()
+
+
+
+
+@bp.get("/contact_interests")
+def contact_interests_list():
+    session = get_scoped_session()
+    rows = session.execute(select(ContactInterest).order_by(ContactInterest.name)).scalars().all()
+    return jsonify({
+        "status": "success",
+        "contact_interests": [_interest_dict(row, _interest_contact_count(session, row.id)) for row in rows],
+    }), 200
+
+
+
+
+@bp.route("/contact_interests", methods=["POST", "OPTIONS"])
+def contact_interests_add():
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return {"status": "error", "message": "name is required"}, 400
+
+    session = get_scoped_session()
+    row = ContactInterest(name=name, description=(data.get("description") or "").strip() or None)
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error (duplicate name?)"}, 409
+
+    return jsonify({"status": "success", "contact_interest": _interest_dict(row, 0)}), 200
+
+
+@bp.route("/contact_interests/<int:interest_id>", methods=["PATCH", "OPTIONS"])
+def contact_interests_update(interest_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    row = session.get(ContactInterest, interest_id)
+    if row is None:
+        return {"status": "error", "message": "Interest not found"}, 404
+
+    if "name" in data:
+        name = (data.get("name") or "").strip()
+        if not name:
+            return {"status": "error", "message": "name cannot be empty"}, 400
+        row.name = name
+    if "description" in data:
+        row.description = (data.get("description") or "").strip() or None
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error (duplicate name?)"}, 409
+
+    return jsonify({
+        "status": "success",
+        "contact_interest": _interest_dict(row, _interest_contact_count(session, row.id)),
+    }), 200
+
+
+@bp.route("/contact_interests/<int:interest_id>", methods=["DELETE", "OPTIONS"])
+def contact_interests_delete(interest_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    row = session.get(ContactInterest, interest_id)
+    if row is None:
+        return {"status": "error", "message": "Interest not found"}, 404
+    used_by = _interest_contact_count(session, row.id)
+    if used_by > 0:
+        return jsonify({
+            "status": "error",
+            "message": f"Interest is used by {used_by} contacts — remove them from it first",
+        }), 409
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": interest_id}), 200
+
+
+@bp.route("/contacts/<int:contact_id>/interests", methods=["POST", "OPTIONS"])
+def contact_interests_assign(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    interest_id = data.get("interest_id")
+    interest = session.get(ContactInterest, interest_id) if interest_id is not None else None
+    if interest is None:
+        return {"status": "error", "message": "interest_id not found"}, 400
+
+    if interest not in contact.interests:
+        contact.interests.append(interest)
+        record_contact_change(
+            session, contact, "manual_edit", changed_fields=["interests"],
+            note=f"Dodano zainteresowanie „{interest.name}”",
+        )
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "contact": _contact_dict(contact)}), 200
+
+
+@bp.route("/contacts/<int:contact_id>/interests/<int:interest_id>", methods=["DELETE", "OPTIONS"])
+def contact_interests_unassign(contact_id: int, interest_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    interest = session.get(ContactInterest, interest_id)
+    if interest is not None and interest in contact.interests:
+        contact.interests.remove(interest)
+        record_contact_change(
+            session, contact, "manual_edit", changed_fields=["interests"],
+            note=f"Usunięto zainteresowanie „{interest.name}”",
+        )
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "contact": _contact_dict(contact)}), 200
+
+
+
+
+@bp.get("/contact_interests/<int:interest_id>")
+def contact_interests_get(interest_id: int):
+    session = get_scoped_session()
+    row = session.get(ContactInterest, interest_id)
+    if row is None:
+        return {"status": "error", "message": "Interest not found"}, 404
+    return jsonify({"status": "success", "contact_interest":
+                    _interest_dict(row, _interest_contact_count(session, interest_id))}), 200
+
+
+def _education_dict(row):
+    data = {key: getattr(row, key) for key in
+            ("id", "contact_id", "institution", "field_of_study", "degree", "notes")}
+    for key in ("start_date", "end_date", "created_at", "updated_at"):
+        value = getattr(row, key)
+        data[key] = value.isoformat() if value else None
+    return data
+
+
+def _education_values(data, row=None):
+    if not isinstance(data, dict):
+        raise ValueError("Expected a JSON object")
+    values = {}
+    for key, limit in (("institution", 255), ("field_of_study", 255), ("degree", 20), ("notes", None)):
+        value = data.get(key, getattr(row, key, None))
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{key} must be a string")
+        value = value.strip() or None if value is not None else None
+        if limit and value and len(value) > limit:
+            raise ValueError(f"{key} must be at most {limit} characters")
+        values[key] = value
+    if not values["institution"]:
+        raise ValueError("institution is required")
+    if values["degree"] not in (None, "bachelor", "engineer", "master", "doctor", "other"):
+        raise ValueError("Invalid degree")
+    for key in ("start_date", "end_date"):
+        value = data.get(key, getattr(row, key, None))
+        if value is not None and value != "" and not isinstance(value, datetime.date):
+            try:
+                if not isinstance(value, str) or len(value) != 10:
+                    raise ValueError()
+                value = datetime.date.fromisoformat(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} must be YYYY-MM-DD") from None
+        values[key] = value or None
+    if values["start_date"] and values["end_date"] and values["end_date"] < values["start_date"]:
+        raise ValueError("end_date must not precede start_date")
+    return values
+
+
+@bp.route("/contacts/<int:contact_id>/education", methods=["GET", "POST", "OPTIONS"])
+@bp.route("/contacts/<int:contact_id>/education/<int:education_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
+def contact_education(contact_id: int, education_id: int | None = None):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    row = None
+    if education_id is not None:
+        row = session.get(ContactEducation, education_id)
+        if row is None or row.contact_id != contact_id:
+            return {"status": "error", "message": "Education not found"}, 404
+    if request.method == "GET":
+        if row is not None:
+            return jsonify({"status": "success", "education": _education_dict(row)}), 200
+        rows = session.scalars(select(ContactEducation).where(ContactEducation.contact_id == contact_id)
+                               .order_by(ContactEducation.start_date.desc().nullslast(), ContactEducation.id)).all()
+        return jsonify({"status": "success", "education": [_education_dict(item) for item in rows]}), 200
+    if request.method in ("POST", "PATCH"):
+        try:
+            values = _education_values(request.get_json(silent=True), row)
+        except ValueError as exc:
+            return {"status": "error", "message": str(exc)}, 400
+        if row is None:
+            row = ContactEducation(contact_id=contact_id, **values)
+            session.add(row)
+        else:
+            for key, value in values.items():
+                setattr(row, key, value)
+            row.updated_at = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    else:
+        session.delete(row)
+    record_contact_change(session, contact, "manual_edit", changed_fields=["education"],
+                          note=f"Wykształcenie: {row.institution} ({request.method})")
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    if request.method == "DELETE":
+        return jsonify({"status": "success", "deleted_id": education_id}), 200
+    return jsonify({"status": "success", "education": _education_dict(row)}), 200
