@@ -1,5 +1,5 @@
 ---
-name: 'lenie-contact-facebook-photo'
+name: 'lenie-contact-facebook-enrich'
 description: 'Fetch a contact''s current Facebook profile picture and structured facts (current city, hometown, gender, birthday, education, hobby/interest tags) via the logged-in Claude in Chrome browser, and save them to Lenie''s private contact book'
 ---
 
