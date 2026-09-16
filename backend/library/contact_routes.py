@@ -28,7 +28,7 @@ bp = Blueprint("contacts", __name__)
 logger = logging.getLogger(__name__)
 
 _CONTACT_FIELDS = (
-    "first_name", "last_name", "phone_number", "email", "linkedin_url",
+    "first_name", "last_name", "phone_number", "email",
     "company", "position", "address", "current_city", "hometown", "pesel", "notes", "display_label",
 )
 
@@ -39,7 +39,7 @@ _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
 _ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
 
-_LINK_TYPES = ("facebook", "instagram", "twitter", "website", "other")
+_LINK_TYPES = ("linkedin", "facebook", "instagram", "twitter", "website", "other")
 
 _GENDER_VALUES = ("male", "female", "other")
 
@@ -255,7 +255,6 @@ def _contact_dict(row: Contact) -> dict:
         "display_name": contact_display_name(row),
         "phone_number": row.phone_number,
         "email": row.email,
-        "linkedin_url": row.linkedin_url,
         "company": row.company,
         "position": row.position,
         "address": row.address,
@@ -1530,17 +1529,22 @@ def contact_lookup_results_update(lookup_result_id: int):
     if "notes" in data:
         row.notes = (data.get("notes") or "").strip() or None
 
-    # Confirming a LinkedIn candidate promotes its url onto the contact's
-    # single-valued linkedin_url field — this table only tracks the search
-    # trail, contacts.linkedin_url remains the one confirmed profile.
+    # Confirmed profiles live in generic links; lookup rows retain the search trail.
     if row.status == "confirmed" and row.lookup_type == "linkedin" and row.url:
         contact = session.get(Contact, row.contact_id)
-        if contact is not None and contact.linkedin_url != row.url:
-            contact.linkedin_url = row.url
-            record_contact_change(
-                session, contact, "linkedin_analysis", changed_fields=["linkedin_url"],
-                note=f"Potwierdzony wynik OSINT (lookup #{row.id})",
-            )
+        if contact is not None:
+            links = list(session.scalars(select(ContactLink).where(
+                ContactLink.contact_id == contact.id, ContactLink.link_type == "linkedin",
+            ).order_by(ContactLink.id)))
+            if not any(link.url == row.url for link in links):
+                if links:
+                    links[0].url = row.url
+                else:
+                    session.add(ContactLink(contact_id=contact.id, link_type="linkedin", url=row.url))
+                record_contact_change(
+                    session, contact, "linkedin_analysis", changed_fields=["links"],
+                    note=f"Potwierdzony wynik OSINT (lookup #{row.id})",
+                )
 
     try:
         session.commit()

@@ -89,7 +89,7 @@ const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
   rejected: "odrzucone",
 };
 
-type LinkType = "facebook" | "instagram" | "twitter" | "website" | "other";
+type LinkType = "linkedin" | "facebook" | "instagram" | "twitter" | "website" | "other";
 
 interface ContactLink {
   id: number;
@@ -99,6 +99,7 @@ interface ContactLink {
 }
 
 const LINK_TYPE_LABELS: Record<LinkType, string> = {
+  linkedin: "LinkedIn",
   facebook: "Facebook",
   instagram: "Instagram",
   twitter: "X / Twitter",
@@ -158,6 +159,7 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   phone_number: "Telefon",
   email: "Email",
   linkedin_url: "LinkedIn",
+  links: "Linki",
   company: "Firma",
   position: "Stanowisko",
   address: "Adres",
@@ -211,7 +213,6 @@ interface ContactDetail {
   display_name: string;
   phone_number: string | null;
   email: string | null;
-  linkedin_url: string | null;
   company: string | null;
   position: string | null;
   address: string | null;
@@ -242,7 +243,6 @@ const emptyForm = {
   display_label: "",
   phone_number: "",
   email: "",
-  linkedin_url: "",
   company: "",
   position: "",
   address: "",
@@ -377,7 +377,6 @@ const Contact = () => {
     display_label: c.display_label ?? "",
     phone_number: c.phone_number ?? "",
     email: c.email ?? "",
-    linkedin_url: c.linkedin_url ?? "",
     company: c.company ?? "",
     position: c.position ?? "",
     address: c.address ?? "",
@@ -921,9 +920,6 @@ const Contact = () => {
           {contact.gender && <div><strong>Płeć:</strong> {GENDER_LABELS[contact.gender]}</div>}
           {contact.phone_number && <div><strong>Telefon:</strong> {contact.phone_number}</div>}
           {contact.email && <div><strong>Email:</strong> {contact.email}</div>}
-          {contact.linkedin_url && (
-            <div><strong>LinkedIn:</strong> <a href={contact.linkedin_url} target="_blank" rel="noreferrer">{contact.linkedin_url}</a></div>
-          )}
           {contact.company && <div><strong>Firma:</strong> {contact.company}</div>}
           {contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
           {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
@@ -987,10 +983,6 @@ const Contact = () => {
         <label>
           Email
           <input type="text" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={inputStyle} />
-        </label>
-        <label>
-          LinkedIn
-          <input type="text" value={form.linkedin_url} onChange={(e) => setForm({ ...form, linkedin_url: e.target.value })} style={inputStyle} />
         </label>
         <label>
           Firma

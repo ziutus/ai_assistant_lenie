@@ -35,7 +35,7 @@ ACTIONS = {
     "merge_duplicates", "merge_into_existing", "split_person", "split_person_primary",
     "skip_empty_file", "skip_no_identifier",
 }
-FIELDS = ("phone_number", "email", "linkedin_url", "birthday", "company", "position", "address")
+FIELDS = ("phone_number", "email", "birthday", "company", "position", "address")
 ALIASES = {
     "radek": "radoslaw", "maciek": "maciej", "tomek": "tomasz", "gosia": "malgorzata",
     "gosia tarankowa": "malgorzata tarankowa", "kaska": "katarzyna", "ania": "anna",
@@ -307,7 +307,7 @@ def run_import(session, spec, sources, apply=False):
     from sqlalchemy import select, text
 
     from library.contact_change_log import record_contact_change
-    from library.db.models import Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactRelationship
+    from library.db.models import Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactLink, ContactRelationship
 
     session.autoflush = False
     counts = Counter()
@@ -390,9 +390,25 @@ def run_import(session, spec, sources, apply=False):
     def audit(contact, fields, note):
         record_contact_change(session, contact, "obsidian_import", changed_fields=sorted(set(fields)), note=note)
 
+    def linkedin_links(contact):
+        if contact.id is None:
+            return []
+        return list(session.scalars(select(ContactLink).where(
+            ContactLink.contact_id == contact.id, ContactLink.link_type == "linkedin",
+        ).order_by(ContactLink.id)))
+
     def update(contact, fields, private, group_name, op, token, secondary=None):
         changes, flags = {}, []
+        links = linkedin_links(contact)
+        linkedin_url = fields.get("linkedin_url")
+        if linkedin_url and not any(link.url == linkedin_url for link in links):
+            if not links:
+                changes["links"] = linkedin_url
+            else:
+                flags.append("FIELD_CONFLICT:linkedin_url:retain")
         for key, value in fields.items():
+            if key == "linkedin_url":
+                continue
             current = getattr(contact, key)
             if not current:
                 changes[key] = value
@@ -400,6 +416,13 @@ def run_import(session, spec, sources, apply=False):
                 flags.append(f"FIELD_CONFLICT:{key}:retain")
         merged_private = append_private(contact.private_notes, private)
         if secondary:
+            secondary_links = linkedin_links(secondary)
+            target_url = changes.get("links") or (links[0].url if links else None)
+            for link in secondary_links:
+                if not target_url:
+                    changes["links"] = target_url = link.url
+                elif link.url != target_url:
+                    flags.append("MERGE_CONFLICT:links:retain")
             for key in FIELDS:
                 value = getattr(secondary, key)
                 if value and not getattr(contact, key) and key not in changes:
@@ -423,14 +446,20 @@ def run_import(session, spec, sources, apply=False):
                 if group.name not in existing_groups and group.name not in add_groups:
                     add_groups.append(group.name)
                     groups[group.name] = group
-        occupied = [key for key in FIELDS if getattr(contact, key)]
+        occupied = [key for key in FIELDS if getattr(contact, key)] + (["links"] if links else [])
         print(f"  CONTACT #{contact.id or 'new'} {contact.first_name or ''} {contact.last_name or ''}: "
               f"current_fields={occupied}, private_notes={'present' if contact.private_notes else 'empty'}, "
               f"groups={sorted(existing_groups)}; intended_fields={sorted(changes)}, "
               f"add_groups={add_groups}; flags={flags}")
         if apply:
             for key, value in changes.items():
-                setattr(contact, key, value)
+                if key == "links":
+                    if links:
+                        links[0].url = value
+                    else:
+                        session.add(ContactLink(contact_id=contact.id, link_type="linkedin", url=value))
+                else:
+                    setattr(contact, key, value)
             for name in add_groups:
                 contact.groups.append(groups[name])
             changed_fields = list(changes) + (["groups"] if add_groups else [])

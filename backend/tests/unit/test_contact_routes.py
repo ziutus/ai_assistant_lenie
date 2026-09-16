@@ -32,7 +32,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         gender=None,
         display_label=None,
         phone_number="+48 725 428 453",
-        email=None, linkedin_url=None, company=None, position=None,
+        email=None, company=None, position=None,
         address=None, current_city=None, hometown=None, birthday=None, pesel=None, notes=None, private_notes=None, groups=[], whatsapp_profile=None,
         birthday_month=None, birthday_day=None,
         languages=[], nationality=[], photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
@@ -881,15 +881,21 @@ class TestContactLookupResultsAdd:
 
 
 class TestContactLookupResultsUpdate:
-    def test_confirming_linkedin_candidate_updates_contact_url(self, monkeypatch):
+    @pytest.mark.parametrize("existing_url", [None, "https://www.linkedin.com/in/old/",
+                                               "https://www.linkedin.com/in/adam-wojtysiak/"])
+    def test_confirming_linkedin_candidate_updates_contact_link(self, monkeypatch, existing_url):
         from library.contact_routes import contact_lookup_results_update
 
-        contact = _make_contact(id_=1, linkedin_url=None)
+        from library.db.models import ContactChangeLog, ContactLink
+
+        contact = _make_contact(id_=1)
         lookup_result = _make_lookup_result(
             id_=7, contact_id=1, lookup_type="linkedin", status="candidate",
             url="https://www.linkedin.com/in/adam-wojtysiak/",
         )
+        existing = ContactLink(id=42, contact_id=1, link_type="linkedin", url=existing_url) if existing_url else None
         session = MagicMock()
+        session.scalars.return_value = [existing] if existing else []
         session.get.side_effect = lambda model, id_: {
             ("ContactLookupResult", 7): lookup_result,
             ("Contact", 1): contact,
@@ -903,12 +909,29 @@ class TestContactLookupResultsUpdate:
 
         assert response[1] == 200
         assert lookup_result.status == "confirmed"
-        assert contact.linkedin_url == "https://www.linkedin.com/in/adam-wojtysiak/"
+        added_links = [call.args[0] for call in session.add.call_args_list if isinstance(call.args[0], ContactLink)]
+        if existing_url is None:
+            assert len(added_links) == 1
+            assert added_links[0].contact_id == 1
+            assert added_links[0].link_type == "linkedin"
+            assert added_links[0].url == lookup_result.url
+        else:
+            assert added_links == []
+            assert existing.id == 42
+            assert existing.url == lookup_result.url
+        logs = [call.args[0] for call in session.add.call_args_list if isinstance(call.args[0], ContactChangeLog)]
+        if existing_url == lookup_result.url:
+            assert logs == []
+        else:
+            assert len(logs) == 1
+            assert logs[0].changed_fields == ["links"]
+            assert logs[0].source == "linkedin_analysis"
+            assert logs[0].note == "Potwierdzony wynik OSINT (lookup #7)"
 
     def test_rejecting_candidate_does_not_touch_contact(self, monkeypatch):
         from library.contact_routes import contact_lookup_results_update
 
-        contact = _make_contact(id_=1, linkedin_url=None)
+        contact = _make_contact(id_=1)
         lookup_result = _make_lookup_result(
             id_=8, contact_id=1, lookup_type="linkedin", status="candidate",
             url="https://www.linkedin.com/in/someone-else/",
@@ -927,7 +950,8 @@ class TestContactLookupResultsUpdate:
 
         assert response[1] == 200
         assert lookup_result.status == "rejected"
-        assert contact.linkedin_url is None
+        session.scalars.assert_not_called()
+        session.add.assert_not_called()
 
     def test_missing_lookup_result_is_404(self, monkeypatch):
         from library.contact_routes import contact_lookup_results_update
