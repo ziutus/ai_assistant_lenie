@@ -32,7 +32,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         display_label=None,
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
-        address=None, birthday=None, pesel=None, notes=None, private_notes=None, groups=[], whatsapp_profile=None,
+        address=None, current_city=None, hometown=None, birthday=None, pesel=None, notes=None, private_notes=None, groups=[], whatsapp_profile=None,
         birthday_month=None, birthday_day=None,
         languages=[], nationality=[], photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
         created_at=dt.datetime(2026, 8, 23, 12, 0),

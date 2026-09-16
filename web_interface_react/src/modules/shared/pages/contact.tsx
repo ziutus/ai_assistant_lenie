@@ -147,6 +147,8 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   company: "Firma",
   position: "Stanowisko",
   address: "Adres",
+  current_city: "Mieszka w",
+  hometown: "Pochodzi z",
   birthday: "Urodziny",
   pesel: "PESEL",
   notes: "Notatki",
@@ -198,6 +200,8 @@ interface ContactDetail {
   company: string | null;
   position: string | null;
   address: string | null;
+  current_city: string | null;
+  hometown: string | null;
   birthday: string | null;
   notes: string | null;
   languages: ContactLanguage[];
@@ -224,6 +228,8 @@ const emptyForm = {
   company: "",
   position: "",
   address: "",
+  current_city: "",
+  hometown: "",
   birthday: "",
   notes: "",
   languages: [] as ContactLanguage[],
@@ -354,6 +360,8 @@ const Contact = () => {
     company: c.company ?? "",
     position: c.position ?? "",
     address: c.address ?? "",
+    current_city: c.current_city ?? "",
+    hometown: c.hometown ?? "",
     birthday: c.birthday ?? "",
     notes: c.notes ?? "",
     languages: c.languages ?? [],
@@ -892,6 +900,8 @@ const Contact = () => {
           {contact.company && <div><strong>Firma:</strong> {contact.company}</div>}
           {contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
           {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
+          {contact.current_city && <div><strong>Mieszka w:</strong> {contact.current_city}</div>}
+          {contact.hometown && <div><strong>Pochodzi z:</strong> {contact.hometown}</div>}
           {contact.birthday && <div><strong>Urodziny:</strong> {contact.birthday}</div>}
           {contact.nationality.length > 0 && (
             <div><strong>Narodowość:</strong> {contact.nationality.join(", ")}</div>
@@ -954,6 +964,14 @@ const Contact = () => {
         <label>
           Adres
           <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} style={inputStyle} />
+        </label>
+        <label>
+          Mieszka w (miasto) — motyw do small talku
+          <input type="text" value={form.current_city} onChange={(e) => setForm({ ...form, current_city: e.target.value })} style={inputStyle} />
+        </label>
+        <label>
+          Pochodzi z (rodzinne miasto) — motyw do small talku
+          <input type="text" value={form.hometown} onChange={(e) => setForm({ ...form, hometown: e.target.value })} style={inputStyle} />
         </label>
         <label>
           Urodziny

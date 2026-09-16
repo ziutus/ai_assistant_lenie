@@ -3126,6 +3126,8 @@ class Contact(Base):
     company: Mapped[str | None] = mapped_column(String(200))
     position: Mapped[str | None] = mapped_column(String(200))
     address: Mapped[str | None] = mapped_column(Text)
+    current_city: Mapped[str | None] = mapped_column(String(200))
+    hometown: Mapped[str | None] = mapped_column(String(200))
     birthday: Mapped[datetime.date | None] = mapped_column(Date)
     birthday_month: Mapped[int | None] = mapped_column(SmallInteger)
     birthday_day: Mapped[int | None] = mapped_column(SmallInteger)
