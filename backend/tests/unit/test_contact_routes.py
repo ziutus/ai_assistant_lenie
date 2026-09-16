@@ -29,6 +29,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         category=category or _make_category(),
         first_name=first_name,
         last_name=last_name,
+        gender=None,
         display_label=None,
         phone_number="+48 725 428 453",
         email=None, linkedin_url=None, company=None, position=None,
@@ -2069,6 +2070,69 @@ class TestContactBirthdayPair:
         assert result["birthday_month"] == month
         assert result["birthday_day"] == day
         assert result["private_notes"] == ("vault note" if kind == "service" else None)
+
+
+class TestContactGender:
+    @pytest.fixture(params=["POST", "PATCH"])
+    def birthday_request(self, monkeypatch, request):
+        from library.contact_routes import contacts_add, contacts_update
+
+        row = _make_contact()
+        session = MagicMock()
+        session.get.return_value = row
+        session.execute.return_value.scalars.return_value.first.return_value = _make_category()
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+
+        def send(data):
+            with Flask(__name__).test_request_context(
+                "/contacts" if request.param == "POST" else "/contacts/1",
+                method=request.param, json={"last_name": row.last_name, **data},
+            ):
+                return contacts_add() if request.param == "POST" else contacts_update(1)
+
+        return send, session, row
+
+    @pytest.mark.parametrize("value", ["male", "female", "other"])
+    def test_valid_value_accepted(self, birthday_request, value):
+        send, session, _ = birthday_request
+        response, status = send({"gender": value})
+        assert status == 200
+        assert response.json["contact"]["gender"] == value
+        change = session.add.call_args_list[-1][0][0]
+        assert "gender" in change.changed_fields
+        session.commit.assert_called_once()
+
+    def test_null_clears_value(self, birthday_request):
+        send, session, row = birthday_request
+        row.gender = "male"
+        response, status = send({"gender": None})
+        assert status == 200
+        assert response.json["contact"]["gender"] is None
+        change = session.add.call_args_list[-1][0][0]
+        assert "gender" in change.changed_fields
+        session.commit.assert_called_once()
+
+    def test_invalid_value_rejected(self, birthday_request):
+        send, session, row = birthday_request
+        response, status = send({"gender": "unknown"})
+        assert status == 400
+        assert response["status"] == "error"
+        assert "gender" in response["message"]
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+
+    def test_omitted_field_leaves_value_untouched_on_update(self, monkeypatch):
+        from library.contact_routes import contacts_update
+
+        row = _make_contact(gender="female")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/contacts/1", method="PATCH", json={}):
+            response, status = contacts_update(1)
+        assert status == 200
+        assert row.gender == "female"
+        session.add.assert_not_called()
 
 
 class TestContactPrivateNotes:

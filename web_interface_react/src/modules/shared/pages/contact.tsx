@@ -137,9 +137,18 @@ const CHANGE_SOURCE_LABELS: Record<ChangeSource, string> = {
   other: "Inne",
 };
 
+type Gender = "male" | "female" | "other";
+
+const GENDER_LABELS: Record<Gender, string> = {
+  male: "Mężczyzna",
+  female: "Kobieta",
+  other: "Inna",
+};
+
 const CHANGE_FIELD_LABELS: Record<string, string> = {
   first_name: "Imię",
   last_name: "Nazwisko",
+  gender: "Płeć",
   display_label: "Nazwa robocza",
   phone_number: "Telefon",
   email: "Email",
@@ -192,6 +201,7 @@ interface ContactDetail {
   groups: { id: number; name: string }[];
   first_name: string | null;
   last_name: string | null;
+  gender: Gender | null;
   display_label: string | null;
   display_name: string;
   phone_number: string | null;
@@ -221,6 +231,7 @@ const emptyForm = {
   category_id: "",
   first_name: "",
   last_name: "",
+  gender: "" as Gender | "",
   display_label: "",
   phone_number: "",
   email: "",
@@ -353,6 +364,7 @@ const Contact = () => {
     category_id: String(c.category_id),
     first_name: c.first_name ?? "",
     last_name: c.last_name ?? "",
+    gender: c.gender ?? ("" as const),
     display_label: c.display_label ?? "",
     phone_number: c.phone_number ?? "",
     email: c.email ?? "",
@@ -523,6 +535,7 @@ const Contact = () => {
     const payload = {
       ...form,
       category_id: form.category_id ? Number(form.category_id) : undefined,
+      gender: form.gender || null,
       birthday: form.birthday || null,
       change_source: changeSource,
       change_note: changeNote.trim() || undefined,
@@ -892,6 +905,7 @@ const Contact = () => {
             {otherName(contact)}
           </div>
           {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
+          {contact.gender && <div><strong>Płeć:</strong> {GENDER_LABELS[contact.gender]}</div>}
           {contact.phone_number && <div><strong>Telefon:</strong> {contact.phone_number}</div>}
           {contact.email && <div><strong>Email:</strong> {contact.email}</div>}
           {contact.linkedin_url && (
@@ -936,6 +950,15 @@ const Contact = () => {
         <label>
           Nazwisko
           <input type="text" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} style={inputStyle} />
+        </label>
+        <label>
+          Płeć — pomocne przy obcych imionach/nazwiskach, gdy nie widać zdjęcia
+          <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value as Gender | "" })} style={inputStyle}>
+            <option value="">(nie podano)</option>
+            {(Object.keys(GENDER_LABELS) as Gender[]).map((g) => (
+              <option key={g} value={g}>{GENDER_LABELS[g]}</option>
+            ))}
+          </select>
         </label>
         <label>
           Nazwa robocza (gdy nie znasz imienia ani nazwiska)

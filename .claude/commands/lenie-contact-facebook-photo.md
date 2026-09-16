@@ -1,9 +1,14 @@
 ---
 name: 'lenie-contact-facebook-photo'
-description: 'Fetch a contact''s current Facebook profile picture and small-talk facts (current city, hometown) via the logged-in Claude in Chrome browser, and save them to Lenie''s private contact book'
+description: 'Fetch a contact''s current Facebook profile picture and structured facts (current city, hometown, gender, birthday) via the logged-in Claude in Chrome browser, and save them to Lenie''s private contact book'
 ---
 
-Give a contact in Lenie's private contact book (`backend/library/contact_routes.py`) a profile photo pulled from their Facebook profile picture, plus two structured small-talk facts from the "Informacje" tab — `current_city` (mieszka w) and `hometown` (pochodzi z). Useful when a contact is known to have a Facebook profile but is missing this data in Lenie. The small-talk angle matters here: these two facts are deliberately kept as their own structured fields (not buried in free-text notes) so they're easy to scan before a conversation — see `[[user_accessibility_social_interaction]]` in memory for why the contact book treats this kind of thing as a first-class need, not a nice-to-have.
+Give a contact in Lenie's private contact book (`backend/library/contact_routes.py`) a profile photo pulled from their Facebook profile picture, plus structured facts from the "Informacje" tab: `current_city` (mieszka w), `hometown` (pochodzi z), `gender`, and `birthday`/`birthday_month`/`birthday_day`. Useful when a contact is known to have a Facebook profile but is missing this data in Lenie.
+
+Two different motivations drive this, worth keeping straight when deciding what to pull:
+- `current_city`/`hometown` are **small-talk aids** — concrete, low-effort conversation topics, kept as their own structured fields (not buried in free-text notes) so they're easy to scan before a conversation. See `[[user_accessibility_social_interaction]]` in memory for why the contact book treats this as a first-class need, not a nice-to-have.
+- `gender` is a **disambiguation aid**, not a small-talk topic — most useful for foreign names/surnames where gender isn't obvious from the name alone and no photo exists yet (real incident that prompted this: a Korean contact's gender was wrongly assumed from the name alone).
+- `birthday` is already a first-class field (backs the "Nadchodzące urodziny" view) — this skill is just another way to fill it in when it's visible on Facebook but missing in Lenie.
 
 ## Input
 
@@ -20,7 +25,7 @@ All contact-book calls go to the NAS backend REST API (`http://192.168.200.7:505
 curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contacts/<ID>"
 ```
 
-Note `uuid`, `display_name` (or `first_name`/`last_name`), existing `photo_url`, `current_city`, and `hometown`. Look at the `links` array for an entry with `link_type: "facebook"` — that's the profile URL to use.
+Note `uuid`, `display_name` (or `first_name`/`last_name`), existing `photo_url`, `current_city`, `hometown`, `gender`, and `birthday`/`birthday_month`/`birthday_day`. Look at the `links` array for an entry with `link_type: "facebook"` — that's the profile URL to use.
 
 - If the user supplied a URL and the contact has none stored yet, save it so future runs don't need it repeated:
   ```bash
@@ -69,39 +74,43 @@ curl -s -X POST -H "x-api-key: $LENIE_API_KEY" \
 
 A successful response echoes back the new `storage_key` and a presigned `photo_url`.
 
-### Step 5: Pull small-talk facts from the "Informacje" tab
+### Step 5: Pull structured facts from the "Informacje" tab
 
-While still on the profile, navigate to `<profile_url>/about_places` (or click **Informacje** → **Miejsca, w których mieszkał(a)**). Facebook shows up to two relevant rows there:
+While still on the profile, visit two sub-pages of the "Informacje" tab (still under the same profile — append the path or click through the tab's left-hand menu):
 
-- **"Obecne miasto"** / "Mieszka w" → `current_city`
-- **"Rodzinne miasto"** → `hometown`
+- `<profile_url>/about_places` (**Miejsca, w których mieszkał(a)**):
+  - **"Obecne miasto"** / "Mieszka w" → `current_city`
+  - **"Rodzinne miasto"** → `hometown`
+- `<profile_url>/about_contact_and_basic_info` (**Kontakt i podstawowe informacje**):
+  - **"Płeć"** → `gender` (map "Kobieta" → `female`, "Mężczyzna" → `male`, anything else/custom → `other`)
+  - **"Data urodzenia"** → `birthday` if a full date (year included) is shown, otherwise `birthday_month`+`birthday_day` if only day/month is visible (Facebook often hides the year even when the day/month is public) — never guess a missing year
 
-Take a `screenshot` or use `get_page_text` to read the values — this is plain visible text, not blocked like the CDN image URLs in Step 3. Only take a value that is explicitly labeled; don't infer a city from an unrelated post or check-in.
+Take a `screenshot` or use `get_page_text` to read the values on each page — this is plain visible text, not blocked like the CDN image URLs in Step 3. Only take a value that is explicitly labeled; don't infer a city, gender, or birthday from an unrelated post, check-in, or profile picture caption.
 
-Skip this step (and say so in the report) if the section is empty, hidden by the profile's privacy settings, or the profile has no separate "Informacje" tab visible while logged in as this account.
+Skip whichever sub-section is empty or hidden by the profile's privacy settings (say so in the report), and skip the whole step if the profile has no "Informacje" tab visible while logged in as this account.
 
-If either value is found and differs from what's already on the contact (from Step 1), save it:
+If any value is found and differs from what's already on the contact (from Step 1), save it in one PATCH call:
 
 ```bash
 curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
   -X PATCH "http://192.168.200.7:5055/contacts/<ID>" \
-  --data-binary '{"current_city": "<current city found>", "hometown": "<hometown found>", "change_source": "osint_lookup", "change_note": "Uzupełnione z zakładki Informacje na Facebooku"}'
+  --data-binary '{"current_city": "<current city found>", "hometown": "<hometown found>", "gender": "<male|female|other>", "birthday_month": <1-12>, "birthday_day": <1-31>, "change_source": "osint_lookup", "change_note": "Uzupełnione z zakładki Informacje na Facebooku"}'
 ```
 
-Only include the keys you actually found (omit `current_city`/`hometown` entirely rather than sending an empty string, which would clear an existing value). Use a UTF-8 file with `--data-binary @file.json` instead of an inline `-d` string if either value contains Polish diacritics and you're building the JSON through shell interpolation (see the Polish-text gotcha in `[[project_contact_photo_split_skill]]`).
+Only include the keys you actually found (omit the rest entirely rather than sending an empty string/null, which would clear an existing value). `birthday_month`/`birthday_day` must be sent together — see `_validate_birthday_pair()` in `contact_routes.py`. Use a UTF-8 file with `--data-binary @file.json` instead of an inline `-d` string if any value contains Polish diacritics and you're building the JSON through shell interpolation (confirmed gotcha: inline `-d '...Łódź...'` in Git Bash on Windows silently mangles diacritics to ASCII — see the same warning in `[[project_contact_smalltalk_fields]]`).
 
 ### Step 6: Verify and clean up
 
 ```bash
 curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contacts/<ID>" \
-  | python3 -c "import json,sys; d=json.load(sys.stdin)['contact']; print(d['photo_url'], d['current_city'], d['hometown'])"
+  | python3 -c "import json,sys; d=json.load(sys.stdin)['contact']; print(d['photo_url'], d['current_city'], d['hometown'], d['gender'], d['birthday'], d['birthday_month'], d['birthday_day'])"
 ```
 
-Confirm `photo_url` is non-null and different from before the upload, and `current_city`/`hometown` reflect what was found (or are unchanged if Step 5 found nothing new). Delete the temporary screenshot file(s) from the OS temp dir. Close the Chrome tab you opened (`tabs_close_mcp`) unless the user asked to keep it open.
+Confirm `photo_url` is non-null and different from before the upload, and the other fields reflect what was found (or are unchanged if Step 5 found nothing new). Delete the temporary screenshot file(s) from the OS temp dir. Close the Chrome tab you opened (`tabs_close_mcp`) unless the user asked to keep it open.
 
 ### Step 7: Report
 
-Tell the user, in Polish: which contact was updated, where the photo came from (profile URL, which album/photo), and which small-talk facts (if any) were added or already present. Give the test link `http://192.168.200.7:3000/contacts/<id>`.
+Tell the user, in Polish: which contact was updated, where the photo came from (profile URL, which album/photo), and which structured facts (if any) were added or already present. Give the test link `http://192.168.200.7:3000/contacts/<id>`.
 
 ## Safety net: photo history
 
@@ -120,5 +129,6 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json" \
 - All communication with the user in **Polish**.
 - Never scrape or guess at a Facebook profile the user hasn't confirmed belongs to the contact — a wrong-person photo is worse than no photo.
 - This skill only writes to the private contact book (`contacts`, `contact_photos`, `contact_links`) via the REST API — it never posts, messages, or interacts with anything on Facebook itself, only reads the public/logged-in-visible profile picture and "Informacje" tab.
-- `current_city`/`hometown` are plain `String(200)` columns on `Contact` (see `library/db/models.py`), visible to every auth kind (unlike `private_notes`, which is service-only) — they're meant to be seen at a glance, not hidden.
+- `current_city`/`hometown`/`gender` are plain columns on `Contact` (see `library/db/models.py`), visible to every auth kind (unlike `private_notes`, which is service-only) — they're meant to be seen at a glance, not hidden. `gender` is constrained to `male`/`female`/`other` by a DB check constraint (`ck_contacts_gender`) — anything else the profile shows (a custom/nonbinary label) maps to `other`, never invented as free text.
+- Never overwrite an existing `gender`/`birthday` with a guess — if Facebook's value looks inconsistent with what's already recorded (e.g. contradicts a name-based assumption), flag it to the user instead of silently changing it.
 - Works one contact at a time; for a batch of contacts, run the workflow once per contact rather than trying to parallelize Chrome tabs against the same logged-in session.

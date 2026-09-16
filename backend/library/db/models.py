@@ -3119,6 +3119,7 @@ class Contact(Base):
     category_id: Mapped[int] = mapped_column(ForeignKey("contact_categories.id"), nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(100))
     last_name: Mapped[str | None] = mapped_column(String(100))
+    gender: Mapped[str | None] = mapped_column(String(20))
     display_label: Mapped[str | None] = mapped_column(String(200))
     phone_number: Mapped[str | None] = mapped_column(String(30))
     email: Mapped[str | None] = mapped_column(String(255))
