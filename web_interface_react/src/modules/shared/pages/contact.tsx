@@ -137,6 +137,11 @@ const CHANGE_SOURCE_LABELS: Record<ChangeSource, string> = {
   other: "Inne",
 };
 
+const MONTHS_GENITIVE = [
+  "stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca",
+  "lipca", "sierpnia", "września", "października", "listopada", "grudnia",
+];
+
 type Gender = "male" | "female" | "other";
 
 const GENDER_LABELS: Record<Gender, string> = {
@@ -213,6 +218,8 @@ interface ContactDetail {
   current_city: string | null;
   hometown: string | null;
   birthday: string | null;
+  birthday_month: number | null;
+  birthday_day: number | null;
   notes: string | null;
   languages: ContactLanguage[];
   nationality: string[];
@@ -242,6 +249,8 @@ const emptyForm = {
   current_city: "",
   hometown: "",
   birthday: "",
+  birthday_month: "",
+  birthday_day: "",
   notes: "",
   languages: [] as ContactLanguage[],
   nationality: [] as string[],
@@ -375,6 +384,8 @@ const Contact = () => {
     current_city: c.current_city ?? "",
     hometown: c.hometown ?? "",
     birthday: c.birthday ?? "",
+    birthday_month: c.birthday_month != null ? String(c.birthday_month) : "",
+    birthday_day: c.birthday_day != null ? String(c.birthday_day) : "",
     notes: c.notes ?? "",
     languages: c.languages ?? [],
     nationality: c.nationality ?? [],
@@ -537,6 +548,8 @@ const Contact = () => {
       category_id: form.category_id ? Number(form.category_id) : undefined,
       gender: form.gender || null,
       birthday: form.birthday || null,
+      birthday_month: form.birthday_month ? Number(form.birthday_month) : null,
+      birthday_day: form.birthday_day ? Number(form.birthday_day) : null,
       change_source: changeSource,
       change_note: changeNote.trim() || undefined,
     };
@@ -917,6 +930,9 @@ const Contact = () => {
           {contact.current_city && <div><strong>Mieszka w:</strong> {contact.current_city}</div>}
           {contact.hometown && <div><strong>Pochodzi z:</strong> {contact.hometown}</div>}
           {contact.birthday && <div><strong>Urodziny:</strong> {contact.birthday}</div>}
+          {!contact.birthday && contact.birthday_month && contact.birthday_day && (
+            <div><strong>Urodziny:</strong> {contact.birthday_day} {MONTHS_GENITIVE[contact.birthday_month - 1]} <span style={{ color: "#667" }}>(bez roku)</span></div>
+          )}
           {contact.nationality.length > 0 && (
             <div><strong>Narodowość:</strong> {contact.nationality.join(", ")}</div>
           )}
@@ -997,8 +1013,33 @@ const Contact = () => {
           <input type="text" value={form.hometown} onChange={(e) => setForm({ ...form, hometown: e.target.value })} style={inputStyle} />
         </label>
         <label>
-          Urodziny
+          Urodziny (jeśli znasz pełną datę, z rokiem)
           <input type="date" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} style={inputStyle} />
+        </label>
+        <label>
+          Urodziny bez roku (dzień i miesiąc) — np. gdy Facebook ukrywa rok
+          <div style={{ display: "flex", gap: 8 }}>
+            <select
+              value={form.birthday_day}
+              onChange={(e) => setForm({ ...form, birthday_day: e.target.value })}
+              style={{ ...inputStyle, width: "auto" }}
+            >
+              <option value="">dzień</option>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                <option key={day} value={day}>{day}</option>
+              ))}
+            </select>
+            <select
+              value={form.birthday_month}
+              onChange={(e) => setForm({ ...form, birthday_month: e.target.value })}
+              style={{ ...inputStyle, width: "auto" }}
+            >
+              <option value="">miesiąc</option>
+              {MONTHS_GENITIVE.map((name, index) => (
+                <option key={name} value={index + 1}>{name}</option>
+              ))}
+            </select>
+          </div>
         </label>
         <label>
           Kategoria
