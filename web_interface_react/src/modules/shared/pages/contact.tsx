@@ -89,6 +89,23 @@ const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
   rejected: "odrzucone",
 };
 
+type LinkType = "facebook" | "instagram" | "twitter" | "website" | "other";
+
+interface ContactLink {
+  id: number;
+  link_type: LinkType;
+  url: string;
+  label: string | null;
+}
+
+const LINK_TYPE_LABELS: Record<LinkType, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  twitter: "X / Twitter",
+  website: "Strona WWW",
+  other: "Inne",
+};
+
 type CefrLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 const LANGUAGE_LEVELS: CefrLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
@@ -160,6 +177,12 @@ const emptyOrgForm = {
   notes: "",
 };
 
+const emptyLinkForm = {
+  link_type: "facebook" as LinkType,
+  url: "",
+  label: "",
+};
+
 interface ContactDetail {
   id: number;
   category_id: number;
@@ -182,6 +205,7 @@ interface ContactDetail {
   is_archived: boolean;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
+  links: ContactLink[];
   events: ContactGroupEvent[];
   change_log: ContactChangeLogEntry[];
   whatsapp_profile: WhatsappProfile | null;
@@ -290,6 +314,9 @@ const Contact = () => {
   const [organizations, setOrganizations] = React.useState<ContactOrganization[]>([]);
   const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
   const [showOrgForm, setShowOrgForm] = React.useState(false);
+  const [links, setLinks] = React.useState<ContactLink[]>([]);
+  const [linkForm, setLinkForm] = React.useState(emptyLinkForm);
+  const [showLinkForm, setShowLinkForm] = React.useState(false);
   const [whatsappProfile, setWhatsappProfile] = React.useState<WhatsappProfile | null>(null);
   const [langForm, setLangForm] = React.useState<{ language: string; native: boolean; level: CefrLevel | "" }>({
     language: "", native: false, level: "",
@@ -345,6 +372,7 @@ const Contact = () => {
       setForm(formFromContact(fetched));
       setRelationships(fetched.relationships ?? []);
       setOrganizations(fetched.organizations ?? []);
+      setLinks(fetched.links ?? []);
       setChangeLog(fetched.change_log ?? []);
       setContactGroups(fetched.groups ?? []);
       setWhatsappProfile(fetched.whatsapp_profile ?? null);
@@ -366,6 +394,7 @@ const Contact = () => {
     setForm(emptyForm);
     setRelationships([]);
     setOrganizations([]);
+    setLinks([]);
     setChangeLog([]);
     setContactGroups([]);
     setWhatsappProfile(null);
@@ -649,6 +678,43 @@ const Contact = () => {
       console.error("Error deleting organization", error);
       setIsError(true);
       setMessage(`Nie udało się usunąć organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const addLink = async () => {
+    if (!linkForm.url.trim()) {
+      setIsError(true);
+      setMessage("Podaj adres URL.");
+      return;
+    }
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/contacts/${id}/links`, {
+        link_type: linkForm.link_type,
+        url: linkForm.url.trim(),
+        label: linkForm.label.trim() || undefined,
+      }, { headers });
+      setLinkForm(emptyLinkForm);
+      setShowLinkForm(false);
+      loadContact();
+    } catch (error: any) {
+      console.error("Error adding link", error);
+      setIsError(true);
+      setMessage(`Nie udało się dodać linku: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const removeLink = async (linkId: number) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.delete(`${apiUrl}/contact_links/${linkId}`, { headers });
+      loadContact();
+    } catch (error: any) {
+      console.error("Error deleting link", error);
+      setIsError(true);
+      setMessage(`Nie udało się usunąć linku: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -1272,6 +1338,76 @@ const Contact = () => {
               <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
                 <button className={"button"} type="button" onClick={addOrganization}>Zapisz organizację</button>
                 <button className={"button"} type="button" onClick={() => { setShowOrgForm(false); setOrgForm(emptyOrgForm); }}>
+                  Anuluj
+                </button>
+              </div>
+            </div>
+          )}
+
+          <h3>Linki</h3>
+          {links.length === 0 && (
+            <p style={{ color: "#667" }}>Brak zapisanych linków.</p>
+          )}
+          {links.length > 0 && (
+            <ul style={{ listStyle: "none", padding: 0 }}>
+              {links.map((link) => (
+                <li
+                  key={link.id}
+                  style={{
+                    padding: "8px 10px", marginBottom: 6, borderRadius: 6,
+                    background: "#f5f7fa", border: "1px solid #d5dde8",
+                    display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                  }}
+                >
+                  <strong>{LINK_TYPE_LABELS[link.link_type]}</strong>
+                  <a href={link.url} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>
+                    {link.label || link.url}
+                  </a>
+                  {mode === "edit" && (
+                    <button
+                      type="button"
+                      onClick={() => removeLink(link.id)}
+                      style={{ border: "none", background: "none", color: "#a33", cursor: "pointer", padding: 0, marginLeft: "auto" }}
+                    >
+                      Usuń
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {mode === "edit" && !showLinkForm && (
+            <button className={"button"} type="button" onClick={() => setShowLinkForm(true)}>
+              + Dodaj link
+            </button>
+          )}
+          {mode === "edit" && showLinkForm && (
+            <div style={{ marginTop: 8, padding: 8, background: "#f5f7fa", border: "1px solid #d5dde8", borderRadius: 6 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select
+                  value={linkForm.link_type}
+                  onChange={(e) => setLinkForm({ ...linkForm, link_type: e.target.value as LinkType })}
+                  style={{ padding: "4px 8px" }}
+                >
+                  {(Object.keys(LINK_TYPE_LABELS) as LinkType[]).map((t) => (
+                    <option key={t} value={t}>{LINK_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+                <input
+                  type="text" placeholder="URL *" value={linkForm.url}
+                  onChange={(e) => setLinkForm({ ...linkForm, url: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 260 }}
+                />
+                <input
+                  type="text" placeholder="Etykieta (opcjonalnie)" value={linkForm.label}
+                  onChange={(e) => setLinkForm({ ...linkForm, label: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 160 }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <button className={"button"} type="button" onClick={addLink}>Zapisz link</button>
+                <button className={"button"} type="button" onClick={() => { setShowLinkForm(false); setLinkForm(emptyLinkForm); }}>
                   Anuluj
                 </button>
               </div>

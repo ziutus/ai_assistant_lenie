@@ -20,8 +20,8 @@ from library.contact_names import contact_display_name, validate_contact_name
 from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLookupResult,
-    ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
+    Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
+    ContactLookupResult, ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
 )
 
 bp = Blueprint("contacts", __name__)
@@ -38,6 +38,8 @@ _LOOKUP_STATUSES = ("no_results", "candidate", "confirmed", "rejected")
 _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
 _ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
+
+_LINK_TYPES = ("facebook", "instagram", "twitter", "website", "other")
 
 _LANGUAGE_LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
 
@@ -300,6 +302,18 @@ def _organization_dict(row: ContactOrganization) -> dict:
         "status": row.status,
         "source_url": row.source_url,
         "notes": row.notes,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _link_dict(row: ContactLink) -> dict:
+    return {
+        "id": row.id,
+        "contact_id": row.contact_id,
+        "link_type": row.link_type,
+        "url": row.url,
+        "label": row.label,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -873,6 +887,12 @@ def contacts_get(contact_id: int):
         .order_by(ContactOrganization.is_current.desc(), ContactOrganization.is_primary.desc())
     ).scalars().all()
 
+    links = session.execute(
+        select(ContactLink)
+        .where(ContactLink.contact_id == contact_id)
+        .order_by(ContactLink.created_at.asc())
+    ).scalars().all()
+
     change_log = session.execute(
         select(ContactChangeLog)
         .where(ContactChangeLog.contact_id == contact_id)
@@ -887,6 +907,7 @@ def contacts_get(contact_id: int):
     data["relationships"] = relationships
     data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
     data["organizations"] = [_organization_dict(org) for org in organizations]
+    data["links"] = [_link_dict(link) for link in links]
     data["change_log"] = [_change_log_dict(cl) for cl in change_log]
     data["whatsapp_profile"] = row.whatsapp_profile
     data["photo_url"] = _contact_photo_url(row)
@@ -1637,3 +1658,92 @@ def contact_organizations_delete(organization_id: int):
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
     return jsonify({"status": "success", "deleted_id": organization_id}), 200
+
+
+# --- links (multiple social/profile URLs per contact — Facebook, Instagram, ...) ---
+
+@bp.route("/contacts/<int:contact_id>/links", methods=["POST", "OPTIONS"])
+def contact_links_add(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    link_type = (data.get("link_type") or "").strip()
+    if link_type not in _LINK_TYPES:
+        return {"status": "error", "message": f"link_type must be one of {_LINK_TYPES}"}, 400
+
+    url = (data.get("url") or "").strip()
+    if not url:
+        return {"status": "error", "message": "url is required"}, 400
+
+    row = ContactLink(
+        contact_id=contact_id,
+        link_type=link_type,
+        url=url,
+        label=(data.get("label") or "").strip() or None,
+    )
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "link": _link_dict(row)}), 200
+
+
+@bp.route("/contact_links/<int:link_id>", methods=["PATCH", "OPTIONS"])
+def contact_links_update(link_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    row = session.get(ContactLink, link_id)
+    if row is None:
+        return {"status": "error", "message": "Link not found"}, 404
+
+    if "link_type" in data:
+        link_type = (data.get("link_type") or "").strip()
+        if link_type not in _LINK_TYPES:
+            return {"status": "error", "message": f"link_type must be one of {_LINK_TYPES}"}, 400
+        row.link_type = link_type
+    if "url" in data:
+        url = (data.get("url") or "").strip()
+        if not url:
+            return {"status": "error", "message": "url cannot be empty"}, 400
+        row.url = url
+    if "label" in data:
+        row.label = (data.get("label") or "").strip() or None
+
+    row.updated_at = datetime.datetime.now()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "link": _link_dict(row)}), 200
+
+
+@bp.route("/contact_links/<int:link_id>", methods=["DELETE", "OPTIONS"])
+def contact_links_delete(link_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    row = session.get(ContactLink, link_id)
+    if row is None:
+        return {"status": "error", "message": "Link not found"}, 404
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": link_id}), 200

@@ -3160,6 +3160,36 @@ class Contact(Base):
         return f"Contact(id={self.id!r}, last_name={self.last_name!r})"
 
 
+class ContactLink(Base):
+    """Multi-value social/profile link for a contact (Facebook, Instagram,
+    X/Twitter, personal website, other) — deliberately generic and unlimited
+    in count, unlike contacts.linkedin_url, which stays as the single legacy
+    field predating this table and is not migrated into it.
+    """
+
+    __tablename__ = "contact_links"
+    __table_args__ = (
+        CheckConstraint(
+            "link_type IN ('facebook', 'instagram', 'twitter', 'website', 'other')",
+            name="ck_contact_links_link_type",
+        ),
+        Index("idx_contact_links_contact", "contact_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    link_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+
+    def __repr__(self) -> str:
+        return f"ContactLink(id={self.id!r}, contact_id={self.contact_id!r}, link_type={self.link_type!r})"
+
+
 class ContactFamilyCreation(Base):
     """Idempotency and provenance for an explicitly requested family batch."""
 
