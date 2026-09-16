@@ -1,9 +1,9 @@
 ---
 name: 'lenie-contact-facebook-photo'
-description: 'Fetch a contact''s current Facebook profile picture (via the logged-in Claude in Chrome browser) and upload it as their photo in Lenie''s private contact book'
+description: 'Fetch a contact''s current Facebook profile picture and small-talk facts (current city, hometown) via the logged-in Claude in Chrome browser, and save them to Lenie''s private contact book'
 ---
 
-Give a contact in Lenie's private contact book (`backend/library/contact_routes.py`) a profile photo pulled from their Facebook profile picture — useful when a contact has no `photo` yet but is known to have a Facebook profile.
+Give a contact in Lenie's private contact book (`backend/library/contact_routes.py`) a profile photo pulled from their Facebook profile picture, plus two structured small-talk facts from the "Informacje" tab — `current_city` (mieszka w) and `hometown` (pochodzi z). Useful when a contact is known to have a Facebook profile but is missing this data in Lenie. The small-talk angle matters here: these two facts are deliberately kept as their own structured fields (not buried in free-text notes) so they're easy to scan before a conversation — see `[[user_accessibility_social_interaction]]` in memory for why the contact book treats this kind of thing as a first-class need, not a nice-to-have.
 
 ## Input
 
@@ -20,7 +20,7 @@ All contact-book calls go to the NAS backend REST API (`http://192.168.200.7:505
 curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contacts/<ID>"
 ```
 
-Note `uuid`, `display_name` (or `first_name`/`last_name`), and existing `photo_url`. Look at the `links` array for an entry with `link_type: "facebook"` — that's the profile URL to use.
+Note `uuid`, `display_name` (or `first_name`/`last_name`), existing `photo_url`, `current_city`, and `hometown`. Look at the `links` array for an entry with `link_type: "facebook"` — that's the profile URL to use.
 
 - If the user supplied a URL and the contact has none stored yet, save it so future runs don't need it repeated:
   ```bash
@@ -33,7 +33,7 @@ Note `uuid`, `display_name` (or `first_name`/`last_name`), and existing `photo_u
 
 ### Step 2: Open the profile in Chrome and find the current profile picture
 
-Load the Chrome tools in one `ToolSearch` call if not already loaded: `select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__find,mcp__claude-in-chrome__tabs_close_mcp`. The user must already be logged into Facebook in that Chrome profile — this skill doesn't handle login.
+Load the Chrome tools in one `ToolSearch` call if not already loaded: `select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__find,mcp__claude-in-chrome__get_page_text,mcp__claude-in-chrome__tabs_close_mcp`. The user must already be logged into Facebook in that Chrome profile — this skill doesn't handle login.
 
 1. `tabs_context_mcp` (createIfEmpty: true), then `navigate` to the profile URL.
 2. **Do not click the small circular avatar directly** — on a profile with family members linked, that hot zone often opens a "Członkowie rodziny" (family members) popup instead of the photo. The reliable path is via the album:
@@ -69,18 +69,39 @@ curl -s -X POST -H "x-api-key: $LENIE_API_KEY" \
 
 A successful response echoes back the new `storage_key` and a presigned `photo_url`.
 
-### Step 5: Verify and clean up
+### Step 5: Pull small-talk facts from the "Informacje" tab
+
+While still on the profile, navigate to `<profile_url>/about_places` (or click **Informacje** → **Miejsca, w których mieszkał(a)**). Facebook shows up to two relevant rows there:
+
+- **"Obecne miasto"** / "Mieszka w" → `current_city`
+- **"Rodzinne miasto"** → `hometown`
+
+Take a `screenshot` or use `get_page_text` to read the values — this is plain visible text, not blocked like the CDN image URLs in Step 3. Only take a value that is explicitly labeled; don't infer a city from an unrelated post or check-in.
+
+Skip this step (and say so in the report) if the section is empty, hidden by the profile's privacy settings, or the profile has no separate "Informacje" tab visible while logged in as this account.
+
+If either value is found and differs from what's already on the contact (from Step 1), save it:
+
+```bash
+curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
+  -X PATCH "http://192.168.200.7:5055/contacts/<ID>" \
+  --data-binary '{"current_city": "<current city found>", "hometown": "<hometown found>", "change_source": "osint_lookup", "change_note": "Uzupełnione z zakładki Informacje na Facebooku"}'
+```
+
+Only include the keys you actually found (omit `current_city`/`hometown` entirely rather than sending an empty string, which would clear an existing value). Use a UTF-8 file with `--data-binary @file.json` instead of an inline `-d` string if either value contains Polish diacritics and you're building the JSON through shell interpolation (see the Polish-text gotcha in `[[project_contact_photo_split_skill]]`).
+
+### Step 6: Verify and clean up
 
 ```bash
 curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contacts/<ID>" \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['contact']['photo_url'])"
+  | python3 -c "import json,sys; d=json.load(sys.stdin)['contact']; print(d['photo_url'], d['current_city'], d['hometown'])"
 ```
 
-Confirm it's non-null and different from before the upload. Delete the temporary screenshot file(s) from the OS temp dir. Close the Chrome tab you opened (`tabs_close_mcp`) unless the user asked to keep it open.
+Confirm `photo_url` is non-null and different from before the upload, and `current_city`/`hometown` reflect what was found (or are unchanged if Step 5 found nothing new). Delete the temporary screenshot file(s) from the OS temp dir. Close the Chrome tab you opened (`tabs_close_mcp`) unless the user asked to keep it open.
 
-### Step 6: Report
+### Step 7: Report
 
-Tell the user, in Polish: which contact got the photo, where it came from (profile URL, which album/photo), and give the test link `http://192.168.200.7:3000/contacts/<id>`.
+Tell the user, in Polish: which contact was updated, where the photo came from (profile URL, which album/photo), and which small-talk facts (if any) were added or already present. Give the test link `http://192.168.200.7:3000/contacts/<id>`.
 
 ## Safety net: photo history
 
@@ -98,5 +119,6 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json" \
 
 - All communication with the user in **Polish**.
 - Never scrape or guess at a Facebook profile the user hasn't confirmed belongs to the contact — a wrong-person photo is worse than no photo.
-- This skill only writes to the private contact book (`contacts`, `contact_photos`, `contact_links`) via the REST API — it never posts, messages, or interacts with anything on Facebook itself, only reads the public/logged-in-visible profile picture.
+- This skill only writes to the private contact book (`contacts`, `contact_photos`, `contact_links`) via the REST API — it never posts, messages, or interacts with anything on Facebook itself, only reads the public/logged-in-visible profile picture and "Informacje" tab.
+- `current_city`/`hometown` are plain `String(200)` columns on `Contact` (see `library/db/models.py`), visible to every auth kind (unlike `private_notes`, which is service-only) — they're meant to be seen at a glance, not hidden.
 - Works one contact at a time; for a batch of contacts, run the workflow once per contact rather than trying to parallelize Chrome tabs against the same logged-in session.

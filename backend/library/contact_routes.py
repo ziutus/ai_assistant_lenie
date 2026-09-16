@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 _CONTACT_FIELDS = (
     "first_name", "last_name", "phone_number", "email", "linkedin_url",
-    "company", "position", "address", "pesel", "notes", "display_label",
+    "company", "position", "address", "current_city", "hometown", "pesel", "notes", "display_label",
 )
 
 _LOOKUP_TYPES = ("phone", "linkedin", "web")
@@ -256,6 +256,8 @@ def _contact_dict(row: Contact) -> dict:
         "company": row.company,
         "position": row.position,
         "address": row.address,
+        "current_city": row.current_city,
+        "hometown": row.hometown,
         "birthday": row.birthday.isoformat() if row.birthday else None,
         "birthday_month": row.birthday_month,
         "birthday_day": row.birthday_day,
