@@ -1,3 +1,4 @@
+import ContactInterestsEducation from "../components/ContactInterestsEducation";
 import React from "react";
 import axios from "axios";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -174,6 +175,8 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   is_archived: "Status archiwizacji",
   whatsapp_profile: "Profil WhatsApp",
   groups: "Grupy",
+  interests: "Zainteresowania",
+  education: "Wykształcenie",
   photo_storage_key: "Zdjęcie",
   photo_user_description: "Twój opis zdjęcia",
   photo_ai_description: "Opis zdjęcia AI",
@@ -1246,6 +1249,12 @@ const Contact = () => {
               </li>)}
             </ul>
           </section>}
+          <ContactInterestsEducation key={id} contactId={id!} editable={mode === "edit"} onChanged={() => {
+            // Refresh the audit without replacing unsaved fields in the main contact form.
+            void axios.get(`${apiUrl}/contacts/${id}`, { headers })
+              .then(response => setChangeLog(response.data.contact.change_log ?? []))
+              .catch(() => { setIsError(true); setMessage("Nie udało się odświeżyć historii zmian."); });
+          }} />
           <h3>Organizacje (etat, JDG, funkcje...)</h3>
           <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
             Jedna osoba może mieć kilka afiliacji naraz — np. etat gdzie indziej i osobną JDG do optymalizacji

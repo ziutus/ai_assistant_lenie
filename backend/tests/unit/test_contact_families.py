@@ -1,10 +1,9 @@
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from library.contact_families import create_family
-from library.db.models import Contact, ContactCategory, ContactPhoto, ContactFamilyCreation, ContactGroup, ContactRelationship
+from library.db.models import Contact, ContactPhoto, ContactFamilyCreation, ContactGroup, ContactRelationship
 
 
 @pytest.fixture
