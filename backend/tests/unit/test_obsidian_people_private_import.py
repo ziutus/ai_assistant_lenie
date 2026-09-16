@@ -8,7 +8,7 @@ import pytest
 from imports.obsidian_people_private_import import (
     MARKER, append_private, names_for, route_fields, route_operation, run_import,
 )
-from library.db.models import Contact, ContactCategory, ContactGroup
+from library.db.models import Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactLink
 
 
 def test_routing_and_multi_names_keep_narrative_private():
@@ -99,3 +99,71 @@ def test_dry_run_never_writes_or_commits(capsys, last_name):
     assert "Earlier synthetic text" not in output
     assert "example@example.invalid" not in output
     assert "DRY-RUN" in output
+
+
+@pytest.mark.parametrize("existing_url", [None, "https://www.linkedin.com/in/old", "https://www.linkedin.com/in/example"])
+@pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("from_secondary", [False, True])
+def test_linkedin_is_created_or_updated_in_place(existing_url, apply, from_secondary):
+    session = MagicMock()
+    contact = Contact(id=1001, first_name="Example", last_name="Person", category_id=1, groups=[])
+    secondary = Contact(id=1002, first_name="Example", last_name="Person", category_id=1, groups=[])
+    url = "https://www.linkedin.com/in/example"
+    existing = ContactLink(id=42, contact_id=1001, link_type="linkedin", url=existing_url) if existing_url else None
+    secondary_link = ContactLink(id=43, contact_id=1002, link_type="linkedin", url=url)
+
+    def scalars(statement):
+        entity = statement.column_descriptions[0]["entity"]
+        params = statement.compile().params.values()
+        rows = []
+        if entity is ContactCategory:
+            rows = [ContactCategory(id=1, name="Osoba prywatna")]
+        elif entity is Contact:
+            rows = [secondary if 1002 in params else contact]
+        elif entity is ContactLink:
+            rows = [secondary_link] if 1002 in params else ([existing] if existing else [])
+        result = MagicMock()
+        result.__iter__.side_effect = lambda: iter(rows)
+        result.one_or_none.return_value = rows[0] if rows else None
+        return result
+
+    session.scalars.side_effect = scalars
+    operation = {"path": "Example Person.md", "action": "append_existing", "contact_id": 1001}
+    if from_secondary:
+        operation.update(action="merge_duplicates", secondary_contact_id=1002)
+    spec = {"groups": {"existing_reused": {}, "new_groups_to_create": []}, "operations": [operation]}
+    run_import(session, spec, {"Example Person.md": ("" if from_secondary else f"LinkedIn: {url}", 1)}, apply=apply)
+    added_links = [call.args[0] for call in session.add.call_args_list if isinstance(call.args[0], ContactLink)]
+    logs = [call.args[0] for call in session.add.call_args_list if isinstance(call.args[0], ContactChangeLog)]
+    # A conflicting existing LinkedIn link is always retained (flagged, never overwritten),
+    # matching every other field's FIELD_CONFLICT/MERGE_CONFLICT retain behavior.
+    changed = existing_url is None
+    if not apply:
+        session.add.assert_not_called()
+        session.flush.assert_not_called()
+        session.commit.assert_not_called()
+        if existing:
+            assert existing.url == existing_url
+    elif existing is None:
+        assert len(added_links) == 1
+        assert added_links[0].contact_id == contact.id
+        assert added_links[0].link_type == "linkedin"
+        assert added_links[0].url == url
+    else:
+        assert added_links == []
+        assert existing.id == 42
+        assert existing.url == (url if changed else existing_url)
+    if apply and changed:
+        assert len(logs) == 1
+        assert logs[0].changed_fields == ["links"]
+    else:
+        assert logs == []
+    assert not hasattr(contact, "linkedin_url")
+    assert secondary_link.url == url
+
+
+def test_linkedin_in_another_persons_narrative_is_not_extracted():
+    narrative = "Someone else has profile https://www.linkedin.com/in/someone-else"
+    fields, private, _ = route_fields(narrative)
+    assert fields == {}
+    assert private == narrative

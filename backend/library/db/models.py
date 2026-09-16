@@ -3123,7 +3123,6 @@ class Contact(Base):
     display_label: Mapped[str | None] = mapped_column(String(200))
     phone_number: Mapped[str | None] = mapped_column(String(30))
     email: Mapped[str | None] = mapped_column(String(255))
-    linkedin_url: Mapped[str | None] = mapped_column(Text)
     company: Mapped[str | None] = mapped_column(String(200))
     position: Mapped[str | None] = mapped_column(String(200))
     address: Mapped[str | None] = mapped_column(Text)
@@ -3164,16 +3163,15 @@ class Contact(Base):
 
 
 class ContactLink(Base):
-    """Multi-value social/profile link for a contact (Facebook, Instagram,
-    X/Twitter, personal website, other) — deliberately generic and unlimited
-    in count, unlike contacts.linkedin_url, which stays as the single legacy
-    field predating this table and is not migrated into it.
+    """Generic social/profile links, including LinkedIn, for a contact.
+
+    LinkedIn confirmation and imports reuse an existing LinkedIn link row.
     """
 
     __tablename__ = "contact_links"
     __table_args__ = (
         CheckConstraint(
-            "link_type IN ('facebook', 'instagram', 'twitter', 'website', 'other')",
+            "link_type IN ('linkedin', 'facebook', 'instagram', 'twitter', 'website', 'other')",
             name="ck_contact_links_link_type",
         ),
         Index("idx_contact_links_contact", "contact_id"),
@@ -3243,8 +3241,8 @@ class ContactLookupResult(Base):
     either "searched and found nothing" (status=no_results) or "found a
     possible match, not confirmed" (status=candidate) — a contact can have
     several candidate rows of the same lookup_type. Confirming a candidate
-    is a status update here; by convention its url is then also copied into
-    contacts.linkedin_url, which stays single-valued.
+    is a status update here; a confirmed LinkedIn URL is also saved in
+    contact_links, updating an existing LinkedIn link when present.
     """
 
     __tablename__ = "contact_lookup_results"
@@ -3417,8 +3415,8 @@ class ContactChangeLog(Base):
     """Append-only audit trail for a contact: how it was created/updated and
     why — 'manual_edit' (UI), 'google_import' (google_contacts_import.py),
     'whatsapp_analysis' (whatsapp_neighbor_profiles.py), 'linkedin_analysis'
-    (a confirmed ContactLookupResult promoted onto contacts.linkedin_url),
-    'osint_lookup', 'other'. changed_fields lists which Contact columns
+    (a confirmed ContactLookupResult promoted into contact_links),
+    'osint_lookup', 'other'. changed_fields lists which contact fields or related collections
     changed in this event (diffed by the caller before commit); note is an
     optional free-text reason. Deliberately NOT full row versioning —
     contacts.updated_at remains the cheap "last touched" timestamp, this
