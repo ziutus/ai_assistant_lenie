@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -350,6 +351,9 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
         counts[_reimport_one_note(session, service, repo, model, vault_path, note_path, is_private)] += 1
         return counts
 
+    # Pace full scans, including unchanged notes; zero disables the pause.
+    scan_throttle_seconds = float(cfg.get("OBSIDIAN_SCAN_THROTTLE_SECONDS", "0.2"))
+
     for subfolder, is_private in PILOT_SUBFOLDERS:
         folder = vault_path / subfolder
         if not folder.is_dir():
@@ -360,5 +364,7 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
             counts["scanned"] += 1
             counts[_reimport_one_note(session, service, repo, model, vault_path, note_path, is_private)] += 1
             heartbeat(session, job.id, dict(counts))
+            if scan_throttle_seconds > 0:
+                time.sleep(scan_throttle_seconds)
 
     return counts
