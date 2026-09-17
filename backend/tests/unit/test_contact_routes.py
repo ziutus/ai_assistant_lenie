@@ -998,8 +998,9 @@ class TestContactLookupResultsDelete:
 def _make_organization(id_=1, contact_id=1, org_type="jdg", organization_name="Vente", status="confirmed", **extra):
     defaults = dict(
         contact_id=contact_id, org_type=org_type, organization_name=organization_name,
-        role=None, nip=None, regon=None, address=None,
+        role=None, nip=None, regon=None, address=None, correspondence_address=None,
         is_primary=False, is_current=True, start_date=None, end_date=None,
+        suspended_at=None, verified_at=None,
         status=status, source_url=None, notes=None,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),

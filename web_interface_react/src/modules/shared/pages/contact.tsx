@@ -67,10 +67,13 @@ interface ContactOrganization {
   nip: string | null;
   regon: string | null;
   address: string | null;
+  correspondence_address: string | null;
   is_primary: boolean;
   is_current: boolean;
   start_date: string | null;
   end_date: string | null;
+  suspended_at: string | null;
+  verified_at: string | null;
   status: OrgStatus;
   source_url: string | null;
   notes: string | null;
@@ -191,11 +194,14 @@ const emptyOrgForm = {
   nip: "",
   regon: "",
   address: "",
+  correspondence_address: "",
   is_primary: false,
   is_current: true,
   status: "candidate" as OrgStatus,
   source_url: "",
   notes: "",
+  suspended_at: "",
+  verified_at: "",
 };
 
 const emptyLinkForm = {
@@ -675,11 +681,14 @@ const Contact = () => {
         nip: orgForm.nip.trim() || undefined,
         regon: orgForm.regon.trim() || undefined,
         address: orgForm.address.trim() || undefined,
+        correspondence_address: orgForm.correspondence_address.trim() || undefined,
         is_primary: orgForm.is_primary,
         is_current: orgForm.is_current,
         status: orgForm.status,
         source_url: orgForm.source_url.trim() || undefined,
         notes: orgForm.notes.trim() || undefined,
+        suspended_at: orgForm.suspended_at || undefined,
+        verified_at: orgForm.verified_at || undefined,
       }, { headers });
       setOrgForm(emptyOrgForm);
       setShowOrgForm(false);
@@ -688,6 +697,20 @@ const Contact = () => {
       console.error("Error adding organization", error);
       setIsError(true);
       setMessage(`Nie udało się dodać organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const copyOrgAddressToHome = async (address: string) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/contacts/${id}`, { address }, { headers });
+      setForm((prev) => ({ ...prev, address }));
+      loadContact();
+    } catch (error: any) {
+      console.error("Error copying address to contact", error);
+      setIsError(true);
+      setMessage(`Nie udało się skopiować adresu: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -1291,7 +1314,42 @@ const Contact = () => {
                       {org.regon && <span>REGON: {org.regon}</span>}
                     </div>
                   )}
-                  {org.address && <div style={{ fontSize: "0.85em", color: "#667" }}>{org.address}</div>}
+                  {org.address && (
+                    <div style={{ fontSize: "0.85em", color: "#667", display: "flex", gap: 6, alignItems: "center" }}>
+                      <span>Adres rejestrowy: {org.address}</span>
+                      {mode === "edit" && org.org_type === "jdg" && (
+                        <button
+                          type="button"
+                          onClick={() => copyOrgAddressToHome(org.address as string)}
+                          title="Skopiuj jako adres domowy kontaktu"
+                          style={{ border: "none", background: "none", color: "#2b6cb0", cursor: "pointer", padding: 0, fontSize: "0.95em" }}
+                        >
+                          → adres domowy
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {org.correspondence_address && (
+                    <div style={{ fontSize: "0.85em", color: "#667", display: "flex", gap: 6, alignItems: "center" }}>
+                      <span>Adres do doręczeń: {org.correspondence_address}</span>
+                      {mode === "edit" && org.org_type === "jdg" && (
+                        <button
+                          type="button"
+                          onClick={() => copyOrgAddressToHome(org.correspondence_address as string)}
+                          title="Skopiuj jako adres domowy kontaktu"
+                          style={{ border: "none", background: "none", color: "#2b6cb0", cursor: "pointer", padding: 0, fontSize: "0.95em" }}
+                        >
+                          → adres domowy
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {(org.verified_at || org.suspended_at) && (
+                    <div style={{ fontSize: "0.85em", color: "#667" }}>
+                      {org.verified_at && <span>Zweryfikowano w rejestrze: {org.verified_at} </span>}
+                      {org.suspended_at && <span style={{ color: "#a33" }}>· Zawieszona od: {org.suspended_at}</span>}
+                    </div>
+                  )}
                   {org.notes && <div style={{ fontSize: "0.85em", color: "#667" }}>{linkifyPlainText(org.notes)}</div>}
                   <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center" }}>
                     {org.nip && (
@@ -1382,6 +1440,29 @@ const Contact = () => {
                   onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })}
                   style={{ padding: "4px 8px", minWidth: 220 }}
                 />
+                <input
+                  type="text" placeholder="Adres do doręczeń" value={orgForm.correspondence_address}
+                  onChange={(e) => setOrgForm({ ...orgForm, correspondence_address: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 220 }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  Zweryfikowano w rejestrze:
+                  <input
+                    type="date" value={orgForm.verified_at}
+                    onChange={(e) => setOrgForm({ ...orgForm, verified_at: e.target.value })}
+                    style={{ padding: "4px 8px" }}
+                  />
+                </label>
+                <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  Data zawieszenia:
+                  <input
+                    type="date" value={orgForm.suspended_at}
+                    onChange={(e) => setOrgForm({ ...orgForm, suspended_at: e.target.value })}
+                    style={{ padding: "4px 8px" }}
+                  />
+                </label>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
                 <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
