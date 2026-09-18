@@ -38,7 +38,10 @@ _LOOKUP_STATUSES = ("no_results", "candidate", "confirmed", "rejected")
 
 _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
-_ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
+_ORG_FIELDS = (
+    "organization_name", "role", "nip", "regon", "address", "correspondence_address", "source_url", "notes",
+)
+_ORG_DATE_FIELDS = ("start_date", "end_date", "suspended_at", "verified_at")
 
 _LINK_TYPES = ("linkedin", "facebook", "instagram", "twitter", "website", "fixly", "other")
 
@@ -301,10 +304,13 @@ def _organization_dict(row: ContactOrganization) -> dict:
         "nip": row.nip,
         "regon": row.regon,
         "address": row.address,
+        "correspondence_address": row.correspondence_address,
         "is_primary": row.is_primary,
         "is_current": row.is_current,
         "start_date": row.start_date.isoformat() if row.start_date else None,
         "end_date": row.end_date.isoformat() if row.end_date else None,
+        "suspended_at": row.suspended_at.isoformat() if row.suspended_at else None,
+        "verified_at": row.verified_at.isoformat() if row.verified_at else None,
         "status": row.status,
         "source_url": row.source_url,
         "notes": row.notes,
@@ -1659,10 +1665,9 @@ def contact_organizations_add(contact_id: int):
             continue
         if field in data:
             setattr(row, field, (data.get(field) or "").strip() or None)
-    if "start_date" in data:
-        row.start_date = data.get("start_date") or None
-    if "end_date" in data:
-        row.end_date = data.get("end_date") or None
+    for field in _ORG_DATE_FIELDS:
+        if field in data:
+            setattr(row, field, data.get(field) or None)
 
     session.add(row)
     try:
@@ -1709,10 +1714,9 @@ def contact_organizations_update(organization_id: int):
         row.is_primary = bool(data.get("is_primary"))
     if "is_current" in data:
         row.is_current = bool(data.get("is_current"))
-    if "start_date" in data:
-        row.start_date = data.get("start_date") or None
-    if "end_date" in data:
-        row.end_date = data.get("end_date") or None
+    for field in _ORG_DATE_FIELDS:
+        if field in data:
+            setattr(row, field, data.get(field) or None)
 
     row.updated_at = datetime.datetime.now()
     try:
