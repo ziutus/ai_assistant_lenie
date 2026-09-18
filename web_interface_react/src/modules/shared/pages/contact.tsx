@@ -19,6 +19,8 @@ interface ContactRelationship {
   direction: "outgoing" | "incoming";
   relationship_type: string;
   note: string | null;
+  start_date: string | null;
+  end_date: string | null;
   other_contact: { id: number; first_name: string | null; last_name: string | null; display_name?: string };
 }
 
@@ -262,6 +264,11 @@ const emptyForm = {
 const otherName = (other: { first_name: string | null; last_name: string | null; display_name?: string }) =>
   other.display_name || [other.first_name, other.last_name].filter(Boolean).join(" ");
 
+const relDatesLabel = (r: ContactRelationship) => {
+  if (!r.start_date && !r.end_date) return null;
+  return `${r.start_date ?? "?"} – ${r.end_date ?? "nadal"}`;
+};
+
 // events arrives sorted event_date desc, id desc (see GET /contacts/:id
 // in contact_routes.py) — the first entry is always the most recent one.
 const latestEvent = (events: ContactGroupEvent[] | undefined) =>
@@ -339,6 +346,13 @@ const Contact = () => {
   const [relTargetId, setRelTargetId] = React.useState<number | null>(null);
   const [relType, setRelType] = React.useState("");
   const [relNote, setRelNote] = React.useState("");
+  const [relStartDate, setRelStartDate] = React.useState("");
+  const [relEndDate, setRelEndDate] = React.useState("");
+  const [editingRelId, setEditingRelId] = React.useState<number | null>(null);
+  const [editRelType, setEditRelType] = React.useState("");
+  const [editRelNote, setEditRelNote] = React.useState("");
+  const [editRelStartDate, setEditRelStartDate] = React.useState("");
+  const [editRelEndDate, setEditRelEndDate] = React.useState("");
 
   const [organizations, setOrganizations] = React.useState<ContactOrganization[]>([]);
   const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
@@ -632,9 +646,12 @@ const Contact = () => {
     try {
       await axios.post(`${apiUrl}/contacts/${id}/relationships`, {
         related_contact_id: relTargetId, relationship_type: relType.trim(), note: relNote.trim() || undefined,
+        start_date: relStartDate || undefined, end_date: relEndDate || undefined,
       }, { headers });
       setRelType("");
       setRelNote("");
+      setRelStartDate("");
+      setRelEndDate("");
       setRelTargetId(null);
       setRelQuery("");
       setRelResults([]);
@@ -656,6 +673,36 @@ const Contact = () => {
       console.error("Error deleting relationship", error);
       setIsError(true);
       setMessage(`Nie udało się usunąć powiązania: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const startEditRelationship = (r: ContactRelationship) => {
+    setEditingRelId(r.id);
+    setEditRelType(r.relationship_type);
+    setEditRelNote(r.note ?? "");
+    setEditRelStartDate(r.start_date ?? "");
+    setEditRelEndDate(r.end_date ?? "");
+  };
+
+  const saveEditRelationship = async () => {
+    if (editingRelId === null || !editRelType.trim()) {
+      setIsError(true);
+      setMessage("Podaj typ powiązania.");
+      return;
+    }
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/contact_relationships/${editingRelId}`, {
+        relationship_type: editRelType.trim(), note: editRelNote.trim() || null,
+        start_date: editRelStartDate || null, end_date: editRelEndDate || null,
+      }, { headers });
+      setEditingRelId(null);
+      loadContact();
+    } catch (error: any) {
+      console.error("Error updating relationship", error);
+      setIsError(true);
+      setMessage(`Nie udało się zapisać powiązania: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -1519,16 +1566,61 @@ const Contact = () => {
             <ul style={{ listStyle: "none", padding: 0 }}>
               {outgoing.map((r) => (
                 <li key={r.id} style={{ padding: "4px 0" }}>
-                  <a href={`/contacts/${r.other_contact.id}`}><strong>{otherName(r.other_contact)}</strong></a> — {r.relationship_type}
-                  {r.note && <span style={{ color: "#667" }}> ({r.note})</span>}
-                  {mode === "edit" && (
-                    <button
-                      type="button"
-                      onClick={() => removeRelationship(r.id)}
-                      style={{ marginLeft: 8, border: "none", background: "none", color: "#a33", cursor: "pointer" }}
-                    >
-                      ✕
-                    </button>
+                  {editingRelId === r.id ? (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input
+                        type="text"
+                        value={editRelType}
+                        onChange={(e) => setEditRelType(e.target.value)}
+                        style={{ padding: "4px 8px", minWidth: 160 }}
+                      />
+                      <input
+                        type="text"
+                        value={editRelNote}
+                        placeholder="Notatka"
+                        onChange={(e) => setEditRelNote(e.target.value)}
+                        style={{ padding: "4px 8px", minWidth: 140 }}
+                      />
+                      <input
+                        type="date"
+                        value={editRelStartDate}
+                        onChange={(e) => setEditRelStartDate(e.target.value)}
+                        style={{ padding: "4px 8px" }}
+                      />
+                      <span>–</span>
+                      <input
+                        type="date"
+                        value={editRelEndDate}
+                        onChange={(e) => setEditRelEndDate(e.target.value)}
+                        style={{ padding: "4px 8px" }}
+                      />
+                      <button className={"button"} type="button" onClick={saveEditRelationship}>Zapisz</button>
+                      <button className={"button"} type="button" onClick={() => setEditingRelId(null)}>Anuluj</button>
+                    </div>
+                  ) : (
+                    <>
+                      <a href={`/contacts/${r.other_contact.id}`}><strong>{otherName(r.other_contact)}</strong></a> — {r.relationship_type}
+                      {relDatesLabel(r) && <span style={{ color: "#667" }}> [{relDatesLabel(r)}]</span>}
+                      {r.note && <span style={{ color: "#667" }}> ({r.note})</span>}
+                      {mode === "edit" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => startEditRelationship(r)}
+                            style={{ marginLeft: 8, border: "none", background: "none", color: "#458", cursor: "pointer" }}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeRelationship(r.id)}
+                            style={{ marginLeft: 4, border: "none", background: "none", color: "#a33", cursor: "pointer" }}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </>
                   )}
                 </li>
               ))}
@@ -1541,6 +1633,7 @@ const Contact = () => {
                 {incoming.map((r) => (
                   <li key={r.id} style={{ padding: "4px 0" }}>
                     <a href={`/contacts/${r.other_contact.id}`}><strong>{otherName(r.other_contact)}</strong></a> — ten kontakt jest dla tej osoby: {r.relationship_type}
+                    {relDatesLabel(r) && <span style={{ color: "#667" }}> [{relDatesLabel(r)}]</span>}
                     {r.note && <span style={{ color: "#667" }}> ({r.note})</span>}
                   </li>
                 ))}
@@ -1593,6 +1686,21 @@ const Contact = () => {
                 placeholder="Notatka (opcjonalnie)"
                 onChange={(e) => setRelNote(e.target.value)}
                 style={{ padding: "4px 8px", minWidth: 160 }}
+              />
+              <input
+                type="date"
+                value={relStartDate}
+                onChange={(e) => setRelStartDate(e.target.value)}
+                title="Data rozpoczęcia (opcjonalnie)"
+                style={{ padding: "4px 8px" }}
+              />
+              <span>–</span>
+              <input
+                type="date"
+                value={relEndDate}
+                onChange={(e) => setRelEndDate(e.target.value)}
+                title="Data zakończenia (opcjonalnie)"
+                style={{ padding: "4px 8px" }}
               />
               <button className={"button"} type="button" onClick={addRelationship}>Dodaj powiązanie</button>
             </div>

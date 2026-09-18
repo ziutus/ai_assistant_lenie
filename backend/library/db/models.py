@@ -3214,6 +3214,14 @@ class ContactRelationship(Base):
     reads "Zofia is Adam's wife". Single row, no automatic reciprocal
     row/label — the UI shows outgoing and incoming rows separately instead
     of guessing Polish kinship-term inflection.
+
+    start_date/end_date are optional and apply to any relationship_type, not
+    just employment — e.g. "kolega z przedszkola"/"kolega z liceum" with the
+    years attended, or a "pracownik" row with the employment period. Also how
+    a contact of category "firma" (Contact.company used as a lightweight
+    company record — no separate companies table) is linked to the people
+    who work/worked there, so "who works/worked at company X" is a query on
+    this table instead of free-text ContactOrganization.organization_name.
     """
 
     __tablename__ = "contact_relationships"
@@ -3227,6 +3235,8 @@ class ContactRelationship(Base):
     related_contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
     relationship_type: Mapped[str] = mapped_column(String(50), nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
+    start_date: Mapped[datetime.date | None] = mapped_column(Date)
+    end_date: Mapped[datetime.date | None] = mapped_column(Date)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
