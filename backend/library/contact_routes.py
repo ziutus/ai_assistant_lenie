@@ -40,7 +40,7 @@ _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
 _ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
 
-_LINK_TYPES = ("linkedin", "facebook", "instagram", "twitter", "website", "other")
+_LINK_TYPES = ("linkedin", "facebook", "instagram", "twitter", "website", "fixly", "other")
 
 _GENDER_VALUES = ("male", "female", "other")
 
@@ -342,6 +342,8 @@ def _relationship_dict(rel: ContactRelationship, other: Contact, direction: str)
         "direction": direction,  # "outgoing" (this contact -> other) or "incoming" (other -> this contact)
         "relationship_type": rel.relationship_type,
         "note": rel.note,
+        "start_date": rel.start_date.isoformat() if rel.start_date else None,
+        "end_date": rel.end_date.isoformat() if rel.end_date else None,
         "contact_id": rel.contact_id,
         "related_contact_id": rel.related_contact_id,
         "other_contact": {
@@ -1447,6 +1449,8 @@ def contact_relationships_add(contact_id: int):
         related_contact_id=related.id,
         relationship_type=relationship_type,
         note=(data.get("note") or "").strip() or None,
+        start_date=data.get("start_date") or None,
+        end_date=data.get("end_date") or None,
     )
     session.add(row)
     try:
@@ -1458,6 +1462,42 @@ def contact_relationships_add(contact_id: int):
     return jsonify({
         "status": "success",
         "relationship": _relationship_dict(row, related, "outgoing"),
+    }), 200
+
+
+@bp.route("/contact_relationships/<int:relationship_id>", methods=["PATCH", "OPTIONS"])
+def contact_relationships_update(relationship_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    row = session.get(ContactRelationship, relationship_id)
+    if row is None:
+        return {"status": "error", "message": "Relationship not found"}, 404
+
+    if "relationship_type" in data:
+        relationship_type = (data.get("relationship_type") or "").strip()
+        if not relationship_type:
+            return {"status": "error", "message": "relationship_type cannot be empty"}, 400
+        row.relationship_type = relationship_type
+    if "note" in data:
+        row.note = (data.get("note") or "").strip() or None
+    if "start_date" in data:
+        row.start_date = data.get("start_date") or None
+    if "end_date" in data:
+        row.end_date = data.get("end_date") or None
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error (duplicate relationship?)"}, 409
+
+    other = session.get(Contact, row.related_contact_id)
+    return jsonify({
+        "status": "success",
+        "relationship": _relationship_dict(row, other, "outgoing"),
     }), 200
 
 
