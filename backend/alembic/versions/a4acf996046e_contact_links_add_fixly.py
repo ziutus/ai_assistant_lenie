@@ -1,8 +1,8 @@
 """Add fixly to contact_links.link_type."""
 from alembic import op
 
-revision = "b2c3d4e5f6a7"
-down_revision = "a1b2c3d4e5f6"
+revision = "a4acf996046e"
+down_revision = "f001eb38307e"
 branch_labels = None
 depends_on = None
 

@@ -1,8 +1,8 @@
 """Add start_date/end_date to contact_relationships."""
 from alembic import op
 
-revision = "a1b2c3d4e5f6"
-down_revision = "63f91b7e2a84"
+revision = "f001eb38307e"
+down_revision = "b66730cf146e"
 branch_labels = None
 depends_on = None
 
