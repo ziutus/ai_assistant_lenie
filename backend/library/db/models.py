@@ -3174,7 +3174,7 @@ class ContactLink(Base):
     __tablename__ = "contact_links"
     __table_args__ = (
         CheckConstraint(
-            "link_type IN ('linkedin', 'facebook', 'instagram', 'twitter', 'website', 'other')",
+            "link_type IN ('linkedin', 'facebook', 'instagram', 'twitter', 'website', 'fixly', 'other')",
             name="ck_contact_links_link_type",
         ),
         Index("idx_contact_links_contact", "contact_id"),

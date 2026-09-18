@@ -40,7 +40,7 @@ _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
 _ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
 
-_LINK_TYPES = ("linkedin", "facebook", "instagram", "twitter", "website", "other")
+_LINK_TYPES = ("linkedin", "facebook", "instagram", "twitter", "website", "fixly", "other")
 
 _GENDER_VALUES = ("male", "female", "other")
 

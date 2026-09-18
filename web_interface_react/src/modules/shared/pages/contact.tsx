@@ -92,7 +92,7 @@ const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
   rejected: "odrzucone",
 };
 
-type LinkType = "linkedin" | "facebook" | "instagram" | "twitter" | "website" | "other";
+type LinkType = "linkedin" | "facebook" | "instagram" | "twitter" | "website" | "fixly" | "other";
 
 interface ContactLink {
   id: number;
@@ -107,6 +107,7 @@ const LINK_TYPE_LABELS: Record<LinkType, string> = {
   instagram: "Instagram",
   twitter: "X / Twitter",
   website: "Strona WWW",
+  fixly: "Fixly",
   other: "Inne",
 };
 
