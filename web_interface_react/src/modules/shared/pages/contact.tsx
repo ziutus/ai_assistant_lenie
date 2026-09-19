@@ -1,3 +1,4 @@
+import ContactChannelsEditor, { type ContactChannel } from "../components/ContactChannelsEditor";
 import ContactInterestsEducation from "../components/ContactInterestsEducation";
 import React from "react";
 import axios from "axios";
@@ -165,6 +166,8 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   display_label: "Nazwa robocza",
   phone_number: "Telefon",
   email: "Email",
+  phone_numbers: "Telefony",
+  email_addresses: "Adresy e-mail",
   linkedin_url: "LinkedIn",
   links: "Linki",
   company: "Firma",
@@ -225,6 +228,8 @@ interface ContactDetail {
   display_name: string;
   phone_number: string | null;
   email: string | null;
+  phone_numbers?: ContactChannel[];
+  email_addresses?: ContactChannel[];
   company: string | null;
   position: string | null;
   address: string | null;
@@ -253,8 +258,8 @@ const emptyForm = {
   last_name: "",
   gender: "" as Gender | "",
   display_label: "",
-  phone_number: "",
-  email: "",
+  phone_numbers: [] as ContactChannel[],
+  email_addresses: [] as ContactChannel[],
   company: "",
   position: "",
   address: "",
@@ -399,8 +404,8 @@ const Contact = () => {
     last_name: c.last_name ?? "",
     gender: c.gender ?? ("" as const),
     display_label: c.display_label ?? "",
-    phone_number: c.phone_number ?? "",
-    email: c.email ?? "",
+    phone_numbers: c.phone_numbers ?? (c.phone_number ? [{ value: c.phone_number, label: null }] : []),
+    email_addresses: c.email_addresses ?? (c.email ? [{ value: c.email, label: null }] : []),
     company: c.company ?? "",
     position: c.position ?? "",
     address: c.address ?? "",
@@ -992,8 +997,12 @@ const Contact = () => {
           </div>
           {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
           {contact.gender && <div><strong>Płeć:</strong> {GENDER_LABELS[contact.gender]}</div>}
-          {contact.phone_number && <div><strong>Telefon:</strong> {contact.phone_number}</div>}
-          {contact.email && <div><strong>Email:</strong> {contact.email}</div>}
+          {(contact.phone_numbers ?? (contact.phone_number ? [{ value: contact.phone_number, label: null }] : [])).map((entry, index) => (
+            <div key={`phone-${index}`}><strong>Telefon{index === 0 ? " główny" : ""}:</strong> {entry.value}{entry.label && ` (${entry.label})`}</div>
+          ))}
+          {(contact.email_addresses ?? (contact.email ? [{ value: contact.email, label: null }] : [])).map((entry, index) => (
+            <div key={`email-${index}`}><strong>Email{index === 0 ? " główny" : ""}:</strong> {entry.value}{entry.label && ` (${entry.label})`}</div>
+          ))}
           {contact.company && <div><strong>Firma:</strong> {contact.company}</div>}
           {contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
           {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
@@ -1050,14 +1059,10 @@ const Contact = () => {
           Nazwa robocza (gdy nie znasz imienia ani nazwiska)
           <input type="text" maxLength={200} value={form.display_label} onChange={(e) => setForm({ ...form, display_label: e.target.value })} style={inputStyle} />
         </label>
-        <label>
-          Telefon
-          <input type="text" value={form.phone_number} onChange={(e) => setForm({ ...form, phone_number: e.target.value })} style={inputStyle} />
-        </label>
-        <label>
-          Email
-          <input type="text" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={inputStyle} />
-        </label>
+        <ContactChannelsEditor title="Telefony" kind="tel" entries={form.phone_numbers}
+          onChange={(phone_numbers) => setForm({ ...form, phone_numbers })} />
+        <ContactChannelsEditor title="Adresy e-mail" kind="email" entries={form.email_addresses}
+          onChange={(email_addresses) => setForm({ ...form, email_addresses })} />
         <label>
           Firma
           <input type="text" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} style={inputStyle} />

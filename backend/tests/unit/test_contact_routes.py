@@ -647,6 +647,13 @@ class TestContactsListArchivedFilter:
         assert "NOT" in compiled
         assert "contact_groups.id IN" in compiled
 
+    def test_search_includes_primary_and_additional_channels(self, monkeypatch):
+        compiled = self._run(monkeypatch, "?q=praca")
+        assert "contacts.phone_number" in compiled
+        assert "contacts.email" in compiled
+        assert "CAST(contacts.phone_numbers AS TEXT)" in compiled
+        assert "CAST(contacts.email_addresses AS TEXT)" in compiled
+
 
 class TestContactsDelete:
     def test_deletes_contact(self, monkeypatch):
