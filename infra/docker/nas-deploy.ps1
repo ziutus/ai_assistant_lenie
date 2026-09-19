@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $NasHostName = "192.168.200.7"
 $NasUser = "admin"
-$NasDocker = "/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker"
+$NasDocker = "/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker"
 $NasComposeDir = "/share/ContainerNew/lenie-compose"
 $NasComposeFile = "$NasComposeDir/compose.nas.yaml"
 $NasConfigDir = "/share/ContainerNew/lenie-config"

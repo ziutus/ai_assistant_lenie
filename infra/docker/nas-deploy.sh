@@ -15,7 +15,7 @@ set -euo pipefail
 # --- Configuration ---
 NAS_HOST="192.168.200.7"
 NAS_USER="admin"
-NAS_DOCKER="/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker"
+NAS_DOCKER="/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker"
 NAS_COMPOSE_DIR="/share/ContainerNew/lenie-compose"
 NAS_COMPOSE_FILE="${NAS_COMPOSE_DIR}/compose.nas.yaml"
 NAS_CONFIG_DIR="/share/ContainerNew/lenie-config"

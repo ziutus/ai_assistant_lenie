@@ -32,18 +32,18 @@ Full Lenie stack running on a local QNAP NAS for personal use and testing.
 | Legacy AWS bridge | `lenie-cloud-bridge` | `192.168.200.7:5005/lenie-ai-server` | — | `worker.py --types legacy_aws_pull` — pobieranie bufora DynamoDB z ery serverless |
 | Migrations (one-shot) | `lenie-migrate` | `192.168.200.7:5005/lenie-ai-server` | — | `alembic upgrade heads` przy starcie stacka (`restart: "no"`) |
 | PostgreSQL | `lenie-ai-db` | `192.168.200.7:5005/lenie-ai-db` | 5434 | PostgreSQL 18 + pgvector |
-| MinIO | `lenie-minio` | `minio/minio` (pinned digest) | 9000, 9001 | S3-compatible storage (API + web console) |
-| MinIO init (one-shot) | `lenie-minio-init` | `minio/mc` | — | Inicjalizacja bucketa (`restart: "no"`) |
-| Vault | `lenie-vault` | `hashicorp/vault:1.21.3` | 8210 | HashiCorp Vault secrets manager |
+| MinIO | `lenie-minio` | `192.168.200.7:5005/minio/minio` (pinned digest) | 9000, 9001 | S3-compatible storage (API + web console) |
+| MinIO init (one-shot) | `lenie-minio-init` | `192.168.200.7:5005/minio/mc` (pinned digest) | — | Inicjalizacja bucketa (`restart: "no"`) |
+| Vault | `lenie-vault` | `192.168.200.7:5005/hashicorp/vault:1.21.3` | 8210 | HashiCorp Vault secrets manager |
 | NER service | `lenie-ner-service` | `192.168.200.7:5005/lenie-ner-service` | — | spaCy Polish NER (internal-only, `http://lenie-ner-service:8090`) |
-| Obsidian sync | `obsidian-headless-sync` | `ghcr.io/belphemur/obsidian-headless-sync-docker:0.0.14` | — | Sync vaulta Obsidian (Epic 42 reimport) |
+| Obsidian sync | `obsidian-headless-sync` | `192.168.200.7:5005/obsidian-headless-sync:0.0.14` | — | Sync vaulta Obsidian (Epic 42 reimport) |
 | Registry UI | `lenie-registry-ui` | `joxit/docker-registry-ui:latest` | 8550 | Web UI for Docker registry |
 | **Registry** | `lenie-registry` | `registry:2` | 5005 | Private Docker registry (infra) |
 
 Slack Bot (`lenie-ai-slack-bot`) został usunięty 2026-07-22 wraz z serwerem MCP i nie jest już częścią stacka.
 
 All application services are orchestrated via `docker compose` using `compose.nas.yaml`.
-The registry container runs standalone (started once, persists across deployments).
+Registry and registry UI are included in the NAS compose file; their existing containers and persistent registry volume are retained across application deployments.
 
 **Network topology:** All services are connected via Docker network `lenie-net`. Backend connects to DB by container name `lenie-ai-db` on internal port 5432. Frontend containers serve static files via nginx — API calls go from the user's browser directly to the backend port.
 
@@ -78,7 +78,7 @@ ssh admin@192.168.200.7 "echo OK"
 Docker binary is not in the default PATH on QNAP. Full path:
 
 ```
-/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 ```
 
 Container Station must be installed via QNAP App Center.
@@ -97,6 +97,119 @@ QNAP uses several ports by default. Known conflicts:
 
 ## Private Docker Registry
 
+### Pool2 storage and image recovery (2026-09-19)
+
+Container Station now lives on Pool2. Its Docker root is
+`/share/CACHEDEV2_DATA/Container/container-station-data/lib/docker`.
+`/share/Container` and the compatibility link `/share/ContainerNew` both
+resolve to `/share/CACHEDEV2_DATA/Container`. Keep the compatibility paths
+in compose bind mounts; they now point to the restored configuration on Pool2.
+
+There are three image copies with different recovery roles:
+
+| Location | Purpose | Survives registry volume replacement? |
+|---|---|---|
+| Docker Desktop / Images (PC) | Build and off-NAS image copy | Yes |
+| `lenie-registry`, volume `lenie-registry-data` | Distribution to Docker clients | No |
+| Container Station / Images (NAS Docker image store) | Local container startup and republishing images | Yes |
+
+The last two share the same storage pool. Neither protects against losing the
+whole pool or removing Container Station's Docker root. Image copies also do
+not contain PostgreSQL, MinIO, Vault or Obsidian volume data.
+
+Before rebuilding the registry, retain `registry:2`, its UI image and every
+application image in Container Station Images. Do not prune these images.
+With the exact compose image references already present, containers can be
+started using `docker compose ... up -d --pull never`. After restoring the
+registry container, use `docker tag` and `docker push` on the NAS to republish
+the retained images. Keep the registry's own bootstrap image outside its
+registry as well, to avoid a circular recovery dependency.
+
+Additional external image copies in the NAS registry:
+
+| Upstream image | NAS registry reference (prefix `192.168.200.7:5005/`) |
+|---|---|
+| `hashicorp/vault:1.21.3` | `hashicorp/vault:1.21.3` |
+| `ghcr.io/belphemur/obsidian-headless-sync-docker:0.0.14` | `obsidian-headless-sync:0.0.14` |
+| `registry:2` | `bootstrap/registry:2` |
+| `joxit/docker-registry-ui:latest` (snapshot from 2026-09-19) | `bootstrap/registry-ui:20260919` |
+
+Registry and its UI retain their original compose references for bootstrap;
+the other services use the NAS mirror. To replenish an external mirror, pull
+the chosen upstream version on Docker Desktop, tag it with the NAS reference,
+push it, then pull that reference on the NAS. Verify the resulting image IDs
+and retain both copies. For MinIO, use the pinned source digests below.
+
+### MinIO mirror after Docker Hub access failure
+
+On 2026-09-19 Docker Hub denied the pinned MinIO image. The exact upstream
+digests were still available from Quay. Their `linux/amd64` variants were
+pulled into Docker Desktop and pushed into the NAS registry:
+
+| Image | Quay source digest | NAS registry digest |
+|---|---|---|
+| `minio/minio:RELEASE.2025-09-07T16-13-09Z` | `14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e` | `52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff` |
+| `minio/mc:RELEASE.2025-08-13T08-35-41Z` | `a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727` | `bdfae21c72b19fae5a005c56dddba25a873d75fac3dda60f55aea7e417382cbe` |
+
+Digests in the table omit the `sha256:` prefix. Upstream multi-platform and
+republished single-platform manifest digests differ; image config IDs were
+checked for equality between Docker Desktop and the NAS registry. Compose
+pins the NAS digests. Do not replace them with `latest` during recovery.
+
+### Restore order after replacing Container Station storage
+
+1. Verify the backup and resolved destination paths. Restore configuration,
+   create `lenie-net` and the seven external volumes declared in compose.
+2. Bootstrap registry and its UI; publish images, then pull them into the NAS
+   Docker image store. Keep a copy of the previous compose before replacing it.
+3. Restore MinIO's backup into its **empty, stopped** volume before starting
+   MinIO. Extract the backup into a separate staging directory **without
+   `--strip-components`** and inspect the complete archive layout. The September
+   backup has active `.minio.sys/` and `lenie-storage/` at its root, alongside
+   an older nested `_data/` tree; the first archive entries alone are misleading.
+   Restore the complete archive root into the stopped volume. Stripping two
+   path components flattened bucket contents into the volume root; a healthy
+   MinIO process alone did not detect the incorrect layout.
+   Verify an actual object read after restoring, not just the health endpoint.
+4. Start PostgreSQL, preserve its freshly initialized database under a separate
+   name, then restore the custom-format dump with `pg_restore --exit-on-error
+   --create -U postgres -d postgres`. Do not overwrite an existing live database.
+5. Start Vault from its restored bind mounts and verify `initialized=true` and
+   `sealed=false`. Run `lenie-migrate` successfully before starting the backend
+   and workers. Check document/contact counts and storage access.
+6. Restore the host-health collector script as well as its cron entry. An
+   existing cron entry pointing to a missing script leaves workers deferred.
+7. Verify Obsidian sync configuration and volume contents before any reimport.
+   Follow the [batch backfill procedure](../deployment/nas/obsidian-batch-backfill.md);
+   do not start a full one-shot `obsidian_reimport` as a migration step.
+
+Recovery validation on 2026-09-19: the PostgreSQL dump restored 10,527 documents,
+600 contacts and 9,191 embeddings. MinIO's corrected archive layout exposed
+1,441 objects (233,992,698 bytes), with three sample object reads checked via
+the backend's Vault-loaded configuration. Obsidian reached `Fully synced`
+and the restored vault contained 1,561 Markdown files. The NER image was absent
+from both machines, so it was rebuilt locally and published; `/healthz` returned
+`status: ok` on the NAS.
+
+Final service check: all 13 persistent compose services were running; PostgreSQL,
+MinIO, Vault and NER reported healthy. MinIO init exited with code 0 and the
+Alembic migration run succeeded. All 12 distinct image copies (including the
+registry/UI bootstrap mirrors) were verified between Docker Desktop and the
+NAS registry and retained in Container Station Images.
+
+The `scheduled_tasks` row `obsidian_reimport` is now **disabled**; its former
+03:30 Europe/Warsaw time is retained. This prevents the restored full-vault
+schedule from becoming an unintended post-migration backfill. The coordinator
+was started only after initial Obsidian file synchronization completed; its
+watcher still supports individual-note jobs. Do not re-enable a full migration
+scan in place of the batch procedure.
+
+The original migration backup was retained. The initial empty PostgreSQL
+database was preserved as `lenie-ai-empty-before-restore-20260919`; the
+incorrectly flattened MinIO copy was preserved separately at
+`/share/Container/lenie-compose/minio-before-layout-fix-20260919`. That latter
+directory is diagnostic material, **not a valid restore source**.
+
 A private Docker registry (`registry:2`) runs on the NAS to store built images. This replaces the previous workflow of exporting images to `.tar.gz`, transferring via `scp`, and loading with `docker load`.
 
 ### One-Time Setup
@@ -105,7 +218,7 @@ A private Docker registry (`registry:2`) runs on the NAS to store built images. 
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 
 $DOCKER run -d --name lenie-registry \
   --restart unless-stopped \
@@ -142,7 +255,7 @@ Apply & Restart Docker Desktop.
 
 **NAS (Container Station):**
 
-Edit `/share/CACHEDEV4_DATA/.qpkg/container-station/etc/docker.json`, add:
+Edit `/share/CACHEDEV2_DATA/.qpkg/container-station/etc/docker.json`, add:
 
 ```json
 {
@@ -166,7 +279,7 @@ curl http://192.168.200.7:5005/v2/_catalog
 
 # From NAS — pull it back
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 $DOCKER pull 192.168.200.7:5005/hello-world
 ```
 
@@ -176,7 +289,7 @@ Over time, the registry accumulates old image layers. To reclaim disk space:
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 
 # Run garbage collection (removes unreferenced blobs)
 $DOCKER exec lenie-registry bin/registry garbage-collect /etc/docker/registry/config.yml
@@ -211,7 +324,7 @@ $DOCKER exec lenie-registry du -sh /var/lib/registry
 
 `infra/docker/nas-deploy.sh` is the older bash equivalent (same steps, same flags in `--flag` form) — kept for Mac/Linux use, not required on Windows anymore.
 
-> **Note:** `minio` is not included in the default `all` target — it must be deployed explicitly. MinIO uses the official Docker Hub image, so the build/push step is skipped automatically.
+> **Note:** `minio` is not included in the default `all` target — it must be deployed explicitly. MinIO uses the pinned NAS registry mirror described above; publish that mirror before deployment. The deploy script does not build or publish MinIO itself.
 
 The script performs these steps for each service:
 
@@ -237,7 +350,7 @@ scp infra/docker/compose.nas.yaml admin@192.168.200.7:/share/ContainerNew/lenie-
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 
 # Status
 $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
@@ -270,7 +383,7 @@ If migrating from the previous tar.gz/scp deployment:
 5. Create external volumes (if they don't exist):
    ```bash
    ssh admin@192.168.200.7
-   DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+   DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
    $DOCKER volume create lenie-ai-db-data
    $DOCKER volume create lenie-ai-data
    $DOCKER volume create lenie-minio-data
@@ -317,7 +430,7 @@ docker push 192.168.200.7:5005/lenie-ai-frontend:latest
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml pull
 $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d
 ```
@@ -385,8 +498,8 @@ it. The durable NAS value is `/app/data/cache`:
 
 ```powershell
 .\backend\.venv\Scripts\python.exe scripts\env_to_vault.py vault set --env dev CACHE_DIR=/app/data/cache
-ssh admin@192.168.200.7 "/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker exec -u 0 lenie-ai-server sh -c 'mkdir -p /app/data/cache/youtube_to_text && chown -R 1000:1000 /app/data/cache'"
-ssh admin@192.168.200.7 "/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker restart lenie-ai-server"
+ssh admin@192.168.200.7 "/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker exec -u 0 lenie-ai-server sh -c 'mkdir -p /app/data/cache/youtube_to_text && chown -R 1000:1000 /app/data/cache'"
+ssh admin@192.168.200.7 "/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker restart lenie-ai-server"
 ```
 
 Use the same directory for the other application-side pipelines that use
@@ -456,7 +569,7 @@ If auto-unseal is not yet configured (or AWS KMS is unreachable), unseal manuall
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 $DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
   vault operator unseal <UNSEAL_KEY>
 ```
@@ -509,7 +622,7 @@ error-record conversion) or `-RedirectStandardOutput`, never `2>&1`.
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 
 # Via compose
 $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
@@ -567,14 +680,19 @@ manually per "Manual Deploy (Step by Step)" above.
 ### Disk space on NAS
 
 ```bash
-ssh admin@192.168.200.7 'df -h /share/CACHEDEV4_DATA'
+ssh admin@192.168.200.7 'df -h /share/CACHEDEV2_DATA'
 ```
 
-Clean unused Docker images on NAS:
+Inspect Docker disk usage on NAS:
 
 ```bash
-$DOCKER system prune -a
+$DOCKER system df
 ```
+
+Do not run blanket `system prune -a` or `image prune -a`: images without a
+running container can still be the recovery copies for registry, migrations
+or MinIO init. Remove only individually reviewed obsolete image references,
+after verifying that every required recovery image exists elsewhere.
 
 ### Docker Desktop / NAS Docker version drift breaks save/scp/load
 
@@ -603,7 +721,7 @@ Worked for both a ~1.1GB backend image and the Alpine-based frontend image
 
 **Takeaway for next time:** if `nas-deploy.ps1`/`.sh` suddenly fails on image
 publish, check `docker version` locally vs. `ssh admin@192.168.200.7
-"/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker version"` for a
+"/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker version"` for a
 version gap before deep-diagnosing tar/checksum errors — and check that
 insecure-registries is still configured (Docker Desktop updates can reset it).
 The deploy scripts now default to direct push with an automatic fallback to
@@ -629,7 +747,7 @@ If the problem persists, restart Docker Desktop (Settings → Resources → Rest
 ```bash
 docker save 192.168.200.7:5005/lenie-ai-frontend:latest | \
   ssh admin@192.168.200.7 \
-  "/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker load"
+  "/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker load"
 ```
 
 ### Registry troubleshooting

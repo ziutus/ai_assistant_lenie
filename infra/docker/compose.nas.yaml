@@ -2,7 +2,7 @@
 # Images pulled from private registry at 192.168.200.7:5005
 #
 # Usage on NAS:
-#   DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+#   DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 #   $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d
 #   $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
 
@@ -201,7 +201,8 @@ services:
     # Newer community MinIO releases dropped the bundled web console and changed
     # the toolset, which can silently break the "mc ready local" healthcheck below.
     # Re-pin deliberately (and re-verify healthcheck + console) — do not float to :latest.
-    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # NAS registry mirror of the same linux/amd64 image from Quay.
+    image: 192.168.200.7:5005/minio/minio@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
     container_name: lenie-minio
     restart: unless-stopped
     mem_limit: 768m
@@ -230,7 +231,7 @@ services:
     # so there is no exact-date match; verified this tag pulls and its `mc ready`
     # subcommand exists). Unlike lenie-minio, this container had never successfully
     # run on this NAS before pinning — first deploy should be watched.
-    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    image: 192.168.200.7:5005/minio/mc@sha256:bdfae21c72b19fae5a005c56dddba25a873d75fac3dda60f55aea7e417382cbe
     restart: "no"
     mem_limit: 128m
     mem_reservation: 32m
@@ -291,7 +292,7 @@ services:
       - lenie-registry
 
   lenie-vault:
-    image: hashicorp/vault:1.21.3
+    image: 192.168.200.7:5005/hashicorp/vault:1.21.3
     container_name: lenie-vault
     restart: unless-stopped
     mem_limit: 512m
@@ -344,7 +345,8 @@ services:
     # failed pull attempt against "v0.0.14" during deploy. Re-verify at
     # https://github.com/Belphemur/obsidian-headless-sync-docker/tags before
     # bumping. Public image on GHCR — anonymous pull works, no docker login needed.
-    image: ghcr.io/belphemur/obsidian-headless-sync-docker:0.0.14
+    # NAS registry mirror; also kept in the NAS Docker image store.
+    image: 192.168.200.7:5005/obsidian-headless-sync:0.0.14
     container_name: obsidian-headless-sync
     restart: unless-stopped
     mem_limit: 512m
