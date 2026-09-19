@@ -27,9 +27,9 @@ Two Google-Contacts-specific data-quality quirks are cleaned up on import:
    this is the general-purpose group mechanism, not something built only
    for one particular group.
 
-A contact matched by name only has empty fields filled in (email, phone,
-address, company, position, birthday) and groups added — existing data is
-never overwritten, mirroring court_case_contacts_import.py's approach.
+A matched contact has empty address/company/position/birthday fields filled
+and groups added. All phone numbers and emails are preserved, with missing
+values appended to the ordered lists without replacing the existing primary.
 
 Usage:
     cd backend
@@ -58,23 +58,23 @@ DEFAULT_SUFFIX_GROUP = "Tuwima Gardens Mieszkańcy"
 NOISE_LABELS = {"mycontacts", "starred"}
 
 
-def _first_nonempty(row: dict, *keys: str) -> str | None:
-    for key in keys:
-        value = (row.get(key) or "").strip()
-        if value:
-            return value
-    return None
+def _parse_channels(row: dict, prefix: str, field: str) -> list[dict]:
+    from library.contact_channels import channel_key, normalize_channels
 
-
-def _parse_phone(row: dict) -> str | None:
-    """contacts.phone_number is VARCHAR(30); a handful of rows have Google
-    exporting the same (or a second) number joined with ' ::: ' into one
-    field — take the first one rather than let a long combined value blow
-    the column limit."""
-    value = _first_nonempty(row, "Phone 1 - Value", "Phone 2 - Value")
-    if value and ":::" in value:
-        value = value.split(":::")[0].strip()
-    return value[:30] if value else None
+    result, seen = [], set()
+    columns = sorted(
+        (key for key in row if re.fullmatch(rf"{re.escape(prefix)} \d+ - Value", key)),
+        key=lambda key: int(key.split(" ")[1]),
+    )
+    for key in columns:
+        label = (row.get(key.replace(" - Value", " - Type")) or "").strip() or None
+        for value in (row.get(key) or "").split(":::"):
+            value = value.strip()
+            normalized_key = channel_key(value, field)
+            if value and normalized_key not in seen:
+                seen.add(normalized_key)
+                result.append({"value": value, "label": label})
+    return normalize_channels(result, field)
 
 
 def _parse_birthday(value: str | None) -> datetime.date | None:
@@ -140,6 +140,7 @@ def main():
 
     from imports.whatsapp_neighbor_profiles import normalize_name
     from library.contact_change_log import record_contact_change
+    from library.contact_channels import channel_key, contact_channels
     from library.db.engine import get_session
     from library.db.models import Contact, ContactCategory, ContactGroup
 
@@ -202,8 +203,10 @@ def main():
             if has_suffix and suffix_group_name not in group_names:
                 group_names.append(suffix_group_name)
 
-            email = _first_nonempty(row, "E-mail 1 - Value", "E-mail 2 - Value", "E-mail 3 - Value")
-            phone = _parse_phone(row)
+            phone_numbers = _parse_channels(row, "Phone", "phone_numbers")
+            email_addresses = _parse_channels(row, "E-mail", "email_addresses")
+            email = email_addresses[0]["value"] if email_addresses else None
+            phone = phone_numbers[0]["value"] if phone_numbers else None
             company = (row.get("Organization Name") or "").strip() or None
             position = (row.get("Organization Title") or "").strip() or None
             address = (row.get("Address 1 - Formatted") or "").strip() or None
@@ -233,12 +236,13 @@ def main():
                              first_name, last_name, f" (+grupy: {', '.join(new_groups)})" if new_groups else "")
                 if args.apply:
                     changed_fields = []
-                    if email and not existing.email:
-                        existing.email = email
-                        changed_fields.append("email")
-                    if phone and not existing.phone_number:
-                        existing.phone_number = phone
-                        changed_fields.append("phone_number")
+                    for field, incoming in (("phone_numbers", phone_numbers), ("email_addresses", email_addresses)):
+                        current = contact_channels(existing, field)
+                        keys = {channel_key(entry["value"], field) for entry in current}
+                        additions = [entry for entry in incoming if channel_key(entry["value"], field) not in keys]
+                        if additions:
+                            setattr(existing, field, current + additions)
+                            changed_fields.append(field)
                     if company and not existing.company:
                         existing.company = company
                         changed_fields.append("company")
@@ -273,6 +277,8 @@ def main():
                         last_name=last_name,
                         phone_number=phone,
                         email=email,
+                        phone_numbers=phone_numbers,
+                        email_addresses=email_addresses,
                         company=company,
                         position=position,
                         address=address,

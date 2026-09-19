@@ -10,11 +10,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import false, func, or_, select
+from sqlalchemy import Text, cast, false, func, or_, select
 from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
 from library.contact_birthdays import upcoming_birthday_entry
+from library.contact_channels import channel_patch, contact_channels
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
 from library.contact_names import contact_display_name, validate_contact_name
 from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
@@ -260,6 +261,8 @@ def _contact_dict(row: Contact) -> dict:
         "display_name": contact_display_name(row),
         "phone_number": row.phone_number,
         "email": row.email,
+        "phone_numbers": contact_channels(row, "phone_numbers"),
+        "email_addresses": contact_channels(row, "email_addresses"),
         "company": row.company,
         "position": row.position,
         "address": row.address,
@@ -786,6 +789,9 @@ def contacts_list():
             func.unaccent(Contact.last_name).ilike(phrase),
             func.unaccent(Contact.display_label).ilike(phrase),
             func.unaccent(func.coalesce(Contact.phone_number, "")).ilike(phrase),
+            func.unaccent(func.coalesce(Contact.email, "")).ilike(phrase),
+            func.unaccent(cast(Contact.phone_numbers, Text)).ilike(phrase),
+            func.unaccent(cast(Contact.email_addresses, Text)).ilike(phrase),
         ))
 
     total = session.execute(
@@ -1211,6 +1217,11 @@ def contacts_add():
     if birthday_error:
         return {"status": "error", "message": birthday_error}, 400
 
+    try:
+        channels = channel_patch(data)
+    except ValueError as error:
+        return {"status": "error", "message": str(error)}, 400
+
     gender_error = _validate_gender(data)
     if gender_error:
         return {"status": "error", "message": gender_error}, 400
@@ -1240,6 +1251,10 @@ def contacts_add():
         if field in data:
             setattr(row, field, (data.get(field) or "").strip() or None)
             changed_fields.append(field)
+    for field, value in channels.items():
+        if field in data and getattr(row, field, None) != value and field not in changed_fields:
+            changed_fields.append(field)
+        setattr(row, field, value)
     auth = getattr(g, "auth", None)
     if "private_notes" in data and auth and auth.kind == "service":
         row.private_notes = (data.get("private_notes") or "").strip() or None
@@ -1298,6 +1313,11 @@ def contacts_update(contact_id: int):
     if birthday_error:
         return {"status": "error", "message": birthday_error}, 400
 
+    try:
+        channels = channel_patch(data, row)
+    except ValueError as error:
+        return {"status": "error", "message": str(error)}, 400
+
     gender_error = _validate_gender(data)
     if gender_error:
         return {"status": "error", "message": gender_error}, 400
@@ -1321,6 +1341,10 @@ def contacts_update(contact_id: int):
             if getattr(row, field) != new_value:
                 changed_fields.append(field)
             setattr(row, field, new_value)
+    for field, value in channels.items():
+        if field in data and getattr(row, field, None) != value and field not in changed_fields:
+            changed_fields.append(field)
+        setattr(row, field, value)
     auth = getattr(g, "auth", None)
     if "private_notes" in data and auth and auth.kind == "service":
         new_private_notes = (data.get("private_notes") or "").strip() or None

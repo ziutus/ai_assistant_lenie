@@ -27,6 +27,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     select,
     text as sa_text,
@@ -35,6 +36,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship, validates
 from sqlalchemy.types import UserDefinedType
 
+from library.contact_channels import sync_contact_channels
 from library.publisher_domain import normalize_publisher_domain, registrable_domain
 from library.url_normalization import canonicalize_url
 
@@ -3123,6 +3125,8 @@ class Contact(Base):
     display_label: Mapped[str | None] = mapped_column(String(200))
     phone_number: Mapped[str | None] = mapped_column(String(30))
     email: Mapped[str | None] = mapped_column(String(255))
+    phone_numbers: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    email_addresses: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     company: Mapped[str | None] = mapped_column(String(200))
     position: Mapped[str | None] = mapped_column(String(200))
     address: Mapped[str | None] = mapped_column(Text)
@@ -3163,6 +3167,10 @@ class Contact(Base):
 
     def __repr__(self) -> str:
         return f"Contact(id={self.id!r}, last_name={self.last_name!r})"
+
+
+event.listen(Contact, "before_insert", sync_contact_channels)
+event.listen(Contact, "before_update", sync_contact_channels)
 
 
 class ContactLink(Base):
