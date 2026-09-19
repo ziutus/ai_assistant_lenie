@@ -28,7 +28,7 @@ set -uo pipefail
 # --- Konfiguracja (spojna z nas-deploy.sh) ---
 NAS_HOST="${NAS_HOST:-192.168.200.7}"
 NAS_USER="${NAS_USER:-admin}"
-NAS_DOCKER="/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker"
+NAS_DOCKER="/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker"
 NAS_COMPOSE_FILE="/share/ContainerNew/lenie-compose/compose.nas.yaml"
 HTTP_TIMEOUT=10
 SLOW_HTTP_S=2.0          # powyzej tego czasu odpowiedzi HTTP -> WARN
