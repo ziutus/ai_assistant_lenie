@@ -46,6 +46,7 @@ dependencies = [
     "pymupdf>=1.28.0",
     "watchdog>=4.0",
     "pillow>=11.0",
+    "phonenumberslite>=9,<10",
 ]
 
 [project.optional-dependencies]

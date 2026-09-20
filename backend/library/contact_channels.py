@@ -3,13 +3,15 @@
 Replace lists when editing them; in-place JSON mutations are not tracked by ORM.
 """
 
+from library.contact_phones import normalize_phone, phone_comparison_key
+
 CHANNEL_FIELDS = {"phone_numbers": ("phone_number", 30), "email_addresses": ("email", 255)}
 
 
 def channel_key(value: str, field: str) -> str:
     if field == "email_addresses":
         return value.casefold()
-    return "".join(c for c in value if c not in " ()-.")
+    return phone_comparison_key(value)
 
 
 def normalize_channels(value, field: str) -> list[dict]:
@@ -27,6 +29,8 @@ def normalize_channels(value, field: str) -> list[dict]:
         if label is not None and (not isinstance(label, str) or len(label.strip()) > 100):
             raise ValueError(f"{field} label must be text of at most 100 characters")
         text = text.strip()
+        if field == "phone_numbers":
+            text = normalize_phone(text)
         key = channel_key(text, field)
         if not key:
             raise ValueError(f"{field} value must contain more than formatting characters")
@@ -64,6 +68,8 @@ def channel_patch(data: dict, row=None) -> dict:
             if scalar is not None and (not isinstance(scalar, str) or len(scalar.strip()) > limit):
                 raise ValueError(f"{legacy} must be text of at most {limit} characters")
             scalar = (scalar or "").strip() or None
+            if scalar and field == "phone_numbers":
+                scalar = normalize_phone(scalar)
         if field in data:
             entries = normalize_channels(data[field], field)
             primary = entries[0]["value"] if entries else None
