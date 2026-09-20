@@ -3306,6 +3306,7 @@ class Address(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str | None] = mapped_column(String(100))
+    notes: Mapped[str | None] = mapped_column(Text)
     street: Mapped[str | None] = mapped_column(String(200))
     building_number: Mapped[str | None] = mapped_column(String(20))
     apartment_number: Mapped[str | None] = mapped_column(String(20))

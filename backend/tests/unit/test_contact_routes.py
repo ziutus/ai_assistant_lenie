@@ -45,7 +45,7 @@ class TestContactAddresses:
         assert response.json["addresses"] == [{
             "id": 30, "role": "zamieszkania", "is_primary": True,
             "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "apartment_number": None,
-                        "postal_code": None, "city": "Warsaw", "country": None,
+                        "postal_code": None, "city": "Warsaw", "country": None, "notes": None,
                         "formatted_address": "Example Street 1, Warsaw",
                         "latitude": None, "longitude": None, "geocoded": False},
         }]
@@ -89,9 +89,36 @@ class TestContactAddresses:
         assert link.address is address
         assert link.is_primary is False
 
+    @pytest.mark.parametrize("initial", [None, "", "  Domofon: 5869  ", "x" * 1000])
+    def test_notes_create_update_and_clear_preserve_coordinates(self, address_api, initial):
+        client, session, _, _, _ = address_api
+        response = client.post("/contacts/7/addresses", json={
+            "city": "Warsaw", "building_number": "1", "notes": initial,
+        })
+        assert response.status_code == 200
+        address = session.add.call_args_list[0].args[0].address
+        assert address.notes == response.json["address"]["address"]["notes"] == ((initial or "").strip() or None)
+        session.get.side_effect = lambda *_: address
+        address.latitude, address.longitude, address.location, address.geocode_id = 52, 21, "point", 42
+        for notes in ("  Piętro 2\nDzwonić trzy razy  ", "x" * 1000, "   ", None):
+            response = client.patch("/address/20", json={"notes": notes})
+            assert response.status_code == 200
+            assert address.notes == response.json["address"]["notes"] == ((notes or "").strip() or None)
+            assert response.json["address"]["formatted_address"] == "1, Warsaw"
+            assert (address.latitude, address.longitude, address.location, address.geocode_id) == (52, 21, "point", 42)
+
+    @pytest.mark.parametrize("notes", [42, [], {}, "x" * 1001])
+    def test_invalid_notes_rejected_on_create_and_update(self, address_api, notes):
+        client, session, *_ = address_api
+        assert client.post("/contacts/7/addresses", json={
+            "city": "Warsaw", "building_number": "1", "notes": notes,
+        }).status_code == 400
+        assert client.patch("/address/20", json={"notes": notes}).status_code == 400
+        session.commit.assert_not_called()
+
     @pytest.mark.parametrize("payload", [
         {}, {"city": "   "}, {"city": None}, {"city": 42},
-        {"address_id": "20"}, {"address_id": 20, "city": "unexpected"},
+        {"address_id": 20, "notes": "unexpected"}, {"address_id": "20"}, {"address_id": 20, "city": "unexpected"},
         {"city": "Street", "role": "x" * 51},
         {"city": "Street", "is_primary": "false"},
     ])
@@ -166,7 +193,7 @@ class TestContactAddresses:
         assert response.json == {
             "status": "success", "resolved": True,
             "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "apartment_number": None,
-                        "postal_code": None, "city": "Warsaw", "country": None,
+                        "postal_code": None, "city": "Warsaw", "country": None, "notes": None,
                         "formatted_address": "Example Street 1, Warsaw",
                         "latitude": 52.2297, "longitude": 21.0122, "geocoded": True},
         }
@@ -269,7 +296,7 @@ class TestContactAddresses:
 
     @pytest.mark.parametrize("field, limit", [
         ("street", 200), ("building_number", 20), ("apartment_number", 20),
-        ("postal_code", 10), ("city", 200), ("country", 100),
+        ("postal_code", 10), ("city", 200), ("country", 100), ("notes", 1000),
     ])
     def test_address_fields_validate_type_and_length(self, address_api, field, limit):
         client, session, *_ = address_api
@@ -304,14 +331,14 @@ class TestContactAddresses:
         from library.address_parsing import DEFAULT_ADDRESS_PARSE_MODEL
         client, session, *_ = address_api
         fields = dict(street=None, building_number="32", apartment_number=None,
-                      postal_code="08-207", city="Wyczółki", country=None)
+                      postal_code="08-207", city="Wyczółki", country=None, notes="Domofon: 5869")
         ask = MagicMock(return_value=SimpleNamespace(response_text=json.dumps(fields)))
         monkeypatch.setattr("library.address_parsing.ai_ask", ask)
         monkeypatch.setattr("library.address_parsing.load_config", lambda: {})
-        response = client.post("/addresses/parse", json={"text": "Wyczółki 32, 08-207 Wyczółki"})
+        response = client.post("/addresses/parse", json={"text": "Wyczółki 32, 08-207 Wyczółki. Domofon: 5869"})
         assert response.status_code == 200
         assert response.json == {"status": "success", **fields}
-        assert ask.call_args.args == ("Wyczółki 32, 08-207 Wyczółki",)
+        assert ask.call_args.args == ("Wyczółki 32, 08-207 Wyczółki. Domofon: 5869",)
         kwargs = ask.call_args.kwargs
         assert kwargs["model"] == DEFAULT_ADDRESS_PARSE_MODEL
         assert kwargs["temperature"] == 0.0 and kwargs["operation"] == "address_parse"
@@ -324,7 +351,7 @@ class TestContactAddresses:
 
     @pytest.mark.parametrize("response_text", [
         "not JSON", '{"city": "Warszawa"}', "null", "[]", None,
-        '{"city": 7, "street": null, "building_number": null, "apartment_number": null, "postal_code": null, "country": null}',
+        '{"city": 7, "street": null, "building_number": null, "apartment_number": null, "postal_code": null, "country": null, "notes": null}',
     ])
     def test_parse_malformed_response_is_empty_success(self, address_api, monkeypatch, response_text):
         from library.address_formatting import ADDRESS_FIELD_LIMITS
@@ -333,7 +360,7 @@ class TestContactAddresses:
         monkeypatch.setattr("library.address_parsing.load_config", lambda: {})
         response = client.post("/addresses/parse", json={"text": "test"})
         assert response.status_code == 200
-        assert response.json == {"status": "success", **dict.fromkeys(ADDRESS_FIELD_LIMITS)}
+        assert response.json == {"status": "success", **dict.fromkeys((*ADDRESS_FIELD_LIMITS, "notes"))}
 
     @pytest.mark.parametrize("failure", [RuntimeError("provider unavailable"), SystemExit(1)])
     @pytest.mark.parametrize("target", ["ai_ask", "load_config"])
@@ -344,7 +371,7 @@ class TestContactAddresses:
         monkeypatch.setattr(f"library.address_parsing.{target}", MagicMock(side_effect=failure))
         response = client.post("/addresses/parse", json={"text": "test"})
         assert response.status_code == 200
-        assert response.json == {"status": "success", **dict.fromkeys(ADDRESS_FIELD_LIMITS)}
+        assert response.json == {"status": "success", **dict.fromkeys((*ADDRESS_FIELD_LIMITS, "notes"))}
 
     @pytest.mark.parametrize("payload", [None, [], {}, {"text": None}, {"text": 42}, {"text": " "}])
     def test_empty_parse_input_does_not_call_llm(self, address_api, monkeypatch, payload):

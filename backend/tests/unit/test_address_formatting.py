@@ -21,7 +21,32 @@ from library.address_formatting import (
     ({"city": "tekst\nbez   struktury"}, "tekst bez struktury"),
 ])
 def test_format_address(fields, expected):
-    assert format_address(SimpleNamespace(**fields)) == expected
+    assert format_address(SimpleNamespace(**fields, notes="Domofon: 5869; wejście od podwórza")) == expected
+
+
+@pytest.mark.parametrize("notes", [" Domofon: 5869 ", "x" * 1000, None, "   "])
+def test_bielik_notes_pass_through(monkeypatch, notes):
+    import json
+    from library.address_parsing import parse_address_text
+    fields = {**dict.fromkeys(ADDRESS_FIELD_LIMITS), "city": "Łódź", "notes": notes}
+    monkeypatch.setattr("library.address_parsing.load_config", lambda: {})
+    monkeypatch.setattr("library.address_parsing.ai_ask", MagicMock(
+        return_value=SimpleNamespace(response_text=json.dumps(fields))))
+    assert parse_address_text("Łódź, Domofon: 5869") == {
+        **fields, "notes": (notes or "").strip() or None,
+    }
+
+
+@pytest.mark.parametrize("field, value", [("notes", "x" * 1001), ("notes", 42), ("street", "x" * 201)])
+def test_bielik_invalid_field_discards_entire_result(monkeypatch, field, value):
+    import json
+    from library.address_parsing import parse_address_text
+    empty = dict.fromkeys((*ADDRESS_FIELD_LIMITS, "notes"))
+    fields = {**empty, "city": "Łódź", field: value}
+    monkeypatch.setattr("library.address_parsing.load_config", lambda: {})
+    monkeypatch.setattr("library.address_parsing.ai_ask", MagicMock(
+        return_value=SimpleNamespace(response_text=json.dumps(fields))))
+    assert parse_address_text("test") == empty
 
 
 @pytest.mark.parametrize("text, expected", [

@@ -17,7 +17,7 @@ from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
 from library.address_formatting import ADDRESS_FIELD_LIMITS, format_address
-from library.address_parsing import parse_address_text
+from library.address_parsing import ADDRESS_NOTES_MAX_LENGTH, parse_address_text
 from library.address_geocoding import geocode_address
 from library.contact_birthdays import upcoming_birthday_entry
 from library.contact_channels import channel_patch, contact_channels
@@ -319,6 +319,7 @@ def _address_dict(row: Address) -> dict:
         "id": row.id, "label": row.label,
         **{field: getattr(row, field) for field in ADDRESS_FIELD_LIMITS},
         "formatted_address": format_address(row),
+        "notes": row.notes,
         "latitude": float(row.latitude) if row.latitude is not None else None,
         "longitude": float(row.longitude) if row.longitude is not None else None,
         "geocoded": row.latitude is not None,
@@ -1757,7 +1758,7 @@ def contact_addresses(contact_id: int):
     if "address_id" in data:
         if type(data["address_id"]) is not int or data["address_id"] <= 0:
             return {"status": "error", "message": "address_id must be a positive integer"}, 400
-        if any(field in data for field in (*ADDRESS_FIELD_LIMITS, "label")):
+        if any(field in data for field in (*ADDRESS_FIELD_LIMITS, "label", "notes")):
             return {"status": "error", "message": "Choose address_id or a new address"}, 400
         address = session.get(Address, data["address_id"])
         if address is None:
@@ -1769,7 +1770,8 @@ def contact_addresses(contact_id: int):
         fields = {field: (data.get(field) or "").strip() or None for field in ADDRESS_FIELD_LIMITS}
         if "country" not in data:
             fields["country"] = "Polska"
-        address = Address(**fields, label=(data.get("label") or "").strip() or None)
+        address = Address(**fields, label=(data.get("label") or "").strip() or None,
+                          notes=(data.get("notes") or "").strip() or None)
     row = ContactAddress(contact_id=contact_id, address=address,
                          role=(data.get("role") or "").strip() or None,
                          is_primary=data.get("is_primary", False))
@@ -1787,7 +1789,7 @@ def contact_addresses(contact_id: int):
 def _validate_address_payload(data, *, creating=False):
     if not isinstance(data, dict):
         return "JSON object required"
-    for field, limit in (("label", 100), ("role", 50), *ADDRESS_FIELD_LIMITS.items()):
+    for field, limit in (("label", 100), ("role", 50), ("notes", ADDRESS_NOTES_MAX_LENGTH), *ADDRESS_FIELD_LIMITS.items()):
         if field in data:
             value = data[field]
             if value is not None and not isinstance(value, str):
@@ -1821,7 +1823,7 @@ def addresses_update(address_id: int):
         field in data and (data[field] or "").strip() != (getattr(row, field) or "")
         for field in ADDRESS_FIELD_LIMITS
     )
-    for field in ("label", *ADDRESS_FIELD_LIMITS):
+    for field in ("label", "notes", *ADDRESS_FIELD_LIMITS):
         if field in data:
             setattr(row, field, (data[field] or "").strip() or None)
     if changed_location:

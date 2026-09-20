@@ -14,7 +14,7 @@ from library.db.models import Address, GeocodeCache
 @pytest.mark.parametrize("resolved", [False, True])
 def test_geocode_address_cache_and_coordinates(monkeypatch, cached, resolved):
     session = MagicMock()
-    address = Address(street="Example Street", building_number="1", city="Warsaw")
+    address = Address(street="Example Street", building_number="1", city="Warsaw", notes="Domofon: 5869")
     query = "Example Street 1, Warsaw"
     # A building hit must be accepted even though NER's OSM-class filter rejects it.
     hit = {
