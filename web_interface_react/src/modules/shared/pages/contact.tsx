@@ -993,10 +993,10 @@ const Contact = () => {
 
       {mode === "view" && contact ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
           <div style={{ fontSize: "1.2em", fontWeight: 600 }}>
             {otherName(contact)}
           </div>
-          {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
           {contact.category_name !== "Firma" && contact.gender && <div><strong>Płeć:</strong> {GENDER_LABELS[contact.gender]}</div>}
           {(contact.phone_numbers ?? (contact.phone_number ? [{ value: contact.phone_number, label: null }] : [])).map((entry, index) => (
             <div key={`phone-${index}`}><strong>Telefon{index === 0 ? " główny" : ""}:</strong> {entry.value}{entry.label && ` (${entry.label})`}</div>
@@ -1009,9 +1009,11 @@ const Contact = () => {
           {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
           {contact.category_name !== "Firma" && contact.current_city && <div><strong>Mieszka w:</strong> {contact.current_city}</div>}
           {contact.category_name !== "Firma" && contact.hometown && <div><strong>Pochodzi z:</strong> {contact.hometown}</div>}
-          {contact.category_name !== "Firma" && contact.birthday && <div><strong>Urodziny:</strong> {contact.birthday}</div>}
-          {contact.category_name !== "Firma" && !contact.birthday && contact.birthday_month && contact.birthday_day && (
-            <div><strong>Urodziny:</strong> {contact.birthday_day} {MONTHS_GENITIVE[contact.birthday_month - 1]} <span style={{ color: "#667" }}>(bez roku)</span></div>
+          {contact.birthday && (
+            <div><strong>{contact.category_name === "Firma" ? "Data założenia" : "Urodziny"}:</strong> {contact.birthday}</div>
+          )}
+          {!contact.birthday && contact.birthday_month && contact.birthday_day && (
+            <div><strong>{contact.category_name === "Firma" ? "Data założenia" : "Urodziny"}:</strong> {contact.birthday_day} {MONTHS_GENITIVE[contact.birthday_month - 1]} <span style={{ color: "#667" }}>(bez roku)</span></div>
           )}
           {contact.category_name !== "Firma" && contact.nationality.length > 0 && (
             <div><strong>Narodowość:</strong> {contact.nationality.join(", ")}</div>
@@ -1039,6 +1041,15 @@ const Contact = () => {
         </div>
       ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <label>
+          Kategoria
+          <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} style={inputStyle}>
+            <option value="">(domyślna)</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </label>
         {!isCompanyCategory && <label>
           Imię
           <input type="text" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} style={inputStyle} />
@@ -1084,12 +1095,14 @@ const Contact = () => {
           Pochodzi z (rodzinne miasto) — motyw do small talku
           <input type="text" value={form.hometown} onChange={(e) => setForm({ ...form, hometown: e.target.value })} style={inputStyle} />
         </label>}
-        {!isCompanyCategory && <label>
-          Urodziny (jeśli znasz pełną datę, z rokiem)
+        <label>
+          {isCompanyCategory ? "Data założenia (jeśli znana z rokiem)" : "Urodziny (jeśli znasz pełną datę, z rokiem)"}
           <input type="date" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} style={inputStyle} />
-        </label>}
-        {!isCompanyCategory && <label>
-          Urodziny bez roku (dzień i miesiąc) — np. gdy Facebook ukrywa rok
+        </label>
+        <label>
+          {isCompanyCategory
+            ? "Data założenia bez roku (dzień i miesiąc) — np. gdy rok nie jest pewny"
+            : "Urodziny bez roku (dzień i miesiąc) — np. gdy Facebook ukrywa rok"}
           <div style={{ display: "flex", gap: 8 }}>
             <select
               value={form.birthday_day}
@@ -1112,15 +1125,6 @@ const Contact = () => {
               ))}
             </select>
           </div>
-        </label>}
-        <label>
-          Kategoria
-          <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} style={inputStyle}>
-            <option value="">(domyślna)</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
         </label>
         {!isCompanyCategory && <div>
           <div style={{ marginBottom: 4 }}>Narodowość</div>

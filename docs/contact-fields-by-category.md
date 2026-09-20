@@ -8,7 +8,7 @@ Widoczność jest sterowana kategorią kontaktu — w kodzie frontendu to `conta
 
 | Pole | Po co istnieje | Osoba prywatna | Firma | Uzasadnienie |
 |---|---|---|---|---|
-| `category_id` / `category_name` | Typ kontaktu — steruje wszystkimi regułami widoczności poniżej | widoczne, edytowalne | widoczne, edytowalne | musi być zawsze dostępne — to od niego zależy reszta formularza |
+| `category_id` / `category_name` | Typ kontaktu — steruje wszystkimi regułami widoczności poniżej | widoczne, edytowalne, **na samej górze formularza** | widoczne, edytowalne, **na samej górze formularza** | musi być zawsze dostępne i widoczne jako pierwsze — to od niego zależy reszta formularza. Zmiana kategorii w dowolną stronę (Firma ↔ Osoba prywatna) jest dozwolona bez ograniczeń — to zwykły select bez blokady kierunku. Zmiana **nie czyści** wartości pól, które przez to stają się ukryte (np. imię/nazwisko ustawione przy „Osoba prywatna” pozostają w rekordzie po przełączeniu na „Firma”, tylko przestają być widoczne/edytowalne) — świadomie nieniszczące zachowanie |
 | `first_name`, `last_name` | Imię i nazwisko osoby | widoczne | **ukryte** | firma nie ma imienia/nazwiska; wcześniej można je było wpisać nawet przy kategorii „Firma” — błąd naprawiony |
 | `display_label` | Nazwa robocza/wyświetlana, gdy imię i nazwisko są nieznane lub gdy potrzeba krótszej nazwy niż pełna | widoczne | widoczne | dla firmy przydatne jako skrócona nazwa wyświetlana (np. „Serwis Kalickiego” zamiast pełnej nazwy z CEIDG) — nie jest to pole person-specific |
 | `company` | Pierwotnie: pracodawca *osoby*. Dla kategorii „Firma”: pełni rolę nazwy własnej kontaktu | widoczne | widoczne | dla „Firma” to pole niesie nazwę firmy — świadome przeciążenie semantyczne (patrz sekcja „Znane kompromisy”) |
@@ -28,7 +28,7 @@ Widoczność jest sterowana kategorią kontaktu — w kodzie frontendu to `conta
 
 | Pole | Po co istnieje | Osoba prywatna | Firma | Uzasadnienie |
 |---|---|---|---|---|
-| `birthday`, `birthday_month`/`birthday_day` | Data urodzin (pełna lub bez roku, np. z Facebooka) | widoczne | **ukryte** | koncepcja „urodzin” nie ma odpowiednika dla firmy; data założenia działalności to inny byt, niereprezentowany w tym modelu |
+| `birthday`, `birthday_month`/`birthday_day` | Data urodzin (pełna lub bez roku, np. z Facebooka); zasila widok „Nadchodzące urodziny" (`GET /contacts/upcoming_birthdays`) | widoczne jako „Urodziny” | widoczne, **przemianowane na „Data założenia”** | mechanizm jest w istocie ogólnym „przypomnieniem o rocznicy”, nie stricte urodzinami osoby — backend (`contact_birthdays.py`) jest w pełni generyczny (liczy `turning_age`/`next_occurrence` bez odwołania do kategorii, a etykieta „kończy N lat” brzmi naturalnie i dla rocznicy firmy), więc zamiast ukrywać pole, etykieta w UI (edycja i widok, `contact.tsx`) zmienia się warunkowo na „Data założenia” dla `category_name === "Firma"` — ta sama kolumna, inny opis |
 | `nationality` | Narodowość osoby | widoczne | **ukryte** | cecha osobista/etniczna; dla firmy odpowiednikiem byłby kraj rejestracji, ale to inny koncept — NIP/REGON już są w `contact_organizations` |
 | `languages` | Znajomość języków przez osobę | widoczne | **ukryte** | kompetencja osoby, nie firmy |
 | Zainteresowania / Wykształcenie (`ContactInterestsEducation`, tabele `contact_interests`/`contact_education`) | Hobby i wykształcenie osoby | widoczne | **ukryte** | jednoznacznie osobowe |
