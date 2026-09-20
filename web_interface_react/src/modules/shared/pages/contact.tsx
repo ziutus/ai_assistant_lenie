@@ -70,6 +70,7 @@ interface Address {
   notes: string | null;
   street: string | null;
   building_number: string | null;
+  block_number: string | null;
   apartment_number: string | null;
   postal_code: string | null;
   city: string;
@@ -103,6 +104,7 @@ interface AddressSearchResult extends Address {
 const addressFields = [
   { key: "street", label: "Ulica", maxLength: 200 },
   { key: "building_number", label: "Nr budynku", maxLength: 20 },
+  { key: "block_number", label: "Nr bloku", maxLength: 20 },
   { key: "apartment_number", label: "Nr lokalu", maxLength: 20 },
   { key: "postal_code", label: "Kod pocztowy", maxLength: 10 },
   { key: "city", label: "Miasto / miejscowość", maxLength: 200 },
@@ -111,7 +113,7 @@ const addressFields = [
 type ParsedAddress = { [Key in typeof addressFields[number]["key"] | "notes"]: string | null };
 const ADDRESS_NOTES_MAX_LENGTH = 1000;
 const emptyAddressForm = {
-  label: "", street: "", building_number: "", apartment_number: "", postal_code: "", city: "", country: "Polska",
+  label: "", street: "", building_number: "", block_number: "", apartment_number: "", postal_code: "", city: "", country: "Polska",
   role: "zamieszkania", is_primary: false, notes: "",
 };
 

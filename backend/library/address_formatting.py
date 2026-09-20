@@ -12,17 +12,24 @@ if TYPE_CHECKING:
     from library.db.models import Address
 
 ADDRESS_FIELD_LIMITS = {
-    "street": 200, "building_number": 20, "apartment_number": 20,
+    "street": 200, "building_number": 20, "block_number": 20, "apartment_number": 20,
     "postal_code": 10, "city": 200, "country": 100,
 }
 
 
 def format_address(address: Address) -> str:
-    """street building/apartment, postal city[, country other than Polska]."""
+    """street building[ blok block]/apartment, postal city[, non-Polska country].
+
+    The block follows the building and precedes the apartment slash:
+    "Bratysławska 15 blok 31/26, 90-001 Łódź". Without a block, the original
+    format is unchanged: "Bratysławska 15/26, 90-001 Łódź".
+    """
     def value(field):
         return " ".join((getattr(address, field, None) or "").split())
 
     line = " ".join(filter(None, (value("street"), value("building_number"))))
+    if value("block_number"):
+        line = " ".join(filter(None, (line, f"blok {value('block_number')}")))
     if value("apartment_number"):
         line += f"/{value('apartment_number')}"
     locality = " ".join(filter(None, (value("postal_code"), value("city"))))

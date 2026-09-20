@@ -44,7 +44,7 @@ class TestContactAddresses:
         assert response.status_code == 200
         assert response.json["addresses"] == [{
             "id": 30, "role": "zamieszkania", "is_primary": True,
-            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "apartment_number": None,
+            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "block_number": None, "apartment_number": None,
                         "postal_code": None, "city": "Warsaw", "country": None, "notes": None,
                         "formatted_address": "Example Street 1, Warsaw",
                         "latitude": None, "longitude": None, "geocoded": False, "verified_at": None},
@@ -80,6 +80,39 @@ class TestContactAddresses:
         assert [call[0] for call in session.method_calls if call[0] in ("add", "commit")] == [
             "add", "commit", "add", "commit",
         ]
+
+    @pytest.mark.parametrize("initial", [None, " 31A-32 ", "x" * 20])
+    def test_block_number_create_update_and_clear(self, address_api, initial):
+        client, session, *_ = address_api
+        response = client.post("/contacts/7/addresses", json={
+            "street": "Bratysławska", "building_number": "15", "block_number": initial,
+            "apartment_number": "26", "city": "Łódź",
+        })
+        assert response.status_code == 200
+        address = session.add.call_args_list[0].args[0].address
+        assert address.block_number == response.json["address"]["address"]["block_number"] == (
+            (initial or "").strip() or None)
+        session.get.side_effect = lambda *_: address
+        for value in (" 31 ", "x" * 20, "   ", None):
+            response = client.patch("/address/20", json={"block_number": value})
+            assert response.status_code == 200
+            normalized = (value or "").strip() or None
+            assert address.block_number == response.json["address"]["block_number"] == normalized
+            block = f" blok {normalized}" if normalized else ""
+            assert response.json["address"]["formatted_address"] == f"Bratysławska 15{block}/26, Łódź"
+            assert address.building_number == "15" and address.apartment_number == "26"
+
+    @pytest.mark.parametrize("value", [31, [], {}, "x" * 21])
+    def test_invalid_block_number_rejected_on_create_and_update(self, address_api, value):
+        client, session, *_ = address_api
+        for method, path, base in (
+            (client.post, "/contacts/7/addresses", {"building_number": "15", "city": "Łódź"}),
+            (client.patch, "/address/20", {}),
+        ):
+            response = method(path, json={**base, "block_number": value})
+            assert response.status_code == 400
+            assert "block_number" in response.json["message"]
+        session.commit.assert_not_called()
 
     def test_attach_reuses_same_address(self, address_api):
         client, session, _, address, _ = address_api
@@ -118,7 +151,7 @@ class TestContactAddresses:
 
     @pytest.mark.parametrize("payload", [
         {}, {"city": "   "}, {"city": None}, {"city": 42},
-        {"address_id": 20, "notes": "unexpected"}, {"address_id": "20"}, {"address_id": 20, "city": "unexpected"},
+        {"address_id": 20, "block_number": "31"}, {"address_id": 20, "notes": "unexpected"}, {"address_id": "20"}, {"address_id": 20, "city": "unexpected"},
         {"city": "Street", "role": "x" * 51},
         {"city": "Street", "is_primary": "false"},
     ])
@@ -193,7 +226,7 @@ class TestContactAddresses:
         assert response.status_code == 200
         assert response.json == {
             "status": "success", "resolved": True,
-            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "apartment_number": None,
+            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "block_number": None, "apartment_number": None,
                         "postal_code": None, "city": "Warsaw", "country": None, "notes": None,
                         "formatted_address": "Example Street 1, Warsaw",
                         "latitude": 52.2297, "longitude": 21.0122, "geocoded": True, "verified_at": None},
@@ -260,7 +293,7 @@ class TestContactAddresses:
         assert response.status_code == 200
         assert response.json == {
             "status": "success", **result,
-            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1",
+            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "block_number": None,
                         "apartment_number": None, "postal_code": None, "city": "Warsaw", "country": None,
                         "notes": None, "formatted_address": "Example Street 1, Warsaw",
                         "latitude": None, "longitude": None, "geocoded": False,
@@ -366,7 +399,7 @@ class TestContactAddresses:
         session.commit.assert_not_called()
 
     @pytest.mark.parametrize("field, limit", [
-        ("street", 200), ("building_number", 20), ("apartment_number", 20),
+        ("street", 200), ("building_number", 20), ("block_number", 20), ("apartment_number", 20),
         ("postal_code", 10), ("city", 200), ("country", 100), ("notes", 1000),
     ])
     def test_address_fields_validate_type_and_length(self, address_api, field, limit):
@@ -401,7 +434,7 @@ class TestContactAddresses:
         import json
         from library.address_parsing import DEFAULT_ADDRESS_PARSE_MODEL
         client, session, *_ = address_api
-        fields = dict(street=None, building_number="32", apartment_number=None,
+        fields = dict(street=None, building_number="32", block_number=None, apartment_number=None,
                       postal_code="08-207", city="Wyczółki", country=None, notes="Domofon: 5869")
         ask = MagicMock(return_value=SimpleNamespace(response_text=json.dumps(fields)))
         monkeypatch.setattr("library.address_parsing.ai_ask", ask)
@@ -422,7 +455,7 @@ class TestContactAddresses:
 
     @pytest.mark.parametrize("response_text", [
         "not JSON", '{"city": "Warszawa"}', "null", "[]", None,
-        '{"city": 7, "street": null, "building_number": null, "apartment_number": null, "postal_code": null, "country": null, "notes": null}',
+        '{"city": 7, "street": null, "building_number": null, "block_number": null, "apartment_number": null, "postal_code": null, "country": null, "notes": null}',
     ])
     def test_parse_malformed_response_is_empty_success(self, address_api, monkeypatch, response_text):
         from library.address_formatting import ADDRESS_FIELD_LIMITS
