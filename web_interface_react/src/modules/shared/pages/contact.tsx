@@ -67,7 +67,13 @@ type OrgStatus = "candidate" | "confirmed" | "rejected";
 interface Address {
   id: number;
   label: string | null;
-  raw_address: string;
+  street: string | null;
+  building_number: string | null;
+  apartment_number: string | null;
+  postal_code: string | null;
+  city: string;
+  country: string | null;
+  formatted_address: string;
   latitude: number | null;
   longitude: number | null;
   geocoded: boolean;
@@ -80,14 +86,23 @@ interface ContactAddress {
   address: Address;
 }
 
-interface AddressSearchResult {
-  id: number;
-  label: string | null;
-  raw_address: string;
+interface AddressSearchResult extends Address {
   linked_contacts: { id: number; display_name: string }[];
 }
 
-const emptyAddressForm = { label: "", raw_address: "", role: "zamieszkania", is_primary: false };
+const addressFields = [
+  { key: "street", label: "Ulica", maxLength: 200 },
+  { key: "building_number", label: "Nr budynku", maxLength: 20 },
+  { key: "apartment_number", label: "Nr lokalu", maxLength: 20 },
+  { key: "postal_code", label: "Kod pocztowy", maxLength: 10 },
+  { key: "city", label: "Miasto / miejscowość", maxLength: 200 },
+  { key: "country", label: "Kraj", maxLength: 100 },
+] as const;
+type ParsedAddress = { [Key in typeof addressFields[number]["key"]]: string | null };
+const emptyAddressForm = {
+  label: "", street: "", building_number: "", apartment_number: "", postal_code: "", city: "", country: "Polska",
+  role: "zamieszkania", is_primary: false,
+};
 
 interface ContactOrganization {
   id: number;
@@ -395,6 +410,8 @@ const Contact = () => {
   const [organizations, setOrganizations] = React.useState<ContactOrganization[]>([]);
   const [addresses, setAddresses] = React.useState<ContactAddress[]>([]);
   const [addressForm, setAddressForm] = React.useState(emptyAddressForm);
+  const [addressText, setAddressText] = React.useState("");
+  const [addressParseBusy, setAddressParseBusy] = React.useState(false);
   const [showAddressForm, setShowAddressForm] = React.useState(false);
   const [addressMode, setAddressMode] = React.useState<"new" | "existing">("new");
   const [addressQuery, setAddressQuery] = React.useState("");
@@ -819,10 +836,29 @@ const Contact = () => {
     return () => { active = false; window.clearTimeout(timer); };
   }, [addressQuery, addressMode, showAddressForm, apiUrl, apiKey, id]);
 
+  const parseAddress = async (text = addressText) => {
+    setAddressParseBusy(true);
+    setIsError(false); setMessage("");
+    try {
+      const response = await axios.post<ParsedAddress>(`${apiUrl}/addresses/parse`, { text }, { headers });
+      setAddressForm(current => {
+        const next = { ...current };
+        for (const { key } of addressFields) {
+          const value = response.data[key];
+          if (value != null) next[key] = value;
+        }
+        return next;
+      });
+      setMessage(addressFields.some(({ key }) => response.data[key] != null)
+        ? "Sprawdź i popraw pola przed zapisaniem adresu."
+        : "Nie udało się podzielić adresu. Uzupełnij pola ręcznie.");
+    } catch (error: any) {
+      setIsError(true);
+      setMessage(`Nie udało się podzielić adresu. Możesz wpisać pola ręcznie: ${error.response?.data?.message || error.message}`);
+    } finally { setAddressParseBusy(false); }
+  };
+
   const addAddress = async (addressId?: number) => {
-    if (!addressId && !addressForm.raw_address.trim()) {
-      setIsError(true); setMessage("Podaj treść adresu."); return;
-    }
     setAddressBusy(true);
     setIsError(false);
     setMessage("");
@@ -830,8 +866,10 @@ const Contact = () => {
       const values = { role: addressForm.role.trim() || null, is_primary: addressForm.is_primary };
       await axios.post(`${apiUrl}/contacts/${id}/addresses`, addressId
         ? { ...values, address_id: addressId }
-        : { ...values, raw_address: addressForm.raw_address.trim(), label: addressForm.label.trim() || null }, { headers });
+        : { ...values, label: addressForm.label.trim() || null,
+          ...Object.fromEntries(addressFields.map(({ key }) => [key, addressForm[key].trim() || null])) }, { headers });
       setAddressForm(emptyAddressForm);
+      setAddressText("");
       setShowAddressForm(false);
       setAddressQuery("");
       await refreshAddresses();
@@ -886,18 +924,11 @@ const Contact = () => {
   };
 
   const copyOrgAddressToHome = async (address: string) => {
-    setIsError(false);
-    setMessage("");
-    try {
-      await axios.post(`${apiUrl}/contacts/${id}/addresses`, {
-        raw_address: address, role: "zamieszkania", is_primary: addresses.length === 0,
-      }, { headers });
-      await refreshAddresses();
-    } catch (error: any) {
-      console.error("Error copying address to contact", error);
-      setIsError(true);
-      setMessage(`Nie udało się skopiować adresu: ${error.response?.data?.message || error.message}`);
-    }
+    setAddressMode("new");
+    setShowAddressForm(true);
+    setAddressText(address);
+    setAddressForm({ ...emptyAddressForm, is_primary: addresses.length === 0 });
+    await parseAddress(address);
   };
 
   const updateOrganizationStatus = async (organizationId: number, status: OrgStatus) => {
@@ -997,7 +1028,7 @@ const Contact = () => {
         {addresses.map((link) => (
           <li key={link.id} style={{ marginBottom: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
             <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
-              {link.role && <span>{link.role} — </span>}{link.address.raw_address}</div>
+              {link.role && <span>{link.role} — </span>}{link.address.formatted_address}</div>
             {mode === "edit" && <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
               <label>Rola <input key={`${link.id}-${link.role}`} defaultValue={link.role ?? ""} maxLength={50}
                 disabled={addressBusy} onBlur={(event) => {
@@ -1018,7 +1049,7 @@ const Contact = () => {
               </button>
               {openAddressMaps.has(link.id) && <React.Suspense fallback={<p>Ładowanie mapy…</p>}>
                 <CountryMap countries={[]} places={[{
-                  name: link.address.label || link.address.raw_address,
+                  name: link.address.label || link.address.formatted_address,
                   lat: link.address.latitude,
                   lon: link.address.longitude,
                 }]} />
@@ -1045,14 +1076,25 @@ const Contact = () => {
           {addressMode === "new" ? <>
             <label>Etykieta<input value={addressForm.label} maxLength={100} style={inputStyle}
               onChange={(event) => setAddressForm({ ...addressForm, label: event.target.value })} /></label>
-            <label>Treść adresu<textarea value={addressForm.raw_address} style={inputStyle} rows={2}
-              onChange={(event) => setAddressForm({ ...addressForm, raw_address: event.target.value })} /></label>
-            <button className={"button"} type="button" disabled={addressBusy} onClick={() => void addAddress()}>Zapisz adres</button>
+            <label>Wklej adres<textarea value={addressText} style={inputStyle} rows={2}
+              placeholder="Wklej pełny adres, np. z e-maila lub wizytówki"
+              onChange={(event) => setAddressText(event.target.value)} /></label>
+            <button className={"button"} type="button" disabled={addressParseBusy || addressBusy || !addressText.trim()}
+              onClick={() => void parseAddress()}>{addressParseBusy ? "Dzielenie adresu…" : "Podziel adres"}</button>
+            {addressFields.map(({ key, label, maxLength }) => <label key={key}>{label}
+              <input value={addressForm[key]} maxLength={maxLength} style={inputStyle}
+                placeholder={key === "postal_code" ? "np. 95-054" : undefined}
+                aria-describedby={key === "postal_code" ? "address-postal-hint" : undefined}
+                onChange={(event) => setAddressForm(current => ({ ...current, [key]: event.target.value }))} />
+              {key === "postal_code" && <small id="address-postal-hint">Format: NN-NNN</small>}
+            </label>)}
+            <button className={"button"} type="button" disabled={addressBusy || addressParseBusy}
+              onClick={() => void addAddress()}>Zapisz adres</button>
           </> : <>
             <label>Szukaj adresu<input value={addressQuery} style={inputStyle}
               onChange={(event) => setAddressQuery(event.target.value)} /></label>
             {addressResults.map((address) => <div key={address.id} style={{ padding: 8, border: "1px solid #ddd", borderRadius: 6 }}>
-              <div>{address.label && <strong>{address.label}: </strong>}{address.raw_address}</div>
+              <div>{address.label && <strong>{address.label}: </strong>}{address.formatted_address}</div>
               {address.linked_contacts.length > 0 && <div style={{ color: "#667", fontSize: "0.85em" }}>
                 Używany przez: {address.linked_contacts.map((person) => person.display_name).join(", ")}
               </div>}

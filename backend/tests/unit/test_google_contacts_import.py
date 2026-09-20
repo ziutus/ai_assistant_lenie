@@ -148,7 +148,7 @@ def test_ambiguous_csv_row_is_reported_without_creating_or_updating_contact(tmp_
 def test_import_addresses_adds_once_and_keeps_existing_addresses(tmp_path, monkeypatch, existing_contact, apply):
     from library.db.models import Address, ContactAddress, ContactCategory, ContactChangeLog, ContactGroup
     row = contact(phones=("501234567",))
-    links = [ContactAddress(contact_id=1, address=Address(raw_address="Old Street"), is_primary=True)] if existing_contact else []
+    links = [ContactAddress(contact_id=1, address=Address(city="Old Street"), is_primary=True)] if existing_contact else []
     session = MagicMock()
     session.execute.return_value.scalars.return_value.first.return_value = ContactCategory(id=1)
     added = []
@@ -180,7 +180,7 @@ def test_import_addresses_adds_once_and_keeps_existing_addresses(tmp_path, monke
     new_links = [value for value in added if isinstance(value, ContactAddress)]
     audits = [value for value in added if isinstance(value, ContactChangeLog)]
     assert len(new_addresses) == len(new_links) == 1
-    assert new_addresses[0].raw_address == "New Street"
+    assert new_addresses[0].city == "New Street"
     assert new_links[0].is_primary == (not existing_contact)
     assert new_links[0].role == "zamieszkania"
     assert "addresses" in audits[0].changed_fields

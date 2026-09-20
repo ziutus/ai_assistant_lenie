@@ -173,11 +173,12 @@ def test_linkedin_in_another_persons_narrative_is_not_extracted():
 @pytest.mark.parametrize("apply", [False, True])
 @pytest.mark.parametrize("source_label", ["adres", "address"])
 def test_address_import_is_additive_idempotent_and_respects_dry_run(existing_text, apply, source_label):
+    from library.address_formatting import format_address, imported_address_fields
     from library.db.models import Address, ContactAddress
     session = MagicMock()
     contact = Contact(id=1001, first_name="Example", last_name="Person", category_id=1, groups=[])
     existing_links = [] if existing_text is None else [
-        ContactAddress(id=20, contact_id=1001, address=Address(raw_address=existing_text), is_primary=True),
+        ContactAddress(id=20, contact_id=1001, address=Address(**imported_address_fields(existing_text)), is_primary=True),
     ]
 
     def scalars(statement):
@@ -200,7 +201,8 @@ def test_address_import_is_additive_idempotent_and_respects_dry_run(existing_tex
     if apply and existing_text != "Example Street 1":
         assert len(new_links) == 1
         assert new_links[0].contact is contact
-        assert new_links[0].address.raw_address == "Example Street 1"
+        assert new_links[0].address.city == "Example Street"
+        assert new_links[0].address.building_number == "1"
         assert new_links[0].role == "zamieszkania"
         assert new_links[0].is_primary == (existing_text is None)
         assert audits[0].changed_fields == ["addresses"]
@@ -212,4 +214,4 @@ def test_address_import_is_additive_idempotent_and_respects_dry_run(existing_tex
         session.flush.assert_not_called()
     assert "address" not in Contact.__table__.columns
     if existing_links:
-        assert existing_links[0].address.raw_address == existing_text
+        assert format_address(existing_links[0].address) == format_address(Address(**imported_address_fields(existing_text)))

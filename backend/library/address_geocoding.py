@@ -3,6 +3,7 @@
 from sqlalchemy import func
 
 from library import locationiq_client
+from library.address_formatting import format_address
 from library.db.models import Address, GeocodeCache
 
 
@@ -12,11 +13,12 @@ def geocode_address(session, address: Address) -> bool:
     Full addresses trust the first hit without NER place-name heuristics.
     Negative cache entries retain provenance and are not retried.
     """
-    row = session.query(GeocodeCache).filter(GeocodeCache.query == address.raw_address).one_or_none()
+    query = format_address(address)
+    row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
     if row is None:
-        hit = locationiq_client.geocode(address.raw_address)
+        hit = locationiq_client.geocode(query)
         row = GeocodeCache(
-            query=address.raw_address,
+            query=query,
             resolved=hit is not None,
             display_name=hit.get("display_name") if hit else None,
             lat=hit.get("lat") if hit else None,

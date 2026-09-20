@@ -3306,7 +3306,12 @@ class Address(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str | None] = mapped_column(String(100))
-    raw_address: Mapped[str] = mapped_column(Text, nullable=False)
+    street: Mapped[str | None] = mapped_column(String(200))
+    building_number: Mapped[str | None] = mapped_column(String(20))
+    apartment_number: Mapped[str | None] = mapped_column(String(20))
+    postal_code: Mapped[str | None] = mapped_column(String(10))
+    city: Mapped[str] = mapped_column(String(200), nullable=False)
+    country: Mapped[str | None] = mapped_column(String(100))
     latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     location: Mapped[object | None] = mapped_column(GeographyPoint())
