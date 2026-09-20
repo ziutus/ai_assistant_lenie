@@ -62,6 +62,30 @@ interface WhatsappProfile {
 type OrgType = "employment" | "jdg" | "board" | "ownership" | "other";
 type OrgStatus = "candidate" | "confirmed" | "rejected";
 
+interface Address {
+  id: number;
+  label: string | null;
+  raw_address: string;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+interface ContactAddress {
+  id: number;
+  role: string | null;
+  is_primary: boolean;
+  address: Address;
+}
+
+interface AddressSearchResult {
+  id: number;
+  label: string | null;
+  raw_address: string;
+  linked_contacts: { id: number; display_name: string }[];
+}
+
+const emptyAddressForm = { label: "", raw_address: "", role: "zamieszkania", is_primary: false };
+
 interface ContactOrganization {
   id: number;
   org_type: OrgType;
@@ -172,7 +196,7 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   links: "Linki",
   company: "Firma",
   position: "Stanowisko",
-  address: "Adres",
+  addresses: "Adresy",
   current_city: "Mieszka w",
   hometown: "Pochodzi z",
   birthday: "Urodziny",
@@ -232,7 +256,7 @@ interface ContactDetail {
   email_addresses?: ContactChannel[];
   company: string | null;
   position: string | null;
-  address: string | null;
+  addresses: ContactAddress[];
   current_city: string | null;
   hometown: string | null;
   birthday: string | null;
@@ -262,7 +286,6 @@ const emptyForm = {
   email_addresses: [] as ContactChannel[],
   company: "",
   position: "",
-  address: "",
   current_city: "",
   hometown: "",
   birthday: "",
@@ -367,6 +390,13 @@ const Contact = () => {
   const [editRelEndDate, setEditRelEndDate] = React.useState("");
 
   const [organizations, setOrganizations] = React.useState<ContactOrganization[]>([]);
+  const [addresses, setAddresses] = React.useState<ContactAddress[]>([]);
+  const [addressForm, setAddressForm] = React.useState(emptyAddressForm);
+  const [showAddressForm, setShowAddressForm] = React.useState(false);
+  const [addressMode, setAddressMode] = React.useState<"new" | "existing">("new");
+  const [addressQuery, setAddressQuery] = React.useState("");
+  const [addressResults, setAddressResults] = React.useState<AddressSearchResult[]>([]);
+  const [addressBusy, setAddressBusy] = React.useState(false);
   const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
   const [showOrgForm, setShowOrgForm] = React.useState(false);
   const [links, setLinks] = React.useState<ContactLink[]>([]);
@@ -408,7 +438,6 @@ const Contact = () => {
     email_addresses: c.email_addresses ?? (c.email ? [{ value: c.email, label: null }] : []),
     company: c.company ?? "",
     position: c.position ?? "",
-    address: c.address ?? "",
     current_city: c.current_city ?? "",
     hometown: c.hometown ?? "",
     birthday: c.birthday ?? "",
@@ -431,6 +460,7 @@ const Contact = () => {
       setForm(formFromContact(fetched));
       setRelationships(fetched.relationships ?? []);
       setOrganizations(fetched.organizations ?? []);
+      setAddresses(fetched.addresses ?? []);
       setLinks(fetched.links ?? []);
       setChangeLog(fetched.change_log ?? []);
       setContactGroups(fetched.groups ?? []);
@@ -453,6 +483,12 @@ const Contact = () => {
     setForm(emptyForm);
     setRelationships([]);
     setOrganizations([]);
+    setAddresses([]);
+    setAddressForm(emptyAddressForm);
+    setShowAddressForm(false);
+    setAddressMode("new");
+    setAddressQuery("");
+    setAddressResults([]);
     setLinks([]);
     setChangeLog([]);
     setContactGroups([]);
@@ -753,13 +789,83 @@ const Contact = () => {
     }
   };
 
+  const refreshAddresses = async () => {
+    const response = await axios.get(`${apiUrl}/contacts/${id}/addresses`, { headers });
+    setAddresses(response.data.addresses ?? []);
+    // Preserve unsaved scalar fields while refreshing the audit trail.
+    const detail = await axios.get(`${apiUrl}/contacts/${id}`, { headers });
+    setChangeLog(detail.data.contact.change_log ?? []);
+  };
+
+  React.useEffect(() => {
+    setAddressResults([]);
+    if (!showAddressForm || addressMode !== "existing" || !addressQuery.trim()) return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await axios.get(`${apiUrl}/addresses`, {
+          params: { q: addressQuery.trim() },
+          headers: { "x-api-key": `${apiKey}` },
+        });
+        if (active) setAddressResults(response.data.addresses ?? []);
+      } catch {
+        if (active) { setIsError(true); setMessage("Nie udało się wyszukać adresów."); }
+      }
+    }, 300);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [addressQuery, addressMode, showAddressForm, apiUrl, apiKey, id]);
+
+  const addAddress = async (addressId?: number) => {
+    if (!addressId && !addressForm.raw_address.trim()) {
+      setIsError(true); setMessage("Podaj treść adresu."); return;
+    }
+    setAddressBusy(true);
+    setIsError(false);
+    setMessage("");
+    try {
+      const values = { role: addressForm.role.trim() || null, is_primary: addressForm.is_primary };
+      await axios.post(`${apiUrl}/contacts/${id}/addresses`, addressId
+        ? { ...values, address_id: addressId }
+        : { ...values, raw_address: addressForm.raw_address.trim(), label: addressForm.label.trim() || null }, { headers });
+      setAddressForm(emptyAddressForm);
+      setShowAddressForm(false);
+      setAddressQuery("");
+      await refreshAddresses();
+    } catch (error: any) {
+      setIsError(true); setMessage(`Nie udało się dodać adresu: ${error.response?.data?.message || error.message}`);
+    } finally { setAddressBusy(false); }
+  };
+
+  const updateAddressLink = async (linkId: number, values: { role?: string | null; is_primary?: boolean }) => {
+    setAddressBusy(true);
+    setIsError(false); setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/contact_addresses/${linkId}`, values, { headers });
+      await refreshAddresses();
+    } catch (error: any) {
+      setIsError(true); setMessage(`Nie udało się zmienić adresu: ${error.response?.data?.message || error.message}`);
+    } finally { setAddressBusy(false); }
+  };
+
+  const removeAddressLink = async (linkId: number) => {
+    setAddressBusy(true);
+    setIsError(false); setMessage("");
+    try {
+      await axios.delete(`${apiUrl}/contact_addresses/${linkId}`, { headers });
+      await refreshAddresses();
+    } catch (error: any) {
+      setIsError(true); setMessage(`Nie udało się usunąć adresu: ${error.response?.data?.message || error.message}`);
+    } finally { setAddressBusy(false); }
+  };
+
   const copyOrgAddressToHome = async (address: string) => {
     setIsError(false);
     setMessage("");
     try {
-      await axios.patch(`${apiUrl}/contacts/${id}`, { address }, { headers });
-      setForm((prev) => ({ ...prev, address }));
-      loadContact();
+      await axios.post(`${apiUrl}/contacts/${id}/addresses`, {
+        raw_address: address, role: "zamieszkania", is_primary: addresses.length === 0,
+      }, { headers });
+      await refreshAddresses();
     } catch (error: any) {
       console.error("Error copying address to contact", error);
       setIsError(true);
@@ -856,6 +962,66 @@ const Contact = () => {
   };
 
   const inputStyle: React.CSSProperties = { padding: "6px 10px", width: "100%", boxSizing: "border-box" };
+  const addressSection = !isNew && (
+    <section>
+      <h3>Adresy</h3>
+      {addresses.length === 0 && <p style={{ color: "#667" }}>Brak zapisanych adresów.</p>}
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {addresses.map((link) => (
+          <li key={link.id} style={{ marginBottom: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
+            <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
+              {link.role && <span>{link.role} — </span>}{link.address.raw_address}</div>
+            {mode === "edit" && <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
+              <label>Rola <input key={`${link.id}-${link.role}`} defaultValue={link.role ?? ""} maxLength={50}
+                disabled={addressBusy} onBlur={(event) => {
+                  const role = event.target.value.trim() || null;
+                  if (role !== link.role) void updateAddressLink(link.id, { role });
+                }} /></label>
+              <label><input type="checkbox" checked={link.is_primary} disabled={addressBusy}
+                onChange={(event) => void updateAddressLink(link.id, { is_primary: event.target.checked })} /> Główny adres</label>
+              <button className={"button"} type="button" disabled={addressBusy}
+                onClick={() => void removeAddressLink(link.id)}>Usuń</button>
+            </div>}
+          </li>
+        ))}
+      </ul>
+      {mode === "edit" && <>
+        <button className={"button"} type="button" onClick={() => setShowAddressForm(!showAddressForm)}>
+          {showAddressForm ? "Anuluj" : "+ Dodaj adres"}
+        </button>
+        {showAddressForm && <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+          <div style={{ display: "flex", gap: 12 }}>
+            <label><input type="radio" name="addressMode" checked={addressMode === "new"}
+              onChange={() => setAddressMode("new")} /> Nowy adres</label>
+            <label><input type="radio" name="addressMode" checked={addressMode === "existing"}
+              onChange={() => setAddressMode("existing")} /> Istniejący adres</label>
+          </div>
+          <label>Rola<input value={addressForm.role} maxLength={50} style={inputStyle}
+            onChange={(event) => setAddressForm({ ...addressForm, role: event.target.value })} /></label>
+          <label><input type="checkbox" checked={addressForm.is_primary}
+            onChange={(event) => setAddressForm({ ...addressForm, is_primary: event.target.checked })} /> Główny adres</label>
+          {addressMode === "new" ? <>
+            <label>Etykieta<input value={addressForm.label} maxLength={100} style={inputStyle}
+              onChange={(event) => setAddressForm({ ...addressForm, label: event.target.value })} /></label>
+            <label>Treść adresu<textarea value={addressForm.raw_address} style={inputStyle} rows={2}
+              onChange={(event) => setAddressForm({ ...addressForm, raw_address: event.target.value })} /></label>
+            <button className={"button"} type="button" disabled={addressBusy} onClick={() => void addAddress()}>Zapisz adres</button>
+          </> : <>
+            <label>Szukaj adresu<input value={addressQuery} style={inputStyle}
+              onChange={(event) => setAddressQuery(event.target.value)} /></label>
+            {addressResults.map((address) => <div key={address.id} style={{ padding: 8, border: "1px solid #ddd", borderRadius: 6 }}>
+              <div>{address.label && <strong>{address.label}: </strong>}{address.raw_address}</div>
+              {address.linked_contacts.length > 0 && <div style={{ color: "#667", fontSize: "0.85em" }}>
+                Używany przez: {address.linked_contacts.map((person) => person.display_name).join(", ")}
+              </div>}
+              <button className={"button"} type="button" disabled={addressBusy}
+                onClick={() => void addAddress(address.id)}>Wybierz adres</button>
+            </div>)}
+          </>}
+        </div>}
+      </>}
+    </section>
+  );
   const outgoing = relationships.filter((r) => r.direction === "outgoing");
   const incoming = relationships.filter((r) => r.direction === "incoming");
   const isCompanyCategory = categories.find((c) => String(c.id) === form.category_id)?.name === "Firma";
@@ -1006,7 +1172,7 @@ const Contact = () => {
           ))}
           {contact.company && <div><strong>Firma:</strong> {contact.company}</div>}
           {contact.category_name !== "Firma" && contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
-          {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
+          {addressSection}
           {contact.category_name !== "Firma" && contact.current_city && <div><strong>Mieszka w:</strong> {contact.current_city}</div>}
           {contact.category_name !== "Firma" && contact.hometown && <div><strong>Pochodzi z:</strong> {contact.hometown}</div>}
           {contact.birthday && (
@@ -1083,10 +1249,7 @@ const Contact = () => {
           Stanowisko
           <input type="text" value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} style={inputStyle} />
         </label>}
-        <label>
-          Adres
-          <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} style={inputStyle} />
-        </label>
+        {addressSection}
         {!isCompanyCategory && <label>
           Mieszka w (miasto) — motyw do small talku
           <input type="text" value={form.current_city} onChange={(e) => setForm({ ...form, current_city: e.target.value })} style={inputStyle} />

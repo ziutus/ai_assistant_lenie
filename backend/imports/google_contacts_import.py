@@ -27,7 +27,7 @@ Two Google-Contacts-specific data-quality quirks are cleaned up on import:
    this is the general-purpose group mechanism, not something built only
    for one particular group.
 
-A matched contact has empty address/company/position/birthday fields filled
+A matched contact gains new addresses and has empty company/position/birthday fields filled
 and groups added. All phone numbers and emails are preserved, with missing
 values appended to the ordered lists without replacing the existing primary.
 Yearless birthdays populate month/day only. Ambiguous identity matches are
@@ -224,6 +224,7 @@ def main():
     from library.contact_change_log import record_contact_change
     from library.contact_channels import channel_key, contact_channels
     from library.db.engine import get_session
+    from library.contact_addresses import attach_imported_address
     from library.db.models import Contact, ContactCategory, ContactGroup
 
     session = get_session()
@@ -323,9 +324,8 @@ def main():
                     if position and not existing.position:
                         existing.position = position
                         changed_fields.append("position")
-                    if address and not existing.address:
-                        existing.address = address
-                        changed_fields.append("address")
+                    if attach_imported_address(session, existing, address):
+                        changed_fields.append("addresses")
                     for field, value in birthday_changes.items():
                         setattr(existing, field, value)
                         changed_fields.append(field)
@@ -359,7 +359,6 @@ def main():
                         email_addresses=email_addresses,
                         company=company,
                         position=position,
-                        address=address,
                         **(birthday_data or {}),
                         notes=notes,
                     )
@@ -367,9 +366,11 @@ def main():
                         contact.groups.append(get_or_create_group(group_name))
                     session.add(contact)
                     session.flush()
+                    address_added = attach_imported_address(session, contact, address)
                     record_contact_change(
                         session, contact, "google_import",
-                        changed_fields=["first_name", "last_name", "category_id", *(birthday_data or {})],
+                        changed_fields=["first_name", "last_name", "category_id", *(birthday_data or {}),
+                                        *(["addresses"] if address_added else [])],
                         note=f"Zaimportowano z eksportu Kontaktów Google ({args.csv})",
                     )
                 else:

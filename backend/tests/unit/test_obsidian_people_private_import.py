@@ -21,7 +21,7 @@ def test_routing_and_multi_names_keep_narrative_private():
     assert fields == {
         "phone_number": "+48 123 456 789", "email": "example@example.invalid",
         "linkedin_url": "https://www.linkedin.com/in/example", "birthday": datetime.date(1990, 2, 3),
-        "company": "Example Ltd; NIP: 1234567890", "position": "Tester", "address": "Example Street 1",
+        "company": "Example Ltd; NIP: 1234567890", "position": "Tester", "addresses": "Example Street 1",
     }
     assert private == "Synthetic personal context."
     assert not flags
@@ -167,3 +167,49 @@ def test_linkedin_in_another_persons_narrative_is_not_extracted():
     fields, private, _ = route_fields(narrative)
     assert fields == {}
     assert private == narrative
+
+
+@pytest.mark.parametrize("existing_text", [None, "Example Street 1", "Other Street 2"])
+@pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("source_label", ["adres", "address"])
+def test_address_import_is_additive_idempotent_and_respects_dry_run(existing_text, apply, source_label):
+    from library.db.models import Address, ContactAddress
+    session = MagicMock()
+    contact = Contact(id=1001, first_name="Example", last_name="Person", category_id=1, groups=[])
+    existing_links = [] if existing_text is None else [
+        ContactAddress(id=20, contact_id=1001, address=Address(raw_address=existing_text), is_primary=True),
+    ]
+
+    def scalars(statement):
+        entity = statement.column_descriptions[0]["entity"]
+        rows = {Contact: [contact], ContactCategory: [ContactCategory(id=1, name="Osoba prywatna")],
+                ContactAddress: existing_links}.get(entity, [])
+        result = MagicMock()
+        result.__iter__.side_effect = lambda: iter(rows)
+        result.one_or_none.return_value = rows[0] if rows else None
+        return result
+
+    session.scalars.side_effect = scalars
+    spec = {"groups": {"existing_reused": {}, "new_groups_to_create": []}, "operations": [
+        {"path": "Example Person.md", "action": "append_existing", "contact_id": 1001},
+    ]}
+    run_import(session, spec, {"Example Person.md": (f"{source_label}: Example Street 1", 1)}, apply=apply)
+    added = [call.args[0] for call in session.add.call_args_list]
+    new_links = [row for row in added if isinstance(row, ContactAddress)]
+    audits = [row for row in added if isinstance(row, ContactChangeLog)]
+    if apply and existing_text != "Example Street 1":
+        assert len(new_links) == 1
+        assert new_links[0].contact is contact
+        assert new_links[0].address.raw_address == "Example Street 1"
+        assert new_links[0].role == "zamieszkania"
+        assert new_links[0].is_primary == (existing_text is None)
+        assert audits[0].changed_fields == ["addresses"]
+    else:
+        assert new_links == audits == []
+    if not apply:
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+        session.flush.assert_not_called()
+    assert "address" not in Contact.__table__.columns
+    if existing_links:
+        assert existing_links[0].address.raw_address == existing_text
