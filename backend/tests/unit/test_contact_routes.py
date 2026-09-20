@@ -329,6 +329,64 @@ class TestContactAddresses:
         assert session.add.call_args.args[0].changed_fields == ["addresses"]
         session.commit.assert_called_once()
 
+    @pytest.mark.parametrize("outcome", ["confirmed", "not_found", "unavailable"])
+    @pytest.mark.parametrize("coordinates", [(None, None), (51.746111, None), (None, 19.418129), (51.746111, 19.418129)])
+    def test_validate_osm_gating_through_real_domain(self, address_api, monkeypatch, outcome, coordinates):
+        client, _, _, address, _ = address_api
+        address.latitude, address.longitude = coordinates
+        hit = {"outcome": outcome, "match": {"nr_budynku": "1"}} if outcome != "unavailable" else None
+        monkeypatch.setattr("library.address_validation_client.validate_address_external", lambda _: hit)
+        supplement = {"found": True, "postal_code": None, "nearby_postal_code": "94-039", "housename": "blok 31",
+                      "lat": 51.74869, "lon": 19.4211182, "osm_id": 106305382, "osm_type": "way"}
+        osm = MagicMock(return_value=supplement)
+        monkeypatch.setattr("library.address_overpass_client.find_osm_building_match", osm)
+        response = client.post("/address/20/validate")
+        assert response.status_code == 200
+        assert response.json["outcome"] == outcome
+        if outcome != "confirmed" and all(value is not None for value in coordinates):
+            osm.assert_called_once_with(*coordinates, address.street, address.building_number)
+            assert response.json["osm_supplement"] == supplement
+        else:
+            osm.assert_not_called()
+            assert response.json.get("osm_supplement") is None
+
+    @pytest.mark.parametrize("outcome", ["not_found", "unavailable"])
+    @pytest.mark.parametrize("previous", [None, dt.datetime(2026, 1, 2, 3, 4)])
+    @pytest.mark.parametrize("supplement", [
+        None, {"found": False, "postal_code": None, "nearby_postal_code": None},
+        {"found": False, "postal_code": None, "nearby_postal_code": "94-039"},
+        {"found": True, "postal_code": "94-039", "housename": "blok 31"},
+    ])
+    def test_validate_osm_response_preserves_registry_decision(self, address_api, monkeypatch, outcome, previous, supplement):
+        client, _, _, address, _ = address_api
+        address.latitude, address.longitude = 51.746111, 19.418129
+        address.verified_at = previous
+        monkeypatch.setattr("library.address_validation_client.validate_address_external",
+                            lambda _: {"outcome": "not_found"} if outcome == "not_found" else None)
+        timestamps_at_lookup = []
+
+        def lookup(*args):
+            timestamps_at_lookup.append(address.verified_at)
+            return supplement
+
+        monkeypatch.setattr("library.address_overpass_client.find_osm_building_match", lookup)
+        before = dt.datetime.now()
+        response = client.post("/address/20/validate")
+        assert response.status_code == 200
+        assert response.json["outcome"] == outcome
+        assert response.json["osm_supplement"] == supplement
+        assert response.json["official_postal_code"] is None
+        assert address.verified_at == timestamps_at_lookup[0]
+        if outcome == "not_found":
+            assert before <= address.verified_at <= dt.datetime.now()
+        else:
+            assert address.verified_at == previous
+        assert response.json["address"]["verified_at"] == (
+            address.verified_at.isoformat() if address.verified_at else None
+        )
+        assert response.json["address"]["postal_code"] is None
+        assert (response.json["address"]["latitude"], response.json["address"]["longitude"]) == (51.746111, 19.418129)
+
     def test_validate_database_error_rolls_back(self, address_api, monkeypatch):
         client, session, *_ = address_api
         monkeypatch.setattr("library.contact_routes.validate_address", MagicMock(return_value={"outcome": "unavailable"}))

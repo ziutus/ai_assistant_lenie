@@ -158,3 +158,69 @@ def test_invalid_optional_score_is_null(monkeypatch, score):
     result = validate_address(MagicMock(), Address(city="Wrocław", building_number="1"))
     assert result["outcome"] == "confirmed"
     assert result["score"] is None
+
+
+@pytest.mark.parametrize("hit", [
+    {"outcome": "confirmed", "match": MATCH}, {"outcome": "not_found"}, None,
+])
+@pytest.mark.parametrize("coordinates", [(None, None), (51.746111, None), (None, 19.418129), (51.746111, 19.418129)])
+def test_osm_only_for_unconfirmed_addresses_with_both_coordinates(monkeypatch, hit, coordinates):
+    address = Address(street="Rynek", building_number="1", city="Wrocław",
+                      latitude=coordinates[0], longitude=coordinates[1])
+    monkeypatch.setattr("library.address_validation_client.validate_address_external", lambda _: hit)
+    osm = MagicMock(return_value={"found": True, "postal_code": None, "housename": "blok 31"})
+    monkeypatch.setattr("library.address_overpass_client.find_osm_building_match", osm)
+    result = validate_address(MagicMock(), address)
+    outcome = hit["outcome"] if hit else "unavailable"
+    assert result["outcome"] == outcome
+    if outcome != "confirmed" and all(value is not None for value in coordinates):
+        osm.assert_called_once_with(*coordinates, "Rynek", "1")
+        assert result["osm_supplement"] == osm.return_value
+    else:
+        osm.assert_not_called()
+        assert result.get("osm_supplement") is None
+
+
+@pytest.mark.parametrize("hit", [
+    {"outcome": "not_found"}, None,
+    {"outcome": "confirmed", "match": {**MATCH, "nr_budynku": "2"}},
+])
+@pytest.mark.parametrize("supplement", [
+    None, {"found": False, "postal_code": None, "nearby_postal_code": None},
+    {"found": False, "postal_code": None, "nearby_postal_code": "94-039"},
+    {"found": True, "postal_code": "94-039", "housename": "blok 31", "lat": 51.74869, "lon": 19.4211182},
+])
+@pytest.mark.parametrize("previous", [None, PREVIOUS])
+def test_osm_never_changes_registry_timestamp_or_address(monkeypatch, hit, supplement, previous):
+    address = Address(street="Bratysławska", building_number="15", city="Łódź", postal_code="00-001",
+                      latitude=51.746111, longitude=19.418129, location="point", geocode_id=42,
+                      verified_at=previous)
+    monkeypatch.setattr("library.address_validation_client.validate_address_external", lambda _: hit)
+    timestamps_at_lookup = []
+
+    def lookup(*args):
+        timestamps_at_lookup.append(address.verified_at)
+        return supplement
+
+    osm = MagicMock(side_effect=lookup)
+    monkeypatch.setattr("library.address_overpass_client.find_osm_building_match", osm)
+    session = MagicMock()
+    before = dt.datetime.now()
+    result = validate_address(session, address)
+    osm.assert_called_once_with(51.746111, 19.418129, "Bratysławska", "15")
+    assert result["osm_supplement"] == supplement
+    assert result["outcome"] == ("not_found" if hit and hit["outcome"] == "not_found" else "unavailable")
+    assert result["official_postal_code"] is None
+    assert result["postal_code_matches"] is None
+    assert result["score"] is None
+    # The registry has already decided the timestamp before OSM runs.
+    assert address.verified_at == timestamps_at_lookup[0]
+    if result["outcome"] == "not_found":
+        assert before <= address.verified_at <= dt.datetime.now()
+    else:
+        assert address.verified_at == previous
+    assert (address.latitude, address.longitude, address.location, address.geocode_id) == (
+        51.746111, 19.418129, "point", 42,
+    )
+    assert address.postal_code == "00-001"
+    session.commit.assert_not_called()

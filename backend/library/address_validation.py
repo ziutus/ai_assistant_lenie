@@ -3,13 +3,23 @@
 import datetime
 import math
 
-from library import address_validation_client
+from library import address_overpass_client, address_validation_client
 from library.address_formatting import format_address
 from library.db.models import Address
 
 
 def _normalized(value: str | None) -> str:
     return "".join((value or "").split()).casefold()
+
+
+def _with_osm_supplement(result: dict, address: Address) -> dict:
+    """Add community data without changing the registry outcome or the address."""
+    if (result["outcome"] in ("not_found", "unavailable")
+            and address.latitude is not None and address.longitude is not None):
+        result["osm_supplement"] = address_overpass_client.find_osm_building_match(
+            float(address.latitude), float(address.longitude), address.street, address.building_number,
+        )
+    return result
 
 
 def validate_address(session, address: Address) -> dict:
@@ -29,13 +39,13 @@ def validate_address(session, address: Address) -> dict:
     }
     hit = address_validation_client.validate_address_external(format_address(address))
     if hit is None:
-        return result
+        return _with_osm_supplement(result, address)
     if hit["outcome"] == "confirmed":
         match = hit["match"]
         building = match.get("nr_budynku")
         if (not isinstance(building, str) or not _normalized(building)
                 or _normalized(building) != _normalized(address.building_number)):
-            return result
+            return _with_osm_supplement(result, address)
         postal_code = match.get("kod_pocztowy")
         if isinstance(postal_code, str) and postal_code.strip():
             result["official_postal_code"] = postal_code.strip()
@@ -46,4 +56,4 @@ def validate_address(session, address: Address) -> dict:
             result["score"] = float(score)
     result["outcome"] = hit["outcome"]
     address.verified_at = datetime.datetime.now()
-    return result
+    return _with_osm_supplement(result, address)
