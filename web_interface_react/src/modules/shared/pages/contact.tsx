@@ -87,6 +87,16 @@ interface AddressValidationResult {
   official_postal_code: string | null;
   postal_code_matches: boolean | null;
   score: number | null;
+  osm_supplement?: {
+    found: boolean;
+    postal_code: string | null;
+    nearby_postal_code?: string | null;
+    housename?: string | null;
+    lat?: number | null;
+    lon?: number | null;
+    osm_id?: number;
+    osm_type?: string;
+  } | null;
   address: Address;
 }
 
@@ -950,6 +960,20 @@ const Contact = () => {
         setIsError(true);
         setMessage("❓ Nie udało się zweryfikować adresu (usługa niedostępna lub brak jednoznacznego wyniku) — spróbuj później.");
       }
+      const osm = result.osm_supplement;
+      if ((result.outcome === "not_found" || result.outcome === "unavailable") && osm) {
+        const hints: string[] = [];
+        if (osm.found) {
+          let hint = "📍 Znaleziono w OpenStreetMap (dane społecznościowe, mniej pewne niż rejestr oficjalny)";
+          if (osm.postal_code) hint += ` — sugerowany kod pocztowy: ${osm.postal_code}`;
+          if (osm.housename) hint += ` — oznaczenie: ${osm.housename}`;
+          hints.push(hint);
+        }
+        if (!osm.postal_code && osm.nearby_postal_code) {
+          hints.push(`📍 OpenStreetMap (dane społecznościowe): kod pocztowy pobliskich budynków przy tej samej ulicy: ${osm.nearby_postal_code} (do potwierdzenia; mniej pewne niż dopasowanie budynku i rejestr oficjalny).`);
+        }
+        if (hints.length) setMessage(current => `${current}\n${hints.join("\n")}`);
+      }
     } catch {
       setIsError(true);
       setMessage("❓ Nie udało się zweryfikować lub odświeżyć adresu — spróbuj później.");
@@ -1217,7 +1241,7 @@ const Contact = () => {
 
       {isLoading && <div className={"loader"}></div>}
       {message && (
-        <p className={isError ? "errorText" : undefined} style={isError ? undefined : { color: "#2e7d43" }}>
+        <p className={isError ? "errorText" : undefined} style={{ whiteSpace: "pre-line", color: isError ? undefined : "#2e7d43" }}>
           {message}
         </p>
       )}
