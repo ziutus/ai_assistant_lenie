@@ -3580,3 +3580,84 @@ class ContactEducation(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+
+
+class ChatConversation(Base):
+    """One imported chat/group (currently WhatsApp only) — a lightweight
+    watermark row so a repeat export of the same chat imports incrementally
+    instead of re-scanning the whole history. ``chat_key`` is the stable
+    identity across repeat exports (WhatsApp reuses a display name across
+    "Czat ogólny", "Czat ogólny (1)", ... exports of the same group), chosen
+    by the operator at first import via ``imports/whatsapp_chat_import.py``'s
+    ``--chat-key``.
+    """
+
+    __tablename__ = "chat_conversations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'whatsapp'"))
+    chat_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    last_imported_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"ChatConversation(id={self.id!r}, chat_key={self.chat_key!r})"
+
+
+class ChatMessage(Base):
+    """One message from a full chat log import (currently WhatsApp only,
+    imports/whatsapp_chat_import.py) — distinct from Contact.whatsapp_profile
+    (whatsapp_neighbor_profiles.py), which stores LLM-distilled facts about a
+    person rather than raw message history. Deliberately its own table, not
+    a Document: private multi-participant correspondence is not library
+    content (see the storage note on whatsapp_neighbor_profiles.py for the
+    same reasoning about not creating synthetic Documents here).
+
+    WhatsApp's own export format has no stable message id, so ``dedup_hash``
+    (sha256 of chat_key+sender_name_raw+sent_at+content/media filename) is
+    the only way to make a repeat export of overlapping history idempotent.
+
+    ``contact_id`` is resolve-only (``library.whatsapp_parser.find_contact``)
+    — this import never creates a Contact for a sender it doesn't already
+    know, unlike whatsapp_neighbor_profiles.py which does that deliberately
+    for its neighbor-profile use case.
+    """
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        CheckConstraint(
+            "message_type IN ('text', 'image', 'video', 'audio', 'document', "
+            "'contact_card', 'sticker', 'system', 'deleted')",
+            name="ck_chat_messages_message_type",
+        ),
+        Index("idx_chat_messages_conversation_sent_at", "conversation_id", "sent_at"),
+        Index("idx_chat_messages_contact", "contact_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_conversations.id", ondelete="CASCADE"), nullable=False,
+    )
+    sender_name_raw: Mapped[str] = mapped_column(String(255), nullable=False)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"))
+    sent_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    message_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str | None] = mapped_column(Text)
+    media_storage_key: Mapped[str | None] = mapped_column(Text)
+    media_original_filename: Mapped[str | None] = mapped_column(Text)
+    media_mime_type: Mapped[str | None] = mapped_column(String(100))
+    media_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    dedup_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    conversation: Mapped["ChatConversation"] = relationship(foreign_keys=[conversation_id])
+    contact: Mapped["Contact | None"] = relationship(foreign_keys=[contact_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"ChatMessage(id={self.id!r}, conversation_id={self.conversation_id!r}, "
+            f"sender_name_raw={self.sender_name_raw!r}, sent_at={self.sent_at!r})"
+        )
