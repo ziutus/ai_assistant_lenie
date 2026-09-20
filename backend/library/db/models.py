@@ -3317,6 +3317,7 @@ class Address(Base):
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     location: Mapped[object | None] = mapped_column(GeographyPoint())
     geocode_id: Mapped[int | None] = mapped_column(ForeignKey("geocode_cache.id", ondelete="SET NULL"))
+    verified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 

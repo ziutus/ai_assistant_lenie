@@ -47,7 +47,7 @@ class TestContactAddresses:
             "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "apartment_number": None,
                         "postal_code": None, "city": "Warsaw", "country": None, "notes": None,
                         "formatted_address": "Example Street 1, Warsaw",
-                        "latitude": None, "longitude": None, "geocoded": False},
+                        "latitude": None, "longitude": None, "geocoded": False, "verified_at": None},
         }]
         sql = str(session.execute.call_args.args[0])
         assert "ORDER BY contact_addresses.is_primary DESC, contact_addresses.id" in sql
@@ -134,6 +134,7 @@ class TestContactAddresses:
         ("post", "/contacts/7/addresses", {"address_id": 999}),
         ("patch", "/address/999", {"label": "home"}),
         ("post", "/address/999/geocode", None),
+        ("post", "/address/999/validate", None),
         ("patch", "/contact_addresses/999", {"role": "home"}),
         ("delete", "/contact_addresses/999", None),
     ])
@@ -195,7 +196,7 @@ class TestContactAddresses:
             "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "apartment_number": None,
                         "postal_code": None, "city": "Warsaw", "country": None, "notes": None,
                         "formatted_address": "Example Street 1, Warsaw",
-                        "latitude": 52.2297, "longitude": 21.0122, "geocoded": True},
+                        "latitude": 52.2297, "longitude": 21.0122, "geocoded": True, "verified_at": None},
         }
         geocode.assert_called_once_with(session, address)
         audits = [call.args[0] for call in session.add.call_args_list]
@@ -236,6 +237,76 @@ class TestContactAddresses:
     def test_geocode_options_does_not_access_database(self, address_api):
         client, session, *_ = address_api
         assert client.options("/address/20/geocode").status_code == 200
+        session.get.assert_not_called()
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("outcome", ["confirmed", "not_found"])
+    def test_validate_response_and_audit_every_linked_contact(self, address_api, monkeypatch, outcome):
+        client, session, contact, address, _ = address_api
+        session.execute.return_value.scalars.return_value.all.return_value = [contact, _make_contact(id_=8)]
+        verified = dt.datetime(2026, 9, 20, 12, 30)
+        result = {"outcome": outcome, "official_postal_code": "50-106" if outcome == "confirmed" else None,
+                  "postal_code_matches": True if outcome == "confirmed" else None,
+                  "score": 0.98 if outcome == "confirmed" else None}
+
+        def validate(db_session, row):
+            assert db_session is session and row is address
+            row.verified_at = verified
+            return result
+
+        validator = MagicMock(side_effect=validate)
+        monkeypatch.setattr("library.contact_routes.validate_address", validator)
+        response = client.post("/address/20/validate")
+        assert response.status_code == 200
+        assert response.json == {
+            "status": "success", **result,
+            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1",
+                        "apartment_number": None, "postal_code": None, "city": "Warsaw", "country": None,
+                        "notes": None, "formatted_address": "Example Street 1, Warsaw",
+                        "latitude": None, "longitude": None, "geocoded": False,
+                        "verified_at": verified.isoformat()},
+        }
+        validator.assert_called_once_with(session, address)
+        audits = [call.args[0] for call in session.add.call_args_list]
+        assert {audit.contact_id for audit in audits} == {7, 8}
+        assert all(audit.source == "manual_edit" and audit.changed_fields == ["addresses"] for audit in audits)
+        assert [call[0] for call in session.method_calls if call[0] in ("add", "commit")] == [
+            "add", "add", "commit",
+        ]
+        query = session.execute.call_args.args[0]
+        assert "contact_addresses.address_id" in str(query)
+        assert 20 in query.compile().params.values()
+
+    @pytest.mark.parametrize("previous", [None, dt.datetime(2026, 1, 2, 3, 4)])
+    def test_validate_unavailable_is_200_and_preserves_verified_at(self, address_api, monkeypatch, previous):
+        client, session, contact, address, _ = address_api
+        address.verified_at = previous
+        session.execute.return_value.scalars.return_value.all.return_value = [contact]
+        result = {"outcome": "unavailable", "official_postal_code": None,
+                  "postal_code_matches": None, "score": None}
+        validator = MagicMock(return_value=result)
+        monkeypatch.setattr("library.contact_routes.validate_address", validator)
+        response = client.post("/address/20/validate")
+        assert response.status_code == 200
+        assert response.json["status"] == "success"
+        assert {key: response.json[key] for key in result} == result
+        assert address.verified_at == previous
+        assert response.json["address"]["verified_at"] == (previous.isoformat() if previous else None)
+        validator.assert_called_once_with(session, address)
+        assert session.add.call_args.args[0].changed_fields == ["addresses"]
+        session.commit.assert_called_once()
+
+    def test_validate_database_error_rolls_back(self, address_api, monkeypatch):
+        client, session, *_ = address_api
+        monkeypatch.setattr("library.contact_routes.validate_address", MagicMock(return_value={"outcome": "unavailable"}))
+        session.commit.side_effect = RuntimeError("synthetic failure")
+        response = client.post("/address/20/validate")
+        assert response.status_code == 500
+        session.rollback.assert_called_once()
+
+    def test_validate_options_does_not_access_database(self, address_api):
+        client, session, *_ = address_api
+        assert client.options("/address/20/validate").status_code == 200
         session.get.assert_not_called()
         session.commit.assert_not_called()
 

@@ -78,6 +78,15 @@ interface Address {
   latitude: number | null;
   longitude: number | null;
   geocoded: boolean;
+  verified_at: string | null;
+}
+
+interface AddressValidationResult {
+  outcome: "confirmed" | "not_found" | "unavailable";
+  official_postal_code: string | null;
+  postal_code_matches: boolean | null;
+  score: number | null;
+  address: Address;
 }
 
 interface ContactAddress {
@@ -918,6 +927,33 @@ const Contact = () => {
     } finally { setAddressBusy(false); }
   };
 
+  const validateAddress = async (addressId: number) => {
+    setAddressBusy(true);
+    setIsError(false); setMessage("");
+    try {
+      const response = await axios.post<AddressValidationResult>(`${apiUrl}/address/${addressId}/validate`, {}, { headers });
+      const result = response.data;
+      await refreshAddresses();
+      if (result.outcome === "confirmed") {
+        if (result.postal_code_matches === false) {
+          setIsError(true);
+          setMessage(`⚠️ Adres istnieje, ale oficjalny kod pocztowy to ${result.official_postal_code} (masz zapisany ${result.address.postal_code}).`);
+        } else {
+          setMessage("✅ Adres potwierdzony w rejestrze.");
+        }
+      } else if (result.outcome === "not_found") {
+        setIsError(true);
+        setMessage("⚠️ Nie znaleziono takiego adresu w rejestrze — sprawdź numer budynku.");
+      } else {
+        setIsError(true);
+        setMessage("❓ Nie udało się zweryfikować adresu (usługa niedostępna lub brak jednoznacznego wyniku) — spróbuj później.");
+      }
+    } catch {
+      setIsError(true);
+      setMessage("❓ Nie udało się zweryfikować lub odświeżyć adresu — spróbuj później.");
+    } finally { setAddressBusy(false); }
+  };
+
   const toggleAddressMap = (linkId: number) => {
     setOpenAddressMaps(current => {
       const next = new Set(current);
@@ -1045,6 +1081,9 @@ const Contact = () => {
             <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
               {link.role && <span>{link.role} — </span>}{link.address.formatted_address}</div>
             {link.address.notes && <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>📝 Notatki: {link.address.notes}</div>}
+            {link.address.verified_at && <div style={{ marginTop: 4, color: "#667" }}>
+              <small>Zweryfikowano: {new Date(link.address.verified_at).toLocaleDateString("pl-PL")}</small>
+            </div>}
             {mode === "edit" && <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
               <label style={{ width: "100%" }}>Notatki (kod domofonu, dojazd...)
                 <textarea key={`${link.id}-${link.address.notes}`} defaultValue={link.address.notes ?? ""}
@@ -1066,6 +1105,8 @@ const Contact = () => {
                 onClick={() => void removeAddressLink(link.id)}>Usuń</button>
               {link.address.latitude == null && <button className={"button"} type="button" disabled={addressBusy}
                 onClick={() => void geocodeAddress(link.address.id)}>📍 Geokoduj</button>}
+              <button className={"button"} type="button" disabled={addressBusy}
+                onClick={() => void validateAddress(link.address.id)}>✓ Zweryfikuj adres</button>
             </div>}
             {link.address.latitude != null && link.address.longitude != null && <>
               <button className={"button"} type="button" style={{ marginTop: 6 }} aria-expanded={openAddressMaps.has(link.id)}
