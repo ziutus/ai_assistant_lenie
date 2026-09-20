@@ -658,6 +658,10 @@ class TestContactsListArchivedFilter:
         compiled = self._run(monkeypatch, "?q=0048%20501-234-567")
         assert "regexp_replace" in compiled
 
+    def test_search_includes_company(self, monkeypatch):
+        compiled = self._run(monkeypatch, "?q=kal")
+        assert "contacts.company" in compiled
+
 
 class TestContactsDelete:
     def test_deletes_contact(self, monkeypatch):

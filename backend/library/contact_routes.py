@@ -801,6 +801,7 @@ def contacts_list():
             func.unaccent(Contact.first_name).ilike(phrase),
             func.unaccent(Contact.last_name).ilike(phrase),
             func.unaccent(Contact.display_label).ilike(phrase),
+            func.unaccent(func.coalesce(Contact.company, "")).ilike(phrase),
             func.unaccent(func.coalesce(Contact.phone_number, "")).ilike(phrase),
             func.unaccent(func.coalesce(Contact.email, "")).ilike(phrase),
             _channel_search(Contact.phone_numbers, phrase, digits),
