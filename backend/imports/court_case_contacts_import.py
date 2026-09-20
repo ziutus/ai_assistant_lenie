@@ -83,6 +83,7 @@ def main():
     from imports.whatsapp_neighbor_profiles import normalize_name
     from library.db.engine import get_session
     from library.db.models import Contact, ContactCategory, ContactOrganization
+    from library.contact_addresses import attach_imported_address
     from library.pesel import is_valid_pesel, pesel_birthdate
 
     phone_by_name = load_phone_by_name(args.contacts_csv, args.contacts_suffix) if args.contacts_csv else {}
@@ -152,13 +153,13 @@ def main():
                         first_name=imie,
                         last_name=nazwisko,
                         phone_number=phone,
-                        address=miejsce or None,
                         pesel=pesel or None,
                         birthday=birthdate,
                         notes=note_line,
                     )
                     session.add(contact)
                     session.flush()
+                    attach_imported_address(session, contact, miejsce)
                     if firma:
                         session.add(ContactOrganization(
                             contact_id=contact.id,

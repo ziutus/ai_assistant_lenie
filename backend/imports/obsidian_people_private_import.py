@@ -35,7 +35,7 @@ ACTIONS = {
     "merge_duplicates", "merge_into_existing", "split_person", "split_person_primary",
     "skip_empty_file", "skip_no_identifier",
 }
-FIELDS = ("phone_number", "email", "birthday", "company", "position", "address")
+FIELDS = ("phone_number", "email", "birthday", "company", "position")
 ALIASES = {
     "radek": "radoslaw", "maciek": "maciej", "tomek": "tomasz", "gosia": "malgorzata",
     "gosia tarankowa": "malgorzata tarankowa", "kaska": "katarzyna", "ania": "anna",
@@ -69,7 +69,7 @@ LABELS = {
     "linkedin": "linkedin_url", "linkedin_url": "linkedin_url",
     "urodziny": "birthday", "birthday": "birthday", "data urodzenia": "birthday",
     "firma": "company", "company": "company", "pracodawca": "company",
-    "stanowisko": "position", "position": "position", "adres": "address", "address": "address",
+    "stanowisko": "position", "position": "position", "adres": "addresses", "address": "addresses",
     "nip": "company",
 }
 PHONE = re.compile(r"(?:\+48[ -]?)?(?:\d[ -]?){9}")
@@ -199,7 +199,7 @@ def route_operation(op, body):
                 company_parts.append(stripped)
                 expect_company = False
             elif re.match(r"^(?:ul\.|al\.|adres:)\s*", stripped, re.I):
-                fields["address"] = stripped
+                fields["addresses"] = stripped
             elif re.fullmatch(r"[^\W\d_]+\s+(?:\+48[ -]?)?(?:\d[ -]?){9}", stripped):
                 fields["phone_number"] = stripped.split(maxsplit=1)[1]
             else:
@@ -307,7 +307,8 @@ def run_import(session, spec, sources, apply=False):
     from sqlalchemy import select, text
 
     from library.contact_change_log import record_contact_change
-    from library.db.models import Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactLink, ContactRelationship
+    from library.contact_addresses import attach_imported_address, contact_address_links
+    from library.db.models import Contact, ContactAddress, ContactCategory, ContactChangeLog, ContactGroup, ContactLink, ContactRelationship
 
     session.autoflush = False
     counts = Counter()
@@ -400,6 +401,13 @@ def run_import(session, spec, sources, apply=False):
     def update(contact, fields, private, group_name, op, token, secondary=None):
         changes, flags = {}, []
         links = linkedin_links(contact)
+        address_links = contact_address_links(session, contact)
+        known_addresses = {link.address.raw_address for link in address_links}
+        incoming_address = (fields.get("addresses") or "").strip()
+        if incoming_address and incoming_address not in known_addresses:
+            changes["addresses"] = [incoming_address]
+            known_addresses.add(incoming_address)
+        shared_addresses = []
         linkedin_url = fields.get("linkedin_url")
         if linkedin_url and not any(link.url == linkedin_url for link in links):
             if not links:
@@ -407,7 +415,7 @@ def run_import(session, spec, sources, apply=False):
             else:
                 flags.append("FIELD_CONFLICT:linkedin_url:retain")
         for key, value in fields.items():
-            if key == "linkedin_url":
+            if key in {"linkedin_url", "addresses"}:
                 continue
             current = getattr(contact, key)
             if not current:
@@ -416,6 +424,12 @@ def run_import(session, spec, sources, apply=False):
                 flags.append(f"FIELD_CONFLICT:{key}:retain")
         merged_private = append_private(contact.private_notes, private)
         if secondary:
+            for link in contact_address_links(session, secondary):
+                if link.address.raw_address not in known_addresses:
+                    shared_addresses.append(link.address)
+                    known_addresses.add(link.address.raw_address)
+            if shared_addresses:
+                changes.setdefault("addresses", [])
             secondary_links = linkedin_links(secondary)
             target_url = changes.get("links") or (links[0].url if links else None)
             for link in secondary_links:
@@ -446,14 +460,22 @@ def run_import(session, spec, sources, apply=False):
                 if group.name not in existing_groups and group.name not in add_groups:
                     add_groups.append(group.name)
                     groups[group.name] = group
-        occupied = [key for key in FIELDS if getattr(contact, key)] + (["links"] if links else [])
+        occupied = [key for key in FIELDS if getattr(contact, key)] + (["links"] if links else []) + (["addresses"] if address_links else [])
         print(f"  CONTACT #{contact.id or 'new'} {contact.first_name or ''} {contact.last_name or ''}: "
               f"current_fields={occupied}, private_notes={'present' if contact.private_notes else 'empty'}, "
               f"groups={sorted(existing_groups)}; intended_fields={sorted(changes)}, "
               f"add_groups={add_groups}; flags={flags}")
         if apply:
             for key, value in changes.items():
-                if key == "links":
+                if key == "addresses":
+                    for raw_address in value:
+                        attach_imported_address(session, contact, raw_address)
+                    for address in shared_addresses:
+                        has_addresses = bool(contact_address_links(session, contact))
+                        session.add(ContactAddress(contact=contact, address=address,
+                                                   role="zamieszkania", is_primary=not has_addresses))
+                        session.flush()
+                elif key == "links":
                     if links:
                         links[0].url = value
                     else:

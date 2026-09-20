@@ -18,6 +18,160 @@ pytest.importorskip("sqlalchemy")
 from flask import Flask, g
 
 
+class TestContactAddresses:
+    @pytest.fixture
+    def address_api(self, monkeypatch):
+        from library.contact_routes import bp
+        from library.db.models import Address, ContactAddress
+        session = MagicMock()
+        contact = _make_contact(id_=7, first_name="Jan", last_name="Kowalski")
+        address = Address(id=20, label="dom", raw_address="Example Street 1")
+        link = ContactAddress(id=30, contact_id=7, address_id=20, address=address,
+                              role="zamieszkania", is_primary=True)
+        rows = {("Contact", 7): contact, ("Address", 20): address, ("ContactAddress", 30): link}
+        session.get.side_effect = lambda model, ident: rows.get((model.__name__, ident))
+        session.execute.return_value.scalars.return_value.all.return_value = []
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        app.register_blueprint(bp)
+        return app.test_client(), session, contact, address, link
+
+    def test_list_and_detail_use_nested_addresses_and_primary_order(self, address_api):
+        from library.contact_routes import _contact_dict
+        client, session, contact, address, link = address_api
+        session.execute.return_value.scalars.return_value.all.return_value = [link]
+        response = client.get("/contacts/7/addresses")
+        assert response.status_code == 200
+        assert response.json["addresses"] == [{
+            "id": 30, "role": "zamieszkania", "is_primary": True,
+            "address": {"id": 20, "label": "dom", "raw_address": "Example Street 1",
+                        "latitude": None, "longitude": None},
+        }]
+        sql = str(session.execute.call_args.args[0])
+        assert "ORDER BY contact_addresses.is_primary DESC, contact_addresses.id" in sql
+        with client.application.test_request_context():
+            detail = _contact_dict(contact)
+        assert "address" not in detail
+        assert detail["addresses"] == response.json["addresses"]
+
+    def test_create_address_and_audit(self, address_api):
+        from library.db.models import ContactAddress, ContactChangeLog
+        client, session, _, _, _ = address_api
+        response = client.post("/contacts/7/addresses", json={
+            "raw_address": " New Street 2 ", "label": " summer house ",
+            "role": "dowolna rola", "is_primary": True,
+        })
+        assert response.status_code == 200
+        link, audit = [call.args[0] for call in session.add.call_args_list]
+        assert isinstance(link, ContactAddress)
+        assert link.contact_id == 7
+        assert link.address.raw_address == "New Street 2"
+        assert link.address.label == "summer house"
+        assert link.role == "dowolna rola" and link.is_primary
+        assert all(getattr(link.address, field) is None for field in ("latitude", "longitude", "location", "geocode_id"))
+        assert isinstance(audit, ContactChangeLog)
+        assert audit.contact_id == 7 and audit.changed_fields == ["addresses"]
+        assert session.commit.call_count == 2  # Persist the post-commit audit too.
+        assert [call[0] for call in session.method_calls if call[0] in ("add", "commit")] == [
+            "add", "commit", "add", "commit",
+        ]
+
+    def test_attach_reuses_same_address(self, address_api):
+        client, session, _, address, _ = address_api
+        response = client.post("/contacts/7/addresses", json={"address_id": 20, "role": "praca"})
+        assert response.status_code == 200
+        link = session.add.call_args_list[0].args[0]
+        assert link.address is address
+        assert link.is_primary is False
+
+    @pytest.mark.parametrize("payload", [
+        {}, {"raw_address": "   "}, {"raw_address": None}, {"raw_address": 42},
+        {"address_id": "20"}, {"address_id": 20, "raw_address": "unexpected"},
+        {"raw_address": "Street", "role": "x" * 51},
+        {"raw_address": "Street", "is_primary": "false"},
+    ])
+    def test_invalid_create_is_400(self, address_api, payload):
+        client, session, *_ = address_api
+        assert client.post("/contacts/7/addresses", json=payload).status_code == 400
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("method,path,payload", [
+        ("get", "/contacts/999/addresses", None),
+        ("post", "/contacts/999/addresses", {"raw_address": "Street"}),
+        ("post", "/contacts/7/addresses", {"address_id": 999}),
+        ("patch", "/address/999", {"label": "home"}),
+        ("patch", "/contact_addresses/999", {"role": "home"}),
+        ("delete", "/contact_addresses/999", None),
+    ])
+    def test_missing_rows_are_404(self, address_api, method, path, payload):
+        client, session, *_ = address_api
+        assert getattr(client, method)(path, json=payload).status_code == 404
+        session.commit.assert_not_called()
+
+    def test_search_unaccents_and_lists_each_linked_contact_once(self, address_api):
+        client, session, contact, address, _ = address_api
+        spouse = _make_contact(id_=8, first_name="Anna", last_name="Kowalska")
+        result_addresses, result_links = MagicMock(), MagicMock()
+        result_addresses.scalars.return_value.all.return_value = [address]
+        result_links.scalars.return_value.all.return_value = [
+            SimpleNamespace(address_id=20, contact_id=c.id, contact=c) for c in (contact, spouse, contact)
+        ]
+        session.execute.side_effect = [result_addresses, result_links]
+        response = client.get("/addresses?q=Łódź")
+        assert response.status_code == 200
+        assert response.json["addresses"][0]["linked_contacts"] == [
+            {"id": 7, "display_name": "Jan Kowalski"}, {"id": 8, "display_name": "Anna Kowalska"},
+        ]
+        from sqlalchemy.dialects import postgresql
+        compiled = session.execute.call_args_list[0].args[0].compile(dialect=postgresql.dialect())
+        assert "unaccent(addresses.raw_address) ILIKE unaccent(" in str(compiled)
+        assert "%Łódź%" in compiled.params.values()
+        assert 20 in compiled.params.values()
+
+    def test_shared_edit_changes_all_links_and_audits_contacts(self, address_api):
+        from library.db.models import ContactAddress
+        client, session, contact, address, link = address_api
+        second_link = ContactAddress(address=address, contact_id=8)
+        session.execute.return_value.scalars.return_value.all.return_value = [contact, _make_contact(id_=8)]
+        response = client.patch("/address/20", json={"raw_address": "Changed Street 3", "label": None})
+        assert response.status_code == 200
+        assert link.address.raw_address == second_link.address.raw_address == "Changed Street 3"
+        assert address.label is None
+        assert {call.args[0].contact_id for call in session.add.call_args_list} == {7, 8}
+
+    @pytest.mark.parametrize("value", ["", "  ", None])
+    def test_shared_address_cannot_be_blanked(self, address_api, value):
+        client, session, _, address, _ = address_api
+        assert client.patch("/address/20", json={"raw_address": value}).status_code == 400
+        assert address.raw_address == "Example Street 1"
+        session.commit.assert_not_called()
+
+    def test_patch_link_does_not_change_shared_address(self, address_api):
+        client, session, _, address, link = address_api
+        response = client.patch("/contact_addresses/30", json={
+            "role": "korespondencyjny", "is_primary": False, "raw_address": "Ignored",
+        })
+        assert response.status_code == 200
+        assert link.role == "korespondencyjny" and not link.is_primary
+        assert address.raw_address == "Example Street 1"
+        assert session.add.call_args.args[0].changed_fields == ["addresses"]
+
+    def test_delete_only_unlinks_and_keeps_address(self, address_api):
+        client, session, _, address, link = address_api
+        assert client.delete("/contact_addresses/30").status_code == 200
+        session.delete.assert_called_once_with(link)
+        assert address.raw_address == "Example Street 1"
+        assert session.add.call_args.args[0].changed_fields == ["addresses"]
+
+    def test_database_error_rolls_back(self, address_api):
+        client, session, *_ = address_api
+        session.commit.side_effect = RuntimeError("synthetic failure")
+        assert client.post("/contacts/7/addresses", json={"address_id": 20}).status_code == 500
+        session.rollback.assert_called_once()
+        session.add.assert_called_once()  # No audit for an unsuccessful change.
+
+
 def _make_category(id_=1, name="Osoba prywatna"):
     return SimpleNamespace(id=id_, name=name, description=None, is_active=True)
 
@@ -33,7 +187,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         display_label=None,
         phone_number="+48 725 428 453",
         email=None, company=None, position=None,
-        address=None, current_city=None, hometown=None, birthday=None, pesel=None, notes=None, private_notes=None, groups=[], interests=[], whatsapp_profile=None,
+        current_city=None, hometown=None, birthday=None, pesel=None, notes=None, private_notes=None, groups=[], interests=[], whatsapp_profile=None,
         birthday_month=None, birthday_day=None,
         languages=[], nationality=[], photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
@@ -1534,6 +1688,7 @@ class TestContactThumbnails:
         factory = MagicMock(return_value=storage)
         monkeypatch.setattr("library.config_loader.load_config", lambda: {})
         monkeypatch.setattr("library.storage.storage_from_config", factory)
+        monkeypatch.setattr("library.contact_routes._contact_addresses", lambda *args: [])
         with Flask(__name__).test_request_context("/contacts"):
             response, status = contacts_list()
             assert status == 200
@@ -1546,6 +1701,7 @@ class TestContactThumbnails:
 
     def test_null_thumbnail_needs_no_storage_and_reuses_client(self, monkeypatch):
         from library.contact_routes import _contact_dict
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", MagicMock())
 
         storage = MagicMock()
         storage.presigned_get_url.return_value = None
@@ -2099,8 +2255,9 @@ class TestContactBirthdayPair:
 
     @pytest.mark.parametrize("kind", ["service", "user", "read_only", None])
     @pytest.mark.parametrize("month, day", [(2, 29), (None, None)])
-    def test_dict_birthday_pair_is_public(self, kind, month, day):
+    def test_dict_birthday_pair_is_public(self, kind, month, day, monkeypatch):
         from library.contact_routes import _contact_dict
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", MagicMock())
 
         row = _make_contact(birthday_month=month, birthday_day=day, private_notes="vault note")
         with Flask(__name__).test_request_context():

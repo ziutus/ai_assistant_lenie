@@ -141,3 +141,47 @@ def test_ambiguous_csv_row_is_reported_without_creating_or_updating_contact(tmp_
     assert "Niejednoznaczne wiersze pominięte do ręcznego sprawdzenia: 1" in output
     assert all(row.birthday_month is None for row in rows)
     session.add.assert_not_called()
+
+
+@pytest.mark.parametrize("existing_contact", [False, True])
+@pytest.mark.parametrize("apply", [False, True])
+def test_import_addresses_adds_once_and_keeps_existing_addresses(tmp_path, monkeypatch, existing_contact, apply):
+    from library.db.models import Address, ContactAddress, ContactCategory, ContactChangeLog, ContactGroup
+    row = contact(phones=("501234567",))
+    links = [ContactAddress(contact_id=1, address=Address(raw_address="Old Street"), is_primary=True)] if existing_contact else []
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.first.return_value = ContactCategory(id=1)
+    added = []
+
+    def add(value):
+        added.append(value)
+        if isinstance(value, Contact):
+            value.id = 1  # Simulate the subsequent flush assigning the PK.
+        elif isinstance(value, ContactAddress):
+            links.append(value)
+
+    def scalars(statement):
+        entity = statement.column_descriptions[0]["entity"]
+        return {Contact: [row] if existing_contact else [], ContactGroup: [], ContactAddress: links}[entity]
+
+    session.add.side_effect = add
+    session.scalars.side_effect = scalars
+    path = tmp_path / "addresses.csv"
+    path.write_text("First Name,Last Name,Phone 1 - Value,Address 1 - Formatted\n"
+                    "Jan,Test,501234567,New Street\nJan,Test,501234567,New Street\n", encoding="utf-8")
+    monkeypatch.setattr("library.db.engine.get_session", lambda: session)
+    monkeypatch.setattr("sys.argv", ["import", "--csv", str(path), *(["--apply"] if apply else [])])
+    main()
+    if not apply:
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+        return
+    new_addresses = [value for value in added if isinstance(value, Address)]
+    new_links = [value for value in added if isinstance(value, ContactAddress)]
+    audits = [value for value in added if isinstance(value, ContactChangeLog)]
+    assert len(new_addresses) == len(new_links) == 1
+    assert new_addresses[0].raw_address == "New Street"
+    assert new_links[0].is_primary == (not existing_contact)
+    assert new_links[0].role == "zamieszkania"
+    assert "addresses" in audits[0].changed_fields
+    assert len(links) == (2 if existing_contact else 1)

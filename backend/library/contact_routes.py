@@ -23,6 +23,7 @@ from library.contact_phones import phone_search_digits
 from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
 from library.db.engine import get_scoped_session
 from library.db.models import (
+    Address, ContactAddress,
     Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
     ContactEducation, ContactInterest, ContactInterestMembership,
     ContactLookupResult, ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 _CONTACT_FIELDS = (
     "first_name", "last_name", "phone_number", "email",
-    "company", "position", "address", "current_city", "hometown", "pesel", "notes", "display_label",
+    "company", "position", "current_city", "hometown", "pesel", "notes", "display_label",
 )
 
 _LOOKUP_TYPES = ("phone", "linkedin", "web")
@@ -277,7 +278,7 @@ def _contact_dict(row: Contact) -> dict:
         "email_addresses": contact_channels(row, "email_addresses"),
         "company": row.company,
         "position": row.position,
-        "address": row.address,
+        "addresses": [_contact_address_dict(link) for link in _contact_addresses(get_scoped_session(), row.id)],
         "current_city": row.current_city,
         "hometown": row.hometown,
         "birthday": row.birthday.isoformat() if row.birthday else None,
@@ -307,6 +308,29 @@ def _lookup_result_dict(row: ContactLookupResult) -> dict:
         "notes": row.notes,
         "searched_at": row.searched_at.isoformat() if row.searched_at else None,
     }
+
+
+def _address_dict(row: Address) -> dict:
+    return {
+        "id": row.id, "label": row.label, "raw_address": row.raw_address,
+        "latitude": float(row.latitude) if row.latitude is not None else None,
+        "longitude": float(row.longitude) if row.longitude is not None else None,
+    }
+
+
+def _contact_address_dict(row: ContactAddress) -> dict:
+    return {
+        "id": row.id, "role": row.role, "is_primary": row.is_primary,
+        "address": _address_dict(row.address),
+    }
+
+
+def _contact_addresses(session, contact_id):
+    return session.execute(
+        select(ContactAddress).options(joinedload(ContactAddress.address))
+        .where(ContactAddress.contact_id == contact_id)
+        .order_by(ContactAddress.is_primary.desc(), ContactAddress.id)
+    ).scalars().all()
 
 
 def _organization_dict(row: ContactOrganization) -> dict:
@@ -1666,6 +1690,171 @@ def contact_lookup_results_delete(lookup_result_id: int):
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
     return jsonify({"status": "success", "deleted_id": lookup_result_id}), 200
+
+
+# --- addresses (multiple, shareable addresses per contact) ---
+
+@bp.route("/addresses", methods=["GET"])
+def addresses_list():
+    session = get_scoped_session()
+    query = select(Address)
+    q = (request.args.get("q") or "").strip()
+    if q:
+        query = query.where(func.unaccent(Address.raw_address).ilike(func.unaccent(f"%{q}%")))
+    addresses = session.execute(query.order_by(Address.id).limit(20)).scalars().all()
+    contacts_by_address = {}
+    if addresses:
+        links = session.execute(
+            select(ContactAddress).options(joinedload(ContactAddress.contact))
+            .where(ContactAddress.address_id.in_([address.id for address in addresses]))
+            .order_by(ContactAddress.id)
+        ).scalars().all()
+        for link in links:
+            contacts_by_address.setdefault(link.address_id, {})[link.contact_id] = {
+                "id": link.contact_id, "display_name": contact_display_name(link.contact),
+            }
+    return jsonify({"status": "success", "addresses": [
+        {"id": address.id, "label": address.label, "raw_address": address.raw_address,
+         "linked_contacts": list(contacts_by_address.get(address.id, {}).values())}
+        for address in addresses
+    ]}), 200
+
+
+@bp.route("/contacts/<int:contact_id>/addresses", methods=["GET", "POST", "OPTIONS"])
+def contact_addresses(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    if request.method == "GET":
+        return jsonify({"status": "success", "addresses": [
+            _contact_address_dict(link) for link in _contact_addresses(session, contact_id)
+        ]}), 200
+
+    data = request.get_json(silent=True) or {}
+    error = _validate_address_payload(data)
+    if error:
+        return {"status": "error", "message": error}, 400
+    if "address_id" in data:
+        if type(data["address_id"]) is not int or data["address_id"] <= 0:
+            return {"status": "error", "message": "address_id must be a positive integer"}, 400
+        if "raw_address" in data or "label" in data:
+            return {"status": "error", "message": "Choose address_id or a new address"}, 400
+        address = session.get(Address, data["address_id"])
+        if address is None:
+            return {"status": "error", "message": "Address not found"}, 404
+    else:
+        if not (data.get("raw_address") or "").strip():
+            return {"status": "error", "message": "raw_address is required"}, 400
+        address = Address(raw_address=data["raw_address"].strip(), label=(data.get("label") or "").strip() or None)
+    row = ContactAddress(contact_id=contact_id, address=address,
+                         role=(data.get("role") or "").strip() or None,
+                         is_primary=data.get("is_primary", False))
+    try:
+        session.add(row)
+        session.commit()
+        record_contact_change(session, contact, "manual_edit", changed_fields=["addresses"])
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "address": _contact_address_dict(row)}), 200
+
+
+def _validate_address_payload(data):
+    if not isinstance(data, dict):
+        return "JSON object required"
+    for field, limit in (("label", 100), ("role", 50), ("raw_address", None)):
+        if field in data:
+            value = data[field]
+            if value is not None and not isinstance(value, str):
+                return f"{field} must be a string or null"
+            if limit and value and len(value.strip()) > limit:
+                return f"{field} must be at most {limit} characters"
+    if "raw_address" in data and not (data["raw_address"] or "").strip():
+        return "raw_address cannot be empty"
+    if "is_primary" in data and type(data["is_primary"]) is not bool:
+        return "is_primary must be a boolean"
+    return None
+
+
+@bp.route("/address/<int:address_id>", methods=["PATCH", "OPTIONS"])
+def addresses_update(address_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    row = session.get(Address, address_id)
+    if row is None:
+        return {"status": "error", "message": "Address not found"}, 404
+    data = request.get_json(silent=True) or {}
+    error = _validate_address_payload(data)
+    if error:
+        return {"status": "error", "message": error}, 400
+    for field in ("label", "raw_address"):
+        if field in data:
+            setattr(row, field, (data[field] or "").strip() or None)
+    row.updated_at = datetime.datetime.now()
+    try:
+        # A shared edit belongs in every affected contact's history.
+        contacts = session.execute(select(Contact).where(Contact.id.in_(
+            select(ContactAddress.contact_id).where(ContactAddress.address_id == address_id)
+        ))).scalars().all()
+        for contact in contacts:
+            record_contact_change(session, contact, "manual_edit", changed_fields=["addresses"])
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "address": _address_dict(row)}), 200
+
+
+@bp.route("/contact_addresses/<int:link_id>", methods=["PATCH", "OPTIONS"])
+def contact_addresses_update(link_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    row = session.get(ContactAddress, link_id)
+    if row is None:
+        return {"status": "error", "message": "Address link not found"}, 404
+    data = request.get_json(silent=True) or {}
+    error = _validate_address_payload(data)
+    if error:
+        return {"status": "error", "message": error}, 400
+    if "role" in data:
+        row.role = (data["role"] or "").strip() or None
+    if "is_primary" in data:
+        row.is_primary = data["is_primary"]
+    try:
+        contact = session.get(Contact, row.contact_id)
+        session.commit()
+        record_contact_change(session, contact, "manual_edit", changed_fields=["addresses"])
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "address": _contact_address_dict(row)}), 200
+
+
+@bp.route("/contact_addresses/<int:link_id>", methods=["DELETE", "OPTIONS"])
+def contact_addresses_delete(link_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    row = session.get(ContactAddress, link_id)
+    if row is None:
+        return {"status": "error", "message": "Address link not found"}, 404
+    try:
+        contact = session.get(Contact, row.contact_id)
+        session.delete(row)
+        session.commit()
+        record_contact_change(session, contact, "manual_edit", changed_fields=["addresses"])
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": link_id}), 200
 
 
 # --- organizations (multiple affiliations per contact — JDG, etat, board seat, ...) ---

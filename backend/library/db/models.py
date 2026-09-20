@@ -3129,7 +3129,6 @@ class Contact(Base):
     email_addresses: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     company: Mapped[str | None] = mapped_column(String(200))
     position: Mapped[str | None] = mapped_column(String(200))
-    address: Mapped[str | None] = mapped_column(Text)
     current_city: Mapped[str | None] = mapped_column(String(200))
     hometown: Mapped[str | None] = mapped_column(String(200))
     birthday: Mapped[datetime.date | None] = mapped_column(Date)
@@ -3294,6 +3293,47 @@ class ContactLookupResult(Base):
             f"ContactLookupResult(id={self.id!r}, contact_id={self.contact_id!r}, "
             f"lookup_type={self.lookup_type!r}, status={self.status!r})"
         )
+
+
+class Address(Base):
+    """Shared physical address, e.g. a household used by both spouses.
+    Editing one row reaches every linked contact; future proximity searches
+    can match that same location without relying on duplicated free text.
+    Geocoding is a separate phase; location is its spatial source of truth.
+    """
+
+    __tablename__ = "addresses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[str | None] = mapped_column(String(100))
+    raw_address: Mapped[str] = mapped_column(Text, nullable=False)
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    location: Mapped[object | None] = mapped_column(GeographyPoint())
+    geocode_id: Mapped[int | None] = mapped_column(ForeignKey("geocode_cache.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class ContactAddress(Base):
+    """A contact's use of a shared address, with its own role and priority.
+    Spouses can share one household row while a contact also has a summer
+    house. An address edit or proximity match then reaches all its contacts.
+    role is an open vocabulary, like ContactRelationship.relationship_type.
+    """
+
+    __tablename__ = "contact_addresses"
+    __table_args__ = (Index("idx_contact_addresses_contact", "contact_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    address_id: Mapped[int] = mapped_column(ForeignKey("addresses.id", ondelete="CASCADE"), nullable=False)
+    role: Mapped[str | None] = mapped_column(String(50))
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    address: Mapped["Address"] = relationship(foreign_keys=[address_id])
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
 
 
 class ContactOrganization(Base):
