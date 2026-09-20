@@ -1047,6 +1047,13 @@ const Contact = () => {
                 onClick={() => toggleAddressMap(link.id)}>
                 {openAddressMaps.has(link.id) ? "🗺 Ukryj mapę" : "🗺 Pokaż na mapie"}
               </button>
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${link.address.latitude},${link.address.longitude}`}
+                target="_blank" rel="noopener noreferrer"
+                className={"button"} style={{ marginTop: 6, marginLeft: 6, display: "inline-block", textDecoration: "none" }}
+              >
+                🧭 Otwórz w Google Maps (trasa)
+              </a>
               {openAddressMaps.has(link.id) && <React.Suspense fallback={<p>Ładowanie mapy…</p>}>
                 <CountryMap countries={[]} places={[{
                   name: link.address.label || link.address.formatted_address,
