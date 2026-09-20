@@ -19,7 +19,7 @@ Widoczność jest sterowana kategorią kontaktu — w kodzie frontendu to `conta
 | Pole | Po co istnieje | Osoba prywatna | Firma | Uzasadnienie |
 |---|---|---|---|---|
 | `phone_numbers`, `email_addresses` (+ starsze `phone_number`/`email`) | Kanały kontaktu | widoczne | widoczne | uniwersalne — firma/JDG ma własny telefon/e-mail tak samo jak osoba |
-| `address` | Adres kontaktowy/wizytowy | widoczne | widoczne | sensowny dla obu; dla firmy to inny adres niż rejestrowy z `contact_organizations.address` (ten drugi opisuje adres z CEIDG konkretnej afiliacji, nie ogólny adres kontaktowy) |
+| Adresy (`Address`/`ContactAddress`, sekcja „Adresy”) | Adres kontaktowy/wizytowy — od 2026-09-20 model współdzielony i strukturalny (ulica/nr/kod/miasto/kraj), z geokodowaniem i weryfikacją rejestrową; zob. [`docs/contact-address-external-services.md`](contact-address-external-services.md) | widoczne | widoczne | sensowny dla obu; dla firmy to inny adres niż rejestrowy z `contact_organizations.address` (ten drugi opisuje adres z CEIDG konkretnej afiliacji, nie ogólny adres kontaktowy) |
 | `position` | Stanowisko *osoby* w organizacji | widoczne | **ukryte** | rola osoby, firma nie ma „stanowiska” |
 | `current_city` | Miasto zamieszkania — motyw do small talku | widoczne | **ukryte** | pole small-talkowe, z natury osobowe |
 | `hometown` | Miasto pochodzenia — motyw do small talku | widoczne | **ukryte** | jak wyżej |
