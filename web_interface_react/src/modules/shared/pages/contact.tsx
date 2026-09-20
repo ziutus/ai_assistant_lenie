@@ -67,6 +67,7 @@ type OrgStatus = "candidate" | "confirmed" | "rejected";
 interface Address {
   id: number;
   label: string | null;
+  notes: string | null;
   street: string | null;
   building_number: string | null;
   apartment_number: string | null;
@@ -98,10 +99,11 @@ const addressFields = [
   { key: "city", label: "Miasto / miejscowość", maxLength: 200 },
   { key: "country", label: "Kraj", maxLength: 100 },
 ] as const;
-type ParsedAddress = { [Key in typeof addressFields[number]["key"]]: string | null };
+type ParsedAddress = { [Key in typeof addressFields[number]["key"] | "notes"]: string | null };
+const ADDRESS_NOTES_MAX_LENGTH = 1000;
 const emptyAddressForm = {
   label: "", street: "", building_number: "", apartment_number: "", postal_code: "", city: "", country: "Polska",
-  role: "zamieszkania", is_primary: false,
+  role: "zamieszkania", is_primary: false, notes: "",
 };
 
 interface ContactOrganization {
@@ -847,9 +849,10 @@ const Contact = () => {
           const value = response.data[key];
           if (value != null) next[key] = value;
         }
+        if (response.data.notes != null) next.notes = response.data.notes;
         return next;
       });
-      setMessage(addressFields.some(({ key }) => response.data[key] != null)
+      setMessage(addressFields.some(({ key }) => response.data[key] != null) || response.data.notes != null
         ? "Sprawdź i popraw pola przed zapisaniem adresu."
         : "Nie udało się podzielić adresu. Uzupełnij pola ręcznie.");
     } catch (error: any) {
@@ -867,6 +870,7 @@ const Contact = () => {
       await axios.post(`${apiUrl}/contacts/${id}/addresses`, addressId
         ? { ...values, address_id: addressId }
         : { ...values, label: addressForm.label.trim() || null,
+          notes: addressForm.notes.trim() || null,
           ...Object.fromEntries(addressFields.map(({ key }) => [key, addressForm[key].trim() || null])) }, { headers });
       setAddressForm(emptyAddressForm);
       setAddressText("");
@@ -875,6 +879,17 @@ const Contact = () => {
       await refreshAddresses();
     } catch (error: any) {
       setIsError(true); setMessage(`Nie udało się dodać adresu: ${error.response?.data?.message || error.message}`);
+    } finally { setAddressBusy(false); }
+  };
+
+  const updateAddressNotes = async (addressId: number, notes: string | null) => {
+    setAddressBusy(true);
+    setIsError(false); setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/address/${addressId}`, { notes }, { headers });
+      await refreshAddresses();
+    } catch (error: any) {
+      setIsError(true); setMessage(`Nie udało się zapisać notatek: ${error.response?.data?.message || error.message}`);
     } finally { setAddressBusy(false); }
   };
 
@@ -1029,7 +1044,17 @@ const Contact = () => {
           <li key={link.id} style={{ marginBottom: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
             <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
               {link.role && <span>{link.role} — </span>}{link.address.formatted_address}</div>
+            {link.address.notes && <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>📝 Notatki: {link.address.notes}</div>}
             {mode === "edit" && <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
+              <label style={{ width: "100%" }}>Notatki (kod domofonu, dojazd...)
+                <textarea key={`${link.id}-${link.address.notes}`} defaultValue={link.address.notes ?? ""}
+                  maxLength={ADDRESS_NOTES_MAX_LENGTH} rows={3} style={inputStyle} disabled={addressBusy}
+                  onBlur={(event) => {
+                    const notes = event.target.value.trim() || null;
+                    if (notes !== link.address.notes) void updateAddressNotes(link.address.id, notes);
+                  }} />
+                <small>Wspólne dla wszystkich kontaktów używających tego adresu. Zapis po opuszczeniu pola.</small>
+              </label>
               <label>Rola <input key={`${link.id}-${link.role}`} defaultValue={link.role ?? ""} maxLength={50}
                 disabled={addressBusy} onBlur={(event) => {
                   const role = event.target.value.trim() || null;
@@ -1095,6 +1120,10 @@ const Contact = () => {
                 onChange={(event) => setAddressForm(current => ({ ...current, [key]: event.target.value }))} />
               {key === "postal_code" && <small id="address-postal-hint">Format: NN-NNN</small>}
             </label>)}
+            <label>Notatki (kod domofonu, dojazd...)
+              <textarea value={addressForm.notes} maxLength={ADDRESS_NOTES_MAX_LENGTH} rows={3} style={inputStyle}
+                onChange={(event) => setAddressForm(current => ({ ...current, notes: event.target.value }))} />
+            </label>
             <button className={"button"} type="button" disabled={addressBusy || addressParseBusy}
               onClick={() => void addAddress()}>Zapisz adres</button>
           </> : <>
