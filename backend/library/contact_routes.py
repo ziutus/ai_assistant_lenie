@@ -6,6 +6,7 @@ directional and single-row (no automatic reciprocal row/label)."""
 
 import datetime
 import logging
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,6 +16,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
+from library.address_formatting import ADDRESS_FIELD_LIMITS, format_address
+from library.address_parsing import parse_address_text
 from library.address_geocoding import geocode_address
 from library.contact_birthdays import upcoming_birthday_entry
 from library.contact_channels import channel_patch, contact_channels
@@ -313,7 +316,9 @@ def _lookup_result_dict(row: ContactLookupResult) -> dict:
 
 def _address_dict(row: Address) -> dict:
     return {
-        "id": row.id, "label": row.label, "raw_address": row.raw_address,
+        "id": row.id, "label": row.label,
+        **{field: getattr(row, field) for field in ADDRESS_FIELD_LIMITS},
+        "formatted_address": format_address(row),
         "latitude": float(row.latitude) if row.latitude is not None else None,
         "longitude": float(row.longitude) if row.longitude is not None else None,
         "geocoded": row.latitude is not None,
@@ -1696,13 +1701,23 @@ def contact_lookup_results_delete(lookup_result_id: int):
 
 # --- addresses (multiple, shareable addresses per contact) ---
 
+@bp.route("/addresses/parse", methods=["POST", "OPTIONS"])
+def addresses_parse():
+    data = request.get_json(silent=True)
+    fields = parse_address_text(data.get("text") if isinstance(data, dict) else None)
+    return jsonify({"status": "success", **fields}), 200
+
+
 @bp.route("/addresses", methods=["GET"])
 def addresses_list():
     session = get_scoped_session()
     query = select(Address)
     q = (request.args.get("q") or "").strip()
     if q:
-        query = query.where(func.unaccent(Address.raw_address).ilike(func.unaccent(f"%{q}%")))
+        query = query.where(or_(
+            *(func.unaccent(field).ilike(func.unaccent(f"%{q}%"))
+              for field in (Address.city, Address.street, Address.postal_code))
+        ))
     addresses = session.execute(query.order_by(Address.id).limit(20)).scalars().all()
     contacts_by_address = {}
     if addresses:
@@ -1716,7 +1731,7 @@ def addresses_list():
                 "id": link.contact_id, "display_name": contact_display_name(link.contact),
             }
     return jsonify({"status": "success", "addresses": [
-        {"id": address.id, "label": address.label, "raw_address": address.raw_address,
+        {**_address_dict(address),
          "linked_contacts": list(contacts_by_address.get(address.id, {}).values())}
         for address in addresses
     ]}), 200
@@ -1742,15 +1757,19 @@ def contact_addresses(contact_id: int):
     if "address_id" in data:
         if type(data["address_id"]) is not int or data["address_id"] <= 0:
             return {"status": "error", "message": "address_id must be a positive integer"}, 400
-        if "raw_address" in data or "label" in data:
+        if any(field in data for field in (*ADDRESS_FIELD_LIMITS, "label")):
             return {"status": "error", "message": "Choose address_id or a new address"}, 400
         address = session.get(Address, data["address_id"])
         if address is None:
             return {"status": "error", "message": "Address not found"}, 404
     else:
-        if not (data.get("raw_address") or "").strip():
-            return {"status": "error", "message": "raw_address is required"}, 400
-        address = Address(raw_address=data["raw_address"].strip(), label=(data.get("label") or "").strip() or None)
+        error = _validate_address_payload(data, creating=True)
+        if error:
+            return {"status": "error", "message": error}, 400
+        fields = {field: (data.get(field) or "").strip() or None for field in ADDRESS_FIELD_LIMITS}
+        if "country" not in data:
+            fields["country"] = "Polska"
+        address = Address(**fields, label=(data.get("label") or "").strip() or None)
     row = ContactAddress(contact_id=contact_id, address=address,
                          role=(data.get("role") or "").strip() or None,
                          is_primary=data.get("is_primary", False))
@@ -1765,18 +1784,22 @@ def contact_addresses(contact_id: int):
     return jsonify({"status": "success", "address": _contact_address_dict(row)}), 200
 
 
-def _validate_address_payload(data):
+def _validate_address_payload(data, *, creating=False):
     if not isinstance(data, dict):
         return "JSON object required"
-    for field, limit in (("label", 100), ("role", 50), ("raw_address", None)):
+    for field, limit in (("label", 100), ("role", 50), *ADDRESS_FIELD_LIMITS.items()):
         if field in data:
             value = data[field]
             if value is not None and not isinstance(value, str):
                 return f"{field} must be a string or null"
             if limit and value and len(value.strip()) > limit:
                 return f"{field} must be at most {limit} characters"
-    if "raw_address" in data and not (data["raw_address"] or "").strip():
-        return "raw_address cannot be empty"
+    for field in ("city", "building_number"):
+        if (creating or field in data) and not (data.get(field) or "").strip():
+            return f"{field} is required and cannot be empty"
+    postal_code = (data.get("postal_code") or "").strip()
+    if postal_code and not re.fullmatch(r"[0-9]{2}-[0-9]{3}", postal_code):
+        return "postal_code must use Polish format NN-NNN (e.g. 95-054)"
     if "is_primary" in data and type(data["is_primary"]) is not bool:
         return "is_primary must be a boolean"
     return None
@@ -1794,9 +1817,15 @@ def addresses_update(address_id: int):
     error = _validate_address_payload(data)
     if error:
         return {"status": "error", "message": error}, 400
-    for field in ("label", "raw_address"):
+    changed_location = any(
+        field in data and (data[field] or "").strip() != (getattr(row, field) or "")
+        for field in ADDRESS_FIELD_LIMITS
+    )
+    for field in ("label", *ADDRESS_FIELD_LIMITS):
         if field in data:
             setattr(row, field, (data[field] or "").strip() or None)
+    if changed_location:
+        row.latitude = row.longitude = row.location = row.geocode_id = None
     row.updated_at = datetime.datetime.now()
     try:
         # A shared edit belongs in every affected contact's history.

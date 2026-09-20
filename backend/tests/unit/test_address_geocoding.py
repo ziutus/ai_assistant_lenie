@@ -14,14 +14,15 @@ from library.db.models import Address, GeocodeCache
 @pytest.mark.parametrize("resolved", [False, True])
 def test_geocode_address_cache_and_coordinates(monkeypatch, cached, resolved):
     session = MagicMock()
-    address = Address(raw_address=" Example Street 1, Warsaw ")
+    address = Address(street="Example Street", building_number="1", city="Warsaw")
+    query = "Example Street 1, Warsaw"
     # A building hit must be accepted even though NER's OSM-class filter rejects it.
     hit = {
         "display_name": "1, Example Street, Warsaw, Poland",
         "lat": "52.229700", "lon": "21.012200", "class": "building",
         "type": "house", "importance": 0.3,
     } if resolved else None
-    row = GeocodeCache(id=42, query=address.raw_address, resolved=resolved,
+    row = GeocodeCache(id=42, query=query, resolved=resolved,
                        lat=hit["lat"] if hit else None, lon=hit["lon"] if hit else None)
     session.query.return_value.filter.return_value.one_or_none.return_value = row if cached else None
     geocode = MagicMock(return_value=hit)
@@ -31,16 +32,16 @@ def test_geocode_address_cache_and_coordinates(monkeypatch, cached, resolved):
     assert geocode_address(session, address) is resolved
     assert address.geocode_id == 42
     condition = session.query.return_value.filter.call_args.args[0]
-    assert condition.right.value == address.raw_address
+    assert condition.right.value == query
     if cached:
         geocode.assert_not_called()
         session.add.assert_not_called()
         session.flush.assert_not_called()
     else:
-        geocode.assert_called_once_with(address.raw_address)
+        geocode.assert_called_once_with(query)
         session.flush.assert_called_once()
         created = session.add.call_args.args[0]
-        assert created.query == address.raw_address
+        assert created.query == query
         assert created.resolved is resolved
         assert created.raw == hit
         for field, key in (("display_name", "display_name"), ("lat", "lat"), ("lon", "lon"),

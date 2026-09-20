@@ -307,8 +307,9 @@ def run_import(session, spec, sources, apply=False):
     from sqlalchemy import select, text
 
     from library.contact_change_log import record_contact_change
+    from library.address_formatting import format_address, imported_address_fields
     from library.contact_addresses import attach_imported_address, contact_address_links
-    from library.db.models import Contact, ContactAddress, ContactCategory, ContactChangeLog, ContactGroup, ContactLink, ContactRelationship
+    from library.db.models import Address, Contact, ContactAddress, ContactCategory, ContactChangeLog, ContactGroup, ContactLink, ContactRelationship
 
     session.autoflush = False
     counts = Counter()
@@ -402,11 +403,14 @@ def run_import(session, spec, sources, apply=False):
         changes, flags = {}, []
         links = linkedin_links(contact)
         address_links = contact_address_links(session, contact)
-        known_addresses = {link.address.raw_address for link in address_links}
+        known_addresses = {format_address(link.address) for link in address_links}
         incoming_address = (fields.get("addresses") or "").strip()
-        if incoming_address and incoming_address not in known_addresses:
+        incoming_formatted = (
+            format_address(Address(**imported_address_fields(incoming_address))) if incoming_address else ""
+        )
+        if incoming_address and incoming_formatted not in known_addresses:
             changes["addresses"] = [incoming_address]
-            known_addresses.add(incoming_address)
+            known_addresses.add(incoming_formatted)
         shared_addresses = []
         linkedin_url = fields.get("linkedin_url")
         if linkedin_url and not any(link.url == linkedin_url for link in links):
@@ -425,9 +429,9 @@ def run_import(session, spec, sources, apply=False):
         merged_private = append_private(contact.private_notes, private)
         if secondary:
             for link in contact_address_links(session, secondary):
-                if link.address.raw_address not in known_addresses:
+                if format_address(link.address) not in known_addresses:
                     shared_addresses.append(link.address)
-                    known_addresses.add(link.address.raw_address)
+                    known_addresses.add(format_address(link.address))
             if shared_addresses:
                 changes.setdefault("addresses", [])
             secondary_links = linkedin_links(secondary)
@@ -468,8 +472,8 @@ def run_import(session, spec, sources, apply=False):
         if apply:
             for key, value in changes.items():
                 if key == "addresses":
-                    for raw_address in value:
-                        attach_imported_address(session, contact, raw_address)
+                    for address_text in value:
+                        attach_imported_address(session, contact, address_text)
                     for address in shared_addresses:
                         has_addresses = bool(contact_address_links(session, contact))
                         session.add(ContactAddress(contact=contact, address=address,

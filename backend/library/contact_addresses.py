@@ -2,6 +2,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
+from library.address_formatting import imported_address_fields
 from library.db.models import Address, ContactAddress
 
 
@@ -15,15 +16,15 @@ def contact_address_links(session, contact):
     ))
 
 
-def attach_imported_address(session, contact, raw_address):
+def attach_imported_address(session, contact, address_text):
     """Add nonblank text once per contact, making only its first address primary."""
-    raw_address = (raw_address or "").strip()
-    if not raw_address:
+    if not (address_text or "").strip():
         return False
+    fields = imported_address_fields(address_text)
     links = contact_address_links(session, contact)
-    if any(link.address.raw_address == raw_address for link in links):
+    if any(all(getattr(link.address, field) == value for field, value in fields.items()) for link in links):
         return False
-    address = Address(raw_address=raw_address)
+    address = Address(**fields)
     session.add(address)
     session.add(ContactAddress(contact=contact, address=address,
                                role="zamieszkania", is_primary=not links))

@@ -25,7 +25,7 @@ class TestContactAddresses:
         from library.db.models import Address, ContactAddress
         session = MagicMock()
         contact = _make_contact(id_=7, first_name="Jan", last_name="Kowalski")
-        address = Address(id=20, label="dom", raw_address="Example Street 1")
+        address = Address(id=20, label="dom", street="Example Street", building_number="1", city="Warsaw")
         link = ContactAddress(id=30, contact_id=7, address_id=20, address=address,
                               role="zamieszkania", is_primary=True)
         rows = {("Contact", 7): contact, ("Address", 20): address, ("ContactAddress", 30): link}
@@ -44,7 +44,9 @@ class TestContactAddresses:
         assert response.status_code == 200
         assert response.json["addresses"] == [{
             "id": 30, "role": "zamieszkania", "is_primary": True,
-            "address": {"id": 20, "label": "dom", "raw_address": "Example Street 1",
+            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "apartment_number": None,
+                        "postal_code": None, "city": "Warsaw", "country": None,
+                        "formatted_address": "Example Street 1, Warsaw",
                         "latitude": None, "longitude": None, "geocoded": False},
         }]
         sql = str(session.execute.call_args.args[0])
@@ -58,14 +60,17 @@ class TestContactAddresses:
         from library.db.models import ContactAddress, ContactChangeLog
         client, session, _, _, _ = address_api
         response = client.post("/contacts/7/addresses", json={
-            "raw_address": " New Street 2 ", "label": " summer house ",
+            "street": " New Street ", "building_number": "2", "city": " Warsaw ", "label": " summer house ",
             "role": "dowolna rola", "is_primary": True,
         })
         assert response.status_code == 200
         link, audit = [call.args[0] for call in session.add.call_args_list]
         assert isinstance(link, ContactAddress)
         assert link.contact_id == 7
-        assert link.address.raw_address == "New Street 2"
+        assert link.address.street == "New Street"
+        assert link.address.building_number == "2"
+        assert link.address.city == "Warsaw"
+        assert link.address.country == "Polska"
         assert link.address.label == "summer house"
         assert link.role == "dowolna rola" and link.is_primary
         assert all(getattr(link.address, field) is None for field in ("latitude", "longitude", "location", "geocode_id"))
@@ -85,10 +90,10 @@ class TestContactAddresses:
         assert link.is_primary is False
 
     @pytest.mark.parametrize("payload", [
-        {}, {"raw_address": "   "}, {"raw_address": None}, {"raw_address": 42},
-        {"address_id": "20"}, {"address_id": 20, "raw_address": "unexpected"},
-        {"raw_address": "Street", "role": "x" * 51},
-        {"raw_address": "Street", "is_primary": "false"},
+        {}, {"city": "   "}, {"city": None}, {"city": 42},
+        {"address_id": "20"}, {"address_id": 20, "city": "unexpected"},
+        {"city": "Street", "role": "x" * 51},
+        {"city": "Street", "is_primary": "false"},
     ])
     def test_invalid_create_is_400(self, address_api, payload):
         client, session, *_ = address_api
@@ -98,7 +103,7 @@ class TestContactAddresses:
 
     @pytest.mark.parametrize("method,path,payload", [
         ("get", "/contacts/999/addresses", None),
-        ("post", "/contacts/999/addresses", {"raw_address": "Street"}),
+        ("post", "/contacts/999/addresses", {"city": "Street"}),
         ("post", "/contacts/7/addresses", {"address_id": 999}),
         ("patch", "/address/999", {"label": "home"}),
         ("post", "/address/999/geocode", None),
@@ -126,7 +131,10 @@ class TestContactAddresses:
         ]
         from sqlalchemy.dialects import postgresql
         compiled = session.execute.call_args_list[0].args[0].compile(dialect=postgresql.dialect())
-        assert "unaccent(addresses.raw_address) ILIKE unaccent(" in str(compiled)
+        assert "unaccent(addresses.city) ILIKE unaccent(" in str(compiled)
+        assert "unaccent(addresses.street) ILIKE unaccent(" in str(compiled)
+        assert "unaccent(addresses.postal_code) ILIKE unaccent(" in str(compiled)
+        assert " OR " in str(compiled)
         assert "%Łódź%" in compiled.params.values()
         assert 20 in compiled.params.values()
 
@@ -135,9 +143,10 @@ class TestContactAddresses:
         client, session, contact, address, link = address_api
         second_link = ContactAddress(address=address, contact_id=8)
         session.execute.return_value.scalars.return_value.all.return_value = [contact, _make_contact(id_=8)]
-        response = client.patch("/address/20", json={"raw_address": "Changed Street 3", "label": None})
+        response = client.patch("/address/20", json={"street": "Changed Street", "building_number": "3", "label": None})
         assert response.status_code == 200
-        assert link.address.raw_address == second_link.address.raw_address == "Changed Street 3"
+        assert link.address.street == second_link.address.street == "Changed Street"
+        assert link.address.building_number == "3"
         assert address.label is None
         assert {call.args[0].contact_id for call in session.add.call_args_list} == {7, 8}
 
@@ -156,7 +165,9 @@ class TestContactAddresses:
         assert response.status_code == 200
         assert response.json == {
             "status": "success", "resolved": True,
-            "address": {"id": 20, "label": "dom", "raw_address": "Example Street 1",
+            "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "apartment_number": None,
+                        "postal_code": None, "city": "Warsaw", "country": None,
+                        "formatted_address": "Example Street 1, Warsaw",
                         "latitude": 52.2297, "longitude": 21.0122, "geocoded": True},
         }
         geocode.assert_called_once_with(session, address)
@@ -204,25 +215,25 @@ class TestContactAddresses:
     @pytest.mark.parametrize("value", ["", "  ", None])
     def test_shared_address_cannot_be_blanked(self, address_api, value):
         client, session, _, address, _ = address_api
-        assert client.patch("/address/20", json={"raw_address": value}).status_code == 400
-        assert address.raw_address == "Example Street 1"
+        assert client.patch("/address/20", json={"city": value}).status_code == 400
+        assert address.city == "Warsaw"
         session.commit.assert_not_called()
 
     def test_patch_link_does_not_change_shared_address(self, address_api):
         client, session, _, address, link = address_api
         response = client.patch("/contact_addresses/30", json={
-            "role": "korespondencyjny", "is_primary": False, "raw_address": "Ignored",
+            "role": "korespondencyjny", "is_primary": False, "city": "Ignored",
         })
         assert response.status_code == 200
         assert link.role == "korespondencyjny" and not link.is_primary
-        assert address.raw_address == "Example Street 1"
+        assert address.city == "Warsaw"
         assert session.add.call_args.args[0].changed_fields == ["addresses"]
 
     def test_delete_only_unlinks_and_keeps_address(self, address_api):
         client, session, _, address, link = address_api
         assert client.delete("/contact_addresses/30").status_code == 200
         session.delete.assert_called_once_with(link)
-        assert address.raw_address == "Example Street 1"
+        assert address.city == "Warsaw"
         assert session.add.call_args.args[0].changed_fields == ["addresses"]
 
     def test_database_error_rolls_back(self, address_api):
@@ -231,6 +242,125 @@ class TestContactAddresses:
         assert client.post("/contacts/7/addresses", json={"address_id": 20}).status_code == 500
         session.rollback.assert_called_once()
         session.add.assert_called_once()  # No audit for an unsuccessful change.
+
+    @pytest.mark.parametrize("postal_code", ["95-054", None, ""])
+    def test_create_village_address(self, address_api, postal_code):
+        client, session, *_ = address_api
+        response = client.post("/contacts/7/addresses", json={
+            "city": "Wyczółki", "building_number": "32", "postal_code": postal_code,
+        })
+        assert response.status_code == 200
+        address = response.json["address"]["address"]
+        assert address["street"] is None
+        assert address["country"] == "Polska"
+        assert address["formatted_address"] == ("32, 95-054 Wyczółki" if postal_code else "32, Wyczółki")
+
+    @pytest.mark.parametrize("postal_code", ["95054", "1-234", "AB-CDE", "95-054 Ksawerów", "１２-３４５"])
+    def test_malformed_postal_code_rejected_on_create_and_patch(self, address_api, postal_code):
+        client, session, *_ = address_api
+        for method, path, payload in [
+            (client.post, "/contacts/7/addresses", {"city": "Ksawerów", "building_number": "15"}),
+            (client.patch, "/address/20", {}),
+        ]:
+            response = method(path, json={**payload, "postal_code": postal_code})
+            assert response.status_code == 400
+            assert "postal_code" in response.json["message"]
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("field, limit", [
+        ("street", 200), ("building_number", 20), ("apartment_number", 20),
+        ("postal_code", 10), ("city", 200), ("country", 100),
+    ])
+    def test_address_fields_validate_type_and_length(self, address_api, field, limit):
+        client, session, *_ = address_api
+        for value in (42, "x" * (limit + 1)):
+            assert client.patch("/address/20", json={field: value}).status_code == 400
+        session.commit.assert_not_called()
+
+    def test_building_required_for_creation_but_fallback_can_be_edited(self, address_api):
+        client, session, _, address, _ = address_api
+        assert client.post("/contacts/7/addresses", json={"city": "Wyczółki"}).status_code == 400
+        assert client.patch("/address/20", json={"building_number": None}).status_code == 400
+        address.city, address.building_number = "unparsed legacy address", None
+        assert client.patch("/address/20", json={"label": "do poprawy"}).status_code == 200
+        assert address.city == "unparsed legacy address"
+
+    def test_explicit_null_country_is_not_defaulted(self, address_api):
+        client, *_ = address_api
+        response = client.post("/contacts/7/addresses", json={"city": "Wyczółki", "building_number": "32", "country": None})
+        assert response.status_code == 200
+        assert response.json["address"]["address"]["country"] is None
+
+    def test_coordinate_invalidation_only_for_changed_components(self, address_api):
+        client, _, _, address, _ = address_api
+        address.latitude, address.longitude, address.geocode_id = 52, 21, 1
+        assert client.patch("/address/20", json={"label": "home", "street": "Example Street"}).status_code == 200
+        assert address.latitude == 52 and address.geocode_id == 1
+        assert client.patch("/address/20", json={"postal_code": "00-001"}).status_code == 200
+        assert all(getattr(address, field) is None for field in ("latitude", "longitude", "location", "geocode_id"))
+
+    def test_parse_address_success_and_schema(self, address_api, monkeypatch):
+        import json
+        from library.address_parsing import DEFAULT_ADDRESS_PARSE_MODEL
+        client, session, *_ = address_api
+        fields = dict(street=None, building_number="32", apartment_number=None,
+                      postal_code="08-207", city="Wyczółki", country=None)
+        ask = MagicMock(return_value=SimpleNamespace(response_text=json.dumps(fields)))
+        monkeypatch.setattr("library.address_parsing.ai_ask", ask)
+        monkeypatch.setattr("library.address_parsing.load_config", lambda: {})
+        response = client.post("/addresses/parse", json={"text": "Wyczółki 32, 08-207 Wyczółki"})
+        assert response.status_code == 200
+        assert response.json == {"status": "success", **fields}
+        assert ask.call_args.args == ("Wyczółki 32, 08-207 Wyczółki",)
+        kwargs = ask.call_args.kwargs
+        assert kwargs["model"] == DEFAULT_ADDRESS_PARSE_MODEL
+        assert kwargs["temperature"] == 0.0 and kwargs["operation"] == "address_parse"
+        assert kwargs["response_format"]["type"] == "json_schema"
+        schema = kwargs["response_format"]["json_schema"]["schema"]
+        assert set(schema["required"]) == set(fields)
+        assert schema["additionalProperties"] is False
+        assert all(value["type"] == ["string", "null"] for value in schema["properties"].values())
+        session.get.assert_not_called()
+
+    @pytest.mark.parametrize("response_text", [
+        "not JSON", '{"city": "Warszawa"}', "null", "[]", None,
+        '{"city": 7, "street": null, "building_number": null, "apartment_number": null, "postal_code": null, "country": null}',
+    ])
+    def test_parse_malformed_response_is_empty_success(self, address_api, monkeypatch, response_text):
+        from library.address_formatting import ADDRESS_FIELD_LIMITS
+        client, *_ = address_api
+        monkeypatch.setattr("library.address_parsing.ai_ask", MagicMock(return_value=SimpleNamespace(response_text=response_text)))
+        monkeypatch.setattr("library.address_parsing.load_config", lambda: {})
+        response = client.post("/addresses/parse", json={"text": "test"})
+        assert response.status_code == 200
+        assert response.json == {"status": "success", **dict.fromkeys(ADDRESS_FIELD_LIMITS)}
+
+    @pytest.mark.parametrize("failure", [RuntimeError("provider unavailable"), SystemExit(1)])
+    @pytest.mark.parametrize("target", ["ai_ask", "load_config"])
+    def test_parse_exceptions_are_empty_success(self, address_api, monkeypatch, failure, target):
+        from library.address_formatting import ADDRESS_FIELD_LIMITS
+        client, *_ = address_api
+        monkeypatch.setattr("library.address_parsing.load_config", lambda: {})
+        monkeypatch.setattr(f"library.address_parsing.{target}", MagicMock(side_effect=failure))
+        response = client.post("/addresses/parse", json={"text": "test"})
+        assert response.status_code == 200
+        assert response.json == {"status": "success", **dict.fromkeys(ADDRESS_FIELD_LIMITS)}
+
+    @pytest.mark.parametrize("payload", [None, [], {}, {"text": None}, {"text": 42}, {"text": " "}])
+    def test_empty_parse_input_does_not_call_llm(self, address_api, monkeypatch, payload):
+        client, *_ = address_api
+        ask = MagicMock()
+        monkeypatch.setattr("library.address_parsing.ai_ask", ask)
+        assert client.post("/addresses/parse", json=payload).status_code == 200
+        ask.assert_not_called()
+
+    def test_parse_model_is_configurable(self, address_api, monkeypatch):
+        client, *_ = address_api
+        ask = MagicMock(return_value=SimpleNamespace(response_text="{}"))
+        monkeypatch.setattr("library.address_parsing.ai_ask", ask)
+        monkeypatch.setattr("library.address_parsing.load_config", lambda: {"ADDRESS_PARSE_MODEL": "Bielik-11B-v2.3-Instruct"})
+        assert client.post("/addresses/parse", json={"text": "test"}).status_code == 200
+        assert ask.call_args.kwargs["model"] == "Bielik-11B-v2.3-Instruct"
 
 
 def _make_category(id_=1, name="Osoba prywatna"):
