@@ -851,28 +851,28 @@ def _load_contact_relationships_summary(session, contact_ids: list[int]) -> dict
 
     outgoing = session.execute(
         select(ContactRelationship.contact_id, ContactRelationship.relationship_type,
-               other.first_name, other.last_name, other.display_label)
+               other.first_name, other.last_name, other.display_label, other.company)
         .join(other, other.id == ContactRelationship.related_contact_id)
         .where(ContactRelationship.contact_id.in_(contact_ids))
     ).all()
-    for contact_id, relationship_type, first_name, last_name, display_label in outgoing:
+    for contact_id, relationship_type, first_name, last_name, display_label, company in outgoing:
         result[contact_id].append({
             "relationship_type": relationship_type,
             "direction": "outgoing",
-            "other_name": " ".join(filter(None, [first_name, last_name])) or display_label or "Kontakt bez nazwy",
+            "other_name": " ".join(filter(None, [first_name, last_name])) or display_label or company or "Kontakt bez nazwy",
         })
 
     incoming = session.execute(
         select(ContactRelationship.related_contact_id, ContactRelationship.relationship_type,
-               other.first_name, other.last_name, other.display_label)
+               other.first_name, other.last_name, other.display_label, other.company)
         .join(other, other.id == ContactRelationship.contact_id)
         .where(ContactRelationship.related_contact_id.in_(contact_ids))
     ).all()
-    for contact_id, relationship_type, first_name, last_name, display_label in incoming:
+    for contact_id, relationship_type, first_name, last_name, display_label, company in incoming:
         result[contact_id].append({
             "relationship_type": relationship_type,
             "direction": "incoming",
-            "other_name": " ".join(filter(None, [first_name, last_name])) or display_label or "Kontakt bez nazwy",
+            "other_name": " ".join(filter(None, [first_name, last_name])) or display_label or company or "Kontakt bez nazwy",
         })
 
     return result
