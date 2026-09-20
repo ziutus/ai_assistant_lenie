@@ -12,10 +12,12 @@ from library.db.models import Address, GeocodeCache
 
 @pytest.mark.parametrize("cached", [False, True])
 @pytest.mark.parametrize("resolved", [False, True])
-def test_geocode_address_cache_and_coordinates(monkeypatch, cached, resolved):
+@pytest.mark.parametrize("block_number", [None, "31"])
+def test_geocode_address_cache_and_coordinates(monkeypatch, cached, resolved, block_number):
     session = MagicMock()
-    address = Address(street="Example Street", building_number="1", city="Warsaw", notes="Domofon: 5869")
-    query = "Example Street 1, Warsaw"
+    address = Address(street="Example Street", building_number="1", block_number=block_number,
+                      city="Warsaw", notes="Domofon: 5869")
+    query = "Example Street 1 blok 31, Warsaw" if block_number else "Example Street 1, Warsaw"
     # A building hit must be accepted even though NER's OSM-class filter rejects it.
     hit = {
         "display_name": "1, Example Street, Warsaw, Poland",

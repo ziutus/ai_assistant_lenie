@@ -22,6 +22,33 @@ from library.address_formatting import (
 ])
 def test_format_address(fields, expected):
     assert format_address(SimpleNamespace(**fields, notes="Domofon: 5869; wejście od podwórza")) == expected
+    assert format_address(SimpleNamespace(**fields, block_number=None)).encode("utf-8") == expected.encode("utf-8")
+
+
+@pytest.mark.parametrize("fields, expected", [
+    (dict(street="Bratysławska", building_number="15", block_number="31", apartment_number="26",
+          postal_code="90-001", city="Łódź"), "Bratysławska 15 blok 31/26, 90-001 Łódź"),
+    (dict(street="Bratysławska", building_number="15", block_number=" 31A-32 ", city="Łódź"),
+     "Bratysławska 15 blok 31A-32, Łódź"),
+    (dict(block_number="31", apartment_number="26", city="Łódź"), "blok 31/26, Łódź"),
+    (dict(building_number="15", block_number="   ", city="Łódź"), "15, Łódź"),
+])
+def test_format_address_with_block(fields, expected):
+    assert format_address(SimpleNamespace(**fields)) == expected
+
+
+def test_bielik_block_number_passes_through(monkeypatch):
+    import json
+    from library.address_parsing import parse_address_text
+    fields = {**dict.fromkeys((*ADDRESS_FIELD_LIMITS, "notes")), "street": "Bratysławska",
+              "building_number": "15", "block_number": "31", "apartment_number": "26", "city": "Łódź"}
+    ask = MagicMock(return_value=SimpleNamespace(response_text=json.dumps(fields)))
+    monkeypatch.setattr("library.address_parsing.load_config", lambda: {})
+    monkeypatch.setattr("library.address_parsing.ai_ask", ask)
+    assert parse_address_text("Bratysławska 15 m 26 blok 31, Łódź") == fields
+    schema = ask.call_args.kwargs["response_format"]["json_schema"]["schema"]
+    assert set(schema["properties"]) == set(schema["required"]) == set(fields)
+    assert len(schema["required"]) == 8
 
 
 @pytest.mark.parametrize("notes", [" Domofon: 5869 ", "x" * 1000, None, "   "])
@@ -37,7 +64,10 @@ def test_bielik_notes_pass_through(monkeypatch, notes):
     }
 
 
-@pytest.mark.parametrize("field, value", [("notes", "x" * 1001), ("notes", 42), ("street", "x" * 201)])
+@pytest.mark.parametrize("field, value", [
+    ("notes", "x" * 1001), ("notes", 42), ("street", "x" * 201),
+    ("block_number", "x" * 21), ("block_number", 31),
+])
 def test_bielik_invalid_field_discards_entire_result(monkeypatch, field, value):
     import json
     from library.address_parsing import parse_address_text
