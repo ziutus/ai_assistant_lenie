@@ -61,6 +61,16 @@ const FitToMatched: React.FC<{ data: GeoJSON.FeatureCollection; matchedIso: Set<
   return null;
 };
 
+/** Fits address/place markers only when country fitting has no priority. */
+const FitToPlaces: React.FC<{ places: PlaceMarker[] }> = ({ places }) => {
+  const map = useMap();
+  React.useEffect(() => {
+    const bounds = L.latLngBounds(places.map(p => [p.lat, p.lon] as [number, number]));
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [16, 16], maxZoom: 15 });
+  }, [map, places]);
+  return null;
+};
+
 /** Map of OpenStreetMap tiles highlighting the countries a geopolitical article discusses.
  *  Every country on the map is labeled in Polish (ISO3_TO_NAME_PL) — matched
  *  (article) countries prominently, everything else (including neighbors of
@@ -189,6 +199,7 @@ const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] })
               </CircleMarker>
             ))}
             <FitToMatched data={geoData} matchedIso={matchedIso} />
+            {matchedIso.size === 0 && places.length > 0 && <FitToPlaces places={places} />}
           </MapContainer>
         </div>
       )}

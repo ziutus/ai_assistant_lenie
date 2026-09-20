@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
+from library.address_geocoding import geocode_address
 from library.contact_birthdays import upcoming_birthday_entry
 from library.contact_channels import channel_patch, contact_channels
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
@@ -315,6 +316,7 @@ def _address_dict(row: Address) -> dict:
         "id": row.id, "label": row.label, "raw_address": row.raw_address,
         "latitude": float(row.latitude) if row.latitude is not None else None,
         "longitude": float(row.longitude) if row.longitude is not None else None,
+        "geocoded": row.latitude is not None,
     }
 
 
@@ -1855,6 +1857,29 @@ def contact_addresses_delete(link_id: int):
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
     return jsonify({"status": "success", "deleted_id": link_id}), 200
+
+
+@bp.route("/address/<int:address_id>/geocode", methods=["POST", "OPTIONS"])
+def addresses_geocode(address_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    try:
+        row = session.get(Address, address_id)
+        if row is None:
+            return {"status": "error", "message": "Address not found"}, 404
+        resolved = geocode_address(session, row)
+        row.updated_at = datetime.datetime.now()
+        contacts = session.execute(select(Contact).where(Contact.id.in_(
+            select(ContactAddress.contact_id).where(ContactAddress.address_id == address_id)
+        ))).scalars().all()
+        for contact in contacts:
+            record_contact_change(session, contact, "manual_edit", changed_fields=["addresses"])
+        session.commit()
+        return jsonify({"status": "success", "address": _address_dict(row), "resolved": resolved}), 200
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
 
 
 # --- organizations (multiple affiliations per contact — JDG, etat, board seat, ...) ---
