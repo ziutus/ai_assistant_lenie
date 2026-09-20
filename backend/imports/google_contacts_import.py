@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-off import: load a Google Contacts CSV export into the private
 contact book (library/db/models.py Contact — independent of the NER persons
-registry), matching against existing contacts by name so people already in
+registry), matching all normalized phone numbers, then unambiguous full names, so people already in
 the database (e.g. the 47 "Tuwima Gardens" creditors created by
 court_case_contacts_import.py) don't get duplicated.
 
@@ -30,6 +30,9 @@ Two Google-Contacts-specific data-quality quirks are cleaned up on import:
 A matched contact has empty address/company/position/birthday fields filled
 and groups added. All phone numbers and emails are preserved, with missing
 values appended to the ordered lists without replacing the existing primary.
+Yearless birthdays populate month/day only. Ambiguous identity matches are
+reported and skipped; birthday conflicts retain the existing date. Dry-run
+uses detached snapshots and the same matching decisions as --apply.
 
 Usage:
     cd backend
@@ -46,6 +49,7 @@ import logging
 import os
 import re
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -77,14 +81,92 @@ def _parse_channels(row: dict, prefix: str, field: str) -> list[dict]:
     return normalize_channels(result, field)
 
 
-def _parse_birthday(value: str | None) -> datetime.date | None:
+def _parse_birthday(value: str | None) -> dict | None:
+    """A missing/invalid date returns None; never invent a birth year."""
+    value = (value or "").strip()
     if not value:
         return None
-    value = value.strip()
     try:
-        return datetime.date.fromisoformat(value)
+        if re.fullmatch(r"--\d{2}-\d{2}", value):
+            date = datetime.date.fromisoformat("2000" + value[1:])
+            return {"birthday_month": date.month, "birthday_day": date.day}
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            return {"birthday": datetime.date.fromisoformat(value)}
     except ValueError:
-        return None  # Google exports "--MM-DD" for a year-less birthday; not representable here.
+        pass
+    return None
+
+
+def _birthday_patch(contact, parsed: dict | None) -> tuple[dict, bool]:
+    """Fill unknown birthday data; report conflicts without overwriting it."""
+    if not parsed:
+        return {}, False
+    full = parsed.get("birthday")
+    incoming = (full.month, full.day) if full else (parsed["birthday_month"], parsed["birthday_day"])
+    if contact.birthday:
+        known = (contact.birthday.month, contact.birthday.day)
+        return {}, (contact.birthday != full if full else known != incoming)
+    month, day = contact.birthday_month, contact.birthday_day
+    if (month is not None and month != incoming[0]) or (day is not None and day != incoming[1]):
+        return {}, True
+    if full:
+        return {"birthday": full}, False
+    return {field: value for field, value in parsed.items() if getattr(contact, field) is None}, False
+
+
+def _name_key(contact) -> str | None:
+    from imports.whatsapp_neighbor_profiles import normalize_name
+
+    if not contact.first_name or not contact.last_name:
+        return None
+    return " ".join(sorted(normalize_name(f"{contact.first_name} {contact.last_name}"))) or None
+
+
+class _ContactIndex:
+    """All valid numbers participate; collisions are retained, never first-wins."""
+
+    def __init__(self, contacts):
+        self.phones, self.names, self.contact_phones = {}, {}, {}
+        for contact in contacts:
+            self.add(contact, include_name=True)
+
+    def add(self, contact, extra_phones=(), *, include_name=False):
+        from library.contact_channels import contact_channels
+        from library.contact_phones import phone_identity_key
+
+        keys = self.contact_phones.setdefault(id(contact), set())
+        for entry in [*contact_channels(contact, "phone_numbers"), *extra_phones]:
+            key = phone_identity_key(entry["value"])
+            if key:
+                keys.add(key)
+                self.phones.setdefault(key, {})[id(contact)] = contact
+        name = _name_key(contact) if include_name else None
+        if name:
+            self.names.setdefault(name, {})[id(contact)] = contact
+
+    def match(self, phones: list[dict], name: str | None):
+        from library.contact_phones import phone_identity_key
+
+        keys = {key for entry in phones if (key := phone_identity_key(entry["value"]))}
+        candidates = {cid: contact for key in keys for cid, contact in self.phones.get(key, {}).items()}
+        named = self.names.get(name, {})
+        if len(candidates) > 1:
+            return None, "telefony wskazują kilka kontaktów"
+        if candidates:
+            cid, contact = next(iter(candidates.items()))
+            if name and _name_key(contact) and name != _name_key(contact):
+                return None, "ten sam telefon, ale różne nazwy — wymaga sprawdzenia"
+            if named and cid not in named:
+                return None, "telefon i nazwa wskazują różne kontakty"
+            return contact, None
+        if len(named) > 1:
+            return None, "nazwa wskazuje kilka kontaktów"
+        if named:
+            cid, contact = next(iter(named.items()))
+            if keys and self.contact_phones[cid] and keys.isdisjoint(self.contact_phones[cid]):
+                return None, "ta sama nazwa, ale inne telefony — wymaga sprawdzenia"
+            return contact, None
+        return None, None
 
 
 def _labels_to_groups(labels_raw: str) -> list[str]:
@@ -154,26 +236,13 @@ def main():
         session.close()
         return
 
-    # Name-based matching is only safe when BOTH sides have a real first+last
-    # name — a bare last_name (first_name is NULL, e.g. a neighbor whose
-    # surname was never known) is a "weak" key that different people can
-    # share (see feedback_no_merge_unverifiable_contacts.md: several
-    # "Aneta"/"Edyta"/"Magdalena"/"Tomasz" contacts already exist from
-    # earlier unrelated imports with no surname on file). Matching a new
-    # CSV row with the same bare first name against one of those would
-    # silently merge two different people and discard one of their phone
-    # numbers, so weak-keyed existing contacts are excluded from this map;
-    # a same-bare-name CSV row always creates its own new Contact instead
-    # unless corroborated by a phone match below.
-    existing_by_key: dict[str, Contact] = {}
-    existing_by_phone: dict[str, Contact] = {}
-    for c in session.scalars(select(Contact)):
-        if c.phone_number:
-            existing_by_phone.setdefault(c.phone_number.strip(), c)
-        if c.first_name:
-            key = " ".join(sorted(normalize_name(f"{c.first_name} {c.last_name}")))
-            if key:
-                existing_by_key.setdefault(key, c)
+    contacts = list(session.scalars(select(Contact)))
+    if not args.apply:
+        # Plan on detached snapshots, including birthday changes from earlier rows.
+        fields = ("id", "first_name", "last_name", "phone_number", "phone_numbers",
+                  "birthday", "birthday_month", "birthday_day", "groups")
+        contacts = [SimpleNamespace(**{field: getattr(c, field) for field in fields}) for c in contacts]
+    contact_index = _ContactIndex(contacts)
 
     group_by_name: dict[str, ContactGroup] = {
         g.name.lower(): g for g in session.scalars(select(ContactGroup))
@@ -190,6 +259,7 @@ def main():
         return group
 
     matched_n, created_n, skipped_birthday_n = 0, 0, 0
+    ambiguous_n, birthday_conflicts_n = 0, 0
     seen_keys: dict[str, int] = {}
 
     with open(args.csv, "r", encoding="utf-8-sig", newline="") as f:
@@ -211,9 +281,10 @@ def main():
             position = (row.get("Organization Title") or "").strip() or None
             address = (row.get("Address 1 - Formatted") or "").strip() or None
             notes = (row.get("Notes") or "").strip() or None
-            birthday = _parse_birthday(row.get("Birthday"))
-            if (row.get("Birthday") or "").strip() and birthday is None:
+            birthday_data = _parse_birthday(row.get("Birthday"))
+            if (row.get("Birthday") or "").strip() and birthday_data is None:
                 skipped_birthday_n += 1
+                logger.warning("Wiersz CSV %d: pominięto nieprawidłową datę urodzin", reader.line_num)
 
             key = " ".join(sorted(normalize_name(f"{first_name or ''} {last_name}")))
             if key:
@@ -222,17 +293,20 @@ def main():
                     logger.warning("Zduplikowany wpis w CSV (ta sama osoba wystąpiła %d razy): %s %s",
                                     seen_keys[key], first_name, last_name)
 
-            # Phone number is a reliable identity signal regardless of name
-            # quality; a bare-first-name key is only trusted when the row
-            # itself also has a real first_name (a "strong" key on both sides).
-            existing = existing_by_phone.get(phone.strip()) if phone else None
-            if existing is None and first_name:
-                existing = existing_by_key.get(key)
+            existing, conflict = contact_index.match(phone_numbers, key if first_name else None)
+            if conflict:
+                ambiguous_n += 1
+                logger.warning("CSV row %d skipped: %s", reader.line_num, conflict)
+                continue
 
             if existing:
                 matched_n += 1
+                birthday_changes, birthday_conflict = _birthday_patch(existing, birthday_data)
+                if birthday_conflict:
+                    birthday_conflicts_n += 1
+                    logger.warning("Wiersz CSV %d: konflikt daty urodzin — zachowano obecną", reader.line_num)
                 new_groups = [g for g in group_names if g.lower() not in {eg.name.lower() for eg in existing.groups}]
-                logger.info("DOPASOWANO #%d %s %s <- %s %s%s", existing.id, existing.first_name, existing.last_name,
+                logger.info("DOPASOWANO #%s %s %s <- %s %s%s", existing.id, existing.first_name, existing.last_name,
                              first_name, last_name, f" (+grupy: {', '.join(new_groups)})" if new_groups else "")
                 if args.apply:
                     changed_fields = []
@@ -252,9 +326,9 @@ def main():
                     if address and not existing.address:
                         existing.address = address
                         changed_fields.append("address")
-                    if birthday and not existing.birthday:
-                        existing.birthday = birthday
-                        changed_fields.append("birthday")
+                    for field, value in birthday_changes.items():
+                        setattr(existing, field, value)
+                        changed_fields.append(field)
                     if notes and (not existing.notes or notes not in existing.notes):
                         existing.notes = f"{existing.notes}\n{notes}" if existing.notes else notes
                         changed_fields.append("notes")
@@ -266,6 +340,10 @@ def main():
                         session, existing, "google_import", changed_fields=changed_fields,
                         note=f"Uzupełniono puste pola z eksportu Kontaktów Google ({args.csv})" if changed_fields else None,
                     )
+                else:
+                    for field, value in birthday_changes.items():
+                        setattr(existing, field, value)
+                contact_index.add(existing, phone_numbers)
             else:
                 created_n += 1
                 logger.info("NOWY KONTAKT: %s %s%s", first_name or "", last_name,
@@ -282,7 +360,7 @@ def main():
                         company=company,
                         position=position,
                         address=address,
-                        birthday=birthday,
+                        **(birthday_data or {}),
                         notes=notes,
                     )
                     for group_name in group_names:
@@ -291,15 +369,16 @@ def main():
                     session.flush()
                     record_contact_change(
                         session, contact, "google_import",
-                        changed_fields=["first_name", "last_name", "category_id"],
+                        changed_fields=["first_name", "last_name", "category_id", *(birthday_data or {})],
                         note=f"Zaimportowano z eksportu Kontaktów Google ({args.csv})",
                     )
-                    # Deliberately NOT added to existing_by_key: two different people can
-                    # share a weak key (e.g. no last name — "Agnieszka" x3), and matching a
-                    # later CSV row against a contact created earlier in this same run would
-                    # silently merge two distinct neighbors instead of creating both. A CSV
-                    # row that really is a duplicate re-entry of the same person just creates
-                    # a second Contact row here, safe to merge manually afterwards.
+                else:
+                    # Index a transient object so dry-run makes the same identity
+                    # decisions as --apply, without adding it to the DB session.
+                    contact = Contact(first_name=first_name, last_name=last_name,
+                                      phone_numbers=phone_numbers, **(birthday_data or {}))
+                # New rows may match again by a valid phone, never by name alone.
+                contact_index.add(contact)
 
         if args.apply:
             session.commit()
@@ -309,7 +388,11 @@ def main():
     print()
     print(f"Wierszy: dopasowanych do istniejących kontaktów: {matched_n}, nowych: {created_n}")
     if skipped_birthday_n:
-        print(f"Pominięte urodziny bez roku (Google '--MM-DD'): {skipped_birthday_n}")
+        print(f"Pominięte nieprawidłowe daty urodzin: {skipped_birthday_n}")
+    if birthday_conflicts_n:
+        print(f"Konflikty dat urodzin (zachowano obecne): {birthday_conflicts_n}")
+    if ambiguous_n:
+        print(f"Niejednoznaczne wiersze pominięte do ręcznego sprawdzenia: {ambiguous_n}")
     if not args.apply:
         print("\n(dry-run — użyj --apply, żeby zapisać zmiany)")
 

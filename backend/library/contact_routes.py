@@ -10,7 +10,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import Text, cast, false, func, or_, select
+from sqlalchemy import column, false, func, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
@@ -18,6 +19,7 @@ from library.contact_birthdays import upcoming_birthday_entry
 from library.contact_channels import channel_patch, contact_channels
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
 from library.contact_names import contact_display_name, validate_contact_name
+from library.contact_phones import phone_search_digits
 from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
 from library.db.engine import get_scoped_session
 from library.db.models import (
@@ -243,6 +245,16 @@ def _group_contact_count(session, group_id: int) -> int:
             ContactGroupMembership.group_id == group_id
         )
     ).scalar_one()
+
+
+def _channel_search(field, phrase, digits=None):
+    # Match individual values/labels, not JSON keys or concatenated phone entries.
+    entries = func.jsonb_array_elements(field).table_valued(column("value", JSONB)).alias()
+    value = entries.c.value["value"].astext
+    conditions = [func.unaccent(value).ilike(phrase), func.unaccent(entries.c.value["label"].astext).ilike(phrase)]
+    if digits:
+        conditions.append(func.regexp_replace(value, "[^0-9]", "", "g").like(f"%{digits}%"))
+    return select(1).select_from(entries).where(or_(*conditions)).exists()
 
 
 def _contact_dict(row: Contact) -> dict:
@@ -784,15 +796,19 @@ def contacts_list():
     q = (request.args.get("q") or "").strip()
     if q:
         phrase = func.unaccent(f"%{q}%")
-        conditions.append(or_(
+        digits = phone_search_digits(q)
+        search_conditions = [
             func.unaccent(Contact.first_name).ilike(phrase),
             func.unaccent(Contact.last_name).ilike(phrase),
             func.unaccent(Contact.display_label).ilike(phrase),
             func.unaccent(func.coalesce(Contact.phone_number, "")).ilike(phrase),
             func.unaccent(func.coalesce(Contact.email, "")).ilike(phrase),
-            func.unaccent(cast(Contact.phone_numbers, Text)).ilike(phrase),
-            func.unaccent(cast(Contact.email_addresses, Text)).ilike(phrase),
-        ))
+            _channel_search(Contact.phone_numbers, phrase, digits),
+            _channel_search(Contact.email_addresses, phrase),
+        ]
+        if digits:
+            search_conditions.append(func.regexp_replace(Contact.phone_number, "[^0-9]", "", "g").like(f"%{digits}%"))
+        conditions.append(or_(*search_conditions))
 
     total = session.execute(
         select(func.count()).select_from(Contact).where(*conditions)

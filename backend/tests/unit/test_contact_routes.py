@@ -66,7 +66,7 @@ class TestContactsAdd:
         added = session.add.call_args_list[0][0][0]
         assert added.last_name == "Wojtysiak"
         assert added.first_name == "Adam"
-        assert added.phone_number == "+48 725 428 453"
+        assert added.phone_number == "+48725428453"
         assert added.category_id == default_category.id
         change_log_entry = session.add.call_args_list[1][0][0]
         assert change_log_entry.source == "manual_edit"
@@ -651,8 +651,12 @@ class TestContactsListArchivedFilter:
         compiled = self._run(monkeypatch, "?q=praca")
         assert "contacts.phone_number" in compiled
         assert "contacts.email" in compiled
-        assert "CAST(contacts.phone_numbers AS TEXT)" in compiled
-        assert "CAST(contacts.email_addresses AS TEXT)" in compiled
+        assert "jsonb_array_elements(contacts.phone_numbers)" in compiled
+        assert "jsonb_array_elements(contacts.email_addresses)" in compiled
+
+    def test_phone_search_ignores_formatting(self, monkeypatch):
+        compiled = self._run(monkeypatch, "?q=0048%20501-234-567")
+        assert "regexp_replace" in compiled
 
 
 class TestContactsDelete:

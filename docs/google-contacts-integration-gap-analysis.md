@@ -28,17 +28,17 @@ numeru: kilka pól może mieć to samo źródło. Ponadto próbuje zapisywać
 | [ ] | Brak bezpośredniego importu People API | Klient oparty na obecnym OAuth, zakres `contacts.readonly`, wszystkie strony, dry-run, mapowanie i zapis historii. |
 | [ ] | Powiązanie kontaktu Google z Lenie | Wykorzystać istniejące unikalne `google_contact_resource_name`; rozstrzygać niejednoznaczne dopasowania przed przypisaniem identyfikatora. |
 | [ ] | Synchronizacja przyrostowa | Przechowywanie `syncToken`, obsługa wygaśnięcia, usunięć, ponowień i zmian identyfikatorów zasobu. |
-| [ ] | Normalizacja telefonów | Ujednolicić zapis/klucz porównawczy, obsłużyć prefiksy kraju, numery zagraniczne i usługowe. Bez zgadywania tożsamości po samym nazwisku lub końcówce numeru. |
-| [ ] | Dopasowanie CSV | Obecny importer nadal dopasowuje po pierwszym telefonie jako tekście lub nazwie. Rozszerzyć na wszystkie kanały, wykrywać kolizje zamiast wybierać pierwszy kontakt. |
-| [ ] | Urodziny bez roku | Importer CSV pomija `--MM-DD`, choć model ma `birthday_month` i `birthday_day`. Dodać mapowanie i testy. |
+| [x] Kod gotowy | Normalizacja telefonów | Wspólny zapis E.164 i klucz porównawczy, domyślnie PL, obsługa prefiksów `+`/`00`, numerów zagranicznych i wewnętrznych. Numery usługowe i nierozpoznane zachowane, wykluczone z automatycznego dopasowania osób. |
+| [~] Częściowo | Dopasowanie CSV | Wszystkie poprawne telefony uczestniczą w dopasowaniu; kolizje i sprzeczne nazwy/numery są zgłaszane bez zmiany kontaktu. Do rozważenia pozostaje dopasowanie po e-mailach. |
+| [x] Kod gotowy | Urodziny bez roku | `--MM-DD` trafia do miesiąca i dnia, z obsługą 29 lutego. Konflikty nie nadpisują istniejących danych. |
 | [ ] | Zdjęcia z Google | Import zdjęcia do istniejącego magazynu zdjęć, z pomijaniem awatarów domyślnych i zachowaniem zasad wyboru zdjęcia. |
 | [ ] | Grupy przez API | CSV już mapuje etykiety na grupy. Dodać odpowiednik dla członkostw i nazw grup Google. |
 | [ ] | Pozostałe pola | Ustalić mapowanie adresów, organizacji, linków i innych danych; model ma nadal pojedynczy adres tekstowy. |
 | [ ] | Eksport Lenie → Google | Jawna lista eksportowanych pól, podgląd zmian, kontrola wersji/konfliktów. Prywatne notatki i PESEL wyłączyć z eksportu. |
 
-Zalecana kolejność dalszych prac: urodziny bez roku i normalizacja/dopasowanie,
-następnie jednokierunkowy import API, zdjęcia i grupy, synchronizacja przyrostowa,
-na końcu eksport.
+Zalecana kolejność dalszych prac: jednokierunkowy import API, zdjęcia i grupy,
+synchronizacja przyrostowa, na końcu eksport. Opcjonalnie rozszerzyć dopasowanie
+o e-maile, z zachowaniem kontroli kolizji.
 
 ## Wiele telefonów i e-maili — kontrakt
 
@@ -68,12 +68,14 @@ Przykładowy POST/PATCH `/contacts` lub `/contacts/{id}`:
 - Starszy PATCH `phone_number` / `email` zastępuje tylko wartość główną,
   zachowując pozostałe. Wyczyszczenie głównej promuje następny wpis, jeżeli istnieje.
 - Jeśli klient przesyła listę i stare pole jednocześnie, wartości główne muszą
-  być zgodne; inaczej API zwraca 400 przed zmianą kontaktu.
+  być zgodne po normalizacji; inaczej API zwraca 400 przed zmianą kontaktu.
 - Limit: 50 wpisów na listę, telefon do 30 znaków, e-mail do 255, etykieta do 100.
   Puste wartości i duplikaty są odrzucane. Porównanie e-maili ignoruje wielkość
-  liter; telefonów ignoruje spacje, nawiasy, kropki i myślniki. To nie jest jeszcze
-  pełna normalizacja E.164 ani walidacja osiągalności numeru/adresu.
-- Wyszukiwanie kontaktów obejmuje obie listy (także etykiety) i główny e-mail.
+  liter; poprawne telefony porównywane są po normalizacji opisanej poniżej.
+  Nie jest to walidacja osiągalności numeru/adresu.
+- Wyszukiwanie kontaktów obejmuje wartości i etykiety obu list oraz główny e-mail.
+  W zapytaniach telefonicznych ignoruje formatowanie i rozpoznaje zapis `0048`.
+  Nie przeszukuje nazw kluczy JSON ani nie łączy cyfr z odrębnych wpisów.
   Lista kontaktów zachowuje dotychczasową prezentację wartości głównej; szczegóły
   pokazują wszystkie wartości. Formularz pozwala dodawać, usuwać i wybierać główną.
 - Import CSV zachowuje wszystkie kolumny `Phone N - Value` / `E-mail N - Value`,
@@ -84,6 +86,46 @@ Przykładowy POST/PATCH `/contacts` lub `/contacts/{id}`:
   przypisywać całe nowe listy, nie mutować JSON w miejscu. Jeśli oba pola zmienia
   bezpośredni kod ORM, lista ma pierwszeństwo. Surowy SQL i bulk updates omijają
   hooki: muszą aktualizować oba pola zgodnie z tym kontraktem.
+
+## Normalizacja telefonów i import dat bez roku
+
+Nowy kod nie wymaga kolejnej migracji schematu. Backend wymaga zależności
+`phonenumberslite>=9,<10` dodanej do `pyproject.toml`. Do wdrożenia potrzebny jest
+obraz backendu z tą zależnością. Nie wykonano masowej normalizacji kontaktów
+na NAS-ie ani ponownego importu rzeczywistych CSV w ramach tej poprawki.
+
+- Przy zapisie przez API/ORM i odczycie CSV poprawne numery są zamieniane na
+  E.164: `501 234 567`, `+48 501-234-567`, `0048 (501) 234 567` → `+48501234567`.
+  Numery bez prefiksu uznajemy za polskie tylko przy 9 cyfrach. Numer zagraniczny
+  powinien mieć jawny prefiks `+` lub `00`; nie zgadujemy kraju na podstawie
+  końcówki numeru ani zapisu z samym kodem kraju bez prefiksu.
+- Używamy metadanych libphonenumber przez `phonenumberslite`, bez ręcznych list
+  prefiksów. Wewnętrzne `wew. 12`, `x12`, `ext. 12` zapisujemy jako `ext. 12`;
+  różne numery wewnętrzne pozostają odrębnymi kluczami.
+- Krótkie numery (`112`), kody (`*123#`), opisy i nierozpoznane wartości zostają
+  zachowane. Nie służą do automatycznego dopasowywania osób. Formatowanie starych
+  danych nie blokuje dopasowania: klucze są obliczane także dla istniejących wpisów.
+- CSV sprawdza wszystkie telefony obu stron. Wspólny numer kilku kontaktów,
+  telefony wskazujące różne osoby, różne pełne nazwy przy tym samym telefonie,
+  wieloznaczna nazwa oraz zgodna nazwa przy rozłącznych poprawnych numerach
+  powodują pominięcie wiersza i ostrzeżenie z numerem wiersza CSV.
+- Kolejne wiersze tego samego importu mogą dopasować nowy kontakt po poprawnym
+  telefonie. Nowych kontaktów nie łączymy na podstawie samej nazwy. Tryb dry-run
+  prowadzi indeks planowanych kontaktów bez zapisu do bazy.
+- `--04-29` zapisuje `birthday_month=4`, `birthday_day=29`, pozostawiając rok
+  nieznany. `--02-29` jest poprawne; `--02-30` i `--04-31` są pomijane z raportem.
+  Pełne daty ISO nadal są importowane. Znana pełna data nie jest zastępowana;
+  rok można uzupełnić, jeśli istniejący miesiąc i dzień pasują do nowej pełnej daty.
+  Konflikt dat pozostawia dane bez zmian i jest liczony oddzielnie od błędnych dat.
+- Historia zmian uwzględnia `birthday_month` i `birthday_day`. Dry-run używa
+  odłączonych kopii danych również dla kolejnych aktualizacji urodzin w jednym CSV.
+
+Weryfikacja poprawki: 434 testy backendu (normalizacja, import CSV w dry-run
+i `--apply`, kanały kontaktowe, endpointy, urodziny, zainteresowania i edukacja).
+Sześć zapytań tylko do odczytu na PostgreSQL ze sztucznymi danymi potwierdziło
+różne formaty numerów, dodatkowe numery i etykiety oraz brak dopasowania po
+kluczach JSON i cyfrach pochodzących z różnych wpisów. Rzeczywistych kontaktów
+nie zmieniano podczas tych kontroli.
 
 ## Migracja i wdrożenie
 
@@ -116,6 +158,7 @@ PostgreSQL potwierdziło wyszukiwanie dodatkowego telefonu, e-maila i etykiety.
 - [People API: listowanie i synchronizacja](https://developers.google.com/people/api/rest/v1/people.connections/list).
 - [People API: model danych, PhoneNumber i Source](https://developers.google.com/people/api/rest/v1/people).
 - [People API: aktualizacja kontaktu](https://developers.google.com/people/api/rest/v1/people/updateContact).
+- [python-phonenumbers: parsowanie, walidacja i format E.164](https://github.com/daviddrysdale/python-phonenumbers).
 
 Dokumentacja Google sprawdzona podczas analizy 2026-09-19. Tokeny synchronizacji
 wygasają po 7 dniach; obsługa ponownego pełnego odczytu będzie częścią przyszłej
