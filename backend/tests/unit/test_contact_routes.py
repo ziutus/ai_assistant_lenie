@@ -607,8 +607,8 @@ class TestContactsListArchivedFilter:
         from library.contact_routes import _load_contact_relationships_summary
         session = MagicMock()
         session.execute.return_value.all.side_effect = [
-            [(1, "dziecko", None, None, "Dziecko 1")],
-            [(1, "bliźnięta", None, None, "Dziecko 2")],
+            [(1, "dziecko", None, None, "Dziecko 1", None)],
+            [(1, "bliźnięta", None, None, "Dziecko 2", None)],
         ]
         result = _load_contact_relationships_summary(session, [1])
         assert [row["other_name"] for row in result[1]] == ["Dziecko 1", "Dziecko 2"]

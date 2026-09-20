@@ -1325,12 +1325,13 @@ const Contact = () => {
               </li>)}
             </ul>
           </section>}
-          <ContactInterestsEducation key={id} contactId={id!} editable={mode === "edit"} onChanged={() => {
+          {contact?.category_name !== "Firma" && <ContactInterestsEducation key={id} contactId={id!} editable={mode === "edit"} onChanged={() => {
             // Refresh the audit without replacing unsaved fields in the main contact form.
             void axios.get(`${apiUrl}/contacts/${id}`, { headers })
               .then(response => setChangeLog(response.data.contact.change_log ?? []))
               .catch(() => { setIsError(true); setMessage("Nie udało się odświeżyć historii zmian."); });
-          }} />
+          }} />}
+          {contact?.category_name !== "Firma" && <>
           <h3>Organizacje (etat, JDG, funkcje...)</h3>
           <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
             Jedna osoba może mieć kilka afiliacji naraz — np. etat gdzie indziej i osobną JDG do optymalizacji
@@ -1560,6 +1561,7 @@ const Contact = () => {
               </div>
             </div>
           )}
+          </>}
 
           <h3>Linki</h3>
           {links.length === 0 && (
