@@ -12,6 +12,8 @@ import ContactPhotoDescriptions, { type ContactPhotoData } from "../components/C
 import ContactPhotoHistory from "../components/ContactPhotoHistory";
 import ContactFamilyForm from "../components/ContactFamilyForm";
 
+const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
+
 // Private contact detail/edit panel (`/contacts/:id`, id="new" for
 // creation) — see backend/library/contact_routes.py.
 
@@ -68,6 +70,7 @@ interface Address {
   raw_address: string;
   latitude: number | null;
   longitude: number | null;
+  geocoded: boolean;
 }
 
 interface ContactAddress {
@@ -397,6 +400,7 @@ const Contact = () => {
   const [addressQuery, setAddressQuery] = React.useState("");
   const [addressResults, setAddressResults] = React.useState<AddressSearchResult[]>([]);
   const [addressBusy, setAddressBusy] = React.useState(false);
+  const [openAddressMaps, setOpenAddressMaps] = React.useState<Set<number>>(() => new Set());
   const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
   const [showOrgForm, setShowOrgForm] = React.useState(false);
   const [links, setLinks] = React.useState<ContactLink[]>([]);
@@ -847,6 +851,29 @@ const Contact = () => {
     } finally { setAddressBusy(false); }
   };
 
+  const geocodeAddress = async (addressId: number) => {
+    setAddressBusy(true);
+    setIsError(false); setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/address/${addressId}/geocode`, {}, { headers });
+      await refreshAddresses();
+      if (response.data.resolved === false) {
+        setIsError(true); setMessage("Nie znaleziono współrzędnych dla tego adresu.");
+      }
+    } catch (error: any) {
+      setIsError(true); setMessage(`Nie udało się geokodować adresu: ${error.response?.data?.message || error.message}`);
+    } finally { setAddressBusy(false); }
+  };
+
+  const toggleAddressMap = (linkId: number) => {
+    setOpenAddressMaps(current => {
+      const next = new Set(current);
+      if (next.has(linkId)) next.delete(linkId);
+      else next.add(linkId);
+      return next;
+    });
+  };
+
   const removeAddressLink = async (linkId: number) => {
     setAddressBusy(true);
     setIsError(false); setMessage("");
@@ -981,7 +1008,22 @@ const Contact = () => {
                 onChange={(event) => void updateAddressLink(link.id, { is_primary: event.target.checked })} /> Główny adres</label>
               <button className={"button"} type="button" disabled={addressBusy}
                 onClick={() => void removeAddressLink(link.id)}>Usuń</button>
+              {link.address.latitude == null && <button className={"button"} type="button" disabled={addressBusy}
+                onClick={() => void geocodeAddress(link.address.id)}>📍 Geokoduj</button>}
             </div>}
+            {link.address.latitude != null && link.address.longitude != null && <>
+              <button className={"button"} type="button" style={{ marginTop: 6 }} aria-expanded={openAddressMaps.has(link.id)}
+                onClick={() => toggleAddressMap(link.id)}>
+                {openAddressMaps.has(link.id) ? "🗺 Ukryj mapę" : "🗺 Pokaż na mapie"}
+              </button>
+              {openAddressMaps.has(link.id) && <React.Suspense fallback={<p>Ładowanie mapy…</p>}>
+                <CountryMap countries={[]} places={[{
+                  name: link.address.label || link.address.raw_address,
+                  lat: link.address.latitude,
+                  lon: link.address.longitude,
+                }]} />
+              </React.Suspense>}
+            </>}
           </li>
         ))}
       </ul>

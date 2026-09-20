@@ -45,7 +45,7 @@ class TestContactAddresses:
         assert response.json["addresses"] == [{
             "id": 30, "role": "zamieszkania", "is_primary": True,
             "address": {"id": 20, "label": "dom", "raw_address": "Example Street 1",
-                        "latitude": None, "longitude": None},
+                        "latitude": None, "longitude": None, "geocoded": False},
         }]
         sql = str(session.execute.call_args.args[0])
         assert "ORDER BY contact_addresses.is_primary DESC, contact_addresses.id" in sql
@@ -101,6 +101,7 @@ class TestContactAddresses:
         ("post", "/contacts/999/addresses", {"raw_address": "Street"}),
         ("post", "/contacts/7/addresses", {"address_id": 999}),
         ("patch", "/address/999", {"label": "home"}),
+        ("post", "/address/999/geocode", None),
         ("patch", "/contact_addresses/999", {"role": "home"}),
         ("delete", "/contact_addresses/999", None),
     ])
@@ -139,6 +140,66 @@ class TestContactAddresses:
         assert link.address.raw_address == second_link.address.raw_address == "Changed Street 3"
         assert address.label is None
         assert {call.args[0].contact_id for call in session.add.call_args_list} == {7, 8}
+
+    def test_geocode_resolved_audits_every_linked_contact(self, address_api, monkeypatch):
+        client, session, contact, address, _ = address_api
+        session.execute.return_value.scalars.return_value.all.return_value = [contact, _make_contact(id_=8)]
+
+        def resolve(db_session, row):
+            assert db_session is session and row is address
+            row.latitude, row.longitude = 52.2297, 21.0122
+            return True
+
+        geocode = MagicMock(side_effect=resolve)
+        monkeypatch.setattr("library.contact_routes.geocode_address", geocode)
+        response = client.post("/address/20/geocode")
+        assert response.status_code == 200
+        assert response.json == {
+            "status": "success", "resolved": True,
+            "address": {"id": 20, "label": "dom", "raw_address": "Example Street 1",
+                        "latitude": 52.2297, "longitude": 21.0122, "geocoded": True},
+        }
+        geocode.assert_called_once_with(session, address)
+        audits = [call.args[0] for call in session.add.call_args_list]
+        assert {audit.contact_id for audit in audits} == {7, 8}
+        assert all(audit.source == "manual_edit" and audit.changed_fields == ["addresses"] for audit in audits)
+        assert [call[0] for call in session.method_calls if call[0] in ("add", "commit")] == [
+            "add", "add", "commit",
+        ]
+        query = session.execute.call_args.args[0]
+        assert "contact_addresses.address_id" in str(query)
+        assert 20 in query.compile().params.values()
+
+    def test_geocode_unresolved_still_succeeds(self, address_api, monkeypatch):
+        client, session, contact, address, _ = address_api
+        session.execute.return_value.scalars.return_value.all.return_value = [contact]
+        geocode = MagicMock(return_value=False)
+        monkeypatch.setattr("library.contact_routes.geocode_address", geocode)
+        response = client.post("/address/20/geocode")
+        assert response.status_code == 200
+        assert response.json["status"] == "success"
+        assert response.json["resolved"] is False
+        assert response.json["address"]["geocoded"] is False
+        assert response.json["address"]["latitude"] is None
+        assert response.json["address"]["longitude"] is None
+        geocode.assert_called_once_with(session, address)
+        assert session.add.call_args.args[0].changed_fields == ["addresses"]
+        session.commit.assert_called_once()
+
+    def test_geocode_database_error_rolls_back(self, address_api, monkeypatch):
+        client, session, *_ = address_api
+        monkeypatch.setattr("library.contact_routes.geocode_address", MagicMock(return_value=False))
+        session.commit.side_effect = RuntimeError("synthetic failure")
+        response = client.post("/address/20/geocode")
+        assert response.status_code == 500
+        assert response.json == {"status": "error", "message": "DB error"}
+        session.rollback.assert_called_once()
+
+    def test_geocode_options_does_not_access_database(self, address_api):
+        client, session, *_ = address_api
+        assert client.options("/address/20/geocode").status_code == 200
+        session.get.assert_not_called()
+        session.commit.assert_not_called()
 
     @pytest.mark.parametrize("value", ["", "  ", None])
     def test_shared_address_cannot_be_blanked(self, address_api, value):
