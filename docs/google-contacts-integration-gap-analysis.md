@@ -116,7 +116,7 @@ na NAS-ie ani ponownego importu rzeczywistych CSV w ramach tej poprawki.
   nieznany. `--02-29` jest poprawne; `--02-30` i `--04-31` są pomijane z raportem.
   Pełne daty ISO nadal są importowane. Znana pełna data nie jest zastępowana;
   rok można uzupełnić, jeśli istniejący miesiąc i dzień pasują do nowej pełnej daty.
-  Konflikt dat pozostawia dane bez zmian i jest liczony oddzielnie od błędnych dat.
+  Konflikt dat pozostawia dane bez zmian i jest raportowany oddzielnie od błędnych dat.
 - Historia zmian uwzględnia `birthday_month` i `birthday_day`. Dry-run używa
   odłączonych kopii danych również dla kolejnych aktualizacji urodzin w jednym CSV.
 

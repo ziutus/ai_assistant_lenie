@@ -115,7 +115,7 @@ def test_existing_contact_gets_yearless_date_and_conflicts_are_preserved(tmp_pat
     main()
     output = capsys.readouterr().out
     assert "dopasowanych do istniejących kontaktów: 2, nowych: 0" in output
-    assert "Konflikty dat urodzin (zachowano obecne): 1" in output
+    assert "Konflikty dat urodzin: zachowano obecne" in output
     assert row.birthday is None
     if apply:
         assert (row.birthday_month, row.birthday_day) == (4, 29)

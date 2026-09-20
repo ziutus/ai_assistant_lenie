@@ -388,9 +388,9 @@ def main():
     print()
     print(f"Wierszy: dopasowanych do istniejących kontaktów: {matched_n}, nowych: {created_n}")
     if skipped_birthday_n:
-        print(f"Pominięte nieprawidłowe daty urodzin: {skipped_birthday_n}")
+        print("Pominięto nieprawidłowe daty urodzin — sprawdź ostrzeżenia dla wierszy CSV.")
     if birthday_conflicts_n:
-        print(f"Konflikty dat urodzin (zachowano obecne): {birthday_conflicts_n}")
+        print("Konflikty dat urodzin: zachowano obecne — sprawdź ostrzeżenia dla wierszy CSV.")
     if ambiguous_n:
         print(f"Niejednoznaczne wiersze pominięte do ręcznego sprawdzenia: {ambiguous_n}")
     if not args.apply:

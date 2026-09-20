@@ -7,14 +7,18 @@ import re
 
 import phonenumbers
 
-_PHONE = re.compile(r"(?P<number>\+?[0-9\s().-]+?)(?:\s*(?:ext\.?|x|wew\.?)\s*(?P<extension>[0-9]+))?", re.I)
+_EXTENSION = re.compile(r"(?:ext\.?|x|wew\.?)\s*([0-9]+)$", re.I)
 
 
 def phone_identity_key(value: str) -> str | None:
-    match = _PHONE.fullmatch(value.strip())
-    if not match:
+    text = value.strip()
+    if len(text) > 128:
         return None
-    number = re.sub(r"[\s().-]", "", match["number"])
+    extension = _EXTENSION.search(text)
+    number_text = text[:extension.start()].rstrip() if extension else text
+    if not re.fullmatch(r"\+?[0-9\s().-]+", number_text):
+        return None
+    number = re.sub(r"[\s().-]", "", number_text)
     # Do not guess a country from a foreign national number or a bare country code.
     if not number.startswith(("+", "00")) and len(number) != 9:
         return None
@@ -25,8 +29,8 @@ def phone_identity_key(value: str) -> str | None:
     if not phonenumbers.is_valid_number(parsed):
         return None
     canonical = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-    if match["extension"]:
-        canonical += " ext. " + match["extension"]
+    if extension:
+        canonical += " ext. " + extension[1]
     return canonical if len(canonical) <= 30 else None
 
 

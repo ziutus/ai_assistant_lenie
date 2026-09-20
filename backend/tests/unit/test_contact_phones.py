@@ -47,3 +47,9 @@ def test_legacy_update_uses_canonical_primary():
     ("Jan 123", None), ("*123#", None), ("00", None)])
 def test_numeric_search_keeps_text_queries_intact(value, expected):
     assert phone_search_digits(value) == expected
+
+
+def test_long_or_malformed_phone_input_is_not_parsed():
+    assert phone_identity_key("\t" * 10000 + "invalid") is None
+    assert phone_identity_key("1 " * 10000 + "x") is None
+    assert phone_identity_key("501234567 ext. not-a-number") is None
