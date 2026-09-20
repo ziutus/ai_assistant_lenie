@@ -858,6 +858,7 @@ const Contact = () => {
   const inputStyle: React.CSSProperties = { padding: "6px 10px", width: "100%", boxSizing: "border-box" };
   const outgoing = relationships.filter((r) => r.direction === "outgoing");
   const incoming = relationships.filter((r) => r.direction === "incoming");
+  const isCompanyCategory = categories.find((c) => String(c.id) === form.category_id)?.name === "Firma";
 
   return (
     <div style={{ maxWidth: 560 }}>
@@ -996,7 +997,7 @@ const Contact = () => {
             {otherName(contact)}
           </div>
           {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
-          {contact.gender && <div><strong>Płeć:</strong> {GENDER_LABELS[contact.gender]}</div>}
+          {contact.category_name !== "Firma" && contact.gender && <div><strong>Płeć:</strong> {GENDER_LABELS[contact.gender]}</div>}
           {(contact.phone_numbers ?? (contact.phone_number ? [{ value: contact.phone_number, label: null }] : [])).map((entry, index) => (
             <div key={`phone-${index}`}><strong>Telefon{index === 0 ? " główny" : ""}:</strong> {entry.value}{entry.label && ` (${entry.label})`}</div>
           ))}
@@ -1004,10 +1005,10 @@ const Contact = () => {
             <div key={`email-${index}`}><strong>Email{index === 0 ? " główny" : ""}:</strong> {entry.value}{entry.label && ` (${entry.label})`}</div>
           ))}
           {contact.company && <div><strong>Firma:</strong> {contact.company}</div>}
-          {contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
+          {contact.category_name !== "Firma" && contact.position && <div><strong>Stanowisko:</strong> {contact.position}</div>}
           {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
-          {contact.current_city && <div><strong>Mieszka w:</strong> {contact.current_city}</div>}
-          {contact.hometown && <div><strong>Pochodzi z:</strong> {contact.hometown}</div>}
+          {contact.category_name !== "Firma" && contact.current_city && <div><strong>Mieszka w:</strong> {contact.current_city}</div>}
+          {contact.category_name !== "Firma" && contact.hometown && <div><strong>Pochodzi z:</strong> {contact.hometown}</div>}
           {contact.birthday && <div><strong>Urodziny:</strong> {contact.birthday}</div>}
           {!contact.birthday && contact.birthday_month && contact.birthday_day && (
             <div><strong>Urodziny:</strong> {contact.birthday_day} {MONTHS_GENITIVE[contact.birthday_month - 1]} <span style={{ color: "#667" }}>(bez roku)</span></div>
@@ -1046,7 +1047,7 @@ const Contact = () => {
           Nazwisko
           <input type="text" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} style={inputStyle} />
         </label>
-        <label>
+        {!isCompanyCategory && <label>
           Płeć — pomocne przy obcych imionach/nazwiskach, gdy nie widać zdjęcia
           <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value as Gender | "" })} style={inputStyle}>
             <option value="">(nie podano)</option>
@@ -1054,7 +1055,7 @@ const Contact = () => {
               <option key={g} value={g}>{GENDER_LABELS[g]}</option>
             ))}
           </select>
-        </label>
+        </label>}
         <label>
           Nazwa robocza (gdy nie znasz imienia ani nazwiska)
           <input type="text" maxLength={200} value={form.display_label} onChange={(e) => setForm({ ...form, display_label: e.target.value })} style={inputStyle} />
@@ -1067,22 +1068,22 @@ const Contact = () => {
           Firma
           <input type="text" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} style={inputStyle} />
         </label>
-        <label>
+        {!isCompanyCategory && <label>
           Stanowisko
           <input type="text" value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} style={inputStyle} />
-        </label>
+        </label>}
         <label>
           Adres
           <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} style={inputStyle} />
         </label>
-        <label>
+        {!isCompanyCategory && <label>
           Mieszka w (miasto) — motyw do small talku
           <input type="text" value={form.current_city} onChange={(e) => setForm({ ...form, current_city: e.target.value })} style={inputStyle} />
-        </label>
-        <label>
+        </label>}
+        {!isCompanyCategory && <label>
           Pochodzi z (rodzinne miasto) — motyw do small talku
           <input type="text" value={form.hometown} onChange={(e) => setForm({ ...form, hometown: e.target.value })} style={inputStyle} />
-        </label>
+        </label>}
         <label>
           Urodziny (jeśli znasz pełną datę, z rokiem)
           <input type="date" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} style={inputStyle} />
