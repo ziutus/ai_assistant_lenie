@@ -16,6 +16,25 @@ Prywatna książka kontaktów (`backend/library/db/models.py:Address`/`ContactAd
 
 `address_validation.py` dodatkowo **nie ufa samemu statusowi "matched" bezkrytycznie** — porównuje zwrócony `nr_budynku` z naszym `building_number`; różnica traktowana jest jako `unavailable` (rejestr mógł dopasować inny budynek na tej samej ulicy), nie jako fałszywe potwierdzenie.
 
+## Konto adresy.app — wyższy limit zapytań
+
+`https://adresy.app/oferta`: nawet plan **Free (0 zł/mies.) wymaga konta i klucza API** — bez klucza działa tylko surowy limit 3 zapytania/min na adres IP (opisany w `/api/`), z kontem na planie Free: **30 zapytań/min, 3000/mies.**, dalej bezpłatnie. Kod już to obsługuje: `address_validation_client.py` czyta opcjonalny `ADRESY_APP_API_KEY` z configu (ten sam mechanizm co `LOCATIONIQ_API_KEY`) i wysyła go jako nagłówek `X-API-Key`, gdy jest ustawiony — **brak klucza nie blokuje działania**, tylko ogranicza do wolniejszego, nieautoryzowanego tieru. Gdy konto powstanie: dodać `ADRESY_APP_API_KEY` do Vault (ten sam sposób co inne sekrety w tym projekcie) — bez zmian w kodzie.
+
+## Fallback: OpenStreetMap / Overpass (dane społecznościowe, niższa pewność)
+
+Gdy `adresy.app` nie potwierdzi adresu (`not_found`/`unavailable`), a adres ma już współrzędne z geokodowania, `POST /address/<id>/validate` dodatkowo próbuje wąskiego zapytania Overpass (`around:400m` wokół znanych współrzędnych — **nigdy** zapytania po całym mieście/`area`, sprawdzone na żywo: zapytanie po całej Łodzi przekroczyło 57 sekund i się nie powiodło, zapytanie promieniowe wykonuje się w sekundy). Motywacja: część danych adresowych w OSM (szczególnie dla Łodzi) jest **zaimportowana bezpośrednio z EMUiA** przez lokalnych mapowiczów (tag `source:addr="EMUiA (emuia.geoportal.gov.pl)"`) i czasem zawiera dokładnie ten poziom szczegółowości osiedlowej ("blok N" jako `addr:housename`), którego brakuje dopasowaniu `adresy.app`.
+
+**Sprawdzony na żywo przypadek** (kontakt 367, adres "Bratysławska 15, blok 31, Łódź", który `adresy.app` nie potwierdził): Overpass znalazł dokładny budynek — `way`, `addr:housenumber="15"`, `addr:housename="blok 31"`, `addr:street="Bratysławska"`, prawdziwe współrzędne — ale **bez** `addr:postcode` na tym konkretnym budynku (sąsiednie budynki przy tej samej ulicy miały `94-039`).
+
+**To zawsze dodatkowy, słabszy sygnał, nigdy zamiennik oficjalnej weryfikacji** — `Address.verified_at` reaguje wyłącznie na wynik `adresy.app`, nigdy na dopasowanie OSM. Sugerowany kod pocztowy z sąsiedniego budynku przy tej samej ulicy jest jawnie oznaczony jako "do potwierdzenia", nigdy cicho podstawiany jako pewny.
+
+## Ręczna weryfikacja/poprawa adresu (gdy oba automatyczne źródła zawiodą)
+
+Gdy ani `adresy.app`, ani fallback OSM nie dadzą pewnej odpowiedzi, przydatne strony do ręcznego sprawdzenia:
+- **`https://adresy.app/`** — wyszukiwarka adresów PRG w przeglądarce (ten sam rejestr co API, czasem łatwiej ręcznie doprecyzować literówkę w interfejsie niż przez API).
+- **`https://www.openstreetmap.org/`** — wyszukiwanie i podgląd mapy społecznościowej; widać też dokładne tagi budynku (np. `addr:housename`), jeśli ktoś kiedyś zmapował dany blok.
+- **`https://mapy.geoportal.gov.pl/`** — oficjalna przeglądarka mapowa GUGiK (ten sam PRG/EMUiA, ale z interfejsem do ręcznego wyszukiwania punktu adresowego, gdy API CAPAP jest niedostępne — zob. sekcja poniżej).
+
 ## Odrzucona alternatywa: oficjalne API GUGiK (EMUiA / CAPAP FTS)
 
 Sprawdzone i **świadomie odrzucone** 2026-09-20 — **nie próbować ponownie bez nowych informacji**:
