@@ -61,6 +61,7 @@ library/
 ├── lenie_markdown.py        # Markdown processing & splitting for embeddings
 ├── document_markdown.py     # Markdown image/link reference extraction
 ├── google_auth.py           # Google OAuth 2.0 utilities
+├── whatsapp_parser.py       # Shared WhatsApp "Export chat" parsing/sender-resolution helpers, used by both imports/whatsapp_neighbor_profiles.py and imports/whatsapp_chat_import.py
 └── stalker_youtube_file.py  # YouTube metadata extraction & download
 ```
 
