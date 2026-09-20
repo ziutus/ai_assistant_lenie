@@ -577,6 +577,7 @@ These write to the private contact book (personal CRM), independent of the NER p
   python imports/whatsapp_chat_import.py --export "chat.zip" --chat-key "..." --chat-name "..." --apply --limit 50 -v # smoke test
   ```
   Known limitation: a message first imported with `--skip-media` won't retroactively get its attachment uploaded on a later re-import (its `dedup_hash` is unchanged, so it's treated as already-imported) — delete that row first if a media backfill is needed.
+- **`whatsapp_chat_media_local_backfill.py`** — one-off fix script: re-uploads chat_messages media that landed on the wrong storage backend (e.g. a dev-machine shell run with `SECRETS_BACKEND=env` bypasses Vault, where `STORAGE_BACKEND`/MinIO credentials actually live, so `storage_from_config()` silently falls back to `LocalStorage` — see `feedback_dev_machine_storage_backend_mismatch.md`) back to the real one, under the same already-recorded key (keys are backend-independent, so no DB changes are needed — only the bytes need to move). **Must run where `storage_from_config()` resolves to the real backend** — copy the misplaced local directory plus this script into the `lenie-ai-server` container via `docker cp` and run it there (`SECRETS_BACKEND=vault` by default in the container), not from a bare dev-machine shell. `python imports/whatsapp_chat_media_local_backfill.py --dir /tmp/chat_media_backfill --key-prefix chat_media [--apply]`. Kept for reference/re-use if the same class of mistake happens again.
 
 ## Running scripts against the NAS production DB (from a dev machine)
 

@@ -39,6 +39,8 @@ import Jobs from "./modules/shared/pages/jobs";
 import Scheduler from "./modules/shared/pages/scheduler";
 import Entities from "./modules/shared/pages/entities";
 import ChapterGroups from "./modules/shared/pages/chapterGroups";
+import Chats from "./modules/shared/pages/chats";
+import ChatConversation from "./modules/shared/pages/chatConversation";
 import { AuthorizationContext } from "./modules/shared/context/authorizationContext";
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -105,6 +107,8 @@ function App() {
                   <Route path="/jobs" element={<Jobs />} />
                   <Route path="/scheduler" element={<Scheduler />} />
                   <Route path="/chapter-groups" element={<ChapterGroups />} />
+                  <Route path="/chats" element={<Chats />} />
+                  <Route path="/chats/:id" element={<ChatConversation />} />
                   <Route path="/search" element={<Search />} />
                   <Route path="/upload-file" element={<UploadFile />} />
                   <Route path="*" element={<p>404</p>} />

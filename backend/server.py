@@ -35,6 +35,7 @@ from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.contact_routes import bp as contact_bp
 from library.document_links_routes import bp as document_links_bp
 from library.cleanup_rules_routes import bp as cleanup_rules_bp
+from library.chat_routes import bp as chat_bp
 from library.youtube_processing import process_youtube_url, parse_chapters_from_description
 from library.stalker_youtube_file import StalkerYoutubeFile
 from library.storage import storage_from_config
@@ -122,6 +123,7 @@ app.register_blueprint(llm_analysis_bp)
 app.register_blueprint(contact_bp)
 app.register_blueprint(document_links_bp)
 app.register_blueprint(cleanup_rules_bp)
+app.register_blueprint(chat_bp)
 start_analysis_worker()
 
 
