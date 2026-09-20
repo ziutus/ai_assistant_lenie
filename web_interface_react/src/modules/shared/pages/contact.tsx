@@ -993,10 +993,10 @@ const Contact = () => {
 
       {mode === "view" && contact ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
           <div style={{ fontSize: "1.2em", fontWeight: 600 }}>
             {otherName(contact)}
           </div>
-          {contact.category_name && <div style={{ color: "#667" }}>{contact.category_name}</div>}
           {contact.category_name !== "Firma" && contact.gender && <div><strong>Płeć:</strong> {GENDER_LABELS[contact.gender]}</div>}
           {(contact.phone_numbers ?? (contact.phone_number ? [{ value: contact.phone_number, label: null }] : [])).map((entry, index) => (
             <div key={`phone-${index}`}><strong>Telefon{index === 0 ? " główny" : ""}:</strong> {entry.value}{entry.label && ` (${entry.label})`}</div>
@@ -1009,14 +1009,16 @@ const Contact = () => {
           {contact.address && <div><strong>Adres:</strong> {contact.address}</div>}
           {contact.category_name !== "Firma" && contact.current_city && <div><strong>Mieszka w:</strong> {contact.current_city}</div>}
           {contact.category_name !== "Firma" && contact.hometown && <div><strong>Pochodzi z:</strong> {contact.hometown}</div>}
-          {contact.birthday && <div><strong>Urodziny:</strong> {contact.birthday}</div>}
-          {!contact.birthday && contact.birthday_month && contact.birthday_day && (
-            <div><strong>Urodziny:</strong> {contact.birthday_day} {MONTHS_GENITIVE[contact.birthday_month - 1]} <span style={{ color: "#667" }}>(bez roku)</span></div>
+          {contact.birthday && (
+            <div><strong>{contact.category_name === "Firma" ? "Data założenia" : "Urodziny"}:</strong> {contact.birthday}</div>
           )}
-          {contact.nationality.length > 0 && (
+          {!contact.birthday && contact.birthday_month && contact.birthday_day && (
+            <div><strong>{contact.category_name === "Firma" ? "Data założenia" : "Urodziny"}:</strong> {contact.birthday_day} {MONTHS_GENITIVE[contact.birthday_month - 1]} <span style={{ color: "#667" }}>(bez roku)</span></div>
+          )}
+          {contact.category_name !== "Firma" && contact.nationality.length > 0 && (
             <div><strong>Narodowość:</strong> {contact.nationality.join(", ")}</div>
           )}
-          {contact.languages.length > 0 && (
+          {contact.category_name !== "Firma" && contact.languages.length > 0 && (
             <div><strong>Języki:</strong> {contact.languages.map(languageSummary).join(", ")}</div>
           )}
           {contact.notes && <div><strong>Notatki:</strong> {linkifyPlainText(contact.notes)}</div>}
@@ -1040,13 +1042,22 @@ const Contact = () => {
       ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <label>
+          Kategoria
+          <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} style={inputStyle}>
+            <option value="">(domyślna)</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </label>
+        {!isCompanyCategory && <label>
           Imię
           <input type="text" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} style={inputStyle} />
-        </label>
-        <label>
+        </label>}
+        {!isCompanyCategory && <label>
           Nazwisko
           <input type="text" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} style={inputStyle} />
-        </label>
+        </label>}
         {!isCompanyCategory && <label>
           Płeć — pomocne przy obcych imionach/nazwiskach, gdy nie widać zdjęcia
           <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value as Gender | "" })} style={inputStyle}>
@@ -1085,11 +1096,13 @@ const Contact = () => {
           <input type="text" value={form.hometown} onChange={(e) => setForm({ ...form, hometown: e.target.value })} style={inputStyle} />
         </label>}
         <label>
-          Urodziny (jeśli znasz pełną datę, z rokiem)
+          {isCompanyCategory ? "Data założenia (jeśli znana z rokiem)" : "Urodziny (jeśli znasz pełną datę, z rokiem)"}
           <input type="date" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} style={inputStyle} />
         </label>
         <label>
-          Urodziny bez roku (dzień i miesiąc) — np. gdy Facebook ukrywa rok
+          {isCompanyCategory
+            ? "Data założenia bez roku (dzień i miesiąc) — np. gdy rok nie jest pewny"
+            : "Urodziny bez roku (dzień i miesiąc) — np. gdy Facebook ukrywa rok"}
           <div style={{ display: "flex", gap: 8 }}>
             <select
               value={form.birthday_day}
@@ -1113,16 +1126,7 @@ const Contact = () => {
             </select>
           </div>
         </label>
-        <label>
-          Kategoria
-          <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} style={inputStyle}>
-            <option value="">(domyślna)</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </label>
-        <div>
+        {!isCompanyCategory && <div>
           <div style={{ marginBottom: 4 }}>Narodowość</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
             {form.nationality.length === 0 && <span style={{ color: "#667" }}>Brak.</span>}
@@ -1158,8 +1162,8 @@ const Contact = () => {
               Dodaj
             </button>
           </div>
-        </div>
-        <div>
+        </div>}
+        {!isCompanyCategory && <div>
           <div style={{ marginBottom: 4 }}>Języki</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
             {form.languages.length === 0 && <span style={{ color: "#667" }}>Brak języków.</span>}
@@ -1214,7 +1218,7 @@ const Contact = () => {
               Dodaj
             </button>
           </div>
-        </div>
+        </div>}
         <label>
           Notatki
           <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} style={inputStyle} />
@@ -1636,7 +1640,7 @@ const Contact = () => {
         </div>
       )}
 
-      {!isNew && whatsappProfile && (
+      {!isNew && !isCompanyCategory && whatsappProfile && (
         <div style={{ marginTop: 24 }}>
           <h3>Profil sąsiedzki (WhatsApp)</h3>
           <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
