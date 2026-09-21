@@ -71,6 +71,9 @@ const Chats = () => {
         <code>backend/imports/whatsapp_chat_import.py</code>. Tylko do odczytu.
       </p>
 
+      <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading}
+        label="rozmów" onPageChange={(p) => fetchConversations(p)} />
+
       {message && <p className={isError ? "error" : undefined}>{message}</p>}
       {isLoading && <p>Ładowanie...</p>}
 
