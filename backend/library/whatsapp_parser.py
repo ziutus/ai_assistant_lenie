@@ -183,6 +183,21 @@ def normalize_name(value: str) -> set[str]:
 _UNKNOWN_CONTACT_NAME_RE = re.compile(r"^(nieznan\w*|unkonwn|unknown)$", re.IGNORECASE)
 
 
+def strip_sender_suffix(display_name: str, suffix: str | None) -> str:
+    """Strip a trailing ' - <suffix>' community tag (the household's own WhatsApp
+    display-name convention, e.g. " - Tuwima Gardens") from a whole display name.
+
+    Contacts in the private contact book never carry this suffix (google_contacts_import.py
+    strips it at import time into a contact_groups membership instead), so matching a raw
+    WhatsApp sender name against the contact book without stripping it first never finds a
+    match — normalize_name() would fold the suffix's own words into the comparison key.
+    """
+    if not suffix:
+        return display_name
+    suffix_re = re.compile(r"\s*-\s*" + re.escape(suffix) + r"\s*$", re.IGNORECASE)
+    return suffix_re.sub("", display_name).strip()
+
+
 def load_contacts(csv_path: str, suffix: str | None = None) -> dict[str, str]:
     """Load a Google Contacts CSV export into a normalized-phone-digits -> display-name map.
 
