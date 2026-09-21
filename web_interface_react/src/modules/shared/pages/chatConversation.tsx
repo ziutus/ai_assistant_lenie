@@ -160,7 +160,7 @@ const ChatConversation = () => {
             ))}
           </select>
         </label>
-        <label style={{ marginLeft: 14 }}>
+        <label style={{ marginLeft: 12 }}>
           Od dnia:{" "}
           <input
             type="date"
@@ -175,7 +175,8 @@ const ChatConversation = () => {
         {dateFrom && (
           <button
             type="button"
-            style={{ marginLeft: 8 }}
+            className="button"
+            style={{ marginLeft: 12 }}
             disabled={isLoading}
             onClick={() => {
               setDateFrom("");
@@ -186,6 +187,9 @@ const ChatConversation = () => {
           </button>
         )}
       </div>
+
+      <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading}
+        label="wiadomości" onPageChange={(p) => fetchMessages(p)} />
 
       {message && <p className={isError ? "error" : undefined}>{message}</p>}
       {isLoading && <p>Ładowanie...</p>}
