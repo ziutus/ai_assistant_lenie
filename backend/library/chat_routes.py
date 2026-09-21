@@ -12,6 +12,7 @@ imports/whatsapp_chat_import.py; there is no write path here.
 """
 
 import logging
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, select
@@ -74,6 +75,12 @@ def list_chat_messages(conversation_id: int):
     message_type = (request.args.get("message_type") or "").strip()
     if message_type:
         conditions.append(ChatMessage.message_type == message_type)
+    date_from = (request.args.get("date_from") or "").strip()
+    if date_from:
+        try:
+            conditions.append(ChatMessage.sent_at >= datetime.strptime(date_from, "%Y-%m-%d"))
+        except ValueError:
+            pass
 
     total = session.execute(select(func.count()).select_from(ChatMessage).where(*conditions)).scalar_one()
     offset = request.args.get("offset", default=0, type=int)
