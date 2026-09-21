@@ -252,6 +252,46 @@ class FeedSource(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class Topic(Base):
+    """User-managed topic linking documents, contacts and chat records."""
+
+    __tablename__ = "topics"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    items: Mapped[list["TopicItem"]] = relationship(back_populates="topic", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("uq_topics_active_lower_name", sa_text("lower(name)"), unique=True,
+              postgresql_where=sa_text("archived_at IS NULL"), sqlite_where=sa_text("archived_at IS NULL")),
+    )
+
+
+class TopicItem(Base):
+    """Polymorphic membership; entity existence is checked by topic_service."""
+
+    __tablename__ = "topic_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id", ondelete="CASCADE"), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    topic: Mapped["Topic"] = relationship(back_populates="items")
+
+    __table_args__ = (
+        CheckConstraint("entity_type IN ('document', 'contact', 'chat_conversation', 'chat_message')",
+                        name="ck_topic_items_entity_type"),
+        UniqueConstraint("topic_id", "entity_type", "entity_id", name="uq_topic_items_entity"),
+        Index("idx_topic_items_entity", "entity_type", "entity_id"),
+    )
+
+
 class ContentGroup(Base):
     """Shared user-managed topic or work-priority group."""
 

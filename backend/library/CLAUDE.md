@@ -186,6 +186,7 @@ Supported models:
 
 ### Other Modules
 
+- **`topic_service.py` / `topic_routes.py`** — Topics CRUD/archive and validated, duplicate-safe polymorphic links to documents, contacts, chat conversations and messages; grouped resolved detail (`topics`, `topic_items`).
 - **`document_links_service.py`** — typed, directed links between two library documents (`document_links` table, [ADR-026](../../docs/adr/adr-026-document-to-document-links.md)). `RELATIONS` is the code-side vocabulary (each relation carries a `from`-side and a `to`-side Polish phrase so `link_to_dict(link, perspective_document_id=...)` renders the edge from either endpoint); `create_link()` (self-link/unknown-doc guards, upsert per `(from, to, relation)`, a `url_mention` re-proposal never revives a human-`rejected` edge), `set_link_status()`, `detect_url_mention_links()` (scans `text_md`/`text`/`summary` for URLs — incl. bare `host/path` — that normalize to another document's `url`/`canonical_url`, proposes a `references` link; narrows candidates by a last-path-segment ILIKE before the exact normalized-key match). Blueprint: `document_links_routes.py`. Backfill: [`imports/detect_document_links.py`](../imports/CLAUDE.md). Confirmed links also feed `GET /document/<id>/relationship_graph` in `server.py`.
 - **`transcript.py`** — Transcription via AssemblyAI (sole provider, ADR-011) + `transcript_price()` cost calculator + `get_assemblyai_price_per_minute()` per-model pricing.
 - **`google_auth.py`** — Google OAuth 2.0 credential management with token caching.
