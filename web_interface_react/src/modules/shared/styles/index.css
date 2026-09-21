@@ -157,6 +157,14 @@ input[type="file"]:disabled {
   border-radius: 12px;
 }
 .contact-duplicate-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.contact-duplicate-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+}
+.contact-duplicate-selection { display: inline-flex; align-items: center; gap: 6px; }
 .contact-merge-scroll { overflow-x: auto; margin: 18px 0; }
 .contact-merge-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 560px; }
 .contact-merge-table th, .contact-merge-table td {

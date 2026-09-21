@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from library.contact_duplicates import dismiss_duplicate_pair, find_duplicate_candidates
+from library.contact_duplicates import dismiss_duplicate_pair, dismiss_duplicate_pairs_bulk, find_duplicate_candidates
 from library.contact_merge import merge_contacts
 from library.db.models import Contact, ContactChangeLog, ContactDuplicateDismissal, ContactRelationship
 
@@ -27,6 +27,45 @@ def test_dismissal_normalizes_order_and_updates_existing_note():
     assert row.note == "new"
     assert session.scalar.call_args.args[0].compile().params == {"contact_id_a_1": 1, "contact_id_b_1": 2}
     session.add.assert_not_called()
+    session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("pairs", [[], None, {}, [{"contact_id_a": 1, "contact_id_b": 2}] * 201])
+def test_bulk_dismissal_rejects_invalid_list(pairs):
+    session = MagicMock()
+    with pytest.raises(ValueError):
+        dismiss_duplicate_pairs_bulk(session, pairs)
+    assert session.mock_calls == []
+
+
+@pytest.mark.parametrize("pair", [
+    None, [], "1-2", {}, {"contact_id_a": 1},
+    {"contact_id_a": "1", "contact_id_b": 2},
+    {"contact_id_a": True, "contact_id_b": 2},
+    {"contact_id_a": 1.0, "contact_id_b": 2},
+    {"contact_id_a": 0, "contact_id_b": 2},
+    {"contact_id_a": 1, "contact_id_b": -2},
+    {"contact_id_a": 1, "contact_id_b": 1},
+])
+def test_bulk_dismissal_validates_all_pairs_before_writing(pair):
+    session = MagicMock()
+    with pytest.raises(ValueError):
+        dismiss_duplicate_pairs_bulk(session, [{"contact_id_a": 1, "contact_id_b": 2}, pair])
+    assert session.mock_calls == []
+
+
+@pytest.mark.parametrize("count", [2, 3, 200])
+def test_bulk_dismissal_returns_processed_count(count):
+    session = MagicMock()
+    existing = ContactDuplicateDismissal(contact_id_a=1, contact_id_b=2, note="old")
+    session.scalar.side_effect = [existing] + [None] * (count - 1)
+    pairs = [{"contact_id_a": index + 2, "contact_id_b": 1} for index in range(count)]
+    assert dismiss_duplicate_pairs_bulk(session, pairs) == count
+    assert existing.note is None
+    assert session.scalar.call_count == count
+    assert [(call.args[0].contact_id_a, call.args[0].contact_id_b, call.args[0].note)
+            for call in session.add.call_args_list] == [(1, index + 3, None) for index in range(count - 1)]
+    session.get.assert_not_called()
     session.commit.assert_not_called()
 
 
