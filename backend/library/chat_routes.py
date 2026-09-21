@@ -4,8 +4,8 @@ Endpoints (x-api-key required via the global before_request):
   GET /chat_conversations                    — paginated list of imported chats
   GET /chat_conversations/<id>/messages      — paginated message thread (chronological
                                                 by default), media served as presigned
-                                                MinIO URLs; optional ?sender=/?message_type=
-                                                filters
+                                                MinIO URLs; optional ?sender=/?message_type=/
+                                                ?contact_id= filters
 
 Read-only — chat_conversations/chat_messages are populated exclusively by
 imports/whatsapp_chat_import.py; there is no write path here.
@@ -72,6 +72,9 @@ def list_chat_messages(conversation_id: int):
     sender = (request.args.get("sender") or "").strip()
     if sender:
         conditions.append(ChatMessage.sender_name_raw == sender)
+    contact_id = request.args.get("contact_id", type=int)
+    if contact_id is not None:
+        conditions.append(ChatMessage.contact_id == contact_id)
     message_type = (request.args.get("message_type") or "").strip()
     if message_type:
         conditions.append(ChatMessage.message_type == message_type)

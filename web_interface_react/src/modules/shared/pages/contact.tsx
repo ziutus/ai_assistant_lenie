@@ -281,6 +281,14 @@ const emptyLinkForm = {
   label: "",
 };
 
+interface ChatConversationSummary {
+  id: number;
+  display_name: string;
+  platform: string;
+  message_count: number;
+  last_message_at: string | null;
+}
+
 interface ContactDetail {
   id: number;
   category_id: number;
@@ -313,6 +321,7 @@ interface ContactDetail {
   events: ContactGroupEvent[];
   change_log: ContactChangeLogEntry[];
   whatsapp_profile: WhatsappProfile | null;
+  chat_conversations: ChatConversationSummary[];
   photo_url: string | null;
   photo: ContactPhotoData | null;
 }
@@ -1678,6 +1687,19 @@ const Contact = () => {
                   </NavLink>
                 ))}
               </li>)}
+            </ul>
+          </section>}
+          {!!contact?.chat_conversations?.length && <section style={{ marginBottom: 24 }}>
+            <h3>Czaty</h3>
+            <ul style={{ listStyle: "none", padding: 0 }}>
+              {contact.chat_conversations.map((conv) => (
+                <li key={conv.id} style={{ marginBottom: 4 }}>
+                  <NavLink to={`/chats/${conv.id}?contact_id=${id}`}>{conv.display_name}</NavLink>
+                  {" — "}
+                  {conv.message_count.toLocaleString("pl")} wiadomości
+                  {conv.last_message_at && <> · ostatnia: {new Date(conv.last_message_at).toLocaleDateString("pl-PL")}</>}
+                </li>
+              ))}
             </ul>
           </section>}
           {contact?.category_name !== "Firma" && <ContactInterestsEducation key={id} contactId={id!} editable={mode === "edit"} onChanged={() => {
