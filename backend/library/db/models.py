@@ -3582,6 +3582,27 @@ class ContactEducation(Base):
     contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
 
 
+class ContactDuplicateDismissal(Base):
+    """Rejected duplicate pair, stored with the smaller id first (canonical ordering).
+
+    The same pair stays dismissed regardless of detection query ordering.
+    """
+
+    __tablename__ = "contact_duplicate_dismissals"
+    __table_args__ = (
+        CheckConstraint("contact_id_a < contact_id_b", name="ck_contact_duplicate_dismissals_order"),
+        UniqueConstraint("contact_id_a", "contact_id_b"),
+        Index("idx_contact_duplicate_dismissals_a", "contact_id_a"),
+        Index("idx_contact_duplicate_dismissals_b", "contact_id_b"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id_a: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    contact_id_b: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    dismissed_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class ChatConversation(Base):
     """One imported chat/group (currently WhatsApp only) — a lightweight
     watermark row so a repeat export of the same chat imports incrementally

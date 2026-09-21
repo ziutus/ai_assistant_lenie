@@ -31,12 +31,92 @@ from library.db.models import (
     Address, ContactAddress,
     ChatConversation, ChatMessage,
     Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
-    ContactEducation, ContactInterest, ContactInterestMembership,
+    ContactDuplicateDismissal, ContactEducation, ContactInterest, ContactInterestMembership,
     ContactLookupResult, ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
 )
 
 bp = Blueprint("contacts", __name__)
 logger = logging.getLogger(__name__)
+
+
+def _duplicate_summary(row: Contact) -> dict:
+    return {
+        **{field: getattr(row, field) for field in (
+            "id", "uuid", "first_name", "last_name", "company", "phone_number", "email", "current_city", "is_archived",
+        )},
+        "display_name": contact_display_name(row),
+        "category_name": row.category.name if row.category else None,
+        "photo_thumbnail_url": _contact_photo_thumbnail_url(row),
+        "groups": [{"id": group.id, "name": group.name} for group in row.groups],
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@bp.route("/contacts/duplicates", methods=["GET", "OPTIONS"])
+def contacts_duplicates():
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_duplicates import find_duplicate_candidates
+    session = get_scoped_session()
+    include_archived = request.args.get("include_archived", "").lower() in ("1", "true", "yes")
+    pairs = find_duplicate_candidates(session, include_archived=include_archived)
+    return jsonify({"status": "success", "duplicates": [
+        {**pair, "contact_a": _duplicate_summary(pair["contact_a"]), "contact_b": _duplicate_summary(pair["contact_b"])}
+        for pair in pairs
+    ]})
+
+
+@bp.route("/contacts/duplicates/dismiss", methods=["POST", "OPTIONS"])
+def contacts_duplicates_dismiss():
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_duplicates import dismiss_duplicate_pair
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or any(
+        type(data.get(key)) is not int or data[key] <= 0 for key in ("contact_id_a", "contact_id_b")
+    ):
+        return {"status": "error", "message": "Contact ids must be positive integers"}, 400
+    session = get_scoped_session()
+    try:
+        if any(session.get(Contact, data[key]) is None for key in ("contact_id_a", "contact_id_b")):
+            return {"status": "error", "message": "Contact not found"}, 404
+        row: ContactDuplicateDismissal = dismiss_duplicate_pair(
+            session, data["contact_id_a"], data["contact_id_b"], data.get("note"),
+        )
+        session.commit()
+        return jsonify({"status": "success", "dismissal_id": row.id})
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+
+@bp.route("/contacts/merge", methods=["POST", "OPTIONS"])
+def contacts_merge():
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_merge import merge_contacts
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return {"status": "error", "message": "JSON object required"}, 400
+    session = get_scoped_session()
+    try:
+        row = merge_contacts(
+            session, data.get("primary_contact_id"), data.get("duplicate_contact_id"), data.get("field_choices", {}),
+        )
+        session.commit()
+        return jsonify({
+            "status": "success", "contact": _contact_dict(row), "deleted_contact_id": data["duplicate_contact_id"],
+        })
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
 
 _CONTACT_FIELDS = (
     "first_name", "last_name", "phone_number", "email",
@@ -1008,6 +1088,12 @@ def contacts_get(contact_id: int):
     ).scalars().all()
 
     data = _contact_dict(row)
+    data["photo_storage_key"] = row.photo_storage_key
+    data["photo_thumbnail_storage_key"] = row.photo_thumbnail_storage_key
+    data["merge_counts"] = {
+        name: session.scalar(select(func.count()).select_from(model).where(model.contact_id == contact_id))
+        for name, model in (("events", ContactEventParticipant), ("education", ContactEducation))
+    }
     # Cap group and participant events at 20 to keep the contact overview compact;
     # the standalone events list exposes the complete history.
     events = session.execute(_events_query(contact_id=contact_id).limit(20)).scalars().all()

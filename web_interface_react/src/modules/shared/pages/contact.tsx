@@ -1249,6 +1249,7 @@ const Contact = () => {
       </div>
 
       {isLoading && <div className={"loader"}></div>}
+      {searchParams.get("merged") === "1" && <p role="status" style={{ color: "#16803a" }}>Scalono kontakty.</p>}
       {message && (
         <p className={isError ? "errorText" : undefined} style={{ whiteSpace: "pre-line", color: isError ? undefined : "#2e7d43" }}>
           {message}

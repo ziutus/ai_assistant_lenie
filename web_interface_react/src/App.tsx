@@ -22,6 +22,8 @@ import ToolRecommendations from "./modules/shared/pages/toolRecommendations";
 import Tools from "./modules/shared/pages/tools";
 import Sources from "./modules/shared/pages/sources";
 import Contacts from "./modules/shared/pages/contacts";
+import ContactDuplicates from "./modules/shared/pages/contactDuplicates";
+import ContactMerge from "./modules/shared/pages/contactMerge";
 import Contact from "./modules/shared/pages/contact";
 import ContactCategories from "./modules/shared/pages/contactCategories";
 import ContactGroups from "./modules/shared/pages/contactGroups";
@@ -88,6 +90,8 @@ function App() {
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/contacts" element={<Contacts />} />
+                  <Route path="/contacts/duplicates" element={<ContactDuplicates />} />
+                  <Route path="/contacts/merge" element={<ContactMerge />} />
                   <Route path="/contact-events" element={<ContactEvents />} />
                   <Route path="/contact-birthdays" element={<ContactBirthdays />} />
                   <Route path="/contacts/:id" element={<Contact />} />
