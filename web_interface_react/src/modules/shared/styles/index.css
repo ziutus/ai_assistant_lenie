@@ -129,3 +129,46 @@ input[type="file"]:disabled {
     width: 100%;
   }
 }
+.contact-duplicate-card {
+  border: 1px solid #d5dde8;
+  border-radius: 8px;
+  padding: 18px;
+  margin: 18px 0;
+  overflow-wrap: anywhere;
+}
+.contact-duplicate-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 12px;
+}
+.contact-duplicate-photo {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.contact-duplicate-chip {
+  display: inline-block;
+  padding: 3px 8px;
+  margin: 3px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 12px;
+}
+.contact-duplicate-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.contact-merge-scroll { overflow-x: auto; margin: 18px 0; }
+.contact-merge-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 560px; }
+.contact-merge-table th, .contact-merge-table td {
+  padding: 12px;
+  border: 1px solid #d5dde8;
+  vertical-align: top;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.contact-merge-table label { display: block; cursor: pointer; }
+.contact-merge-table input { margin-right: 8px; }
+@media (max-width: 600px) {
+  .contact-duplicate-columns { grid-template-columns: 1fr; }
+}
