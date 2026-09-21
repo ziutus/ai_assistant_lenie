@@ -217,7 +217,17 @@ const ChatConversation = () => {
                   m.sender_name_raw
                 )}
               </strong>
-              <span>{formatDate(m.sent_at)}</span>
+              <span>
+                {formatDate(m.sent_at)}
+                {contactId && m.sent_at && (
+                  <>
+                    {" "}
+                    <a href={`/chats/${id}?date_from=${m.sent_at.slice(0, 10)}`} title="Zobacz całą rozmowę od tej daty">
+                      🔗
+                    </a>
+                  </>
+                )}
+              </span>
             </div>
             {m.message_type === "deleted" ? (
               <em style={{ color: "#999" }}>Wiadomość usunięta</em>
