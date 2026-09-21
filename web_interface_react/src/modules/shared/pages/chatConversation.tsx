@@ -83,6 +83,7 @@ const ChatConversation = () => {
   const [conversation, setConversation] = React.useState<ChatConversationListItem | null>(null);
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([]);
   const [messageType, setMessageType] = React.useState(searchParams.get("message_type") ?? "");
+  const [dateFrom, setDateFrom] = React.useState(searchParams.get("date_from") ?? "");
   const requestedPageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
   const initialPageSize = PAGE_SIZES.includes(requestedPageSize) ? requestedPageSize : DEFAULT_PAGE_SIZE;
   const requestedPage = Number(searchParams.get("page") ?? "1");
@@ -96,7 +97,7 @@ const ChatConversation = () => {
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
-  const fetchMessages = async (pageArg: number, messageTypeArg = messageType) => {
+  const fetchMessages = async (pageArg: number, messageTypeArg = messageType, dateFromArg = dateFrom) => {
     setIsLoading(true);
     setIsError(false);
     setMessage("");
@@ -106,6 +107,7 @@ const ChatConversation = () => {
         limit: String(pageSize),
       };
       if (messageTypeArg) params.message_type = messageTypeArg;
+      if (dateFromArg) params.date_from = dateFromArg;
       const response = await axios.get(`${apiUrl}/chat_conversations/${id}/messages`, { params, headers });
       setConversation(response.data.conversation ?? null);
       const rows: ChatMessageItem[] = response.data.messages ?? [];
@@ -115,6 +117,7 @@ const ChatConversation = () => {
       const nextParams: Record<string, string> = {};
       if (pageArg !== 1) nextParams.page = String(pageArg);
       if (messageTypeArg) nextParams.message_type = messageTypeArg;
+      if (dateFromArg) nextParams.date_from = dateFromArg;
       setSearchParams(nextParams, { replace: true });
       if (!rows.length) setMessage("Brak wiadomości pasujących do filtra.");
     } catch (error: any) {
@@ -126,7 +129,7 @@ const ChatConversation = () => {
   };
 
   React.useEffect(() => {
-    fetchMessages(initialPage, messageType);
+    fetchMessages(initialPage, messageType, dateFrom);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -157,6 +160,31 @@ const ChatConversation = () => {
             ))}
           </select>
         </label>
+        <label style={{ marginLeft: 14 }}>
+          Od dnia:{" "}
+          <input
+            type="date"
+            value={dateFrom}
+            disabled={isLoading}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              fetchMessages(1, messageType, e.target.value);
+            }}
+          />
+        </label>
+        {dateFrom && (
+          <button
+            type="button"
+            style={{ marginLeft: 8 }}
+            disabled={isLoading}
+            onClick={() => {
+              setDateFrom("");
+              fetchMessages(1, messageType, "");
+            }}
+          >
+            Wyczyść
+          </button>
+        )}
       </div>
 
       {message && <p className={isError ? "error" : undefined}>{message}</p>}
