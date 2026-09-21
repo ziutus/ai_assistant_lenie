@@ -13,7 +13,8 @@ interface TopicItem {
   entity_id: number;
   note: string | null;
   entity: { id: number; title?: string; url?: string; display_name?: string; content?: string;
-    sent_at?: string; conversation_id?: number } | null;
+    sent_at?: string; conversation_id?: number; message_type?: string; sender_name_raw?: string;
+    media_original_filename?: string | null; media_mime_type?: string | null; media_url?: string | null } | null;
 }
 interface Topic {
   id: number;
@@ -99,6 +100,22 @@ function entityLink(kind: EntityType, entity: NonNullable<TopicItem["entity"]>) 
   return `/chats/${entity.conversation_id}?date_from=${encodeURIComponent(entity.sent_at?.slice(0, 10) || "")}`;
 }
 
+function ChatMessageAttachment({ entity }: { entity: NonNullable<TopicItem["entity"]> }) {
+  if (!entity.media_original_filename) return null;
+  if (!entity.media_url) {
+    return <p style={{ color: "#888", fontStyle: "italic" }}>📎 {entity.media_original_filename} — plik niedostępny</p>;
+  }
+  if (entity.message_type === "image") {
+    return <a href={entity.media_url} target="_blank" rel="noreferrer">
+      <img src={entity.media_url} alt={entity.media_original_filename}
+        style={{ maxWidth: 160, maxHeight: 160, borderRadius: 4, display: "block", marginTop: 4 }} />
+    </a>;
+  }
+  return <a href={entity.media_url} target="_blank" rel="noreferrer" style={{ display: "block" }}>
+    📄 {entity.media_original_filename}
+  </a>;
+}
+
 export function TopicDetail() {
   const { id } = useParams();
   const api = useTopicsApi();
@@ -160,9 +177,14 @@ export function TopicDetail() {
         {!topic.items?.[type].length && <p>Brak powiązań.</p>}
         <ul>{topic.items?.[type].map(item => <li key={item.id} style={{ marginBottom: 12 }}>
           {item.entity ? <Link to={entityLink(type, item.entity)}>
-            {item.entity.title || item.entity.display_name || item.entity.content || `#${item.entity_id}`}
+            {item.entity.title || item.entity.display_name
+              || (type === "chat_message" && (item.entity.sender_name_raw
+                ? `${item.entity.sender_name_raw}: ${item.entity.content || item.entity.media_original_filename || ""}`
+                : item.entity.content))
+              || `#${item.entity_id}`}
           </Link> : <span>Usunięty element #{item.entity_id}</span>}
           {item.entity?.sent_at && <time style={{ marginLeft: 8 }}>{item.entity.sent_at}</time>}
+          {type === "chat_message" && item.entity && <ChatMessageAttachment entity={item.entity} />}
           {item.note && <p>{item.note}</p>}
           <button className="button" style={{ marginLeft: 8 }} disabled={busy}
             onClick={() => void mutate(() => api.delete(`/topic_items/${item.id}`))}>Usuń powiązanie</button>

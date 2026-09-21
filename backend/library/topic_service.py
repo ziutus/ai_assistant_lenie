@@ -122,7 +122,7 @@ def item_to_dict(item) -> dict:
             "created_at": item.created_at.isoformat() if item.created_at else None}
 
 
-def _display(entity_type, entity):
+def _display(entity_type, entity, storage=None):
     if entity_type == "document":
         return {"id": entity.id, "title": entity.title or entity.url, "url": entity.url}
     if entity_type == "contact":
@@ -130,9 +130,17 @@ def _display(entity_type, entity):
         return {"id": entity.id, "display_name": name or entity.display_label or entity.company or "Kontakt bez nazwy"}
     if entity_type == "chat_conversation":
         return {"id": entity.id, "display_name": entity.display_name}
-    return {"id": entity.id, "content": (entity.content or "")[:200],
-            "sent_at": entity.sent_at.isoformat() if entity.sent_at else None,
-            "conversation_id": entity.conversation_id}
+    return {
+        "id": entity.id, "content": (entity.content or "")[:200],
+        "sent_at": entity.sent_at.isoformat() if entity.sent_at else None,
+        "conversation_id": entity.conversation_id,
+        "message_type": entity.message_type,
+        "sender_name_raw": entity.sender_name_raw,
+        "media_original_filename": entity.media_original_filename,
+        "media_mime_type": entity.media_mime_type,
+        "media_url": storage.presigned_get_url(entity.media_storage_key)
+        if (storage and entity.media_storage_key) else None,
+    }
 
 
 def get_topic_detail(session, topic_id) -> dict | None:
@@ -149,8 +157,16 @@ def get_topic_detail(session, topic_id) -> dict | None:
         entities = {entity.id: entity for entity in session.scalars(
             select(model).where(model.id.in_([item.entity_id for item in members]))
         ).all()}
+        # Presigning is a MinIO network call — only pay for it for chat_message
+        # items that actually have an attachment.
+        storage = None
+        if kind == "chat_message" and any(getattr(e, "media_storage_key", None) for e in entities.values()):
+            from library.config_loader import load_config
+            from library.storage import storage_from_config
+
+            storage = storage_from_config(load_config())
         for item in members:
             entity = entities.get(item.entity_id)
             # Deleted polymorphic targets remain visible/removable as missing links.
-            grouped[kind].append({**item_to_dict(item), "entity": _display(kind, entity) if entity else None})
+            grouped[kind].append({**item_to_dict(item), "entity": _display(kind, entity, storage) if entity else None})
     return {**topic_to_dict(topic), "items": grouped}
