@@ -70,6 +70,7 @@ from library.whatsapp_parser import (  # noqa: E402
     message_datetime,
     parse_attachment,
     parse_export,
+    strip_sender_suffix,
 )
 
 logger = logging.getLogger("whatsapp_chat_import")
@@ -152,6 +153,10 @@ def main():
     parser.add_argument("--chat-name", required=True,
                         help="Wyświetlana nazwa rozmowy (chat_conversations.display_name)")
     parser.add_argument("--platform", default="whatsapp")
+    parser.add_argument("--sender-suffix", default="Tuwima Gardens",
+                        help="Sufiks ' - <suffix>' w nazwie nadawcy (konwencja WhatsApp/Google Contacts dla tej "
+                             "grupy) do odcięcia przed dopasowaniem po nazwisku do książki kontaktów; pusty "
+                             "string wyłącza")
     parser.add_argument("--limit", type=int, default=None, help="Maks. liczba wiadomości do przetworzenia w tym uruchomieniu (testy)")
     parser.add_argument("--force", action="store_true", help="Zignoruj watermark (last_imported_at) i przetwórz całą historię od nowa")
     parser.add_argument("--skip-media", action="store_true", help="Nie wgrywaj załączników do MinIO, tylko log tekstowy")
@@ -262,7 +267,8 @@ def main():
             existing_hashes.add(dedup_hash)
 
             phone = m["sender"] if is_phone_number(m["sender"]) else None
-            contact_id = find_contact(m["sender"], phone, phone_index, name_index)
+            sender_for_match = strip_sender_suffix(m["sender"], args.sender_suffix)
+            contact_id = find_contact(sender_for_match, phone, phone_index, name_index)
 
             session.add(ChatMessage(
                 conversation_id=conversation.id,

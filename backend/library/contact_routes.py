@@ -29,6 +29,7 @@ from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, gener
 from library.db.engine import get_scoped_session
 from library.db.models import (
     Address, ContactAddress,
+    ChatConversation, ChatMessage,
     Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
     ContactEducation, ContactInterest, ContactInterestMembership,
     ContactLookupResult, ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
@@ -928,6 +929,36 @@ def _parse_contact_group_ids(raw: str | None) -> list[int]:
     return ids
 
 
+def _contact_chat_conversations(session, contact_id: int) -> list[dict]:
+    """Conversations (chat_conversations, currently WhatsApp only — see
+    library/chat_routes.py) this contact has at least one resolved message in,
+    most recently active first. Read-only summary for the contact overview;
+    the full thread is opened via /chats/:id."""
+    rows = session.execute(
+        select(
+            ChatConversation.id,
+            ChatConversation.display_name,
+            ChatConversation.platform,
+            func.count(ChatMessage.id),
+            func.max(ChatMessage.sent_at),
+        )
+        .join(ChatMessage, ChatMessage.conversation_id == ChatConversation.id)
+        .where(ChatMessage.contact_id == contact_id)
+        .group_by(ChatConversation.id)
+        .order_by(func.max(ChatMessage.sent_at).desc())
+    ).all()
+    return [
+        {
+            "id": conv_id,
+            "display_name": display_name,
+            "platform": platform,
+            "message_count": message_count,
+            "last_message_at": last_message_at.isoformat() if last_message_at else None,
+        }
+        for conv_id, display_name, platform, message_count, last_message_at in rows
+    ]
+
+
 @bp.get("/contacts/<int:contact_id>")
 def contacts_get(contact_id: int):
     session = get_scoped_session()
@@ -987,6 +1018,7 @@ def contacts_get(contact_id: int):
     data["links"] = [_link_dict(link) for link in links]
     data["change_log"] = [_change_log_dict(cl) for cl in change_log]
     data["whatsapp_profile"] = row.whatsapp_profile
+    data["chat_conversations"] = _contact_chat_conversations(session, contact_id)
     data["photo_url"] = _contact_photo_url(row)
     from library.contact_photos import photo_dict
     data["photo"] = photo_dict(session.get(ContactPhoto, row.photo_storage_key)) if row.photo_storage_key else None

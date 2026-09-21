@@ -577,6 +577,28 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
     return SimpleNamespace(id=id_, **defaults)
 
 
+class TestContactChatConversations:
+    def test_returns_conversations_ordered_by_last_message(self):
+        from library.contact_routes import _contact_chat_conversations
+
+        session = MagicMock()
+        session.execute.return_value.all.return_value = [
+            (2, "Tuwima Gardens - Czat ogólny", "whatsapp", 42, dt.datetime(2026, 9, 1, 10, 0)),
+        ]
+        result = _contact_chat_conversations(session, 380)
+        assert result == [{
+            "id": 2, "display_name": "Tuwima Gardens - Czat ogólny", "platform": "whatsapp",
+            "message_count": 42, "last_message_at": "2026-09-01T10:00:00",
+        }]
+
+    def test_no_conversations_returns_empty_list(self):
+        from library.contact_routes import _contact_chat_conversations
+
+        session = MagicMock()
+        session.execute.return_value.all.return_value = []
+        assert _contact_chat_conversations(session, 380) == []
+
+
 class TestContactsAdd:
     def test_creates_contact_with_default_category(self, monkeypatch):
         from library.contact_routes import contacts_add

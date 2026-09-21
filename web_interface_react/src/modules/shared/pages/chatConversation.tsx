@@ -84,6 +84,7 @@ const ChatConversation = () => {
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([]);
   const [messageType, setMessageType] = React.useState(searchParams.get("message_type") ?? "");
   const [dateFrom, setDateFrom] = React.useState(searchParams.get("date_from") ?? "");
+  const contactId = searchParams.get("contact_id") ?? "";
   const requestedPageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
   const initialPageSize = PAGE_SIZES.includes(requestedPageSize) ? requestedPageSize : DEFAULT_PAGE_SIZE;
   const requestedPage = Number(searchParams.get("page") ?? "1");
@@ -94,6 +95,7 @@ const ChatConversation = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
+  const [contactLabel, setContactLabel] = React.useState<string | null>(null);
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
@@ -108,16 +110,22 @@ const ChatConversation = () => {
       };
       if (messageTypeArg) params.message_type = messageTypeArg;
       if (dateFromArg) params.date_from = dateFromArg;
+      if (contactId) params.contact_id = contactId;
       const response = await axios.get(`${apiUrl}/chat_conversations/${id}/messages`, { params, headers });
       setConversation(response.data.conversation ?? null);
       const rows: ChatMessageItem[] = response.data.messages ?? [];
       setMessages(rows);
+      if (contactId) {
+        const match = rows.find((m) => String(m.contact?.id) === contactId);
+        if (match?.contact?.display_name) setContactLabel(match.contact.display_name);
+      }
       setPage(pageArg);
       setTotal(response.data.total ?? rows.length);
       const nextParams: Record<string, string> = {};
       if (pageArg !== 1) nextParams.page = String(pageArg);
       if (messageTypeArg) nextParams.message_type = messageTypeArg;
       if (dateFromArg) nextParams.date_from = dateFromArg;
+      if (contactId) nextParams.contact_id = contactId;
       setSearchParams(nextParams, { replace: true });
       if (!rows.length) setMessage("Brak wiadomości pasujących do filtra.");
     } catch (error: any) {
@@ -131,7 +139,7 @@ const ChatConversation = () => {
   React.useEffect(() => {
     fetchMessages(initialPage, messageType, dateFrom);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, contactId]);
 
   return (
     <div>
@@ -141,6 +149,14 @@ const ChatConversation = () => {
         <p style={{ color: "#667", marginBottom: 14 }}>
           {conversation.platform} · {conversation.message_count.toLocaleString("pl")} wiadomości łącznie ·
           {" "}ostatni import: {formatDate(conversation.last_imported_at)}
+        </p>
+      )}
+
+      {contactId && (
+        <p style={{ background: "#eef6ff", padding: "8px 10px", borderRadius: 6, marginBottom: 14 }}>
+          Pokazuję tylko wiadomości: <strong>{contactLabel ?? `kontakt #${contactId}`}</strong>
+          {" — "}
+          <NavLink to={`/chats/${id}`}>pokaż wszystkie</NavLink>
         </p>
       )}
 
@@ -205,7 +221,17 @@ const ChatConversation = () => {
                   m.sender_name_raw
                 )}
               </strong>
-              <span>{formatDate(m.sent_at)}</span>
+              <span>
+                {formatDate(m.sent_at)}
+                {contactId && m.sent_at && (
+                  <>
+                    {" "}
+                    <a href={`/chats/${id}?date_from=${m.sent_at.slice(0, 10)}`} title="Zobacz całą rozmowę od tej daty">
+                      🔗
+                    </a>
+                  </>
+                )}
+              </span>
             </div>
             {m.message_type === "deleted" ? (
               <em style={{ color: "#999" }}>Wiadomość usunięta</em>
