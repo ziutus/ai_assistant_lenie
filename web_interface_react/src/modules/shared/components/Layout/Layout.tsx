@@ -135,6 +135,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           Duplikaty kontaktów
         </NavLink>
         <NavLink to="/chats" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Rozmowy</NavLink>
+        <NavLink to="/topics" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Tematy</NavLink>
         <NavLink
           to="/contact-events"
           className={({ isActive }) => isActive ? classes.activeLink : classes.link}
