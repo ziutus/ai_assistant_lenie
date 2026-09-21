@@ -55,6 +55,85 @@ document.addEventListener('DOMContentLoaded', function () {
   const replaceSocialPost = document.getElementById('replaceSocialPost');
   let commentsLoading = false;
 
+  const facebookGroupMembersContainer = document.getElementById('facebookGroupMembersContainer');
+  const collectFbGroupMembersButton = document.getElementById('collectFbGroupMembersButton');
+  const fbGroupMembersStatus = document.getElementById('fbGroupMembersStatus');
+  const fbGroupMembersActions = document.getElementById('fbGroupMembersActions');
+  let fbGroupMembers = [];
+  let fbGroupId = '';
+
+  collectFbGroupMembersButton.addEventListener('click', async () => {
+    collectFbGroupMembersButton.disabled = true;
+    fbGroupMembersActions.style.display = 'none';
+    fbGroupMembers = [];
+    fbGroupMembersStatus.textContent = 'Przewijanie strony i zbieranie członków…';
+    let progressListener;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || !isFacebookGroupMembersUrl(tab.url)) {
+        throw new Error('Otwórz stronę członków grupy na Facebooku (adres facebook.com/groups/<id>/members/).');
+      }
+      fbGroupId = new URL(tab.url).pathname.match(/^\/groups\/(\d+)\//)[1];
+      progressListener = (message, sender) => {
+        if (message.type === 'fb_group_members_progress' && sender.tab?.id === tab.id) {
+          fbGroupMembersStatus.textContent = `Zebrano osób: ${message.count}…`;
+        }
+      };
+      chrome.runtime.onMessage.addListener(progressListener);
+      // executeScript serializes func without its outer scope. Load the sibling
+      // parser into the same isolated world before invoking the driver.
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['facebook-group-members.js'] });
+      const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: collectFacebookGroupMembers });
+      if (!Array.isArray(result?.result?.members)) throw new Error('Nie udało się odczytać listy członków.');
+      fbGroupMembers = result.result.members;
+      const reason = result.result.stoppedReason === 'bottom-reached'
+        ? 'Osiągnięto koniec strony.'
+        : 'Brak nowych członków przez 5 kolejnych kroków przewijania.';
+      fbGroupMembersStatus.textContent = `Zebrano osób: ${result.result.count}. ${reason}`;
+      fbGroupMembersActions.style.display = 'block';
+    } catch (error) {
+      fbGroupMembersStatus.textContent = error.message;
+    } finally {
+      if (progressListener) chrome.runtime.onMessage.removeListener(progressListener);
+      collectFbGroupMembersButton.disabled = false;
+    }
+  });
+
+  document.getElementById('copyFbGroupMembersJsonButton').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(fbGroupMembers, null, 2));
+      fbGroupMembersStatus.textContent = 'Skopiowano JSON.';
+    } catch (error) {
+      fbGroupMembersStatus.textContent = error.message;
+    }
+  });
+
+  function downloadFbGroupMembers(extension) {
+    const csvField = value => {
+      const text = String(value ?? '');
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const content = extension === 'json'
+      ? JSON.stringify(fbGroupMembers, null, 2)
+      : ['name,fb_id,profile_url', ...fbGroupMembers.map(member =>
+        [member.name, member.fb_id, member.profile_url].map(csvField).join(','))].join('\r\n');
+    const blob = new Blob([content], { type: extension === 'json' ? 'application/json' : 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `facebook_group_${fbGroupId}_members.${extension}`;
+    document.body.appendChild(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  document.getElementById('downloadFbGroupMembersJsonButton').addEventListener('click', () => downloadFbGroupMembers('json'));
+  document.getElementById('downloadFbGroupMembersCsvButton').addEventListener('click', () => downloadFbGroupMembers('csv'));
+
   function formatLinkedInComments(comments) {
     return (comments || []).map((comment) => {
       const meta = [comment.authorUrl, comment.timestamp].filter(Boolean).join(' · ');
@@ -114,7 +193,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailId = '';
   let detectedEmailPublishedOn = '';
   let detectedEmailImages = [];
-  const debugState = { version: '1.0.59' };
+  const debugState = { version: '1.0.60' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -426,6 +505,16 @@ document.addEventListener('DOMContentLoaded', function () {
     return false;
   }
 
+  function isFacebookGroupMembersUrl(url) {
+    try {
+      const parsed = new URL(url);
+      return /(^|\.)facebook\.com$/.test(parsed.hostname)
+        && /^\/groups\/\d+\/members\/?/.test(parsed.pathname);
+    } catch (_) {
+      return false;
+    }
+  }
+
   function isGmailMessageUrl(url) {
     try {
       if (new URL(url).hostname.toLowerCase() !== 'mail.google.com') return false;
@@ -439,6 +528,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // Auto set type for YouTube/social posts and fetch metadata.
   chrome.tabs.query({ currentWindow: true, active: true }, function (tabs) {
     const pageUrl = tabs[0]?.url || '';
+    facebookGroupMembersContainer.style.display = isFacebookGroupMembersUrl(pageUrl) ? 'block' : 'none';
     if (pageUrl.startsWith('https://www.youtube.com/watch') || pageUrl.startsWith('http://www.youtube.com/watch')) {
       typeSelect.value = 'youtube';
       chapterListContainer.style.display = 'block';
