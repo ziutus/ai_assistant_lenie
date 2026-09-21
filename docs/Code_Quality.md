@@ -25,6 +25,7 @@ make security-bandit # Run bandit Python security linter
 make security-safety # Check dependencies with safety
 make security-all    # Run all security checks
 .\scripts\security-depx.ps1 # Windows: check lockfiles for malicious packages
+make security-trivy  # Scan built NAS images (build them first, e.g. make nas-build-all)
 ```
 
 | Tool | Purpose |
@@ -34,8 +35,11 @@ make security-all    # Run all security checks
 | Bandit | Python-specific security linter |
 | Safety | Dependency vulnerability check (requires free account) |
 | depx | Known malicious or hijacked package detection (supply-chain malware) |
+| Trivy | OS/package vulnerability scanning of built Docker images |
 
 For the native Windows command, CI-gate behavior, and finding triage, see [Dependency Supply-Chain Scanning](security/dependency-supply-chain-scanning.md). `depx` complements CVE scanners such as pip-audit and Dependabot; it does not replace them.
+
+`make security` through `make security-safety` (and `depx`) scan source code and dependency locks — they cannot see OS-level vulnerabilities baked into a built image. `make security-trivy` scans the built images themselves; see [Container Image Scanning](security/container-image-scanning.md) for usage and why this project scans images instead of migrating to hardened base images (e.g. Chainguard).
 
 ## Code Duplication Detection
 

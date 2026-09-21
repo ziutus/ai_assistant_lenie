@@ -70,6 +70,24 @@ security-bandit: ## Run bandit Python security linter
 security-safety: ## Check dependencies with safety
 	cd backend && uvx safety scan
 
+# Container image scanning (Trivy via Docker - scans built images, not source).
+# Build the image first (e.g. `make nas-build-server`), then scan it.
+TRIVY_SEVERITY ?= HIGH,CRITICAL
+
+security-trivy-server:   ## Scan the backend image with Trivy (build first: make nas-build-server)
+	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ aquasec/trivy image --severity $(TRIVY_SEVERITY) $(NAS_REGISTRY)/lenie-ai-server:latest
+
+security-trivy-frontend: ## Scan the frontend image with Trivy (build first: make nas-build-frontend)
+	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ aquasec/trivy image --severity $(TRIVY_SEVERITY) $(NAS_REGISTRY)/lenie-ai-frontend:latest
+
+security-trivy-app2:     ## Scan the app2 image with Trivy (build first: make nas-build-app2)
+	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ aquasec/trivy image --severity $(TRIVY_SEVERITY) $(NAS_REGISTRY)/lenie-ai-app2:latest
+
+security-trivy:          ## Scan all built NAS images with Trivy (run `make nas-build-all` first)
+	$(MAKE) security-trivy-server
+	$(MAKE) security-trivy-frontend
+	$(MAKE) security-trivy-app2
+
 # Docker Hub (requires .env with DOCKER_HUB_USERNAME, DOCKER_HUB_TOKEN, CI_REGISTRY_IMAGE, TAG_VERSION)
 docker-image:   ## Build and tag Docker image (version + latest)
 	docker build -t $(DOCKER_HUB_USERNAME)/$(CI_REGISTRY_IMAGE):$(TAG_VERSION) .
@@ -178,4 +196,5 @@ security-all:   ## Run all security checks
 	@echo "=== Running Safety ==="
 	-cd backend && uvx safety scan
 	@echo ""
-	@echo "=== Security checks complete ==="
+	@echo "=== Security checks complete (source only) ==="
+	@echo "=== For container image scanning, build images then run: make security-trivy ==="
