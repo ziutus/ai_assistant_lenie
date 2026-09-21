@@ -1,6 +1,8 @@
 # CHANGELOG
 
-## [1.0.59] - 2026-09-08
+## [1.0.60] - 2026-09-21
+### Dodane
+- Lokalne pobieranie listy członków grupy Facebooka (`facebook.com/groups/<id>/members/`): przycisk „Pobierz listę członków grupy" przewija stronę wewnątrz karty (content script, nie sterowanie z zewnątrz — wirtualizowana lista FB nie doładowuje się pod automatyzacją przeglądarki), z licznikiem zebranych osób na żywo. Każdy wiersz członka wymaga własnego linku `/groups/<id>/user/<id>/` — osoby wspomniane tylko jako „wspólny znajomy" w opisie cudzego wiersza nie trafiają na listę. Wynik (nazwa, ID, link do profilu) można skopiować jako JSON albo pobrać jako plik `.json`/`.csv`; dane zostają lokalnie, nic nie jest wysyłane do backendu.
 ### Dodane
 - Opcjonalny import załadowanych komentarzy LinkedIn z autorami (nazwa + link do profilu), znacznikiem czasu, linkami w treści i kontekstem odpowiedzi (do kogo). Osobny edytowalny podgląd pozwala usunąć wybrane wypowiedzi przed wysłaniem; komentarze trafiają do dokumentu jako osobna sekcja pod treścią posta.
 - Jawne zastąpienie treści istniejącego wpisu LinkedIn przez `replace_social_post` w backendzie NAS. Zachowuje metadane, usuwa stare wektory i podsumowanie, wymaga ponownej analizy. Bez automatycznego fallbacku tej operacji do AWS.

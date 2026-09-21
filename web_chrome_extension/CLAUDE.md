@@ -2,7 +2,7 @@
 
 Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. No build step — load unpacked directly from this folder.
 
-**Version**: 1.0.59 | **Manifest**: v3
+**Version**: 1.0.60 | **Manifest**: v3
 
 ## Directory Structure
 
@@ -34,6 +34,7 @@ web_chrome_extension/
 7. **Source tracking** — dropdown loaded from `GET {apiBase}/sources?active=1` (apiBase = serverUrl minus the `/url_add` suffix), with a "+ Dodaj nowe źródło…" option that creates a source via `POST /sources`. Last selection persisted (`chrome.storage.sync.lastSource`); fetched list cached in `chrome.storage.local.sourcesCache`. Offline / endpoint without `/sources` (AWS Gateway) → cache, then the 4 hardcoded fallback options in popup.html
 8. **Paywall flag** — boolean Yes/No radio buttons
 9. **Notes & chapters** — free-text note field, chapter list (visible for YouTube only)
+10. **Facebook group members capture** — on a `facebook.com/groups/<id>/members/` tab, an extra "Pobierz listę członków grupy" section appears (independent of `type`, no submission to the backend). `facebook-group-members.js` splits into a pure `parseFacebookGroupMembers(groupId, root)` (only `a[href*="/groups/<id>/user/<numeric_id>/"]` rows count as members — a name mentioned only as a mutual-friend caption inside another row's description has no such link of its own and is never picked up; dedup by numeric id across repeated sections) and an async `collectFacebookGroupMembers()` driver, injected into the tab via `chrome.scripting.executeScript` (popup.js first loads the file with `files:` so the driver can call the sibling parser from the same isolated world, then invokes `func: collectFacebookGroupMembers`). The driver scrolls in real steps with a delay between them — not a single jump — because FB's virtualized member list does not reliably lazy-load under an outside-driven (CDP/automation) scroll or a one-shot `scrollTo`, only under repeated in-page scroll events; it stops after 5 steps with no new members/height growth, or once the bottom is reached, and reports live progress to the popup via `chrome.runtime.sendMessage`. Result (`name`, `fb_id`, `profile_url`) can be copied as JSON or downloaded as `.json`/`.csv` — purely local, for manual review/import, nothing is sent over the network. Tests: `node --test web_chrome_extension/tests/*.test.cjs` (only the pure parser is unit-tested; the scroll loop needs manual QA on a real group page).
 
 ## Popup UI
 

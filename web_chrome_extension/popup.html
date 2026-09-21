@@ -64,6 +64,16 @@
         </div>
       </div>
 
+      <div id="facebookGroupMembersContainer" class="form-group" style="display: none;">
+        <button id="collectFbGroupMembersButton" type="button" class="btn btn-outline-secondary btn-sm">Pobierz listę członków grupy</button>
+        <small id="fbGroupMembersStatus" class="form-text text-muted" role="status"></small>
+        <div id="fbGroupMembersActions" class="mt-2" style="display: none;">
+          <button id="downloadFbGroupMembersJsonButton" type="button" class="btn btn-outline-secondary btn-sm">Pobierz .json</button>
+          <button id="downloadFbGroupMembersCsvButton" type="button" class="btn btn-outline-secondary btn-sm">Pobierz .csv</button>
+          <button id="copyFbGroupMembersJsonButton" type="button" class="btn btn-outline-secondary btn-sm">Kopiuj JSON</button>
+        </div>
+      </div>
+
       <label for="note">Notatka</label>
       <div class="form-group">
         <textarea id="note" class="form-control" rows="4" placeholder="Wpisz swoją notatkę"></textarea>
@@ -199,10 +209,11 @@
   </div>
 
   <div class="mt-3">
-    Wersja <a href="https://github.com/ziutus/ai_assistant_lenie/blob/main/web_chrome_extension/CHANGELOG.md" target="_blank">1.0.59</a>
+    Wersja <a href="https://github.com/ziutus/ai_assistant_lenie/blob/main/web_chrome_extension/CHANGELOG.md" target="_blank">1.0.60</a>
   </div>
 </div>
 <script src="linkedin-comments.js"></script>
+<script src="facebook-group-members.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

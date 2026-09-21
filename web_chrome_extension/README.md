@@ -19,6 +19,10 @@ Extractor tests (uses jsdom from the installed React frontend dependencies): `no
 
 For Gmail the extension imports the visible text and sent date of the most recently expanded message in the open conversation. Visible links are kept as `label (URL)` and Gmail redirect URLs are unwrapped locally without opening them. Message-body images are saved as external HTTPS URLs and placed with `[imgN]` markers; 1×1 tracking pixels are ignored. It sends a synthetic `gmail://` identifier, not the Gmail page HTML, and the content remains editable in the popup before sending. It does not scan the inbox or use Google OAuth.
 
+### Facebook group members list (1.0.60)
+
+Open `facebook.com/groups/<id>/members/` and the popup shows a **Pobierz listę członków grupy** button. Clicking it scrolls the page inside the tab itself (not from outside browser automation, which reliably stalls on Facebook's virtualized member list) and collects each member's name, numeric Facebook ID, and profile URL, showing a live count while it runs. A name mentioned only as a mutual friend in someone else's row is not collected as a separate member. The result can be copied as JSON or downloaded as `.json`/`.csv` for manual review/import — nothing is sent to the Lenie backend or any other server.
+
 See [CLAUDE.md](CLAUDE.md) for detailed technical documentation (features, API communication, data flow, permissions, directory structure).
 
 ## Installation
