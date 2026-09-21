@@ -126,6 +126,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         >
           Kontakty
         </NavLink>
+        <NavLink to="/chats" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Rozmowy</NavLink>
         <NavLink
           to="/contact-events"
           className={({ isActive }) => isActive ? classes.activeLink : classes.link}
