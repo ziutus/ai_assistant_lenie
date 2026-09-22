@@ -3308,7 +3308,7 @@ class ContactLookupResult(Base):
     __tablename__ = "contact_lookup_results"
     __table_args__ = (
         CheckConstraint(
-            "lookup_type IN ('phone', 'linkedin', 'web')", name="ck_contact_lookup_results_lookup_type",
+            "lookup_type IN ('phone', 'linkedin', 'web', 'email')", name="ck_contact_lookup_results_lookup_type",
         ),
         CheckConstraint(
             "status IN ('no_results', 'candidate', 'confirmed', 'rejected')",
