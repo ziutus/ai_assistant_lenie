@@ -919,6 +919,7 @@ def contacts_list():
             func.unaccent(func.coalesce(Contact.company, "")).ilike(phrase),
             func.unaccent(func.coalesce(Contact.phone_number, "")).ilike(phrase),
             func.unaccent(func.coalesce(Contact.email, "")).ilike(phrase),
+            func.coalesce(Contact.pesel, "").ilike(phrase),
             _channel_search(Contact.phone_numbers, phrase, digits),
             _channel_search(Contact.email_addresses, phrase),
         ]
