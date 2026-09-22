@@ -276,13 +276,21 @@ const Contacts = () => {
               <button type="button" className="button" onClick={() => { setGroupFilterActive(true); setSelectedGroupValues((values) => allGroupValues.filter((value) => !effectiveSelectedGroupValues.includes(value))); }}>Odwróć wybór</button>
             </div>
             {groups.map((g) => (
-              <label key={`include-${g.id}`} style={{ display: "block", whiteSpace: "nowrap" }}>
-                <input
-                  type="checkbox"
-                  checked={effectiveSelectedGroupValues.includes(String(g.id))}
-                  onChange={(e) => { setGroupFilterActive(true); setSelectedGroupValues(e.target.checked ? [...effectiveSelectedGroupValues, String(g.id)] : effectiveSelectedGroupValues.filter((value) => value !== String(g.id))); }}
-                /> {g.name}
-              </label>
+              <div key={`include-${g.id}`} className="group-filter-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                <label style={{ display: "block", whiteSpace: "nowrap" }}>
+                  <input
+                    type="checkbox"
+                    checked={effectiveSelectedGroupValues.includes(String(g.id))}
+                    onChange={(e) => { setGroupFilterActive(true); setSelectedGroupValues(e.target.checked ? [...effectiveSelectedGroupValues, String(g.id)] : effectiveSelectedGroupValues.filter((value) => value !== String(g.id))); }}
+                  /> {g.name}
+                </label>
+                <button
+                  type="button"
+                  className="group-filter-only button"
+                  style={{ padding: "1px 6px", fontSize: "0.8em" }}
+                  onClick={() => { setGroupFilterActive(true); setSelectedGroupValues([String(g.id)]); }}
+                >only</button>
+              </div>
             ))}
             <label style={{ display: "block", whiteSpace: "nowrap", borderTop: "1px solid #ddd", marginTop: 8, paddingTop: 8 }}>
               <input
