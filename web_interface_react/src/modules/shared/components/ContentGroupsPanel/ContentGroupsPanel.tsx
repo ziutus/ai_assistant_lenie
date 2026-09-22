@@ -17,11 +17,14 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const target = documentId !== undefined ? `document/${documentId}` : `feed_items/${feedItemId}`;
 
   const load = React.useCallback(async () => {
+    setError("");
     try {
       const groupResponse = await fetch(`${apiUrl}/content_groups`, { headers });
+      if (!groupResponse.ok) throw new Error(`content_groups: HTTP ${groupResponse.status}`);
       const groupData = await groupResponse.json();
       setCatalog(Array.isArray(groupData.content_groups) ? groupData.content_groups : []);
       const currentResponse = await fetch(`${apiUrl}/${target}/groups`, { headers });
+      if (!currentResponse.ok) throw new Error(`groups: HTTP ${currentResponse.status}`);
       const currentData = await currentResponse.json();
       const current = Array.isArray(currentData.groups) ? currentData.groups : [];
       setGroups(current);
@@ -29,6 +32,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       const priority = current.find((group: ContentGroup) => group.kind === "priority");
       setPriorityId(priority?.id || "");
       const suggestionResponse = await fetch(`${apiUrl}/${target}/group-suggestions`, { headers });
+      if (!suggestionResponse.ok) throw new Error(`group-suggestions: HTTP ${suggestionResponse.status}`);
       const suggestionData = await suggestionResponse.json();
       setSuggestions(Array.isArray(suggestionData.suggestions) ? suggestionData.suggestions : []);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać grup"); }

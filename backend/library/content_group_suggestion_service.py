@@ -200,7 +200,7 @@ def execute_suggestion_job(session, job: Job) -> dict:
         raise
 
 
-def decide_suggestion(session, suggestion_id: int, action: str, user_id: int):
+def decide_suggestion(session, suggestion_id: int, action: str, user_id: int | None):
     suggestion = session.get(ContentGroupSuggestion, suggestion_id)
     if suggestion is None:
         raise LookupError("suggestion not found")
