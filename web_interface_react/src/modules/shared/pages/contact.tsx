@@ -311,6 +311,7 @@ interface ContactDetail {
   birthday: string | null;
   birthday_month: number | null;
   birthday_day: number | null;
+  pesel: string | null;
   notes: string | null;
   languages: ContactLanguage[];
   nationality: string[];
@@ -341,6 +342,7 @@ const emptyForm = {
   birthday: "",
   birthday_month: "",
   birthday_day: "",
+  pesel: "",
   notes: "",
   languages: [] as ContactLanguage[],
   nationality: [] as string[],
@@ -496,6 +498,7 @@ const Contact = () => {
     birthday: c.birthday ?? "",
     birthday_month: c.birthday_month != null ? String(c.birthday_month) : "",
     birthday_day: c.birthday_day != null ? String(c.birthday_day) : "",
+    pesel: c.pesel ?? "",
     notes: c.notes ?? "",
     languages: c.languages ?? [],
     nationality: c.nationality ?? [],
@@ -1378,6 +1381,7 @@ const Contact = () => {
           {!contact.birthday && contact.birthday_month && contact.birthday_day && (
             <div><strong>{contact.category_name === "Firma" ? "Data założenia" : "Urodziny"}:</strong> {contact.birthday_day} {MONTHS_GENITIVE[contact.birthday_month - 1]} <span style={{ color: "#667" }}>(bez roku)</span></div>
           )}
+          {contact.category_name !== "Firma" && contact.pesel && <div><strong>PESEL:</strong> {contact.pesel}</div>}
           {contact.category_name !== "Firma" && contact.nationality.length > 0 && (
             <div><strong>Narodowość:</strong> {contact.nationality.join(", ")}</div>
           )}
@@ -1486,6 +1490,11 @@ const Contact = () => {
             </select>
           </div>
         </label>
+        {!isCompanyCategory && <label>
+          PESEL
+          <input type="text" inputMode="numeric" maxLength={11} value={form.pesel}
+            onChange={(e) => setForm({ ...form, pesel: e.target.value.replace(/[^0-9]/g, "") })} style={inputStyle} />
+        </label>}
         {!isCompanyCategory && <div>
           <div style={{ marginBottom: 4 }}>Narodowość</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
