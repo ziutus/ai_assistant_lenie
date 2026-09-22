@@ -64,6 +64,9 @@ interface WhatsappProfile {
 type OrgType = "employment" | "jdg" | "board" | "ownership" | "other";
 type OrgStatus = "candidate" | "confirmed" | "rejected";
 
+type LookupType = "phone" | "linkedin" | "web" | "email";
+type LookupStatus = "no_results" | "candidate" | "confirmed" | "rejected";
+
 interface Address {
   id: number;
   label: string | null;
@@ -153,6 +156,30 @@ const ORG_TYPE_LABELS: Record<OrgType, string> = {
   board: "Funkcja w zarządzie",
   ownership: "Udziały / współwłasność",
   other: "Inne",
+};
+
+interface ContactLookupResult {
+  id: number;
+  lookup_type: LookupType;
+  status: LookupStatus;
+  url: string | null;
+  query_used: string | null;
+  notes: string | null;
+  searched_at: string;
+}
+
+const LOOKUP_TYPE_LABELS: Record<LookupType, string> = {
+  phone: "Telefon",
+  linkedin: "LinkedIn",
+  web: "Wyszukiwanie w sieci",
+  email: "E-mail",
+};
+
+const LOOKUP_STATUS_LABELS: Record<LookupStatus, string> = {
+  no_results: "brak wyników",
+  candidate: "niepotwierdzone",
+  confirmed: "potwierdzone",
+  rejected: "odrzucone",
 };
 
 const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
@@ -275,6 +302,14 @@ const emptyOrgForm = {
   verified_at: "",
 };
 
+const emptyLookupForm = {
+  lookup_type: "email" as LookupType,
+  status: "candidate" as LookupStatus,
+  url: "",
+  query_used: "",
+  notes: "",
+};
+
 const emptyLinkForm = {
   link_type: "facebook" as LinkType,
   url: "",
@@ -318,6 +353,7 @@ interface ContactDetail {
   is_archived: boolean;
   relationships: ContactRelationship[];
   organizations: ContactOrganization[];
+  lookup_results: ContactLookupResult[];
   links: ContactLink[];
   events: ContactGroupEvent[];
   change_log: ContactChangeLogEntry[];
@@ -454,6 +490,9 @@ const Contact = () => {
   const [openAddressMaps, setOpenAddressMaps] = React.useState<Set<number>>(() => new Set());
   const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
   const [showOrgForm, setShowOrgForm] = React.useState(false);
+  const [lookupResults, setLookupResults] = React.useState<ContactLookupResult[]>([]);
+  const [lookupForm, setLookupForm] = React.useState(emptyLookupForm);
+  const [showLookupForm, setShowLookupForm] = React.useState(false);
   const [links, setLinks] = React.useState<ContactLink[]>([]);
   const [linkForm, setLinkForm] = React.useState(emptyLinkForm);
   const [showLinkForm, setShowLinkForm] = React.useState(false);
@@ -516,6 +555,7 @@ const Contact = () => {
       setForm(formFromContact(fetched));
       setRelationships(fetched.relationships ?? []);
       setOrganizations(fetched.organizations ?? []);
+      setLookupResults(fetched.lookup_results ?? []);
       setAddresses(fetched.addresses ?? []);
       setLinks(fetched.links ?? []);
       setChangeLog(fetched.change_log ?? []);
@@ -842,6 +882,53 @@ const Contact = () => {
       console.error("Error adding organization", error);
       setIsError(true);
       setMessage(`Nie udało się dodać organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const addLookupResult = async () => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/contacts/${id}/lookup_results`, {
+        lookup_type: lookupForm.lookup_type,
+        status: lookupForm.status,
+        url: lookupForm.url.trim() || undefined,
+        query_used: lookupForm.query_used.trim() || undefined,
+        notes: lookupForm.notes.trim() || undefined,
+      }, { headers });
+      setLookupForm(emptyLookupForm);
+      setShowLookupForm(false);
+      loadContact();
+    } catch (error: any) {
+      console.error("Error adding lookup result", error);
+      setIsError(true);
+      setMessage(`Nie udało się dodać wyniku wyszukiwania: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const updateLookupResultStatus = async (lookupResultId: number, status: LookupStatus) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/contact_lookup_results/${lookupResultId}`, { status }, { headers });
+      loadContact();
+    } catch (error: any) {
+      console.error("Error updating lookup result", error);
+      setIsError(true);
+      setMessage(`Nie udało się zaktualizować wyniku wyszukiwania: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const removeLookupResult = async (lookupResultId: number) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.delete(`${apiUrl}/contact_lookup_results/${lookupResultId}`, { headers });
+      loadContact();
+    } catch (error: any) {
+      console.error("Error deleting lookup result", error);
+      setIsError(true);
+      setMessage(`Nie udało się usunąć wyniku wyszukiwania: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -1949,6 +2036,122 @@ const Contact = () => {
             </div>
           )}
           </>}
+
+          <h3>Wyniki wyszukiwania OSINT</h3>
+          <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
+            Ślad ustaleń z badania OSINT (np. telefon, profil LinkedIn, e-mail znaleziony w publicznym rejestrze) —
+            każdy wpis ma status pewności, niezależnie od pól kontaktu ustawianych ręcznie lub z importu.
+          </p>
+          {lookupResults.length === 0 && (
+            <p style={{ color: "#667" }}>Brak zapisanych wyników wyszukiwania.</p>
+          )}
+          {lookupResults.length > 0 && (
+            <ul style={{ listStyle: "none", padding: 0 }}>
+              {lookupResults.map((lr) => (
+                <li
+                  key={lr.id}
+                  style={{
+                    padding: "8px 10px", marginBottom: 6, borderRadius: 6,
+                    background: lr.status === "candidate" ? "#fff8e6" : "#f5f7fa",
+                    border: `1px solid ${lr.status === "candidate" ? "#e8d18a" : "#d5dde8"}`,
+                  }}
+                >
+                  <div>
+                    <strong>{LOOKUP_TYPE_LABELS[lr.lookup_type]}</strong>
+                    {lr.url && <span>{" — "}{lr.url}</span>}
+                    <span style={{ marginLeft: 8, fontSize: "0.8em", color: "#667" }}>
+                      [{LOOKUP_STATUS_LABELS[lr.status]}]
+                    </span>
+                  </div>
+                  {lr.query_used && (
+                    <div style={{ fontSize: "0.85em", color: "#667" }}>Zapytanie: {lr.query_used}</div>
+                  )}
+                  {lr.notes && <div style={{ fontSize: "0.85em", color: "#667" }}>{linkifyPlainText(lr.notes)}</div>}
+                  <div style={{ fontSize: "0.8em", color: "#889" }}>Sprawdzono: {lr.searched_at?.slice(0, 10)}</div>
+                  <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center" }}>
+                    {mode === "edit" && lr.status === "candidate" && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => updateLookupResultStatus(lr.id, "confirmed")}
+                          style={{ border: "none", background: "none", color: "#2e7d43", cursor: "pointer", padding: 0 }}
+                        >
+                          ✓ Potwierdź
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateLookupResultStatus(lr.id, "rejected")}
+                          style={{ border: "none", background: "none", color: "#a33", cursor: "pointer", padding: 0 }}
+                        >
+                          ✕ Odrzuć
+                        </button>
+                      </>
+                    )}
+                    {mode === "edit" && (
+                      <button
+                        type="button"
+                        onClick={() => removeLookupResult(lr.id)}
+                        style={{ border: "none", background: "none", color: "#a33", cursor: "pointer", padding: 0 }}
+                      >
+                        Usuń
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {mode === "edit" && !showLookupForm && (
+            <button className={"button"} type="button" onClick={() => setShowLookupForm(true)}>
+              + Dodaj wynik wyszukiwania
+            </button>
+          )}
+          {mode === "edit" && showLookupForm && (
+            <div style={{ marginTop: 8, padding: 8, background: "#f5f7fa", border: "1px solid #d5dde8", borderRadius: 6 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select
+                  value={lookupForm.lookup_type}
+                  onChange={(e) => setLookupForm({ ...lookupForm, lookup_type: e.target.value as LookupType })}
+                  style={{ padding: "4px 8px" }}
+                >
+                  {(Object.keys(LOOKUP_TYPE_LABELS) as LookupType[]).map((t) => (
+                    <option key={t} value={t}>{LOOKUP_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+                <input
+                  type="text" placeholder="Odnaleziona wartość (URL / telefon / e-mail)" value={lookupForm.url}
+                  onChange={(e) => setLookupForm({ ...lookupForm, url: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 260 }}
+                />
+                <select
+                  value={lookupForm.status}
+                  onChange={(e) => setLookupForm({ ...lookupForm, status: e.target.value as LookupStatus })}
+                  style={{ padding: "4px 8px" }}
+                >
+                  {(Object.keys(LOOKUP_STATUS_LABELS) as LookupStatus[]).map((s) => (
+                    <option key={s} value={s}>{LOOKUP_STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+              </div>
+              <input
+                type="text" placeholder="Zapytanie użyte do wyszukania" value={lookupForm.query_used}
+                onChange={(e) => setLookupForm({ ...lookupForm, query_used: e.target.value })}
+                style={{ padding: "4px 8px", marginTop: 6, width: "100%", boxSizing: "border-box" }}
+              />
+              <textarea
+                placeholder="Notatki (źródło, uzasadnienie)" value={lookupForm.notes} rows={2}
+                onChange={(e) => setLookupForm({ ...lookupForm, notes: e.target.value })}
+                style={{ padding: "4px 8px", marginTop: 6, width: "100%", boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <button className={"button"} type="button" onClick={addLookupResult}>Zapisz wynik</button>
+                <button className={"button"} type="button" onClick={() => { setShowLookupForm(false); setLookupForm(emptyLookupForm); }}>
+                  Anuluj
+                </button>
+              </div>
+            </div>
+          )}
 
           <h3>Linki</h3>
           {links.length === 0 && (
