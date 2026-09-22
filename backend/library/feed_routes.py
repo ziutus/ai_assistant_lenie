@@ -40,6 +40,16 @@ def _service():
         abort(403, "service API key required")
 
 
+def _user_or_service() -> int | None:
+    """Content-group endpoints reachable from the document editor (service key)
+    as well as the household feed-review UI (user key). Returns the acting
+    user_id, or None for a service-key caller — decided_by_user_id-style
+    columns are nullable for exactly this reason."""
+    if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
+        abort(403, "user or service API key required")
+    return g.auth.user_id if g.auth.kind == "user" else None
+
+
 def _job_viewer() -> bool:
     if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
         abort(403, "user or service API key required")
@@ -139,7 +149,7 @@ def _item_dict(item):
 
 @bp.get("/content_groups")
 def get_content_groups():
-    _user()
+    _user_or_service()
     session = get_scoped_session()
     query = select(ContentGroup).order_by(ContentGroup.kind, ContentGroup.name)
     if request.args.get("include_archived") != "1":
@@ -149,7 +159,7 @@ def get_content_groups():
 
 @bp.post("/content_groups")
 def post_content_group():
-    _user()
+    _user_or_service()
     body = request.get_json(silent=True) or {}
     try:
         row = create_group(get_scoped_session(), body.get("name"), body.get("kind"), body.get("priority_rank"))
@@ -165,7 +175,7 @@ def post_content_group():
 
 @bp.patch("/content_groups/<int:group_id>")
 def patch_content_group(group_id):
-    _user()
+    _user_or_service()
     session = get_scoped_session()
     row = session.get(ContentGroup, group_id)
     if row is None:
@@ -185,7 +195,7 @@ def patch_content_group(group_id):
 
 @bp.delete("/content_groups/<int:group_id>")
 def delete_content_group(group_id):
-    _user()
+    _user_or_service()
     session = get_scoped_session()
     row = session.get(ContentGroup, group_id)
     if row is None:
@@ -245,7 +255,7 @@ def get_feed_item_groups(item_id):
 
 @bp.get("/document/<int:document_id>/groups")
 def get_document_groups(document_id):
-    _user()
+    _user_or_service()
     session = get_scoped_session()
     document = session.get(Document, document_id)
     if document is None:
@@ -256,7 +266,7 @@ def get_document_groups(document_id):
 
 @bp.patch("/document/<int:document_id>/groups")
 def patch_document_groups(document_id):
-    _user()
+    _user_or_service()
     session = get_scoped_session()
     document = session.get(Document, document_id)
     if document is None:
@@ -421,15 +431,14 @@ def get_feed_suggestions(item_id):
 
 @bp.get("/document/<int:document_id>/group-suggestions")
 def get_document_suggestions(document_id):
-    _user()
+    _user_or_service()
     session = get_scoped_session()
     if session.get(Document, document_id) is None:
         abort(404)
     return jsonify(_suggestions_response(session, "document", document_id))
 
 
-def _request_suggestions(target_type, target_id):
-    user_id = _user()
+def _request_suggestions(target_type, target_id, user_id):
     session = get_scoped_session()
     try:
         job, run = request_suggestions(session, target_type, target_id, user_id=user_id, force=bool((request.get_json(silent=True) or {}).get("force")))
@@ -442,17 +451,17 @@ def _request_suggestions(target_type, target_id):
 
 @bp.post("/feed_items/<int:item_id>/group-suggestions")
 def request_feed_suggestions(item_id):
-    return _request_suggestions("feed_item", item_id)
+    return _request_suggestions("feed_item", item_id, _user())
 
 
 @bp.post("/document/<int:document_id>/group-suggestions")
 def request_document_suggestions(document_id):
-    return _request_suggestions("document", document_id)
+    return _request_suggestions("document", document_id, _user_or_service())
 
 
 @bp.post("/content_group_suggestions/<int:suggestion_id>/<action>")
 def decide_content_group_suggestion(suggestion_id, action):
-    user_id = _user()
+    user_id = _user_or_service()
     if action not in {"accept", "dismiss", "revert"}:
         abort(404)
     try:
