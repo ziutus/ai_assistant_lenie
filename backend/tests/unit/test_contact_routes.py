@@ -1402,6 +1402,29 @@ class TestContactLookupResultsAdd:
         assert added.status == "candidate"
         assert added.url == "https://www.linkedin.com/in/adam-wojtysiak/"
 
+    def test_adds_email_candidate(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/lookup_results", method="POST",
+            json={
+                "lookup_type": "email", "status": "candidate",
+                "url": "kontakt@example-firma.pl",
+                "notes": "Adres znaleziony w CEIDG przy weryfikacji firmy",
+            },
+        ):
+            response = contact_lookup_results_add(1)
+
+        assert response[1] == 200
+        added = session.add.call_args[0][0]
+        assert added.lookup_type == "email"
+        assert added.status == "candidate"
+        assert added.url == "kontakt@example-firma.pl"
+
     def test_missing_contact_is_404(self, monkeypatch):
         from library.contact_routes import contact_lookup_results_add
 
