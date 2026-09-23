@@ -172,3 +172,11 @@ input[type="file"]:disabled {
 @media (max-width: 600px) {
   .contact-duplicate-columns { grid-template-columns: 1fr; }
 }
+
+.group-filter-only {
+  visibility: hidden;
+}
+.group-filter-row:hover .group-filter-only,
+.group-filter-row:focus-within .group-filter-only {
+  visibility: visible;
+}
