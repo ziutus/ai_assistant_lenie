@@ -1903,6 +1903,101 @@ class TestContactOrganizationsDelete:
         assert response[1] == 404
 
 
+class TestContactOrganizationsCeidgLookup:
+    def test_creates_new_jdg_from_ceidg_match(self, monkeypatch):
+        from library.contact_routes import contact_organizations_ceidg_lookup
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        session.execute.return_value.scalars.return_value.all.return_value = []
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr(
+            "library.ceidg_client.get_company_by_nip",
+            lambda nip: {"nazwa": "KRATON", "adresDzialalnosci": {}},
+        )
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/organizations/ceidg_lookup", method="POST", json={"nip": "726 175 68 29"},
+        ):
+            response = contact_organizations_ceidg_lookup(1)
+
+        assert response[1] == 200
+        session.add.assert_called_once()
+        added = session.add.call_args[0][0]
+        assert added.org_type == "jdg"
+        assert added.organization_name == "KRATON"
+        assert added.nip == "726 175 68 29"
+
+    def test_falls_back_to_existing_jdg_nip(self, monkeypatch):
+        from library.contact_routes import contact_organizations_ceidg_lookup
+
+        existing = _make_organization(id_=9, org_type="jdg", nip="7261756829")
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        session.execute.return_value.scalars.return_value.all.return_value = [existing]
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        captured_nip = {}
+
+        def fake_lookup(nip):
+            captured_nip["nip"] = nip
+            return {"nazwa": "KRATON"}
+
+        monkeypatch.setattr("library.ceidg_client.get_company_by_nip", fake_lookup)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/organizations/ceidg_lookup", method="POST", json={}):
+            response = contact_organizations_ceidg_lookup(1)
+
+        assert response[1] == 200
+        assert captured_nip["nip"] == "7261756829"
+        session.add.assert_not_called()
+        assert existing.organization_name == "KRATON"
+
+    def test_no_nip_available_is_400(self, monkeypatch):
+        from library.contact_routes import contact_organizations_ceidg_lookup
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        session.execute.return_value.scalars.return_value.all.return_value = []
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/organizations/ceidg_lookup", method="POST", json={}):
+            response = contact_organizations_ceidg_lookup(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+    def test_no_ceidg_match_is_404(self, monkeypatch):
+        from library.contact_routes import contact_organizations_ceidg_lookup
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        session.execute.return_value.scalars.return_value.all.return_value = []
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.ceidg_client.get_company_by_nip", lambda nip: None)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/organizations/ceidg_lookup", method="POST", json={"nip": "7261756829"},
+        ):
+            response = contact_organizations_ceidg_lookup(1)
+
+        assert response[1] == 404
+        session.add.assert_not_called()
+
+    def test_missing_contact_is_404(self, monkeypatch):
+        from library.contact_routes import contact_organizations_ceidg_lookup
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/999/organizations/ceidg_lookup", method="POST", json={"nip": "7261756829"},
+        ):
+            response = contact_organizations_ceidg_lookup(999)
+
+        assert response[1] == 404
+
+
 def _make_link(id_=1, contact_id=1, link_type="facebook", url="https://facebook.com/example", label=None, **extra):
     defaults = dict(
         contact_id=contact_id, link_type=link_type, url=url, label=label,

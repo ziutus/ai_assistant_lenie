@@ -2176,6 +2176,77 @@ def contact_organizations_delete(organization_id: int):
     return jsonify({"status": "success", "deleted_id": organization_id}), 200
 
 
+@bp.route("/contacts/<int:contact_id>/organizations/ceidg_lookup", methods=["POST", "OPTIONS"])
+def contact_organizations_ceidg_lookup(contact_id: int):
+    """Look up a contact's JDG by NIP via the official CEIDG API and save/refresh it.
+
+    Body: {"nip": "..."} — optional if the contact already has a `jdg`
+    organization entry with a NIP; that stored NIP is used as a fallback so
+    this endpoint can also serve as a periodic "refresh from CEIDG" action.
+    """
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    from library.ceidg_client import company_to_organization_fields, get_company_by_nip, normalize_nip
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    existing = session.execute(
+        select(ContactOrganization).where(
+            ContactOrganization.contact_id == contact_id,
+            ContactOrganization.org_type == "jdg",
+        )
+    ).scalars().all()
+
+    nip = (data.get("nip") or "").strip()
+    target_row = None
+    if nip:
+        clean_nip = normalize_nip(nip)
+        target_row = next(
+            (row for row in existing if row.nip and normalize_nip(row.nip) == clean_nip), None
+        )
+    else:
+        target_row = next((row for row in existing if row.nip), None)
+        if target_row:
+            nip = target_row.nip
+
+    if not nip:
+        return {"status": "error", "message": "nip is required (not given and no existing jdg entry has one)"}, 400
+
+    firma = get_company_by_nip(nip)
+    if firma is None:
+        return {
+            "status": "error",
+            "message": "No CEIDG match for this NIP, or CEIDG_API_KEY is not configured/valid",
+        }, 404
+
+    fields = company_to_organization_fields(firma)
+    fields["nip"] = nip
+    fields["source_url"] = f"https://dane.biznes.gov.pl/api/ceidg/v2/firmy?nip={normalize_nip(nip)}"
+    fields["verified_at"] = datetime.datetime.now()
+    fields.setdefault("organization_name", target_row.organization_name if target_row else nip)
+
+    if target_row is None:
+        target_row = ContactOrganization(contact_id=contact_id, org_type="jdg", status="confirmed")
+        session.add(target_row)
+
+    for field, value in fields.items():
+        setattr(target_row, field, value)
+    target_row.updated_at = datetime.datetime.now()
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "organization": _organization_dict(target_row), "ceidg_raw": firma}), 200
+
+
 # --- links (multiple social/profile URLs per contact — Facebook, Instagram, ...) ---
 
 @bp.route("/contacts/<int:contact_id>/links", methods=["POST", "OPTIONS"])
