@@ -2569,7 +2569,7 @@ def _alternate_name_values(data, row=None):
         values[key] = value or None
     if values["start_date"] and values["end_date"] and values["end_date"] < values["start_date"]:
         raise ValueError("end_date must not precede start_date")
-    from imports.whatsapp_neighbor_profiles import normalize_name
+    from library.whatsapp_parser import normalize_name
 
     values["normalized_name"] = " ".join(sorted(normalize_name(values["name"])))
     return values
