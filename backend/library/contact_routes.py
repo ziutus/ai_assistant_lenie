@@ -28,7 +28,7 @@ from library.contact_phones import phone_search_digits
 from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    Address, ContactAddress,
+    Address, ContactAddress, ContactAlternateName,
     ChatConversation, ChatMessage,
     Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
     ContactDuplicateDismissal, ContactEducation, ContactInterest, ContactInterestMembership,
@@ -1099,6 +1099,7 @@ def contacts_get(contact_id: int):
     # the standalone events list exposes the complete history.
     events = session.execute(_events_query(contact_id=contact_id).limit(20)).scalars().all()
     data["events"] = [_event_dict(event) for event in events]
+    data["alternate_names"] = [_alternate_name_dict(item) for item in getattr(row, "alternate_names", [])]
     data["relationships"] = relationships
     data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
     data["organizations"] = [_organization_dict(org) for org in organizations]
@@ -2529,3 +2530,91 @@ def contact_education(contact_id: int, education_id: int | None = None):
     if request.method == "DELETE":
         return jsonify({"status": "success", "deleted_id": education_id}), 200
     return jsonify({"status": "success", "education": _education_dict(row)}), 200
+
+
+def _alternate_name_dict(row):
+    data = {key: getattr(row, key) for key in
+            ("id", "contact_id", "name", "normalized_name", "name_kind", "note")}
+    for key in ("start_date", "end_date", "created_at"):
+        value = getattr(row, key)
+        data[key] = value.isoformat() if value else None
+    return data
+
+
+def _alternate_name_values(data, row=None):
+    if not isinstance(data, dict):
+        raise ValueError("Expected a JSON object")
+    values = {}
+    for key, limit in (("name", None), ("name_kind", 20), ("note", None)):
+        value = data.get(key, getattr(row, key, "former_name" if key == "name_kind" else None))
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{key} must be a string")
+        value = value.strip() or None if value is not None else None
+        if limit and value and len(value) > limit:
+            raise ValueError(f"{key} must be at most {limit} characters")
+        values[key] = value
+    if not values["name"]:
+        raise ValueError("name is required")
+    if values["name_kind"] not in ("maiden_name", "former_name", "other"):
+        raise ValueError("Invalid name_kind")
+    for key in ("start_date", "end_date"):
+        value = data.get(key, getattr(row, key, None))
+        if value is not None and value != "" and not isinstance(value, datetime.date):
+            try:
+                if not isinstance(value, str) or len(value) != 10:
+                    raise ValueError()
+                value = datetime.date.fromisoformat(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} must be YYYY-MM-DD") from None
+        values[key] = value or None
+    if values["start_date"] and values["end_date"] and values["end_date"] < values["start_date"]:
+        raise ValueError("end_date must not precede start_date")
+    from imports.whatsapp_neighbor_profiles import normalize_name
+
+    values["normalized_name"] = " ".join(sorted(normalize_name(values["name"])))
+    return values
+
+
+@bp.route("/contacts/<int:contact_id>/alternate_names", methods=["GET", "POST", "OPTIONS"])
+@bp.route("/contacts/<int:contact_id>/alternate_names/<int:alternate_name_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
+def contact_alternate_names(contact_id: int, alternate_name_id: int | None = None):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    row = None
+    if alternate_name_id is not None:
+        row = session.get(ContactAlternateName, alternate_name_id)
+        if row is None or row.contact_id != contact_id:
+            return {"status": "error", "message": "Alternate name not found"}, 404
+    if request.method == "GET":
+        if row is not None:
+            return jsonify({"status": "success", "alternate_name": _alternate_name_dict(row)}), 200
+        rows = session.scalars(select(ContactAlternateName).where(ContactAlternateName.contact_id == contact_id)
+                               .order_by(ContactAlternateName.start_date.desc().nullslast(), ContactAlternateName.id)).all()
+        return jsonify({"status": "success", "alternate_names": [_alternate_name_dict(item) for item in rows]}), 200
+    if request.method in ("POST", "PATCH"):
+        try:
+            values = _alternate_name_values(request.get_json(silent=True), row)
+        except ValueError as exc:
+            return {"status": "error", "message": str(exc)}, 400
+        if row is None:
+            row = ContactAlternateName(contact_id=contact_id, **values)
+            session.add(row)
+        else:
+            for key, value in values.items():
+                setattr(row, key, value)
+    else:
+        session.delete(row)
+    record_contact_change(session, contact, "manual_edit", changed_fields=["alternate_names"],
+                          note=f"Alternatywne nazwisko: {row.name} ({request.method})")
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    if request.method == "DELETE":
+        return jsonify({"status": "success", "deleted_id": alternate_name_id}), 200
+    return jsonify({"status": "success", "alternate_name": _alternate_name_dict(row)}), 200

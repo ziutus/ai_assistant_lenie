@@ -8,6 +8,14 @@ type Education = {
   id: number; institution: string; field_of_study: string | null; degree: string | null;
   start_date: string | null; end_date: string | null; notes: string | null;
 };
+type AlternateName = {
+  id: number; name: string; name_kind: string;
+  start_date: string | null; end_date: string | null; note: string | null;
+};
+const nameKinds: Record<string, string> = {
+  maiden_name: "Nazwisko panieńskie", former_name: "Poprzednie nazwisko", other: "Inne",
+};
+const emptyAlternateName = { name: "", name_kind: "former_name", start_date: "", end_date: "", note: "" };
 const degrees: Record<string, string> = {
   bachelor: "Licencjat", engineer: "Inżynier", master: "Magister", doctor: "Doktor", other: "Inne",
 };
@@ -25,6 +33,10 @@ export default function ContactInterestsEducation({ contactId, editable, onChang
   const [form, setForm] = React.useState(emptyEducation);
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [showForm, setShowForm] = React.useState(false);
+  const [alternateNames, setAlternateNames] = React.useState<AlternateName[]>([]);
+  const [nameForm, setNameForm] = React.useState(emptyAlternateName);
+  const [editingNameId, setEditingNameId] = React.useState<number | null>(null);
+  const [showNameForm, setShowNameForm] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const headers = { "x-api-key": `${apiKey}` };
@@ -35,6 +47,7 @@ export default function ContactInterestsEducation({ contactId, editable, onChang
       axios.get(`${base}/education`, { headers }),
     ]);
     setInterests(contact.data.contact.interests ?? []);
+    setAlternateNames(contact.data.contact.alternate_names ?? []);
     setAllInterests(dictionary.data.contact_interests ?? []);
     setEducation(entries.data.education ?? []);
   };
@@ -46,6 +59,7 @@ export default function ContactInterestsEducation({ contactId, editable, onChang
   };
   React.useEffect(() => {
     setInterests([]); setEducation([]); setShowForm(false); setEditingId(null);
+    setAlternateNames([]); setShowNameForm(false); setEditingNameId(null); setNameForm(emptyAlternateName);
     void run(async () => {}, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contactId, apiUrl, apiKey]);
@@ -53,6 +67,11 @@ export default function ContactInterestsEducation({ contactId, editable, onChang
     if (editingId === null) await axios.post(`${base}/education`, form, { headers });
     else await axios.patch(`${base}/education/${editingId}`, form, { headers });
     setShowForm(false); setForm(emptyEducation); setEditingId(null);
+  });
+  const saveAlternateName = () => run(async () => {
+    if (editingNameId === null) await axios.post(`${base}/alternate_names`, nameForm, { headers });
+    else await axios.patch(`${base}/alternate_names/${editingNameId}`, nameForm, { headers });
+    setShowNameForm(false); setNameForm(emptyAlternateName); setEditingNameId(null);
   });
   return <section style={{ marginTop: 20 }}>
     {error && <p role="alert" style={{ color: "#b91c1c" }}>{error}</p>}
@@ -119,6 +138,43 @@ export default function ContactInterestsEducation({ contactId, editable, onChang
       <label>Notatki <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
       <button type="button" disabled={!form.institution.trim()} onClick={() => void saveEducation()}>Zapisz wykształcenie</button>
       <button type="button" onClick={() => setShowForm(false)}>Anuluj</button>
+    </fieldset>}
+    <h3>Alternatywne nazwiska / Poprzednie nazwiska</h3>
+    {!alternateNames.length && <p>Brak wpisów.</p>}
+    {alternateNames.map(entry => <article key={entry.id} style={{ borderBottom: "1px solid #ddd", padding: 8 }}>
+      <strong>{entry.name}</strong>
+      <div>{nameKinds[entry.name_kind]}</div>
+      {(entry.start_date || entry.end_date) && <div>{entry.start_date || "?"} — {entry.end_date || "obecnie"}</div>}
+      {entry.note && <p style={{ whiteSpace: "pre-wrap" }}>{entry.note}</p>}
+      {editable && <>
+        <button type="button" disabled={busy} onClick={() => {
+          setEditingNameId(entry.id); setNameForm({ name: entry.name, name_kind: entry.name_kind,
+            start_date: entry.start_date ?? "", end_date: entry.end_date ?? "", note: entry.note ?? "" });
+          setShowNameForm(true);
+        }}>Edytuj</button>
+        <button type="button" disabled={busy} onClick={() => {
+          if (window.confirm("Usunąć alternatywne nazwisko?")) void run(async () => {
+            await axios.delete(`${base}/alternate_names/${entry.id}`, { headers });
+            if (editingNameId === entry.id) { setShowNameForm(false); setEditingNameId(null); }
+          });
+        }}>Usuń</button>
+      </>}
+    </article>)}
+    {editable && !showNameForm && <button type="button" disabled={busy} onClick={() => {
+      setEditingNameId(null); setNameForm(emptyAlternateName); setShowNameForm(true);
+    }}>Dodaj alternatywne nazwisko</button>}
+    {editable && showNameForm && <fieldset disabled={busy}>
+      <legend>{editingNameId === null ? "Nowy wpis" : "Edycja alternatywnego nazwiska"}</legend>
+      <label>Imię i nazwisko lub nazwisko * <input required value={nameForm.name}
+        onChange={e => setNameForm({ ...nameForm, name: e.target.value })} /></label>
+      <label>Rodzaj <select value={nameForm.name_kind} onChange={e => setNameForm({ ...nameForm, name_kind: e.target.value })}>
+        {Object.entries(nameKinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select></label>
+      <label>Od <input type="date" value={nameForm.start_date} onChange={e => setNameForm({ ...nameForm, start_date: e.target.value })} /></label>
+      <label>Do <input type="date" value={nameForm.end_date} onChange={e => setNameForm({ ...nameForm, end_date: e.target.value })} /></label>
+      <label>Notatka <textarea value={nameForm.note} onChange={e => setNameForm({ ...nameForm, note: e.target.value })} /></label>
+      <button type="button" disabled={!nameForm.name.trim()} onClick={() => void saveAlternateName()}>Zapisz alternatywne nazwisko</button>
+      <button type="button" onClick={() => setShowNameForm(false)}>Anuluj</button>
     </fieldset>}
   </section>;
 }
