@@ -3,8 +3,8 @@
 #
 # Usage on NAS:
 #   DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
-#   $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d
-#   $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
+#   $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
+#   $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
 
 services:
   lenie-ai-db:
@@ -40,7 +40,7 @@ services:
     ports:
       - "5055:5000"
     env_file:
-      - /share/ContainerNew/lenie-env/.env
+      - /share/Container/lenie-env/.env
     # NOTE: this backend runs with SECRETS_BACKEND=vault, so entries here are
     # NOT read by the app's config_loader (only bootstrap vars + Vault KV are)
     # — kept only so `env`-backend/local runs of this compose file still work.
@@ -54,7 +54,7 @@ services:
       OBSIDIAN_VAULT_PATH: /app/obsidian-vault
     volumes:
       - lenie-ai-data:/app/data
-      - /share/ContainerNew/lenie-config:/app/config:ro
+      - /share/Container/lenie-config:/app/config:ro
       # rw per Epic 41 Story 41.2 AC#1 (write access needed by Epic 47's
       # POST /tools vault write). obsidian-headless-sync (below) also writes
       # to this same volume with no locking between the two — no code here
@@ -82,7 +82,7 @@ services:
     pids_limit: 192
     command: ["/app/.venv/bin/python", "worker.py", "--scheduler", "--types", "feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect,retention_sweep"]
     env_file:
-      - /share/ContainerNew/lenie-env/.env
+      - /share/Container/lenie-env/.env
     # See the NOTE on lenie-ai-server above — same SECRETS_BACKEND=vault caveat
     # applies here; OBSIDIAN_VAULT_PATH must also be set in Vault (Story 41.2).
     environment:
@@ -92,7 +92,7 @@ services:
       # Host-health snapshot for the worker admission gate (docs/deployment/nas/
       # host-health-collector.md). Read-only; the QNAP Task Scheduler job owns
       # writes. Harmless when HOST_ADMISSION_ENABLED is unset (the default).
-      - /share/ContainerNew/lenie-host-health:/run/lenie-host-health:ro
+      - /share/Container/lenie-host-health:/run/lenie-host-health:ro
     networks:
       - lenie-net
     depends_on:
@@ -111,13 +111,13 @@ services:
     pids_limit: 256
     command: ["/app/.venv/bin/python", "worker.py", "--types", "document_prepare"]
     env_file:
-      - /share/ContainerNew/lenie-env/.env
+      - /share/Container/lenie-env/.env
     environment:
       DOCUMENT_WORK_DIR: /app/work
       WORKER_HEARTBEAT_PATH: /tmp/lenie-document-worker-heartbeat
     volumes:
       - lenie-document-work:/app/work
-      - /share/ContainerNew/lenie-host-health:/run/lenie-host-health:ro
+      - /share/Container/lenie-host-health:/run/lenie-host-health:ro
     networks:
       - lenie-net
     depends_on:
@@ -138,11 +138,11 @@ services:
     pids_limit: 128
     command: ["/app/.venv/bin/python", "worker.py", "--types", "legacy_aws_pull"]
     env_file:
-      - /share/ContainerNew/lenie-env/.env
+      - /share/Container/lenie-env/.env
     environment:
       WORKER_HEARTBEAT_PATH: /tmp/lenie-cloud-bridge-heartbeat
     volumes:
-      - /share/ContainerNew/lenie-host-health:/run/lenie-host-health:ro
+      - /share/Container/lenie-host-health:/run/lenie-host-health:ro
     networks:
       - lenie-net
     depends_on:
@@ -163,7 +163,7 @@ services:
     # every branch rather than failing when more than one head exists.
     command: ["/app/.venv/bin/alembic", "-c", "/app/alembic.ini", "upgrade", "heads"]
     env_file:
-      - /share/ContainerNew/lenie-env/.env
+      - /share/Container/lenie-env/.env
     networks:
       - lenie-net
     depends_on:
@@ -213,7 +213,7 @@ services:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Web console
     env_file:
-      - /share/ContainerNew/lenie-env/minio.env
+      - /share/Container/lenie-env/minio.env
     command: server /data --console-address ":9001"
     volumes:
       - lenie-minio-data:/data
@@ -238,7 +238,7 @@ services:
     cpus: 0.1
     pids_limit: 64
     env_file:
-      - /share/ContainerNew/lenie-env/minio.env
+      - /share/Container/lenie-env/minio.env
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
@@ -304,11 +304,11 @@ services:
     cap_add:
       - IPC_LOCK
     env_file:
-      - /share/ContainerNew/lenie-env/vault.env
+      - /share/Container/lenie-env/vault.env
     volumes:
-      - /share/ContainerNew/vault/config:/vault/config
-      - /share/ContainerNew/vault/data:/vault/file
-      - /share/ContainerNew/vault/logs:/vault/logs
+      - /share/Container/vault/config:/vault/config
+      - /share/Container/vault/data:/vault/file
+      - /share/Container/vault/logs:/vault/logs
     command: server
     healthcheck:
       test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
@@ -354,7 +354,7 @@ services:
     cpus: 0.25
     pids_limit: 128
     env_file:
-      - /share/ContainerNew/lenie-env/obsidian_headless.env
+      - /share/Container/lenie-env/obsidian_headless.env
     volumes:
       - lenie-obsidian-vault-data:/vault
       - lenie-obsidian-config-data:/home/obsidian/.config

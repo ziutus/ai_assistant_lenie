@@ -8,7 +8,7 @@ new job while the host is under pressure.
 
 - Collector: [`infra/docker/nas/collect-host-health.sh`](../../../infra/docker/nas/collect-host-health.sh)
   runs on the QNAP host (not in a container) once per minute and writes
-  `/share/ContainerNew/lenie-host-health/host-health.json`.
+  `/share/Container/lenie-host-health/host-health.json`.
 - Gate: [`backend/library/host_admission.py`](../../../backend/library/host_admission.py),
   called from `worker.py` right before `claim()`. All three worker services
   (`lenie-worker`, `lenie-document-worker`, `lenie-cloud-bridge`) mount the
@@ -50,7 +50,7 @@ restart the three worker services.
 - `iowait_percent` — iowait jiffies as a percentage of **total CPU jiffies
   between the last two collector runs**, not the cumulative value in
   `/proc/stat`. The collector keeps the previous totals in
-  `/share/ContainerNew/lenie-host-health/.cpu-state`; the very first run after
+  `/share/Container/lenie-host-health/.cpu-state`; the very first run after
   install reports `0` until it has two samples.
 - `disk_temperatures_c` — best effort via `smartctl -A`. Empty list `[]` when
   `smartctl` is not installed or returns nothing; the gate then skips the
@@ -102,20 +102,20 @@ uses and warning when it is stale (collector cron dead). Exit code `0` healthy,
 
    ```bash
    scp infra/docker/nas/collect-host-health.sh \
-       admin@192.168.200.7:/share/ContainerNew/lenie-host-health/collect-host-health.sh
+       admin@192.168.200.7:/share/Container/lenie-host-health/collect-host-health.sh
    ```
 
    Create the directory first if it does not exist
-   (`ssh admin@192.168.200.7 'mkdir -p /share/ContainerNew/lenie-host-health'`).
+   (`ssh admin@192.168.200.7 'mkdir -p /share/Container/lenie-host-health'`).
    This is the same host path the compose file mounts into the workers.
 
 2. Make it executable and give it a first run:
 
    ```bash
    ssh admin@192.168.200.7
-   chmod +x /share/ContainerNew/lenie-host-health/collect-host-health.sh
-   sh /share/ContainerNew/lenie-host-health/collect-host-health.sh
-   cat /share/ContainerNew/lenie-host-health/host-health.json
+   chmod +x /share/Container/lenie-host-health/collect-host-health.sh
+   sh /share/Container/lenie-host-health/collect-host-health.sh
+   cat /share/Container/lenie-host-health/host-health.json
    ```
 
    Confirm the JSON has all six fields and sane values. Run it a second time
@@ -132,7 +132,7 @@ uses and warning when it is stale (collector cron dead). Exit code `0` healthy,
    ```bash
    ssh admin@192.168.200.7
    grep -q lenie-host-health /etc/config/crontab || \
-     echo '* * * * * sh /share/ContainerNew/lenie-host-health/collect-host-health.sh' >> /etc/config/crontab
+     echo '* * * * * sh /share/Container/lenie-host-health/collect-host-health.sh' >> /etc/config/crontab
    crontab /etc/config/crontab
    /etc/init.d/crond.sh restart
    ```
@@ -146,7 +146,7 @@ uses and warning when it is stale (collector cron dead). Exit code `0` healthy,
 
    ```bash
    # age in seconds — must stay well under HOST_HEALTH_MAX_AGE_SECONDS (120)
-   echo $(( $(date +%s) - $(date -d "$(python -c 'import json;print(json.load(open("/share/ContainerNew/lenie-host-health/host-health.json"))["collected_at"])')" +%s) ))
+   echo $(( $(date +%s) - $(date -d "$(python -c 'import json;print(json.load(open("/share/Container/lenie-host-health/host-health.json"))["collected_at"])')" +%s) ))
    ```
 
 ## Step 2 — add the workers' read-only mount
@@ -156,7 +156,7 @@ for `lenie-worker`, `lenie-document-worker` and `lenie-cloud-bridge`:
 
 ```yaml
     volumes:
-      - /share/ContainerNew/lenie-host-health:/run/lenie-host-health:ro
+      - /share/Container/lenie-host-health:/run/lenie-host-health:ro
 ```
 
 Redeploy so the workers pick up the mount:

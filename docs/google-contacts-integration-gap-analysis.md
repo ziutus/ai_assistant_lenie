@@ -141,7 +141,7 @@ Migrację wykonano na NAS-ie 2026-09-19. Baza jest na `d8f2c4a6b901`; zachowano
 600 kontaktów, przeniesiono 419 niepustych telefonów i 77 adresów e-mail.
 Kontrola zgodności wartości głównych z pierwszym elementem list: 0 rozbieżności.
 Kopia tabeli sprzed migracji znajduje się na NAS-ie:
-`/share/ContainerNew/lenie-migration-backups/contacts-before-d8f2c4a6b901-20260919.dump`.
+`/share/Container/lenie-migration-backups/contacts-before-d8f2c4a6b901-20260919.dump`.
 Sama migracja nie wdraża nowej wersji backendu ani interfejsu.
 
 Weryfikacja zmiany: 378 testów backendu (kanały, endpointy kontaktów, urodziny,

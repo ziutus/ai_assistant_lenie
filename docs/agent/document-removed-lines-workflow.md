@@ -114,7 +114,7 @@ $env:PYTHONPATH='.'
 .\.venv\Scripts\python.exe -m pytest tests\unit\test_article_cleaner.py -q
 ```
 
-Zmiana `site_rules.json` na NAS jest odczytywana bez restartu z `/share/ContainerNew/lenie-config/site_rules.json`. Repozytorium pozostaje źródłem prawdy: zmiana produkcyjna musi również trafić do feature brancha i PR.
+Zmiana `site_rules.json` na NAS jest odczytywana bez restartu z `/share/Container/lenie-config/site_rules.json`. Repozytorium pozostaje źródłem prawdy: zmiana produkcyjna musi również trafić do feature brancha i PR.
 
 ## Etap 4: zapis decyzji
 

@@ -23,7 +23,7 @@ Docker runtime.
 
 QNAP Task Scheduler will run a small host-owned collector every minute.  It
 writes its output atomically to
-`/share/ContainerNew/lenie-host-health/host-health.json`.  The file is mounted
+`/share/Container/lenie-host-health/host-health.json`.  The file is mounted
 read-only into the workers and API process.
 
 The snapshot format is versioned and contains its collection timestamp, load

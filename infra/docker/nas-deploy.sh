@@ -16,9 +16,18 @@ set -euo pipefail
 NAS_HOST="192.168.200.7"
 NAS_USER="admin"
 NAS_DOCKER="/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker"
-NAS_COMPOSE_DIR="/share/ContainerNew/lenie-compose"
+# /share/Container = udzial QTS (Container Station), odtwarzany przez system przy
+# kazdym starcie. Nie uzywac recznych dowiazan (np. /share/ContainerNew): po
+# restarcie 2026-09-24 zniknelo, a Docker zalozyl pusty katalog - patrz
+# docs/deployment/nas/nas-incident-runbook.md.
+NAS_DATA_ROOT="/share/Container"
+NAS_COMPOSE_DIR="${NAS_DATA_ROOT}/lenie-compose"
 NAS_COMPOSE_FILE="${NAS_COMPOSE_DIR}/compose.nas.yaml"
-NAS_CONFIG_DIR="/share/ContainerNew/lenie-config"
+NAS_CONFIG_DIR="${NAS_DATA_ROOT}/lenie-config"
+# Blokada rownoleglych deployow: katalog na NAS (mkdir jest atomowy, a QNAP nie
+# ma flock). Chroni tez przed dwoma agentami/maszynami deployujacymi naraz.
+DEPLOY_LOCK_DIR="${NAS_COMPOSE_DIR}/.nas-deploy.lock"
+LOCK_MAX_AGE_S="${LENIE_DEPLOY_LOCK_MAX_AGE:-7200}"
 REGISTRY="${NAS_HOST}:5005"
 
 # Project root (two levels up from this script)
@@ -107,6 +116,111 @@ check_nas_connection() {
         error "Nie można połączyć się z NAS ($NAS_HOST). Sprawdź klucz SSH."
     fi
     ok "Połączenie z NAS OK"
+}
+
+# --- Preflight: nie zaczynaj deployu na niezdrowym hoscie ---------------------
+# Blokuje (chyba ze --skip-preflight) gdy: kernel oops/panic w dmesg (dockerd na
+# takim jadrze potrafi zawisnac w polowie pulla), Docker nie odpowiada, brakuje
+# danych stacku w ${NAS_DATA_ROOT}, macierz RAID zdegradowana, dysk >=95%, Vault
+# zapieczetowany lub w petli restartow. Ostrzega (nie blokuje) przy resyncu RAID,
+# swiezym starcie NAS-a (<10 min) i zepsutej sciezce kolektora w crontabie.
+preflight_nas() {
+    log "Preflight NAS (kernel, Docker, RAID, dane stacku, Vault)..."
+    local out
+    # sh -s: skrypt z heredoc'a (bez ucieczek), argumenty pozycyjne zamiast interpolacji.
+    # Lokalny `timeout` - na QNAP go nie ma, a zawieszony dockerd zablokowalby ssh w nieskonczonosc.
+    if ! out=$(timeout 60 ssh -o ConnectTimeout=5 -o BatchMode=yes "${NAS_USER}@${NAS_HOST}" \
+        "sh -s -- '${NAS_DOCKER}' '${NAS_DATA_ROOT}'" <<'REMOTE'
+D=$1; R=$2
+echo "UPTIME_S=$(cut -d. -f1 /proc/uptime)"
+echo "OOPS=$(dmesg 2>/dev/null | grep -ciE '\bOops:|\bBUG: |unable to handle (kernel|page)|general protection fault|Call Trace|kernel panic|hung task|blocked for more than')"
+for f in lenie-compose/compose.nas.yaml lenie-env/.env vault/config/vault.hcl; do
+    [ -f "$R/$f" ] || echo "MISSING=$f"
+done
+"$D" info >/dev/null 2>&1 && echo "DOCKER=ok" || echo "DOCKER=fail"
+echo "DISK_PCT=$(df -P "$R" 2>/dev/null | awk 'NR==2{gsub("%","",$5);print $5}')"
+echo "MD_BAD=$(awk '/^md[0-9]+ :/{n=$1} match($0,/\[[0-9]+\/[0-9]+\]/){split(substr($0,RSTART+1,RLENGTH-2),a,"/"); if(n!="md9" && a[2]+0<a[1]+0) printf "%s ", n}' /proc/mdstat 2>/dev/null)"
+echo "MD_SYNC=$(grep -ciE 'recovery|resync|reshape' /proc/mdstat 2>/dev/null)"
+echo "VAULT_RESTARTING=$("$D" ps -q --filter name=lenie-vault --filter status=restarting 2>/dev/null | wc -l)"
+p=$(grep -h collect-host-health /etc/config/crontab 2>/dev/null | grep -oE '/share/[^ ]*collect-host-health\.sh' | head -1)
+[ -n "$p" ] && [ ! -f "$p" ] && echo "CRON_BROKEN=$p"
+exit 0
+REMOTE
+    ); then
+        error "Preflight: nie udalo sie zebrac danych z NAS (ssh/Docker nie odpowiada w 60 s). Uruchom: infra/docker/nas-health.sh"
+    fi
+
+    local blockers=() warns=() k v
+    declare -A P=()
+    while IFS='=' read -r k v; do [ -n "$k" ] && P[$k]="$v"; done <<<"$out"
+    local missing; missing=$( (grep '^MISSING=' <<<"$out" || true) | cut -d= -f2 | tr '\n' ' ')
+
+    [ "${P[DOCKER]:-fail}" = "ok" ] || blockers+=("Docker na NAS nie odpowiada ('docker info' zawodzi)")
+    [ "${P[OOPS]:-0}" -eq 0 ] 2>/dev/null || blockers+=("dmesg zawiera ${P[OOPS]} wpisow kernel oops/panic/hung task - Docker moze zawisnac w polowie pulla (dmesg | grep -iE 'Oops:|BUG:')")
+    [ -z "$missing" ] || blockers+=("brak w ${NAS_DATA_ROOT}: ${missing}(udzial niezamontowany lub pusty katalog zalozony przez Docker)")
+    local md_bad="${P[MD_BAD]:-}"
+    [ -z "${md_bad// /}" ] || blockers+=("RAID zdegradowany: ${md_bad}")
+    [ "${P[DISK_PCT]:-0}" -lt 95 ] 2>/dev/null || blockers+=("dysk ${NAS_DATA_ROOT} zajety w ${P[DISK_PCT]}%")
+    [ "${P[VAULT_RESTARTING]:-0}" -eq 0 ] 2>/dev/null || blockers+=("lenie-vault w petli restartow (brak konfiguracji / zapieczetowany?)")
+    if ! curl -s -m 8 "http://${NAS_HOST}:8210/v1/sys/health" 2>/dev/null | grep -q '"sealed":false'; then
+        blockers+=("Vault (:8210) nie odpowiada albo jest zapieczetowany - backend nie wczyta sekretow")
+    fi
+
+    [ "${P[MD_SYNC]:-0}" -eq 0 ] 2>/dev/null || warns+=("RAID w trakcie resyncu/odbudowy - I/O dyskow obciazone, pulle beda wolniejsze (make nas-health pokazuje postep)")
+    [ "${P[UPTIME_S]:-99999}" -ge 600 ] 2>/dev/null || warns+=("NAS wystartowal <10 min temu - uslugi jeszcze sie stabilizuja")
+    [ -z "${P[CRON_BROKEN]:-}" ] || warns+=("crontab NAS wskazuje nieistniejacy plik kolektora: ${P[CRON_BROKEN]} (zmien na ${NAS_DATA_ROOT}/lenie-host-health/...)")
+
+    local w b
+    for w in "${warns[@]:-}"; do [ -n "$w" ] && warn "Preflight: $w"; done
+    if [ "${#blockers[@]}" -gt 0 ]; then
+        for b in "${blockers[@]}"; do echo -e "${RED}[PREFLIGHT]${NC} $b"; done
+        if [ "$SKIP_PREFLIGHT" = "true" ]; then
+            warn "Preflight zawiodl, ale --skip-preflight - kontynuuje na wlasne ryzyko"
+        else
+            error "Preflight NAS zawiodl (${#blockers[@]}). Napraw (docs/deployment/nas/nas-incident-runbook.md) albo uzyj --skip-preflight."
+        fi
+    else
+        ok "Preflight NAS OK"
+    fi
+}
+
+# --- Blokada rownoleglych deployow -------------------------------------------
+LOCK_HELD="false"
+
+acquire_lock() {
+    local info cur holder_host holder_pid holder_ts holder_user age reason=""
+    info="$(hostname)|$$|$(date +%s)|${USER:-${USERNAME:-unknown}}"
+    if nas_ssh "mkdir '${DEPLOY_LOCK_DIR}' 2>/dev/null && echo '${info}' > '${DEPLOY_LOCK_DIR}/owner'"; then
+        LOCK_HELD="true"; ok "Blokada deployu przejeta"; return
+    fi
+    cur=$(nas_ssh "cat '${DEPLOY_LOCK_DIR}/owner' 2>/dev/null" || true)
+    if [ -z "$cur" ]; then
+        error "Nie mozna utworzyc blokady ${DEPLOY_LOCK_DIR} (brak katalogu lenie-compose na NAS?)"
+    fi
+    IFS='|' read -r holder_host holder_pid holder_ts holder_user <<<"$cur"
+    age=$(( $(date +%s) - ${holder_ts:-0} ))
+    if [ "$FORCE_UNLOCK" = "true" ]; then
+        reason="--force-unlock"
+    elif [ "$holder_host" = "$(hostname)" ] && ! kill -0 "$holder_pid" 2>/dev/null; then
+        reason="proces ${holder_pid} na tej maszynie juz nie istnieje (przerwany deploy)"
+    elif [ "$age" -gt "$LOCK_MAX_AGE_S" ]; then
+        reason="blokada starsza niz ${LOCK_MAX_AGE_S}s"
+    fi
+    if [ -z "$reason" ]; then
+        error "Inny deploy trwa: ${holder_user:-?}@${holder_host:-?} (pid ${holder_pid:-?}, od ${age}s). Poczekaj albo, jesli to pozostalosc, uzyj --force-unlock."
+    fi
+    warn "Przejmuje nieaktualna blokade (${holder_user:-?}@${holder_host:-?}): ${reason}"
+    nas_ssh "rm -rf '${DEPLOY_LOCK_DIR}'"
+    nas_ssh "mkdir '${DEPLOY_LOCK_DIR}' && echo '${info}' > '${DEPLOY_LOCK_DIR}/owner'" \
+        || error "Blokada przejeta w miedzyczasie przez inny deploy - ponow probe"
+    LOCK_HELD="true"; ok "Blokada deployu przejeta"
+}
+
+release_lock() {
+    if [ "$LOCK_HELD" = "true" ]; then
+        LOCK_HELD="false"
+        nas_ssh "rm -rf '${DEPLOY_LOCK_DIR}'" >/dev/null 2>&1 || warn "Nie udalo sie zdjac blokady ${DEPLOY_LOCK_DIR} (usun recznie albo --force-unlock)"
+    fi
 }
 
 check_docker_local() {
@@ -277,6 +391,10 @@ echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, 
     echo "  --skip-build      Skip Docker build, push existing local image"
     echo "  --compose-only    Only run compose up on NAS (no build/push)"
     echo "  --sync-compose    Copy compose.nas.yaml to NAS before deploying"
+    echo "  --preflight-only  Only run the NAS health preflight (kernel oops, Docker, RAID, data, Vault), then exit"
+    echo "  --skip-preflight  Continue even if the preflight reports blockers (at your own risk)"
+    echo "  --force-unlock    Take over the deploy lock even if it looks active"
+    echo "  (a live log is always written to \$TMPDIR/lenie-nas-deploy-<time>.log; only one deploy runs at a time)"
     echo "  --help, -h        Show this help"
     echo ""
     echo "Examples:"
@@ -295,6 +413,9 @@ echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, 
 SKIP_BUILD="false"
 COMPOSE_ONLY="false"
 SYNC_COMPOSE="false"
+SKIP_PREFLIGHT="false"
+PREFLIGHT_ONLY="false"
+FORCE_UNLOCK="false"
 SERVICES=""
 
 while [[ $# -gt 0 ]]; do
@@ -302,6 +423,9 @@ while [[ $# -gt 0 ]]; do
         --skip-build)    SKIP_BUILD="true"; shift ;;
         --compose-only)  COMPOSE_ONLY="true"; shift ;;
         --sync-compose)  SYNC_COMPOSE="true"; shift ;;
+        --skip-preflight) SKIP_PREFLIGHT="true"; shift ;;
+        --preflight-only) PREFLIGHT_ONLY="true"; shift ;;
+        --force-unlock)  FORCE_UNLOCK="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
         frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
@@ -314,6 +438,15 @@ if [ -z "$SERVICES" ]; then
     SERVICES="$ALL_SERVICES"
 fi
 
+# Log na zywo do pliku (i na ekran) - zawsze, bez potrzeby `| tee` po stronie
+# wywolujacego. Unika slepoty `| tail` (brak podgladu do konca skryptu).
+if [ -z "${LENIE_DEPLOY_LOGGED:-}" ] && [ "$PREFLIGHT_ONLY" != "true" ]; then
+    DEPLOY_LOG="${LENIE_DEPLOY_LOG:-${TMPDIR:-/tmp}/lenie-nas-deploy-$(date +%Y%m%d-%H%M%S).log}"
+    export LENIE_DEPLOY_LOGGED=1
+    exec > >(tee -a "$DEPLOY_LOG") 2>&1
+    echo "Log wdrozenia: ${DEPLOY_LOG}"
+fi
+
 echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  Lenie NAS Deploy (Registry)${NC}"
 echo -e "${GREEN}  NAS: ${NAS_HOST}${NC}"
@@ -324,6 +457,17 @@ echo -e "${GREEN}  Compose only: ${COMPOSE_ONLY}${NC}"
 echo -e "${GREEN}============================================${NC}"
 
 check_nas_connection
+preflight_nas
+if [ "$PREFLIGHT_ONLY" = "true" ]; then
+    exit 0
+fi
+
+# Jedna instancja naraz (takze z innej maszyny/agenta). Zdejmowana przy wyjsciu,
+# takze po error()/Ctrl+C; po twardym zabiciu zostaje - patrz --force-unlock.
+trap release_lock EXIT
+trap 'exit 130' INT TERM
+acquire_lock
+
 sync_site_rules
 
 # Compose must be updated before the migration runner; older Compose files do

@@ -28,7 +28,7 @@ costs the full branch → CI → merge → image rebuild → NAS deploy cycle, a
 `main` branch protection makes the PR mandatory.
 
 `site_rules.json` already has a partial escape hatch: the NAS reads it from
-`/share/ContainerNew/lenie-config/site_rules.json` without a restart. But it is
+`/share/Container/lenie-config/site_rules.json` without a restart. But it is
 still a file edited by hand, the repo stays the source of truth, there is no
 self-service editing, and it does not reach the line-level rules that live in
 `article_cleaner.py`.
