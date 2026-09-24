@@ -3413,12 +3413,20 @@ class ContactOrganization(Base):
         CheckConstraint(
             "status IN ('candidate', 'confirmed', 'rejected')", name="ck_contact_organizations_status",
         ),
+        CheckConstraint(
+            "registry IS NULL OR registry IN ('ceidg', 'krs', 'other')",
+            name="ck_contact_organizations_registry",
+        ),
         Index("idx_contact_organizations_contact", "contact_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
     org_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Which official register the entity is in: 'ceidg' (sole proprietorship),
+    # 'krs' (company/foundation/association), 'other', NULL = not known yet.
+    # Independent of org_type, which is the person's relation to the entity.
+    registry: Mapped[str | None] = mapped_column(String(10))
     organization_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str | None] = mapped_column(String(200))
     nip: Mapped[str | None] = mapped_column(String(15))
