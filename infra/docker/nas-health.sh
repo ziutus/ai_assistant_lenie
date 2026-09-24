@@ -189,7 +189,13 @@ else
         echo "===NCPU===";      grep -c ^processor /proc/cpuinfo
         echo "===MEMINFO===";   grep -E "^(MemTotal|MemAvailable|MemFree|SwapTotal|SwapFree):" /proc/meminfo
         echo "===DISK===";      df -h /share/CACHEDEV*_DATA 2>/dev/null
-        echo "===DMESG===";     dmesg 2>/dev/null | grep -iE "out of memory|oom-kill|killed process|kernel panic|hung task|blocked for more than|general protection fault" | tail -15
+        echo "===DMESG===";     dmesg 2>/dev/null | grep -iE "out of memory|oom-kill|killed process|kernel panic|hung task|blocked for more than|general protection fault|\bOops:|\bBUG: |unable to handle (kernel|page)|Call Trace" | tail -15
+        echo "===MDSTAT===";    cat /proc/mdstat 2>/dev/null
+        echo "===CNEW===";
+        if [ -L /share/ContainerNew ]; then echo "link -> $(readlink /share/ContainerNew)"; elif [ -d /share/ContainerNew ]; then echo "plain_dir"; else echo "missing"; fi
+        [ -f /share/ContainerNew/lenie-compose/compose.nas.yaml ] && echo compose_ok || echo compose_missing
+        [ -f /share/ContainerNew/vault/config/vault.hcl ] && echo vault_cfg_ok || echo vault_cfg_missing
+        [ -f /share/ContainerNew/lenie-env/.env ] && echo env_ok || echo env_missing
         echo "===TOP===";       top -bn1 2>/dev/null | head -18
         echo "===HOSTHEALTH==="; cat /share/ContainerNew/lenie-host-health/host-health.json 2>/dev/null
     ' 2>/dev/null)
@@ -261,10 +267,34 @@ else
         fi
     done < <(sect DISK | tail -n +2)
 
-    # --- dmesg: OOM / panic ---
+    # --- RAID (md): degradacja/rebuild = [U_] / [_U] albo recovery/resync ---
+    MDSTAT=$(sect MDSTAT)
+    if [ -z "$MDSTAT" ]; then
+        info "/proc/mdstat niedostepny - pomijam kontrole RAID"
+    elif MD_BAD=$(awk '/^md[0-9]+ :/{n=$1} match($0,/\[[0-9]+\/[0-9]+\]/){split(substr($0,RSTART+1,RLENGTH-2),a,"/"); if(n!="md9" && a[2]+0<a[1]+0) print n" aktywnych "a[2]" z "a[1]}' <<<"$MDSTAT"); [ -n "$MD_BAD" ]; then
+        # md9 = systemowa macierz QNAP z 32 slotami ([32/4]) - zawsze "niepelna", pomijana
+        crit "RAID zdegradowany (brakujacy dysk w macierzy md): $(tr '\n' ';' <<<"$MD_BAD")"
+    elif grep -qiE 'recovery|resync|reshape' <<<"$MDSTAT"; then
+        warn "RAID w trakcie odbudowy/synchronizacji:$(grep -iE 'recovery|resync|reshape' <<<"$MDSTAT" | head -1)"
+    else
+        ok "RAID: wszystkie macierze md kompletne ($(grep -cE '^md[0-9]+ :' <<<"$MDSTAT") szt.)"
+    fi
+
+    # --- /share/ContainerNew: compose, .env i konfiguracja Vaulta musza istniec ---
+    # Po restarcie NAS brak dowiazania powoduje, ze Docker zaklada PUSTY katalog
+    # zamiast prawdziwych danych -> Vault nie startuje ("A storage backend must
+    # be specified"), a deploy dziala na pustym miejscu.
+    CNEW=$(sect CNEW)
+    if grep -q '^missing$' <<<"$CNEW" || grep -q 'compose_missing\|vault_cfg_missing\|env_missing' <<<"$CNEW"; then
+        crit "/share/ContainerNew niekompletny ($(tr '\n' ' ' <<<"$CNEW")) - po restarcie odtworz dowiazanie do CACHEDEV2_DATA/Container"
+    else
+        ok "/share/ContainerNew: $(head -1 <<<"$CNEW"), compose + .env + vault.hcl obecne"
+    fi
+
+    # --- dmesg: OOM / panic / kernel oops ---
     DMESG=$(sect DMESG)
     if [ -n "$DMESG" ]; then
-        crit "dmesg biezacego bootu zawiera slady OOM/panic/hung task:"
+        crit "dmesg biezacego bootu zawiera slady OOM/panic/hung task/kernel oops:"
         echo "$DMESG" | sed 's/^/      /'
     else
         ok "dmesg: brak OOM/panic/hung task w biezacym boocie"
@@ -351,7 +381,7 @@ else
             else
                 ok "${name}: running${health:+ ($health)}  restarts=${restarts}"
             fi
-        elif [ "$EXPECT_EXIT" = true ] && [ "$status" = "exited" ] && [ "${exitcode:-1}" = "0" ]; then
+        elif [ "$EXPECT_EXIT" = true ] && { [ "$status" = "exited" ] || [ "$status" = "removing" ]; } && [ "${exitcode:-1}" = "0" ]; then
             ok "${name}: exited(0) - zadanie jednorazowe, OK"
         else
             crit "${name}: ${status}${exitcode:+ (exit ${exitcode})}${oom:+ OOMKilled=$oom}"
