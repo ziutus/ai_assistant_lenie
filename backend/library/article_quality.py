@@ -211,7 +211,7 @@ def is_photo_caption_line(line: str) -> bool:
     if len(stripped) > _CAPTION_MAX_CHARS:
         return False
     # Usuń markery [imgN] — podpis często sąsiaduje z markerem obrazka
-    bare = re.sub(r"\[img\d+(?::[^\]]*)?\]", "", stripped).strip()
+    bare = re.sub(r"\[img\d+(?::[^\]]{0,2000})?\]", "", stripped).strip()
     if not bare:
         return False
     if _CAPTION_PREFIX_RE.match(bare) or _CAPTION_AGENCY_RE.search(bare):

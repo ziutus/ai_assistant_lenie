@@ -1024,3 +1024,13 @@ class TestBankierExtraction:
         assert "PKNORLEN" not in result
         assert "Bankier.pl na skróty" not in result
         assert "WIG30" not in result
+
+
+def test_money_img_credit_helper_matches_former_regex_semantics():
+    from library.article_cleaner import _is_money_img_credit
+
+    assert _is_money_img_credit("[[img3: foto]](https://www.money.pl/x)")
+    assert _is_money_img_credit("[img0: a] see money.pl/abc")
+    assert not _is_money_img_credit("[img0: a] nothing here")
+    assert not _is_money_img_credit("money.pl/ [img0: a]")
+    assert not _is_money_img_credit("[img0: " + "]" * 50000)

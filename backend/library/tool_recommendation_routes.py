@@ -44,7 +44,7 @@ def _ensure_tool(session, item: ToolRecommendation) -> tuple[Tool, bool]:
 def _catalog_label(url: str) -> str:
     parsed = urlparse(url)
     path = [part for part in parsed.path.split("/") if part]
-    if parsed.netloc.lower().endswith("github.com") and len(path) >= 2:
+    if parsed.netloc.lower() in {"github.com", "www.github.com"} and len(path) >= 2:
         return f"{path[0]}/{path[1]}"
     return parsed.netloc or url
 
