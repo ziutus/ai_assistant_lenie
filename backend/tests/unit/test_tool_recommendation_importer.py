@@ -20,3 +20,25 @@ def test_parser_preserves_category_description_and_ignores_heading_row():
         "description": "Link sharing platform",
         "category": "Bookmarking",
     }]
+
+
+def test_raw_githubusercontent_url_is_rebuilt_from_validated_parts():
+    assert github_raw_url("https://raw.githubusercontent.com/o/r/main/README.md") == (
+        "https://raw.githubusercontent.com/o/r/main/README.md"
+    )
+
+
+def test_non_github_hosts_are_rejected():
+    import pytest
+
+    for url in ("https://evilgithub.com/o/r", "http://github.com/o/r", "https://github.com.evil.io/o/r"):
+        with pytest.raises(ValueError):
+            github_raw_url(url)
+
+
+def test_parser_is_linear_on_unclosed_brackets():
+    import time
+
+    start = time.monotonic()
+    parse_markdown_recommendations("| " + "[" * 50000 + " |\n## " + "x " * 50000)
+    assert time.monotonic() - start < 2

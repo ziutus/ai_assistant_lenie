@@ -3,22 +3,26 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import requests
 
-_HEADING = re.compile(r"^#{2,6}\s+(.+?)\s*$")
-_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+# Bounded quantifiers keep matching linear on adversarial input (CodeQL py/polynomial-redos).
+_HEADING = re.compile(r"^#{2,6}[ \t]+(\S.{0,500})$")
+_LINK = re.compile(r"\[([^\]\[]{1,300})\]\((https?://[^)\s]{1,2000})\)")
+_ALLOWED_HOSTS = {"github.com", "www.github.com", "raw.githubusercontent.com"}
+_RAW_HOST = "raw.githubusercontent.com"
 
 
 def github_raw_url(url: str) -> str:
     """Convert a public GitHub repository/file URL into its raw README URL."""
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.netloc not in {"github.com", "www.github.com", "raw.githubusercontent.com"}:
+    if parsed.scheme != "https" or parsed.netloc not in _ALLOWED_HOSTS:
         raise ValueError("source_url must be a public GitHub URL")
-    if parsed.netloc == "raw.githubusercontent.com":
-        return url
     parts = [part for part in parsed.path.split("/") if part]
+    if parsed.netloc == _RAW_HOST:
+        # Rebuild from validated parts instead of echoing the caller's string.
+        return f"https://{_RAW_HOST}/{'/'.join(quote(part, safe='') for part in parts)}"
     if len(parts) < 2:
         raise ValueError("source_url must identify a GitHub repository or Markdown file")
     owner, repository = parts[:2]
@@ -28,7 +32,8 @@ def github_raw_url(url: str) -> str:
 
 
 def fetch_markdown(source_url: str) -> str:
-    response = requests.get(github_raw_url(source_url), timeout=20)
+    # No redirects: the host allowlist is enforced on the URL we build, not on a redirect target.
+    response = requests.get(github_raw_url(source_url), timeout=20, allow_redirects=False)
     response.raise_for_status()
     return response.text
 

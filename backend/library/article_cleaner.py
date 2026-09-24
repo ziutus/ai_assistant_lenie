@@ -16,8 +16,8 @@ from library.article_quality import photo_caption_candidates
 from library.cleanup_rules import _bump_hit_counts, host_from_url, load_active_rules, match_line_rules
 from library.lenie_markdown import links_correct, md_square_brackets_in_one_line
 
-_IMG_MARKER_RE = re.compile(r'^\[img(\d+)(?::\s*[^\]]*)?\]\s*$')
-_IMG_MARKER_INLINE_RE = re.compile(r'\[img\d+(?::\s*[^\]]*)?\]')
+_IMG_MARKER_RE = re.compile(r'^\[img(\d+)(?::[^\]]{0,2000})?\]\s*$')
+_IMG_MARKER_INLINE_RE = re.compile(r'\[img\d+(?::[^\]]{0,2000})?\]')
 
 
 def strip_image_markers(text: str) -> str:
@@ -79,9 +79,22 @@ def _is_portal_internal_link(url: str) -> bool:
     return any(re.search(p, url) for p in _PORTAL_INTERNAL_LINK_PATTERNS)
 
 
+_MONEY_IMG_PREFIX_RE = re.compile(r'^\[?\[img\d+:')
+
+
+def _is_money_img_credit(line: str) -> bool:
+    """`[imgN: ...]` marker line followed by a money.pl link — linear replacement
+    for the former `^\\[?\\[img\\d+:.*\\].*money\\.pl/` (polynomial backtracking)."""
+    prefix = _MONEY_IMG_PREFIX_RE.match(line)
+    if not prefix:
+        return False
+    close = line.find(']', prefix.end())
+    return close != -1 and 'money.pl/' in line[close + 1:]
+
+
 def _is_adjacent_tag_links_line(line: str) -> bool:
     """Czy linia składa się wyłącznie z co najmniej dwóch linków tagowych portalu."""
-    link_re = re.compile(r'\[[^\]\n]+\]\(([^)\n]+)\)')
+    link_re = re.compile(r'\[[^\]\n]{1,1000}\]\(([^)\n]{1,4000})\)')
     matches = link_re.findall(line)
     if len(matches) < 2 or link_re.sub('', line).strip():
         return False
@@ -114,7 +127,7 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set, rules=(), host=Non
 
         # Sekcje do pominięcia (premium, wstawki H2+img)
         # Po replace_link linia może mieć [linkN] na końcu — usuń przed porównaniem
-        stripped_no_links = re.sub(r'\s*\[link\d+\]', '', stripped).strip()
+        stripped_no_links = re.sub(r'\s{0,100}\[link\d+\]', '', stripped).strip()
         if stripped in skip_section_markers or stripped_no_links in skip_section_markers \
                 or stripped in h2_ad_titles or stripped_no_links in h2_ad_titles:
             skip_section = True
@@ -355,7 +368,7 @@ def _clean_lines_money(lines: list[str], rules=(), host=None, hit_ids=None) -> l
         if re.match(r'^[\w\sąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+\+\d+$', tag_line):
             continue
         # "Zobacz też" — linia z [imgN: tytuł] i link do innego artykułu money.pl
-        if re.match(r'^\[?\[img\d+:.*\].*money\.pl/', stripped):
+        if _is_money_img_credit(stripped):
             continue
         if _matches_cleanup_rule(stripped, rules, host, hit_ids):
             continue
@@ -655,7 +668,7 @@ def _clean_lines_gazeta(lines: list[str], rules=(), host=None, hit_ids=None) -> 
 
     for line in lines:
         stripped = line.strip()
-        stripped_no_links = re.sub(r'\s*\[link\d+\]', '', stripped).strip()
+        stripped_no_links = re.sub(r'\s{0,100}\[link\d+\]', '', stripped).strip()
 
         if re.match(r'^Otwórz galerię \(\d+\)$', stripped, re.IGNORECASE):
             continue
@@ -694,7 +707,7 @@ _STRICT_CAPTION_CATEGORIES = {
     "illustrative", "stock", "agency",
 }
 
-_IMG_MARKER_ALT_RE = re.compile(r'^\[img\d+(?::\s*([^\]]*))?\]\s*$')
+_IMG_MARKER_ALT_RE = re.compile(r'^\[img\d+(?::([^\]]{0,2000}))?\]\s*$')
 
 
 def _strip_photo_caption_lines(text: str, url: str) -> str:
@@ -886,9 +899,9 @@ def extract_inline_images(text: str) -> tuple[str, list[dict]]:
         extracted_images.append({"alt": alt, "url": img_url})
         return f"[img{idx}: {alt}]" if alt else f"[img{idx}]"
 
-    text = re.sub(r'!\[([^\]]*)\]\(([^)]*)\)', replace_image, text)
+    text = re.sub(r'!\[([^\]]{0,2000})\]\(([^)]{0,20000})\)', replace_image, text)
     # Linki owijające markery img: [[imgN]](url) → [imgN]
-    text = re.sub(r'\[(\[img\d+[^\]]*\])\]\([^)]+\)', lambda m: m.group(1), text)
+    text = re.sub(r'\[(\[img\d+[^\]]{0,2000}\])\]\([^)]{1,20000}\)', lambda m: m.group(1), text)
     return text, extracted_images
 
 
@@ -987,7 +1000,7 @@ def clean_article_text(text: str, url: str = "") -> dict:
         extracted_links.append({"text": link_text, "url": link_url})
         return f"{link_text} [link{idx}]"
 
-    text = re.sub(r'\[([^\]]*)\]\(([^)]+)\)', replace_link, text)
+    text = re.sub(r'\[([^\]]{0,2000})\]\(([^)]{1,20000})\)', replace_link, text)
 
     # 6. Usuń stare referencje z document_md_decode i osierocone markery
     text = re.sub(r'picture\[\d+\]:"[^"]*"', '', text)
@@ -1002,7 +1015,7 @@ def clean_article_text(text: str, url: str = "") -> dict:
         except (ValueError, AttributeError):
             pass
         return ""  # usuń osierocony
-    text = re.sub(r'\[img\d+(?::[^\]]*)?\]', _clean_orphan_img, text)
+    text = re.sub(r'\[img\d+(?::[^\]]{0,2000})?\]', _clean_orphan_img, text)
 
     # 7. Normalizacja
     text = text.replace('\xa0', ' ')
