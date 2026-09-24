@@ -50,15 +50,19 @@ def find_duplicate_candidates(session, *, include_archived: bool = False) -> lis
     return sorted(candidates, key=lambda pair: (-pair["score"], pair["contact_a"].id, pair["contact_b"].id))
 
 
-def dismiss_duplicate_pair(
-    session, contact_id_a: int, contact_id_b: int, note: str | None,
-) -> ContactDuplicateDismissal:
+def _validate_duplicate_pair(contact_id_a: int, contact_id_b: int, note: str | None) -> None:
     if any(type(value) is not int or value <= 0 for value in (contact_id_a, contact_id_b)):
         raise ValueError("Contact ids must be positive integers")
     if contact_id_a == contact_id_b:
         raise ValueError("Two different contacts are required")
     if note is not None and not isinstance(note, str):
         raise ValueError("note must be text or null")
+
+
+def dismiss_duplicate_pair(
+    session, contact_id_a: int, contact_id_b: int, note: str | None,
+) -> ContactDuplicateDismissal:
+    _validate_duplicate_pair(contact_id_a, contact_id_b, note)
     a, b = sorted((contact_id_a, contact_id_b))
     row = session.scalar(select(ContactDuplicateDismissal).where(
         ContactDuplicateDismissal.contact_id_a == a, ContactDuplicateDismissal.contact_id_b == b,
@@ -69,3 +73,17 @@ def dismiss_duplicate_pair(
     row.note = note
     row.dismissed_at = func.now()
     return row
+
+
+def dismiss_duplicate_pairs_bulk(session, pairs: list[dict]) -> int:
+    if not isinstance(pairs, list) or not pairs:
+        raise ValueError("pairs must be a non-empty list")
+    if len(pairs) > 200:
+        raise ValueError("At most 200 pairs are allowed")
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            raise ValueError("Each pair must be an object")
+        _validate_duplicate_pair(pair.get("contact_id_a"), pair.get("contact_id_b"), None)
+    for pair in pairs:
+        dismiss_duplicate_pair(session, pair["contact_id_a"], pair["contact_id_b"], None)
+    return len(pairs)

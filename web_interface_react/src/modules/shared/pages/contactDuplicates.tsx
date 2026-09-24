@@ -29,11 +29,14 @@ const ContactDuplicates = () => {
   const [isLoading, setIsLoading] = React.useState(true);
   const [message, setMessage] = React.useState("");
   const [pending, setPending] = React.useState<string[]>([]);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [bulkPending, setBulkPending] = React.useState(false);
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
   React.useEffect(() => {
     const controller = new AbortController();
     setIsLoading(true); setMessage(""); setPairs([]);
+    setSelected(new Set());
     axios.get(`${apiUrl}/contacts/duplicates`, {
       headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` },
       params: { include_archived: includeArchived ? "1" : "0" }, signal: controller.signal,
@@ -51,6 +54,7 @@ const ContactDuplicates = () => {
         contact_id_a: pair.contact_a.id, contact_id_b: pair.contact_b.id,
       }, { headers });
       setPairs(current => current.filter(item => item.contact_a.id !== pair.contact_a.id || item.contact_b.id !== pair.contact_b.id));
+      setSelected(current => { const next = new Set(current); next.delete(key); return next; });
     } catch (error: any) {
       setMessage(`Nie udało się odrzucić pary: ${error.response?.data?.message || error.message}`);
     } finally {
@@ -58,13 +62,57 @@ const ContactDuplicates = () => {
     }
   };
 
+  const dismissSelected = async () => {
+    if (selected.size === 0 || bulkPending || pending.length > 0) return;
+    const selectedPairs = pairs.filter(pair => selected.has(`${pair.contact_a.id}-${pair.contact_b.id}`));
+    setBulkPending(true);
+    try {
+      await axios.post(`${apiUrl}/contacts/duplicates/dismiss_bulk`, {
+        pairs: selectedPairs.map(pair => ({ contact_id_a: pair.contact_a.id, contact_id_b: pair.contact_b.id })),
+      }, { headers });
+      setPairs(current => current.filter(pair => !selected.has(`${pair.contact_a.id}-${pair.contact_b.id}`)));
+      setSelected(new Set()); setMessage("");
+    } catch (error: any) {
+      setMessage(`Nie udało się odrzucić zaznaczonych par: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setBulkPending(false);
+    }
+  };
+
   return <div className="contact-duplicates">
     <h2>Duplikaty kontaktów</h2>
-    <label><input type="checkbox" checked={includeArchived} onChange={event => setIncludeArchived(event.target.checked)} /> Uwzględnij zarchiwizowane</label>
+    <label><input type="checkbox" checked={includeArchived} disabled={bulkPending} onChange={event => setIncludeArchived(event.target.checked)} /> Uwzględnij zarchiwizowane</label>
+    <div className="contact-duplicate-toolbar">
+      <label className="contact-duplicate-selection">
+        <input type="checkbox" checked={pairs.length > 0 && selected.size === pairs.length}
+          ref={input => { if (input) input.indeterminate = selected.size > 0 && selected.size < pairs.length; }}
+          disabled={isLoading || bulkPending || pairs.length === 0}
+          onChange={event => setSelected(event.target.checked
+            ? new Set(pairs.map(pair => `${pair.contact_a.id}-${pair.contact_b.id}`)) : new Set())} />
+        Zaznacz wszystkie
+      </label>
+      <span>Zaznaczono: {selected.size}</span>
+      <button className="button" disabled={selected.size === 0 || bulkPending || pending.length > 0}
+        onClick={() => void dismissSelected()}>Oznacz zaznaczone jako to nie duplikaty</button>
+    </div>
     {isLoading && <div className="loader" />}
     {message && <p className="errorText" role="alert">{message}</p>}
     {!isLoading && !message && pairs.length === 0 && <p>Brak wykrytych duplikatów.</p>}
     {pairs.map(pair => <article className="contact-duplicate-card" key={`${pair.contact_a.id}-${pair.contact_b.id}`}>
+      <label className="contact-duplicate-selection">
+        <input type="checkbox" checked={selected.has(`${pair.contact_a.id}-${pair.contact_b.id}`)}
+          disabled={bulkPending}
+          onChange={event => {
+            const checked = event.target.checked;
+            const key = `${pair.contact_a.id}-${pair.contact_b.id}`;
+            setSelected(current => {
+              const next = new Set(current);
+              if (checked) next.add(key); else next.delete(key);
+              return next;
+            });
+          }} />
+        Zaznacz parę
+      </label>
       <span className="contact-duplicate-chip">Zgodność: {Math.round(pair.score * 100)}%</span>
       <div className="contact-duplicate-columns">
         {[pair.contact_a, pair.contact_b].map(contact => <div key={contact.id}>
@@ -77,7 +125,7 @@ const ContactDuplicates = () => {
       <p>{pair.reasons.map(reason => <span className="contact-duplicate-chip" key={reason}>{reason}</span>)}</p>
       <div className="contact-duplicate-actions">
         <NavLink className="button" to={`/contacts/merge?a=${pair.contact_a.id}&b=${pair.contact_b.id}`}>Scal kontakty</NavLink>
-        <button className="button" disabled={pending.includes(`${pair.contact_a.id}-${pair.contact_b.id}`)} onClick={() => void dismiss(pair)}>To nie duplikaty</button>
+        <button className="button" disabled={bulkPending || pending.includes(`${pair.contact_a.id}-${pair.contact_b.id}`)} onClick={() => void dismiss(pair)}>To nie duplikaty</button>
       </div>
     </article>)}
   </div>;

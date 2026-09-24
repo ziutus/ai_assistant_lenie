@@ -94,6 +94,27 @@ def contacts_duplicates_dismiss():
         return {"status": "error", "message": "DB error"}, 500
 
 
+@bp.route("/contacts/duplicates/dismiss_bulk", methods=["POST", "OPTIONS"])
+def contacts_duplicates_dismiss_bulk():
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_duplicates import dismiss_duplicate_pairs_bulk
+    data = request.get_json(silent=True)
+    session = get_scoped_session()
+    try:
+        if not isinstance(data, dict):
+            raise ValueError("JSON object required")
+        count = dismiss_duplicate_pairs_bulk(session, data.get("pairs"))
+        session.commit()
+        return jsonify({"status": "success", "dismissed_count": count})
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+
 @bp.route("/contacts/merge", methods=["POST", "OPTIONS"])
 def contacts_merge():
     if request.method == "OPTIONS":
