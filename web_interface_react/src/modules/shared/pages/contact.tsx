@@ -411,6 +411,14 @@ const eventHintText = (event: ContactGroupEvent) =>
 const ceidgUrlForNip = (nip: string) =>
   `https://aplikacja.ceidg.gov.pl/ceidg/ceidg.public.ui/searchdetails.aspx?Nip=${encodeURIComponent(nip.replace(/[^0-9]/g, ""))}`;
 
+// KRS (Krajowy Rejestr Sądowy) — the official register for companies
+// (sp. z o.o., sp.k., S.A. ...), which CEIDG does not cover. The public search
+// has no NIP deep link, so this opens the search page. A JDG owner's own
+// organization row never gets this link (org_type "jdg" is CEIDG by definition);
+// other types (e.g. "employment") describe the person's relation, not the
+// employer's legal form, so both registers are offered.
+const KRS_SEARCH_URL = "https://wyszukiwarka-krs.ms.gov.pl/";
+
 // Free-text fields (contact/organization notes) sometimes carry a raw URL
 // typed by hand (e.g. "Facebook: https://..."). Render it as a clickable
 // link instead of plain text, same trailing-punctuation handling as
@@ -1918,10 +1926,21 @@ const Contact = () => {
                         href={ceidgUrlForNip(org.nip)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Sprawdź w oficjalnym rejestrze CEIDG"
+                        title="Sprawdź w oficjalnym rejestrze CEIDG (jednoosobowe działalności gospodarcze)"
                         style={{ color: "#2b6cb0" }}
                       >
                         Sprawdź w CEIDG ↗
+                      </a>
+                    )}
+                    {org.nip && org.org_type !== "jdg" && (
+                      <a
+                        href={KRS_SEARCH_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Spółki (sp. z o.o., sp.k., S.A.) są w KRS, nie w CEIDG — wyszukaj po NIP-ie"
+                        style={{ color: "#2b6cb0" }}
+                      >
+                        Sprawdź w KRS ↗
                       </a>
                     )}
                     {org.nip && org.org_type === "jdg" && (
