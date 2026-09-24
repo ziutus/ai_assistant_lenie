@@ -2226,9 +2226,18 @@ def contact_organizations_ceidg_lookup(contact_id: int):
 
     fields = company_to_organization_fields(firma)
     fields["nip"] = nip
-    fields["source_url"] = f"https://dane.biznes.gov.pl/api/ceidg/v2/firmy?nip={normalize_nip(nip)}"
+    fields["source_url"] = f"https://dane.biznes.gov.pl/api/ceidg/v3/firma?nip={normalize_nip(nip)}"
     fields["verified_at"] = datetime.datetime.now()
     fields.setdefault("organization_name", target_row.organization_name if target_row else nip)
+
+    # CEIDG doesn't always return telefon (e.g. when the owner opted out of
+    # publishing it) — don't let a refresh silently drop a phone number we
+    # already had on file from another source just because this field is
+    # replaced wholesale below.
+    if target_row is not None and target_row.notes:
+        old_phone = re.search(r"tel\.:\s*[^,]+", target_row.notes)
+        if old_phone and "tel.:" not in fields.get("notes", ""):
+            fields["notes"] = ", ".join(p for p in (old_phone.group(0), fields.get("notes")) if p)
 
     if target_row is None:
         target_row = ContactOrganization(contact_id=contact_id, org_type="jdg", status="confirmed")

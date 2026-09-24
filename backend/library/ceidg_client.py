@@ -24,7 +24,7 @@ from library.external_service_events import observed_request
 
 logger = logging.getLogger(__name__)
 
-FIRMY_URL = "https://dane.biznes.gov.pl/api/ceidg/v2/firmy"
+FIRMA_URL = "https://dane.biznes.gov.pl/api/ceidg/v3/firma"
 REQUEST_TIMEOUT_S = 15
 
 
@@ -58,9 +58,9 @@ def get_company_by_nip(nip: str) -> dict | None:
 
     try:
         resp = observed_request(
-            service="ceidg", operation="firmy_by_nip",
+            service="ceidg", operation="firma_by_nip",
             request_fn=lambda: requests.get(
-                FIRMY_URL,
+                FIRMA_URL,
                 params={"nip": clean_nip},
                 headers={"Authorization": f"Bearer {key}"},
                 timeout=REQUEST_TIMEOUT_S,
@@ -69,7 +69,11 @@ def get_company_by_nip(nip: str) -> dict | None:
         if resp.status_code in (401, 403):
             logger.warning("CEIDG API rejected the configured token (HTTP %s)", resp.status_code)
             return None
-        if resp.status_code == 404:
+        # 204: no match for these criteria (documented, most common "miss").
+        # 404: the resource path itself doesn't exist — treated the same way
+        # here since it can never happen for a valid nip query, only for a
+        # wrong URL (which is itself a configuration bug, not a real miss).
+        if resp.status_code in (204, 404):
             return None
         resp.raise_for_status()
         data = resp.json()
@@ -80,30 +84,29 @@ def get_company_by_nip(nip: str) -> dict | None:
         logger.warning("CEIDG returned invalid JSON for NIP %s: %s", clean_nip, e)
         return None
 
-    firmy = data.get("firmy") if isinstance(data, dict) else None
-    if not firmy:
+    firma = data.get("firma") if isinstance(data, dict) else None
+    if not firma:
         return None
-    return firmy[0]
+    return firma[0]
 
 
 def _format_address(addr: dict | None) -> str | None:
-    """Best-effort single-line rendering of a CEIDG address dict.
+    """Single-line rendering of a CEIDG address dict (API v3 field names).
 
-    Field names have varied across API versions — this tolerates several
-    likely spellings rather than assuming one exact schema. Returns None
-    when nothing usable is present.
+    Fields per the official schema: ulica, budynek, lokal, kod, miasto.
+    Returns None when nothing usable is present.
     """
     if not isinstance(addr, dict):
         return None
-    street = addr.get("ulica") or addr.get("nazwaUlicy")
-    house = addr.get("budynek") or addr.get("nrBudynku") or addr.get("numerBudynku")
-    flat = addr.get("lokal") or addr.get("nrLokalu") or addr.get("numerLokalu")
-    postal = addr.get("kodPocztowy") or addr.get("kod")
-    city = addr.get("miejscowosc") or addr.get("nazwaMiejscowosci")
+    street = addr.get("ulica")
+    house = addr.get("budynek")
+    flat = addr.get("lokal")
+    postal = addr.get("kod")
+    city = addr.get("miasto")
 
     street_part = None
     if street:
-        street_part = f"ul. {street} {house}" if house else f"ul. {street}"
+        street_part = f"{street} {house}" if house else street
         if flat:
             street_part += f"/{flat}"
 
@@ -111,44 +114,37 @@ def _format_address(addr: dict | None) -> str | None:
     return ", ".join(p for p in (street_part, postal_city) if p) or None
 
 
-def company_to_organization_fields(firma: dict) -> dict:
-    """Map a raw CEIDG "firma" dict onto ContactOrganization fields.
+#: CEIDG API v3 status values (firma.status) that count as an active JDG.
+_ACTIVE_STATUSES = {"AKTYWNY", "OCZEKUJE_NA_ROZPOCZECIE_DZIALANOSCI", "WYLACZNIE_W_FORMIE_SPOLKI"}
 
-    Tolerant of schema drift the same way _format_address is: probes a few
-    likely key spellings instead of assuming one exact CEIDG API version.
+
+def company_to_organization_fields(firma: dict) -> dict:
+    """Map a raw CEIDG "firma" dict (API v3 field names) onto ContactOrganization fields.
+
     Only includes keys that were actually found — callers should merge this
     into an existing record rather than overwrite blindly with None.
     """
     fields: dict = {}
 
-    name = firma.get("nazwa") or firma.get("firma")
+    name = firma.get("nazwa")
     if name:
         fields["organization_name"] = name
 
-    business_address = _format_address(
-        firma.get("adresDzialalnosci") or firma.get("adresGlownegoMiejscaWykonywaniaDzialalnosci")
-    )
+    business_address = _format_address(firma.get("adresDzialalnosci"))
     if business_address:
         fields["address"] = business_address
 
-    correspondence_address = _format_address(
-        firma.get("adresKorespondencyjny") or firma.get("adresDoDoreczen")
-    )
+    correspondence_address = _format_address(firma.get("adresKorespondencyjny"))
     if correspondence_address:
         fields["correspondence_address"] = correspondence_address
 
-    status = (firma.get("status") or firma.get("statusFirmy") or "").upper()
+    status = (firma.get("status") or "").upper()
     if status:
-        if status in ("AKTYWNY", "AKTYWNA", "WZNOWIONA"):
-            fields["is_current"] = True
-        elif status in ("ZAWIESZONY", "ZAWIESZONA"):
-            fields["is_current"] = False
-            if firma.get("dataZawieszenia"):
-                fields["suspended_at"] = firma["dataZawieszenia"]
-        elif status in ("WYKRESLONY", "WYKRESLONA"):
-            fields["is_current"] = False
-            if firma.get("dataWykreslenia"):
-                fields["end_date"] = firma["dataWykreslenia"]
+        fields["is_current"] = status in _ACTIVE_STATUSES
+        if status == "ZAWIESZONY" and firma.get("dataZawieszenia"):
+            fields["suspended_at"] = firma["dataZawieszenia"]
+        elif status == "WYKRESLONY" and firma.get("dataWykreslenia"):
+            fields["end_date"] = firma["dataWykreslenia"]
 
     if firma.get("dataRozpoczecia"):
         fields["start_date"] = firma["dataRozpoczecia"]
@@ -157,10 +153,10 @@ def company_to_organization_fields(firma: dict) -> dict:
     phone = firma.get("telefon")
     if phone:
         contact_bits.append(f"tel.: {phone}")
-    email = firma.get("adresEmail") or firma.get("email")
+    email = firma.get("email")
     if email:
         contact_bits.append(f"e-mail: {email}")
-    www = firma.get("www") or firma.get("adresWWW")
+    www = firma.get("www")
     if www:
         contact_bits.append(f"www: {www}")
     if contact_bits:

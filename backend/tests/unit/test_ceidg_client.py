@@ -1,4 +1,4 @@
-"""Unit tests for library/ceidg_client.py — CEIDG API lookup by NIP."""
+"""Unit tests for library/ceidg_client.py — CEIDG API v3 lookup by NIP."""
 
 from unittest.mock import MagicMock, patch
 
@@ -28,10 +28,10 @@ KRATON_FIRMA = {
     "status": "AKTYWNY",
     "dataRozpoczecia": "2004-01-06",
     "adresDzialalnosci": {
-        "ulica": "Reymonta", "budynek": "12", "kodPocztowy": "95-070", "miejscowosc": "Aleksandrów Łódzki",
+        "ulica": "ul. Reymonta", "budynek": "12", "kod": "95-070", "miasto": "Aleksandrów Łódzki",
     },
     "telefon": "+48 600 827 080",
-    "adresEmail": "kraton@kraton.pl",
+    "email": "kraton@kraton.pl",
 }
 
 
@@ -49,12 +49,12 @@ class TestNormalizeNip:
 
 class TestGetCompanyByNip:
     def test_returns_first_match(self):
-        with patch("library.ceidg_client.requests.get", return_value=_response(body={"firmy": [KRATON_FIRMA]})):
+        with patch("library.ceidg_client.requests.get", return_value=_response(body={"firma": [KRATON_FIRMA]})):
             with patch("library.ceidg_client._api_key", return_value="jwt.test"):
                 assert get_company_by_nip("7261756829") == KRATON_FIRMA
 
     def test_sends_bearer_token_and_clean_nip(self):
-        with patch("library.ceidg_client.requests.get", return_value=_response(body={"firmy": []})) as mock_get:
+        with patch("library.ceidg_client.requests.get", return_value=_response(body={"firma": []})) as mock_get:
             with patch("library.ceidg_client._api_key", return_value="jwt.test"):
                 get_company_by_nip("726 175 68 29")
         assert mock_get.call_args.kwargs["params"]["nip"] == "7261756829"
@@ -77,13 +77,19 @@ class TestGetCompanyByNip:
             with patch("library.ceidg_client._api_key", return_value="bad-token"):
                 assert get_company_by_nip("7261756829") is None
 
-    def test_404_means_clean_miss(self):
+    def test_204_means_clean_miss(self):
+        """CEIDG API v3 uses 204 for 'no data matches these criteria'."""
+        with patch("library.ceidg_client.requests.get", return_value=_response(status=204)):
+            with patch("library.ceidg_client._api_key", return_value="jwt.test"):
+                assert get_company_by_nip("0000000000") is None
+
+    def test_404_also_treated_as_miss(self):
         with patch("library.ceidg_client.requests.get", return_value=_response(status=404)):
             with patch("library.ceidg_client._api_key", return_value="jwt.test"):
                 assert get_company_by_nip("0000000000") is None
 
-    def test_empty_firmy_list_returns_none(self):
-        with patch("library.ceidg_client.requests.get", return_value=_response(body={"firmy": []})):
+    def test_empty_firma_list_returns_none(self):
+        with patch("library.ceidg_client.requests.get", return_value=_response(body={"firma": []})):
             with patch("library.ceidg_client._api_key", return_value="jwt.test"):
                 assert get_company_by_nip("7261756829") is None
 

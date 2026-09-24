@@ -1997,6 +1997,30 @@ class TestContactOrganizationsCeidgLookup:
 
         assert response[1] == 404
 
+    def test_preserves_old_phone_when_ceidg_omits_it(self, monkeypatch):
+        """CEIDG doesn't return telefon for every record; a refresh must not drop
+        a phone number already on file from another source (e.g. a business card)."""
+        from library.contact_routes import contact_organizations_ceidg_lookup
+
+        existing = _make_organization(
+            id_=7, org_type="jdg", nip="7261756829", notes="tel.: +48 600 827 080, e-mail: kraton@kraton.pl",
+        )
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        session.execute.return_value.scalars.return_value.all.return_value = [existing]
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr(
+            "library.ceidg_client.get_company_by_nip",
+            lambda nip: {"nazwa": "KRATON", "email": "kraton.ak@gmail.com", "www": "www.kraton.pl"},
+        )
+        app = Flask(__name__)
+        with app.test_request_context("/contacts/1/organizations/ceidg_lookup", method="POST", json={}):
+            response = contact_organizations_ceidg_lookup(1)
+
+        assert response[1] == 200
+        assert "tel.: +48 600 827 080" in existing.notes
+        assert "e-mail: kraton.ak@gmail.com" in existing.notes
+
 
 def _make_link(id_=1, contact_id=1, link_type="facebook", url="https://facebook.com/example", label=None, **extra):
     defaults = dict(
