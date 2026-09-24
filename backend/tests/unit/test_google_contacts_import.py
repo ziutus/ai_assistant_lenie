@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from imports.google_contacts_import import _birthday_patch, _ContactIndex, _name_key, _parse_birthday, _parse_channels, main
-from library.db.models import Contact
+from library.db.models import Contact, ContactAlternateName
 
 
 def contact(id_=1, phones=(), **kwargs):
@@ -185,3 +185,51 @@ def test_import_addresses_adds_once_and_keeps_existing_addresses(tmp_path, monke
     assert new_links[0].role == "zamieszkania"
     assert "addresses" in audits[0].changed_fields
     assert len(links) == (2 if existing_contact else 1)
+
+
+@pytest.mark.parametrize("alternate", ["Jan Żółć", "Żółć Jan", "Żółć"])
+def test_alternate_names_match_full_names_but_never_surnames(alternate):
+    row = contact(alternate_names=[ContactAlternateName(name=alternate)])
+    index = _ContactIndex([row])
+    assert index.match([], "jan zolc") == (row, None)
+    assert index.match([], "zolc") == (None, None)
+    assert index.match([], _name_key(row)) == (row, None)
+
+
+@pytest.mark.parametrize("first_name,alternate", [(None, "Żółć"), ("", "Żółć"), ("123", "Żółć"),
+                                                      ("Jan", "123"), ("Jan", "Żółć 123")])
+def test_alternate_names_require_first_and_last_name(first_name, alternate):
+    row = Contact(first_name=first_name, alternate_names=[ContactAlternateName(name=alternate)])
+    assert _ContactIndex([row]).names == {}
+
+
+def test_alternate_name_collisions_are_preserved_and_reindexing_is_idempotent():
+    a = contact(alternate_names=[ContactAlternateName(name="Jan Żółć"), ContactAlternateName(name="Żółć")])
+    b = contact(2, alternate_names=[ContactAlternateName(name="Żółć")])
+    index = _ContactIndex([a])
+    index.add(a, include_name=True)
+    assert index.match([], "jan zolc") == (a, None)
+    index.add(b, include_name=True)
+    result, conflict = index.match([], "jan zolc")
+    assert result is None and conflict
+
+
+def test_alternate_names_are_not_indexed_without_include_name():
+    row = contact(alternate_names=[ContactAlternateName(name="Żółć")])
+    index = _ContactIndex([])
+    index.add(row)
+    assert index.names == {}
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_import_matches_alternate_names_including_dry_run(tmp_path, monkeypatch, capsys, apply):
+    row = contact(alternate_names=[ContactAlternateName(name="Żółć")])
+    path = tmp_path / "alternate.csv"
+    path.write_text("First Name,Last Name\nJan,Żółć\n", encoding="utf-8")
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.first.return_value = SimpleNamespace(id=1)
+    session.scalars.side_effect = [[row], []]
+    monkeypatch.setattr("library.db.engine.get_session", lambda: session)
+    monkeypatch.setattr("sys.argv", ["import", "--csv", str(path), *(["--apply"] if apply else [])])
+    main()
+    assert "dopasowanych do istniejących kontaktów: 1, nowych: 0" in capsys.readouterr().out

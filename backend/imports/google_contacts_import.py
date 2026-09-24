@@ -143,6 +143,21 @@ class _ContactIndex:
         name = _name_key(contact) if include_name else None
         if name:
             self.names.setdefault(name, {})[id(contact)] = contact
+        if include_name:
+            from imports.whatsapp_neighbor_profiles import normalize_name
+
+            for alternate in getattr(contact, "alternate_names", ()):
+                raw = alternate.name.strip()
+                if len(raw.split()) > 1:
+                    tokens = normalize_name(raw)
+                elif normalize_name(contact.first_name or "") and normalize_name(raw):
+                    tokens = normalize_name(f"{contact.first_name} {raw}")
+                else:
+                    continue
+                # Never introduce a surname-only (or punctuation-only) key.
+                if len(tokens) >= 2:
+                    key = " ".join(sorted(tokens))
+                    self.names.setdefault(key, {})[id(contact)] = contact
 
     def match(self, phones: list[dict], name: str | None):
         from library.contact_phones import phone_identity_key
@@ -219,6 +234,7 @@ def main():
     suffix_group_name = args.suffix_group
 
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     from imports.whatsapp_neighbor_profiles import normalize_name
     from library.contact_change_log import record_contact_change
@@ -237,11 +253,11 @@ def main():
         session.close()
         return
 
-    contacts = list(session.scalars(select(Contact)))
+    contacts = list(session.scalars(select(Contact).options(selectinload(Contact.alternate_names))))
     if not args.apply:
         # Plan on detached snapshots, including birthday changes from earlier rows.
         fields = ("id", "first_name", "last_name", "phone_number", "phone_numbers",
-                  "birthday", "birthday_month", "birthday_day", "groups")
+                  "birthday", "birthday_month", "birthday_day", "groups", "alternate_names")
         contacts = [SimpleNamespace(**{field: getattr(c, field) for field in fields}) for c in contacts]
     contact_index = _ContactIndex(contacts)
 

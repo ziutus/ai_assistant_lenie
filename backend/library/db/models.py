@@ -3194,6 +3194,9 @@ class Contact(Base):
     interests: Mapped[list["ContactInterest"]] = relationship(
         secondary="contact_interest_memberships", back_populates="contacts",
     )
+    alternate_names: Mapped[list["ContactAlternateName"]] = relationship(
+        foreign_keys="ContactAlternateName.contact_id", back_populates="contact", cascade="all, delete-orphan",
+    )
     events: Mapped[list["ContactGroupEvent"]] = relationship(
         secondary="contact_event_participants", back_populates="participants", passive_deletes=True,
     )
@@ -3597,6 +3600,30 @@ class ContactChangeLog(Base):
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which
 # auto-creates unknown names via DiscoverySource.ensure().
+
+
+class ContactAlternateName(Base):
+    """Alternate or former names in the private contact book."""
+
+    __tablename__ = "contact_alternate_names"
+    __table_args__ = (
+        CheckConstraint("name_kind IN ('maiden_name', 'former_name', 'other')",
+                        name="ck_contact_alternate_names_kind"),
+        Index("idx_contact_alternate_names_contact", "contact_id"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_name: Mapped[str] = mapped_column(Text, nullable=False)
+    name_kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default="former_name")
+    start_date: Mapped[datetime.date | None] = mapped_column(Date)
+    end_date: Mapped[datetime.date | None] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id], back_populates="alternate_names")
+
+    def __repr__(self) -> str:
+        return f"ContactAlternateName(id={self.id!r}, contact_id={self.contact_id!r}, name={self.name!r})"
 
 
 class ContactEducation(Base):
