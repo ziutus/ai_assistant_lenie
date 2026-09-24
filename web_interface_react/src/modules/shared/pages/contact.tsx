@@ -415,14 +415,19 @@ const ceidgUrlForNip = (nip: string) =>
 // read.tsx's renderInline bareUrl case — kept separate here since that
 // function also does markdown/wikilink/footnote parsing this plain text
 // doesn't need.
+//
+// Also links a scheme-less host after "www:" (CEIDG-imported organization
+// notes read "www: kraton.pl") — https:// is prepended for the href.
 const linkifyPlainText = (text: string): React.ReactNode[] =>
-  text.split(/(https?:\/\/[^\s)]+)/g).map((part, i) => {
-    const match = part.match(/^(https?:\/\/[^\s)]+?)([.,;:!?]*)$/);
-    if (!match) return <React.Fragment key={i}>{part}</React.Fragment>;
+  text.split(/(https?:\/\/[^\s)]+|(?<=www:\s*)[^\s,;)]+)/gi).map((part, i) => {
+    const match = part.match(/^([^\s)]+?)([.,;:!?]*)$/);
+    const isUrl = match && (/^https?:\/\//i.test(part) || (i % 2 === 1));
+    if (!match || !isUrl) return <React.Fragment key={i}>{part}</React.Fragment>;
     const [, url, trailing] = match;
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
     return (
       <React.Fragment key={i}>
-        <a href={url} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{url}</a>
+        <a href={href} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{url}</a>
         {trailing}
       </React.Fragment>
     );
@@ -1117,6 +1122,20 @@ const Contact = () => {
       console.error("Error updating organization", error);
       setIsError(true);
       setMessage(`Nie udało się zaktualizować organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const refreshOrganizationFromCeidg = async (nip: string) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/contacts/${id}/organizations/ceidg_lookup`, { nip }, { headers });
+      setMessage("Odświeżono dane organizacji z CEIDG.");
+      loadContact();
+    } catch (error: any) {
+      console.error("Error refreshing organization from CEIDG", error);
+      setIsError(true);
+      setMessage(`Nie udało się odświeżyć z CEIDG: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -1890,6 +1909,16 @@ const Contact = () => {
                       >
                         Sprawdź w CEIDG ↗
                       </a>
+                    )}
+                    {org.nip && org.org_type === "jdg" && (
+                      <button
+                        type="button"
+                        onClick={() => refreshOrganizationFromCeidg(org.nip as string)}
+                        title="Pobierz aktualne dane z oficjalnego API CEIDG i zapisz"
+                        style={{ border: "none", background: "none", color: "#2b6cb0", cursor: "pointer", padding: 0 }}
+                      >
+                        ↻ Odśwież z CEIDG
+                      </button>
                     )}
                     {mode === "edit" && org.status === "candidate" && (
                       <>
