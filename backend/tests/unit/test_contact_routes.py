@@ -1592,7 +1592,7 @@ class TestContactLookupResultsDelete:
 def _make_organization(id_=1, contact_id=1, org_type="jdg", organization_name="Vente", status="confirmed", **extra):
     defaults = dict(
         contact_id=contact_id, org_type=org_type, organization_name=organization_name,
-        role=None, nip=None, regon=None, address=None, correspondence_address=None, website=None,
+        registry=None, role=None, nip=None, regon=None, address=None, correspondence_address=None, website=None,
         is_primary=False, is_current=True, start_date=None, end_date=None,
         suspended_at=None, verified_at=None,
         status=status, source_url=None, notes=None,
@@ -1697,8 +1697,103 @@ class TestContactOrganizationsAdd:
         assert response[1] == 400
         session.add.assert_not_called()
 
+    @pytest.mark.parametrize("payload, expected", [
+        ({"org_type": "jdg"}, "ceidg"),  # a JDG is by definition a CEIDG entry
+        ({"org_type": "jdg", "registry": "krs"}, "krs"),  # explicit value wins over the default
+        ({"org_type": "employment"}, None),  # relation to the person says nothing about the register
+        ({"org_type": "employment", "registry": "krs"}, "krs"),
+        ({"org_type": "employment", "registry": "  KRS "}, "krs"),  # trimmed and lower-cased
+        ({"org_type": "employment", "registry": ""}, None),
+    ])
+    def test_registry_resolution(self, monkeypatch, payload, expected):
+        from library.contact_routes import contact_organizations_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/organizations", method="POST", json={"organization_name": "Acme", **payload},
+        ):
+            response = contact_organizations_add(1)
+
+        assert response[1] == 200
+        assert session.add.call_args[0][0].registry == expected
+
+    def test_invalid_registry_is_400(self, monkeypatch):
+        from library.contact_routes import contact_organizations_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/organizations", method="POST",
+            json={"org_type": "employment", "organization_name": "Acme", "registry": "regon"},
+        ):
+            response = contact_organizations_add(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
 
 class TestContactOrganizationsUpdate:
+    def test_sets_registry(self, monkeypatch):
+        from library.contact_routes import contact_organizations_update
+
+        row = _make_organization(id_=6, org_type="employment")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_organizations/6", method="PATCH", json={"registry": "krs"}):
+            response = contact_organizations_update(6)
+
+        assert response[1] == 200
+        assert row.registry == "krs"
+
+    def test_empty_registry_clears_to_unknown(self, monkeypatch):
+        from library.contact_routes import contact_organizations_update
+
+        row = _make_organization(id_=6, org_type="employment", registry="krs")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_organizations/6", method="PATCH", json={"registry": ""}):
+            response = contact_organizations_update(6)
+
+        assert response[1] == 200
+        assert row.registry is None
+
+    def test_registry_untouched_when_not_in_payload(self, monkeypatch):
+        from library.contact_routes import contact_organizations_update
+
+        row = _make_organization(id_=6, org_type="employment", registry="krs")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_organizations/6", method="PATCH", json={"status": "confirmed"}):
+            response = contact_organizations_update(6)
+
+        assert response[1] == 200
+        assert row.registry == "krs"
+
+    def test_invalid_registry_is_400_and_leaves_row_alone(self, monkeypatch):
+        from library.contact_routes import contact_organizations_update
+
+        row = _make_organization(id_=6, org_type="employment", registry="krs")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_organizations/6", method="PATCH", json={"registry": "regon"}):
+            response = contact_organizations_update(6)
+
+        assert response[1] == 400
+        assert row.registry == "krs"
+
     def test_promotes_candidate_to_confirmed(self, monkeypatch):
         from library.contact_routes import contact_organizations_update
 
@@ -1927,6 +2022,7 @@ class TestContactOrganizationsCeidgLookup:
         assert added.org_type == "jdg"
         assert added.organization_name == "KRATON"
         assert added.nip == "726 175 68 29"
+        assert added.registry == "ceidg"
 
     def test_falls_back_to_existing_jdg_nip(self, monkeypatch):
         from library.contact_routes import contact_organizations_ceidg_lookup

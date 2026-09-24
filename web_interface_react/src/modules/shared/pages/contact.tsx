@@ -63,6 +63,9 @@ interface WhatsappProfile {
 
 type OrgType = "employment" | "jdg" | "board" | "ownership" | "other";
 type OrgStatus = "candidate" | "confirmed" | "rejected";
+// Which official register the entity is in. Independent of OrgType, which is the
+// person's relation to it ("employment" can be a JDG or a company). null = unknown.
+type OrgRegistry = "ceidg" | "krs" | "other";
 
 type LookupType = "phone" | "linkedin" | "web" | "email";
 type LookupStatus = "no_results" | "candidate" | "confirmed" | "rejected";
@@ -133,6 +136,7 @@ const emptyAddressForm = {
 interface ContactOrganization {
   id: number;
   org_type: OrgType;
+  registry: OrgRegistry | null;
   organization_name: string;
   role: string | null;
   nip: string | null;
@@ -150,6 +154,12 @@ interface ContactOrganization {
   source_url: string | null;
   notes: string | null;
 }
+
+const ORG_REGISTRY_LABELS: Record<OrgRegistry, string> = {
+  ceidg: "CEIDG (jednoosobowa działalność)",
+  krs: "KRS (spółka, fundacja, stowarzyszenie)",
+  other: "Inny rejestr / brak",
+};
 
 const ORG_TYPE_LABELS: Record<OrgType, string> = {
   employment: "Etat",
@@ -288,6 +298,7 @@ const changeFieldLabel = (field: string) => CHANGE_FIELD_LABELS[field] ?? field;
 
 const emptyOrgForm = {
   org_type: "jdg" as OrgType,
+  registry: "" as OrgRegistry | "",
   organization_name: "",
   role: "",
   nip: "",
@@ -412,12 +423,22 @@ const ceidgUrlForNip = (nip: string) =>
   `https://aplikacja.ceidg.gov.pl/ceidg/ceidg.public.ui/searchdetails.aspx?Nip=${encodeURIComponent(nip.replace(/[^0-9]/g, ""))}`;
 
 // KRS (Krajowy Rejestr Sądowy) — the official register for companies
-// (sp. z o.o., sp.k., S.A. ...), which CEIDG does not cover. The public search
-// has no NIP deep link, so this opens the search page. A JDG owner's own
-// organization row never gets this link (org_type "jdg" is CEIDG by definition);
-// other types (e.g. "employment") describe the person's relation, not the
-// employer's legal form, so both registers are offered.
+// (sp. z o.o., sp.k., S.A.), foundations and associations, which CEIDG does not
+// cover. The public search has no NIP deep link, so this opens the search page.
 const KRS_SEARCH_URL = "https://wyszukiwarka-krs.ms.gov.pl/";
+
+// Which registers to offer for an organization row. org_type is the person's
+// relation to the entity (an "employment" employer can be a JDG or a company), so
+// it cannot decide this — the explicit `registry` column does. Rows that predate
+// it: a "jdg" row is CEIDG by definition; anything else is unknown, so both
+// registers are offered rather than guessing.
+const registryLinksFor = (org: { registry: OrgRegistry | null; org_type: OrgType }) => {
+  const registry = org.registry ?? (org.org_type === "jdg" ? "ceidg" : null);
+  return {
+    ceidg: registry === null || registry === "ceidg",
+    krs: registry === null || registry === "krs",
+  };
+};
 
 // Free-text fields (contact/organization notes) sometimes carry a raw URL
 // typed by hand (e.g. "Facebook: https://..."). Render it as a clickable
@@ -876,6 +897,7 @@ const Contact = () => {
     try {
       await axios.post(`${apiUrl}/contacts/${id}/organizations`, {
         org_type: orgForm.org_type,
+        registry: orgForm.registry || undefined,
         organization_name: orgForm.organization_name.trim(),
         role: orgForm.role.trim() || undefined,
         nip: orgForm.nip.trim() || undefined,
@@ -1133,6 +1155,20 @@ const Contact = () => {
       console.error("Error updating organization", error);
       setIsError(true);
       setMessage(`Nie udało się zaktualizować organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const updateOrganizationRegistry = async (organizationId: number, registry: OrgRegistry | "") => {
+    setIsError(false);
+    setMessage("");
+    try {
+      // An empty string clears the registry back to "unknown" (backend stores NULL).
+      await axios.patch(`${apiUrl}/contact_organizations/${organizationId}`, { registry }, { headers });
+      loadContact();
+    } catch (error: any) {
+      console.error("Error updating organization registry", error);
+      setIsError(true);
+      setMessage(`Nie udało się zmienić rejestru organizacji: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -1921,7 +1957,7 @@ const Contact = () => {
                   )}
                   {org.notes && <div style={{ fontSize: "0.85em", color: "#667" }}>{linkifyPlainText(org.notes)}</div>}
                   <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center" }}>
-                    {org.nip && (
+                    {org.nip && registryLinksFor(org).ceidg && (
                       <a
                         href={ceidgUrlForNip(org.nip)}
                         target="_blank"
@@ -1932,16 +1968,29 @@ const Contact = () => {
                         Sprawdź w CEIDG ↗
                       </a>
                     )}
-                    {org.nip && org.org_type !== "jdg" && (
+                    {org.nip && registryLinksFor(org).krs && (
                       <a
                         href={KRS_SEARCH_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Spółki (sp. z o.o., sp.k., S.A.) są w KRS, nie w CEIDG — wyszukaj po NIP-ie"
+                        title="Spółki (sp. z o.o., sp.k., S.A.), fundacje i stowarzyszenia są w KRS — wyszukaj po NIP-ie"
                         style={{ color: "#2b6cb0" }}
                       >
                         Sprawdź w KRS ↗
                       </a>
+                    )}
+                    {mode === "edit" && (
+                      <select
+                        value={org.registry ?? ""}
+                        onChange={(e) => updateOrganizationRegistry(org.id, e.target.value as OrgRegistry | "")}
+                        title="W jakim rejestrze jest ten podmiot — od tego zależą linki do sprawdzenia"
+                        style={{ padding: "2px 4px", fontSize: "0.85em" }}
+                      >
+                        <option value="">Rejestr: nieznany</option>
+                        {(Object.keys(ORG_REGISTRY_LABELS) as OrgRegistry[]).map((r) => (
+                          <option key={r} value={r}>{ORG_REGISTRY_LABELS[r]}</option>
+                        ))}
+                      </select>
                     )}
                     {org.nip && org.org_type === "jdg" && (
                       <button
@@ -2001,6 +2050,17 @@ const Contact = () => {
                 >
                   {(Object.keys(ORG_TYPE_LABELS) as OrgType[]).map((t) => (
                     <option key={t} value={t}>{ORG_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+                <select
+                  value={orgForm.registry}
+                  onChange={(e) => setOrgForm({ ...orgForm, registry: e.target.value as OrgRegistry | "" })}
+                  title="W jakim rejestrze jest ten podmiot (dla JDG domyślnie CEIDG)"
+                  style={{ padding: "4px 8px" }}
+                >
+                  <option value="">Rejestr: nieznany</option>
+                  {(Object.keys(ORG_REGISTRY_LABELS) as OrgRegistry[]).map((r) => (
+                    <option key={r} value={r}>{ORG_REGISTRY_LABELS[r]}</option>
                   ))}
                 </select>
                 <input

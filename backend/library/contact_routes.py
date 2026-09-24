@@ -149,6 +149,19 @@ _LOOKUP_STATUSES = ("no_results", "candidate", "confirmed", "rejected")
 
 _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
+_ORG_REGISTRIES = ("ceidg", "krs", "other")
+
+
+def _parse_org_registry(data: dict) -> tuple[str | None, str | None]:
+    """Validate the optional `registry` field. Returns (value, error message).
+
+    An empty/blank value means "not known" (NULL); anything else must be one of
+    _ORG_REGISTRIES.
+    """
+    value = (data.get("registry") or "").strip().lower() or None
+    if value is not None and value not in _ORG_REGISTRIES:
+        return None, f"registry must be one of {_ORG_REGISTRIES} or empty"
+    return value, None
 _ORG_FIELDS = (
     "organization_name", "role", "nip", "regon", "address", "correspondence_address", "website", "source_url", "notes",
 )
@@ -450,6 +463,7 @@ def _organization_dict(row: ContactOrganization) -> dict:
         "id": row.id,
         "contact_id": row.contact_id,
         "org_type": row.org_type,
+        "registry": row.registry,
         "organization_name": row.organization_name,
         "role": row.role,
         "nip": row.nip,
@@ -2105,9 +2119,16 @@ def contact_organizations_add(contact_id: int):
     if status not in _ORG_STATUSES:
         return {"status": "error", "message": f"status must be one of {_ORG_STATUSES}"}, 400
 
+    registry, registry_error = _parse_org_registry(data)
+    if registry_error:
+        return {"status": "error", "message": registry_error}, 400
+    if registry is None and org_type == "jdg":
+        registry = "ceidg"  # a JDG is by definition a CEIDG entry
+
     row = ContactOrganization(
         contact_id=contact_id,
         org_type=org_type,
+        registry=registry,
         organization_name=organization_name,
         status=status,
         is_primary=bool(data.get("is_primary", False)),
@@ -2158,6 +2179,11 @@ def contact_organizations_update(organization_id: int):
         if status not in _ORG_STATUSES:
             return {"status": "error", "message": f"status must be one of {_ORG_STATUSES}"}, 400
         row.status = status
+    if "registry" in data:
+        registry, registry_error = _parse_org_registry(data)
+        if registry_error:
+            return {"status": "error", "message": registry_error}, 400
+        row.registry = registry
     for field in _ORG_FIELDS:
         if field == "organization_name":
             continue
@@ -2251,6 +2277,7 @@ def contact_organizations_ceidg_lookup(contact_id: int):
     fields["nip"] = nip
     fields["source_url"] = f"https://dane.biznes.gov.pl/api/ceidg/v3/firma?nip={normalize_nip(nip)}"
     fields["verified_at"] = datetime.datetime.now()
+    fields["registry"] = "ceidg"  # a CEIDG hit is by definition a CEIDG entry
     fields.setdefault("organization_name", target_row.organization_name if target_row else nip)
 
     # CEIDG doesn't always return telefon (e.g. when the owner opted out of
