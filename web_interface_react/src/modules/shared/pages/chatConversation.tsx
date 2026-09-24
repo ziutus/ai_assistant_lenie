@@ -45,6 +45,61 @@ const formatSize = (bytes: number | null) => {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
 
+interface TopicOption {
+  id: number;
+  name: string;
+}
+
+const AddToTopicButton = ({ messageId, topics, apiUrl, headers }: {
+  messageId: number; topics: TopicOption[]; apiUrl: string; headers: Record<string, string>;
+}) => {
+  const [open, setOpen] = React.useState(false);
+  const [topicId, setTopicId] = React.useState("");
+  const [status, setStatus] = React.useState<"idle" | "saving" | "done" | "error">("idle");
+
+  if (!topics.length) return null;
+
+  if (status === "done") {
+    const topicName = topics.find((t) => String(t.id) === topicId)?.name;
+    return <span style={{ fontSize: "0.85em", color: "#2a7" }}>✓ Dodano do „{topicName}”</span>;
+  }
+
+  if (!open) {
+    return (
+      <button type="button" className="button" style={{ fontSize: "0.8em", padding: "2px 8px" }}
+        onClick={() => setOpen(true)}>
+        📌 Dodaj do tematu
+      </button>
+    );
+  }
+
+  const add = async () => {
+    if (!topicId) return;
+    setStatus("saving");
+    try {
+      await axios.post(`${apiUrl}/topics/${topicId}/items`,
+        { entity_type: "chat_message", entity_id: messageId }, { headers });
+      setStatus("done");
+    } catch (error: any) {
+      console.error("Error adding chat message to topic", error);
+      setStatus("error");
+    }
+  };
+
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: "0.85em" }}>
+      <select value={topicId} onChange={(e) => setTopicId(e.target.value)} disabled={status === "saving"}>
+        <option value="">Wybierz temat...</option>
+        {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+      <button type="button" className="button" disabled={!topicId || status === "saving"} onClick={add}>
+        Dodaj
+      </button>
+      {status === "error" && <span style={{ color: "#c00" }}>Nie udało się dodać</span>}
+    </span>
+  );
+};
+
 const MessageMedia = ({ m }: { m: ChatMessageItem }) => {
   if (!m.media_original_filename) return null;
   const sizeLabel = formatSize(m.media_size_bytes);
@@ -96,8 +151,16 @@ const ChatConversation = () => {
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
   const [contactLabel, setContactLabel] = React.useState<string | null>(null);
+  const [topics, setTopics] = React.useState<TopicOption[]>([]);
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
+
+  React.useEffect(() => {
+    axios.get(`${apiUrl}/topics`, { params: { limit: 100 }, headers: { "x-api-key": `${apiKey}` } })
+      .then((response) => setTopics(response.data.topics ?? []))
+      .catch((error) => console.error("Error fetching topics", error));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchMessages = async (pageArg: number, messageTypeArg = messageType, dateFromArg = dateFrom) => {
     setIsLoading(true);
@@ -241,6 +304,9 @@ const ChatConversation = () => {
                 <MessageMedia m={m} />
               </>
             )}
+            <div style={{ marginTop: 6 }}>
+              <AddToTopicButton messageId={m.id} topics={topics} apiUrl={apiUrl} headers={headers} />
+            </div>
           </div>
         ))}
       </div>

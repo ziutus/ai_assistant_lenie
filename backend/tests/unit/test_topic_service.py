@@ -139,7 +139,32 @@ def test_detail_grouping_and_deleted_target():
     assert groups["chat_conversation"][0]["entity"]["display_name"] == "Group"
     assert groups["chat_message"][0]["entity"] == {
         "id": 7, "content": "x" * 200, "sent_at": now.isoformat(), "conversation_id": 3,
+        "message_type": None, "sender_name_raw": None,
+        "media_original_filename": None, "media_mime_type": None, "media_url": None,
     }
+
+
+def test_chat_message_display_includes_presigned_media_url(monkeypatch):
+    session = MagicMock()
+    topic = Topic(id=1, name="Test")
+    session.get.return_value = topic
+    message = ChatMessage(id=9, content=None, sent_at=None, conversation_id=3, message_type="image",
+                           sender_name_raw="Jan Kowalski", media_storage_key="chat_media/x/y.jpg",
+                           media_original_filename="y.jpg", media_mime_type="image/jpeg")
+    items = [TopicItem(id=1, topic_id=1, entity_type="chat_message", entity_id=9)]
+    session.scalars.side_effect = [MagicMock(all=lambda: items), MagicMock(all=lambda: [message])]
+
+    fake_storage = MagicMock()
+    fake_storage.presigned_get_url.return_value = "https://minio.example/presigned"
+    monkeypatch.setattr("library.config_loader.load_config", lambda: {})
+    monkeypatch.setattr("library.storage.storage_from_config", lambda cfg: fake_storage)
+
+    detail = svc.get_topic_detail(session, 1)
+    entity = detail["items"]["chat_message"][0]["entity"]
+    assert entity["media_url"] == "https://minio.example/presigned"
+    assert entity["media_original_filename"] == "y.jpg"
+    assert entity["message_type"] == "image"
+    fake_storage.presigned_get_url.assert_called_once_with("chat_media/x/y.jpg")
 
 
 def test_contact_display_fallback():
