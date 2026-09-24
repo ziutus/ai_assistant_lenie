@@ -139,6 +139,7 @@ interface ContactOrganization {
   regon: string | null;
   address: string | null;
   correspondence_address: string | null;
+  website: string | null;
   is_primary: boolean;
   is_current: boolean;
   start_date: string | null;
@@ -293,6 +294,7 @@ const emptyOrgForm = {
   regon: "",
   address: "",
   correspondence_address: "",
+  website: "",
   is_primary: false,
   is_current: true,
   status: "candidate" as OrgStatus,
@@ -872,6 +874,7 @@ const Contact = () => {
         regon: orgForm.regon.trim() || undefined,
         address: orgForm.address.trim() || undefined,
         correspondence_address: orgForm.correspondence_address.trim() || undefined,
+        website: orgForm.website.trim() || undefined,
         is_primary: orgForm.is_primary,
         is_current: orgForm.is_current,
         status: orgForm.status,
@@ -1891,6 +1894,17 @@ const Contact = () => {
                       )}
                     </div>
                   )}
+                  {org.website && (
+                    <div style={{ fontSize: "0.85em", color: "#667" }}>
+                      Strona WWW:{" "}
+                      <a
+                        href={/^https?:\/\//i.test(org.website) ? org.website : `https://${org.website}`}
+                        target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}
+                      >
+                        {org.website}
+                      </a>
+                    </div>
+                  )}
                   {(org.verified_at || org.suspended_at) && (
                     <div style={{ fontSize: "0.85em", color: "#667" }}>
                       {org.verified_at && <span>Zweryfikowano w rejestrze: {org.verified_at} </span>}
@@ -2001,6 +2015,11 @@ const Contact = () => {
                   type="text" placeholder="Adres do doręczeń" value={orgForm.correspondence_address}
                   onChange={(e) => setOrgForm({ ...orgForm, correspondence_address: e.target.value })}
                   style={{ padding: "4px 8px", minWidth: 220 }}
+                />
+                <input
+                  type="text" placeholder="Strona WWW" value={orgForm.website}
+                  onChange={(e) => setOrgForm({ ...orgForm, website: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 160 }}
                 />
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>

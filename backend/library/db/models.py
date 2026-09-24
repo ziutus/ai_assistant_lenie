@@ -3425,6 +3425,7 @@ class ContactOrganization(Base):
     regon: Mapped[str | None] = mapped_column(String(20))
     address: Mapped[str | None] = mapped_column(Text)
     correspondence_address: Mapped[str | None] = mapped_column(Text)
+    website: Mapped[str | None] = mapped_column(Text)
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
     start_date: Mapped[datetime.date | None] = mapped_column(Date)
