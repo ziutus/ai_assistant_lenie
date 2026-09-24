@@ -13,6 +13,7 @@ Ten katalog grupuje dokumenty planistyczne według **etapu/środowiska wdrożeni
   - [`storage-and-jobs-migration-plan.md`](nas/storage-and-jobs-migration-plan.md) — centralizacja storage (MinIO/S3-compatible) i jobów.
   - [`dynamodb-sync-to-nas-implementation-plan.md`](nas/dynamodb-sync-to-nas-implementation-plan.md) — wykonawczy plan przejścia z tymczasowego bufora AWS na bezpośredni ingest przez VPN/NAS, zakończony usunięciem `dynamodb_sync.py`.
   - [`multi-user-household.md`](nas/multi-user-household.md) — kilku zaufanych użytkowników, bez planowania wydajności pod skalę.
+  - [`nas-incident-runbook.md`](nas/nas-incident-runbook.md) — co sprawdzić po awarii/restarcie NAS-a i przed deployem (kernel oops, RAID, ścieżki danych, Vault); preflight i blokada w `nas-deploy.sh`.
 
 ## Co jest eksperymentem myślowym (nauka w wolnym czasie, niski priorytet)
 

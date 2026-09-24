@@ -101,9 +101,13 @@ QNAP uses several ports by default. Known conflicts:
 
 Container Station now lives on Pool2. Its Docker root is
 `/share/CACHEDEV2_DATA/Container/container-station-data/lib/docker`.
-`/share/Container` and the compatibility link `/share/ContainerNew` both
-resolve to `/share/CACHEDEV2_DATA/Container`. Keep the compatibility paths
-in compose bind mounts; they now point to the restored configuration on Pool2.
+`/share/Container` (a QTS-managed share, recreated by the system at every boot)
+resolves to `/share/CACHEDEV2_DATA/Container`. Compose bind mounts, the deploy
+scripts and the NAS crontab must use `/share/Container/...` — **not** the former
+hand-made `/share/ContainerNew` link. That link is not recreated after a reboot,
+and when it is missing Docker silently creates an empty directory in its place
+(Vault then fails with "A storage backend must be specified"). See the
+[NAS incident runbook](../deployment/nas/nas-incident-runbook.md).
 
 There are three image copies with different recovery roles:
 
@@ -336,14 +340,14 @@ The script performs these steps for each service:
 
 ### Compose File
 
-The compose file lives at `/share/ContainerNew/lenie-compose/compose.nas.yaml` on the NAS. Source of truth is `infra/docker/compose.nas.yaml` in the repo.
+The compose file lives at `/share/Container/lenie-compose/compose.nas.yaml` on the NAS. Source of truth is `infra/docker/compose.nas.yaml` in the repo.
 
 To sync it to NAS:
 
 ```powershell
 .\infra\docker\nas-deploy.ps1 -SyncCompose
 # or manually:
-scp infra/docker/compose.nas.yaml admin@192.168.200.7:/share/ContainerNew/lenie-compose/compose.nas.yaml
+scp infra/docker/compose.nas.yaml admin@192.168.200.7:/share/Container/lenie-compose/compose.nas.yaml
 ```
 
 ### Docker Compose Commands on NAS
@@ -353,23 +357,23 @@ ssh admin@192.168.200.7
 DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 
 # Status
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
 
 # Restart all
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml restart
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml restart
 
 # Restart single service
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml restart lenie-ai-server
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml restart lenie-ai-server
 
 # View logs
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
 
 # Stop everything
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml down
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml down
 
 # Pull latest images and recreate
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml pull
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml pull
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
 ```
 
 ### Migration from Old Workflow
@@ -431,8 +435,8 @@ docker push 192.168.200.7:5005/lenie-ai-frontend:latest
 ```bash
 ssh admin@192.168.200.7
 DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml pull
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml pull
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
 ```
 
 ## Database Setup
@@ -470,7 +474,7 @@ ORM instead of `psql` — for the exact env-var pattern see
 
 ## Backend Configuration
 
-The backend reads environment variables from `/share/ContainerNew/lenie-env/.env` on the NAS. Create this file from `infra/docker/nas.env.example` template and fill in your secrets:
+The backend reads environment variables from `/share/Container/lenie-env/.env` on the NAS. Create this file from `infra/docker/nas.env.example` template and fill in your secrets:
 
 Key differences from local `.env`:
 
@@ -484,7 +488,7 @@ To update the env file on the NAS:
 
 ```bash
 # First time: cp infra/docker/nas.env.example infra/docker/nas.env && edit nas.env with real secrets
-scp infra/docker/nas.env admin@192.168.200.7:/share/ContainerNew/lenie-env/.env
+scp infra/docker/nas.env admin@192.168.200.7:/share/Container/lenie-env/.env
 # Then restart the backend container
 ```
 
@@ -536,7 +540,7 @@ disable_mlock = true
 api_addr = "http://0.0.0.0:8200"
 ```
 
-AWS credentials for KMS are provided via env file at `/share/ContainerNew/lenie-env/vault.env` (see `infra/docker/vault.env.example` for template). The KMS key and IAM user are managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on the personal AWS account (profile `ziutus-Administrator`).
+AWS credentials for KMS are provided via env file at `/share/Container/lenie-env/vault.env` (see `infra/docker/vault.env.example` for template). The KMS key and IAM user are managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on the personal AWS account (profile `ziutus-Administrator`).
 
 Persistent data directories on NAS:
 - `/share/vault/config` — configuration
@@ -625,7 +629,7 @@ ssh admin@192.168.200.7
 DOCKER=/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker
 
 # Via compose
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
 
 # All lenie containers (including registry)
 $DOCKER ps --filter name=lenie
@@ -634,11 +638,11 @@ $DOCKER ps --filter name=lenie
 ### View logs
 
 ```bash
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-worker
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-document-worker
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-db
-$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-minio
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-worker
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-document-worker
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-db
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-minio
 $DOCKER logs --tail 50 lenie-vault
 $DOCKER logs --tail 50 lenie-registry
 ```

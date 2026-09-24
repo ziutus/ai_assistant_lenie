@@ -29,7 +29,11 @@ set -uo pipefail
 NAS_HOST="${NAS_HOST:-192.168.200.7}"
 NAS_USER="${NAS_USER:-admin}"
 NAS_DOCKER="/share/CACHEDEV2_DATA/.qpkg/container-station/bin/docker"
-NAS_COMPOSE_FILE="/share/ContainerNew/lenie-compose/compose.nas.yaml"
+# /share/Container = udzial QTS (Container Station), tworzony przez system przy
+# kazdym starcie. NIE uzywac recznych dowiazan (/share/ContainerNew zniknelo po
+# restarcie 2026-09-24 - patrz docs/deployment/nas/nas-incident-runbook.md).
+NAS_DATA_ROOT="${NAS_DATA_ROOT:-/share/Container}"
+NAS_COMPOSE_FILE="${NAS_DATA_ROOT}/lenie-compose/compose.nas.yaml"
 HTTP_TIMEOUT=10
 SLOW_HTTP_S=2.0          # powyzej tego czasu odpowiedzi HTTP -> WARN
 
@@ -192,12 +196,17 @@ else
         echo "===DMESG===";     dmesg 2>/dev/null | grep -iE "out of memory|oom-kill|killed process|kernel panic|hung task|blocked for more than|general protection fault|\bOops:|\bBUG: |unable to handle (kernel|page)|Call Trace" | tail -15
         echo "===MDSTAT===";    cat /proc/mdstat 2>/dev/null
         echo "===CNEW===";
-        if [ -L /share/ContainerNew ]; then echo "link -> $(readlink /share/ContainerNew)"; elif [ -d /share/ContainerNew ]; then echo "plain_dir"; else echo "missing"; fi
-        [ -f /share/ContainerNew/lenie-compose/compose.nas.yaml ] && echo compose_ok || echo compose_missing
-        [ -f /share/ContainerNew/vault/config/vault.hcl ] && echo vault_cfg_ok || echo vault_cfg_missing
-        [ -f /share/ContainerNew/lenie-env/.env ] && echo env_ok || echo env_missing
+        if [ -L '"${NAS_DATA_ROOT}"' ]; then echo "link -> $(readlink '"${NAS_DATA_ROOT}"')"; elif [ -d '"${NAS_DATA_ROOT}"' ]; then echo "dir"; else echo "missing"; fi
+        [ -f '"${NAS_DATA_ROOT}"'/lenie-compose/compose.nas.yaml ] && echo compose_ok || echo compose_missing
+        [ -f '"${NAS_DATA_ROOT}"'/vault/config/vault.hcl ] && echo vault_cfg_ok || echo vault_cfg_missing
+        [ -f '"${NAS_DATA_ROOT}"'/lenie-env/.env ] && echo env_ok || echo env_missing
+        echo "===CRON===";
+        grep -h "collect-host-health" /etc/config/crontab 2>/dev/null | while read -r line; do
+            p=$(echo "$line" | grep -oE "/share/[^ ]*collect-host-health\.sh" | head -1)
+            [ -n "$p" ] && { [ -f "$p" ] && echo "ok $p" || echo "broken $p"; }
+        done
         echo "===TOP===";       top -bn1 2>/dev/null | head -18
-        echo "===HOSTHEALTH==="; cat /share/ContainerNew/lenie-host-health/host-health.json 2>/dev/null
+        echo "===HOSTHEALTH==="; cat '"${NAS_DATA_ROOT}"'/lenie-host-health/host-health.json 2>/dev/null
     ' 2>/dev/null)
 
     sect() { awk -v s="===$1===" 'f && /^===[A-Z_]+===$/{exit} $0==s{f=1;next} f' <<<"$OS"; }
@@ -280,15 +289,26 @@ else
         ok "RAID: wszystkie macierze md kompletne ($(grep -cE '^md[0-9]+ :' <<<"$MDSTAT") szt.)"
     fi
 
-    # --- /share/ContainerNew: compose, .env i konfiguracja Vaulta musza istniec ---
-    # Po restarcie NAS brak dowiazania powoduje, ze Docker zaklada PUSTY katalog
-    # zamiast prawdziwych danych -> Vault nie startuje ("A storage backend must
-    # be specified"), a deploy dziala na pustym miejscu.
+    # --- ${NAS_DATA_ROOT}: compose, .env i konfiguracja Vaulta musza istniec ---
+    # Gdy sciezka bind-mount nie istnieje (np. reczne dowiazanie zniknelo po
+    # restarcie), Docker zaklada PUSTY katalog zamiast prawdziwych danych ->
+    # Vault nie startuje ("A storage backend must be specified"), a deploy
+    # dziala na pustym miejscu. Patrz docs/deployment/nas/nas-incident-runbook.md.
     CNEW=$(sect CNEW)
     if grep -q '^missing$' <<<"$CNEW" || grep -q 'compose_missing\|vault_cfg_missing\|env_missing' <<<"$CNEW"; then
-        crit "/share/ContainerNew niekompletny ($(tr '\n' ' ' <<<"$CNEW")) - po restarcie odtworz dowiazanie do CACHEDEV2_DATA/Container"
+        crit "${NAS_DATA_ROOT} niekompletny ($(tr '\n' ' ' <<<"$CNEW")) - dane konfiguracyjne stacku niedostepne (runbook: sekcja \"Brak /share/Container\")"
     else
-        ok "/share/ContainerNew: $(head -1 <<<"$CNEW"), compose + .env + vault.hcl obecne"
+        ok "${NAS_DATA_ROOT}: $(head -1 <<<"$CNEW"), compose + .env + vault.hcl obecne"
+    fi
+
+    # --- crontab NAS: kolektor host-health musi wskazywac istniejacy plik ---
+    CRON=$(sect CRON)
+    if grep -q '^broken ' <<<"$CRON"; then
+        warn "crontab NAS wskazuje nieistniejacy plik kolektora: $(grep '^broken ' <<<"$CRON" | head -1 | cut -d' ' -f2) - admission gate wstrzyma workery (host-health.json nieswiezy)"
+    elif [ -n "$CRON" ]; then
+        ok "crontab: kolektor host-health wskazuje istniejacy plik"
+    else
+        info "crontab: brak wpisu collect-host-health (collector niewdrozony)"
     fi
 
     # --- dmesg: OOM / panic / kernel oops ---

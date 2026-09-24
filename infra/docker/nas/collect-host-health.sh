@@ -10,7 +10,7 @@
 # /proc directly; tolerates a missing smartctl.
 set -eu
 
-OUTPUT_DIR="${HOST_HEALTH_OUTPUT_DIR:-/share/ContainerNew/lenie-host-health}"
+OUTPUT_DIR="${HOST_HEALTH_OUTPUT_DIR:-/share/Container/lenie-host-health}"
 OUTPUT="$OUTPUT_DIR/host-health.json"
 STATE="$OUTPUT_DIR/.cpu-state"
 mkdir -p "$OUTPUT_DIR"
