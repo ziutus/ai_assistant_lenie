@@ -2457,7 +2457,10 @@ const Contact = () => {
 
       {!isNew && (
         <div style={{ marginTop: 24 }}>
-          <h3>Historia zmian</h3>
+          <details>
+          <summary style={{ cursor: "pointer", fontSize: "1.17em", fontWeight: "bold", margin: "1em 0" }}>
+            Historia zmian ({changeLog.length})
+          </summary>
           {changeLog.length === 0 && <p style={{ color: "#667" }}>Brak zapisanej historii.</p>}
           {changeLog.length > 0 && (
             <ul style={{ listStyle: "none", padding: 0 }}>
@@ -2483,6 +2486,7 @@ const Contact = () => {
               ))}
             </ul>
           )}
+          </details>
         </div>
       )}
     </div>
