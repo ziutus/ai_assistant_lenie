@@ -139,6 +139,7 @@ interface ContactOrganization {
   regon: string | null;
   address: string | null;
   correspondence_address: string | null;
+  website: string | null;
   is_primary: boolean;
   is_current: boolean;
   start_date: string | null;
@@ -293,6 +294,7 @@ const emptyOrgForm = {
   regon: "",
   address: "",
   correspondence_address: "",
+  website: "",
   is_primary: false,
   is_current: true,
   status: "candidate" as OrgStatus,
@@ -415,14 +417,19 @@ const ceidgUrlForNip = (nip: string) =>
 // read.tsx's renderInline bareUrl case — kept separate here since that
 // function also does markdown/wikilink/footnote parsing this plain text
 // doesn't need.
+//
+// Also links a scheme-less host after "www:" (CEIDG-imported organization
+// notes read "www: kraton.pl") — https:// is prepended for the href.
 const linkifyPlainText = (text: string): React.ReactNode[] =>
-  text.split(/(https?:\/\/[^\s)]+)/g).map((part, i) => {
-    const match = part.match(/^(https?:\/\/[^\s)]+?)([.,;:!?]*)$/);
-    if (!match) return <React.Fragment key={i}>{part}</React.Fragment>;
+  text.split(/(https?:\/\/[^\s)]+|(?<=www:\s*)[^\s,;)]+)/gi).map((part, i) => {
+    const match = part.match(/^([^\s)]+?)([.,;:!?]*)$/);
+    const isUrl = match && (/^https?:\/\//i.test(part) || (i % 2 === 1));
+    if (!match || !isUrl) return <React.Fragment key={i}>{part}</React.Fragment>;
     const [, url, trailing] = match;
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
     return (
       <React.Fragment key={i}>
-        <a href={url} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{url}</a>
+        <a href={href} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>{url}</a>
         {trailing}
       </React.Fragment>
     );
@@ -867,6 +874,7 @@ const Contact = () => {
         regon: orgForm.regon.trim() || undefined,
         address: orgForm.address.trim() || undefined,
         correspondence_address: orgForm.correspondence_address.trim() || undefined,
+        website: orgForm.website.trim() || undefined,
         is_primary: orgForm.is_primary,
         is_current: orgForm.is_current,
         status: orgForm.status,
@@ -1117,6 +1125,20 @@ const Contact = () => {
       console.error("Error updating organization", error);
       setIsError(true);
       setMessage(`Nie udało się zaktualizować organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const refreshOrganizationFromCeidg = async (nip: string) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/contacts/${id}/organizations/ceidg_lookup`, { nip }, { headers });
+      setMessage("Odświeżono dane organizacji z CEIDG.");
+      loadContact();
+    } catch (error: any) {
+      console.error("Error refreshing organization from CEIDG", error);
+      setIsError(true);
+      setMessage(`Nie udało się odświeżyć z CEIDG: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -1872,6 +1894,17 @@ const Contact = () => {
                       )}
                     </div>
                   )}
+                  {org.website && (
+                    <div style={{ fontSize: "0.85em", color: "#667" }}>
+                      Strona WWW:{" "}
+                      <a
+                        href={/^https?:\/\//i.test(org.website) ? org.website : `https://${org.website}`}
+                        target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}
+                      >
+                        {org.website}
+                      </a>
+                    </div>
+                  )}
                   {(org.verified_at || org.suspended_at) && (
                     <div style={{ fontSize: "0.85em", color: "#667" }}>
                       {org.verified_at && <span>Zweryfikowano w rejestrze: {org.verified_at} </span>}
@@ -1890,6 +1923,16 @@ const Contact = () => {
                       >
                         Sprawdź w CEIDG ↗
                       </a>
+                    )}
+                    {org.nip && org.org_type === "jdg" && (
+                      <button
+                        type="button"
+                        onClick={() => refreshOrganizationFromCeidg(org.nip as string)}
+                        title="Pobierz aktualne dane z oficjalnego API CEIDG i zapisz"
+                        style={{ border: "none", background: "none", color: "#2b6cb0", cursor: "pointer", padding: 0 }}
+                      >
+                        ↻ Odśwież z CEIDG
+                      </button>
                     )}
                     {mode === "edit" && org.status === "candidate" && (
                       <>
@@ -1972,6 +2015,11 @@ const Contact = () => {
                   type="text" placeholder="Adres do doręczeń" value={orgForm.correspondence_address}
                   onChange={(e) => setOrgForm({ ...orgForm, correspondence_address: e.target.value })}
                   style={{ padding: "4px 8px", minWidth: 220 }}
+                />
+                <input
+                  type="text" placeholder="Strona WWW" value={orgForm.website}
+                  onChange={(e) => setOrgForm({ ...orgForm, website: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 160 }}
                 />
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>

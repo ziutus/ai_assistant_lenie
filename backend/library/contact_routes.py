@@ -150,7 +150,7 @@ _LOOKUP_STATUSES = ("no_results", "candidate", "confirmed", "rejected")
 _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
 _ORG_STATUSES = ("candidate", "confirmed", "rejected")
 _ORG_FIELDS = (
-    "organization_name", "role", "nip", "regon", "address", "correspondence_address", "source_url", "notes",
+    "organization_name", "role", "nip", "regon", "address", "correspondence_address", "website", "source_url", "notes",
 )
 _ORG_DATE_FIELDS = ("start_date", "end_date", "suspended_at", "verified_at")
 
@@ -456,6 +456,7 @@ def _organization_dict(row: ContactOrganization) -> dict:
         "regon": row.regon,
         "address": row.address,
         "correspondence_address": row.correspondence_address,
+        "website": row.website,
         "is_primary": row.is_primary,
         "is_current": row.is_current,
         "start_date": row.start_date.isoformat() if row.start_date else None,
