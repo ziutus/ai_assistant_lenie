@@ -156,9 +156,9 @@ def company_to_organization_fields(firma: dict) -> dict:
     email = firma.get("email")
     if email:
         contact_bits.append(f"e-mail: {email}")
-    www = firma.get("www")
+    www = (firma.get("www") or "").strip()
     if www:
-        contact_bits.append(f"www: {www}")
+        fields["website"] = www
     if contact_bits:
         fields["notes"] = ", ".join(contact_bits)
 

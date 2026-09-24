@@ -32,6 +32,7 @@ KRATON_FIRMA = {
     },
     "telefon": "+48 600 827 080",
     "email": "kraton@kraton.pl",
+    "www": "kraton.pl",
 }
 
 
@@ -108,6 +109,8 @@ class TestCompanyToOrganizationFields:
         assert fields["start_date"] == "2004-01-06"
         assert "tel.: +48 600 827 080" in fields["notes"]
         assert "e-mail: kraton@kraton.pl" in fields["notes"]
+        assert "www:" not in fields["notes"]
+        assert fields["website"] == "kraton.pl"
 
     def test_suspended_status_sets_is_current_false(self):
         firma = {**KRATON_FIRMA, "status": "ZAWIESZONY", "dataZawieszenia": "2026-01-01"}
