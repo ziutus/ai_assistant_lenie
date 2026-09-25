@@ -118,6 +118,8 @@ def main():
             storage.put_bytes(storage_key, data, content_type=content_type)
             session.add(ContactPhoto(storage_key=storage_key, user_description_revision=0, ai_descriptions={}))
             session.flush()
+            from library.contact_photos import ensure_photo_link
+            ensure_photo_link(session, contact.id, storage_key)
             contact.photo_storage_key = storage_key
             contact.photo_thumbnail_storage_key = None
             try:

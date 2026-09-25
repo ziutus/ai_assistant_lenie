@@ -8,7 +8,8 @@ beforeEach(() => vi.resetAllMocks());
 afterEach(cleanup);
 
 const setup = () => render(<ContactFamilyForm contactId="493" contactName="Anna" apiUrl="/api" apiKey="test"
-  photo={{ storage_key: "photo.png", user_description: "Mąż i dzieci — bliźnięta.", user_description_revision: 1, ai_descriptions: {} }}
+  photo={{ id: "shared-photo", subject_kind: "people", people_count: 3, classification_revision: 1,
+    storage_key: "photo.png", user_description: "Mąż i dzieci — bliźnięta.", user_description_revision: 1, ai_descriptions: {} }}
   groups={[]} onCreated={vi.fn()} />);
 
 it("creates distinct unnamed children and twins only when the user marks that fact", async () => {

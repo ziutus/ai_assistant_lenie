@@ -512,3 +512,14 @@ Connection configured via environment variables: `POSTGRESQL_HOST`, `POSTGRESQL_
 
 - The `langauge` typo in `document_embeddings` was fixed — column renamed to `language` (migration: `08-fix-language-typo.sql`).
 - The `embedding` column uses dimensionless `vector` type to support multiple embedding models with different dimensions (e.g. OpenAI ada-002: 1536, Titan v2: 1024, BAAI/bge-multilingual-gemma2: 3584). Each model has a dedicated HNSW partial index. When adding a new embedding model, create a new partial index in `04-create-table.sql`.
+
+### Contact photo metadata
+
+`contact_photos` keeps `storage_key` as its primary key and adds a unique,
+non-null UUID `id` (server default `gen_random_uuid()`), `subject_kind`
+(people/no_people/unknown), nullable nonnegative `people_count`, and
+`classification_revision`. Descriptions remain photo properties.
+`contact_photo_links` has composite PK (`contact_id`, `storage_key`), nullable
+`depicts_contact`, `revision`, and `created_at`. Contact deletion cascades to
+links; avatar replacement retains them. Migration `b7e41c9a620d` backfills all
+current contact avatars and photo UUIDs; downgrade removes only these additions.

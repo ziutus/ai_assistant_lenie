@@ -21,6 +21,19 @@ describe("contact photo descriptions", () => {
   beforeEach(() => vi.resetAllMocks());
   afterEach(cleanup);
 
+  it("uses photo identity and preserves the draft while refreshing a conflict", async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(axios.patch).mockRejectedValue({ response: { status: 409, data: { message: "Konflikt" } } });
+    render(<ContactPhotoDescriptions photo={{ ...initial, id: "shared-id" }} onChange={vi.fn()}
+      onConflict={refresh} apiUrl="/api" apiKey="test" contactId="493" />);
+    fireEvent.change(screen.getByLabelText("Twój opis zdjęcia"), { target: { value: "Szkic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz swój opis" }));
+    await screen.findByText("Konflikt");
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Twój opis zdjęcia")).toHaveProperty("value", "Szkic");
+    expect(axios.patch).toHaveBeenCalledWith("/api/contact_photos/shared-id/description", expect.anything(), expect.anything());
+  });
+
   it("keeps both out-of-order model results and an unsaved user draft", async () => {
     const resolve: Record<string, (value: unknown) => void> = {};
     vi.mocked(axios.post).mockImplementation((_url, body: any) => new Promise((done) => { resolve[body.model] = done; }));

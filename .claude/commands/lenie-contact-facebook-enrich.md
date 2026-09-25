@@ -42,7 +42,15 @@ curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contact_intere
     -d '{"link_type": "facebook", "url": "<url>"}'
   ```
 - If neither the user nor the contact record has a URL, ask the user for it — never guess a profile from a name search; Facebook has too many same-name accounts and the point of this skill is a confirmed, specific profile.
-- If the contact already has a `photo_url`, mention that a photo already exists and confirm the user wants to replace it before continuing (it isn't destructive — see "Safety net" below — but worth a heads-up).
+- If photo operations are allowed by the metadata check below and the contact already has a `photo_url`, mention that a photo already exists and confirm replacement only when the user has not already requested it.
+
+Before any photo or face operation, read `contact.photo.id` and
+`GET /contact_photos/<uuid>`. Check `subject_kind` and the link for this contact.
+If `subject_kind == no_people` or `depicts_contact === false`, do not treat the
+avatar as its owner's portrait: skip Steps 2–4 and all face/crop/split operations.
+Continue Steps 5/5b to fill textual profile fields. Unknown classification is not
+confirmation of identity. In verification, require a changed photo URL only when
+an upload actually happened.
 
 ### Step 2: Open the profile in Chrome and find the current profile picture
 
@@ -146,7 +154,7 @@ curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contacts/<ID>"
 curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contacts/<ID>/education"
 ```
 
-Confirm `photo_url` is non-null and different from before the upload, and the other fields (including `interests` and the education list) reflect what was found (or are unchanged if Step 5/5b found nothing new). Delete the temporary screenshot file(s) from the OS temp dir. Close the Chrome tab you opened (`tabs_close_mcp`) unless the user asked to keep it open.
+If a photo was uploaded, confirm `photo_url` is non-null and different from before the upload. Always verify that the textual fields (including `interests` and the education list) reflect what was found (or are unchanged if Step 5/5b found nothing new). Delete any temporary screenshot files created by this run. Close the Chrome tab you opened (`tabs_close_mcp`) unless the user asked to keep it open.
 
 ### Step 7: Report
 

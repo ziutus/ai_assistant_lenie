@@ -3138,10 +3138,32 @@ class ContactPhoto(Base):
 
     __tablename__ = "contact_photos"
 
+    __table_args__ = (
+        CheckConstraint("subject_kind IN ('people', 'no_people', 'unknown')", name="ck_contact_photos_subject_kind"),
+        CheckConstraint("people_count >= 0", name="ck_contact_photos_people_count"),
+    )
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), unique=True, nullable=False,
+                                  server_default=sa_text("gen_random_uuid()"))
+    subject_kind: Mapped[str] = mapped_column(Text, nullable=False, server_default=sa_text("'unknown'"))
+    people_count: Mapped[int | None] = mapped_column(Integer)
+    classification_revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+
     storage_key: Mapped[str] = mapped_column(Text, primary_key=True)
     user_description: Mapped[str | None] = mapped_column(Text)
     user_description_revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
     ai_descriptions: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa_text("'{}'::jsonb"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class ContactPhotoLink(Base):
+    """A contact's association with a photo, retained after avatar replacement."""
+
+    __tablename__ = "contact_photo_links"
+
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), primary_key=True)
+    storage_key: Mapped[str] = mapped_column(ForeignKey("contact_photos.storage_key"), primary_key=True)
+    depicts_contact: Mapped[bool | None] = mapped_column(Boolean)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 

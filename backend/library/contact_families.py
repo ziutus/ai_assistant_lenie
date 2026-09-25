@@ -4,7 +4,7 @@ from uuid import UUID
 
 from library.contact_change_log import record_contact_change
 from library.contact_names import contact_display_name, validate_contact_name
-from library.contact_photos import _error, _photo
+from library.contact_photos import _error, _photo, ensure_photo_link
 from library.db.models import Contact, ContactFamilyCreation, ContactGroup, ContactRelationship
 
 
@@ -97,6 +97,8 @@ def create_family(session, contact_id, body):
             )
             session.add(row)
             session.flush()
+            if row.photo_storage_key:
+                ensure_photo_link(session, row.id, row.photo_storage_key)
             record_contact_change(session, row, "manual_edit",
                                   ["first_name", "last_name", "display_label", "notes", "photo_storage_key"], source)
             return row

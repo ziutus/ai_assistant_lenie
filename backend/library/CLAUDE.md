@@ -219,3 +219,23 @@ ASSEMBLYAI
 EMBEDDING_MODEL, TAGGING_MODEL, ENV_DATA, DEBUG
 OBSIDIAN_VAULT_PATH  # Vault root the NAS backend reads for obsidian_reimport_service.py (default: /app/obsidian-vault)
 ```
+
+### Photo-level contact API
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/contact_photos/<uuid>` | Photo metadata, served URL and all persistent contact links |
+| PATCH | `/contact_photos/<uuid>/description` | User description with `user_description_revision` |
+| PATCH | `/contact_photos/<uuid>/classification` | Manual subject/count with `classification_revision` |
+| PATCH | `/contact_photos/<uuid>/contacts/<contact_id>` | Nullable `depicts_contact` with link `revision` |
+| POST | `/contact_photos/<uuid>/describe` | One vision description model |
+| POST | `/contact_photos/<uuid>/classify/suggest` | Explicit, unpersisted vision suggestion only |
+
+These use the existing contact authentication. Classification never runs on upload,
+page load or description generation. Its fixed visual prompt excludes user text,
+names, relationships and previous results. Default model: `google/gemma-4-31B-it`;
+usage operation: `contact_photo_classification`. Photo-level edits log against every
+linked contact, including historical links; no links means no contact log.
+Legacy contact description/describe routes retain current-storage-key validation.
+`contact_photo_links` retains associations after replacement; history and safe
+restore accept linked photos as well as legacy uploads under the contact UUID.

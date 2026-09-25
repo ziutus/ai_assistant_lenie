@@ -8,7 +8,8 @@ import type { ContactCategory } from "./contactCategories";
 import type { ContactGroupEvent } from "./contactGroupDetail";
 import type { ContactGroup } from "./contactGroups";
 import type { ContactListItem } from "./contacts";
-import ContactPhotoDescriptions, { type ContactPhotoData } from "../components/ContactPhotoDescriptions";
+import { type ContactPhotoData } from "../components/ContactPhotoDescriptions";
+import ContactPhotoPanel from "../components/ContactPhotoPanel";
 import ContactPhotoHistory from "../components/ContactPhotoHistory";
 import ContactFamilyForm from "../components/ContactFamilyForm";
 
@@ -494,6 +495,7 @@ const Contact = () => {
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
   const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
+  const [panelPhotoId, setPanelPhotoId] = React.useState<string | null>(null);
   const [photo, setPhoto] = React.useState<ContactPhotoData | null>(null);
   const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = React.useState(false);
   const photoPreviewCloseRef = React.useRef<HTMLButtonElement | null>(null);
@@ -1439,6 +1441,9 @@ const Contact = () => {
               <span style={{ color: "#98a2b3", fontSize: "0.75em", textAlign: "center", padding: 4 }}>Brak zdjęcia</span>
             )}
           </div>
+          {photo?.id && <button type="button" onClick={() => setPanelPhotoId(photo.id!)}>Szczegóły zdjęcia</button>}
+          {photo?.subject_kind && photo.subject_kind !== "unknown" && <span>{photo.subject_kind === "people" ? "Ludzie" : "Bez ludzi"}</span>}
+          {photo?.depicts_contact === false && <span>Nie przedstawia tej osoby</span>}
           {mode === "edit" && (
             <div>
               <input
@@ -1471,10 +1476,12 @@ const Contact = () => {
         </div>
       )}
 
-      {!isNew && id && photo && <ContactPhotoDescriptions key={`${id}:${photo.storage_key}`}
-        photo={photo} contactId={id} apiUrl={apiUrl} apiKey={`${apiKey}`} onChange={setPhoto} />}
+      {id && panelPhotoId && <ContactPhotoPanel key={panelPhotoId} photoId={panelPhotoId} contactId={id}
+        apiUrl={apiUrl} apiKey={`${apiKey}`} onClose={() => setPanelPhotoId(null)}
+        onChange={(updated) => { if (updated.id === photo?.id) setPhoto((old) => old && ({ ...old, ...updated })); }} />}
       {!isNew && id && <ContactPhotoHistory key={id} contactId={id} apiUrl={apiUrl} apiKey={`${apiKey}`}
-        onRestored={(url, updatedPhoto) => { setPhotoUrl(url); setPhoto(updatedPhoto); }} />}
+        onOpenPhoto={setPanelPhotoId}
+        onRestored={(url, updatedPhoto) => { setPhotoUrl(url); setPhoto(updatedPhoto); void loadContact(); }} />}
       {!isNew && id && photo && contact && <ContactFamilyForm key={`family:${id}:${photo.storage_key}`}
         photo={photo} contactId={id} contactName={otherName(contact)} apiUrl={apiUrl} apiKey={`${apiKey}`}
         groups={allGroups} onCreated={() => { void loadContact(); }} />}

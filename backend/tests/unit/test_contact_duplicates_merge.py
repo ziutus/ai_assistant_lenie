@@ -101,7 +101,8 @@ def test_merge_preserves_history_channels_and_resolves_relationship_conflicts():
     session.scalar.side_effect = [None, 20, None]
     result = merge_contacts(session, 1, 2, {"pesel": "duplicate", "email": "duplicate"})
     assert result is primary
-    updates = [call.args[0] for call in session.execute.call_args_list]
+    from sqlalchemy.sql.dml import Update
+    updates = [call.args[0] for call in session.execute.call_args_list if isinstance(call.args[0], Update)]
     compiled = [query.compile(dialect=postgresql.dialect()) for query in updates]
     assert compiled[0].params["pesel"] is None
     values = compiled[1].params
@@ -126,3 +127,30 @@ def test_missing_contact_does_not_mutate():
     with pytest.raises(ValueError, match="not found"):
         merge_contacts(session, 1, 2, {})
     session.execute.assert_not_called()
+
+
+def test_merge_retains_photo_links_and_assigns_selected_photo():
+    from library.db.models import ContactPhotoLink
+
+    primary = Contact(id=1, first_name="Anna", photo_storage_key="primary.png")
+    duplicate = Contact(id=2, first_name="Ania", photo_storage_key="duplicate.png")
+    session = MagicMock()
+    session.scalars.side_effect = [MagicMock(all=lambda: [primary, duplicate]), [], [], [], [], [], [],
+                                   MagicMock(all=lambda: [])]
+    incoming = [ContactPhotoLink(contact_id=2, storage_key=key, depicts_contact=False)
+                for key in ("duplicate.png", "historic.png", "primary.png")]
+    session.execute.return_value.scalars.return_value.all.return_value = incoming
+    links = {"primary.png": ContactPhotoLink(contact_id=1, storage_key="primary.png", depicts_contact=True)}
+    session.get.side_effect = lambda model, key: links.get(key[1])
+
+    def added(row):
+        if isinstance(row, ContactPhotoLink):
+            links[row.storage_key] = row
+
+    session.add.side_effect = added
+    merge_contacts(session, 1, 2, {"photo_storage_key": "duplicate"})
+    assert set(links) == {"primary.png", "duplicate.png", "historic.png"}
+    assert all(link.contact_id == 1 for link in links.values())
+    assert links["primary.png"].depicts_contact is True
+    assert links["duplicate.png"].depicts_contact is False
+    assert links["historic.png"].depicts_contact is False

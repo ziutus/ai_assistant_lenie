@@ -19,23 +19,21 @@ All calls go to the NAS backend REST API (`http://192.168.200.7:5055`) with head
 curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contacts/<ID>"
 ```
 
-Note `uuid`, `photo_url`, `groups`, `category_id`, `display_name`. Download the photo and actually look at it (Read tool on the downloaded file — this is a vision task, don't guess from the AI-generated `photo.ai_descriptions` text alone, though it's a useful hint for how many people/what they're wearing):
+Read `contact.photo.id`, then fetch `GET /contact_photos/<uuid>` with the same auth.
+Use this photo object's `photo_url`, `user_description`, classification and `contacts`.
+If `subject_kind == no_people`, do not split. If the anchor's contact link has
+`depicts_contact === false`, stop the automatic contact-and-family scenario.
+If classification is `unknown`, you MUST view the image yourself; AI text is not evidence.
+Always download and visually inspect the original before selecting crops. If only one
+person is visible, report that there is nothing to split.
 
-```bash
-mkdir -p "$CLAUDE_JOB_DIR/tmp/contact<ID>"
-curl -s -o "$CLAUDE_JOB_DIR/tmp/contact<ID>/original.png" "<photo_url from above>"
-```
+### Step 2: Identify people using user knowledge
 
-**If the photo shows only one person, stop here and tell the user — there's nothing to split.**
-
-### Step 2: Identify the people
-
-For each person in the photo, judge whether they are plausibly:
-- **the anchor contact themself** (usually confirmable by comparing to context — the contact's name/notes/existing description),
-- **a household-relevant adult** (spouse/partner) — a person prominent in the photo, standing directly with the anchor,
-- **a child or an incidental bystander** — a minor, or someone only partially visible / clearly not part of the immediate household.
-
-Only the first two categories get split into their own contact by default. For the third, **stop and ask the user** whether they want separate contacts created too — do not assume. (Rationale from real sessions: adults handled automatically without pushback; the first time children appeared in a photo, the right call was to mention them and wait rather than creating contacts unprompted.)
+Identify the anchor and other people only from explicit user knowledge, including the
+photo's user description. Do not infer a spouse, parent, child or twins from appearance,
+proximity, matching clothes or agreement between AI descriptions. If identity or the
+requested creation scope is unclear, ask before creating contacts. Unnamed people may
+use neutral display labels; family role labels require user-provided facts.
 
 ### Step 3: Crop
 
@@ -81,15 +79,15 @@ This mints a new immutable storage key — the previous (unsplit) photo is **not
 
 ### Step 5: Create a placeholder contact for each other adult
 
-**Default to NOT asking for a real name.** Create the contact with a descriptive `display_label` and a `notes` field flagging the guess as unconfirmed — the name/relationship gets filled in later, by the user, once actually known. (Confirmed by the user across two real sessions: asked once whether to prompt for a name vs. leave blank, the answer was "leave blank, fill in later" — treat that as the standing default, not something to re-ask each time.)
+**Default to NOT asking for a real name.** Create the contact with a descriptive `display_label` and a `notes` field recording the user-provided facts — the name/relationship gets filled in later, by the user, once actually known. (Confirmed by the user across two real sessions: asked once whether to prompt for a name vs. leave blank, the answer was "leave blank, fill in later" — treat that as the standing default, not something to re-ask each time.)
 
 Write the JSON body to a file first (see "Gotcha" below — do not inline-interpolate Polish text into `curl -d` from a shell loop):
 
 ```json
 {
   "category_id": 1,
-  "display_label": "<Role> <AnchorDisplayName> (niepotwierdzone)",
-  "notes": "Prawdopodobnie <role> kontaktu <AnchorDisplayName> (id <ID>) — rozpoznanie na podstawie wspólnego zdjęcia z grupy „<group name>”. Tożsamość NIE została potwierdzona, imię/nazwisko do uzupełnienia po weryfikacji.",
+  "display_label": "Osoba ze zdjęcia <AnchorDisplayName>",
+  "notes": "<Explicit user-provided facts; no visual relationship guesses>",
   "change_source": "manual_edit",
   "change_note": "Utworzono z podzielonego zdjęcia kontaktu <ID> (<AnchorDisplayName>)."
 }
@@ -106,18 +104,13 @@ Then:
 - Upload that person's crop the same way as Step 4, to the new contact's id.
 - Add them to every group the anchor belongs to (`POST /contacts/<new_id>/groups {"group_id": N}`), if that grouping is relevant to why the photo exists (e.g. a kindergarten-parents group).
 
-### Step 6: Add relationships, both directions
+### Step 6: Add relationships from user knowledge
 
-Use a specific, gendered Polish term for each direction rather than a generic "member of family" label — matches the existing vocabulary already in `contact_relationships` (`żona`/`mąż`; extend as needed, e.g. `syn`/`córka` outgoing from parent, `matka`/`ojciec` incoming from child — there's no fixed enum, `relationship_type` is free text, see `ContactRelationship` in `backend/library/db/models.py`). Mark both rows as unconfirmed:
-
-```bash
-curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
-  -X POST "http://192.168.200.7:5055/contacts/<A>/relationships" --data-binary @- <<'EOF'
-{"related_contact_id": <B>, "relationship_type": "<term from A's perspective>", "note": "Niepotwierdzone — rozpoznanie na podstawie wspólnego zdjęcia, do weryfikacji."}
-EOF
-```
-
-Repeat with `<A>`/`<B>` swapped and the reciprocal term. If a family has more than two members split out (e.g. two parents + a child), link the child to **both** parents, not just the anchor — a real family graph, not just a star around the anchor contact.
+Create relationships only when explicitly supported by user knowledge. One row is
+enough: `POST /contacts/<A>/relationships` with `related_contact_id: B`, the type
+expressing who B is to A, and a note recording the user's source. The UI displays both
+directions; do not create reciprocal duplicates. If the relationship is unknown,
+leave it unset rather than persisting an appearance-based guess.
 
 ### Step 7: Report
 
