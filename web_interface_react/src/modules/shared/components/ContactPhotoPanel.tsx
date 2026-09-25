@@ -58,7 +58,11 @@ export default function ContactPhotoPanel({ photoId, contactId, apiUrl, apiKey, 
   const link = photo?.contacts.find((c) => String(c.contact_id) === contactId);
   const others = photo?.contacts.filter((c) => String(c.contact_id) !== contactId) ?? [];
   return <dialog ref={dialog} aria-label="Szczegóły zdjęcia" onCancel={onClose}
-    style={{ maxWidth: 900, width: "90vw", maxHeight: "90vh", overflow: "auto" }}>
+    style={{
+      // The global `* { margin: 0; padding: 0 }` reset removes the dialog's default centering.
+      margin: "auto", padding: 24, border: "1px solid #ccc", borderRadius: 8,
+      maxWidth: 900, width: "90vw", maxHeight: "90vh", overflow: "auto",
+    }}>
     <button type="button" onClick={onClose}>Zamknij</button>
     <h2>Szczegóły zdjęcia</h2>
     {error && <p role="alert">{error}</p>}

@@ -21,6 +21,13 @@ afterEach(cleanup);
 const show = () => render(<ContactPhotoPanel photoId="photo-id" contactId="1" apiUrl="/api" apiKey="key"
   onClose={vi.fn()} onChange={vi.fn()} />);
 
+it("centres the modal itself because the global CSS reset removes the dialog's default margin", () => {
+  show();
+  const dialog = screen.getByRole("dialog", { name: "Szczegóły zdjęcia" });
+  expect(dialog.style.margin).toBe("auto");
+  expect(dialog.style.padding).toBe("24px");
+});
+
 it("loads shared photo without an AI call and saves suggestions only explicitly", async () => {
   show();
   await screen.findByText(/Zmiana opisu i klasyfikacji dotyczy 2 kontaktów/);
