@@ -2765,7 +2765,8 @@ def photo_detail(photo_id):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     from library.contact_photos import get_photo
-    return get_photo(get_scoped_session(), photo_id)
+    payload, status = get_photo(get_scoped_session(), photo_id)
+    return jsonify(payload), status
 
 
 @bp.route("/contact_photos/<uuid:photo_id>/description", methods=["PATCH", "OPTIONS"])
@@ -2773,7 +2774,8 @@ def photo_description(photo_id):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     from library.contact_photos import update_description
-    return update_description(get_scoped_session(), None, request.get_json(silent=True), photo_id=photo_id)
+    payload, status = update_description(get_scoped_session(), None, request.get_json(silent=True), photo_id=photo_id)
+    return jsonify(payload), status
 
 
 @bp.route("/contact_photos/<uuid:photo_id>/describe", methods=["POST", "OPTIONS"])
@@ -2781,7 +2783,8 @@ def photo_describe(photo_id):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     from library.contact_photos import generate_description
-    return generate_description(get_scoped_session(), None, request.get_json(silent=True), photo_id=photo_id)
+    payload, status = generate_description(get_scoped_session(), None, request.get_json(silent=True), photo_id=photo_id)
+    return jsonify(payload), status
 
 
 @bp.route("/contact_photos/<uuid:photo_id>/classification", methods=["PATCH", "OPTIONS"])
@@ -2789,7 +2792,8 @@ def photo_classification(photo_id):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     from library.contact_photos import update_classification
-    return update_classification(get_scoped_session(), photo_id, request.get_json(silent=True))
+    payload, status = update_classification(get_scoped_session(), photo_id, request.get_json(silent=True))
+    return jsonify(payload), status
 
 
 @bp.route("/contact_photos/<uuid:photo_id>/contacts/<int:contact_id>", methods=["PATCH", "OPTIONS"])
@@ -2797,7 +2801,8 @@ def photo_contact_link(photo_id, contact_id):
     if request.method == "OPTIONS":
         return {"status": "OK"}, 200
     from library.contact_photos import update_link
-    return update_link(get_scoped_session(), photo_id, contact_id, request.get_json(silent=True))
+    payload, status = update_link(get_scoped_session(), photo_id, contact_id, request.get_json(silent=True))
+    return jsonify(payload), status
 
 
 @bp.route("/contact_photos/<uuid:photo_id>/classify/suggest", methods=["POST", "OPTIONS"])
@@ -2806,4 +2811,5 @@ def photo_classify_suggest(photo_id):
         return {"status": "OK"}, 200
     from library.contact_photos import suggest_classification
     body = request.get_json(silent=True) if request.data else {}
-    return suggest_classification(get_scoped_session(), photo_id, body)
+    payload, status = suggest_classification(get_scoped_session(), photo_id, body)
+    return jsonify(payload), status
