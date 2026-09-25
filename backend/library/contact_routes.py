@@ -145,7 +145,7 @@ _CONTACT_FIELDS = (
     "company", "position", "current_city", "hometown", "pesel", "notes", "display_label",
 )
 
-_LOOKUP_TYPES = ("phone", "linkedin", "web", "email")
+_LOOKUP_TYPES = ("phone", "linkedin", "web", "email", "facebook")
 _LOOKUP_STATUSES = ("no_results", "candidate", "confirmed", "rejected")
 
 _ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
