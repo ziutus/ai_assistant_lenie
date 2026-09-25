@@ -298,6 +298,18 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
 
 const changeFieldLabel = (field: string) => CHANGE_FIELD_LABELS[field] ?? field;
 
+// Display-only grouping of Polish numbers (+48 22 306 01 06 / +48 600 123 456); anything else is shown as stored.
+const formatPhone = (raw: string): string => {
+  const compact = raw.replace(/[\s\-().]/g, "");
+  const m = compact.match(/^(?:(?:\+|00)48)?(\d{9})$/);
+  if (!m) return raw;
+  const d = m[1];
+  const grouped = /^[4-8]/.test(d)
+    ? `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`
+    : `${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 7)} ${d.slice(7)}`;
+  return `+48 ${grouped}`;
+};
+
 const emptyOrgForm = {
   org_type: "jdg" as OrgType,
   registry: "" as OrgRegistry | "",
@@ -1403,6 +1415,11 @@ const Contact = () => {
             <button className={"button"} type="button" onClick={() => (mode === "view" ? setMode("edit") : cancelEdit())}>
               {mode === "view" ? "✏️ Edytuj" : "← Podgląd"}
             </button>
+            {mode === "edit" && (
+              <button className={"button"} type="button" disabled={isLoading} onClick={save}>
+                💾 Zapisz
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1526,7 +1543,7 @@ const Contact = () => {
           </div>
           {contact.category_name !== "Firma" && contact.gender && <div><strong>Płeć:</strong> {GENDER_LABELS[contact.gender]}</div>}
           {(contact.phone_numbers ?? (contact.phone_number ? [{ value: contact.phone_number, label: null }] : [])).map((entry, index) => (
-            <div key={`phone-${index}`}><strong>Telefon{index === 0 ? " główny" : ""}:</strong> {entry.value}{entry.label && ` (${entry.label})`}</div>
+            <div key={`phone-${index}`}><strong>Telefon{index === 0 ? " główny" : ""}:</strong> {formatPhone(entry.value)}{entry.label && ` (${entry.label})`}</div>
           ))}
           {(contact.email_addresses ?? (contact.email ? [{ value: contact.email, label: null }] : [])).map((entry, index) => (
             <div key={`email-${index}`}><strong>Email{index === 0 ? " główny" : ""}:</strong> {entry.value}{entry.label && ` (${entry.label})`}</div>
