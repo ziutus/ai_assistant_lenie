@@ -12,6 +12,7 @@ import { type ContactPhotoData } from "../components/ContactPhotoDescriptions";
 import ContactPhotoPanel from "../components/ContactPhotoPanel";
 import ContactPhotoHistory from "../components/ContactPhotoHistory";
 import ContactFamilyForm from "../components/ContactFamilyForm";
+import InfoTip from "../components/InfoTip";
 
 const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
@@ -1879,11 +1880,12 @@ const Contact = () => {
               .catch(() => { setIsError(true); setMessage("Nie udało się odświeżyć historii zmian."); });
           }} />}
           {contact?.category_name !== "Firma" && <>
-          <h3>Organizacje (etat, JDG, funkcje...)</h3>
-          <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
-            Jedna osoba może mieć kilka afiliacji naraz — np. etat gdzie indziej i osobną JDG do optymalizacji
-            podatkowej. Adres tutaj to adres rejestrowy tej organizacji, nie adres zamieszkania kontaktu.
-          </p>
+          <h3>Organizacje (etat, JDG, funkcje...)
+            <InfoTip label="Informacje o organizacjach">
+              Jedna osoba może mieć kilka afiliacji naraz — np. etat gdzie indziej i osobną JDG do optymalizacji
+              podatkowej. Adres tutaj to adres rejestrowy tej organizacji, nie adres zamieszkania kontaktu.
+            </InfoTip>
+          </h3>
           {organizations.length === 0 && (
             <p style={{ color: "#667" }}>Brak zapisanych organizacji.</p>
           )}
@@ -2171,11 +2173,12 @@ const Contact = () => {
           )}
           </>}
 
-          <h3>Wyniki wyszukiwania OSINT</h3>
-          <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
-            Ślad ustaleń z badania OSINT (np. telefon, profil LinkedIn, e-mail znaleziony w publicznym rejestrze) —
-            każdy wpis ma status pewności, niezależnie od pól kontaktu ustawianych ręcznie lub z importu.
-          </p>
+          <h3>Wyniki wyszukiwania OSINT
+            <InfoTip label="Informacje o wynikach OSINT">
+              Ślad ustaleń z badania OSINT (np. telefon, profil LinkedIn, e-mail znaleziony w publicznym rejestrze) —
+              każdy wpis ma status pewności, niezależnie od pól kontaktu ustawianych ręcznie lub z importu.
+            </InfoTip>
+          </h3>
           {lookupResults.length === 0 && (
             <p style={{ color: "#667" }}>Brak zapisanych wyników wyszukiwania.</p>
           )}
@@ -2361,10 +2364,11 @@ const Contact = () => {
 
       {!isNew && !isCompanyCategory && whatsappProfile && (
         <div style={{ marginTop: 24 }}>
-          <h3>Profil sąsiedzki (WhatsApp)</h3>
-          <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
-            Budowany i aktualizowany automatycznie z czatów WhatsApp — tylko fakty jawnie napisane przez tę osobę o sobie.
-          </p>
+          <h3>Profil sąsiedzki (WhatsApp)
+            <InfoTip label="Informacje o profilu sąsiedzkim">
+              Budowany i aktualizowany automatycznie z czatów WhatsApp — tylko fakty jawnie napisane przez tę osobę o sobie.
+            </InfoTip>
+          </h3>
           <WhatsappProfileView profile={whatsappProfile} latestEvent={latestEvent(contact?.events)} />
         </div>
       )}
