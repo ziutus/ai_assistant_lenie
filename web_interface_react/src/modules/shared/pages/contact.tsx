@@ -1403,6 +1403,11 @@ const Contact = () => {
             <button className={"button"} type="button" onClick={() => (mode === "view" ? setMode("edit") : cancelEdit())}>
               {mode === "view" ? "✏️ Edytuj" : "← Podgląd"}
             </button>
+            {mode === "edit" && (
+              <button className={"button"} type="button" disabled={isLoading} onClick={save}>
+                💾 Zapisz
+              </button>
+            )}
           </div>
         )}
       </div>
