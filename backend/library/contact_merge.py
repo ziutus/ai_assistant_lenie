@@ -5,10 +5,11 @@ from sqlalchemy import func, or_, select, update
 from library.contact_channels import CHANNEL_FIELDS, channel_key, contact_channels
 from library.contact_change_log import record_contact_change
 from library.contact_names import contact_display_name
+from library.contact_photos import ensure_photo_link
 from library.db.models import (
     ChatMessage, Contact, ContactAddress, ContactChangeLog, ContactEducation, ContactEventParticipant,
     ContactFamilyCreation, ContactGroupMembership, ContactInterestMembership, ContactLink, ContactLookupResult,
-    ContactOrganization, ContactRelationship,
+    ContactOrganization, ContactPhotoLink, ContactRelationship,
 )
 
 MERGE_FIELDS = (
@@ -61,6 +62,16 @@ def merge_contacts(session, primary_id: int, duplicate_id: int, field_choices: d
     # The channel mapper hook replaces primary entries and caps lists at 50; a merge
     # must preserve every channel, including when the selected scalar is empty.
     session.execute(update(Contact).where(Contact.id == primary_id).values(**values, updated_at=func.now()))
+    photo_links = session.execute(select(ContactPhotoLink).where(
+        ContactPhotoLink.contact_id == duplicate_id,
+    )).scalars().all()
+    for link in photo_links:
+        if session.get(ContactPhotoLink, (primary_id, link.storage_key)) is None:
+            session.add(ContactPhotoLink(contact_id=primary_id, storage_key=link.storage_key,
+                                         depicts_contact=link.depicts_contact))
+    photo_key = values.get("photo_storage_key", primary.photo_storage_key)
+    if photo_key:
+        ensure_photo_link(session, primary_id, photo_key)
     for model, key, marker in (
         (ContactGroupMembership, "group_id", "groups"),
         (ContactInterestMembership, "interest_id", "interests"),

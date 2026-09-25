@@ -22,6 +22,16 @@ describe("contact photo history", () => {
   beforeEach(() => vi.resetAllMocks());
   afterEach(cleanup);
 
+  it("opens details of an inherited historical photo by photo UUID", async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { history: [{ ...older, id: "shared-photo" }] } });
+    const open = vi.fn();
+    render(<ContactPhotoHistory contactId="child" apiUrl="/api" apiKey="test" onRestored={vi.fn()} onOpenPhoto={open} />);
+    expand(screen.getByText("Historia zdjęć").closest("details")!);
+    fireEvent.click(await screen.findByRole("button", { name: "Szczegóły zdjęcia" }));
+    expect(open).toHaveBeenCalledWith("shared-photo");
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it("loads lazily, restores a photo and refreshes current flags", async () => {
     vi.mocked(axios.get).mockResolvedValueOnce({ data: { history: [current, older] } })
       .mockResolvedValueOnce({ data: { history: [{ ...older, is_current: true }] } });

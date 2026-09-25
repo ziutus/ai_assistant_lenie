@@ -25,12 +25,13 @@ from library.contact_channels import channel_patch, contact_channels
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
 from library.contact_names import contact_display_name, validate_contact_name
 from library.contact_phones import phone_search_digits
+from library.contact_photos import ensure_photo_link
 from library.contact_photo_thumbnails import _photo_thumbnail_storage_key, generate_photo_thumbnail
 from library.db.engine import get_scoped_session
 from library.db.models import (
     Address, ContactAddress, ContactAlternateName,
     ChatConversation, ChatMessage,
-    Contact, ContactPhoto, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
+    Contact, ContactPhoto, ContactPhotoLink, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
     ContactDuplicateDismissal, ContactEducation, ContactInterest, ContactInterestMembership,
     ContactLookupResult, ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
 )
@@ -1146,6 +1147,11 @@ def contacts_get(contact_id: int):
     data["photo_url"] = _contact_photo_url(row)
     from library.contact_photos import photo_dict
     data["photo"] = photo_dict(session.get(ContactPhoto, row.photo_storage_key)) if row.photo_storage_key else None
+    if data["photo"]:
+        link = session.get(ContactPhotoLink, (row.id, row.photo_storage_key))
+        data["photo"].update(depicts_contact=link.depicts_contact if link else None,
+                             link_revision=link.revision if link else 0)
+
     return jsonify({"status": "success", "contact": data}), 200
 
 
@@ -1214,6 +1220,7 @@ def contact_photo_upload(contact_id: int):
         session.add(photo)
         session.flush()
         contact.photo_storage_key = key
+        ensure_photo_link(session, contact.id, key)
         contact.photo_thumbnail_storage_key = thumbnail_key
         contact.updated_at = datetime.datetime.now()
         record_contact_change(session, contact, "manual_edit", changed_fields=["photo_storage_key", "photo_thumbnail_storage_key"])
@@ -1286,7 +1293,9 @@ def contact_photo_history(contact_id: int):
 
     storage = storage_from_config(load_config())
     rows = session.execute(
-        select(ContactPhoto).where(ContactPhoto.storage_key.like(f"contacts/{contact.uuid}/%"))
+        select(ContactPhoto).where(or_(ContactPhoto.storage_key.like(f"contacts/{contact.uuid}/%"),
+            ContactPhoto.storage_key.in_(select(ContactPhotoLink.storage_key)
+                                        .where(ContactPhotoLink.contact_id == contact_id))))
         .order_by(ContactPhoto.created_at.desc())
     ).scalars().all()
     history = []
@@ -1316,7 +1325,8 @@ def contact_photo_restore(contact_id: int):
     if not isinstance(data, dict) or not isinstance(data.get("storage_key"), str):
         return {"status": "error", "message": "storage_key is required and must be a string"}, 400
     key = data["storage_key"]
-    if not key.startswith(f"contacts/{contact.uuid}/"):
+    if (not key.startswith(f"contacts/{contact.uuid}/")
+            and session.get(ContactPhotoLink, (contact_id, key)) is None):
         return {"status": "error", "message": "Photo does not belong to this contact"}, 400
     photo = session.get(ContactPhoto, key)
     if photo is None:
@@ -1339,6 +1349,7 @@ def contact_photo_restore(contact_id: int):
             logger.warning("Could not generate/store photo thumbnail for contact %s", contact_id, exc_info=True)
         try:
             contact.photo_storage_key = key
+            ensure_photo_link(session, contact.id, key)
             contact.photo_thumbnail_storage_key = thumb_key
             contact.updated_at = datetime.datetime.now()
             record_contact_change(
@@ -2747,3 +2758,58 @@ def contact_alternate_names(contact_id: int, alternate_name_id: int | None = Non
     if request.method == "DELETE":
         return jsonify({"status": "success", "deleted_id": alternate_name_id}), 200
     return jsonify({"status": "success", "alternate_name": _alternate_name_dict(row)}), 200
+
+
+@bp.route("/contact_photos/<uuid:photo_id>", methods=["GET", "OPTIONS"])
+def photo_detail(photo_id):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_photos import get_photo
+    payload, status = get_photo(get_scoped_session(), photo_id)
+    return jsonify(payload), status
+
+
+@bp.route("/contact_photos/<uuid:photo_id>/description", methods=["PATCH", "OPTIONS"])
+def photo_description(photo_id):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_photos import update_description
+    payload, status = update_description(get_scoped_session(), None, request.get_json(silent=True), photo_id=photo_id)
+    return jsonify(payload), status
+
+
+@bp.route("/contact_photos/<uuid:photo_id>/describe", methods=["POST", "OPTIONS"])
+def photo_describe(photo_id):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_photos import generate_description
+    payload, status = generate_description(get_scoped_session(), None, request.get_json(silent=True), photo_id=photo_id)
+    return jsonify(payload), status
+
+
+@bp.route("/contact_photos/<uuid:photo_id>/classification", methods=["PATCH", "OPTIONS"])
+def photo_classification(photo_id):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_photos import update_classification
+    payload, status = update_classification(get_scoped_session(), photo_id, request.get_json(silent=True))
+    return jsonify(payload), status
+
+
+@bp.route("/contact_photos/<uuid:photo_id>/contacts/<int:contact_id>", methods=["PATCH", "OPTIONS"])
+def photo_contact_link(photo_id, contact_id):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_photos import update_link
+    payload, status = update_link(get_scoped_session(), photo_id, contact_id, request.get_json(silent=True))
+    return jsonify(payload), status
+
+
+@bp.route("/contact_photos/<uuid:photo_id>/classify/suggest", methods=["POST", "OPTIONS"])
+def photo_classify_suggest(photo_id):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    from library.contact_photos import suggest_classification
+    body = request.get_json(silent=True) if request.data else {}
+    payload, status = suggest_classification(get_scoped_session(), photo_id, body)
+    return jsonify(payload), status

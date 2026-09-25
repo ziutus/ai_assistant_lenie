@@ -13,10 +13,11 @@ interface Props {
   contactId: string;
   apiUrl: string;
   apiKey: string;
+  onOpenPhoto?: (photoId: string) => void;
   onRestored: (photoUrl: string, photo: ContactPhotoData) => void;
 }
 
-export default function ContactPhotoHistory({ contactId, apiUrl, apiKey, onRestored }: Props) {
+export default function ContactPhotoHistory({ contactId, apiUrl, apiKey, onRestored, onOpenPhoto }: Props) {
   const [history, setHistory] = React.useState<HistoryItem[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [loaded, setLoaded] = React.useState(false);
@@ -77,6 +78,7 @@ export default function ContactPhotoHistory({ contactId, apiUrl, apiKey, onResto
         return <article key={item.storage_key} style={{ border: "1px solid #d5dde8", borderRadius: 8, padding: 12 }}>
           {imageUrl ? <img src={imageUrl} alt="Zdjęcie z historii kontaktu"
             style={{ width: "100%", height: 200, objectFit: "contain" }} /> : <p>Brak zdjęcia</p>}
+          {item.id && onOpenPhoto && <button type="button" onClick={() => onOpenPhoto(item.id!)}>Szczegóły zdjęcia</button>}
           <p>{new Date(item.created_at).toLocaleString("pl-PL")}</p>
           <button type="button" className="button" disabled={item.is_current || restoring !== null || loading}
             onClick={() => { void restore(item.storage_key); }}>

@@ -2317,6 +2317,7 @@ class TestContactThumbnails:
 
         contact = _make_contact(photo_thumbnail_storage_key="contacts/uuid/photo_thumb.jpg")
         session = MagicMock()
+        session.scalar.return_value = 0
         session.get.return_value = contact
         session.execute.return_value.scalar_one.return_value = 1
         session.execute.return_value.scalars.return_value.all.return_value = [contact]
@@ -2380,6 +2381,7 @@ class TestContactGroupEvents:
         from library.db.models import ContactGroupEvent
 
         session = MagicMock()
+        session.scalar.return_value = 0
         event = ContactGroupEvent(
             id=7, group_id=3, title="Meeting", event_date=dt.date(2026, 9, 1),
             created_at=dt.datetime(2026, 9, 1), updated_at=dt.datetime(2026, 9, 1),
@@ -2547,7 +2549,8 @@ def photo_history_setup(monkeypatch):
         ai_descriptions={"model": {"text": "Opis zdjęcia"}},
     )
     session = MagicMock()
-    session.get.side_effect = lambda model, key: contact if model is Contact else photo
+    session.get.side_effect = lambda model, key, **kw: contact if model is Contact else (
+        photo if model.__name__ == "ContactPhoto" else None)
     monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
     monkeypatch.setattr("library.config_loader.load_config", lambda: {})
     storage = MagicMock()
@@ -2558,6 +2561,30 @@ def photo_history_setup(monkeypatch):
 
 
 class TestContactPhotoHistory:
+    def test_history_query_includes_inherited_but_not_unrelated_photos(self, photo_history_setup):
+        from sqlalchemy import Column, DateTime, Integer, MetaData, Table, Text, create_engine
+        from library.contact_routes import contact_photo_history
+        from library.db.models import ContactPhoto
+
+        contact, legacy, session, _ = photo_history_setup
+        metadata = MetaData()
+        photos = Table("contact_photos", metadata, Column("storage_key", Text), Column("created_at", DateTime))
+        links = Table("contact_photo_links", metadata, Column("contact_id", Integer), Column("storage_key", Text))
+        engine = create_engine("sqlite://")
+        metadata.create_all(engine)
+        inherited = "contacts/parent/photos/shared.png"
+        with engine.begin() as connection:
+            connection.execute(photos.insert(), [
+                {"storage_key": key, "created_at": dt.datetime(2026, 9, day)}
+                for key, day in [(legacy.storage_key, 1), (inherited, 2), ("contacts/unrelated/photo.png", 3)]
+            ])
+            connection.execute(links.insert(), [{"contact_id": contact.id, "storage_key": inherited}])
+            session.execute.return_value.scalars.return_value.all.return_value = []
+            with Flask(__name__).test_request_context():
+                assert contact_photo_history(contact.id)[1] == 200
+            query = session.execute.call_args.args[0].with_only_columns(ContactPhoto.storage_key)
+            assert connection.execute(query).scalars().all() == [inherited, legacy.storage_key]
+
     def test_history_order_prefix_metadata_and_thumbnails(self, photo_history_setup):
         from library.contact_routes import contact_photo_history, _photo_thumbnail_storage_key
         from library.contact_photos import photo_dict
@@ -2573,7 +2600,8 @@ class TestContactPhotoHistory:
         assert status == 200
         statement = session.execute.call_args.args[0]
         compiled = statement.compile()
-        assert list(compiled.params.values()) == [f"contacts/{contact.uuid}/%"]
+        assert list(compiled.params.values()) == [f"contacts/{contact.uuid}/%", contact.id]
+        assert "contact_photo_links" in str(compiled)
         assert "contact_photos.storage_key LIKE" in str(compiled)
         assert "ORDER BY contact_photos.created_at DESC" in str(compiled)
         history = response.json["history"]
@@ -2601,6 +2629,26 @@ class TestContactPhotoHistory:
 
 
 class TestContactPhotoRestore:
+    def test_restores_inherited_photo_and_keeps_link(self, photo_history_setup):
+        from library.contact_routes import contact_photo_restore
+        from library.db.models import Contact, ContactPhoto, ContactPhotoLink
+
+        contact, photo, session, _ = photo_history_setup
+        photo.storage_key = "contacts/parent/photos/shared.png"
+        link = ContactPhotoLink(contact_id=contact.id, storage_key=photo.storage_key, revision=2,
+                                depicts_contact=False)
+        session.get.side_effect = lambda model, key, **kw: {
+            Contact: contact, ContactPhoto: photo, ContactPhotoLink: link,
+        }.get(model)
+        with Flask(__name__).test_request_context(method="POST", json={"storage_key": photo.storage_key}):
+            response, status = contact_photo_restore(contact.id)
+        assert status == 200
+        assert response.json["photo"]["storage_key"] == photo.storage_key
+        assert contact.photo_storage_key == photo.storage_key
+        assert link.depicts_contact is False
+        assert link.revision == 2
+        session.commit.assert_called_once()
+
     @pytest.mark.parametrize("body", [{}, {"storage_key": None}, {"storage_key": 123}, [], None])
     def test_invalid_body(self, photo_history_setup, body):
         from library.contact_routes import contact_photo_restore
@@ -2618,7 +2666,7 @@ class TestContactPhotoRestore:
             "storage_key": "contacts/22222222-2222-2222-2222-222222222222/photos/other.png",
         }):
             assert contact_photo_restore(contact.id)[1] == 400
-        assert session.get.call_count == 1
+        assert session.get.call_count == 2
         session.commit.assert_not_called()
         storage.exists.assert_not_called()
 
@@ -3005,6 +3053,7 @@ class TestContactPrivateNotes:
 
         row = _make_contact(private_notes="vault note")
         session = MagicMock()
+        session.scalar.return_value = 0
         session.get.return_value = row
         session.execute.return_value.all.return_value = []
         session.execute.return_value.scalars.return_value.all.return_value = []
@@ -3061,6 +3110,7 @@ class TestContactEventParticipants:
         event = ContactGroupEvent(id=7, group_id=3, group=group, title="Urodziny",
                                   event_date=dt.date(2026, 9, 13), participants=[contacts[1]])
         session = MagicMock()
+        session.scalar.return_value = 0
         records = {Contact: contacts, ContactGroup: {3: group}, ContactGroupEvent: {7: event}}
         session.get.side_effect = lambda model, ident: records.get(model, {}).get(ident)
         session.execute.return_value.scalars.return_value.all.return_value = [event]

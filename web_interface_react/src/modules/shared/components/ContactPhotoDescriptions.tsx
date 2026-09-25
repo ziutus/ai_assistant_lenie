@@ -11,6 +11,12 @@ export interface PhotoDescription {
 }
 
 export interface ContactPhotoData {
+  id?: string;
+  subject_kind?: "people" | "no_people" | "unknown";
+  people_count?: number | null;
+  classification_revision?: number;
+  depicts_contact?: boolean | null;
+  link_revision?: number;
   storage_key: string;
   user_description: string | null;
   user_description_revision: number;
@@ -28,9 +34,10 @@ interface Props {
   apiUrl: string;
   apiKey: string;
   onChange: (photo: ContactPhotoData) => void;
+  onConflict?: () => Promise<void>;
 }
 
-export default function ContactPhotoDescriptions({ photo, contactId, apiUrl, apiKey, onChange }: Props) {
+export default function ContactPhotoDescriptions({ photo, contactId, apiUrl, apiKey, onChange, onConflict }: Props) {
   const [draft, setDraft] = React.useState(photo.user_description ?? "");
   const [saving, setSaving] = React.useState(false);
   const [running, setRunning] = React.useState<Record<string, boolean>>({});
@@ -43,6 +50,7 @@ export default function ContactPhotoDescriptions({ photo, contactId, apiUrl, api
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
+  const base = photo.id ? `${apiUrl}/contact_photos/${photo.id}` : `${apiUrl}/contacts/${contactId}/photo`;
   const headers = { "x-api-key": apiKey };
   const errorText = (error: any) => error.response?.data?.message ?? "Nie udało się wykonać operacji. Spróbuj ponownie.";
   const busy = Object.values(running).some(Boolean);
@@ -52,7 +60,7 @@ export default function ContactPhotoDescriptions({ photo, contactId, apiUrl, api
     setSaved(false);
     setErrors((old) => ({ ...old, user: "" }));
     try {
-      const response = await axios.patch(`${apiUrl}/contacts/${contactId}/photo/description`, {
+      const response = await axios.patch(`${base}/description`, {
         storage_key: photo.storage_key,
         user_description: draft,
         user_description_revision: photo.user_description_revision,
@@ -67,7 +75,10 @@ export default function ContactPhotoDescriptions({ photo, contactId, apiUrl, api
       onChange(updated);
       setDraft(updated.user_description ?? "");
       setSaved(true);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.response?.status === 409 && onConflict) {
+        try { await onConflict(); } catch { /* Keep the draft and the original conflict visible. */ }
+      }
       if (mounted.current) setErrors((old) => ({ ...old, user: errorText(error) }));
     } finally {
       if (mounted.current) setSaving(false);
@@ -78,7 +89,7 @@ export default function ContactPhotoDescriptions({ photo, contactId, apiUrl, api
     setRunning((old) => ({ ...old, [model]: true }));
     setErrors((old) => ({ ...old, [model]: "" }));
     try {
-      const response = await axios.post(`${apiUrl}/contacts/${contactId}/photo/describe`, {
+      const response = await axios.post(`${base}/describe`, {
         storage_key: photo.storage_key, model,
       }, { headers });
       if (!mounted.current) return;
@@ -93,7 +104,10 @@ export default function ContactPhotoDescriptions({ photo, contactId, apiUrl, api
       };
       currentPhoto.current = updated;
       onChange(updated);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.response?.status === 409 && onConflict) {
+        try { await onConflict(); } catch { /* Keep the draft and the original conflict visible. */ }
+      }
       if (mounted.current) setErrors((old) => ({ ...old, [model]: errorText(error) }));
     } finally {
       if (mounted.current) setRunning((old) => ({ ...old, [model]: false }));

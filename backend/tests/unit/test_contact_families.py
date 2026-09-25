@@ -46,6 +46,10 @@ def test_family_is_atomic_with_twins_peer_and_shared_photo(family):
     result, status = create_family(session, root.id, body)
     assert status == 201
     contacts = [row for row in rows if isinstance(row, Contact)]
+    from library.db.models import ContactPhotoLink
+    links = [row for row in rows if isinstance(row, ContactPhotoLink)]
+    assert {link.contact_id for link in links} == {row.id for row in contacts}
+    assert all(link.storage_key == root.photo_storage_key for link in links)
     assert len(contacts) == 3
     assert all(row.first_name is None and row.last_name is None for row in contacts)
     assert all(row.photo_storage_key == "photo.png" for row in contacts)

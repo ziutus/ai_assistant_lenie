@@ -237,7 +237,7 @@ def test_routes_missing_and_conflicts(client):
 def test_migration_head_upgrade_downgrade_and_postgresql_sql():
     directory = Path(__file__).resolve().parents[2] / "alembic"
     script = ScriptDirectory(str(directory))
-    assert script.get_current_head() == "c4e8b1a93d72"
+    assert "c4e8b1a93d72" in {revision.revision for revision in script.walk_revisions()}
     revision = script.get_revision("c4e8b1a93d72")
     assert revision.down_revision == "a9c7e2d48f10"
     spec = importlib.util.spec_from_file_location("topics_migration", revision.path)
