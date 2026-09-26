@@ -153,7 +153,13 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json" \
 
 ### Step 5c: Links the person published in their own profile (OSINT)
 
-The profile intro (under the name on the main page; in `get_page_text` it appears as a bare URL line, e.g. `https://www.instagram.com/<handle>/`) and, on some profiles, the "Informacje kontaktowe" entry of the left "Informacje" menu can contain links the person put there themselves: Instagram, LinkedIn, X/Twitter, a personal or company website. These are self-published leads, so save them on the contact.
+Links the person put there themselves — Instagram, LinkedIn, X/Twitter, a personal or company website — can appear in three places:
+
+- the profile intro under the name on the main page (in `get_page_text` a bare URL line, e.g. `https://www.instagram.com/<handle>/`);
+- the **"Linki"** entry of the left "Informacje" menu, present on some profiles (`<profile_url>/directory_links`; shows e.g. `georgiaadventureclub.com` with the label "Strona internetowa" — no scheme, add `https://`);
+- the **"Informacje kontaktowe"** entry (`<profile_url>/directory_contact_info`), which usually lists messenger handles (Skype, Gadu-Gadu) rather than URLs — those have no `link_type`, so only mention them in the Step 6b `notes`.
+
+These are self-published leads, so save the URLs on the contact.
 
 - **Only self-published links.** Take URLs from the profile's own intro/bio or its contact-info section. Never from posts, comments, liked pages, "Obserwowani" lists or friends' profiles.
 - **Map host → `link_type`:** `instagram.com` → `instagram`; `linkedin.com/in/…` → `linkedin`; `x.com`/`twitter.com` → `twitter`; another personal/company site → `website`; anything else → `other`. Skip Facebook itself (Step 1 already handles the profile URL).
