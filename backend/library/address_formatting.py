@@ -8,6 +8,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from unidecode import unidecode
+
 if TYPE_CHECKING:
     from library.db.models import Address
 
@@ -88,6 +90,67 @@ def parse_address_text_heuristic(text: str) -> dict:
     if not result["city"] or any(value and len(value) > ADDRESS_FIELD_LIMITS[key] for key, value in result.items()):
         return empty
     return result
+
+
+_COUNTRY_ALIASES = {"pl", "polska", "poland", "rp", "rzeczpospolita polska"}
+_IDENTITY_FIELDS = ("street", "building_number", "block_number", "apartment_number", "postal_code", "city", "country")
+
+
+def _field(address, name):
+    value = address.get(name) if isinstance(address, dict) else getattr(address, name, None)
+    return " ".join((value or "").split())
+
+
+def _fold(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", unidecode(value or "").casefold()).strip()
+
+
+def address_identity(address) -> dict:
+    """Comparable, accent/case/country-alias-insensitive fields of an address.
+
+    A legacy row whose whole text sits in ``city`` (no street/number — how an
+    unparsable import is stored, see imported_address_fields) is re-parsed so it
+    compares equal to the same address entered field by field. Unparsable text
+    is kept as-is and simply matches nothing else.
+    """
+    fields = {name: _field(address, name) for name in _IDENTITY_FIELDS}
+    if not fields["street"] and not fields["building_number"] and re.search(r"[\n,]|\d", fields["city"]):
+        raw = (address.get("city") if isinstance(address, dict) else address.city) or ""
+        segments = [part.strip() for part in re.split(r"[,\n]+", raw) if part.strip()]
+        kept = [part for part in segments if part.casefold() not in _COUNTRY_ALIASES]
+        parsed = parse_address_text_heuristic(",".join(kept))
+        if parsed["city"] is not None:
+            country = fields["country"] or next((part for part in segments if part.casefold() in _COUNTRY_ALIASES), "")
+            fields = {name: (parsed[name] or "") for name in _IDENTITY_FIELDS}
+            fields["country"] = country
+    identity = {name: _fold(value) for name, value in fields.items()}
+    if identity["country"] in {_fold(alias) for alias in _COUNTRY_ALIASES} or not identity["country"]:
+        identity["country"] = "pl"
+    return identity
+
+
+def is_specific_address(address) -> bool:
+    """True when the address names a street or a building, not just a city.
+
+    Only such addresses are worth offering for sharing between contacts: 22 unrelated contacts have just
+    "Łódź", and that is not a shared place. A legacy one-line row counts once it parses into a street/number.
+    """
+    identity = address_identity(address)
+    return bool(identity["street"] or identity["building_number"])
+
+
+def addresses_match(first, second) -> bool:
+    """True when two addresses point at the same place.
+
+    Everything must be equal after folding except the postal code, which may be
+    missing on either side (an address entered without one is still the same).
+    """
+    a, b = address_identity(first), address_identity(second)
+    if not a["city"] or a["city"] != b["city"]:
+        return False
+    if a["postal_code"] and b["postal_code"] and a["postal_code"] != b["postal_code"]:
+        return False
+    return all(a[name] == b[name] for name in _IDENTITY_FIELDS if name != "postal_code")
 
 
 def imported_address_fields(text: str) -> dict:

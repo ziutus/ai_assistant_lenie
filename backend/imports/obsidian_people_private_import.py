@@ -307,7 +307,7 @@ def run_import(session, spec, sources, apply=False):
     from sqlalchemy import select, text
 
     from library.contact_change_log import record_contact_change
-    from library.address_formatting import format_address, imported_address_fields
+    from library.address_formatting import addresses_match, format_address, imported_address_fields
     from library.contact_addresses import attach_imported_address, contact_address_links
     from library.db.models import Address, Contact, ContactAddress, ContactCategory, ContactChangeLog, ContactGroup, ContactLink, ContactRelationship
 
@@ -430,7 +430,7 @@ def run_import(session, spec, sources, apply=False):
         if secondary:
             for link in contact_address_links(session, secondary):
                 if format_address(link.address) not in known_addresses:
-                    shared_addresses.append(link.address)
+                    shared_addresses.append(link)  # the secondary's link: role, period and archive state travel too
                     known_addresses.add(format_address(link.address))
             if shared_addresses:
                 changes.setdefault("addresses", [])
@@ -474,10 +474,18 @@ def run_import(session, spec, sources, apply=False):
                 if key == "addresses":
                     for address_text in value:
                         attach_imported_address(session, contact, address_text)
-                    for address in shared_addresses:
-                        has_addresses = bool(contact_address_links(session, contact))
-                        session.add(ContactAddress(contact=contact, address=address,
-                                                   role="zamieszkania", is_primary=not has_addresses))
+                    for source in shared_addresses:
+                        current = contact_address_links(session, contact)
+                        if not source.is_archived and any(
+                                not link.is_archived and addresses_match(link.address, source.address)
+                                for link in current):
+                            continue  # same place already active (the database would refuse a second copy)
+                        session.add(ContactAddress(
+                            contact=contact, address=source.address, role=source.role or "zamieszkania",
+                            valid_from=source.valid_from, valid_to=source.valid_to, is_archived=source.is_archived,
+                            valid_from_precision=source.valid_from_precision,
+                            valid_to_precision=source.valid_to_precision,
+                            is_primary=not source.is_archived and not any(not link.is_archived for link in current)))
                         session.flush()
                 elif key == "links":
                     if links:

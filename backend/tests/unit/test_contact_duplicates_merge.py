@@ -95,7 +95,7 @@ def test_merge_preserves_history_channels_and_resolves_relationship_conflicts():
     incoming = ContactRelationship(id=12, contact_id=4, related_contact_id=2, relationship_type="kolega")
     session = MagicMock()
     session.scalars.side_effect = [
-        MagicMock(all=lambda: [primary, duplicate]), [], [], [], [], [], [],
+        MagicMock(all=lambda: [primary, duplicate]), [], [], [], [], [], [], [], [],
         MagicMock(all=lambda: [direct, collision, incoming]),
     ]
     session.scalar.side_effect = [None, 20, None]
@@ -112,7 +112,8 @@ def test_merge_preserves_history_channels_and_resolves_relationship_conflicts():
     assert "notes" not in values and "first_name" not in values
     tables = {query.table.name for query in updates}
     assert {"chat_messages", "contact_change_log", "contact_family_creations", "contact_education",
-            "contact_links", "contact_lookup_results", "contact_addresses", "contact_organizations"} <= tables
+            "contact_links", "contact_lookup_results", "contact_organizations"} <= tables
+    assert "contact_addresses" not in tables  # handled per link by _merge_addresses, not a bulk UPDATE
     assert incoming.related_contact_id == 1
     assert [call.args[0] for call in session.delete.call_args_list] == [direct, collision, duplicate]
     log = next(call.args[0] for call in session.add.call_args_list if isinstance(call.args[0], ContactChangeLog))
@@ -135,7 +136,7 @@ def test_merge_retains_photo_links_and_assigns_selected_photo():
     primary = Contact(id=1, first_name="Anna", photo_storage_key="primary.png")
     duplicate = Contact(id=2, first_name="Ania", photo_storage_key="duplicate.png")
     session = MagicMock()
-    session.scalars.side_effect = [MagicMock(all=lambda: [primary, duplicate]), [], [], [], [], [], [],
+    session.scalars.side_effect = [MagicMock(all=lambda: [primary, duplicate]), [], [], [], [], [], [], [], [],
                                    MagicMock(all=lambda: [])]
     incoming = [ContactPhotoLink(contact_id=2, storage_key=key, depicts_contact=False)
                 for key in ("duplicate.png", "historic.png", "primary.png")]
@@ -154,3 +155,35 @@ def test_merge_retains_photo_links_and_assigns_selected_photo():
     assert links["primary.png"].depicts_contact is True
     assert links["duplicate.png"].depicts_contact is False
     assert links["historic.png"].depicts_contact is False
+
+
+def test_merge_addresses_folds_active_twins_and_keeps_history_and_other_places():
+    import datetime
+    from library.contact_merge import _merge_addresses
+    from library.db.models import Address, ContactAddress
+
+    home = ContactAddress(id=1, contact_id=1, is_primary=False, is_archived=False,
+                          address=Address(id=10, street="Example Street", building_number="1", city="Warsaw"))
+    twin = ContactAddress(id=2, contact_id=2, role="zamieszkania", is_primary=True, is_archived=False,
+                          valid_from=datetime.date(2010, 1, 1),
+                          address=Address(id=11, street="example street", building_number="1", city="WARSAW"))
+    other = ContactAddress(id=3, contact_id=2, is_primary=False, is_archived=False,
+                           address=Address(id=12, street="Other", building_number="9", city="Krakow"))
+    past = ContactAddress(id=4, contact_id=2, is_primary=False, is_archived=True,
+                          address=Address(id=13, street="Example Street", building_number="1", city="Warsaw"))
+    session = MagicMock()
+    session.scalars.side_effect = [[home], [twin, other, past]]
+
+    assert _merge_addresses(session, 1, 2) is True
+    assert (home.role, home.is_primary, home.valid_from) == ("zamieszkania", True, datetime.date(2010, 1, 1))
+    assert [call.args[0] for call in session.delete.call_args_list] == [twin]
+    assert other.contact_id == 1 and past.contact_id == 1  # different place and archived history both move
+    assert past.is_archived is True
+
+
+def test_merge_addresses_reports_nothing_to_do_without_links():
+    from library.contact_merge import _merge_addresses
+
+    session = MagicMock()
+    session.scalars.side_effect = [[], []]
+    assert _merge_addresses(session, 1, 2) is False

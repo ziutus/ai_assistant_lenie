@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from library.address_formatting import (
-    ADDRESS_FIELD_LIMITS, format_address, imported_address_fields, parse_address_text_heuristic,
+    ADDRESS_FIELD_LIMITS, addresses_match, format_address, imported_address_fields, parse_address_text_heuristic,
 )
 
 
@@ -125,3 +125,76 @@ def test_import_preserves_fallback_and_does_not_duplicate(monkeypatch):
     links.append(link)
     assert not attach_imported_address(session, contact, text)
     assert session.add.call_count == 2
+
+
+def _addr(**fields):
+    return SimpleNamespace(**{**dict.fromkeys(ADDRESS_FIELD_LIMITS), **fields})
+
+
+LEGACY_ONE_LINE = _addr(city="Czeremchy 5\n95-073 Tkaczewska Góra\nPL")
+STRUCTURED = _addr(street="Czeremchy", building_number="5", postal_code="95-073", city="Tkaczewska Góra", country="PL")
+
+
+def test_legacy_one_field_address_matches_its_structured_twin():
+    assert addresses_match(LEGACY_ONE_LINE, STRUCTURED)
+    assert addresses_match(STRUCTURED, LEGACY_ONE_LINE)
+
+
+@pytest.mark.parametrize("other", [
+    _addr(street="olsztyńska", building_number="16", city="ŁÓDŹ", country="Polska"),
+    _addr(street="Olsztynska", building_number="16", postal_code="90-001", city="Łódź", country=None),
+])
+def test_case_accents_country_alias_and_missing_postal_are_ignored(other):
+    base = _addr(street="Olsztyńska", building_number="16", city="Łódź", country="Polska")
+    assert addresses_match(base, other)
+
+
+@pytest.mark.parametrize("other", [
+    _addr(street="Olsztyńska", building_number="17", city="Łódź"),
+    _addr(street="Olsztyńska", building_number="16", apartment_number="3", city="Łódź"),
+    _addr(street="Olsztyńska", building_number="16", postal_code="90-001", city="Łódź"),
+    _addr(street="Olsztyńska", building_number="16", city="Łódź", country="Niemcy"),
+    _addr(street="Olsztyńska", building_number="16", city="Kraków"),
+])
+def test_different_places_do_not_match(other):
+    base = _addr(street="Olsztyńska", building_number="16", postal_code="91-001", city="Łódź")
+    assert not addresses_match(base, other)
+
+
+def test_unparsable_free_text_matches_nothing_else():
+    assert not addresses_match(_addr(city="gdzieś nad morzem"), _addr(city="Łódź"))
+    assert addresses_match(_addr(city="gdzieś nad morzem"), _addr(city="Gdzies nad morzem"))
+
+
+def _attach(existing_links, text):
+    from library.contact_addresses import attach_imported_address
+    from library.db.models import Contact, ContactAddress
+    contact = Contact(id=1)
+    session = MagicMock()
+    session.scalars.return_value = existing_links
+    added = []
+    session.add.side_effect = added.append
+    result = attach_imported_address(session, contact, text)
+    return result, [row for row in added if isinstance(row, ContactAddress)]
+
+
+def test_import_skips_the_same_place_spelled_differently_and_never_resurrects_history():
+    from library.db.models import Address, ContactAddress
+    active = ContactAddress(id=1, contact_id=1, is_archived=False, is_primary=True,
+                            address=Address(street="Olsztyńska", building_number="16", city="Łódź"))
+    assert _attach([active], "olsztynska 16, 90-001 lodz")[0] is False
+    past = ContactAddress(id=2, contact_id=1, is_archived=True, is_primary=False,
+                          address=Address(street="Piękna", building_number="15", city="Ksawerów"))
+    assert _attach([past], "Piękna 15, 95-054 Ksawerów")[0] is False
+
+
+def test_import_makes_the_first_active_address_primary_even_after_history():
+    from library.db.models import Address, ContactAddress
+    past = ContactAddress(id=2, contact_id=1, is_archived=True, is_primary=False,
+                          address=Address(street="Piękna", building_number="15", city="Ksawerów"))
+    added, links = _attach([past], "Olsztyńska 16, 90-001 Łódź")
+    assert added is True and links[0].is_primary is True
+    active = ContactAddress(id=1, contact_id=1, is_archived=False, is_primary=True,
+                            address=Address(street="Piękna", building_number="15", city="Ksawerów"))
+    added, links = _attach([active], "Olsztyńska 16, 90-001 Łódź")
+    assert added is True and links[0].is_primary is False

@@ -13,6 +13,8 @@ import ContactPhotoPanel from "../components/ContactPhotoPanel";
 import ContactPhotoHistory from "../components/ContactPhotoHistory";
 import ContactFamilyForm from "../components/ContactFamilyForm";
 import InfoTip from "../components/InfoTip";
+import AddressMapMenu from "../components/AddressMapMenu";
+import { parsePartialDateInput, partialDateToDisplay } from "../services/partialDate";
 
 const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
@@ -112,7 +114,25 @@ interface ContactAddress {
   id: number;
   role: string | null;
   is_primary: boolean;
+  /** "2016", "2016-03" or "2016-03-05" (precision as entered); either end may be unknown. */
+  valid_from?: string | null;
+  valid_to?: string | null;
+  is_archived: boolean;
   address: Address;
+  /** Other contacts using the very same address row — editing it changes it for them too. */
+  shared_with?: { contact_id: number; display_name: string; is_archived: boolean }[];
+  /** Id of an earlier link of this contact that points at the same place, if any. */
+  duplicate_of_link_id?: number | null;
+}
+
+/** An existing address (used by other contacts) that looks like the one being added — offered for sharing. */
+interface SimilarAddress {
+  address_id: number;
+  formatted_address: string;
+  label: string | null;
+  has_notes: boolean;
+  geocoded: boolean;
+  linked_contacts: { id: number; display_name: string; is_archived: boolean }[];
 }
 
 interface AddressSearchResult extends Address {
@@ -539,6 +559,7 @@ const Contact = () => {
   const [addressResults, setAddressResults] = React.useState<AddressSearchResult[]>([]);
   const [addressBusy, setAddressBusy] = React.useState(false);
   const [openAddressMaps, setOpenAddressMaps] = React.useState<Set<number>>(() => new Set());
+  const [similarAddresses, setSimilarAddresses] = React.useState<SimilarAddress[] | null>(null);
   const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
   const [showOrgForm, setShowOrgForm] = React.useState(false);
   const [lookupResults, setLookupResults] = React.useState<ContactLookupResult[]>([]);
@@ -1034,7 +1055,7 @@ const Contact = () => {
     } finally { setAddressParseBusy(false); }
   };
 
-  const addAddress = async (addressId?: number) => {
+  const addAddress = async (addressId?: number, sharingChoice?: "separate") => {
     setAddressBusy(true);
     setIsError(false);
     setMessage("");
@@ -1044,14 +1065,21 @@ const Contact = () => {
         ? { ...values, address_id: addressId }
         : { ...values, label: addressForm.label.trim() || null,
           notes: addressForm.notes.trim() || null,
+          ...(sharingChoice ? { sharing_choice: sharingChoice } : {}),
           ...Object.fromEntries(addressFields.map(({ key }) => [key, addressForm[key].trim() || null])) }, { headers });
       setAddressForm(emptyAddressForm);
       setAddressText("");
       setShowAddressForm(false);
       setAddressQuery("");
+      setSimilarAddresses(null);
       await refreshAddresses();
     } catch (error: any) {
-      setIsError(true); setMessage(`Nie udało się dodać adresu: ${error.response?.data?.message || error.message}`);
+      const data = error.response?.data;
+      if (error.response?.status === 409 && data?.code === "similar_addresses") {
+        setSimilarAddresses(data.candidates ?? []);  // not an error: ask whether to share the existing address
+      } else {
+        setIsError(true); setMessage(`Nie udało się dodać adresu: ${data?.message || error.message}`);
+      }
     } finally { setAddressBusy(false); }
   };
 
@@ -1066,7 +1094,10 @@ const Contact = () => {
     } finally { setAddressBusy(false); }
   };
 
-  const updateAddressLink = async (linkId: number, values: { role?: string | null; is_primary?: boolean }) => {
+  const updateAddressLink = async (linkId: number, values: {
+    role?: string | null; is_primary?: boolean; valid_from?: string | null; valid_to?: string | null;
+    is_archived?: boolean;
+  }) => {
     setAddressBusy(true);
     setIsError(false); setMessage("");
     try {
@@ -1077,14 +1108,16 @@ const Contact = () => {
     } finally { setAddressBusy(false); }
   };
 
-  const geocodeAddress = async (addressId: number) => {
+  const geocodeAddress = async (addressId: number, openMapForLinkId?: number) => {
     setAddressBusy(true);
     setIsError(false); setMessage("");
     try {
       const response = await axios.post(`${apiUrl}/address/${addressId}/geocode`, {}, { headers });
       await refreshAddresses();
       if (response.data.resolved === false) {
-        setIsError(true); setMessage("Nie znaleziono współrzędnych dla tego adresu.");
+        setIsError(true); setMessage("Nie znaleziono współrzędnych dla tego adresu. Użyj linku do zewnętrznej mapy z menu „Mapa”.");
+      } else if (openMapForLinkId != null) {
+        setOpenAddressMaps(current => new Set(current).add(openMapForLinkId));
       }
     } catch (error: any) {
       setIsError(true); setMessage(`Nie udało się geokodować adresu: ${error.response?.data?.message || error.message}`);
@@ -1277,15 +1310,57 @@ const Contact = () => {
   };
 
   const inputStyle: React.CSSProperties = { padding: "6px 10px", width: "100%", boxSizing: "border-box" };
-  const addressSection = !isNew && (
-    <section>
-      <h3>Adresy</h3>
-      {addresses.length === 0 && <p style={{ color: "#667" }}>Brak zapisanych adresów.</p>}
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {addresses.map((link) => (
-          <li key={link.id} style={{ marginBottom: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
-            <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
-              {link.role && <span>{link.role} — </span>}{link.address.formatted_address}</div>
+  const addressPeriodText = (link: ContactAddress) => {
+    const from = partialDateToDisplay(link.valid_from), to = partialDateToDisplay(link.valid_to);
+    if (from && to) return `${from} – ${to}`;
+    if (from) return `od ${from}`;
+    if (to) return `do ${to}`;
+    return null;
+  };
+  // Typed as text so a year ("2016") or a month ("03.2016") is enough; the backend keeps the precision.
+  const savePeriodEnd = (link: ContactAddress, field: "valid_from" | "valid_to", input: HTMLInputElement) => {
+    const parsed = parsePartialDateInput(input.value);
+    if (parsed === undefined) {
+      setIsError(true);
+      setMessage("Niepoprawna data. Wpisz rok (2016), miesiąc i rok (03.2016) albo pełną datę (01.03.2016).");
+      input.value = partialDateToDisplay(link[field]);
+      return;
+    }
+    if (parsed !== (link[field] ?? null)) void updateAddressLink(link.id, { [field]: parsed });
+  };
+  const renderAddressLink = (link: ContactAddress) => (
+          <li key={link.id} style={{ marginBottom: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6,
+            ...(link.is_archived ? { background: "#f6f6f8", color: "#556" } : {}) }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between" }}>
+              <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
+                {link.role && <span>{link.role} — </span>}{link.address.formatted_address}
+                {(link.address.latitude == null || link.address.longitude == null) &&
+                  <span role="img" aria-label="Brak geokodowania" style={{ marginLeft: 6, cursor: "help" }}
+                    title="Brak geokodowania — adres nie ma współrzędnych, więc może być błędny lub nierozpoznany. Użyj menu „Mapa” → „Geokoduj”.">⚠️</span>}
+              </div>
+              <AddressMapMenu address={link.address} inlineOpen={openAddressMaps.has(link.id)} busy={addressBusy}
+                onToggleInline={() => toggleAddressMap(link.id)}
+                onGeocode={() => void geocodeAddress(link.address.id, link.id)} />
+            </div>
+            {link.shared_with && link.shared_with.length > 0 && <div style={{ marginTop: 4, color: "#667" }}><small>
+              👥 Wspólny adres z: {link.shared_with.map((person, index) => <React.Fragment key={person.contact_id}>
+                {index > 0 && ", "}
+                <NavLink to={`/contacts/${person.contact_id}`}>{person.display_name}</NavLink>
+                {person.is_archived && " (dawniej)"}
+              </React.Fragment>)}. Zmiana adresu lub notatek dotyczy ich wszystkich.
+            </small></div>}
+            {(link.is_archived || addressPeriodText(link)) && <div style={{ marginTop: 4, color: "#667" }}><small>
+              🕓 {link.is_archived ? "Dawny adres" : "Okres"}{addressPeriodText(link) ? `: ${addressPeriodText(link)}` : " (bez dat)"}
+            </small></div>}
+            {link.duplicate_of_link_id != null && (() => {
+              const original = addresses.find(other => other.id === link.duplicate_of_link_id);
+              return <div role="alert" style={{ marginTop: 6, padding: "6px 10px", background: "#fff4e5",
+                border: "1px solid #f0b060", borderRadius: 6 }}>
+                ⚠️ Możliwy duplikat{original ? ` adresu „${original.address.formatted_address}”` : " innego adresu tego kontaktu"}.
+                {mode === "edit" && <button className={"button"} type="button" style={{ marginLeft: 8 }} disabled={addressBusy}
+                  onClick={() => void removeAddressLink(link.id)}>Usuń duplikat</button>}
+              </div>;
+            })()}
             {link.address.notes && <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>📝 Notatki: {link.address.notes}</div>}
             {link.address.verified_at && <div style={{ marginTop: 4, color: "#667" }}>
               <small>Zweryfikowano: {new Date(link.address.verified_at).toLocaleDateString("pl-PL")}</small>
@@ -1305,8 +1380,19 @@ const Contact = () => {
                   const role = event.target.value.trim() || null;
                   if (role !== link.role) void updateAddressLink(link.id, { role });
                 }} /></label>
-              <label><input type="checkbox" checked={link.is_primary} disabled={addressBusy}
+              <label><input type="checkbox" checked={link.is_primary} disabled={addressBusy || link.is_archived}
                 onChange={(event) => void updateAddressLink(link.id, { is_primary: event.target.checked })} /> Główny adres</label>
+              <label title="Wystarczy rok (2016) albo miesiąc i rok (03.2016); pełna data (01.03.2016) nie jest wymagana.">
+                Od <input key={`${link.id}-from-${link.valid_from}`} defaultValue={partialDateToDisplay(link.valid_from)}
+                  placeholder="2016 lub 03.2016" size={12} disabled={addressBusy}
+                  onBlur={(event) => savePeriodEnd(link, "valid_from", event.target)} /></label>
+              <label title="Wystarczy rok (2019) albo miesiąc i rok (08.2019). Data końca w przeszłości archiwizuje adres automatycznie.">
+                Do <input key={`${link.id}-to-${link.valid_to}`} defaultValue={partialDateToDisplay(link.valid_to)}
+                  placeholder="2019 lub 08.2019" size={12} disabled={addressBusy}
+                  onBlur={(event) => savePeriodEnd(link, "valid_to", event.target)} /></label>
+              <label title="Dawny adres: zostaje w historii kontaktu, ale nie jest już aktualny. Data „Do” w przeszłości archiwizuje go automatycznie.">
+                <input type="checkbox" checked={link.is_archived} disabled={addressBusy}
+                  onChange={(event) => void updateAddressLink(link.id, { is_archived: event.target.checked })} /> Archiwalny</label>
               <button className={"button"} type="button" disabled={addressBusy}
                 onClick={() => void removeAddressLink(link.id)}>Usuń</button>
               {link.address.latitude == null && <button className={"button"} type="button" disabled={addressBusy}
@@ -1315,17 +1401,6 @@ const Contact = () => {
                 onClick={() => void validateAddress(link.address.id)}>✓ Zweryfikuj adres</button>
             </div>}
             {link.address.latitude != null && link.address.longitude != null && <>
-              <button className={"button"} type="button" style={{ marginTop: 6 }} aria-expanded={openAddressMaps.has(link.id)}
-                onClick={() => toggleAddressMap(link.id)}>
-                {openAddressMaps.has(link.id) ? "🗺 Ukryj mapę" : "🗺 Pokaż na mapie"}
-              </button>
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${link.address.latitude},${link.address.longitude}`}
-                target="_blank" rel="noopener noreferrer"
-                className={"button"} style={{ marginTop: 6, marginLeft: 6, display: "inline-block", textDecoration: "none" }}
-              >
-                🧭 Otwórz w Google Maps (trasa)
-              </a>
               {openAddressMaps.has(link.id) && <React.Suspense fallback={<p>Ładowanie mapy…</p>}>
                 <CountryMap countries={[]} places={[{
                   name: link.address.label || link.address.formatted_address,
@@ -1335,10 +1410,20 @@ const Contact = () => {
               </React.Suspense>}
             </>}
           </li>
-        ))}
-      </ul>
+  );
+  const activeAddresses = addresses.filter(link => !link.is_archived);
+  const archivedAddresses = addresses.filter(link => link.is_archived);
+  const addressSection = !isNew && (
+    <section>
+      <h3>Adresy</h3>
+      {addresses.length === 0 && <p style={{ color: "#667" }}>Brak zapisanych adresów.</p>}
+      <ul style={{ listStyle: "none", padding: 0 }}>{activeAddresses.map(renderAddressLink)}</ul>
+      {archivedAddresses.length > 0 && <details style={{ marginBottom: 10 }}>
+        <summary style={{ cursor: "pointer" }}>Dawne adresy ({archivedAddresses.length})</summary>
+        <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>{archivedAddresses.map(renderAddressLink)}</ul>
+      </details>}
       {mode === "edit" && <>
-        <button className={"button"} type="button" onClick={() => setShowAddressForm(!showAddressForm)}>
+        <button className={"button"} type="button" onClick={() => { setShowAddressForm(!showAddressForm); setSimilarAddresses(null); }}>
           {showAddressForm ? "Anuluj" : "+ Dodaj adres"}
         </button>
         {showAddressForm && <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
@@ -1371,6 +1456,27 @@ const Contact = () => {
               <textarea value={addressForm.notes} maxLength={ADDRESS_NOTES_MAX_LENGTH} rows={3} style={inputStyle}
                 onChange={(event) => setAddressForm(current => ({ ...current, notes: event.target.value }))} />
             </label>
+            {similarAddresses && similarAddresses.length > 0 && <div role="alert" style={{ padding: 10,
+              background: "#eef6ff", border: "1px solid #8ab4f0", borderRadius: 6 }}>
+              <strong>Ten adres jest już używany przez inny kontakt.</strong>
+              <div><small>Wspólny adres oznacza, że jego poprawka (np. kod domofonu) zmieni go u wszystkich osób.
+                Jeśli to inna osoba w tym samym bloku, dodaj osobny wpis.</small></div>
+              {similarAddresses.map(candidate => <div key={candidate.address_id}
+                style={{ marginTop: 8, padding: 8, background: "#fff", borderRadius: 6, border: "1px solid #ddd" }}>
+                <div>{candidate.label && <strong>{candidate.label}: </strong>}{candidate.formatted_address}</div>
+                <div style={{ color: "#667" }}><small>
+                  Używają: {candidate.linked_contacts.map(person =>
+                    `${person.display_name}${person.is_archived ? " (dawniej)" : ""}`).join(", ")}
+                  {candidate.has_notes && " · adres ma notatki"}
+                </small></div>
+                <button className={"button"} type="button" style={{ marginTop: 6 }} disabled={addressBusy}
+                  onClick={() => void addAddress(candidate.address_id)}>Użyj tego adresu</button>
+              </div>)}
+              <button className={"button"} type="button" style={{ marginTop: 8 }} disabled={addressBusy}
+                onClick={() => void addAddress(undefined, "separate")}>Dodaj jako osobny adres</button>
+              <button className={"button"} type="button" style={{ marginTop: 8, marginLeft: 6 }}
+                onClick={() => setSimilarAddresses(null)}>Anuluj</button>
+            </div>}
             <button className={"button"} type="button" disabled={addressBusy || addressParseBusy}
               onClick={() => void addAddress()}>Zapisz adres</button>
           </> : <>

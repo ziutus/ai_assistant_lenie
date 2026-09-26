@@ -1,7 +1,9 @@
 """Transactional contact merge; commit and rollback belong to the caller."""
 
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.orm import joinedload
 
+from library.address_formatting import addresses_match
 from library.contact_channels import CHANNEL_FIELDS, channel_key, contact_channels
 from library.contact_change_log import record_contact_change
 from library.contact_names import contact_display_name
@@ -17,6 +19,40 @@ MERGE_FIELDS = (
     "current_city", "hometown", "birthday", "birthday_month", "birthday_day", "pesel", "notes", "private_notes",
     "category_id", "languages", "nationality", "photo_storage_key", "photo_thumbnail_storage_key",
 )
+
+
+def _merge_addresses(session, primary_id: int, duplicate_id: int) -> bool:
+    """Move the duplicate's address links onto the primary without tripping the no-duplicate guards.
+
+    A bulk UPDATE of contact_id would violate the per-contact uniqueness/same-place trigger whenever both
+    contacts have the same place, which is exactly what duplicate contacts usually look like. An active link
+    that repeats one of the primary's active places is folded into it (filling only what the primary lacks);
+    everything else, including all archived history, moves over untouched. Returns whether anything changed.
+    """
+    def links_of(contact_id):
+        return list(session.scalars(
+            select(ContactAddress).options(joinedload(ContactAddress.address))
+            .where(ContactAddress.contact_id == contact_id).order_by(ContactAddress.id)
+        ))
+
+    primary_links = links_of(primary_id)
+    incoming = links_of(duplicate_id)
+    for link in incoming:
+        twin = None
+        if not link.is_archived:
+            twin = next((other for other in primary_links
+                         if not other.is_archived and addresses_match(other.address, link.address)), None)
+        if twin is None:
+            link.contact_id = primary_id
+            primary_links.append(link)
+        else:
+            twin.role = twin.role or link.role
+            if twin.valid_from is None and link.valid_from is not None:
+                twin.valid_from, twin.valid_from_precision = link.valid_from, link.valid_from_precision
+            twin.is_primary = twin.is_primary or link.is_primary
+            session.delete(link)
+        session.flush()
+    return bool(incoming)
 
 
 def merge_contacts(session, primary_id: int, duplicate_id: int, field_choices: dict[str, str]) -> Contact:
@@ -84,8 +120,10 @@ def merge_contacts(session, primary_id: int, duplicate_id: int, field_choices: d
             session.add(model(contact_id=primary_id, **{key: ident}))
         if incoming - existing:
             changed_fields.append(marker)
+    if _merge_addresses(session, primary_id, duplicate_id):
+        changed_fields.append("addresses")
     for model in (
-        ContactLink, ContactLookupResult, ContactAddress, ContactOrganization, ContactEducation,
+        ContactLink, ContactLookupResult, ContactOrganization, ContactEducation,
         ContactFamilyCreation, ChatMessage, ContactChangeLog,
     ):
         session.execute(update(model).where(model.contact_id == duplicate_id).values(contact_id=primary_id))
