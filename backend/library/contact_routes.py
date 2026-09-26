@@ -25,6 +25,7 @@ from library.address_validation import validate_address
 from library.contact_birthdays import upcoming_birthday_entry
 from library.contact_channels import channel_patch, contact_channels
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
+from library.contact_link_promotion import promote_lookup_result
 from library.contact_names import contact_display_name, validate_contact_name
 from library.contact_phones import phone_search_digits
 from library.contact_photos import ensure_photo_link
@@ -1906,21 +1907,10 @@ def contact_lookup_results_update(lookup_result_id: int):
         row.notes = (data.get("notes") or "").strip() or None
 
     # Confirmed profiles live in generic links; lookup rows retain the search trail.
-    if row.status == "confirmed" and row.lookup_type == "linkedin" and row.url:
+    if row.status == "confirmed" and row.url:
         contact = session.get(Contact, row.contact_id)
         if contact is not None:
-            links = list(session.scalars(select(ContactLink).where(
-                ContactLink.contact_id == contact.id, ContactLink.link_type == "linkedin",
-            ).order_by(ContactLink.id)))
-            if not any(link.url == row.url for link in links):
-                if links:
-                    links[0].url = row.url
-                else:
-                    session.add(ContactLink(contact_id=contact.id, link_type="linkedin", url=row.url))
-                record_contact_change(
-                    session, contact, "linkedin_analysis", changed_fields=["links"],
-                    note=f"Potwierdzony wynik OSINT (lookup #{row.id})",
-                )
+            promote_lookup_result(session, contact, row)
 
     try:
         session.commit()
