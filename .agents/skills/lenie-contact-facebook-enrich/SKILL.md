@@ -176,6 +176,30 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json" \
   -d '{"interest_id": <id>}'
 ```
 
+### Step 5c: Links the person published in their own profile (OSINT)
+
+Links the person put there themselves — Instagram, LinkedIn, X/Twitter, a personal or company website — can appear in three places:
+
+- the profile intro under the name on the main page (in `get_page_text` a bare URL line, e.g. `https://www.instagram.com/<handle>/`);
+- the **"Linki"** entry of the left "Informacje" menu, present on some profiles (`<profile_url>/directory_links`; shows e.g. `georgiaadventureclub.com` with the label "Strona internetowa" — no scheme, add `https://`);
+- the **"Informacje kontaktowe"** entry (`<profile_url>/directory_contact_info`), which usually lists messenger handles (Skype, Gadu-Gadu) rather than URLs — those have no `link_type`, so only mention them in the Step 6b `notes`.
+
+These are self-published leads, so save the URLs on the contact.
+
+- **Only self-published links.** Take URLs from the profile's own intro/bio or its contact-info section. Never from posts, comments, liked pages, "Obserwowani" lists or friends' profiles.
+- **Map host → `link_type`:** `instagram.com` → `instagram`; `linkedin.com/in/…` → `linkedin`; `x.com`/`twitter.com` → `twitter`; another personal/company site → `website`; anything else → `other`. Skip Facebook itself (Step 1 already handles the profile URL).
+- **Label without a URL:** if the page text shows only a label (e.g. "LinkedIn" under "Media społecznościowe"), read the anchor with `find` — Facebook wraps external links as `l.facebook.com/l.php?u=<url-encoded target>`; URL-decode the `u=` value and drop `fbclid`. Never open the wrapper.
+- **Normalize:** strip tracking parameters (`fbclid`, `hl`, `igsh`, `utm_*`), keep host + path, use the visible URL text rather than a `l.facebook.com` redirect.
+- **Dedupe** against the `links` array read in Step 1 (case-insensitive host + path); skip what is already there.
+- **Save** each new link:
+  ```bash
+  curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
+    -X POST "http://192.168.200.7:5055/contacts/<ID>/links" \
+    --data-binary '{"link_type": "instagram", "url": "https://www.instagram.com/<handle>/", "label": "Instagram (z opisu profilu na Facebooku)"}'
+  ```
+- **Do not follow the link and do not collect data from the target site here.** If reading the profile opens the linked site in a new browser tab (this happened once with an Instagram link), close that tab. Enriching a contact from LinkedIn is the separate `lenie-contact-linkedin-info` skill.
+- Mention added links in the Step 6b `notes` line (e.g. `linki: instagram (dodano)`).
+
 ### Step 6: Verify and clean up
 
 ```bash
@@ -203,7 +227,7 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; chars
 
 ### Step 7: Report
 
-Tell the user, in Polish: which contact was updated, where the photo came from (profile URL, which album/photo), and which structured facts (if any) were added or already present — including education entries and hobby tags, or a note that Step 5b found nothing usable. Give the test link `http://192.168.200.7:3000/contacts/<id>`.
+Tell the user, in Polish: which contact was updated, where the photo came from (profile URL, which album/photo), and which structured facts (if any) were added or already present — including education entries, hobby tags (or a note that Step 5b found nothing usable) and any profile links added in Step 5c. Give the test link `http://192.168.200.7:3000/contacts/<id>`.
 
 ## Safety net: photo history
 
