@@ -13,6 +13,7 @@ from uuid import uuid4
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import column, false, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
@@ -1967,6 +1968,12 @@ def contact_addresses(contact_id: int):
         session.commit()
         record_contact_change(session, contact, "manual_edit", changed_fields=["addresses"])
         session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if getattr(exc.orig, "pgcode", None) == "23505":  # DB-level guard: same place already linked
+            return jsonify({"status": "error", "code": "duplicate_address",
+                            "message": "Kontakt ma już ten adres."}), 409
+        return {"status": "error", "message": "DB error"}, 500
     except Exception:
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500

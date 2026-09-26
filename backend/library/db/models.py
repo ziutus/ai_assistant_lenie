@@ -3397,7 +3397,10 @@ class ContactAddress(Base):
     """
 
     __tablename__ = "contact_addresses"
-    __table_args__ = (Index("idx_contact_addresses_contact", "contact_id"),)
+    __table_args__ = (
+        Index("idx_contact_addresses_contact", "contact_id"),
+        UniqueConstraint("contact_id", "address_id", name="uq_contact_addresses_contact_address"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)

@@ -76,6 +76,24 @@ class TestContactAddresses:
         assert response.json["existing"]["id"] == 30
         session.add.assert_not_called()
 
+    def test_post_maps_the_database_duplicate_guard_to_409(self, address_api):
+        from sqlalchemy.exc import IntegrityError
+        client, session, contact, address, link = address_api
+        session.commit.side_effect = IntegrityError("insert", {}, SimpleNamespace(pgcode="23505"))
+        response = client.post("/contacts/7/addresses",
+                               json={"street": "Other Street", "building_number": "9", "city": "Warsaw"})
+        assert response.status_code == 409
+        assert response.json["code"] == "duplicate_address"
+        session.rollback.assert_called()
+
+    def test_post_keeps_500_for_other_integrity_errors(self, address_api):
+        from sqlalchemy.exc import IntegrityError
+        client, session, contact, address, link = address_api
+        session.commit.side_effect = IntegrityError("insert", {}, SimpleNamespace(pgcode="23503"))
+        response = client.post("/contacts/7/addresses",
+                               json={"street": "Other Street", "building_number": "9", "city": "Warsaw"})
+        assert response.status_code == 500
+
     def test_post_rejects_choosing_an_existing_address_row_twice(self, address_api):
         client, session, contact, address, link = address_api
         session.execute.return_value.scalars.return_value.all.return_value = [link]
