@@ -1287,13 +1287,17 @@ const Contact = () => {
       <ul style={{ listStyle: "none", padding: 0 }}>
         {addresses.map((link) => (
           <li key={link.id} style={{ marginBottom: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
-            <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
-              {link.role && <span>{link.role} — </span>}{link.address.formatted_address}</div>
-            <div style={{ marginTop: 4, color: "#667" }}><small>
-              {link.address.latitude != null && link.address.longitude != null
-                ? `📍 Współrzędne: ${link.address.latitude.toFixed(5)}, ${link.address.longitude.toFixed(5)}`
-                : "📍 Brak współrzędnych (adres niezgeokodowany)"}
-            </small></div>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between" }}>
+              <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
+                {link.role && <span>{link.role} — </span>}{link.address.formatted_address}
+                {(link.address.latitude == null || link.address.longitude == null) &&
+                  <span role="img" aria-label="Brak geokodowania" style={{ marginLeft: 6, cursor: "help" }}
+                    title="Brak geokodowania — adres nie ma współrzędnych, więc może być błędny lub nierozpoznany. Użyj menu „Mapa” → „Geokoduj”.">⚠️</span>}
+              </div>
+              <AddressMapMenu address={link.address} inlineOpen={openAddressMaps.has(link.id)} busy={addressBusy}
+                onToggleInline={() => toggleAddressMap(link.id)}
+                onGeocode={() => void geocodeAddress(link.address.id, link.id)} />
+            </div>
             {link.address.notes && <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>📝 Notatki: {link.address.notes}</div>}
             {link.address.verified_at && <div style={{ marginTop: 4, color: "#667" }}>
               <small>Zweryfikowano: {new Date(link.address.verified_at).toLocaleDateString("pl-PL")}</small>
@@ -1322,9 +1326,6 @@ const Contact = () => {
               <button className={"button"} type="button" disabled={addressBusy}
                 onClick={() => void validateAddress(link.address.id)}>✓ Zweryfikuj adres</button>
             </div>}
-            <AddressMapMenu address={link.address} inlineOpen={openAddressMaps.has(link.id)} busy={addressBusy}
-              onToggleInline={() => toggleAddressMap(link.id)}
-              onGeocode={() => void geocodeAddress(link.address.id, link.id)} />
             {link.address.latitude != null && link.address.longitude != null && <>
               {openAddressMaps.has(link.id) && <React.Suspense fallback={<p>Ładowanie mapy…</p>}>
                 <CountryMap countries={[]} places={[{

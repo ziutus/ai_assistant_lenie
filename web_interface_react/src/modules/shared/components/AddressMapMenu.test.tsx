@@ -29,6 +29,16 @@ it("offers geocoding instead of the inline map when coordinates are missing", ()
   expect(onGeocode).toHaveBeenCalledTimes(1);
 });
 
+it("highlights the menu item under the pointer", () => {
+  render(<AddressMapMenu address={plain} inlineOpen={false} onToggleInline={vi.fn()} onGeocode={vi.fn()} />);
+  const item = screen.getByText("Waze — nawiguj");
+  expect(item.style.background).toBe("none");
+  fireEvent.mouseEnter(item);
+  expect(item.style.background).not.toBe("none");
+  fireEvent.mouseLeave(item);
+  expect(item.style.background).toBe("none");
+});
+
 it("toggles the inline map when coordinates exist", () => {
   const onToggle = vi.fn();
   render(<AddressMapMenu address={geocoded} inlineOpen={false} onToggleInline={onToggle} onGeocode={vi.fn()} />);

@@ -57,25 +57,39 @@ const AddressMapMenu: React.FC<Props> = ({ address, inlineOpen, onToggleInline, 
 
   const hasCoords = address.latitude != null && address.longitude != null;
   const closeMenu = () => { if (ref.current) ref.current.open = false; };
-  const itemStyle: React.CSSProperties = {
-    display: "block", padding: "6px 12px", textAlign: "left", background: "none", border: 0,
-    width: "100%", cursor: "pointer", textDecoration: "none", color: "inherit", font: "inherit",
-  };
+  const [active, setActive] = React.useState<string | null>(null);
+  const itemProps = (key: string) => ({
+    role: "menuitem" as const,
+    style: {
+      display: "block", padding: "6px 12px", textAlign: "left", border: 0, width: "100%", boxSizing: "border-box",
+      cursor: "pointer", textDecoration: "none", color: "inherit", font: "inherit", whiteSpace: "nowrap",
+      background: active === key ? "#dbeafe" : "none",
+    } as React.CSSProperties,
+    onMouseEnter: () => setActive(key),
+    onMouseLeave: () => setActive(null),
+    onFocus: () => setActive(key),
+    onBlur: () => setActive(null),
+  });
+  const coordsTitle = hasCoords
+    ? `Współrzędne: ${address.latitude!.toFixed(5)}, ${address.longitude!.toFixed(5)}`
+    : "Adres bez współrzędnych";
 
   return (
-    <details ref={ref} style={{ display: "inline-block", position: "relative", marginTop: 6 }}>
-      <summary className={"button"} style={{ display: "inline-block", cursor: "pointer" }}>🗺 Mapa ▾</summary>
-      <div role="menu" style={{ position: "absolute", zIndex: 10, background: "#fff", border: "1px solid #ccc",
-        borderRadius: 6, minWidth: 260, boxShadow: "0 2px 8px rgba(0,0,0,.15)" }}>
+    <details ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+      <summary className={"button"} title={coordsTitle}
+        style={{ display: "inline-block", cursor: "pointer", whiteSpace: "nowrap" }}>🗺 Mapa ▾</summary>
+      <div role="menu" style={{ position: "absolute", right: 0, zIndex: 10, background: "#fff",
+        border: "1px solid #ccc", borderRadius: 6, minWidth: 260, marginTop: 2, overflow: "hidden",
+        boxShadow: "0 2px 8px rgba(0,0,0,.15)" }}>
         {hasCoords
-          ? <button type="button" role="menuitem" style={itemStyle} onClick={() => { onToggleInline(); closeMenu(); }}>
+          ? <button type="button" {...itemProps("inline")} onClick={() => { onToggleInline(); closeMenu(); }}>
             {inlineOpen ? "🗺 Ukryj mapę poniżej" : "🗺 Pokaż mapę poniżej"}
           </button>
-          : <button type="button" role="menuitem" style={itemStyle} disabled={busy}
+          : <button type="button" {...itemProps("inline")} disabled={busy}
             onClick={() => { onGeocode(); closeMenu(); }}>📍 Geokoduj i pokaż mapę poniżej</button>}
         {buildMapLinks(address).map(link => (
-          <a key={link.label} role="menuitem" href={link.href} target="_blank" rel="noopener noreferrer"
-            style={itemStyle} onClick={closeMenu}>{link.label}</a>
+          <a key={link.label} {...itemProps(link.label)} href={link.href} target="_blank" rel="noopener noreferrer"
+            onClick={closeMenu}>{link.label}</a>
         ))}
       </div>
     </details>
