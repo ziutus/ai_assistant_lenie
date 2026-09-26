@@ -1425,6 +1425,28 @@ class TestContactLookupResultsAdd:
         assert added.status == "candidate"
         assert added.url == "kontakt@example-firma.pl"
 
+    def test_adds_facebook_check_record(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/lookup_results", method="POST",
+            json={
+                "lookup_type": "facebook", "status": "no_results",
+                "url": "https://www.facebook.com/profile.php?id=1",
+                "notes": "płeć: tak; miasto: brak; zdjęcie: brak (szara sylwetka)",
+            },
+        ):
+            response = contact_lookup_results_add(1)
+
+        assert response[1] == 200
+        added = session.add.call_args[0][0]
+        assert added.lookup_type == "facebook"
+        assert added.status == "no_results"
+
     def test_missing_contact_is_404(self, monkeypatch):
         from library.contact_routes import contact_lookup_results_add
 
@@ -1450,7 +1472,7 @@ class TestContactLookupResultsAdd:
         app = Flask(__name__)
         with app.test_request_context(
             "/contacts/1/lookup_results", method="POST",
-            json={"lookup_type": "facebook", "status": "no_results"},
+            json={"lookup_type": "tiktok", "status": "no_results"},
         ):
             response = contact_lookup_results_add(1)
 
