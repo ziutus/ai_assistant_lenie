@@ -14,6 +14,7 @@ import ContactPhotoHistory from "../components/ContactPhotoHistory";
 import ContactFamilyForm from "../components/ContactFamilyForm";
 import InfoTip from "../components/InfoTip";
 import AddressMapMenu from "../components/AddressMapMenu";
+import { parsePartialDateInput, partialDateToDisplay } from "../services/partialDate";
 
 const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
@@ -113,7 +114,7 @@ interface ContactAddress {
   id: number;
   role: string | null;
   is_primary: boolean;
-  /** ISO dates (YYYY-MM-DD); either end may be unknown. */
+  /** "2016", "2016-03" or "2016-03-05" (precision as entered); either end may be unknown. */
   valid_from?: string | null;
   valid_to?: string | null;
   is_archived: boolean;
@@ -1309,12 +1310,23 @@ const Contact = () => {
   };
 
   const inputStyle: React.CSSProperties = { padding: "6px 10px", width: "100%", boxSizing: "border-box" };
-  const formatAddressDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString("pl-PL");
   const addressPeriodText = (link: ContactAddress) => {
-    if (link.valid_from && link.valid_to) return `${formatAddressDate(link.valid_from)} – ${formatAddressDate(link.valid_to)}`;
-    if (link.valid_from) return `od ${formatAddressDate(link.valid_from)}`;
-    if (link.valid_to) return `do ${formatAddressDate(link.valid_to)}`;
+    const from = partialDateToDisplay(link.valid_from), to = partialDateToDisplay(link.valid_to);
+    if (from && to) return `${from} – ${to}`;
+    if (from) return `od ${from}`;
+    if (to) return `do ${to}`;
     return null;
+  };
+  // Typed as text so a year ("2016") or a month ("03.2016") is enough; the backend keeps the precision.
+  const savePeriodEnd = (link: ContactAddress, field: "valid_from" | "valid_to", input: HTMLInputElement) => {
+    const parsed = parsePartialDateInput(input.value);
+    if (parsed === undefined) {
+      setIsError(true);
+      setMessage("Niepoprawna data. Wpisz rok (2016), miesiąc i rok (03.2016) albo pełną datę (01.03.2016).");
+      input.value = partialDateToDisplay(link[field]);
+      return;
+    }
+    if (parsed !== (link[field] ?? null)) void updateAddressLink(link.id, { [field]: parsed });
   };
   const renderAddressLink = (link: ContactAddress) => (
           <li key={link.id} style={{ marginBottom: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6,
@@ -1370,10 +1382,14 @@ const Contact = () => {
                 }} /></label>
               <label><input type="checkbox" checked={link.is_primary} disabled={addressBusy || link.is_archived}
                 onChange={(event) => void updateAddressLink(link.id, { is_primary: event.target.checked })} /> Główny adres</label>
-              <label>Od <input type="date" value={link.valid_from ?? ""} disabled={addressBusy}
-                onChange={(event) => void updateAddressLink(link.id, { valid_from: event.target.value || null })} /></label>
-              <label>Do <input type="date" value={link.valid_to ?? ""} disabled={addressBusy}
-                onChange={(event) => void updateAddressLink(link.id, { valid_to: event.target.value || null })} /></label>
+              <label title="Wystarczy rok (2016) albo miesiąc i rok (03.2016); pełna data (01.03.2016) nie jest wymagana.">
+                Od <input key={`${link.id}-from-${link.valid_from}`} defaultValue={partialDateToDisplay(link.valid_from)}
+                  placeholder="2016 lub 03.2016" size={12} disabled={addressBusy}
+                  onBlur={(event) => savePeriodEnd(link, "valid_from", event.target)} /></label>
+              <label title="Wystarczy rok (2019) albo miesiąc i rok (08.2019). Data końca w przeszłości archiwizuje adres automatycznie.">
+                Do <input key={`${link.id}-to-${link.valid_to}`} defaultValue={partialDateToDisplay(link.valid_to)}
+                  placeholder="2019 lub 08.2019" size={12} disabled={addressBusy}
+                  onBlur={(event) => savePeriodEnd(link, "valid_to", event.target)} /></label>
               <label title="Dawny adres: zostaje w historii kontaktu, ale nie jest już aktualny. Data „Do” w przeszłości archiwizuje go automatycznie.">
                 <input type="checkbox" checked={link.is_archived} disabled={addressBusy}
                   onChange={(event) => void updateAddressLink(link.id, { is_archived: event.target.checked })} /> Archiwalny</label>

@@ -162,6 +162,33 @@ class TestContactAddresses:
         assert link.is_archived is True and link.is_primary is False
         assert (link.valid_from, link.valid_to) == (datetime.date(2015, 3, 1), datetime.date(2019, 8, 31))
 
+    def test_patch_accepts_year_and_month_precision_and_reports_them_back(self, address_api):
+        import datetime
+        client, session, contact, address, link = address_api
+        link.is_primary = False
+        response = client.patch("/contact_addresses/30", json={"valid_from": "2016", "valid_to": "2019-08"})
+        assert response.status_code == 200
+        assert (link.valid_from, link.valid_from_precision) == (datetime.date(2016, 1, 1), "year")
+        assert (link.valid_to, link.valid_to_precision) == (datetime.date(2019, 8, 31), "month")
+        assert (response.json["address"]["valid_from"], response.json["address"]["valid_to"]) == ("2016", "2019-08")
+        assert link.is_archived is True  # the end (31 Aug 2019) is in the past
+
+    def test_an_end_year_is_not_before_a_start_month_of_the_same_year(self, address_api):
+        client, session, contact, address, link = address_api
+        link.is_primary = False
+        ok = client.patch("/contact_addresses/30", json={"valid_from": "2019-06", "valid_to": "2019"})
+        assert ok.status_code == 200
+        bad = client.patch("/contact_addresses/30", json={"valid_from": "2020", "valid_to": "2019-12"})
+        assert bad.status_code == 400
+
+    def test_clearing_a_date_clears_its_precision(self, address_api):
+        import datetime
+        client, session, contact, address, link = address_api
+        link.is_primary = False
+        link.valid_from, link.valid_from_precision = datetime.date(2016, 1, 1), "year"
+        assert client.patch("/contact_addresses/30", json={"valid_from": None}).status_code == 200
+        assert (link.valid_from, link.valid_from_precision) == (None, None)
+
     def test_patch_past_end_date_archives_automatically_but_future_does_not(self, address_api):
         client, session, contact, address, link = address_api
         link.is_primary = False
@@ -182,6 +209,8 @@ class TestContactAddresses:
         {"valid_from": "2020-01-01", "valid_to": "2019-01-01"},
         {"valid_from": "2020-13-45"},
         {"valid_from": "20200101"},
+        {"valid_from": "03.2015"},
+        {"valid_to": "2020-02-30"},
         {"is_archived": "yes"},
     ])
     def test_patch_rejects_invalid_period_or_archive_state(self, address_api, payload):

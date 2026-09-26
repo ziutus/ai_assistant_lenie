@@ -483,6 +483,8 @@ def run_import(session, spec, sources, apply=False):
                         session.add(ContactAddress(
                             contact=contact, address=source.address, role=source.role or "zamieszkania",
                             valid_from=source.valid_from, valid_to=source.valid_to, is_archived=source.is_archived,
+                            valid_from_precision=source.valid_from_precision,
+                            valid_to_precision=source.valid_to_precision,
                             is_primary=not source.is_archived and not any(not link.is_archived for link in current)))
                         session.flush()
                 elif key == "links":

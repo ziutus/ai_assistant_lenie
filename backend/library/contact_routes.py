@@ -18,6 +18,7 @@ from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
 from library.address_formatting import ADDRESS_FIELD_LIMITS, addresses_match, format_address, is_specific_address
+from library.partial_dates import format_partial_date, parse_partial_date
 from library.address_parsing import ADDRESS_NOTES_MAX_LENGTH, parse_address_text
 from library.address_geocoding import geocode_address
 from library.address_validation import validate_address
@@ -449,8 +450,8 @@ def _address_dict(row: Address) -> dict:
 def _contact_address_dict(row: ContactAddress) -> dict:
     return {
         "id": row.id, "role": row.role, "is_primary": row.is_primary,
-        "valid_from": row.valid_from.isoformat() if row.valid_from else None,
-        "valid_to": row.valid_to.isoformat() if row.valid_to else None,
+        "valid_from": format_partial_date(row.valid_from, row.valid_from_precision),
+        "valid_to": format_partial_date(row.valid_to, row.valid_to_precision),
         "is_archived": bool(row.is_archived),
         "address": _address_dict(row.address),
     }
@@ -2019,7 +2020,8 @@ def contact_addresses(contact_id: int):
             fields["country"] = "Polska"
         address = Address(**fields, label=(data.get("label") or "").strip() or None,
                           notes=(data.get("notes") or "").strip() or None)
-    valid_from, valid_to = _payload_date(data.get("valid_from")), _payload_date(data.get("valid_to"))
+    valid_from, from_precision = _payload_partial_date(data.get("valid_from"), end=False)
+    valid_to, to_precision = _payload_partial_date(data.get("valid_to"), end=True)
     if valid_from and valid_to and valid_to < valid_from:
         return {"status": "error", "message": "valid_to cannot be earlier than valid_from"}, 400
     is_archived = data.get("is_archived", False)
@@ -2045,7 +2047,8 @@ def contact_addresses(contact_id: int):
     row = ContactAddress(contact_id=contact_id, address=address,
                          role=(data.get("role") or "").strip() or None,
                          is_primary=data.get("is_primary", False),
-                         valid_from=valid_from, valid_to=valid_to, is_archived=is_archived)
+                         valid_from=valid_from, valid_to=valid_to, is_archived=is_archived,
+                         valid_from_precision=from_precision, valid_to_precision=to_precision)
     try:
         session.add(row)
         session.commit()
@@ -2091,19 +2094,20 @@ def _validate_address_payload(data, *, creating=False):
         return "sharing_choice applies to a new address, not to address_id"
     for field in ("valid_from", "valid_to"):
         if field in data and data[field] is not None:
-            if not isinstance(data[field], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data[field]):
-                return f"{field} must be an ISO date (YYYY-MM-DD) or null"
             try:
-                datetime.date.fromisoformat(data[field])
+                if not isinstance(data[field], str):
+                    raise ValueError
+                parse_partial_date(data[field], end=field == "valid_to")
             except ValueError:
-                return f"{field} is not a valid date"
+                return f"{field} must be YYYY, YYYY-MM or YYYY-MM-DD (a real date) or null"
     if data.get("is_archived") is True and data.get("is_primary") is True:
         return "An archived address cannot be the primary address"
     return None
 
 
-def _payload_date(value):
-    return datetime.date.fromisoformat(value) if value else None
+def _payload_partial_date(value, *, end: bool):
+    """A validated wire value -> (date, precision); (None, None) for null. See library/partial_dates.py."""
+    return parse_partial_date(value, end=end) if value else (None, None)
 
 
 @bp.route("/address/<int:address_id>", methods=["PATCH", "OPTIONS"])
@@ -2179,8 +2183,10 @@ def contact_addresses_update(link_id: int):
     error = _validate_address_payload(data)
     if error:
         return {"status": "error", "message": error}, 400
-    valid_from = _payload_date(data["valid_from"]) if "valid_from" in data else row.valid_from
-    valid_to = _payload_date(data["valid_to"]) if "valid_to" in data else row.valid_to
+    valid_from, from_precision = (_payload_partial_date(data["valid_from"], end=False) if "valid_from" in data
+                                  else (row.valid_from, row.valid_from_precision))
+    valid_to, to_precision = (_payload_partial_date(data["valid_to"], end=True) if "valid_to" in data
+                              else (row.valid_to, row.valid_to_precision))
     if valid_from and valid_to and valid_to < valid_from:
         return {"status": "error", "message": "valid_to cannot be earlier than valid_from"}, 400
     is_archived = row.is_archived
@@ -2193,6 +2199,7 @@ def contact_addresses_update(link_id: int):
     if "role" in data:
         row.role = (data["role"] or "").strip() or None
     row.valid_from, row.valid_to, row.is_archived = valid_from, valid_to, is_archived
+    row.valid_from_precision, row.valid_to_precision = from_precision, to_precision
     if "is_primary" in data:
         row.is_primary = data["is_primary"]
     if is_archived:

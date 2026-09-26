@@ -3405,6 +3405,10 @@ class ContactAddress(Base):
         CheckConstraint("valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from",
                         name="ck_contact_addresses_valid_period"),
         CheckConstraint("NOT (is_archived AND is_primary)", name="ck_contact_addresses_archived_not_primary"),
+        CheckConstraint(
+            "(valid_from_precision IS NULL OR (valid_from IS NOT NULL AND valid_from_precision IN ('day', 'month', 'year')))"
+            " AND (valid_to_precision IS NULL OR (valid_to IS NOT NULL AND valid_to_precision IN ('day', 'month', 'year')))",
+            name="ck_contact_addresses_date_precision"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -3416,6 +3420,10 @@ class ContactAddress(Base):
     # explicit "former address" flag: a dated stay can be archived, and so can one with no dates.
     valid_from: Mapped[datetime.date | None] = mapped_column(Date)
     valid_to: Mapped[datetime.date | None] = mapped_column(Date)
+    # How much of valid_from/valid_to is meaningful: 'year' / 'month' / 'day' (NULL = a full day).
+    # valid_from holds the first day of that period, valid_to the last (see library/partial_dates.py).
+    valid_from_precision: Mapped[str | None] = mapped_column(Text)
+    valid_to_precision: Mapped[str | None] = mapped_column(Text)
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 

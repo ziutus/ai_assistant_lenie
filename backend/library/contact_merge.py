@@ -47,7 +47,8 @@ def _merge_addresses(session, primary_id: int, duplicate_id: int) -> bool:
             primary_links.append(link)
         else:
             twin.role = twin.role or link.role
-            twin.valid_from = twin.valid_from or link.valid_from
+            if twin.valid_from is None and link.valid_from is not None:
+                twin.valid_from, twin.valid_from_precision = link.valid_from, link.valid_from_precision
             twin.is_primary = twin.is_primary or link.is_primary
             session.delete(link)
         session.flush()
