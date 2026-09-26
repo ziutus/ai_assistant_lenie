@@ -4,7 +4,9 @@ param(
     [string[]]$Service = @("all"),
     [switch]$SkipBuild,
     [switch]$ComposeOnly,
-    [switch]$SyncCompose
+    [switch]$SyncCompose,
+    # Deploy exactly the named services; by default -Service backend also brings worker and cloud-bridge.
+    [switch]$NoImplied
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +44,20 @@ if ($Service -contains "all") {
     $Services = @("db", "backend", "worker", "document-worker", "frontend", "app2")
 } else {
     $Services = $Service
+}
+
+# backend, worker and cloud-bridge (and lenie-migrate) run ONE image, lenie-ai-server:latest. A backend
+# deploy alone rebuilds it but leaves worker/cloud-bridge on the old container (stale code, unnoticed), so
+# `backend` implies the other two; they share the image, so the extra build below is a cache hit.
+if (-not $NoImplied -and $Services -contains "backend") {
+    $Implied = @("worker", "cloud-bridge") | Where-Object { $Services -notcontains $_ }
+    if ($Implied) {
+        $Services = @($Services) + @($Implied)
+        Write-Host ("Adding services that share the backend image: {0} (use -NoImplied to skip)" -f ($Implied -join ", ")) -ForegroundColor Yellow
+    }
+}
+if ($Services -contains "backend" -and $Services -notcontains "document-worker") {
+    Write-Host "Note: document-worker has its OWN image and is not refreshed; add it if the change affects document preparation." -ForegroundColor Yellow
 }
 
 function Invoke-Checked {
@@ -123,9 +139,13 @@ if (-not $ComposeOnly) {
 
     Push-Location $ProjectRoot
     try {
+        $ImagesDone = @{}
         foreach ($Name in $Services) {
             $Def = $Definitions[$Name]
             if (-not $Def.Dockerfile) { continue }
+            # backend / worker / cloud-bridge share one image: build and push it once.
+            if ($ImagesDone[$Def.Image]) { continue }
+            $ImagesDone[$Def.Image] = $true
             if (-not $SkipBuild) {
                 $BuildArgs = @($Def.BuildArgs)
                 Invoke-Checked { docker build @BuildArgs --progress=plain -t $Def.Image -f $Def.Dockerfile . } "Build $Name"

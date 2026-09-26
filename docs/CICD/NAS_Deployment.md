@@ -667,10 +667,14 @@ running `docker exec -u 0 lenie-document-worker chown -R 1000:1000 /app/work`.
 ```
 
 Note which services **share one image**: `backend` (`lenie-ai-server`),
-`worker` and `lenie-migrate` all run `lenie-ai-server:latest`;
-`document-worker` has its own tag (adds the markdown extra). After a backend
-code change, redeploy every service that consumes the image — usually
-`-Service backend,worker` — or one container keeps running stale code.
+`worker`, `cloud-bridge` and `lenie-migrate` all run `lenie-ai-server:latest`;
+`document-worker` has its own tag (adds the markdown extra). Deploying
+`backend` therefore **also recreates `worker` and `cloud-bridge`** (the script adds
+them and prints what it added; the image is built and pushed once), so none of
+them keeps running stale code. Pass `-NoImplied` (`--no-implied` for the bash
+script) to deploy exactly the services you named. `document-worker` is never added
+implicitly — name it too when the change affects document preparation; the script
+prints a reminder.
 
 ### SSH connection timeouts during deploy
 
