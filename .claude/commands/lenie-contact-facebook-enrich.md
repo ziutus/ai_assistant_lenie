@@ -163,6 +163,7 @@ These are self-published leads, so save the URLs on the contact.
 
 - **Only self-published links.** Take URLs from the profile's own intro/bio or its contact-info section. Never from posts, comments, liked pages, "Obserwowani" lists or friends' profiles.
 - **Map host → `link_type`:** `instagram.com` → `instagram`; `linkedin.com/in/…` → `linkedin`; `x.com`/`twitter.com` → `twitter`; another personal/company site → `website`; anything else → `other`. Skip Facebook itself (Step 1 already handles the profile URL).
+- **Label without a URL:** if the page text shows only a label (e.g. "LinkedIn" under "Media społecznościowe"), read the anchor with `find` — Facebook wraps external links as `l.facebook.com/l.php?u=<url-encoded target>`; URL-decode the `u=` value and drop `fbclid`. Never open the wrapper.
 - **Normalize:** strip tracking parameters (`fbclid`, `hl`, `igsh`, `utm_*`), keep host + path, use the visible URL text rather than a `l.facebook.com` redirect.
 - **Dedupe** against the `links` array read in Step 1 (case-insensitive host + path); skip what is already there.
 - **Save** each new link:
