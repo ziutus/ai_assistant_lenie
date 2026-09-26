@@ -3399,7 +3399,12 @@ class ContactAddress(Base):
     __tablename__ = "contact_addresses"
     __table_args__ = (
         Index("idx_contact_addresses_contact", "contact_id"),
-        UniqueConstraint("contact_id", "address_id", name="uq_contact_addresses_contact_address"),
+        # Active stays only: the same shared address can be a person's home twice (moved away and back).
+        Index("uq_contact_addresses_active_contact_address", "contact_id", "address_id", unique=True,
+              postgresql_where=sa_text("NOT is_archived")),
+        CheckConstraint("valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from",
+                        name="ck_contact_addresses_valid_period"),
+        CheckConstraint("NOT (is_archived AND is_primary)", name="ck_contact_addresses_archived_not_primary"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -3407,6 +3412,11 @@ class ContactAddress(Base):
     address_id: Mapped[int] = mapped_column(ForeignKey("addresses.id", ondelete="CASCADE"), nullable=False)
     role: Mapped[str | None] = mapped_column(String(50))
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    # Period the contact was reachable at this address (either end may be unknown), and an
+    # explicit "former address" flag: a dated stay can be archived, and so can one with no dates.
+    valid_from: Mapped[datetime.date | None] = mapped_column(Date)
+    valid_to: Mapped[datetime.date | None] = mapped_column(Date)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     address: Mapped["Address"] = relationship(foreign_keys=[address_id])

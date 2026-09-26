@@ -18,6 +18,13 @@ pytest.importorskip("sqlalchemy")
 from flask import Flask, g
 
 
+def _rows(items):
+    """A mocked ``session.execute(...)`` result whose ``.scalars().all()`` yields ``items``."""
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = items
+    return result
+
+
 class TestContactAddresses:
     @pytest.fixture
     def address_api(self, monkeypatch):
@@ -44,14 +51,16 @@ class TestContactAddresses:
         assert response.status_code == 200
         assert response.json["addresses"] == [{
             "id": 30, "role": "zamieszkania", "is_primary": True,
+            "valid_from": None, "valid_to": None, "is_archived": False, "shared_with": [],
             "address": {"id": 20, "label": "dom", "street": "Example Street", "building_number": "1", "block_number": None, "apartment_number": None,
                         "postal_code": None, "city": "Warsaw", "country": None, "notes": None,
                         "formatted_address": "Example Street 1, Warsaw",
                         "latitude": None, "longitude": None, "geocoded": False, "verified_at": None},
             "duplicate_of_link_id": None,
         }]
-        sql = str(session.execute.call_args.args[0])
-        assert "ORDER BY contact_addresses.is_primary DESC, contact_addresses.id" in sql
+        sql = str(session.execute.call_args_list[0].args[0])  # the address list; the next call finds co-users
+        assert ("ORDER BY contact_addresses.is_archived, contact_addresses.is_primary DESC, "
+                "contact_addresses.id") in sql
         with client.application.test_request_context():
             detail = _contact_dict(contact)
         assert "address" not in detail
@@ -100,6 +109,101 @@ class TestContactAddresses:
         response = client.post("/contacts/7/addresses", json={"address_id": 20})
         assert response.status_code == 409
         session.add.assert_not_called()
+
+    def test_link_dict_exposes_period_and_archive_flag(self, address_api):
+        import datetime
+        client, session, contact, address, link = address_api
+        link.valid_from, link.valid_to, link.is_archived = datetime.date(2015, 3, 1), datetime.date(2019, 8, 31), True
+        link.is_primary = False
+        session.execute.return_value.scalars.return_value.all.return_value = [link]
+        entry = client.get("/contacts/7/addresses").json["addresses"][0]
+        assert (entry["valid_from"], entry["valid_to"], entry["is_archived"]) == ("2015-03-01", "2019-08-31", True)
+
+    def test_archived_links_are_history_not_duplicates(self, address_api):
+        from library.db.models import Address, ContactAddress
+        client, session, contact, address, link = address_api
+        old = ContactAddress(id=31, contact_id=7, address_id=21, is_archived=True, is_primary=False,
+                             address=Address(id=21, street="Example Street", building_number="1", city="Warsaw"))
+        session.execute.return_value.scalars.return_value.all.return_value = [link, old]
+        addresses = client.get("/contacts/7/addresses").json["addresses"]
+        assert [entry["duplicate_of_link_id"] for entry in addresses] == [None, None]
+
+    def test_post_allows_moving_back_to_a_place_that_is_archived(self, address_api):
+        client, session, contact, address, link = address_api
+        link.is_archived, link.is_primary = True, False
+        session.execute.return_value.scalars.return_value.all.return_value = [link]
+        response = client.post("/contacts/7/addresses",
+                               json={"street": "Example Street", "building_number": "1", "city": "Warsaw"})
+        assert response.status_code == 200
+
+    def test_post_allows_a_new_stay_at_the_same_row_when_the_earlier_one_is_archived(self, address_api):
+        client, session, contact, address, link = address_api
+        link.is_archived, link.is_primary = True, False
+        session.execute.return_value.scalars.return_value.all.return_value = [link]
+        response = client.post("/contacts/7/addresses", json={"address_id": 20})
+        assert response.status_code == 200
+
+    def test_post_with_a_past_end_date_stores_an_archived_stay(self, address_api):
+        from library.db.models import ContactAddress
+        client, session, contact, address, link = address_api
+        response = client.post("/contacts/7/addresses", json={
+            "street": "Old Street", "building_number": "2", "city": "Warsaw",
+            "valid_from": "2015-03-01", "valid_to": "2019-08-31", "sharing_choice": "separate"})
+        assert response.status_code == 200
+        stay = next(call.args[0] for call in session.add.call_args_list if isinstance(call.args[0], ContactAddress))
+        assert stay.is_archived is True and stay.is_primary is False
+
+    def test_patch_archive_clears_primary_and_stores_period(self, address_api):
+        import datetime
+        client, session, contact, address, link = address_api
+        response = client.patch("/contact_addresses/30", json={
+            "is_archived": True, "valid_from": "2015-03-01", "valid_to": "2019-08-31"})
+        assert response.status_code == 200
+        assert link.is_archived is True and link.is_primary is False
+        assert (link.valid_from, link.valid_to) == (datetime.date(2015, 3, 1), datetime.date(2019, 8, 31))
+
+    def test_patch_past_end_date_archives_automatically_but_future_does_not(self, address_api):
+        client, session, contact, address, link = address_api
+        link.is_primary = False
+        assert client.patch("/contact_addresses/30", json={"valid_to": "2999-01-01"}).status_code == 200
+        assert not link.is_archived
+        assert client.patch("/contact_addresses/30", json={"valid_to": "2019-08-31"}).status_code == 200
+        assert link.is_archived is True
+
+    def test_patch_explicit_flag_wins_over_the_end_date_rule(self, address_api):
+        client, session, contact, address, link = address_api
+        link.is_primary = False
+        response = client.patch("/contact_addresses/30", json={"valid_to": "2019-08-31", "is_archived": False})
+        assert response.status_code == 200
+        assert not link.is_archived
+
+    @pytest.mark.parametrize("payload", [
+        {"is_archived": True, "is_primary": True},
+        {"valid_from": "2020-01-01", "valid_to": "2019-01-01"},
+        {"valid_from": "2020-13-45"},
+        {"valid_from": "20200101"},
+        {"is_archived": "yes"},
+    ])
+    def test_patch_rejects_invalid_period_or_archive_state(self, address_api, payload):
+        client, session, contact, address, link = address_api
+        assert client.patch("/contact_addresses/30", json=payload).status_code == 400
+        session.commit.assert_not_called()
+
+    def test_patch_cannot_make_an_archived_link_primary(self, address_api):
+        client, session, contact, address, link = address_api
+        link.is_archived, link.is_primary = True, False
+        response = client.patch("/contact_addresses/30", json={"is_primary": True})
+        assert response.status_code == 400
+        assert link.is_primary is False
+
+    def test_patch_maps_restore_collision_to_409(self, address_api):
+        from sqlalchemy.exc import IntegrityError
+        client, session, contact, address, link = address_api
+        link.is_archived, link.is_primary = True, False
+        session.commit.side_effect = IntegrityError("update", {}, SimpleNamespace(pgcode="23505"))
+        response = client.patch("/contact_addresses/30", json={"is_archived": False})
+        assert response.status_code == 409
+        assert response.json["code"] == "duplicate_address"
 
     def test_create_address_and_audit(self, address_api):
         from library.db.models import ContactAddress, ContactChangeLog
@@ -248,13 +352,127 @@ class TestContactAddresses:
         from library.db.models import ContactAddress
         client, session, contact, address, link = address_api
         second_link = ContactAddress(address=address, contact_id=8)
-        session.execute.return_value.scalars.return_value.all.return_value = [contact, _make_contact(id_=8)]
-        response = client.patch("/address/20", json={"street": "Changed Street", "building_number": "3", "label": None})
+        second_link.contact = _make_contact(id_=8)
+        link.contact = contact
+        session.execute.side_effect = [
+            _rows([link, second_link]),   # links of the shared address
+            _rows([]), _rows([]),         # each contact's other addresses (no clash)
+            _rows([contact, _make_contact(id_=8)]),  # audit targets
+        ]
+        response = client.patch("/address/20", json={
+            "street": "Changed Street", "building_number": "3", "label": None, "confirm_shared": True})
         assert response.status_code == 200
         assert link.address.street == second_link.address.street == "Changed Street"
         assert link.address.building_number == "3"
         assert address.label is None
         assert {call.args[0].contact_id for call in session.add.call_args_list} == {7, 8}
+
+    def test_moving_a_shared_address_needs_explicit_confirmation(self, address_api):
+        from library.db.models import ContactAddress
+        client, session, contact, address, link = address_api
+        link.contact = contact
+        second = ContactAddress(address=address, contact_id=8)
+        second.contact = _make_contact(id_=8, first_name="Ola", last_name="Nowak")
+        session.execute.side_effect = [_rows([link, second])]
+        response = client.patch("/address/20", json={"street": "Elsewhere"})
+        assert response.status_code == 409
+        assert response.json["code"] == "shared_address"
+        assert {entry["id"] for entry in response.json["contacts"]} == {7, 8}
+        assert address.street == "Example Street"
+        session.commit.assert_not_called()
+
+    def test_moving_an_unshared_address_or_editing_notes_needs_no_confirmation(self, address_api):
+        client, session, contact, address, link = address_api
+        link.contact = contact
+        session.execute.side_effect = [_rows([link]), _rows([]), _rows([contact]), _rows([contact])]
+        assert client.patch("/address/20", json={"street": "Elsewhere"}).status_code == 200
+        assert client.patch("/address/20", json={"notes": "domofon"}).status_code == 200
+
+    def test_edit_that_would_duplicate_another_address_of_a_linked_contact_is_refused(self, address_api):
+        from library.db.models import Address, ContactAddress
+        client, session, contact, address, link = address_api
+        link.contact = contact
+        target = ContactAddress(id=31, contact_id=7, address_id=21, is_archived=False,
+                                address=Address(id=21, street="Elsewhere", building_number="1", city="Warsaw"))
+        session.execute.side_effect = [_rows([link]), _rows([link, target])]
+        response = client.patch("/address/20", json={"street": "Elsewhere"})
+        assert response.status_code == 409
+        assert response.json["code"] == "duplicate_address"
+        assert address.street == "Example Street"
+
+    def test_list_shows_who_else_uses_the_same_address_row(self, address_api):
+        from library.db.models import ContactAddress
+        client, session, contact, address, link = address_api
+        other = ContactAddress(id=40, contact_id=9, address_id=20, address=address, is_archived=False)
+        other.contact = _make_contact(id_=9, first_name="Ola", last_name="Nowak")
+        session.execute.side_effect = [_rows([link]), _rows([other])]
+        entry = client.get("/contacts/7/addresses").json["addresses"][0]
+        assert entry["shared_with"] == [{"contact_id": 9, "display_name": "Ola Nowak", "is_archived": False}]
+
+    def _another_contacts_link(self):
+        from library.db.models import Address, ContactAddress
+        other = ContactAddress(id=40, contact_id=9, address_id=30, is_archived=False,
+                               address=Address(id=30, street="Example Street", building_number="1", city="Warsaw",
+                                               notes="secret gate code"))
+        other.contact = _make_contact(id_=9, first_name="Ola", last_name="Nowak")
+        return other
+
+    def test_post_suggests_an_address_other_contacts_already_use(self, address_api):
+        client, session, contact, address, link = address_api
+        session.execute.side_effect = [_rows([]), _rows([self._another_contacts_link()])]
+        response = client.post("/contacts/7/addresses",
+                               json={"street": "example street", "building_number": "1", "city": "WARSAW"})
+        assert response.status_code == 409
+        assert response.json["code"] == "similar_addresses"
+        [candidate] = response.json["candidates"]
+        assert candidate["address_id"] == 30 and candidate["has_notes"] is True
+        assert candidate["linked_contacts"] == [{"id": 9, "display_name": "Ola Nowak", "is_archived": False}]
+        assert "secret" not in response.get_data(as_text=True)  # notes are never exposed in a suggestion
+        session.add.assert_not_called()
+
+    def test_post_saves_a_separate_address_when_the_user_insists(self, address_api):
+        client, session, contact, address, link = address_api
+        session.execute.side_effect = [_rows([])]
+        response = client.post("/contacts/7/addresses", json={
+            "street": "Example Street", "building_number": "1", "city": "Warsaw", "sharing_choice": "separate"})
+        assert response.status_code == 200
+        assert session.execute.call_count >= 1
+
+    def test_city_only_addresses_are_never_suggested_and_cost_no_query(self):
+        from library.contact_routes import _similar_address_candidates
+        from library.db.models import Address
+        session = MagicMock()
+        assert _similar_address_candidates(session, 7, Address(city="Łódź")) == []
+        session.execute.assert_not_called()
+
+    def test_an_apartment_mismatch_is_not_the_same_place(self):
+        from library.contact_routes import _similar_address_candidates
+        from library.db.models import Address
+        session = MagicMock()
+        other = self._another_contacts_link()
+        other.address.apartment_number = "12"
+        session.execute.return_value = _rows([other])
+        assert _similar_address_candidates(
+            session, 7, Address(street="Example Street", building_number="1", apartment_number="3", city="Warsaw")) == []
+        assert len(_similar_address_candidates(
+            session, 7, Address(street="Example Street", building_number="1", apartment_number="12", city="Warsaw"))) == 1
+
+    def test_post_with_address_id_shares_the_existing_row_without_suggestions(self, address_api):
+        client, session, contact, address, link = address_api
+        session.execute.side_effect = [_rows([])]
+        response = client.post("/contacts/7/addresses", json={"address_id": 20, "role": "zamieszkania"})
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize("payload", [
+        {"street": "S", "building_number": "1", "city": "W", "sharing_choice": "merge"},
+        {"address_id": 20, "sharing_choice": "separate"},
+        {"confirm_shared": "yes"},
+    ])
+    def test_new_flags_are_validated(self, address_api, payload):
+        client, session, contact, address, link = address_api
+        url = "/address/20" if "confirm_shared" in payload else "/contacts/7/addresses"
+        call = client.patch if "confirm_shared" in payload else client.post
+        assert call(url, json=payload).status_code == 400
 
     def test_geocode_resolved_audits_every_linked_contact(self, address_api, monkeypatch):
         client, session, contact, address, _ = address_api

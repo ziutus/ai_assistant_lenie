@@ -129,6 +129,16 @@ def address_identity(address) -> dict:
     return identity
 
 
+def is_specific_address(address) -> bool:
+    """True when the address names a street or a building, not just a city.
+
+    Only such addresses are worth offering for sharing between contacts: 22 unrelated contacts have just
+    "Łódź", and that is not a shared place. A legacy one-line row counts once it parses into a street/number.
+    """
+    identity = address_identity(address)
+    return bool(identity["street"] or identity["building_number"])
+
+
 def addresses_match(first, second) -> bool:
     """True when two addresses point at the same place.
 

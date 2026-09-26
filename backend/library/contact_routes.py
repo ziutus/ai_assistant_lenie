@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
-from library.address_formatting import ADDRESS_FIELD_LIMITS, addresses_match, format_address
+from library.address_formatting import ADDRESS_FIELD_LIMITS, addresses_match, format_address, is_specific_address
 from library.address_parsing import ADDRESS_NOTES_MAX_LENGTH, parse_address_text
 from library.address_geocoding import geocode_address
 from library.address_validation import validate_address
@@ -400,7 +400,8 @@ def _contact_dict(row: Contact) -> dict:
         "email_addresses": contact_channels(row, "email_addresses"),
         "company": row.company,
         "position": row.position,
-        "addresses": _contact_address_dicts(_contact_addresses(get_scoped_session(), row.id)),
+        "addresses": _contact_address_dicts(
+            _contact_addresses(get_scoped_session(), row.id), get_scoped_session()),
         "current_city": row.current_city,
         "hometown": row.hometown,
         "birthday": row.birthday.isoformat() if row.birthday else None,
@@ -448,27 +449,92 @@ def _address_dict(row: Address) -> dict:
 def _contact_address_dict(row: ContactAddress) -> dict:
     return {
         "id": row.id, "role": row.role, "is_primary": row.is_primary,
+        "valid_from": row.valid_from.isoformat() if row.valid_from else None,
+        "valid_to": row.valid_to.isoformat() if row.valid_to else None,
+        "is_archived": bool(row.is_archived),
         "address": _address_dict(row.address),
     }
 
 
-def _contact_address_dicts(links) -> list[dict]:
-    """Address links with ``duplicate_of_link_id`` set on any link that repeats an earlier one's place."""
+def _shared_with(session, links) -> dict[int, list[dict]]:
+    """address_id -> the OTHER contacts using that same address row (editing it reaches them all)."""
+    if session is None or not links:
+        return {}
+    contact_id = links[0].contact_id
+    rows = session.execute(
+        select(ContactAddress).options(joinedload(ContactAddress.contact))
+        .where(ContactAddress.address_id.in_({link.address_id for link in links}),
+               ContactAddress.contact_id != contact_id)
+        .order_by(ContactAddress.id)
+    ).scalars().all()
+    shared: dict[int, list[dict]] = {}
+    for row in rows:
+        if row.contact is None or row.contact_id == contact_id:
+            continue
+        shared.setdefault(row.address_id, []).append({
+            "contact_id": row.contact_id, "display_name": contact_display_name(row.contact),
+            "is_archived": bool(row.is_archived),
+        })
+    return shared
+
+
+def _contact_address_dicts(links, session=None) -> list[dict]:
+    """Address links with ``duplicate_of_link_id`` set on any active link that repeats an earlier active one's place.
+
+    Archived links are history (someone may move back to an old address), so they are never flagged
+    and never count as the original. ``shared_with`` lists the other contacts on the same address row.
+    """
     result, seen = [], []
+    shared = _shared_with(session, links)
     for link in links:
         entry = _contact_address_dict(link)
-        original = next((prev for prev in seen if addresses_match(prev.address, link.address)), None)
+        entry["shared_with"] = shared.get(link.address_id, [])
+        original = None
+        if not link.is_archived:
+            original = next((prev for prev in seen if addresses_match(prev.address, link.address)), None)
+            seen.append(link)
         entry["duplicate_of_link_id"] = original.id if original else None
-        seen.append(link)
         result.append(entry)
     return result
+
+
+def _similar_address_candidates(session, contact_id, address) -> list[dict]:
+    """Existing address rows, used by OTHER contacts, that are the same place as ``address``.
+
+    Suggestions only — the caller never merges on its own. Only street/building addresses qualify (see
+    is_specific_address), and the apartment must agree (addresses_match). Notes are deliberately not
+    exposed, just whether the shared row has any, so private details are not leaked into a suggestion.
+    """
+    if not is_specific_address(address):
+        return []
+    links = session.execute(
+        select(ContactAddress).join(Address, Address.id == ContactAddress.address_id)
+        .options(joinedload(ContactAddress.address), joinedload(ContactAddress.contact))
+        .where(ContactAddress.contact_id != contact_id,
+               or_(Address.street.is_not(None), Address.building_number.is_not(None), Address.city.op("~")(r"\d")))
+        .order_by(ContactAddress.address_id, ContactAddress.id)
+    ).scalars().all()
+    by_address: dict[int, dict] = {}
+    for link in links:
+        if link.contact is None or not addresses_match(link.address, address):
+            continue
+        entry = by_address.setdefault(link.address_id, {
+            "address_id": link.address_id, "formatted_address": format_address(link.address),
+            "label": link.address.label, "has_notes": bool(link.address.notes),
+            "geocoded": link.address.latitude is not None, "linked_contacts": [],
+        })
+        entry["linked_contacts"].append({
+            "id": link.contact_id, "display_name": contact_display_name(link.contact),
+            "is_archived": bool(link.is_archived),
+        })
+    return list(by_address.values())
 
 
 def _contact_addresses(session, contact_id):
     return session.execute(
         select(ContactAddress).options(joinedload(ContactAddress.address))
         .where(ContactAddress.contact_id == contact_id)
-        .order_by(ContactAddress.is_primary.desc(), ContactAddress.id)
+        .order_by(ContactAddress.is_archived, ContactAddress.is_primary.desc(), ContactAddress.id)
     ).scalars().all()
 
 
@@ -1930,7 +1996,7 @@ def contact_addresses(contact_id: int):
         return {"status": "error", "message": "Contact not found"}, 404
     if request.method == "GET":
         return jsonify({"status": "success",
-                        "addresses": _contact_address_dicts(_contact_addresses(session, contact_id))}), 200
+                        "addresses": _contact_address_dicts(_contact_addresses(session, contact_id), session)}), 200
 
     data = request.get_json(silent=True) or {}
     error = _validate_address_payload(data)
@@ -1953,16 +2019,33 @@ def contact_addresses(contact_id: int):
             fields["country"] = "Polska"
         address = Address(**fields, label=(data.get("label") or "").strip() or None,
                           notes=(data.get("notes") or "").strip() or None)
-    existing = next((link for link in _contact_addresses(session, contact_id)
-                     if addresses_match(link.address, address)), None)
+    valid_from, valid_to = _payload_date(data.get("valid_from")), _payload_date(data.get("valid_to"))
+    if valid_from and valid_to and valid_to < valid_from:
+        return {"status": "error", "message": "valid_to cannot be earlier than valid_from"}, 400
+    is_archived = data.get("is_archived", False)
+    if "is_archived" not in data and valid_to and valid_to < datetime.date.today():
+        is_archived = True  # an end date in the past means it is a former address (same rule as PATCH)
+    if is_archived and data.get("is_primary") is True:
+        return {"status": "error", "message": "An archived address cannot be the primary address"}, 400
+    links = _contact_addresses(session, contact_id)
+    # Only active stays collide: a person can move back to a place they lived before (own archived link).
+    existing = None if is_archived else next(
+        (link for link in links if not link.is_archived and addresses_match(link.address, address)), None)
     if existing is not None:
         return jsonify({"status": "error", "code": "duplicate_address",
                         "message": f"Kontakt ma już ten adres: {format_address(existing.address)}. "
                                    "Zmień jego rolę zamiast dodawać drugi wpis.",
                         "existing": _contact_address_dict(existing)}), 409
+    if "address_id" not in data and data.get("sharing_choice") != "separate":
+        candidates = _similar_address_candidates(session, contact_id, address)
+        if candidates:
+            return jsonify({"status": "error", "code": "similar_addresses", "candidates": candidates,
+                            "message": "Ten adres jest już używany przez inny kontakt. Użyj istniejącego adresu "
+                                       "(address_id) albo potwierdź osobny wpis (sharing_choice=separate)."}), 409
     row = ContactAddress(contact_id=contact_id, address=address,
                          role=(data.get("role") or "").strip() or None,
-                         is_primary=data.get("is_primary", False))
+                         is_primary=data.get("is_primary", False),
+                         valid_from=valid_from, valid_to=valid_to, is_archived=is_archived)
     try:
         session.add(row)
         session.commit()
@@ -1998,7 +2081,29 @@ def _validate_address_payload(data, *, creating=False):
         return "postal_code must use Polish format NN-NNN (e.g. 95-054)"
     if "is_primary" in data and type(data["is_primary"]) is not bool:
         return "is_primary must be a boolean"
+    if "is_archived" in data and type(data["is_archived"]) is not bool:
+        return "is_archived must be a boolean"
+    if "confirm_shared" in data and type(data["confirm_shared"]) is not bool:
+        return "confirm_shared must be a boolean"
+    if "sharing_choice" in data and data["sharing_choice"] != "separate":
+        return "sharing_choice can only be 'separate'"
+    if "sharing_choice" in data and "address_id" in data:
+        return "sharing_choice applies to a new address, not to address_id"
+    for field in ("valid_from", "valid_to"):
+        if field in data and data[field] is not None:
+            if not isinstance(data[field], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data[field]):
+                return f"{field} must be an ISO date (YYYY-MM-DD) or null"
+            try:
+                datetime.date.fromisoformat(data[field])
+            except ValueError:
+                return f"{field} is not a valid date"
+    if data.get("is_archived") is True and data.get("is_primary") is True:
+        return "An archived address cannot be the primary address"
     return None
+
+
+def _payload_date(value):
+    return datetime.date.fromisoformat(value) if value else None
 
 
 @bp.route("/address/<int:address_id>", methods=["PATCH", "OPTIONS"])
@@ -2017,6 +2122,31 @@ def addresses_update(address_id: int):
         field in data and (data[field] or "").strip() != (getattr(row, field) or "")
         for field in ADDRESS_FIELD_LIMITS
     )
+    if changed_location:
+        links = session.execute(
+            select(ContactAddress).options(joinedload(ContactAddress.contact))
+            .where(ContactAddress.address_id == address_id)
+        ).scalars().all()
+        users = {link.contact_id: link.contact for link in links}
+        if len(users) > 1 and data.get("confirm_shared") is not True:
+            # Changing where a shared address is moves it for everyone; a move should be a new stay instead.
+            return jsonify({"status": "error", "code": "shared_address",
+                            "message": "Ten adres jest używany przez kilku kontaktów; zmiana miejsca dotknie ich "
+                                       "wszystkich. Potwierdź confirm_shared=true albo dodaj nowy adres.",
+                            "contacts": [{"id": cid, "display_name": contact_display_name(contact)}
+                                         for cid, contact in users.items() if contact is not None]}), 409
+        after = {field: ((data[field] or "").strip() if field in data else (getattr(row, field) or ""))
+                 for field in ADDRESS_FIELD_LIMITS}
+        for link in links:
+            if link.is_archived:
+                continue
+            clash = next((other for other in _contact_addresses(session, link.contact_id)
+                          if other.address_id != address_id and not other.is_archived
+                          and addresses_match(other.address, after)), None)
+            if clash is not None:
+                return jsonify({"status": "error", "code": "duplicate_address",
+                                "message": f"Po tej zmianie kontakt #{link.contact_id} miałby dwa razy ten sam "
+                                           f"adres: {format_address(clash.address)}."}), 409
     for field in ("label", "notes", *ADDRESS_FIELD_LIMITS):
         if field in data:
             setattr(row, field, (data[field] or "").strip() or None)
@@ -2049,15 +2179,35 @@ def contact_addresses_update(link_id: int):
     error = _validate_address_payload(data)
     if error:
         return {"status": "error", "message": error}, 400
+    valid_from = _payload_date(data["valid_from"]) if "valid_from" in data else row.valid_from
+    valid_to = _payload_date(data["valid_to"]) if "valid_to" in data else row.valid_to
+    if valid_from and valid_to and valid_to < valid_from:
+        return {"status": "error", "message": "valid_to cannot be earlier than valid_from"}, 400
+    is_archived = row.is_archived
+    if "is_archived" in data:
+        is_archived = data["is_archived"]
+    elif "valid_to" in data and valid_to and valid_to < datetime.date.today():
+        is_archived = True  # an end date in the past means it is a former address
+    if is_archived and data.get("is_primary") is True:
+        return {"status": "error", "message": "An archived address cannot be the primary address"}, 400
     if "role" in data:
         row.role = (data["role"] or "").strip() or None
+    row.valid_from, row.valid_to, row.is_archived = valid_from, valid_to, is_archived
     if "is_primary" in data:
         row.is_primary = data["is_primary"]
+    if is_archived:
+        row.is_primary = False
     try:
         contact = session.get(Contact, row.contact_id)
         session.commit()
         record_contact_change(session, contact, "manual_edit", changed_fields=["addresses"])
         session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if getattr(exc.orig, "pgcode", None) == "23505":  # restoring would duplicate an active address
+            return jsonify({"status": "error", "code": "duplicate_address",
+                            "message": "Kontakt ma już aktywny wpis dla tego adresu."}), 409
+        return {"status": "error", "message": "DB error"}, 500
     except Exception:
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
