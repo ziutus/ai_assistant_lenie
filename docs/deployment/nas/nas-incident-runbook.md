@@ -109,8 +109,9 @@ See [host-health-collector.md](host-health-collector.md) for the collector itsel
   ends; use the log file or `| tee`.
 - The QNAP shell has no `timeout` and no `flock`; wrap `ssh` with a local `timeout`
   and use `mkdir` for locking (as the script does).
-- Backend, `worker` and `cloud-bridge` share one image: deploy `backend` (build + push
-  + migrations), then `--skip-build worker cloud-bridge`. `document-worker` and
-  `ner-service` have their own images.
+- Backend, `worker` and `cloud-bridge` share one image: deploying `backend` (build + push
+  + migrations) automatically recreates `worker` and `cloud-bridge` too (`--no-implied`
+  turns that off). `document-worker` and `ner-service` have their own images and must be
+  named explicitly.
 - `nas-deploy.ps1` has none of the preflight / lock / log features — use
   `nas-deploy.sh` (Git Bash).

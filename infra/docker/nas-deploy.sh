@@ -394,6 +394,8 @@ echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, 
     echo "  --preflight-only  Only run the NAS health preflight (kernel oops, Docker, RAID, data, Vault), then exit"
     echo "  --skip-preflight  Continue even if the preflight reports blockers (at your own risk)"
     echo "  --force-unlock    Take over the deploy lock even if it looks active"
+    echo "  --no-implied      Deploy exactly the named services. By default 'backend' also recreates"
+    echo "                    worker and cloud-bridge, which run the same image (lenie-ai-server)"
     echo "  (a live log is always written to \$TMPDIR/lenie-nas-deploy-<time>.log; only one deploy runs at a time)"
     echo "  --help, -h        Show this help"
     echo ""
@@ -402,6 +404,8 @@ echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, 
     echo "  $0 frontend                  # Build, push & deploy frontend only"
     echo "  $0 minio                     # Deploy MinIO (official image, no build)"
     echo "  $0 obsidian-headless-sync    # Deploy obsidian-headless-sync (official image, no build)"
+    echo "  $0 backend                   # Build backend image; also recreates worker + cloud-bridge"
+    echo "  $0 --no-implied backend      # Backend only (worker/cloud-bridge stay on the old image)"
     echo "  $0 --skip-build backend      # Push existing image & deploy"
     echo "  $0 --compose-only            # Just compose up on NAS"
     echo "  $0 --sync-compose            # Sync compose file and deploy all"
@@ -416,6 +420,7 @@ SYNC_COMPOSE="false"
 SKIP_PREFLIGHT="false"
 PREFLIGHT_ONLY="false"
 FORCE_UNLOCK="false"
+NO_IMPLIED="false"
 SERVICES=""
 
 while [[ $# -gt 0 ]]; do
@@ -426,6 +431,7 @@ while [[ $# -gt 0 ]]; do
         --skip-preflight) SKIP_PREFLIGHT="true"; shift ;;
         --preflight-only) PREFLIGHT_ONLY="true"; shift ;;
         --force-unlock)  FORCE_UNLOCK="true"; shift ;;
+        --no-implied)    NO_IMPLIED="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
         frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
@@ -436,6 +442,22 @@ done
 # Default: all services
 if [ -z "$SERVICES" ]; then
     SERVICES="$ALL_SERVICES"
+fi
+
+# backend, worker and cloud-bridge (and lenie-migrate) run ONE image, lenie-ai-server:latest.
+# Deploying `backend` alone rebuilds and pushes that image but leaves the worker and the bridge
+# on the old container — stale code that keeps running unnoticed (happened on 2026-09-26: a
+# migration and new column logic went live while lenie-worker kept the previous release). So a
+# `backend` deploy implies the other two; they only pull + recreate, no second build.
+# `--no-implied` deploys exactly what was named.
+IMPLIED_SERVICES=""
+if [ "$NO_IMPLIED" != "true" ] && [[ " $SERVICES " == *" backend "* ]]; then
+    for implied in worker cloud-bridge; do
+        if [[ " $SERVICES " != *" $implied "* ]]; then
+            SERVICES="$SERVICES $implied"
+            IMPLIED_SERVICES="$IMPLIED_SERVICES $implied"
+        fi
+    done
 fi
 
 # Log na zywo do pliku (i na ekran) - zawsze, bez potrzeby `| tee` po stronie
@@ -452,6 +474,12 @@ echo -e "${GREEN}  Lenie NAS Deploy (Registry)${NC}"
 echo -e "${GREEN}  NAS: ${NAS_HOST}${NC}"
 echo -e "${GREEN}  Registry: ${REGISTRY}${NC}"
 echo -e "${GREEN}  Services: ${SERVICES}${NC}"
+if [ -n "$IMPLIED_SERVICES" ]; then
+    echo -e "${GREEN}  Dodano (wspolny obraz z backend):${IMPLIED_SERVICES}  (--no-implied wylacza)${NC}"
+fi
+if [[ " $SERVICES " == *" backend "* ]] && [[ " $SERVICES " != *" document-worker "* ]]; then
+    echo -e "${YELLOW}  Uwaga: document-worker ma OSOBNY obraz i nie jest odswiezany — dodaj go, jesli zmiana dotyczy przygotowania dokumentow${NC}"
+fi
 echo -e "${GREEN}  Skip build: ${SKIP_BUILD}${NC}"
 echo -e "${GREEN}  Compose only: ${COMPOSE_ONLY}${NC}"
 echo -e "${GREEN}============================================${NC}"

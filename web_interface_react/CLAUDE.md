@@ -236,6 +236,8 @@ npm test          # Run Vitest tests
 npm run lint      # TypeScript type check only
 ```
 
+**Installing dependencies.** `package-lock.json` is deliberately not committed (`Dockerfile` runs `npm install`), and `.npmrc` sets `shamefully-hoist=true`, a pnpm-only option that npm ignores with a warning. With **npm 10.9.x** `npm install` can crash in arborist with `TypeError: Cannot read properties of null (reading 'edgesOut')` (`#loadPeerSet`, triggered by vitest's optional `@vitest/*`/`jsdom` peers) — it fails even in an empty directory and leaves a half-installed `node_modules` (symptom: vitest dies with `Cannot find module '@asamuzakjp/css-color'`, no `.bin`). Use a newer npm without touching the global one: `npx --yes npm@11 install --no-audit --no-fund`. Worktrees share the main checkout's `node_modules` through a link, so repair it there once. vitest 4 declares Node `^20 || ^22 || >=24` (a Node 23 only prints an `EBADENGINE` warning; the suite passes).
+
 ## AWS Deployment
 
 **Hosting deleted 2026-07-02** — the `app.dev.lenie-ai.eu` S3+CloudFront stacks were removed (the frontend required the decommissioned AWS document API; it now runs only against Docker/NAS). `./deploy.sh` will fail until the stacks are restored — see [docs/aws-serverless-restoration.md](../docs/aws-serverless-restoration.md). Original flow (kept for restoration): the script resolves S3 bucket and CloudFront distribution ID from SSM Parameter Store.
