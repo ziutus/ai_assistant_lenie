@@ -75,6 +75,7 @@ curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contact_intere
     -d '{"link_type": "facebook", "url": "<url>"}'
   ```
 - If neither the user nor the contact record has a URL, ask the user for it — never guess a profile from a name search; Facebook has too many same-name accounts and the point of this skill is a confirmed, specific profile.
+- **Recheck gate (90 days):** the same response carries a `lookup_results` array with earlier checks. If it contains a row with `lookup_type: "facebook"` and `searched_at` within the last 90 days, this profile was already checked — report to the user what that run found (`status` + `notes`) and stop, unless the user explicitly asks to force a re-check. Older rows do not block. Only a completed check writes such a row (Step 6b).
 - If the contact already has a `photo_url`, mention that a photo already exists and confirm the user wants to replace it before continuing (it isn't destructive — see "Safety net" below — but worth a heads-up).
 
 ### Step 2: Open the profile in Chrome and find the current profile picture
@@ -90,6 +91,8 @@ Use the browser adapter above.
 3. Take a screenshot to see the lightbox layout and confirm the photo shown is a real, current profile picture (check the caption/date if visible) and that it's actually of the expected person, not a placeholder or a group photo.
 
 If the "Zdjęcia profilowe" album is empty, private, or doesn't exist (privacy settings vary per profile), fall back to a tightly bounded screenshot capture of the small circular avatar on the main profile page instead — lower resolution, but better than nothing. Tell the user the source was lower-quality when reporting back.
+
+A grey silhouette avatar with an empty photo section means the person has no photo — do not upload the placeholder; record "zdjęcie: brak" in Step 6b.
 
 ### Step 3: Capture the photo as a local file
 
@@ -126,6 +129,8 @@ While still on the profile, visit these sub-pages of the "Informacje" tab (still
 - `<profile_url>/about_work_and_education` (**Praca i edukacja**): each listed school/university entry → an education record. Note the institution name and, if Facebook shows one, the field of study (Facebook rarely states a formal degree level — leave `degree` unset unless the text explicitly names one, e.g. "magister"/"inżynier"; never infer a degree from the institution type alone).
 
 Use the active adapter to read the values on each page from a screenshot or visible page text — this is plain visible text, not blocked like the CDN image URLs in Step 3. Only take a value that is explicitly labeled; don't infer a city, gender, birthday, or school from an unrelated post, check-in, or profile picture caption.
+
+**Current Facebook layout (verified 2026-09):** the `about_*` paths above often show only the profile overview. The "Informacje" left menu links to `<profile_url>/directory_personal_details` (location "Aktualne miejsce zamieszkania" → `current_city`, Płeć, Data urodzenia), `<profile_url>/directory_education` and `<profile_url>/directory_work`; for numeric-id profiles use `profile.php?id=<id>&sk=directory_personal_details`. The right-hand panel loads lazily — wait ~8 s before `get_page_text`/screenshot, and on profiles with an "Osoby, które możesz znać" carousel scroll down to reach it. If the left menu has no "Wykształcenie" entry, the person shares no education — treat it as missing, don't retry.
 
 Skip whichever sub-section is empty or hidden by the profile's privacy settings (say so in the report), and skip the whole step if the profile has no "Informacje" tab visible while logged in as this account.
 
@@ -181,6 +186,21 @@ curl -s -H "x-api-key: $LENIE_API_KEY" "http://192.168.200.7:5055/contacts/<ID>/
 
 If a photo was uploaded, confirm `photo_url` is non-null and the returned storage key identifies the new upload. Confirm the other fields (including `interests` and the education list) reflect what was found (or are unchanged if Step 5/5b found nothing new). Delete the temporary screenshot file(s) from the OS temp dir. Close the task-owned browser tab using the active adapter unless the user asked to keep it open.
 
+### Step 6b: Record the check (also when nothing was found)
+
+Write one `contact_lookup_results` row per completed check, so the same profile is not scraped again within 90 days (Step 1 gate):
+
+```bash
+curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
+  -X POST "http://192.168.200.7:5055/contacts/<ID>/lookup_results" \
+  --data-binary @lookup.json   # {"lookup_type": "facebook", "status": "confirmed|no_results", "url": "<profile url>", "notes": "<one line>"}
+```
+
+- `status: confirmed` when at least one field, education entry or photo was saved or was already present and matches; `no_results` when the profile gave nothing usable (empty or private "Informacje", placeholder avatar).
+- `notes`: one line listing what was found and what was missing, with the reason where known — e.g. `znaleziono: płeć, miasto, 2 szkoły, zdjęcie; brak: miejsce pochodzenia (nie udostępnione), urodziny (ukryte), wykształcenie (brak w menu), hobby`.
+- Do not write a row when the check could not complete (not logged in, page failed to load, blocked by Facebook) — an incomplete run must not suppress a retry.
+- Use a UTF-8 file with `--data-binary @file`, as for the other calls with Polish text.
+
 ### Step 7: Report
 
 Tell the user, in Polish: which contact was updated, where the photo came from (profile URL, which album/photo), and which structured facts (if any) were added or already present — including education entries and hobby tags, or a note that Step 5b found nothing usable. Give the test link `http://192.168.200.7:3000/contacts/<id>`.
@@ -201,7 +221,7 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json" \
 
 - All communication with the user in **Polish**.
 - Never scrape or guess at a Facebook profile the user hasn't confirmed belongs to the contact — a wrong-person photo is worse than no photo.
-- This skill only writes to the private contact book (`contacts`, `contact_photos`, `contact_links`, `contact_education`, `contact_interests`/`contact_interest_memberships`) via the REST API — it never posts, messages, or interacts with anything on Facebook itself, only reads the public/logged-in-visible profile picture and "Informacje" tab.
+- This skill only writes to the private contact book (`contacts`, `contact_photos`, `contact_links`, `contact_education`, `contact_interests`/`contact_interest_memberships`, `contact_lookup_results`) via the REST API — it never posts, messages, or interacts with anything on Facebook itself, only reads the public/logged-in-visible profile picture and "Informacje" tab.
 - `current_city`/`hometown`/`gender` are plain columns on `Contact` (see `library/db/models.py`), visible to every auth kind (unlike `private_notes`, which is service-only) — they're meant to be seen at a glance, not hidden. `gender` is constrained to `male`/`female`/`other` by a DB check constraint (`ck_contacts_gender`) — anything else the profile shows (a custom/nonbinary label) maps to `other`, never invented as free text.
 - Never overwrite an existing `gender`/`birthday` with a guess — if Facebook's value looks inconsistent with what's already recorded (e.g. contradicts a name-based assumption), flag it to the user instead of silently changing it.
 - `contact_interests` is a **shared dictionary across the whole contact book** (like `contact_groups`) — creating a new tag affects every contact, not just this one. Always check for a case-insensitive name match before creating one, and keep names generic/reusable (`badminton`, not `badminton z Rafałem`).
