@@ -61,6 +61,17 @@ def test_different_facebook_url_is_added_next_to_existing_one():
     assert added is not None and existing.url == "https://www.facebook.com/other"
 
 
+def test_profile_php_ids_are_distinct_profiles():
+    existing = ContactLink(id=1, contact_id=396, link_type="facebook", url="https://www.facebook.com/profile.php?id=1")
+    session = _session([existing])
+    assert promote_lookup_result(
+        session, Contact(id=396), _row(url="https://www.facebook.com/profile.php?id=2"),
+    ) is not None
+    assert promote_lookup_result(
+        _session([existing]), Contact(id=396), _row(url="https://www.facebook.com/profile.php?id=1"),
+    ) is None
+
+
 def test_non_profile_result_is_ignored():
     session = _session([])
     assert promote_lookup_result(session, Contact(id=396), _row(url="https://example.com/x")) is None

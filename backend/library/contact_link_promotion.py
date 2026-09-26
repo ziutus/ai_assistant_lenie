@@ -45,7 +45,9 @@ def link_type_for_lookup(lookup_type: str, url: str | None) -> str | None:
 
 def _normalize_url(url: str) -> str:
     parsed = urlparse(url if "://" in url else f"https://{url}")
-    return f"{_host(url)}{parsed.path.rstrip('/').lower()}"
+    # profile.php identifies the profile only through its `id` query parameter.
+    query = f"?{parsed.query.lower()}" if parsed.path.endswith("profile.php") else ""
+    return f"{_host(url)}{parsed.path.rstrip('/').lower()}{query}"
 
 
 def promote_lookup_result(
