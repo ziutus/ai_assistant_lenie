@@ -114,6 +114,8 @@ interface ContactAddress {
   role: string | null;
   is_primary: boolean;
   address: Address;
+  /** Id of an earlier link of this contact that points at the same place, if any. */
+  duplicate_of_link_id?: number | null;
 }
 
 interface AddressSearchResult extends Address {
@@ -1298,6 +1300,15 @@ const Contact = () => {
                 onToggleInline={() => toggleAddressMap(link.id)}
                 onGeocode={() => void geocodeAddress(link.address.id, link.id)} />
             </div>
+            {link.duplicate_of_link_id != null && (() => {
+              const original = addresses.find(other => other.id === link.duplicate_of_link_id);
+              return <div role="alert" style={{ marginTop: 6, padding: "6px 10px", background: "#fff4e5",
+                border: "1px solid #f0b060", borderRadius: 6 }}>
+                ⚠️ Możliwy duplikat{original ? ` adresu „${original.address.formatted_address}”` : " innego adresu tego kontaktu"}.
+                {mode === "edit" && <button className={"button"} type="button" style={{ marginLeft: 8 }} disabled={addressBusy}
+                  onClick={() => void removeAddressLink(link.id)}>Usuń duplikat</button>}
+              </div>;
+            })()}
             {link.address.notes && <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>📝 Notatki: {link.address.notes}</div>}
             {link.address.verified_at && <div style={{ marginTop: 4, color: "#667" }}>
               <small>Zweryfikowano: {new Date(link.address.verified_at).toLocaleDateString("pl-PL")}</small>

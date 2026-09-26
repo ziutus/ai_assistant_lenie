@@ -48,6 +48,7 @@ class TestContactAddresses:
                         "postal_code": None, "city": "Warsaw", "country": None, "notes": None,
                         "formatted_address": "Example Street 1, Warsaw",
                         "latitude": None, "longitude": None, "geocoded": False, "verified_at": None},
+            "duplicate_of_link_id": None,
         }]
         sql = str(session.execute.call_args.args[0])
         assert "ORDER BY contact_addresses.is_primary DESC, contact_addresses.id" in sql
@@ -55,6 +56,32 @@ class TestContactAddresses:
             detail = _contact_dict(contact)
         assert "address" not in detail
         assert detail["addresses"] == response.json["addresses"]
+
+    def test_list_flags_a_later_link_repeating_an_earlier_place(self, address_api):
+        from library.db.models import Address, ContactAddress
+        client, session, contact, address, link = address_api
+        twin = ContactAddress(id=31, contact_id=7, address_id=21, role=None, is_primary=False,
+                              address=Address(id=21, street="example street", building_number="1", city="WARSAW"))
+        session.execute.return_value.scalars.return_value.all.return_value = [link, twin]
+        addresses = client.get("/contacts/7/addresses").json["addresses"]
+        assert [entry["duplicate_of_link_id"] for entry in addresses] == [None, 30]
+
+    def test_post_rejects_an_address_the_contact_already_has(self, address_api):
+        client, session, contact, address, link = address_api
+        session.execute.return_value.scalars.return_value.all.return_value = [link]
+        response = client.post("/contacts/7/addresses",
+                               json={"street": "Example Street", "building_number": "1", "city": "Warsaw"})
+        assert response.status_code == 409
+        assert response.json["code"] == "duplicate_address"
+        assert response.json["existing"]["id"] == 30
+        session.add.assert_not_called()
+
+    def test_post_rejects_choosing_an_existing_address_row_twice(self, address_api):
+        client, session, contact, address, link = address_api
+        session.execute.return_value.scalars.return_value.all.return_value = [link]
+        response = client.post("/contacts/7/addresses", json={"address_id": 20})
+        assert response.status_code == 409
+        session.add.assert_not_called()
 
     def test_create_address_and_audit(self, address_api):
         from library.db.models import ContactAddress, ContactChangeLog

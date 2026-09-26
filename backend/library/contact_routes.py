@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import aliased, joinedload, selectinload
 from werkzeug.utils import secure_filename
 
-from library.address_formatting import ADDRESS_FIELD_LIMITS, format_address
+from library.address_formatting import ADDRESS_FIELD_LIMITS, addresses_match, format_address
 from library.address_parsing import ADDRESS_NOTES_MAX_LENGTH, parse_address_text
 from library.address_geocoding import geocode_address
 from library.address_validation import validate_address
@@ -399,7 +399,7 @@ def _contact_dict(row: Contact) -> dict:
         "email_addresses": contact_channels(row, "email_addresses"),
         "company": row.company,
         "position": row.position,
-        "addresses": [_contact_address_dict(link) for link in _contact_addresses(get_scoped_session(), row.id)],
+        "addresses": _contact_address_dicts(_contact_addresses(get_scoped_session(), row.id)),
         "current_city": row.current_city,
         "hometown": row.hometown,
         "birthday": row.birthday.isoformat() if row.birthday else None,
@@ -449,6 +449,18 @@ def _contact_address_dict(row: ContactAddress) -> dict:
         "id": row.id, "role": row.role, "is_primary": row.is_primary,
         "address": _address_dict(row.address),
     }
+
+
+def _contact_address_dicts(links) -> list[dict]:
+    """Address links with ``duplicate_of_link_id`` set on any link that repeats an earlier one's place."""
+    result, seen = [], []
+    for link in links:
+        entry = _contact_address_dict(link)
+        original = next((prev for prev in seen if addresses_match(prev.address, link.address)), None)
+        entry["duplicate_of_link_id"] = original.id if original else None
+        seen.append(link)
+        result.append(entry)
+    return result
 
 
 def _contact_addresses(session, contact_id):
@@ -1916,9 +1928,8 @@ def contact_addresses(contact_id: int):
     if contact is None:
         return {"status": "error", "message": "Contact not found"}, 404
     if request.method == "GET":
-        return jsonify({"status": "success", "addresses": [
-            _contact_address_dict(link) for link in _contact_addresses(session, contact_id)
-        ]}), 200
+        return jsonify({"status": "success",
+                        "addresses": _contact_address_dicts(_contact_addresses(session, contact_id))}), 200
 
     data = request.get_json(silent=True) or {}
     error = _validate_address_payload(data)
@@ -1941,6 +1952,13 @@ def contact_addresses(contact_id: int):
             fields["country"] = "Polska"
         address = Address(**fields, label=(data.get("label") or "").strip() or None,
                           notes=(data.get("notes") or "").strip() or None)
+    existing = next((link for link in _contact_addresses(session, contact_id)
+                     if addresses_match(link.address, address)), None)
+    if existing is not None:
+        return jsonify({"status": "error", "code": "duplicate_address",
+                        "message": f"Kontakt ma już ten adres: {format_address(existing.address)}. "
+                                   "Zmień jego rolę zamiast dodawać drugi wpis.",
+                        "existing": _contact_address_dict(existing)}), 409
     row = ContactAddress(contact_id=contact_id, address=address,
                          role=(data.get("role") or "").strip() or None,
                          is_primary=data.get("is_primary", False))

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from library.address_formatting import (
-    ADDRESS_FIELD_LIMITS, format_address, imported_address_fields, parse_address_text_heuristic,
+    ADDRESS_FIELD_LIMITS, addresses_match, format_address, imported_address_fields, parse_address_text_heuristic,
 )
 
 
@@ -125,3 +125,42 @@ def test_import_preserves_fallback_and_does_not_duplicate(monkeypatch):
     links.append(link)
     assert not attach_imported_address(session, contact, text)
     assert session.add.call_count == 2
+
+
+def _addr(**fields):
+    return SimpleNamespace(**{**dict.fromkeys(ADDRESS_FIELD_LIMITS), **fields})
+
+
+LEGACY_ONE_LINE = _addr(city="Czeremchy 5\n95-073 Tkaczewska Góra\nPL")
+STRUCTURED = _addr(street="Czeremchy", building_number="5", postal_code="95-073", city="Tkaczewska Góra", country="PL")
+
+
+def test_legacy_one_field_address_matches_its_structured_twin():
+    assert addresses_match(LEGACY_ONE_LINE, STRUCTURED)
+    assert addresses_match(STRUCTURED, LEGACY_ONE_LINE)
+
+
+@pytest.mark.parametrize("other", [
+    _addr(street="olsztyńska", building_number="16", city="ŁÓDŹ", country="Polska"),
+    _addr(street="Olsztynska", building_number="16", postal_code="90-001", city="Łódź", country=None),
+])
+def test_case_accents_country_alias_and_missing_postal_are_ignored(other):
+    base = _addr(street="Olsztyńska", building_number="16", city="Łódź", country="Polska")
+    assert addresses_match(base, other)
+
+
+@pytest.mark.parametrize("other", [
+    _addr(street="Olsztyńska", building_number="17", city="Łódź"),
+    _addr(street="Olsztyńska", building_number="16", apartment_number="3", city="Łódź"),
+    _addr(street="Olsztyńska", building_number="16", postal_code="90-001", city="Łódź"),
+    _addr(street="Olsztyńska", building_number="16", city="Łódź", country="Niemcy"),
+    _addr(street="Olsztyńska", building_number="16", city="Kraków"),
+])
+def test_different_places_do_not_match(other):
+    base = _addr(street="Olsztyńska", building_number="16", postal_code="91-001", city="Łódź")
+    assert not addresses_match(base, other)
+
+
+def test_unparsable_free_text_matches_nothing_else():
+    assert not addresses_match(_addr(city="gdzieś nad morzem"), _addr(city="Łódź"))
+    assert addresses_match(_addr(city="gdzieś nad morzem"), _addr(city="Gdzies nad morzem"))
