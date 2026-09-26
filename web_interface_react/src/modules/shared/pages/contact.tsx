@@ -13,6 +13,7 @@ import ContactPhotoPanel from "../components/ContactPhotoPanel";
 import ContactPhotoHistory from "../components/ContactPhotoHistory";
 import ContactFamilyForm from "../components/ContactFamilyForm";
 import InfoTip from "../components/InfoTip";
+import AddressMapMenu from "../components/AddressMapMenu";
 
 const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
@@ -1077,14 +1078,16 @@ const Contact = () => {
     } finally { setAddressBusy(false); }
   };
 
-  const geocodeAddress = async (addressId: number) => {
+  const geocodeAddress = async (addressId: number, openMapForLinkId?: number) => {
     setAddressBusy(true);
     setIsError(false); setMessage("");
     try {
       const response = await axios.post(`${apiUrl}/address/${addressId}/geocode`, {}, { headers });
       await refreshAddresses();
       if (response.data.resolved === false) {
-        setIsError(true); setMessage("Nie znaleziono współrzędnych dla tego adresu.");
+        setIsError(true); setMessage("Nie znaleziono współrzędnych dla tego adresu. Użyj linku do zewnętrznej mapy z menu „Mapa”.");
+      } else if (openMapForLinkId != null) {
+        setOpenAddressMaps(current => new Set(current).add(openMapForLinkId));
       }
     } catch (error: any) {
       setIsError(true); setMessage(`Nie udało się geokodować adresu: ${error.response?.data?.message || error.message}`);
@@ -1286,6 +1289,11 @@ const Contact = () => {
           <li key={link.id} style={{ marginBottom: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
             <div>{link.is_primary && "⭐ "}{link.address.label && <strong>{link.address.label}: </strong>}
               {link.role && <span>{link.role} — </span>}{link.address.formatted_address}</div>
+            <div style={{ marginTop: 4, color: "#667" }}><small>
+              {link.address.latitude != null && link.address.longitude != null
+                ? `📍 Współrzędne: ${link.address.latitude.toFixed(5)}, ${link.address.longitude.toFixed(5)}`
+                : "📍 Brak współrzędnych (adres niezgeokodowany)"}
+            </small></div>
             {link.address.notes && <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>📝 Notatki: {link.address.notes}</div>}
             {link.address.verified_at && <div style={{ marginTop: 4, color: "#667" }}>
               <small>Zweryfikowano: {new Date(link.address.verified_at).toLocaleDateString("pl-PL")}</small>
@@ -1314,18 +1322,10 @@ const Contact = () => {
               <button className={"button"} type="button" disabled={addressBusy}
                 onClick={() => void validateAddress(link.address.id)}>✓ Zweryfikuj adres</button>
             </div>}
+            <AddressMapMenu address={link.address} inlineOpen={openAddressMaps.has(link.id)} busy={addressBusy}
+              onToggleInline={() => toggleAddressMap(link.id)}
+              onGeocode={() => void geocodeAddress(link.address.id, link.id)} />
             {link.address.latitude != null && link.address.longitude != null && <>
-              <button className={"button"} type="button" style={{ marginTop: 6 }} aria-expanded={openAddressMaps.has(link.id)}
-                onClick={() => toggleAddressMap(link.id)}>
-                {openAddressMaps.has(link.id) ? "🗺 Ukryj mapę" : "🗺 Pokaż na mapie"}
-              </button>
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${link.address.latitude},${link.address.longitude}`}
-                target="_blank" rel="noopener noreferrer"
-                className={"button"} style={{ marginTop: 6, marginLeft: 6, display: "inline-block", textDecoration: "none" }}
-              >
-                🧭 Otwórz w Google Maps (trasa)
-              </a>
               {openAddressMaps.has(link.id) && <React.Suspense fallback={<p>Ładowanie mapy…</p>}>
                 <CountryMap countries={[]} places={[{
                   name: link.address.label || link.address.formatted_address,
