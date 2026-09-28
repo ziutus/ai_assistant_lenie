@@ -2,6 +2,7 @@ import React from "react";
 import axios from "axios";
 import { NavLink, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import { formatEventDateRange } from "../utils/contactEventDate";
 import type { ContactGroup } from "./contactGroups";
 
 export interface ContactGroupEvent {
@@ -11,6 +12,7 @@ export interface ContactGroupEvent {
   participants: { id: number; first_name: string | null; last_name: string | null; display_name: string }[];
   title: string;
   event_date: string;
+  event_date_end: string | null;
   summary: string | null;
   source_document_id: number | null;
   source_document_title: string | null;
@@ -19,7 +21,7 @@ export interface ContactGroupEvent {
 }
 
 interface GroupDetail extends ContactGroup { events: ContactGroupEvent[] }
-const emptyForm = { title: "", event_date: "", summary: "" };
+const emptyForm = { title: "", event_date: "", event_date_end: "", summary: "" };
 
 const ContactGroupDetail = () => {
   const { id } = useParams();
@@ -56,12 +58,16 @@ const ContactGroupDetail = () => {
       report("Tytuł i data są wymagane.", true);
       return;
     }
+    if (form.event_date_end && form.event_date_end < form.event_date) {
+      report("Data zakończenia nie może być wcześniejsza niż data rozpoczęcia.", true); return;
+    }
+    const payload = { ...form, event_date_end: form.event_date_end || null };
     setBusyId(eventId ?? 0);
     report("");
     try {
       const response = eventId === null
-        ? await axios.post(`${apiUrl}/contact_groups/${id}/events`, form, { headers })
-        : await axios.patch(`${apiUrl}/contact_group_events/${eventId}`, form, { headers });
+        ? await axios.post(`${apiUrl}/contact_groups/${id}/events`, payload, { headers })
+        : await axios.patch(`${apiUrl}/contact_group_events/${eventId}`, payload, { headers });
       const saved: ContactGroupEvent = response.data.event;
       setGroup(current => current && ({ ...current, events: [
         ...current.events.filter(event => event.id !== saved.id), saved,
@@ -93,6 +99,8 @@ const ContactGroupDetail = () => {
         onChange={e => setForm({ ...form, title: e.target.value })} /></label>
       <label>Data <input required type="date" value={form.event_date}
         onChange={e => setForm({ ...form, event_date: e.target.value })} /></label>
+      <label>Data zakończenia (opcjonalnie) <input type="date" min={form.event_date || ""} value={form.event_date_end}
+        onChange={e => setForm({ ...form, event_date_end: e.target.value })} /></label>
       <label>Opis <textarea value={form.summary}
         onChange={e => setForm({ ...form, summary: e.target.value })} /></label>
     </>
@@ -125,10 +133,11 @@ const ContactGroupDetail = () => {
               </form>
             ) : <>
               <div style={formStyle}>
-                <time dateTime={event.event_date}>{event.event_date}</time><strong>{event.title}</strong>
+                <time dateTime={event.event_date}>{formatEventDateRange(event.event_date, event.event_date_end)}</time>
+                <NavLink to={`/contact-events/${event.id}`}><strong>{event.title}</strong></NavLink>
                 <button className="button" disabled={busyId !== null} type="button" onClick={() => {
                   setEditId(event.id);
-                  setEditForm({ title: event.title, event_date: event.event_date, summary: event.summary ?? "" });
+                  setEditForm({ title: event.title, event_date: event.event_date, event_date_end: event.event_date_end ?? "", summary: event.summary ?? "" });
                 }}>Edytuj</button>
                 <button className="button" disabled={busyId !== null} type="button" onClick={() => remove(event)}>Usuń</button>
               </div>

@@ -1,3 +1,4 @@
+import { formatEventDateRange } from "../utils/contactEventDate";
 import ContactChannelsEditor, { type ContactChannel } from "../components/ContactChannelsEditor";
 import ContactInterestsEducation from "../components/ContactInterestsEducation";
 import React from "react";
@@ -446,8 +447,8 @@ const latestEvent = (events: ContactGroupEvent[] | undefined) =>
 
 const eventHintText = (event: ContactGroupEvent) =>
   event.group_name
-    ? `${event.group_name}: „${event.title}” (${event.event_date})`
-    : `„${event.title}” (${event.event_date})`;
+    ? `${event.group_name}: „${event.title}” (${formatEventDateRange(event.event_date, event.event_date_end)})`
+    : `„${event.title}” (${formatEventDateRange(event.event_date, event.event_date_end)})`;
 
 // CEIDG (Centralna Ewidencja i Informacja o Działalności Gospodarczej) — the
 // official Polish government JDG register, the authoritative source to
@@ -1971,9 +1972,9 @@ const Contact = () => {
             })()}
             <ul>
               {contact.events.map(event => <li key={event.id}>
-                <time dateTime={event.event_date}>{event.event_date}</time>{" — "}
+                <time dateTime={event.event_date}>{formatEventDateRange(event.event_date, event.event_date_end)}</time>{" — "}
                 {event.group_id !== null && <><NavLink to={`/contact_groups/${event.group_id}`}>{event.group_name}</NavLink>{" — "}</>}
-                <NavLink to={`/contact-events?edit=${event.id}`}>{event.title}</NavLink>
+                <NavLink to={`/contact-events/${event.id}`}>{event.title}</NavLink>
                 {event.participants.filter(participant => String(participant.id) !== id).map(participant => (
                   <NavLink key={participant.id} to={`/contacts/${participant.id}`}
                     style={{ display: "inline-block", marginLeft: 6, padding: "2px 8px", borderRadius: 12, background: "#eef2ff" }}>
