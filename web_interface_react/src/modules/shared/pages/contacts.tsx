@@ -35,6 +35,12 @@ export interface ContactListItem {
 const DEFAULT_PAGE_SIZE = 50;
 const PAGE_SIZES = [25, 50, 100];
 const UNGROUPED_VALUE = "__ungrouped__";
+const DEFAULT_SORT = "name";
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: "name", label: "Nazwisko i imię" },
+  { value: "created_desc", label: "Data dodania (najnowsze)" },
+  { value: "created_asc", label: "Data dodania (najstarsze)" },
+];
 
 const parseIdList = (value: string | null) =>
   (value ?? "").split(",").filter((id) => /^\d+$/.test(id));
@@ -61,6 +67,7 @@ const Contacts = () => {
     ...(searchParams.get("include_ungrouped") === "1" ? [UNGROUPED_VALUE] : []),
   ]);
   const [archived, setArchived] = React.useState<string>(searchParams.get("archived") ?? "");
+  const [sort, setSort] = React.useState<string>(searchParams.get("sort") ?? DEFAULT_SORT);
   // `offset` is retained as a backwards-compatible URL input for links created
   // before the shared page-based pagination pattern was introduced.
   const requestedPageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
@@ -97,6 +104,7 @@ const Contacts = () => {
     if (interestIds.length) params.interest_ids = interestIds.join(",");
     if (excludedInterestIds.length) params.exclude_interest_ids = excludedInterestIds.join(",");
     if (archived) params.archived = archived;
+    if (sort !== DEFAULT_SORT) params.sort = sort;
     if (pageArg !== 1) params.page = String(pageArg);
     if (pageSizeArg !== DEFAULT_PAGE_SIZE) params.page_size = String(pageSizeArg);
     return params;
@@ -163,6 +171,7 @@ const Contacts = () => {
     setQuery("");
     setCategoryId("");
     setArchived("");
+    setSort(DEFAULT_SORT);
     setGroupFilterActive(false);
     setSelectedGroupValues([]);
     void fetchContacts(1, DEFAULT_PAGE_SIZE, {});
@@ -306,6 +315,23 @@ const Contacts = () => {
           <option value="1">Zarchiwizowane</option>
           <option value="all">Wszystkie</option>
         </select>
+        <label>
+          Sortuj
+          <select
+            value={sort}
+            disabled={isLoading}
+            onChange={(e) => {
+              const nextSort = e.target.value;
+              setSort(nextSort);
+              const params = filterParams(1);
+              if (nextSort === DEFAULT_SORT) delete params.sort; else params.sort = nextSort;
+              void fetchContacts(1, pageSize, params);
+            }}
+            style={{ marginLeft: 5, padding: "6px 10px" }}
+          >
+            {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
         <label>
           Wyników na stronę
           <select
