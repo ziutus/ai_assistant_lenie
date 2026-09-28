@@ -136,7 +136,7 @@ Skip whichever sub-section is empty or hidden by the profile's privacy settings 
 
 **Name check:** the profile header (visible on the main page) shows the person's full name. If the contact's `last_name` is empty and the Facebook name clearly matches the contact's first name/`display_name`, take the surname from the header as `last_name` (and `first_name` if that is empty too). Never overwrite an existing non-empty `first_name`/`last_name` — if Facebook's name differs from what's stored (maiden name, nickname, diminutive), flag it to the user instead of changing it.
 
-If any value is found and differs from what's already on the contact (from Step 1), save it in one PATCH call:
+Before saving birthday data, apply the uncertainty rules below. For other values found that differ from what's already on the contact (from Step 1), save them in one PATCH call:
 
 ```bash
 curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
@@ -153,6 +153,18 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; chars
   -X POST "http://192.168.200.7:5055/contacts/<ID>/education" \
   --data-binary '{"institution": "<school/university name>", "field_of_study": "<if shown, else omit>"}'
 ```
+
+### Uncertain or conflicting birthdays
+
+`birthday` stores one full date; `birthday_month` + `birthday_day` store one yearless anniversary. There is no birthday confidence field or structured list of dates by source. `contact_lookup_results.status` describes the lookup, not the truth of each extracted fact.
+
+- Read existing `notes`, `private_notes` (service-only), and lookup notes before saving birthday data. A user dispute or conflict with an existing date takes precedence over the ordinary field-update instruction: do not promote that declaration to `birthday` or silently replace an existing date.
+- An age such as "40" is a source declaration, not a birth date. Preserve its wording and observation date; do not turn it into an exact year or date. A visible full date may fill an empty birthday only if no dispute or conflict is known; it remains a source declaration, not independent verification.
+- Append disputed declarations to `private_notes` using service access. Include the value, source URL, actual observation date (or "unknown"), who observed/reported it, and the reason for the dispute. Distinguish user reports from your browser observations. Preserve previous notes and alternative source values; avoid duplicating the same report on retries. PATCH replaces the entire field: re-read it immediately before writing and send the preserved text plus the new entry. Use `change_source: "osint_lookup"` and a concise `change_note`. If service access is unavailable, report the limitation rather than moving private commentary into public notes.
+- Example: `Birthday claim: source declares age 40; source: <profile URL>; observed: unknown; reported by user on <report date>; status: disputed by user; birth year unverified.` Store alleged motives only as attributed opinions if explicitly requested, never as verified facts.
+- If only the year is disputed, independently supported month/day may be saved together when they do not conflict with existing values. An existing full `birthday` takes precedence in reminders and still produces an age: adding month/day does not disable it. Report this explicitly; clear or correct the full date only when the task authorizes that correction, preserving the prior value and known provenance in the note first.
+- Competing dates can currently coexist only as attributed text entries. Do not invent API fields for source, confidence, or alternate birthdays. After writing, GET the contact and verify the note and intended birthday fields.
+- A user-reported dispute can be recorded without browser enrichment. The 90-day gate applies to profile rechecks, not this correction. Do not create a completed Facebook-check row without a browser check. For an actual completed check, include birthday uncertainty in Step 6b notes; a `confirmed` lookup does not confirm a disputed birthday.
 
 ### Step 5b: Hobby/interest tags (conservative — from self-described text only)
 
