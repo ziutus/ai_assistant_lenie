@@ -22,6 +22,7 @@ from library.partial_dates import format_partial_date, parse_partial_date
 from library.address_parsing import ADDRESS_NOTES_MAX_LENGTH, parse_address_text
 from library.address_geocoding import geocode_address
 from library.address_validation import validate_address
+from library import contact_facts_service
 from library.contact_birthdays import age_in_months, approximate_age, current_age, upcoming_birthday_entry
 from library.contact_channels import channel_patch, contact_channels
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
@@ -1550,6 +1551,48 @@ def _validate_gender(data) -> str | None:
     return None
 
 
+def _record_manual_contact_facts(session, row: Contact, data: dict) -> None:
+    auth = getattr(g, "auth", None)
+    if auth and getattr(auth, "user_id", None) is not None:
+        caller_identity = f"user:{auth.user_id}"
+    elif auth and getattr(auth, "key_id", None) is not None:
+        caller_identity = f"api-key:{auth.key_id}"
+    else:
+        caller_identity = "legacy-api-key" if auth else "unknown"
+    values = {}
+    if any(key in data for key in ("birthday", "birthday_month", "birthday_day", "birthday_year")):
+        birthday = row.birthday
+        if "birthday" in data:
+            birthday = datetime.date.fromisoformat(data["birthday"]) if data.get("birthday") else None
+            value = {key: getattr(birthday, key) if birthday else None for key in ("year", "month", "day")}
+        else:
+            value = {key: getattr(row, f"birthday_{key}", None) if getattr(row, f"birthday_{key}", None) is not None
+                     else getattr(birthday, key, None) for key in ("year", "month", "day")}
+        for key in ("year", "month", "day"):
+            if f"birthday_{key}" in data:
+                value[key] = data[f"birthday_{key}"]
+        values["birthday"] = value
+    for key in ("gender", "current_city", "hometown"):
+        if key in data:
+            values[key] = {key: (data[key] or "").strip() or None}
+    for key, value in values.items():
+        contact_facts_service.record_assertion(
+            session, contact_id=row.id, attribute_key=key, item_key="singleton",
+            source_key="user_manual", value=value, source_record_key=f"manual:{caller_identity}",
+            asserted_by=caller_identity, status="confirmed",
+        )
+
+
+@bp.get("/contacts/<int:contact_id>/facts")
+def contact_facts_get(contact_id: int):
+    session = get_scoped_session()
+    if session.get(Contact, contact_id) is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    return jsonify({"status": "success", "facts": contact_facts_service.get_contact_facts(
+        session, contact_id, request.args.get("attribute_key"),
+    )})
+
+
 @bp.route("/contacts", methods=["POST", "OPTIONS"])
 def contacts_add():
     if request.method == "OPTIONS":
@@ -1594,7 +1637,7 @@ def contacts_add():
     row = Contact(category_id=category_id, last_name=last_name)
     changed_fields = ["last_name"]
     for field in _CONTACT_FIELDS:
-        if field == "last_name":
+        if field in ("last_name", "current_city", "hometown"):
             continue
         if field in data:
             setattr(row, field, (data.get(field) or "").strip() or None)
@@ -1607,16 +1650,6 @@ def contacts_add():
     if "private_notes" in data and auth and auth.kind == "service":
         row.private_notes = (data.get("private_notes") or "").strip() or None
         changed_fields.append("private_notes")
-    if "birthday" in data:
-        row.birthday = data.get("birthday") or None
-        changed_fields.append("birthday")
-    for field in ("birthday_month", "birthday_day", "birthday_year"):
-        if field in data:
-            setattr(row, field, data[field])
-            changed_fields.append(field)
-    if "gender" in data:
-        row.gender = data.get("gender")
-        changed_fields.append("gender")
     if "languages" in data:
         new_languages, error = _normalize_languages(data.get("languages"))
         if error:
@@ -1634,6 +1667,7 @@ def contacts_add():
     session.flush()
     record_contact_change(session, row, change_source, changed_fields=changed_fields, note=change_note)
     try:
+        _record_manual_contact_facts(session, row, data)
         session.commit()
     except Exception:
         session.rollback()
@@ -1682,7 +1716,7 @@ def contacts_update(contact_id: int):
             changed_fields.append("last_name")
         row.last_name = last_name
     for field in _CONTACT_FIELDS:
-        if field == "last_name":
+        if field in ("last_name", "current_city", "hometown"):
             continue
         if field in data:
             new_value = (data.get(field) or "").strip() or None
@@ -1699,22 +1733,6 @@ def contacts_update(contact_id: int):
         if row.private_notes != new_private_notes:
             changed_fields.append("private_notes")
         row.private_notes = new_private_notes
-    if "birthday" in data:
-        new_birthday = data.get("birthday") or None
-        old_birthday = row.birthday.isoformat() if row.birthday else None
-        if old_birthday != new_birthday:
-            changed_fields.append("birthday")
-        row.birthday = new_birthday
-    for field in ("birthday_month", "birthday_day", "birthday_year"):
-        if field in data:
-            if getattr(row, field) != data[field]:
-                changed_fields.append(field)
-            setattr(row, field, data[field])
-    if "gender" in data:
-        new_gender = data.get("gender")
-        if row.gender != new_gender:
-            changed_fields.append("gender")
-        row.gender = new_gender
     if "category_id" in data:
         category_id = data.get("category_id")
         if session.get(ContactCategory, category_id) is None:
@@ -1745,6 +1763,7 @@ def contacts_update(contact_id: int):
     row.updated_at = datetime.datetime.now()
     record_contact_change(session, row, change_source, changed_fields=changed_fields, note=change_note)
     try:
+        _record_manual_contact_facts(session, row, data)
         session.commit()
     except Exception:
         session.rollback()
