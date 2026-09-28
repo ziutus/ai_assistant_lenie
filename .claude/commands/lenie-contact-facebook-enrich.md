@@ -111,7 +111,7 @@ Take a `screenshot` or use `get_page_text` to read the values on each page — t
 
 Skip whichever sub-section is empty or hidden by the profile's privacy settings (say so in the report), and skip the whole step if the profile has no "Informacje" tab visible while logged in as this account.
 
-If any value is found and differs from what's already on the contact (from Step 1), save it in one PATCH call:
+Before saving birthday data, apply the uncertainty rules below. For other values found that differ from what's already on the contact (from Step 1), save them in one PATCH call:
 
 ```bash
 curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
@@ -128,6 +128,12 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; chars
   -X POST "http://192.168.200.7:5055/contacts/<ID>/education" \
   --data-binary '{"institution": "<school/university name>", "field_of_study": "<if shown, else omit>"}'
 ```
+
+### Uncertain or conflicting birthdays
+
+Read and apply the **Uncertain or conflicting birthdays** section in the shared procedure at `.agents/skills/lenie-contact-facebook-enrich/SKILL.md` (relative to the repository root). It is authoritative for birthday handling, including user-reported disputes without a browser recheck. Read it before writing birthday data; if unavailable, leave birthday fields unchanged and report the missing procedure.
+
+It covers source-attributed private notes, preserving competing declarations, avoiding age-to-year inference, and the precedence of a full date over month/day in reminders. A lookup marked `confirmed` does not establish the truth of a disputed birthday. The general field-update instruction above does not override these rules.
 
 ### Step 5b: Hobby/interest tags (conservative — from self-described text only)
 
