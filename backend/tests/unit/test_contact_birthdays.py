@@ -5,7 +5,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from library.contact_birthdays import birthday_source, next_occurrence, upcoming_birthday_entry
+from library.contact_birthdays import approximate_age, birthday_source, current_age, next_occurrence, upcoming_birthday_entry
+
+
+@pytest.mark.parametrize("birthday, today, expected", [
+    (dt.date(2020, 5, 10), dt.date(2026, 9, 14), 6),
+    (dt.date(2020, 10, 10), dt.date(2026, 9, 14), 5),
+    (dt.date(2020, 9, 14), dt.date(2026, 9, 14), 6),
+    (dt.date(2026, 5, 10), dt.date(2026, 9, 14), 0),
+    (None, dt.date(2026, 9, 14), None),
+])
+def test_current_age(birthday, today, expected):
+    assert current_age(birthday, today) == expected
 
 
 def _contact(**extra):
@@ -76,3 +87,18 @@ def test_display_label_for_contact_without_names():
     contact = _contact(first_name=None, last_name=None, display_label="Neighbour",
                        birthday_month=9, birthday_day=20)
     assert upcoming_birthday_entry(contact, dt.date(2026, 9, 14))["display_name"] == "Neighbour"
+
+
+@pytest.mark.parametrize("year, today, month, expected", [
+    (2020, dt.date(2026, 1, 1), None, 6),
+    (2020, dt.date(2026, 12, 31), None, 6),
+    (2020, dt.date(2026, 9, 14), 10, 5),
+    (2020, dt.date(2026, 9, 1), 9, 6),
+    (2020, dt.date(2026, 9, 30), 9, 6),
+    (2020, dt.date(2026, 9, 14), 8, 6),
+    (2026, dt.date(2026, 9, 14), None, 0),
+    (None, dt.date(2026, 9, 14), None, None),
+    (None, dt.date(2026, 9, 14), 9, None),
+])
+def test_approximate_age(year, today, month, expected):
+    assert approximate_age(year, today, month) == expected

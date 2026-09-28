@@ -860,7 +860,7 @@ def _make_contact(id_=1, last_name="Wojtysiak", first_name="Adam", category=None
         phone_number="+48 725 428 453",
         email=None, company=None, position=None,
         current_city=None, hometown=None, birthday=None, pesel=None, notes=None, private_notes=None, groups=[], interests=[], whatsapp_profile=None,
-        birthday_month=None, birthday_day=None,
+        birthday_month=None, birthday_day=None, birthday_year=None,
         languages=[], nationality=[], photo_storage_key=None, photo_thumbnail_storage_key=None, is_archived=False,
         created_at=dt.datetime(2026, 8, 23, 12, 0),
         updated_at=dt.datetime(2026, 8, 23, 12, 0),
@@ -3160,6 +3160,37 @@ class TestContactBirthdayPair:
 
         return send, session, row
 
+    @pytest.mark.parametrize("data", [
+        {"birthday_year": 2020},
+        {"birthday_year": 1900},
+        {"birthday_year": dt.date.today().year},
+        {"birthday_year": 2020, "birthday_month": 9},
+        {"birthday_year": 2020, "birthday_month": 9, "birthday_day": None},
+        {"birthday_year": 2020, "birthday_month": 9, "birthday_day": 14},
+    ])
+    def test_birth_year_saved(self, birthday_request, data):
+        send, session, _ = birthday_request
+        response, status = send(data)
+        assert status in (200, 201)
+        for field, value in data.items():
+            assert response.json["contact"][field] == value
+        change = session.add.call_args_list[-1].args[0]
+        assert "birthday_year" in change.changed_fields
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("data", [
+        {"birthday_year": 1899}, {"birthday_year": dt.date.today().year + 1},
+        {"birthday_year": True}, {"birthday_year": "2020"}, {"birthday_year": 2020.5},
+        {"birthday_year": 2020, "birthday_day": 14},
+        {"birthday_year": 2020, "birthday_month": 13},
+        {"birthday_year": 2020, "birthday_month": 2, "birthday_day": 30},
+    ])
+    def test_invalid_birth_year_fields_rejected(self, birthday_request, data):
+        send, session, _ = birthday_request
+        _, status = send(data)
+        assert status == 400
+        session.commit.assert_not_called()
+
     @pytest.mark.parametrize("month, day", [(1, 31), (2, 29), (4, 30), (6, 30), (9, 30), (11, 30), (12, 31)])
     def test_valid_pair(self, birthday_request, month, day):
         send, session, _ = birthday_request
@@ -3605,3 +3636,53 @@ class TestContactEventParticipants:
         assert not table.c.created_at.nullable
         assert table.c.created_at.server_default is not None
         assert ContactGroupEvent.__table__.c.group_id.nullable
+
+
+@pytest.mark.parametrize("existing, data, valid", [
+    ({"birthday_year": 2020}, {"birthday_month": 9}, True),
+    ({"birthday_year": 2020, "birthday_month": 9}, {"birthday_year": None}, False),
+    # Clearing month+year without also explicitly clearing birthday_day stays
+    # invalid: the legacy contract requires birthday_day to be sent whenever
+    # birthday_month is touched and the row has no existing day of its own.
+    ({"birthday_year": 2020, "birthday_month": 9}, {"birthday_year": None, "birthday_month": None}, False),
+    ({"birthday_year": 2020}, {"birthday_year": None}, True),
+    ({"birthday_year": 2020, "birthday_month": 9, "birthday_day": 14}, {"birthday_day": None}, True),
+])
+def test_birth_year_patch_validates_merged_state(monkeypatch, existing, data, valid):
+    from library.contact_routes import contacts_update
+
+    row = _make_contact(**existing)
+    session = MagicMock()
+    session.get.return_value = row
+    monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+    with Flask(__name__).test_request_context("/contacts/1", method="PATCH", json=data):
+        response, status = contacts_update(1)
+    assert status == (200 if valid else 400)
+    if valid:
+        for field, value in data.items():
+            assert response.json["contact"][field] == value
+        session.commit.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+        for field, value in existing.items():
+            assert getattr(row, field) == value
+
+
+@pytest.mark.parametrize("birthday, year, month, approximate", [
+    (dt.date(2020, 1, 1), 2010, 12, False),
+    (None, 2020, None, True),
+    (None, 2020, 12, True),
+    (None, None, None, False),
+])
+def test_relationship_age_precision(birthday, year, month, approximate):
+    from library.contact_birthdays import approximate_age, current_age
+    from library.contact_routes import _relationship_dict
+
+    rel = SimpleNamespace(id=1, relationship_type="child", note=None, start_date=None,
+                          end_date=None, contact_id=1, related_contact_id=2)
+    other = _make_contact(id_=2, birthday=birthday, birthday_year=year, birthday_month=month)
+    result = _relationship_dict(rel, other, "outgoing")["other_contact"]
+    today = dt.date.today()
+    expected = current_age(birthday, today) if birthday else approximate_age(year, today, month)
+    assert result["age"] == expected
+    assert result["age_is_approximate"] is approximate
