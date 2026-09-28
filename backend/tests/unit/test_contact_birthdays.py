@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from library.contact_birthdays import approximate_age, birthday_source, current_age, next_occurrence, upcoming_birthday_entry
+from library.contact_birthdays import (
+    age_in_months, approximate_age, birthday_source, current_age, next_occurrence, upcoming_birthday_entry,
+)
 
 
 @pytest.mark.parametrize("birthday, today, expected", [
@@ -17,6 +19,17 @@ from library.contact_birthdays import approximate_age, birthday_source, current_
 ])
 def test_current_age(birthday, today, expected):
     assert current_age(birthday, today) == expected
+
+
+@pytest.mark.parametrize("birthday, today, expected", [
+    (dt.date(2026, 4, 1), dt.date(2026, 9, 28), 5),
+    (dt.date(2026, 9, 28), dt.date(2026, 9, 28), 0),
+    (dt.date(2026, 9, 29), dt.date(2026, 9, 28), 0),
+    (dt.date(2026, 1, 1), dt.date(2026, 1, 1), 0),
+    (dt.date(2025, 9, 28), dt.date(2026, 9, 28), 12),
+])
+def test_age_in_months(birthday, today, expected):
+    assert age_in_months(birthday, today) == expected
 
 
 def _contact(**extra):

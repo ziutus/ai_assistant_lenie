@@ -3852,3 +3852,27 @@ def test_relationship_age_precision(birthday, year, month, approximate):
     expected = current_age(birthday, today) if birthday else approximate_age(year, today, month)
     assert result["age"] == expected
     assert result["age_is_approximate"] is approximate
+
+
+def test_relationship_age_under_one_year_shows_months():
+    from library.contact_birthdays import age_in_months
+    from library.contact_routes import _relationship_dict
+
+    today = dt.date.today()
+    newborn_birthday = today.replace(day=1) if today.day != 1 else today
+    rel = SimpleNamespace(id=1, relationship_type="syn", note=None, start_date=None,
+                          end_date=None, contact_id=1, related_contact_id=2)
+    other = _make_contact(id_=2, birthday=newborn_birthday, birthday_year=None, birthday_month=None)
+    result = _relationship_dict(rel, other, "outgoing")["other_contact"]
+    assert result["age"] == 0
+    assert result["age_months"] == age_in_months(newborn_birthday, today)
+
+
+def test_relationship_age_over_one_year_has_no_months():
+    from library.contact_routes import _relationship_dict
+
+    rel = SimpleNamespace(id=1, relationship_type="syn", note=None, start_date=None,
+                          end_date=None, contact_id=1, related_contact_id=2)
+    other = _make_contact(id_=2, birthday=dt.date(2010, 1, 1), birthday_year=None, birthday_month=None)
+    result = _relationship_dict(rel, other, "outgoing")["other_contact"]
+    assert result["age_months"] is None

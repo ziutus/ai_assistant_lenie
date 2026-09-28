@@ -29,7 +29,7 @@ interface ContactRelationship {
   note: string | null;
   start_date: string | null;
   end_date: string | null;
-  other_contact: { id: number; first_name: string | null; last_name: string | null; display_name?: string; age: number | null; age_is_approximate: boolean };
+  other_contact: { id: number; first_name: string | null; last_name: string | null; display_name?: string; age: number | null; age_months: number | null; age_is_approximate: boolean };
 }
 
 interface WhatsappFact {
@@ -444,6 +444,9 @@ const isChildRelationship = (relationshipType: string) => {
 
 const pluralYears = (age: number) =>
   age === 1 ? "rok" : age % 10 >= 2 && age % 10 <= 4 && (age % 100 < 12 || age % 100 > 14) ? "lata" : "lat";
+
+const pluralMonths = (months: number) =>
+  months === 1 ? "miesiąc" : months % 10 >= 2 && months % 10 <= 4 && (months % 100 < 12 || months % 100 > 14) ? "miesiące" : "miesięcy";
 
 const relDatesLabel = (r: ContactRelationship) => {
   if (!r.start_date && !r.end_date) return null;
@@ -2562,7 +2565,11 @@ const Contact = () => {
                     <>
                       <a href={`/contacts/${r.other_contact.id}`}><strong>{otherName(r.other_contact)}</strong></a> — {r.relationship_type}
                       {isChildRelationship(r.relationship_type) && r.other_contact.age !== null && (
-                        <span style={{ color: "#667" }}> ({r.other_contact.age_is_approximate ? "~" : ""}{r.other_contact.age} {pluralYears(r.other_contact.age)})</span>
+                        <span style={{ color: "#667" }}>
+                          {" "}({r.other_contact.age === 0 && r.other_contact.age_months !== null
+                            ? `${r.other_contact.age_months} ${pluralMonths(r.other_contact.age_months)}`
+                            : `${r.other_contact.age_is_approximate ? "~" : ""}${r.other_contact.age} ${pluralYears(r.other_contact.age)}`})
+                        </span>
                       )}
                       {relDatesLabel(r) && <span style={{ color: "#667" }}> [{relDatesLabel(r)}]</span>}
                       {r.note && <span style={{ color: "#667" }}> ({r.note})</span>}
