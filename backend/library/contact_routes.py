@@ -275,6 +275,7 @@ def _event_dict(row: ContactGroupEvent) -> dict:
         } for contact in row.participants],
         "title": row.title,
         "event_date": row.event_date.isoformat(),
+        "event_date_end": row.event_date_end.isoformat() if row.event_date_end is not None else None,
         "summary": row.summary,
         "source_document_id": row.source_document_id,
         "source_document_title": row.source_document.title if row.source_document else None,
@@ -297,6 +298,13 @@ def _event_values(session, data, partial=False, row=None) -> dict:
             values["event_date"] = datetime.date.fromisoformat(data.get("event_date"))
         except (ValueError, TypeError):
             raise ValueError("event_date must be a valid ISO date") from None
+    if "event_date_end" in data:
+        try:
+            values["event_date_end"] = (
+                datetime.date.fromisoformat(data["event_date_end"]) if data["event_date_end"] is not None else None
+            )
+        except (ValueError, TypeError):
+            raise ValueError("event_date_end must be a valid ISO date") from None
     if "summary" in data:
         summary = data["summary"]
         if summary is not None and not isinstance(summary, str):
@@ -331,6 +339,10 @@ def _event_values(session, data, partial=False, row=None) -> dict:
                 raise ValueError(f"participant_contact_ids: contact {ident} not found")
             participants.append(contact)
         values["participants"] = participants
+    event_date = values.get("event_date", row.event_date if partial and row is not None else None)
+    event_date_end = values.get("event_date_end", row.event_date_end if partial and row is not None else None)
+    if event_date_end is not None and event_date is not None and event_date_end < event_date:
+        raise ValueError("event_date_end must be on or after event_date")
     group_id = values.get("group_id", row.group_id if partial and row is not None else None)
     participants = values.get("participants", row.participants if partial and row is not None else [])
     if group_id is None and not participants:
@@ -783,6 +795,18 @@ def contact_group_events_add(group_id: int | None = None):
     except Exception:
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "event": _event_dict(row)}), 200
+
+
+@bp.get("/contact_group_events/<int:event_id>")
+def contact_group_events_get(event_id: int):
+    session = get_scoped_session()
+    row = session.get(ContactGroupEvent, event_id, options=(
+        joinedload(ContactGroupEvent.group), joinedload(ContactGroupEvent.source_document),
+        selectinload(ContactGroupEvent.participants),
+    ))
+    if row is None:
+        return {"status": "error", "message": "Event not found"}, 404
     return jsonify({"status": "success", "event": _event_dict(row)}), 200
 
 

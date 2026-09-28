@@ -29,6 +29,7 @@ import Contact from "./modules/shared/pages/contact";
 import ContactCategories from "./modules/shared/pages/contactCategories";
 import ContactGroups from "./modules/shared/pages/contactGroups";
 import ContactGroupDetail from "./modules/shared/pages/contactGroupDetail";
+import ContactEventDetail from "./modules/shared/pages/contactEventDetail";
 import ContactEvents from "./modules/shared/pages/contactEvents";
 import ContactBirthdays from "./modules/shared/pages/contactBirthdays";
 import InformationSources from "./modules/shared/pages/informationSources";
@@ -96,6 +97,7 @@ function App() {
                   <Route path="/contacts/duplicates" element={<ContactDuplicates />} />
                   <Route path="/contacts/merge" element={<ContactMerge />} />
                   <Route path="/contact-events" element={<ContactEvents />} />
+                  <Route path="/contact-events/:id" element={<ContactEventDetail />} />
                   <Route path="/contact-birthdays" element={<ContactBirthdays />} />
                   <Route path="/contacts/:id" element={<Contact />} />
                   <Route path="/contact-categories" element={<ContactCategories />} />

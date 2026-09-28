@@ -3586,12 +3586,15 @@ class ContactGroupEvent(Base):
     __table_args__ = (
         Index("idx_contact_group_events_group_id", "group_id"),
         Index("idx_contact_group_events_event_date", "event_date"),
+        CheckConstraint("event_date_end IS NULL OR event_date_end >= event_date",
+                        name="ck_contact_group_events_date_range"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("contact_groups.id", ondelete="CASCADE"), nullable=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     event_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    event_date_end: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text)
     source_document_id: Mapped[int | None] = mapped_column(
         ForeignKey("documents.id", ondelete="SET NULL"), index=True,

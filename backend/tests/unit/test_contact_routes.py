@@ -2705,10 +2705,13 @@ class TestContactGroupEvents:
         monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
         return session, event
 
-    def test_get_group_and_events(self, event_session):
+    @pytest.mark.parametrize("end_date", [None, dt.date(2026, 9, 2)])
+    def test_get_group_and_events(self, event_session, end_date):
         from library.contact_routes import contact_groups_get, contact_group_events_list
 
         session, event = event_session
+        event.event_date_end = end_date
+        expected_end = end_date.isoformat() if end_date else None
         session.get.return_value = SimpleNamespace(id=3, name="Parents", description=None)
         session.execute.return_value.scalar_one.return_value = 2
         with Flask(__name__).test_request_context():
@@ -2716,9 +2719,11 @@ class TestContactGroupEvents:
             assert status == 200
             assert response.json["contact_group"]["count"] == 2
             assert response.json["contact_group"]["events"][0]["id"] == event.id
+            assert response.json["contact_group"]["events"][0]["event_date_end"] == expected_end
             response, status = contact_group_events_list(3)
             assert status == 200
             assert response.json["events"][0]["event_date"] == "2026-09-01"
+            assert response.json["events"][0]["event_date_end"] == expected_end
 
     def test_post(self, event_session):
         from library.contact_routes import contact_group_events_add
@@ -2825,6 +2830,7 @@ class TestContactGroupEvents:
         # Simple namespaces match the existing endpoint-test convention.
         events = [SimpleNamespace(
             id=index, group_id=index, title="Meeting", event_date=dt.date(2026, 9, index),
+            event_date_end=dt.date(2026, 9, 4) if index == 3 else None,
             summary=None, source_document_id=None, source_document=None,
             created_at=None, updated_at=None, group=SimpleNamespace(name=f"Group {index}"), participants=[],
         ) for index in (3, 2)]
@@ -2846,6 +2852,7 @@ class TestContactGroupEvents:
             response, status = contacts_get(1)
         assert status == 200
         assert [row["group_name"] for row in response.json["contact"]["events"]] == ["Group 3", "Group 2"]
+        assert [row["event_date_end"] for row in response.json["contact"]["events"]] == ["2026-09-04", None]
         assert "contact_group_memberships.contact_id = 1" in captured[0]
         assert "ORDER BY contact_group_events.event_date DESC" in captured[0]
         assert "LIMIT 20" in captured[0]
@@ -3457,12 +3464,82 @@ class TestContactEventParticipants:
         session = MagicMock()
         session.scalar.return_value = 0
         records = {Contact: contacts, ContactGroup: {3: group}, ContactGroupEvent: {7: event}}
-        session.get.side_effect = lambda model, ident: records.get(model, {}).get(ident)
+        session.get.side_effect = lambda model, ident, **kwargs: records.get(model, {}).get(ident)
         session.execute.return_value.scalars.return_value.all.return_value = [event]
         monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
         app = Flask(__name__)
         app.register_blueprint(bp)
         return app.test_client(), session, event, contacts
+
+    @pytest.mark.parametrize("end", [None, "2026-09-13", "2026-09-15"])
+    def test_create_date_range(self, event_client, end):
+        client, _, _, _ = event_client
+        response = client.post("/contact_events", json={
+            "title": "Meeting", "event_date": "2026-09-13", "event_date_end": end, "group_id": 3,
+        })
+        assert response.status_code == 200
+        assert response.json["event"]["event_date_end"] == end
+
+    @pytest.mark.parametrize("method", ["post", "patch"])
+    @pytest.mark.parametrize("end", ["2026-09-12", "invalid", "2026-02-30", "", 123, False, [], {}])
+    def test_reject_invalid_end_date(self, event_client, method, end):
+        client, session, event, _ = event_client
+        path = "/contact_events" if method == "post" else "/contact_group_events/7"
+        response = getattr(client, method)(path, json={
+            "title": "Changed", "event_date": "2026-09-13", "event_date_end": end, "group_id": 3,
+        })
+        assert response.status_code == 400
+        assert response.json["status"] == "error"
+        assert event.event_date_end is None
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("payload, expected", [
+        ({"title": "Changed"}, "2026-09-15"),
+        ({"event_date": "2026-09-15"}, "2026-09-15"),
+        ({"event_date_end": None}, None),
+        ({"event_date": "2026-09-16", "event_date_end": None}, None),
+        ({"event_date": "2026-09-16", "event_date_end": "2026-09-17"}, "2026-09-17"),
+    ])
+    def test_patch_effective_date_range(self, event_client, payload, expected):
+        client, _, event, _ = event_client
+        event.event_date_end = dt.date(2026, 9, 15)
+        response = client.patch("/contact_group_events/7", json=payload)
+        assert response.status_code == 200
+        assert response.json["event"]["event_date_end"] == expected
+
+    @pytest.mark.parametrize("payload", [
+        {"event_date": "2026-09-16"}, {"event_date_end": "2026-09-12"},
+    ])
+    def test_patch_rejects_conflict_with_stored_date(self, event_client, payload):
+        client, session, event, _ = event_client
+        event.event_date_end = dt.date(2026, 9, 15)
+        response = client.patch("/contact_group_events/7", json=payload)
+        assert response.status_code == 400
+        assert event.event_date == dt.date(2026, 9, 13)
+        assert event.event_date_end == dt.date(2026, 9, 15)
+        session.commit.assert_not_called()
+
+    def test_get_event(self, event_client):
+        from library.db.models import Document
+
+        client, session, event, _ = event_client
+        event.source_document = Document(id=9, title="Meeting note")
+        event.event_date_end = dt.date(2026, 9, 15)
+        response = client.get("/contact_group_events/7")
+        assert response.status_code == 200
+        assert response.json["status"] == "success"
+        assert response.json["event"]["id"] == 7
+        assert response.json["event"]["group_name"] == event.group.name
+        assert response.json["event"]["source_document_title"] == "Meeting note"
+        assert response.json["event"]["participants"][0]["id"] == 1
+        assert response.json["event"]["event_date_end"] == "2026-09-15"
+        assert len(session.get.call_args.kwargs["options"]) == 3
+
+    def test_get_missing_event(self, event_client):
+        client, _, _, _ = event_client
+        response = client.get("/contact_group_events/999")
+        assert response.status_code == 404
+        assert response.json == {"status": "error", "message": "Event not found"}
 
     def test_create_participant_only_deduplicates_and_uses_display_name(self, event_client):
         client, session, _, contacts = event_client
@@ -3511,12 +3588,101 @@ class TestContactEventParticipants:
         assert response.status_code == 200
         assert response.json["event"]["group_id"] == 3
 
-    def test_list_includes_group_and_participant_summaries(self, event_client):
-        client, _, _, _ = event_client
+    @pytest.mark.parametrize("end_date", [None, dt.date(2026, 9, 14)])
+    def test_list_includes_group_and_participant_summaries(self, event_client, end_date):
+        client, _, event, _ = event_client
+        event.event_date_end = end_date
         response = client.get("/contact_events")
         assert response.status_code == 200
         assert response.json["events"][0]["group_name"] == "Rodzina"
         assert response.json["events"][0]["participants"][0]["display_name"] == "Anna Nowak"
+        assert response.json["events"][0]["event_date_end"] == (end_date.isoformat() if end_date else None)
+
+    @pytest.mark.parametrize("path", ["/contact_events", "/contact_groups/3/events"])
+    @pytest.mark.parametrize("payload,expected", [
+        ({}, None), ({"event_date_end": None}, None),
+        ({"event_date_end": "2026-09-14"}, "2026-09-14"),
+        ({"event_date_end": "2026-09-13"}, "2026-09-13"),
+    ])
+    def test_post_end_date(self, event_client, path, payload, expected):
+        client, session, _, _ = event_client
+        response = client.post(path, json={
+            "title": "Meeting", "event_date": "2026-09-13", "group_id": 3, **payload,
+        })
+        assert response.status_code == 200
+        assert response.json["event"]["event_date_end"] == expected
+        added = session.add.call_args.args[0]
+        assert added.event_date_end == (dt.date.fromisoformat(expected) if expected else None)
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("path", ["/contact_events", "/contact_groups/3/events"])
+    @pytest.mark.parametrize("end_date", ["2026-09-12", "2026-02-30", "bad", 123, True, [], {}])
+    def test_post_invalid_end_date(self, event_client, path, end_date):
+        client, session, _, _ = event_client
+        response = client.post(path, json={
+            "title": "Meeting", "event_date": "2026-09-13", "event_date_end": end_date, "group_id": 3,
+        })
+        assert response.status_code == 400
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("initial_end,payload,expected_start,expected_end", [
+        (None, {"event_date_end": "2026-09-14"}, "2026-09-13", "2026-09-14"),
+        ("2026-09-14", {"event_date_end": None}, "2026-09-13", None),
+        ("2026-09-14", {"summary": "Notes"}, "2026-09-13", "2026-09-14"),
+        (None, {"summary": "Notes"}, "2026-09-13", None),
+        (None, {"event_date_end": "2026-09-13"}, "2026-09-13", "2026-09-13"),
+        ("2026-09-14", {"event_date": "2026-09-14"}, "2026-09-14", "2026-09-14"),
+        ("2026-09-14", {"event_date": "2026-09-12"}, "2026-09-12", "2026-09-14"),
+        ("2026-09-14", {"event_date": "2026-09-15", "event_date_end": None}, "2026-09-15", None),
+        ("2026-09-14", {"event_date": "2026-09-15", "event_date_end": "2026-09-16"},
+         "2026-09-15", "2026-09-16"),
+    ])
+    def test_patch_end_date(self, event_client, initial_end, payload, expected_start, expected_end):
+        client, session, event, _ = event_client
+        event.event_date_end = dt.date.fromisoformat(initial_end) if initial_end else None
+        response = client.patch("/contact_group_events/7", json=payload)
+        assert response.status_code == 200
+        assert response.json["event"]["event_date"] == expected_start
+        assert response.json["event"]["event_date_end"] == expected_end
+        assert event.event_date == dt.date.fromisoformat(expected_start)
+        assert event.event_date_end == (dt.date.fromisoformat(expected_end) if expected_end else None)
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("payload", [
+        {"event_date_end": "2026-09-12"}, {"event_date": "2026-09-15"},
+        {"event_date": "2026-09-16", "event_date_end": "2026-09-15"},
+        {"event_date_end": "2026-02-30"}, {"event_date_end": 123},
+        {"event_date_end": True}, {"event_date_end": []}, {"event_date_end": {}},
+    ])
+    def test_patch_invalid_date_range_is_atomic(self, event_client, payload):
+        client, session, event, _ = event_client
+        event.event_date_end = dt.date(2026, 9, 14)
+        response = client.patch("/contact_group_events/7", json={"title": "Changed", **payload})
+        assert response.status_code == 400
+        assert event.title == "Urodziny"
+        assert event.event_date == dt.date(2026, 9, 13)
+        assert event.event_date_end == dt.date(2026, 9, 14)
+        session.commit.assert_not_called()
+
+    @pytest.mark.parametrize("end_date", [None, dt.date(2026, 9, 14)])
+    def test_get_event_by_id(self, event_client, end_date):
+        from library.contact_routes import _event_dict
+
+        client, session, event, _ = event_client
+        event.event_date_end = end_date
+        response = client.get("/contact_group_events/7")
+        assert response.status_code == 200
+        assert response.json == {"status": "success", "event": _event_dict(event)}
+        assert response.json["event"]["event_date_end"] == (end_date.isoformat() if end_date else None)
+        session.commit.assert_not_called()
+
+    def test_get_missing_event_by_id(self, event_client):
+        client, session, _, _ = event_client
+        response = client.get("/contact_group_events/999")
+        assert response.status_code == 404
+        assert response.json == {"status": "error", "message": "Event not found"}
+        session.commit.assert_not_called()
 
     def test_patch_replaces_participants_and_detaches_group(self, event_client):
         client, session, event, contacts = event_client
