@@ -1051,10 +1051,17 @@ def contacts_list():
 
     offset = request.args.get("offset", default=0, type=int)
     limit = min(request.args.get("limit", default=100, type=int), 500)
+    sort = (request.args.get("sort") or "name").strip().lower()
+    if sort == "created_desc":
+        order_by = (Contact.created_at.desc(), Contact.id.desc())
+    elif sort == "created_asc":
+        order_by = (Contact.created_at.asc(), Contact.id.asc())
+    else:
+        order_by = (func.coalesce(Contact.last_name, Contact.first_name, Contact.display_label),
+                    Contact.first_name, Contact.id)
     query = (
         select(Contact).where(*conditions)
-        .order_by(func.coalesce(Contact.last_name, Contact.first_name, Contact.display_label),
-                  Contact.first_name, Contact.id).offset(offset).limit(limit)
+        .order_by(*order_by).offset(offset).limit(limit)
     )
 
     rows = session.execute(query).scalars().all()
