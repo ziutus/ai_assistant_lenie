@@ -22,7 +22,7 @@ from library.partial_dates import format_partial_date, parse_partial_date
 from library.address_parsing import ADDRESS_NOTES_MAX_LENGTH, parse_address_text
 from library.address_geocoding import geocode_address
 from library.address_validation import validate_address
-from library.contact_birthdays import upcoming_birthday_entry
+from library.contact_birthdays import approximate_age, current_age, upcoming_birthday_entry
 from library.contact_channels import channel_patch, contact_channels
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
 from library.contact_link_promotion import promote_lookup_result
@@ -407,6 +407,7 @@ def _contact_dict(row: Contact) -> dict:
         "current_city": row.current_city,
         "hometown": row.hometown,
         "birthday": row.birthday.isoformat() if row.birthday else None,
+        "birthday_year": row.birthday_year,
         "birthday_month": row.birthday_month,
         "birthday_day": row.birthday_day,
         "pesel": row.pesel,
@@ -591,6 +592,7 @@ def _change_log_dict(row: ContactChangeLog) -> dict:
 
 
 def _relationship_dict(rel: ContactRelationship, other: Contact, direction: str) -> dict:
+    today = datetime.date.today()
     return {
         "id": rel.id,
         "direction": direction,  # "outgoing" (this contact -> other) or "incoming" (other -> this contact)
@@ -605,6 +607,9 @@ def _relationship_dict(rel: ContactRelationship, other: Contact, direction: str)
             "first_name": other.first_name,
             "last_name": other.last_name,
             "display_name": contact_display_name(other),
+            "age": current_age(other.birthday, today) if other.birthday is not None
+            else approximate_age(other.birthday_year, today, other.birthday_month),
+            "age_is_approximate": other.birthday is None and other.birthday_year is not None,
         },
     }
 
@@ -1480,19 +1485,29 @@ def contact_photo_delete(contact_id: int):
 
 def _validate_birthday_pair(data, row=None):
     fields = ("birthday_month", "birthday_day")
-    if not any(field in data for field in fields):
+    if not any(field in data for field in (*fields, "birthday_year")):
         return None
+    year = data.get("birthday_year", getattr(row, "birthday_year", None))
+    current_year = datetime.date.today().year
+    if year is not None and (type(year) is not int or not 1900 <= year <= current_year):
+        return f"birthday_year must be an integer between 1900 and {current_year}"
     pair_error = "birthday_month and birthday_day must be provided together"
-    if any(field not in data and getattr(row, field, None) is None for field in fields):
-        return pair_error
     month = data.get("birthday_month", getattr(row, "birthday_month", None))
     day = data.get("birthday_day", getattr(row, "birthday_day", None))
+    if "birthday_month" in data or "birthday_day" in data:
+        if "birthday_month" not in data and getattr(row, "birthday_month", None) is None:
+            return pair_error
+        day_known_via_year = year is not None and month is not None
+        if "birthday_day" not in data and getattr(row, "birthday_day", None) is None and not day_known_via_year:
+            return pair_error
     if month is None and day is None:
         return None
-    if month is None or day is None:
+    if month is None or (day is None and year is None):
         return pair_error
     if type(month) is not int or not 1 <= month <= 12:
         return "birthday_month must be an integer between 1 and 12"
+    if day is None:
+        return None
     max_day = 29 if month == 2 else 30 if month in (4, 6, 9, 11) else 31
     if type(day) is not int or not 1 <= day <= max_day:
         return f"birthday_day must be an integer between 1 and {max_day} for month {month}"
@@ -1568,7 +1583,7 @@ def contacts_add():
     if "birthday" in data:
         row.birthday = data.get("birthday") or None
         changed_fields.append("birthday")
-    for field in ("birthday_month", "birthday_day"):
+    for field in ("birthday_month", "birthday_day", "birthday_year"):
         if field in data:
             setattr(row, field, data[field])
             changed_fields.append(field)
@@ -1663,7 +1678,7 @@ def contacts_update(contact_id: int):
         if old_birthday != new_birthday:
             changed_fields.append("birthday")
         row.birthday = new_birthday
-    for field in ("birthday_month", "birthday_day"):
+    for field in ("birthday_month", "birthday_day", "birthday_year"):
         if field in data:
             if getattr(row, field) != data[field]:
                 changed_fields.append(field)

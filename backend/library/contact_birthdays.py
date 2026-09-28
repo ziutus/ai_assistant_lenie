@@ -6,6 +6,24 @@ from calendar import isleap
 from library.contact_names import contact_display_name
 
 
+def current_age(birthday: datetime.date | None, today: datetime.date) -> int | None:
+    """Age in whole years as of today; None if birthday (full date) is unknown."""
+    if birthday is None:
+        return None
+    return today.year - birthday.year - ((today.month, today.day) < (birthday.month, birthday.day))
+
+
+def approximate_age(birthday_year: int | None, today: datetime.date, birthday_month: int | None = None) -> int | None:
+    """Approximate age in whole years; None if the birth year is unknown.
+
+    Year-only precision is accurate to plus or minus 1 year. When the month is
+    known, assume age rolls over at its start because the day is unknown.
+    """
+    if birthday_year is None:
+        return None
+    return today.year - birthday_year - (birthday_month is not None and today.month < birthday_month)
+
+
 def next_occurrence(month: int, day: int, today: datetime.date) -> datetime.date:
     """Return this year's or next year's birthday, including today."""
     for year in (today.year, today.year + 1):

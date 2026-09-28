@@ -28,7 +28,7 @@ interface ContactRelationship {
   note: string | null;
   start_date: string | null;
   end_date: string | null;
-  other_contact: { id: number; first_name: string | null; last_name: string | null; display_name?: string };
+  other_contact: { id: number; first_name: string | null; last_name: string | null; display_name?: string; age: number | null; age_is_approximate: boolean };
 }
 
 interface WhatsappFact {
@@ -393,6 +393,7 @@ interface ContactDetail {
   birthday: string | null;
   birthday_month: number | null;
   birthday_day: number | null;
+  birthday_year: number | null;
   pesel: string | null;
   notes: string | null;
   languages: ContactLanguage[];
@@ -425,6 +426,7 @@ const emptyForm = {
   birthday: "",
   birthday_month: "",
   birthday_day: "",
+  birthday_year: "",
   pesel: "",
   notes: "",
   languages: [] as ContactLanguage[],
@@ -433,6 +435,14 @@ const emptyForm = {
 
 const otherName = (other: { first_name: string | null; last_name: string | null; display_name?: string }) =>
   other.display_name || [other.first_name, other.last_name].filter(Boolean).join(" ");
+
+const isChildRelationship = (relationshipType: string) => {
+  const normalized = relationshipType.trim().toLowerCase().replace(/ó/g, "o");
+  return normalized === "syn" || normalized === "corka" || normalized === "dziecko";
+};
+
+const pluralYears = (age: number) =>
+  age === 1 ? "rok" : age % 10 >= 2 && age % 10 <= 4 && (age % 100 < 12 || age % 100 > 14) ? "lata" : "lat";
 
 const relDatesLabel = (r: ContactRelationship) => {
   if (!r.start_date && !r.end_date) return null;
@@ -607,6 +617,7 @@ const Contact = () => {
     current_city: c.current_city ?? "",
     hometown: c.hometown ?? "",
     birthday: c.birthday ?? "",
+    birthday_year: c.birthday_year != null ? String(c.birthday_year) : "",
     birthday_month: c.birthday_month != null ? String(c.birthday_month) : "",
     birthday_day: c.birthday_day != null ? String(c.birthday_day) : "",
     pesel: c.pesel ?? "",
@@ -780,6 +791,7 @@ const Contact = () => {
       category_id: form.category_id ? Number(form.category_id) : undefined,
       gender: form.gender || null,
       birthday: form.birthday || null,
+      birthday_year: form.birthday_year ? Number(form.birthday_year) : null,
       birthday_month: form.birthday_month ? Number(form.birthday_month) : null,
       birthday_day: form.birthday_day ? Number(form.birthday_day) : null,
       change_source: changeSource,
@@ -1665,6 +1677,9 @@ const Contact = () => {
           {!contact.birthday && contact.birthday_month && contact.birthday_day && (
             <div><strong>{contact.category_name === "Firma" ? "Data założenia" : "Urodziny"}:</strong> {contact.birthday_day} {MONTHS_GENITIVE[contact.birthday_month - 1]} <span style={{ color: "#667" }}>(bez roku)</span></div>
           )}
+          {!contact.birthday && !(contact.birthday_month && contact.birthday_day) && contact.birthday_year != null && (
+            <div><strong>{contact.category_name === "Firma" ? "Data założenia" : "Urodziny"}:</strong> {contact.birthday_month ? `${MONTHS_GENITIVE[contact.birthday_month - 1]} ` : ""}{contact.birthday_year} <span style={{ color: "#667" }}>(orientacyjnie)</span></div>
+          )}
           {contact.category_name !== "Firma" && contact.pesel && <div><strong>PESEL:</strong> {contact.pesel}</div>}
           {contact.category_name !== "Firma" && contact.nationality.length > 0 && (
             <div><strong>Narodowość:</strong> {contact.nationality.join(", ")}</div>
@@ -1773,6 +1788,11 @@ const Contact = () => {
               ))}
             </select>
           </div>
+        </label>
+        <label>
+          Rok urodzenia (jeśli dzień/miesiąc nieznane — orientacyjny wiek)
+          <input type="text" inputMode="numeric" maxLength={4} value={form.birthday_year}
+            onChange={(e) => setForm({ ...form, birthday_year: e.target.value.replace(/[^0-9]/g, "") })} style={{ ...inputStyle, maxWidth: 100 }} />
         </label>
         {!isCompanyCategory && <label>
           PESEL
@@ -2540,6 +2560,9 @@ const Contact = () => {
                   ) : (
                     <>
                       <a href={`/contacts/${r.other_contact.id}`}><strong>{otherName(r.other_contact)}</strong></a> — {r.relationship_type}
+                      {isChildRelationship(r.relationship_type) && r.other_contact.age !== null && (
+                        <span style={{ color: "#667" }}> ({r.other_contact.age_is_approximate ? "~" : ""}{r.other_contact.age} {pluralYears(r.other_contact.age)})</span>
+                      )}
                       {relDatesLabel(r) && <span style={{ color: "#667" }}> [{relDatesLabel(r)}]</span>}
                       {r.note && <span style={{ color: "#667" }}> ({r.note})</span>}
                       {mode === "edit" && (
