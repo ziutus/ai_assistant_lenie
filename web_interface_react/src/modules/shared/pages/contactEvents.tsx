@@ -1,6 +1,6 @@
 import React from "react";
 import axios from "axios";
-import { NavLink } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination } from "../components/Pagination/pagination";
 import type { ContactGroupEvent } from "./contactGroupDetail";
@@ -21,6 +21,7 @@ const pageSize = 50;
 
 const ContactEvents = () => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
+  const [searchParams] = useSearchParams();
   const [events, setEvents] = React.useState<ContactGroupEvent[]>([]);
   const [groups, setGroups] = React.useState<ContactGroup[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -43,6 +44,18 @@ const ContactEvents = () => {
   };
   const resetForm = () => { setEditId(null); setForm(emptyForm); resetPicker(); };
 
+  const openForEdit = (event: ContactGroupEvent, list: ContactGroupEvent[]) => {
+    setEditId(event.id);
+    setForm({ title: event.title, event_date: event.event_date, summary: event.summary ?? "",
+      group_id: event.group_id, participants: event.participants });
+    resetPicker(); report("");
+    const index = list.findIndex(row => row.id === event.id);
+    if (index >= 0) setPage(Math.floor(index / pageSize) + 1);
+    requestAnimationFrame(() => {
+      document.getElementById(`contact-event-${event.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
+
   React.useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
@@ -52,13 +65,18 @@ const ContactEvents = () => {
       axios.get(`${apiUrl}/contact_groups`, { headers }),
     ]).then(([eventResponse, groupResponse]) => {
       if (!cancelled) {
-        setEvents(eventResponse.data.events);
+        const fetchedEvents: ContactGroupEvent[] = eventResponse.data.events;
+        setEvents(fetchedEvents);
         setGroups(groupResponse.data.contact_groups);
+        const editParam = searchParams.get("edit");
+        const target = editParam ? fetchedEvents.find(event => String(event.id) === editParam) : undefined;
+        if (target) openForEdit(target, fetchedEvents);
       }
     }).catch(error => {
       if (!cancelled) report(`Nie udało się pobrać wydarzeń: ${error.response?.data?.message || error.message}`, true);
     }).finally(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; searchVersion.current += 1; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, apiKey]);
 
   const searchParticipants = async () => {
@@ -170,15 +188,13 @@ const ContactEvents = () => {
     </form>
     <ul style={{ listStyle: "none", padding: 0 }}>
       {events.slice((page - 1) * pageSize, page * pageSize).map(event => <li key={event.id}
-        style={{ padding: "12px 0", borderBottom: "1px solid #eee" }}>
+        id={`contact-event-${event.id}`}
+        style={{ padding: "12px 0", borderBottom: "1px solid #eee",
+          background: editId === event.id ? "#fff8e1" : undefined }}>
         <div style={rowStyle}>
           <time dateTime={event.event_date}>{event.event_date}</time><strong>{event.title}</strong>
-          <button className="button" type="button" disabled={busy} onClick={() => {
-            setEditId(event.id);
-            setForm({ title: event.title, event_date: event.event_date, summary: event.summary ?? "",
-              group_id: event.group_id, participants: event.participants });
-            resetPicker(); report("");
-          }}>Edytuj</button>
+          <button className="button" type="button" disabled={busy}
+            onClick={() => openForEdit(event, events)}>Edytuj</button>
           <button className="button" type="button" disabled={busy} onClick={() => remove(event)}>Usuń</button>
         </div>
         {event.summary && <p style={{ whiteSpace: "pre-wrap" }}>{event.summary}</p>}
