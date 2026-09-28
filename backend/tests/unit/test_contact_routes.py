@@ -18,6 +18,37 @@ pytest.importorskip("sqlalchemy")
 from flask import Flask, g
 
 
+@pytest.fixture(autouse=True)
+def _mock_fact_persistence(monkeypatch):
+    """Keep route-only mocked sessions; exercise real payload mapping and projection.
+
+    The service's persistence and resolution are covered with real sessions in
+    test_contact_facts_service.py. Existing route fixtures do not contain fact tables.
+    """
+    from library import contact_facts_service as facts, contact_routes as routes
+    from library.db.models import Contact
+
+    original = routes._record_manual_contact_facts
+
+    def project_manual(session, row, data):
+        def record(_session, **kwargs):
+            assert kwargs["source_key"] == "user_manual"
+            assertion = SimpleNamespace(id=1, slot_id=1, value=kwargs["value"], source_key="user_manual")
+            slot = SimpleNamespace(id=1, contact_id=row.id, attribute_key=kwargs["attribute_key"],
+                                   selected_assertion_id=1, resolution_mode="pinned")
+            projection_session = MagicMock()
+            projection_session.get.side_effect = lambda model, key: row if model is Contact else assertion
+            projection_session.add.side_effect = session.add
+            facts.project_slot_to_cache(projection_session, slot)
+            return assertion
+
+        with monkeypatch.context() as patch:
+            patch.setattr(facts, "record_assertion", record)
+            original(session, row, data)
+
+    monkeypatch.setattr(routes, "_record_manual_contact_facts", project_manual)
+
+
 def _rows(items):
     """A mocked ``session.execute(...)`` result whose ``.scalars().all()`` yields ``items``."""
     result = MagicMock()
@@ -3165,6 +3196,7 @@ class TestContactBirthdayPair:
             ):
                 return contacts_add() if request.param == "POST" else contacts_update(1)
 
+        send.method = request.param
         return send, session, row
 
     @pytest.mark.parametrize("data", [
@@ -3250,7 +3282,10 @@ class TestContactBirthdayPair:
         assert response.json["contact"]["birthday_month"] is None
         assert response.json["contact"]["birthday_day"] is None
         change = session.add.call_args_list[-1][0][0]
-        assert {"birthday_month", "birthday_day"} <= set(change.changed_fields)
+        if send.method == "PATCH":
+            assert {"birthday_month", "birthday_day"} <= set(change.changed_fields)
+        else:
+            assert not {"birthday_month", "birthday_day"} & set(change.changed_fields)
         session.commit.assert_called_once()
 
     @pytest.mark.parametrize("data, expected, changed", [
@@ -3270,9 +3305,13 @@ class TestContactBirthdayPair:
             response, status = contacts_update(1)
         assert status == 200
         assert (row.birthday_month, row.birthday_day) == expected
-        assert response.json["contact"]["birthday"] == "2000-02-29"
-        if changed:
-            assert session.add.call_args[0][0].changed_fields == changed
+        assert response.json["contact"]["birthday"] == dt.date(2000, *expected).isoformat()
+        assert row.birthday_year == (2000 if data else None)
+        if data:
+            expected_fields = set(changed) | {"birthday_year"}
+            if changed:
+                expected_fields.add("birthday")
+            assert set(session.add.call_args[0][0].changed_fields) == expected_fields
         else:
             session.add.assert_not_called()
 
@@ -3327,6 +3366,7 @@ class TestContactGender:
             ):
                 return contacts_add() if request.param == "POST" else contacts_update(1)
 
+        send.method = request.param
         return send, session, row
 
     @pytest.mark.parametrize("value", ["male", "female", "other"])
@@ -3346,7 +3386,7 @@ class TestContactGender:
         assert status == 200
         assert response.json["contact"]["gender"] is None
         change = session.add.call_args_list[-1][0][0]
-        assert "gender" in change.changed_fields
+        assert ("gender" in change.changed_fields) == (send.method == "PATCH")
         session.commit.assert_called_once()
 
     def test_invalid_value_rejected(self, birthday_request):

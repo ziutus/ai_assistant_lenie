@@ -20,6 +20,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     Index,
     Numeric,
@@ -3694,6 +3695,7 @@ class ContactEducation(Base):
         Index("idx_contact_education_contact", "contact_id"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
+    fact_slot_id: Mapped[int | None] = mapped_column(ForeignKey("contact_fact_slots.id", ondelete="SET NULL"), unique=True)
     contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
     institution: Mapped[str] = mapped_column(String(255), nullable=False)
     field_of_study: Mapped[str | None] = mapped_column(String(255))
@@ -3704,6 +3706,105 @@ class ContactEducation(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+
+
+class ContactFactSource(Base):
+    __tablename__ = "contact_fact_sources"
+    __table_args__ = (CheckConstraint("default_priority BETWEEN 0 AND 100", name="ck_contact_fact_source_priority"),)
+
+    key: Mapped[str] = mapped_column(String(30), primary_key=True)
+    label: Mapped[str | None] = mapped_column(String(100))
+    default_priority: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"ContactFactSource(key={self.key!r})"
+
+
+class ContactFactAttribute(Base):
+    __tablename__ = "contact_fact_attributes"
+    __table_args__ = (CheckConstraint("cardinality IN ('single', 'many')", name="ck_contact_fact_attribute_cardinality"),)
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    cardinality: Mapped[str] = mapped_column(String(10), nullable=False)
+    min_auto_priority: Mapped[int] = mapped_column(SmallInteger, server_default=sa_text("0"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"ContactFactAttribute(key={self.key!r})"
+
+
+class ContactFactSourcePolicy(Base):
+    __tablename__ = "contact_fact_source_policies"
+    __table_args__ = (CheckConstraint("priority BETWEEN 0 AND 100", name="ck_contact_fact_policy_priority"),)
+
+    source_key: Mapped[str] = mapped_column(ForeignKey("contact_fact_sources.key"), primary_key=True)
+    attribute_key: Mapped[str] = mapped_column(ForeignKey("contact_fact_attributes.key"), primary_key=True)
+    priority: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"ContactFactSourcePolicy(source_key={self.source_key!r}, attribute_key={self.attribute_key!r})"
+
+
+class ContactFactSlot(Base):
+    __tablename__ = "contact_fact_slots"
+    __table_args__ = (
+        UniqueConstraint("contact_id", "attribute_key", "item_key", name="uq_contact_fact_slots_item"),
+        Index("idx_contact_fact_slots_contact_attribute", "contact_id", "attribute_key"),
+        CheckConstraint("resolution_mode IN ('auto', 'pinned', 'suppressed')", name="ck_contact_fact_slot_mode"),
+        ForeignKeyConstraint(
+            ["id", "selected_assertion_id"], ["contact_fact_assertions.slot_id", "contact_fact_assertions.id"],
+            name="fk_contact_fact_slots_selected_assertion", use_alter=True,
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement="ignore_fk")
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"))
+    attribute_key: Mapped[str] = mapped_column(ForeignKey("contact_fact_attributes.key"))
+    item_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    resolution_mode: Mapped[str] = mapped_column(String(20), server_default="auto")
+    selected_assertion_id: Mapped[int | None] = mapped_column(Integer)
+    decision_by: Mapped[str | None] = mapped_column(String(100))
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    resolved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"ContactFactSlot(id={self.id!r}, attribute_key={self.attribute_key!r})"
+
+
+class ContactFactAssertion(Base):
+    __tablename__ = "contact_fact_assertions"
+    __table_args__ = (
+        UniqueConstraint("slot_id", "id", name="uq_contact_fact_assertions_slot_id"),
+        Index("idx_contact_fact_assertions_slot_status_source", "slot_id", "status", "source_key"),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="ck_contact_fact_assertion_confidence"),
+        CheckConstraint("status IN ('candidate', 'confirmed', 'rejected', 'superseded')", name="ck_contact_fact_assertion_status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slot_id: Mapped[int] = mapped_column(ForeignKey("contact_fact_slots.id", ondelete="CASCADE"))
+    source_key: Mapped[str] = mapped_column(ForeignKey("contact_fact_sources.key"))
+    source_record_key: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    asserted_by: Mapped[str | None] = mapped_column(String(100))
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, server_default=sa_text("1"))
+    confidence: Mapped[decimal.Decimal | None] = mapped_column(Numeric(4, 3))
+    status: Mapped[str] = mapped_column(String(20), server_default="candidate")
+    evidence_note: Mapped[str | None] = mapped_column(Text)
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    review_note: Mapped[str | None] = mapped_column(Text)
+    observed_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    dedup_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"ContactFactAssertion(id={self.id!r}, slot_id={self.slot_id!r}, source_key={self.source_key!r})"
 
 
 class ContactDuplicateDismissal(Base):
