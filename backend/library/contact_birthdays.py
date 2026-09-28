@@ -13,6 +13,14 @@ def current_age(birthday: datetime.date | None, today: datetime.date) -> int | N
     return today.year - birthday.year - ((today.month, today.day) < (birthday.month, birthday.day))
 
 
+def age_in_months(birthday: datetime.date, today: datetime.date) -> int:
+    """Age in whole months as of today, for a known full birthday."""
+    months = (today.year - birthday.year) * 12 + (today.month - birthday.month)
+    if today.day < birthday.day:
+        months -= 1
+    return max(months, 0)
+
+
 def approximate_age(birthday_year: int | None, today: datetime.date, birthday_month: int | None = None) -> int | None:
     """Approximate age in whole years; None if the birth year is unknown.
 

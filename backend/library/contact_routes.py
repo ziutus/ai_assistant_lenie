@@ -22,7 +22,7 @@ from library.partial_dates import format_partial_date, parse_partial_date
 from library.address_parsing import ADDRESS_NOTES_MAX_LENGTH, parse_address_text
 from library.address_geocoding import geocode_address
 from library.address_validation import validate_address
-from library.contact_birthdays import approximate_age, current_age, upcoming_birthday_entry
+from library.contact_birthdays import age_in_months, approximate_age, current_age, upcoming_birthday_entry
 from library.contact_channels import channel_patch, contact_channels
 from library.contact_change_log import CONTACT_CHANGE_SOURCES, record_contact_change
 from library.contact_link_promotion import promote_lookup_result
@@ -605,6 +605,9 @@ def _change_log_dict(row: ContactChangeLog) -> dict:
 
 def _relationship_dict(rel: ContactRelationship, other: Contact, direction: str) -> dict:
     today = datetime.date.today()
+    age = current_age(other.birthday, today) if other.birthday is not None \
+        else approximate_age(other.birthday_year, today, other.birthday_month)
+    age_months = age_in_months(other.birthday, today) if other.birthday is not None and age == 0 else None
     return {
         "id": rel.id,
         "direction": direction,  # "outgoing" (this contact -> other) or "incoming" (other -> this contact)
@@ -619,8 +622,8 @@ def _relationship_dict(rel: ContactRelationship, other: Contact, direction: str)
             "first_name": other.first_name,
             "last_name": other.last_name,
             "display_name": contact_display_name(other),
-            "age": current_age(other.birthday, today) if other.birthday is not None
-            else approximate_age(other.birthday_year, today, other.birthday_month),
+            "age": age,
+            "age_months": age_months,
             "age_is_approximate": other.birthday is None and other.birthday_year is not None,
         },
     }
