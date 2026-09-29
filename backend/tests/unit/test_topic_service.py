@@ -1,7 +1,7 @@
 """Topics unit tests: real local membership tables, mocked polymorphic targets."""
 
 import importlib.util
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from library import topic_routes, topic_service as svc
-from library.db.models import ChatConversation, ChatMessage, Contact, Document, Topic, TopicItem
+from library.db.models import ChatConversation, ChatMessage, Contact, ContactGroupEvent, Document, Topic, TopicItem
 
 
 @pytest.fixture
@@ -95,6 +95,8 @@ def test_add_duplicate_update_remove(session, monkeypatch, kind, model):
 
 
 @pytest.mark.parametrize("kind,entity_id,note,match", [
+    ("contact_group_event", 8, None, "contact_group_event 8 not found"),
+    ("contact_group_event", True, None, "entity_id"),
     ("unknown", 7, None, "entity_type"), ([], 7, None, "entity_type"),
     ("document", True, None, "entity_id"), ("document", "7", None, "entity_id"),
     ("document", 0, None, "entity_id"), ("document", 2147483648, None, "entity_id"),
@@ -122,17 +124,24 @@ def test_detail_grouping_and_deleted_target():
     now = datetime.now(timezone.utc)
     entities = [Document(id=7, title="Article", url="https://example.com"),
                 Contact(id=7, first_name="Jan", last_name="Nowak"),
+                ContactGroupEvent(id=7, title="Trip", event_date=date(2026, 9, 1),
+                                  event_date_end=date(2026, 9, 3), summary="x" * 250),
                 ChatConversation(id=7, display_name="Group"),
                 ChatMessage(id=7, content="x" * 250, sent_at=now, conversation_id=3)]
     items = [TopicItem(id=i, topic_id=1, entity_type=kind, entity_id=7)
              for i, kind in enumerate(svc.ENTITY_MODELS, 1)]
-    items.append(TopicItem(id=5, topic_id=1, entity_type="document", entity_id=99))
+    items.append(TopicItem(id=6, topic_id=1, entity_type="document", entity_id=99))
     session.scalars.side_effect = [MagicMock(all=lambda: items)] + [
         MagicMock(all=lambda entity=entity: [entity]) for entity in entities
     ]
     detail = svc.get_topic_detail(session, 1)
     assert detail["name"] == "Test"
     groups = detail["items"]
+    assert list(groups) == ["document", "contact", "contact_group_event", "chat_conversation", "chat_message"]
+    assert groups["contact_group_event"][0]["entity"] == {
+        "id": 7, "title": "Trip", "event_date": "2026-09-01", "event_date_end": "2026-09-03",
+        "summary": "x" * 200,
+    }
     assert groups["document"][0]["entity"]["title"] == "Article"
     assert groups["document"][1]["entity"] is None
     assert groups["contact"][0]["entity"]["display_name"] == "Jan Nowak"
@@ -258,3 +267,52 @@ def test_migration_head_upgrade_downgrade_and_postgresql_sql():
     assert "WHERE archived_at IS NULL" in sql
     assert "ON DELETE CASCADE" in sql
     assert "TIMESTAMP WITH TIME ZONE" in sql
+
+
+def test_event_display_without_end_date():
+    entity = ContactGroupEvent(id=7, title="Meeting", event_date=date(2026, 9, 1))
+    assert svc._display("contact_group_event", entity) == {
+        "id": 7, "title": "Meeting", "event_date": "2026-09-01", "event_date_end": None, "summary": "",
+    }
+
+
+def test_event_migration_upgrade_downgrade():
+    directory = Path(__file__).resolve().parents[2] / "alembic"
+    script = ScriptDirectory(str(directory))
+    revision = script.get_revision("e7b2a6d91f03")
+    assert script.get_heads() == [revision.revision]
+    assert revision.down_revision == "a36fe7f31e23"
+    migrations = []
+    for rev in (script.get_revision("c4e8b1a93d72"), revision):
+        spec = importlib.util.spec_from_file_location("migration_" + rev.revision, rev.path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        migrations.append(migration)
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            migrations[0].upgrade()
+            connection.exec_driver_sql("INSERT INTO topics (id, name) VALUES (1, 'Test')")
+            connection.exec_driver_sql(
+                "INSERT INTO topic_items (topic_id, entity_type, entity_id) VALUES (1, 'document', 7)"
+            )
+            migrations[1].upgrade()
+            connection.exec_driver_sql(
+                "INSERT INTO topic_items (topic_id, entity_type, entity_id) VALUES (1, 'contact_group_event', 8)"
+            )
+            migrations[1].downgrade()
+            assert connection.exec_driver_sql("SELECT entity_type FROM topic_items").scalars().all() == ["document"]
+            with pytest.raises(IntegrityError):
+                connection.exec_driver_sql(
+                    "INSERT INTO topic_items (topic_id, entity_type, entity_id) VALUES (1, 'contact_group_event', 9)"
+                )
+    engine.dispose()
+    output = StringIO()
+    context = MigrationContext.configure(dialect_name="postgresql", opts={"as_sql": True, "output_buffer": output})
+    with Operations.context(context):
+        migrations[1].upgrade()
+        migrations[1].downgrade()
+    sql = output.getvalue()
+    assert sql.count("DROP CONSTRAINT ck_topic_items_entity_type") == 2
+    assert sql.count("ADD CONSTRAINT ck_topic_items_entity_type CHECK") == 2
+    assert sql.index("DELETE FROM topic_items") < sql.rindex("DROP CONSTRAINT")

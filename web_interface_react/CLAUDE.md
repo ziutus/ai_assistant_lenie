@@ -123,6 +123,7 @@ instead of copying its markup and state handling.
 | `/feed-review` | `feedReview.tsx` | Feed curation with `Nowe` and `Do przeczytania / obejrzenia` tabs. The latter uses `saved_for_later`; source filters remain in the URL. |
 | `/tool-candidates-review` | `toolCandidatesReview.tsx` | Review queue for Bielik-detected tool candidates (`GET/POST /tool_candidates*`, Epic 44): grouped by discovery source, sorted by detection date, accept/reject/defer actions refresh via `fetch` (no page reload), inline dismissible banner for the accept-response duplicate warning. |
 | `/tools` | `tools.tsx` | Read-only catalog of saved tools (`GET /tools`), with a client-derived category-tag filter and Obsidian-note status. |
+| `/topics/:id` | `topics.tsx` | Topic presentation with description and grouped document, contact, event (`contact_group_event`), chat and message links. Explicit edit mode with save/cancel, one-click archive/restore, and a collapsible add-link form. Events link to `/contact-events/:id` with a date or date range. |
 | `/upload-file` | `file.tsx` | Upload image files (alpha) |
 
 ### Chunk analysis review (`chunks.tsx`)
