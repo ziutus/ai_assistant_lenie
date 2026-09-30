@@ -1014,6 +1014,21 @@ def contacts_upcoming_birthdays():
     return jsonify({"status": "success", "upcoming_birthdays": entries})
 
 
+def _parse_contact_id_query(q: str) -> tuple[list[int], bool]:
+    """Return in-range IDs and whether the query is an ID-only comma list."""
+    if not re.fullmatch(r"\d+(?:\s*,\s*\d+)*", q):
+        return [], False
+    ids = []
+    for value in q.split(","):
+        # Bound conversion as well as SQL parameters, even for huge inputs.
+        value = value.strip().lstrip("0") or "0"
+        if len(value) <= 10:
+            contact_id = int(value)
+            if contact_id <= 2147483647:
+                ids.append(contact_id)
+    return ids, "," in q
+
+
 @bp.get("/contacts")
 def contacts_list():
     session = get_scoped_session()
@@ -1060,7 +1075,10 @@ def contacts_list():
         conditions.append(~Contact.groups.any(ContactGroup.id.in_(excluded_group_ids)))
 
     q = (request.args.get("q") or "").strip()
-    if q:
+    contact_ids, ids_only = _parse_contact_id_query(q)
+    if ids_only:
+        conditions.append(Contact.id.in_(contact_ids))
+    elif q:
         phrase = func.unaccent(f"%{q}%")
         digits = phone_search_digits(q)
         search_conditions = [
@@ -1076,6 +1094,8 @@ def contacts_list():
         ]
         if digits:
             search_conditions.append(func.regexp_replace(Contact.phone_number, "[^0-9]", "", "g").like(f"%{digits}%"))
+        if contact_ids:
+            search_conditions.append(Contact.id == contact_ids[0])
         conditions.append(or_(*search_conditions))
 
     total = session.execute(

@@ -253,7 +253,8 @@ const Contacts = () => {
         <input
           type="text"
           value={query}
-          placeholder="Szukaj po imieniu, nazwisku lub telefonie..."
+          placeholder="Imię, nazwisko, telefon lub ID..."
+          title="Szukaj po imieniu, nazwisku, telefonie lub ID. Wiele ID oddziel przecinkami, np. 576,611."
           onChange={(e) => setQuery(e.target.value)}
           style={{ minWidth: 280, padding: "6px 10px" }}
           disabled={isLoading}
