@@ -1517,7 +1517,7 @@ const Contact = () => {
   const isCompanyCategory = categories.find((c) => String(c.id) === form.category_id)?.name === "Firma";
 
   return (
-    <div style={{ maxWidth: 560 }}>
+    <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h2 style={{ margin: 0 }}>{isNew ? "Nowy kontakt" : "Kontakt"}</h2>
@@ -1711,7 +1711,7 @@ const Contact = () => {
 
         </div>
       ) : (
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 560 }}>
         <label>
           Kategoria
           <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} style={inputStyle}>
