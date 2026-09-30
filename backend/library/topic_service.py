@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from library.db.models import ChatConversation, ChatMessage, Contact, Document, Topic, TopicItem
+from library.db.models import ChatConversation, ChatMessage, Contact, ContactGroupEvent, Document, Topic, TopicItem
 
 ENTITY_MODELS = {
     "document": Document,
     "contact": Contact,
+    "contact_group_event": ContactGroupEvent,
     "chat_conversation": ChatConversation,
     "chat_message": ChatMessage,
 }
@@ -128,6 +129,13 @@ def _display(entity_type, entity, storage=None):
     if entity_type == "contact":
         name = " ".join(filter(None, [entity.first_name, entity.last_name]))
         return {"id": entity.id, "display_name": name or entity.display_label or entity.company or "Kontakt bez nazwy"}
+    if entity_type == "contact_group_event":
+        return {
+            "id": entity.id, "title": entity.title,
+            "event_date": entity.event_date.isoformat() if entity.event_date else None,
+            "event_date_end": entity.event_date_end.isoformat() if entity.event_date_end else None,
+            "summary": (entity.summary or "")[:200],
+        }
     if entity_type == "chat_conversation":
         return {"id": entity.id, "display_name": entity.display_name}
     return {

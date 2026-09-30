@@ -286,7 +286,8 @@ class TopicItem(Base):
     topic: Mapped["Topic"] = relationship(back_populates="items")
 
     __table_args__ = (
-        CheckConstraint("entity_type IN ('document', 'contact', 'chat_conversation', 'chat_message')",
+        CheckConstraint("entity_type IN ('document', 'contact', 'contact_group_event', "
+                        "'chat_conversation', 'chat_message')",
                         name="ck_topic_items_entity_type"),
         UniqueConstraint("topic_id", "entity_type", "entity_id", name="uq_topic_items_entity"),
         Index("idx_topic_items_entity", "entity_type", "entity_id"),

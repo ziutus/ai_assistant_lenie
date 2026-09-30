@@ -5,7 +5,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination, PAGE_SIZES } from "../components/Pagination/pagination";
 
 const sections = {
-  document: "Dokumenty", contact: "Kontakty", chat_conversation: "Czaty", chat_message: "Wiadomości",
+  document: "Dokumenty", contact: "Kontakty", contact_group_event: "Wydarzenia", chat_conversation: "Czaty", chat_message: "Wiadomości",
 };
 type EntityType = keyof typeof sections;
 interface TopicItem {
@@ -13,6 +13,7 @@ interface TopicItem {
   entity_id: number;
   note: string | null;
   entity: { id: number; title?: string; url?: string; display_name?: string; content?: string;
+    event_date?: string | null; event_date_end?: string | null;
     sent_at?: string; conversation_id?: number; message_type?: string; sender_name_raw?: string;
     media_original_filename?: string | null; media_mime_type?: string | null; media_url?: string | null } | null;
 }
@@ -96,6 +97,7 @@ export default function Topics() {
 function entityLink(kind: EntityType, entity: NonNullable<TopicItem["entity"]>) {
   if (kind === "document") return `/read/${entity.id}`;
   if (kind === "contact") return `/contacts/${entity.id}`;
+  if (kind === "contact_group_event") return `/contact-events/${entity.id}`;
   if (kind === "chat_conversation") return `/chats/${entity.id}`;
   return `/chats/${entity.conversation_id}?date_from=${encodeURIComponent(entity.sent_at?.slice(0, 10) || "")}`;
 }
@@ -119,6 +121,8 @@ function ChatMessageAttachment({ entity }: { entity: NonNullable<TopicItem["enti
 export function TopicDetail() {
   const { id } = useParams();
   const api = useTopicsApi();
+  const [editing, setEditing] = React.useState(false);
+  const [adding, setAdding] = React.useState(false);
   const [topic, setTopic] = React.useState<Topic | null>(null);
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -138,6 +142,7 @@ export function TopicDetail() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [api, id, version]);
+  React.useEffect(() => { setEditing(false); setAdding(false); }, [id, api]);
   const mutate = async (action: () => Promise<unknown>) => {
     setBusy(true); setError("");
     try { await action(); refresh(); } catch (err) { setError(errorText(err)); } finally { setBusy(false); }
@@ -147,20 +152,36 @@ export function TopicDetail() {
     {error && <p className="error" role="alert">{error}</p>}
     {loading && <p>Ładowanie…</p>}
     {topic && <>
-      <h2>{topic.name}{topic.archived_at && " (archiwalny)"}</h2>
-      <form onSubmit={event => { event.preventDefault(); void mutate(() => api.patch(`/topics/${id}`, { name, description })); }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <h2>{topic.name}{topic.archived_at && " (archiwalny)"}</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" className="button" disabled={busy}
+            onClick={() => void mutate(() => api.patch(`/topics/${id}`, { archived: !topic.archived_at }))}>
+            {topic.archived_at ? "Przywróć temat" : "Archiwizuj temat"}</button>
+          {!editing && <button type="button" className="button" disabled={busy}
+            onClick={() => setEditing(true)}>Edytuj</button>}
+        </div>
+      </div>
+      {!editing && topic.description && <p style={{ whiteSpace: "pre-wrap" }}>{topic.description}</p>}
+      {editing && <form onSubmit={event => { event.preventDefault(); void mutate(async () => {
+        await api.patch(`/topics/${id}`, { name, description });
+        setEditing(false);
+      }); }}>
         <fieldset disabled={busy} style={{ display: "grid", gap: 8, maxWidth: 600 }}>
           <legend>Edytuj temat</legend>
           <label>Nazwa <input required maxLength={120} value={name} onChange={e => setName(e.target.value)} /></label>
           <label>Opis <textarea value={description} onChange={e => setDescription(e.target.value)} /></label>
           <button className="button" disabled={!name.trim()}>Zapisz</button>
-          <button type="button" className="button" onClick={() => void mutate(() => api.patch(`/topics/${id}`, { archived: !topic.archived_at }))}>
-            {topic.archived_at ? "Przywróć temat" : "Archiwizuj temat"}</button>
+          <button type="button" className="button" onClick={() => {
+            setName(topic.name); setDescription(topic.description || ""); setEditing(false);
+          }}>Anuluj</button>
         </fieldset>
-      </form>
-      <form onSubmit={event => { event.preventDefault(); void mutate(async () => {
+      </form>}
+      <button type="button" className="button" disabled={busy} aria-expanded={adding}
+        aria-controls="topic-add-link" onClick={() => setAdding(value => !value)}>+ Dodaj powiązanie</button>
+      {adding && <form id="topic-add-link" onSubmit={event => { event.preventDefault(); void mutate(async () => {
         await api.post(`/topics/${id}/items`, { entity_type: kind, entity_id: Number(entityId), note: note || null });
-        setEntityId(""); setNote("");
+        setEntityId(""); setNote(""); setAdding(false);
       }); }}>
         <fieldset disabled={busy} style={{ display: "grid", gap: 8, maxWidth: 600, marginTop: 16 }}>
           <legend>Dodaj powiązanie</legend>
@@ -171,17 +192,23 @@ export function TopicDetail() {
           <label>Notatka <input value={note} onChange={e => setNote(e.target.value)} /></label>
           <button className="button">Dodaj</button>
         </fieldset>
-      </form>
+      </form>}
       {(Object.keys(sections) as EntityType[]).map(type => <section key={type}>
         <h3>{sections[type]}</h3>
-        {!topic.items?.[type].length && <p>Brak powiązań.</p>}
-        <ul>{topic.items?.[type].map(item => <li key={item.id} style={{ marginBottom: 12 }}>
+        {!topic.items?.[type]?.length && <p>Brak powiązań.</p>}
+        <ul>{topic.items?.[type]?.map(item => <li key={item.id} style={{ marginBottom: 12 }}>
           {item.entity ? <Link to={entityLink(type, item.entity)}>
             {item.entity.title || item.entity.display_name
               || (type === "chat_message" && (item.entity.sender_name_raw
                 ? `${item.entity.sender_name_raw}: ${item.entity.content || item.entity.media_original_filename || ""}`
                 : item.entity.content))
               || `#${item.entity_id}`}
+            {type === "contact_group_event" && item.entity.event_date && <>
+              {" — "}<time dateTime={item.entity.event_date}>{item.entity.event_date}</time>
+              {item.entity.event_date_end && item.entity.event_date_end !== item.entity.event_date && <>
+                {" – "}<time dateTime={item.entity.event_date_end}>{item.entity.event_date_end}</time>
+              </>}
+            </>}
           </Link> : <span>Usunięty element #{item.entity_id}</span>}
           {item.entity?.sent_at && <time style={{ marginLeft: 8 }}>{item.entity.sent_at}</time>}
           {type === "chat_message" && item.entity && <ChatMessageAttachment entity={item.entity} />}
