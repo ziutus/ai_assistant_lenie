@@ -19,6 +19,7 @@ imports/
 ├── extract_tones.py          # Classify emotional tone + language register per chapter
 ├── detect_document_links.py  # Backfill: propose `references` document_links from verbatim URL mentions (dry-run by default, --apply, --id)
 ├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
+├── reattribute_facebook_facts.py # One-off: re-label Facebook facts stored as user_manual (PATCH) back to source "facebook", release the pin
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
 ├── strip_webpage_images_backfill.py  # One-off: strip raw inline images (incl. base64) out of text_md for webpage/link documents
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
@@ -346,6 +347,20 @@ cd backend
 python imports/fix_duplicate_analysis_runs.py            # dry-run (default)
 python imports/fix_duplicate_analysis_runs.py --apply    # write changes
 python imports/fix_duplicate_analysis_runs.py --id 9245  # single document
+```
+
+### `reattribute_facebook_facts.py`
+
+One-off repair for Facebook-derived contact facts that were saved through `PATCH /contacts/<id>` after the sourced-fact layer landed: that endpoint records every value as a pinned `user_manual` assertion, so the values look like the owner's own input. Finds `user_manual` assertions of `birthday`/`gender`/`current_city`/`hometown` written by one `asserted_by` identity (`api-key:<id>` for the key the skill ran with — never a `user:<id>` from the web UI) since `--since`, re-labels them to `--source` (default `facebook`) and releases the manual pin via `contact_facts_service.reassign_assertion_source()`. The selected value and the Contact columns are untouched; only provenance changes, so later claims from better sources can compete normally.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/reattribute_facebook_facts.py --asserted-by api-key:63 --since 2026-09-28T14:45:00          # dry-run (default)
+python imports/reattribute_facebook_facts.py --asserted-by api-key:63 --since 2026-09-28T14:45:00 --apply  # write changes
+python imports/reattribute_facebook_facts.py ... --contact 586                                             # single contact
 ```
 
 ### `fix_place_tags.py`

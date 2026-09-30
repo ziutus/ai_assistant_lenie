@@ -1571,14 +1571,17 @@ def _validate_gender(data) -> str | None:
     return None
 
 
-def _record_manual_contact_facts(session, row: Contact, data: dict) -> None:
+def _fact_caller_identity() -> str:
     auth = getattr(g, "auth", None)
     if auth and getattr(auth, "user_id", None) is not None:
-        caller_identity = f"user:{auth.user_id}"
-    elif auth and getattr(auth, "key_id", None) is not None:
-        caller_identity = f"api-key:{auth.key_id}"
-    else:
-        caller_identity = "legacy-api-key" if auth else "unknown"
+        return f"user:{auth.user_id}"
+    if auth and getattr(auth, "key_id", None) is not None:
+        return f"api-key:{auth.key_id}"
+    return "legacy-api-key" if auth else "unknown"
+
+
+def _record_manual_contact_facts(session, row: Contact, data: dict) -> None:
+    caller_identity = _fact_caller_identity()
     values = {}
     if any(key in data for key in ("birthday", "birthday_month", "birthday_day", "birthday_year")):
         birthday = row.birthday
@@ -1611,6 +1614,117 @@ def contact_facts_get(contact_id: int):
     return jsonify({"status": "success", "facts": contact_facts_service.get_contact_facts(
         session, contact_id, request.args.get("attribute_key"),
     )})
+
+
+def _external_assertion_from_payload(session, item: dict) -> dict:
+    """Validate one externally sourced fact assertion; raise ValueError with a caller-facing message."""
+    source_key = contact_facts_service.require_external_source(session, item.get("source_key"))
+    attribute_key = item.get("attribute_key")
+    value = contact_facts_service.validate_assertion_value(attribute_key, item.get("value"))
+    status = item.get("status", "candidate")
+    if status not in contact_facts_service.EXTERNAL_ASSERTION_STATUSES:
+        raise ValueError(f"status must be one of {contact_facts_service.EXTERNAL_ASSERTION_STATUSES}")
+    confidence = item.get("confidence")
+    if confidence is not None and (isinstance(confidence, bool) or not isinstance(confidence, (int, float))
+                                   or not 0 <= confidence <= 1):
+        raise ValueError("confidence must be a number between 0 and 1")
+    texts = {}
+    for key, limit in (("source_record_key", 300), ("source_url", 2000), ("evidence_note", 2000)):
+        text = item.get(key)
+        if text is not None and (not isinstance(text, str) or len(text) > limit):
+            raise ValueError(f"{key} must be a string of at most {limit} characters")
+        texts[key] = (text or "").strip() or None
+    return {
+        "attribute_key": attribute_key, "source_key": source_key, "value": value, "status": status,
+        "confidence": confidence, "source_record_key": texts["source_record_key"] or "profile",
+        "source_url": texts["source_url"], "evidence_note": texts["evidence_note"],
+    }
+
+
+@bp.route("/contacts/<int:contact_id>/facts/assertions", methods=["POST", "OPTIONS"])
+def contact_facts_assertions_add(contact_id: int):
+    """Record what an external source (Facebook, LinkedIn, ...) claims about a contact.
+
+    Unlike PATCH /contacts/<id> — whose values are always stored as the owner's own, pinned input —
+    the claim keeps its source and status. A ``candidate`` never overrides a pinned/manual value, and
+    a ``rejected`` claim stays on record as a known-false statement (e.g. a vanity birth year).
+    """
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    if session.get(Contact, contact_id) is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    data = request.get_json(silent=True)
+    items = data.get("assertions") if isinstance(data, dict) and "assertions" in data else [data]
+    if not isinstance(items, list) or not 1 <= len(items) <= 20 or not all(isinstance(i, dict) for i in items):
+        return {"status": "error",
+                "message": "Expected one assertion object or {\"assertions\": [1-20 objects]}"}, 400
+    prepared = []
+    for index, item in enumerate(items):
+        try:
+            prepared.append(_external_assertion_from_payload(session, item))
+        except ValueError as exc:
+            return {"status": "error", "message": f"assertions[{index}]: {exc}"}, 400
+    caller = _fact_caller_identity()
+    results = []
+    try:
+        for entry in prepared:
+            assertion = contact_facts_service.record_assertion(
+                session, contact_id=contact_id, attribute_key=entry["attribute_key"], item_key="singleton",
+                source_key=entry["source_key"], value=entry["value"], source_record_key=entry["source_record_key"],
+                source_url=entry["source_url"], asserted_by=caller, confidence=entry["confidence"],
+                status=entry["status"],
+            )
+            if entry["evidence_note"]:
+                assertion.evidence_note = entry["evidence_note"]
+            session.flush()
+            results.append(contact_facts_service.assertion_summary(session, assertion))
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        logger.exception("Recording fact assertions for contact %s failed", contact_id)
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "assertions": results}), 200
+
+
+@bp.route("/contacts/<int:contact_id>/facts/assertions/<int:assertion_id>", methods=["PATCH", "OPTIONS"])
+def contact_facts_assertion_review(contact_id: int, assertion_id: int):
+    """Confirm, reject or reopen (``candidate``) a claim from an external source."""
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    if session.get(Contact, contact_id) is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or "status" not in data:
+        return {"status": "error", "message": "Expected {\"status\": \"candidate|confirmed|rejected\"}"}, 400
+    note = data.get("review_note")
+    if note is not None and (not isinstance(note, str) or len(note) > 2000):
+        return {"status": "error", "message": "review_note must be a string of at most 2000 characters"}, 400
+    try:
+        assertion = contact_facts_service.set_assertion_status(
+            session, assertion_id, data["status"], by=_fact_caller_identity(),
+            note=(note or "").strip() or None, contact_id=contact_id,
+        )
+        summary = contact_facts_service.assertion_summary(session, assertion)
+        session.commit()
+    except LookupError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 404
+    except PermissionError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 409
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        logger.exception("Reviewing fact assertion %s failed", assertion_id)
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "assertion": summary}), 200
 
 
 @bp.route("/contacts", methods=["POST", "OPTIONS"])

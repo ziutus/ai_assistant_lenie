@@ -111,15 +111,28 @@ Take a `screenshot` or use `get_page_text` to read the values on each page — t
 
 Skip whichever sub-section is empty or hidden by the profile's privacy settings (say so in the report), and skip the whole step if the profile has no "Informacje" tab visible while logged in as this account.
 
-Before saving birthday data, apply the uncertainty rules below. For other values found that differ from what's already on the contact (from Step 1), save them in one PATCH call:
+Apply the uncertainty rules below before saving birthday data. Save `current_city`, `hometown`, `gender` and the birthday as **sourced claims** — **not** with `PATCH /contacts/<ID>`. PATCH treats whatever it receives as the owner's own, pinned input (`user_manual`), so a Facebook value saved that way looks like something the owner typed: it can no longer be outranked by a better source or marked as false (about 130 values were saved like that before this endpoint existed; `backend/imports/reattribute_facebook_facts.py` repairs such rows). Send everything you found in one call and choose each claim's `status` by these rules:
+
+- `confirmed` — the contact's own field (from Step 1) is empty and no dispute is known: the value becomes the visible one.
+- `candidate` — the contact already has a different value, or a birthday dispute is known: the claim is recorded next to the existing value but not applied (a value the owner pinned always wins). Report the conflict.
+- `rejected` — the user told you this claim is false: it stays on record as a known-false statement (add an `evidence_note`), is never applied, and is cleared if it was the visible value.
+- A year on its own (day/month hidden) is always `candidate` — never guess the missing part.
 
 ```bash
 curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
-  -X PATCH "http://192.168.200.7:5055/contacts/<ID>" \
-  --data-binary '{"current_city": "<current city found>", "hometown": "<hometown found>", "gender": "<male|female|other>", "birthday_month": <1-12>, "birthday_day": <1-31>, "change_source": "osint_lookup", "change_note": "Uzupełnione z zakładki Informacje na Facebooku"}'
+  -X POST "http://192.168.200.7:5055/contacts/<ID>/facts/assertions" --data-binary @facts.json
 ```
 
-Only include the keys you actually found (omit the rest entirely rather than sending an empty string/null, which would clear an existing value). `birthday_month`/`birthday_day` must be sent together — see `_validate_birthday_pair()` in `contact_routes.py`. Use a UTF-8 file with `--data-binary @file.json` instead of an inline `-d` string if any value contains Polish diacritics and you're building the JSON through shell interpolation (confirmed gotcha: inline `-d '...Łódź...'` in Git Bash on Windows silently mangles diacritics to ASCII — see the same warning in `[[project_contact_smalltalk_fields]]`).
+```json
+{"assertions": [
+  {"attribute_key": "current_city", "source_key": "facebook", "value": {"current_city": "<city>"}, "source_url": "<profile URL>", "status": "confirmed"},
+  {"attribute_key": "hometown", "source_key": "facebook", "value": {"hometown": "<city>"}, "source_url": "<profile URL>", "status": "confirmed"},
+  {"attribute_key": "gender", "source_key": "facebook", "value": {"gender": "male"}, "source_url": "<profile URL>", "status": "confirmed"},
+  {"attribute_key": "birthday", "source_key": "facebook", "value": {"year": 1990, "month": 4, "day": 12}, "source_url": "<profile URL>", "status": "confirmed"}
+]}
+```
+
+Include only the facts you actually found (1–20 per call); for a birthday send `month` and `day` together and omit `year` when Facebook hides it. `gender` is `male`, `female` or `other`. A single claim may also be sent as a plain object instead of the `assertions` list. Write `facts.json` as a UTF-8 file (`--data-binary @facts.json`), not an inline string: inline Polish diacritics in Git Bash on Windows are silently mangled to ASCII (see the same warning in `[[project_contact_smalltalk_fields]]`). Each entry of the response has `applied` (`true` when the claim became the visible value); if it is `false`, say in the report that the value was recorded as a competing claim, not saved. To review a claim later: `PATCH /contacts/<ID>/facts/assertions/<assertion_id>` with `{"status": "confirmed|candidate|rejected", "review_note": "..."}`; `GET /contacts/<ID>/facts` lists every claim with its source. Education entries keep their own endpoint below; a missing `first_name`/`last_name` from the name check is still a plain PATCH.
 
 For each education entry found that isn't already in the list fetched in Step 1 (match by `institution` name, case-insensitive), add it separately:
 
