@@ -390,6 +390,7 @@ const Contacts = () => {
                 )}
               </span>
               <strong style={{ overflowWrap: "anywhere" }}>{contact.display_name || [contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+              <span title="ID kontaktu" style={{ fontSize: "0.8em", color: "#667", flexShrink: 0 }}>#{contact.id}</span>
             </span>
             {contact.is_archived && (
               <span style={{ fontSize: "0.8em", color: "#a33", border: "1px solid #e3a", borderRadius: 4, padding: "1px 6px" }}>
