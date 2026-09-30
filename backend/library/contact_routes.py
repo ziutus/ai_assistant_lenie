@@ -1701,9 +1701,9 @@ def contact_facts_assertion_review(contact_id: int, assertion_id: int):
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or "status" not in data:
         return {"status": "error", "message": "Expected {\"status\": \"candidate|confirmed|rejected\"}"}, 400
-    note = data.get("review_note")
+    note = data.get("note", data.get("review_note"))
     if note is not None and (not isinstance(note, str) or len(note) > 2000):
-        return {"status": "error", "message": "review_note must be a string of at most 2000 characters"}, 400
+        return {"status": "error", "message": "note must be a string of at most 2000 characters"}, 400
     try:
         assertion = contact_facts_service.set_assertion_status(
             session, assertion_id, data["status"], by=_fact_caller_identity(),
