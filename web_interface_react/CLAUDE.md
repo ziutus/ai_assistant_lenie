@@ -37,6 +37,7 @@ web_interface_react/
 │   │   │   ├── SharedInputs/           # Common document form fields
 │   │   │   ├── EntitiesPanel/          # NER persons/places chips + refresh button (GET/POST /website_entities)
 │   │   │   ├── DocumentLinksPanel/     # "Powiązane dokumenty" — typed links to other documents (GET/POST /document/:id/links + detect, PATCH/DELETE /document_links/:id); on link/webpage/social_media_post editors + reader sidebar (compact prop)
+│   │   │   ├── ContactFacts.tsx        # "Fakty i źródła" table on the contact page (GET /contacts/:id/facts): every claim with source, status, reason/notes and the visible value; edit mode confirms/rejects (PATCH .../facts/assertions/:id, optional `note`) or reopens non-manual claims
 │   │   │   ├── TagsInput/              # Chip editor over the CSV tags field (suggestions from GET /tags)
 │   │   │   └── FormButtons/            # Save/delete action buttons
 │   │   ├── pages/

@@ -1,6 +1,7 @@
 import { formatEventDateRange } from "../utils/contactEventDate";
 import ContactChannelsEditor, { type ContactChannel } from "../components/ContactChannelsEditor";
 import ContactInterestsEducation from "../components/ContactInterestsEducation";
+import ContactFacts from "../components/ContactFacts";
 import React from "react";
 import axios from "axios";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -1516,7 +1517,7 @@ const Contact = () => {
   const isCompanyCategory = categories.find((c) => String(c.id) === form.category_id)?.name === "Firma";
 
   return (
-    <div style={{ maxWidth: 560 }}>
+    <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h2 style={{ margin: 0 }}>{isNew ? "Nowy kontakt" : "Kontakt"}</h2>
@@ -1710,7 +1711,7 @@ const Contact = () => {
 
         </div>
       ) : (
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 560 }}>
         <label>
           Kategoria
           <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} style={inputStyle}>
@@ -2020,6 +2021,20 @@ const Contact = () => {
               ))}
             </ul>
           </section>}
+          {id && !isNew && <ContactFacts key={id} contactId={id} editable={mode === "edit"} onChanged={() => {
+            void axios.get(`${apiUrl}/contacts/${id}`, { headers }).then(response => {
+              const fetched: ContactDetail = response.data.contact;
+              const previous = contact ? formFromContact(contact) : emptyForm;
+              const next = formFromContact(fetched);
+              // Refresh unchanged fields while preserving unsaved edits.
+              setForm(current => Object.fromEntries(Object.entries(current).map(([key, value]) => [key,
+                JSON.stringify(value) === JSON.stringify(previous[key as keyof typeof previous])
+                  ? next[key as keyof typeof next] : value,
+              ])) as typeof current);
+              setContact(fetched);
+              setChangeLog(fetched.change_log ?? []);
+            }).catch(() => { setIsError(true); setMessage("Nie udało się odświeżyć danych kontaktu."); });
+          }} />}
           {contact?.category_name !== "Firma" && <ContactInterestsEducation key={id} contactId={id!} editable={mode === "edit"} onChanged={() => {
             // Refresh the audit without replacing unsaved fields in the main contact form.
             void axios.get(`${apiUrl}/contacts/${id}`, { headers })

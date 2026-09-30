@@ -361,11 +361,12 @@ def test_post_assertion_payload_shape_and_missing_contact(client, session):
     assert session.scalar(select(func.count()).select_from(ContactFactAssertion)) == 0
 
 
-def test_patch_assertion_marks_the_shown_claim_false(client, session):
+@pytest.mark.parametrize('note_field', ['note', 'review_note'])
+def test_patch_assertion_marks_the_shown_claim_false(client, session, note_field):
     result = post_claim(client, value={'year': 1984, 'month': 9, 'day': 26}).json['assertions'][0]
     assert session.get(Contact, 1).birthday_year == 1984
     response = client.patch(f"/contacts/1/facts/assertions/{result['assertion_id']}",
-                            json={'status': 'rejected', 'review_note': 'Rok zmyślony, potwierdzone przez usera'})
+                            json={'status': 'rejected', note_field: 'Rok zmyślony, potwierdzone przez usera'})
     assert response.status_code == 200
     assert response.json['assertion'] == {**result, 'status': 'rejected', 'applied': False,
                                            'selected_assertion_id': None}
@@ -383,7 +384,8 @@ def test_patch_assertion_errors(client, session):
                         json={'status': 'rejected'}).status_code == 404       # belongs to contact 1
     assert client.patch('/contacts/1/facts/assertions/9999', json={'status': 'rejected'}).status_code == 404
     assert client.patch('/contacts/999/facts/assertions/1', json={'status': 'rejected'}).status_code == 404
-    for body in ({}, {'status': 'superseded'}, {'status': 'confirmed', 'review_note': 5}):
+    for body in ({}, {'status': 'superseded'}, {'status': 'confirmed', 'review_note': 5},
+                 {'status': 'confirmed', 'note': 5}, {'status': 'confirmed', 'note': 'x' * 2001}):
         assert client.patch(f"/contacts/1/facts/assertions/{claim['assertion_id']}", json=body).status_code == 400
     assert session.get(ContactFactAssertion, claim['assertion_id']).status == 'confirmed'
     assert session.get(Contact, 1).birthday_month == 9
