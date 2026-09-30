@@ -136,15 +136,28 @@ Skip whichever sub-section is empty or hidden by the profile's privacy settings 
 
 **Name check:** the profile header (visible on the main page) shows the person's full name. If the contact's `last_name` is empty and the Facebook name clearly matches the contact's first name/`display_name`, take the surname from the header as `last_name` (and `first_name` if that is empty too). Never overwrite an existing non-empty `first_name`/`last_name` — if Facebook's name differs from what's stored (maiden name, nickname, diminutive), flag it to the user instead of changing it.
 
-Before saving birthday data, apply the uncertainty rules below. For other values found that differ from what's already on the contact (from Step 1), save them in one PATCH call:
+Apply the uncertainty rules below before saving birthday data. Save `current_city`, `hometown`, `gender` and the birthday as **sourced claims** — **not** with `PATCH /contacts/<ID>`. PATCH treats whatever it receives as the owner's own, pinned input (`user_manual`), so a Facebook value saved that way looks like something the owner typed: it can no longer be outranked by a better source or marked as false (about 130 values were saved like that before this endpoint existed; `backend/imports/reattribute_facebook_facts.py` repairs such rows). Send everything you found in one call and choose each claim's `status` by these rules:
+
+- `confirmed` — the contact's own field (from Step 1) is empty and no dispute is known: the value becomes the visible one.
+- `candidate` — the contact already has a different value, or a birthday dispute is known: the claim is recorded next to the existing value but not applied (a value the owner pinned always wins). Report the conflict.
+- `rejected` — the user told you this claim is false: it stays on record as a known-false statement (add an `evidence_note`), is never applied, and is cleared if it was the visible value.
+- A year on its own (day/month hidden) is always `candidate` — never guess the missing part.
 
 ```bash
 curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; charset=utf-8" \
-  -X PATCH "http://192.168.200.7:5055/contacts/<ID>" \
-  --data-binary '{"current_city": "<current city found>", "hometown": "<hometown found>", "gender": "<male|female|other>", "birthday_month": <1-12>, "birthday_day": <1-31>, "change_source": "osint_lookup", "change_note": "Uzupełnione z zakładki Informacje na Facebooku"}'
+  -X POST "http://192.168.200.7:5055/contacts/<ID>/facts/assertions" --data-binary @facts.json
 ```
 
-Only include the keys you actually found (omit the rest entirely rather than sending an empty string/null, which would clear an existing value). `birthday_month`/`birthday_day` must be sent together — see `_validate_birthday_pair()` in `contact_routes.py`. Use a UTF-8 file with `--data-binary @file.json` instead of an inline `-d` string if any value contains Polish diacritics and you're building the JSON through shell interpolation (confirmed gotcha: inline `-d '...Łódź...'` in Git Bash on Windows silently mangles diacritics to ASCII).
+```json
+{"assertions": [
+  {"attribute_key": "current_city", "source_key": "facebook", "value": {"current_city": "<city>"}, "source_url": "<profile URL>", "status": "confirmed"},
+  {"attribute_key": "hometown", "source_key": "facebook", "value": {"hometown": "<city>"}, "source_url": "<profile URL>", "status": "confirmed"},
+  {"attribute_key": "gender", "source_key": "facebook", "value": {"gender": "male"}, "source_url": "<profile URL>", "status": "confirmed"},
+  {"attribute_key": "birthday", "source_key": "facebook", "value": {"year": 1990, "month": 4, "day": 12}, "source_url": "<profile URL>", "status": "confirmed"}
+]}
+```
+
+Include only the facts you actually found (1–20 per call); for a birthday send `month` and `day` together and omit `year` when Facebook hides it. `gender` is `male`, `female` or `other`. A single claim may also be sent as a plain object instead of the `assertions` list. Write `facts.json` as a UTF-8 file (`--data-binary @facts.json`), not an inline string: inline Polish diacritics in Git Bash on Windows are silently mangled to ASCII. Each entry of the response has `applied` (`true` when the claim became the visible value); if it is `false`, say in the report that the value was recorded as a competing claim, not saved. To review a claim later: `PATCH /contacts/<ID>/facts/assertions/<assertion_id>` with `{"status": "confirmed|candidate|rejected", "review_note": "..."}`; `GET /contacts/<ID>/facts` lists every claim with its source. Education entries keep their own endpoint below; a missing `first_name`/`last_name` from the name check is still a plain PATCH.
 
 For each education entry found that isn't already in the list fetched in Step 1 (match by `institution` name, case-insensitive), add it separately:
 
@@ -156,14 +169,14 @@ curl -s -H "x-api-key: $LENIE_API_KEY" -H "Content-Type: application/json; chars
 
 ### Uncertain or conflicting birthdays
 
-`birthday` stores one full date; `birthday_month` + `birthday_day` store one yearless anniversary. There is no birthday confidence field or structured list of dates by source. `contact_lookup_results.status` describes the lookup, not the truth of each extracted fact.
+`birthday` stores one full date; `birthday_month` + `birthday_day` store one yearless anniversary — these columns are only the *visible* value. Every claim about a birthday (from Facebook, LinkedIn, the owner) is kept as its own sourced assertion with a status (`candidate`/`confirmed`/`rejected`); see the sourced-claims instructions in Step 5 and `GET /contacts/<ID>/facts?attribute_key=birthday`. `contact_lookup_results.status` describes the lookup, not the truth of each extracted fact.
 
 - Read existing `notes`, `private_notes` (service-only), and lookup notes before saving birthday data. A user dispute or conflict with an existing date takes precedence over the ordinary field-update instruction: do not promote that declaration to `birthday` or silently replace an existing date.
 - An age such as "40" is a source declaration, not a birth date. Preserve its wording and observation date; do not turn it into an exact year or date. A visible full date may fill an empty birthday only if no dispute or conflict is known; it remains a source declaration, not independent verification.
 - Append disputed declarations to `private_notes` using service access. Include the value, source URL, actual observation date (or "unknown"), who observed/reported it, and the reason for the dispute. Distinguish user reports from your browser observations. Preserve previous notes and alternative source values; avoid duplicating the same report on retries. PATCH replaces the entire field: re-read it immediately before writing and send the preserved text plus the new entry. Use `change_source: "osint_lookup"` and a concise `change_note`. If service access is unavailable, report the limitation rather than moving private commentary into public notes.
 - Example: `Birthday claim: source declares age 40; source: <profile URL>; observed: unknown; reported by user on <report date>; status: disputed by user; birth year unverified.` Store alleged motives only as attributed opinions if explicitly requested, never as verified facts.
 - If only the year is disputed, independently supported month/day may be saved together when they do not conflict with existing values. An existing full `birthday` takes precedence in reminders and still produces an age: adding month/day does not disable it. Report this explicitly; clear or correct the full date only when the task authorizes that correction, preserving the prior value and known provenance in the note first.
-- Competing dates can currently coexist only as attributed text entries. Do not invent API fields for source, confidence, or alternate birthdays. After writing, GET the contact and verify the note and intended birthday fields.
+- Competing dates coexist as separate assertions. A claim the user calls false is recorded with `status: "rejected"` (`POST .../facts/assertions`, an `evidence_note` naming who reported it and why) or, if it was already recorded, rejected with `PATCH /contacts/<ID>/facts/assertions/<assertion_id>` and a `review_note`; rejecting the claim that is currently visible clears it from the contact's birthday fields, so only do that when the user asked to remove the date. Keep the private-notes entry above as the human-readable account. After writing, GET the contact and `GET /contacts/<ID>/facts?attribute_key=birthday` and verify the intended fields and the claim's status.
 - A user-reported dispute can be recorded without browser enrichment. The 90-day gate applies to profile rechecks, not this correction. Do not create a completed Facebook-check row without a browser check. For an actual completed check, include birthday uncertainty in Step 6b notes; a `confirmed` lookup does not confirm a disputed birthday.
 
 ### Step 5b: Hobby/interest tags (conservative — from self-described text only)
