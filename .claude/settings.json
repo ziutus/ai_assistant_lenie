@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "$j = [Console]::In.ReadToEnd() | ConvertFrom-Json; if ($j.cwd -and ($j.cwd -replace '/', '\\') -like '*\\.claude\\worktrees\\*') { $main = Split-Path -Parent ((git -C $j.cwd rev-parse --path-format=absolute --git-common-dir) -replace '/', '\\'); $s = @((Join-Path $main 'scripts\\worktree-clean.ps1'), (Join-Path (git -C $j.cwd rev-parse --show-toplevel) 'scripts\\worktree-clean.ps1')) | Where-Object { Test-Path $_ } | Select-Object -First 1; if ($s) { Start-Process powershell -WindowStyle Hidden -WorkingDirectory $env:USERPROFILE -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$s,'-Cwd',$j.cwd } }",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

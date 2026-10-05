@@ -100,6 +100,7 @@ context_*.txt
 /.claude/exports/
 /.claude/plans/
 /.claude/settings.local.json
+/.claude/worktree-clean.log
 
 # Import script data cache and state
 backend/imports/data/
