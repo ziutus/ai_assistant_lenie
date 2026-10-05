@@ -13,10 +13,11 @@ interface MultiSelectFilterProps {
   emptyOption?: Option;
   onTelemetry?: () => void;
   style?: React.CSSProperties;
+  variant?: "select";
 }
 
 export default function MultiSelectFilter({
-  options, selectedValues, onChange, labels, emptyOption, onTelemetry, style,
+  options, selectedValues, onChange, labels, emptyOption, onTelemetry, style, variant,
 }: MultiSelectFilterProps) {
   const filterRef = React.useRef<HTMLDetailsElement>(null);
   const allOptions = emptyOption ? [...options, emptyOption] : options;
@@ -40,7 +41,8 @@ export default function MultiSelectFilter({
 
   return (
     <details ref={filterRef} style={{ position: "relative", ...style }}>
-      <summary style={{ cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
+      <summary className={variant === "select" ? "multi-select-native" : undefined}
+        style={variant === "select" ? undefined : { cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
         {allSelected ? labels.all : `${labels.selected}: wybrano ${selectedValues.length}`}
       </summary>
       <div style={{ position: "absolute", zIndex: 2, background: "white", border: "1px solid #bbb", borderRadius: 3, padding: 10, minWidth: 260, boxShadow: "0 2px 8px #0002" }}>

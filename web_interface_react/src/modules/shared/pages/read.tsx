@@ -1,3 +1,4 @@
+import { listNavigationParams } from "../utils/listNavigationParams";
 import React from "react";
 import { useParams, useSearchParams, NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
@@ -1164,9 +1165,8 @@ const Read: React.FC = () => {
   const [listNeighbors, setListNeighbors] = React.useState<ListNeighbors | null>(null);
 
   React.useEffect(() => {
-    if (!listContext) { setListNeighbors(null); return; }
-    const params = new URLSearchParams(listContext);
-    params.set("document_id", id ?? "");
+    const params = listNavigationParams(listContext, id ?? "");
+    if (!params) { setListNeighbors(null); return; }
     void fetch(`${apiUrl}/website_list_neighbors?${params.toString()}`, { headers })
       .then(response => response.ok ? response.json() : null)
       .then(data => setListNeighbors(data?.status === "success" ? data : null))

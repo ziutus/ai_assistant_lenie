@@ -1,3 +1,4 @@
+import { filterCsv, filterValues } from "../utils/multiValueFilter";
 import MultiSelectFilter from "../components/MultiSelectFilter/MultiSelectFilter";
 import { BrowseTelemetry, listOrigins, type BrowseAction } from "../utils/browseTelemetry";
 import React from "react";
@@ -155,16 +156,16 @@ const List = () => {
 
   const { handleDeleteDocument, handleYoutubeRetryCaptions, message: manageMessage, isLoading: isRetrying } = useManageLLM({ formik, selectedDocumentType, selectedDocumentState });
 
-  const handleTypeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-          tel.manual("document_type");
-          setSelectedDocumentType(event.target.value);
-          void loadPage(1, event.target.value, selectedDocumentState, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "filter_change");
+  const handleTypeChange = (values: string[]) => {
+    const value = filterCsv(values, fetchedTypes);
+    setSelectedDocumentType(value);
+    void loadPage(1, value, selectedDocumentState, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "filter_change");
   };
 
-  const handleDocumentStateChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-          tel.manual("processing_status");
-          setSelectedDocumentState(event.target.value);
-          void loadPage(1, selectedDocumentType, event.target.value, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "filter_change");
+  const handleDocumentStateChange = (values: string[]) => {
+    const value = filterCsv(values, fetchedStates);
+    setSelectedDocumentState(value);
+    void loadPage(1, selectedDocumentType, value, searchInDocument, obsidianFilter, pageSize, withoutEmbedding, "filter_change");
   };
 
   const handleObsidianFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -281,24 +282,29 @@ const List = () => {
   };
 
   return (
-    <div>
+    <div className="document-list">
       <h2 style={{ marginBottom: "20px" }}>
         Lista Zapisanych Stron i linków {!!data && `(${data?.length} z ${dataAllLength})`}
       </h2>
 
-      <select value={selectedDocumentType} onChange={handleTypeChange}>
-        <option value="ALL">ALL</option>
-        {fetchedTypes.map((t) => (
-          <option key={t} value={t}>{t}</option>
-        ))}
-      </select>
-
-      <select value={selectedDocumentState} onChange={handleDocumentStateChange}>
-        <option value="ALL">ALL</option>
-        {fetchedStates.map((s) => (
-          <option key={s} value={s}>{s}</option>
-        ))}
-      </select>
+      <MultiSelectFilter
+        variant="select"
+        options={fetchedTypes.map(value => ({ value, label: value }))}
+        selectedValues={filterValues(selectedDocumentType, fetchedTypes)}
+        onChange={handleTypeChange}
+        onTelemetry={() => tel.manual("document_type")}
+        labels={{ all: "Wszystkie typy", selected: "Typy", heading: "Wybierz typy dokumentów:" }}
+        style={{ display: "inline-block", verticalAlign: "middle" }}
+      />
+      <MultiSelectFilter
+        variant="select"
+        options={fetchedStates.map(value => ({ value, label: value }))}
+        selectedValues={filterValues(selectedDocumentState, fetchedStates)}
+        onChange={handleDocumentStateChange}
+        onTelemetry={() => tel.manual("processing_status")}
+        labels={{ all: "Wszystkie statusy", selected: "Statusy", heading: "Wybierz statusy:" }}
+        style={{ display: "inline-block", verticalAlign: "middle" }}
+      />
       <input
         type="text"
         id="search"
@@ -369,6 +375,7 @@ const List = () => {
         Without embedding
       </label>
       <MultiSelectFilter
+        variant="select"
         options={contentGroups.filter(group => group.kind === "topic").map(group => ({ value: String(group.id), label: group.name }))}
         selectedValues={effectiveSelectedTopicValues}
         onChange={values => { setTopicFilterActive(true); setSelectedTopicValues(values); }}
@@ -377,7 +384,7 @@ const List = () => {
         emptyOption={{ value: WITHOUT_TOPICS_VALUE, label: "(bez tematów)" }}
         style={{ display: "inline-block", marginLeft: 12, verticalAlign: "middle" }}
       />
-      <label style={{ marginLeft: 12 }}>Dopasowanie tematów <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => { tel.manual("topic_match"); setTopicMatch(event.target.value as "any" | "all"); }}><option value="any">Dowolny temat</option><option value="all">Wszystkie tematy</option></select></label>
+      <label style={{ marginLeft: 12 }}>Dopasowanie tematów <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => { tel.manual("topic_match"); setTopicMatch(event.target.value as "any" | "all"); }}><option value="any">Dowolny temat</option><option value="all">Wszystkie wybrane tematy</option></select></label>
       <label style={{ marginLeft: 12 }}>Priorytet <select value={priorityGroupId || ""} onChange={event => { tel.manual("priority_group_id"); setPriorityGroupId(event.target.value ? Number(event.target.value) : undefined); }}><option value="">Wszystkie</option>{contentGroups.filter(group => group.kind === "priority").map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
       <label style={{ marginLeft: 12 }}>Sortowanie <select value={groupSort} onChange={event => { tel.manual("sort"); setGroupSort(event.target.value as "newest" | "priority"); }}><option value="priority">Według priorytetu</option><option value="newest">Najnowsze</option></select></label>
       <label style={{ marginLeft: 12 }}><input type="checkbox" checked={withoutPriority} onChange={event => { tel.manual("without_priority", "priority_group_id"); setWithoutPriority(event.target.checked); if (event.target.checked) setPriorityGroupId(undefined); }} /> Bez priorytetu</label>
@@ -388,7 +395,7 @@ const List = () => {
       {copyMessage && <span role="status" style={{ marginLeft: 8, fontSize: ".85rem" }}>{copyMessage}</span>}
       {pagination("top")}
       <div>
-        <p className={"errorText"}>{message}</p>
+        <p role="status" className={isError ? "errorText" : undefined}>{message}</p>
         {manageMessage && <p className={"errorText"}>{manageMessage}</p>}
       </div>
 

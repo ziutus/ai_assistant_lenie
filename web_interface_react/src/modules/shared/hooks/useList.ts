@@ -4,6 +4,7 @@ import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
 
 export const useList = () => {
+  const requestId = React.useRef(0);
   const [data, setData] = React.useState<any[] | null>(null);
   const [dataAllLength, setDataAllLength] = React.useState(0);
   const [message, setMessage] = React.useState<string | null>(null);
@@ -22,6 +23,16 @@ export const useList = () => {
     groupFilters?: { topicGroupIds?: number[]; topicFilterActive?: boolean; includeWithoutTopics?: boolean; topicMatch?: "any" | "all"; priorityGroupId?: number; withoutPriority?: boolean; sort?: "newest" | "priority" },
     telemetry?: BrowseContext,
   ) => {
+    const currentRequest = ++requestId.current;
+    setMessage(null);
+    if (!type.trim() || !documentState.trim()) {
+      setData([]);
+      setDataAllLength(0);
+      setIsLoading(false);
+      setIsError(false);
+      setMessage("Nie wybrano żadnego typu lub statusu dokumentu. Zaznacz co najmniej jedną opcję.");
+      return;
+    }
     setIsLoading(true);
     try {
       const response = await axios.get(`${apiUrl}/website_list`, {
@@ -47,6 +58,7 @@ export const useList = () => {
           sort: groupFilters?.sort,
         },
       });
+      if (currentRequest !== requestId.current) return;
       console.log(response.data.message);
       console.log(response.data);
       if (response.data.websites != null) {
@@ -57,6 +69,7 @@ export const useList = () => {
       setIsLoading(false);
       setIsError(false);
     } catch (error: any) {
+      if (currentRequest !== requestId.current) return;
       console.error("There was an error on handleGetList!", error);
       let message = error.message;
       if (

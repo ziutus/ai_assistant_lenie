@@ -88,14 +88,23 @@ single document progressively (for example, chunk review) may use a
 
 Use `src/modules/shared/components/MultiSelectFilter/MultiSelectFilter.tsx`
 for expandable multi-value checkbox filters (contact groups and document
-topics). It is controlled by `options`, `selectedValues`, `onChange`, and
+topics, document types and statuses). It is controlled by `options`, `selectedValues`, `onChange`, and
 `labels`, with an optional separate `emptyOption` and `onTelemetry` callback.
 The trigger shows `Wszystkie [kategorie]` or `<Label>: wybrano N`.
 The menu provides `Zaznacz wszystkie`, `Odznacz wszystkie`, and
 `Odwróć wybór`; every option, including the empty value, has a `tylko`
 button that selects that value alone. Every action invokes the telemetry
 callback when supplied. Native `<details>` closes on outside `pointerdown`
-via a document listener and a ref.
+via a document listener and a ref. Optional `variant="select"` matches the compact
+native selects on `/list`; contacts retain the default appearance.
+
+Document type/status selections remain strings in AuthorizationContext and storage:
+`ALL` selects everything, CSV selects multiple values, and an empty string selects
+nothing. `utils/multiValueFilter.ts` converts between strings and checkbox values.
+Empty selection clears results with a Polish message without a `/website_list`
+request; stale responses cannot overwrite it. Shareable URLs use `type`/`status`
+(including empty values), and the reader maps `status` to `processing_status` for
+`/website_list_neighbors`. Single-value URLs remain supported.
 
 Keep filter state and URL persistence in the owning page. Reuse the shared
 component instead of copying the pattern. Inclusion/exclusion filters such
@@ -107,7 +116,7 @@ boolean toggles, and form fields do not require this pattern.
 |-------|------|---------|
 | `/connect` | `connect.tsx` | Backend connection configuration (API type, URL, key) |
 | `/` | — | Redirects to `/list` |
-| `/list` | `list.tsx` | Browse documents with type/state/text filters. Each row shows a `🔗 N` badge (from `/website_list`'s `link_count`/`proposed_link_count`) when the document has `document_links` — amber `· N?` for links still awaiting review; the badge links to the document's editor (or `/read` for `obsidian_note`) where `DocumentLinksPanel` lives. |
+| `/list` | `list.tsx` | Browse documents with multi-value type/status/topic filters and text search. Each row shows a `🔗 N` badge (from `/website_list`'s `link_count`/`proposed_link_count`) when the document has `document_links` — amber `· N?` for links still awaiting review; the badge links to the document's editor (or `/read` for `obsidian_note`) where `DocumentLinksPanel` lives. |
 | `/search` | `search.tsx` | Stage 9 complete: natural `POST /search`, visible interpretation, editable/removable topic/filter chips, corrected explicit re-search without LLM, feedback, and shareable `mode=explicit&criteria=<JSON>` URLs that replay explicit criteria without Bielik. |
 | `/link/:id?` | `link.tsx` | Edit link documents (metadata only) |
 | `/webpage/:id?` | `webpage.tsx` | Edit webpages with AI tools (split, clean) |

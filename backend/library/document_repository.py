@@ -24,6 +24,18 @@ class DocumentRepository:
     # Query methods — ORM via SQLAlchemy session
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _filter_values(value: str | None, enum) -> list[str] | None:
+        """None/ALL disables a filter; empty CSV elements are ignored."""
+        if value is None:
+            return None
+        values = list(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
+        if values == ["ALL"]:
+            return None
+        if any(item not in enum.__members__ for item in values):
+            raise ValueError(f"Invalid {enum.__name__} filter: {value}")
+        return values
+
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", processing_status: str = "ALL",
                  search_in_documents=None, count=False, collection_id: int | None = None,
                  ai_summary_needed: bool = None,
@@ -47,11 +59,13 @@ class DocumentRepository:
             )
 
         # Dynamic filters — column stores enum name strings directly
-        if document_type != "ALL":
-            stmt = stmt.where(Document.document_type == document_type)
-
-        if processing_status != "ALL":
-            stmt = stmt.where(Document.processing_status == processing_status)
+        for column, value, enum in (
+            (Document.document_type, document_type, StalkerDocumentType),
+            (Document.processing_status, processing_status, StalkerDocumentStatus),
+        ):
+            values = self._filter_values(value, enum)
+            if values is not None:
+                stmt = stmt.where(column == values[0] if len(values) == 1 else column.in_(values))
 
         if collection_id:
             stmt = stmt.where(Document.collection_id == collection_id)
@@ -302,10 +316,7 @@ class DocumentRepository:
         return {doc_id: (missing, with_notes) for doc_id, missing, with_notes in self.session.execute(stmt).all()}
 
     def get_count(self, document_type: str = "ALL") -> int:
-        stmt = select(func.count(Document.id))
-        if document_type != "ALL":
-            stmt = stmt.where(Document.document_type == document_type)
-        return self.session.execute(stmt).scalar()
+        return self.get_list(document_type=document_type, count=True)
 
     def get_count_by_type(self) -> dict[str, int]:
         """Return document counts grouped by type, plus 'ALL' total."""

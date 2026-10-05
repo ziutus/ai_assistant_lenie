@@ -940,3 +940,60 @@ class TestWebsiteSaveYoutubeTranscriptGuard:
 
         assert resp.status_code == 409
         assert resp.get_json()["message"] == "YouTube document has no transcript. Fetch captions before marking it ready."
+
+
+@pytest.mark.parametrize("endpoint", ["/website_list", "/website_list_neighbors"])
+@pytest.mark.parametrize("types,states,expected_types,expected_states", [
+    (None, None, None, None),
+    ("ALL", "ALL", None, None),
+    ("link", "URL_ADDED", ["link"], ["URL_ADDED"]),
+    ("webpage,link", "URL_ADDED,NEED_MANUAL_REVIEW", ["webpage", "link"],
+     ["URL_ADDED", "NEED_MANUAL_REVIEW"]),
+    (",link, ,webpage,", ", URL_ADDED,,", ["link", "webpage"], ["URL_ADDED"]),
+    (",,", "", [], []),
+])
+def test_csv_list_filters(client, endpoint, types, states, expected_types, expected_states):
+    # Keep the real repository so both routes exercise parsing and SQL generation.
+    session = MagicMock()
+    session.execute.return_value.scalar.return_value = 0
+    session.execute.return_value.all.return_value = []
+    params = {}
+    if types is not None:
+        params["type"] = types
+    if states is not None:
+        params["processing_status"] = states
+    with patch("server.get_scoped_session", return_value=session):
+        response = client.get(endpoint, query_string={"document_id": 1, **params}, headers=API_HEADERS)
+    assert response.status_code == 200
+    for call in session.execute.call_args_list:
+        stmt = call.args[0]
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        for column, values in [("document_type", expected_types), ("processing_status", expected_states)]:
+            if values is None:
+                assert f"documents.{column} =" not in sql
+                assert f"documents.{column} IN" not in sql
+            elif len(values) == 1:
+                assert f"documents.{column} = '{values[0]}'" in sql
+            else:
+                assert f"documents.{column} IN" in sql
+                for value in values:
+                    assert f"'{value}'" in sql
+
+
+@pytest.mark.parametrize("endpoint", ["/website_list", "/website_list_neighbors"])
+@pytest.mark.parametrize("params", [{"type": "link,invalid"}, {"processing_status": "UNKNOWN"},
+                                   {"type": "ALL,link"}])
+def test_csv_list_invalid_filter_returns_400(client, endpoint, params):
+    with patch("server.get_scoped_session", return_value=MagicMock()):
+        response = client.get(endpoint, query_string={"document_id": 1, **params}, headers=API_HEADERS)
+    assert response.status_code == 400
+
+
+def test_csv_get_count_uses_same_filter():
+    from library.document_repository import DocumentRepository
+
+    session = MagicMock()
+    session.execute.return_value.scalar.return_value = 2
+    assert DocumentRepository(session).get_count("webpage,link") == 2
+    sql = str(session.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "documents.document_type IN ('webpage', 'link')" in sql
