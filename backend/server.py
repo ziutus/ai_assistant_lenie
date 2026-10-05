@@ -497,10 +497,13 @@ def website_list_neighbors():
         "without_topics": without_topics, "topic_filter_active": topic_filter_active,
         "include_without_topics": include_without_topics, "without_priority": without_priority, "sort": sort,
     }
-    total = repo.get_list(**filters, count=True)
-    ids: list[int] = []
-    for offset in range((total + 99) // 100):
-        ids.extend(row["id"] for row in repo.get_list(**filters, limit=100, offset=offset))
+    try:
+        total = repo.get_list(**filters, count=True)
+        ids: list[int] = []
+        for offset in range((total + 99) // 100):
+            ids.extend(row["id"] for row in repo.get_list(**filters, limit=100, offset=offset))
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
     try:
         index = ids.index(document_id)
     except ValueError:

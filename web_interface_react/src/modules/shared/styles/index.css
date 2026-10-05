@@ -188,3 +188,18 @@ input[type="file"]:disabled {
 .group-filter-row:focus-within .group-filter-only {
   visibility: visible;
 }
+
+/* Match the list's compact native selects without changing contact filters. */
+.document-list select,
+.multi-select-native {
+  border: 1px solid #767676;
+  border-radius: 2px;
+  padding: 0 2px;
+  height: 24px;
+  line-height: 22px;
+  color: #000;
+  background: #fff;
+}
+.multi-select-native { cursor: pointer; list-style: none; }
+.multi-select-native::-webkit-details-marker { display: none; }
+.multi-select-native::after { content: "▾"; margin-left: 6px; }

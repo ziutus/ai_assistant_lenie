@@ -1,5 +1,6 @@
 """Offline recorder, route, schema, report and retention coverage."""
 
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -258,7 +259,11 @@ def test_search_clarification_error_feedback_and_no_context(client):
             assert record.call_args.kwargs["interpretation_log_id"] == 123
 
 
-def test_list_transport_applied_filters_and_no_context():
+@pytest.mark.parametrize("types,states", [
+    ("link", "URL_ADDED"), ("webpage,link", "URL_ADDED,NEED_MANUAL_REVIEW"),
+    ("ALL", "ALL"), (",link,,", ",URL_ADDED,"),
+])
+def test_list_transport_applied_filters_and_no_context(types, states):
     with patch("library.chunk_review_routes.start_analysis_worker"):
         import server
 
@@ -275,7 +280,7 @@ def test_list_transport_applied_filters_and_no_context():
         ctx = context()
         ctx.update(action="page_change", requested_mode="similar", changed_fields="[]", criteria_origin="{}")
         params = {f"_tel_{key}": value for key, value in ctx.items()}
-        params.update(page=3, limit=25, type="link", topic_filter="true", without_embedding="true")
+        params.update(page=3, limit=25, type=types, processing_status=states, topic_filter="true", without_embedding="true")
         assert client.get("/website_list", query_string=params).status_code == 200
         values = record.call_args.kwargs
         assert values["source_view"] == "document_list" and values["execution_mode"] == "ilike"
@@ -284,6 +289,9 @@ def test_list_transport_applied_filters_and_no_context():
         assert values["filters"]["topic_filter_active"] is True
         assert values["filters"]["topic_group_ids"] == []
         assert values["filters"]["without_embedding"] is True
+        assert values["filters"]["document_type"] == types
+        assert values["filters"]["processing_status"] == states
+        assert json.loads(json.dumps(values["filters"])) == values["filters"]
 
 
 def test_malformed_optional_context():

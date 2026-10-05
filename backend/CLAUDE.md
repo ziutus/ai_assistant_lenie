@@ -57,6 +57,14 @@ Flask + Flask-CORS application exposing 23 REST API endpoints. **Version**: 0.3.
 
 All routes (except health checks) require an `x-api-key` header. Keys live in the `api_keys` table (`library/auth.py`: SHA-256 hash lookup with an in-process TTL cache; `kind=user` keys carry the reader identity used by `reader_routes.py`, `kind=service` keys have full access but get 403 on reader endpoints). There is no shared/legacy key fallback — every client (frontend, Chrome extension) authenticates with its own key. Keys are managed via `imports/api_key_admin.py` (CLI) or the `/api_keys` endpoints (service keys only); the plaintext (`lk_usr_*`/`lk_svc_*`) is shown once at creation. For ad-hoc REST testing from a dev machine, mint a fresh key with `api_key_admin.py` against the target DB (connection recipe: `imports/CLAUDE.md` "Running scripts against the NAS production DB") — existing plaintexts are unrecoverable by design.
 
+`GET /website_list` and `GET /website_list_neighbors` accept single values or CSV
+in `type` and `processing_status` (for example `type=webpage,link`). Missing
+parameters or `ALL` disable the filter. Whitespace and empty CSV elements are
+ignored; an empty selection matches no documents. Unknown values (including
+`ALL` mixed with specific values) return HTTP 400. `DocumentRepository.get_list`
+uses equality for one value and `IN` for multiple values; `get_count` shares the
+same type filtering. Browse telemetry retains the JSON-serializable CSV strings.
+
 ### Storage
 
 - **Primary**: PostgreSQL via `DocumentRepository`

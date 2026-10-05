@@ -1,10 +1,12 @@
+import React from "react";
 import axios from "axios";
 import { MemoryRouter } from "react-router-dom";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthorizationState } from "../../../types";
 import { AuthorizationContext } from "../context/authorizationContext";
 import List from "./list";
+import { BrowseTelemetry } from "../utils/browseTelemetry";
 
 vi.mock("axios");
 const mockedGet = axios.get as unknown as ReturnType<typeof vi.fn>;
@@ -131,6 +133,35 @@ describe("List telemetry", () => {
     }));
   });
 
+  it("marks every topic filter action as manual, including only and the empty option", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: async () => ({
+      content_groups: [{ id: 1, name: "Nauka", kind: "topic" }],
+    }) }));
+    const manual = vi.spyOn(BrowseTelemetry.prototype, "manual");
+    try {
+      render(<AuthorizationContext.Provider value={auth}>
+        <MemoryRouter initialEntries={["/list"]}><List /></MemoryRouter>
+      </AuthorizationContext.Provider>);
+      fireEvent.click(screen.getByText("Wszystkie tematy", { selector: "summary" }));
+      await screen.findByLabelText("Nauka");
+      const actions = [
+        () => fireEvent.click(screen.getByRole("button", { name: "Tylko Nauka" })),
+        () => fireEvent.click(screen.getByRole("button", { name: "Tylko (bez tematów)" })),
+        () => fireEvent.click(screen.getByLabelText("Nauka")),
+        () => fireEvent.click(screen.getByLabelText("(bez tematów)")),
+        ...["Zaznacz wszystkie", "Odznacz wszystkie", "Odwróć wybór"].map(name =>
+          () => fireEvent.click(within(screen.getByText("Wybierz widoczne tematy:").parentElement!).getByRole("button", { name }))),
+      ];
+      for (const action of actions) {
+        manual.mockClear();
+        action();
+        expect(manual).toHaveBeenCalledExactlyOnceWith("topic_filter_active", "topic_group_ids", "include_without_topics");
+      }
+    } finally {
+      manual.mockRestore();
+    }
+  });
+
   it("sends initial remembered/url origins then manual application with a fresh event and browse", async () => {
     localStorage.setItem("lenie_listFilters", JSON.stringify({ obsidianFilter: "missing" }));
     render(<AuthorizationContext.Provider value={auth}>
@@ -155,5 +186,80 @@ describe("List telemetry", () => {
     expect(params()._tel_browse_id).not.toBe(first._tel_browse_id);
     expect(params()._tel_session_id).toBe(first._tel_session_id);
     localStorage.clear();
+  });
+});
+
+
+describe("List multi-value type and status filters", () => {
+  const requests = () => mockedGet.mock.calls.filter(([url]) => url.endsWith("/website_list"));
+  const latestParams = () => requests()[requests().length - 1][1].params;
+  function StatefulList() {
+    const [selectedDocumentType, setSelectedDocumentType] = React.useState("ALL");
+    const [selectedDocumentState, setSelectedDocumentState] = React.useState("ALL");
+    return <AuthorizationContext.Provider value={{ ...auth, selectedDocumentType, setSelectedDocumentType,
+      selectedDocumentState, setSelectedDocumentState }}><List /></AuthorizationContext.Provider>;
+  }
+  const mount = (url = "/list") => render(<MemoryRouter initialEntries={[url]}><StatefulList /></MemoryRouter>);
+  const menu = (heading: string) => within(screen.getByText(heading).parentElement!);
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: async () => ({ content_groups: [] }) }));
+    mockedGet.mockReset().mockImplementation((url: string) => Promise.resolve({ data:
+      url.endsWith("/website_list") ? { websites: [textItemWithMarkdown], all_results_count: 1 }
+        : { states: ["URL_ADDED", "NEED_MANUAL_REVIEW", "EMBEDDING_EXIST"], types: ["link", "webpage", "text"], errors: [] },
+    }));
+  });
+  it("restores CSV from URL, passes request parameters and preserves reader and copied links", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    mount("/list?type=link,webpage&status=URL_ADDED,NEED_MANUAL_REVIEW");
+    await screen.findByRole("link", { name: "Czytaj" });
+    expect(latestParams()).toMatchObject({ type: "link,webpage", processing_status: "URL_ADDED,NEED_MANUAL_REVIEW" });
+    expect(screen.getByText("Typy: wybrano 2")).toBeTruthy();
+    expect(screen.getByText("Statusy: wybrano 2")).toBeTruthy();
+    const readerUrl = new URL(screen.getByRole("link", { name: "Czytaj" }).getAttribute("href")!, "http://localhost");
+    const context = new URLSearchParams(readerUrl.searchParams.get("list")!);
+    expect(context.get("type")).toBe("link,webpage");
+    expect(context.get("status")).toBe("URL_ADDED,NEED_MANUAL_REVIEW");
+    fireEvent.click(screen.getByRole("button", { name: "Kopiuj link" }));
+    expect(writeText).toHaveBeenCalledWith(window.location.href);
+    expect(screen.getByRole("option", { name: "Wszystkie wybrane tematy" }).getAttribute("value")).toBe("all");
+  });
+  it.each([
+    ["Wybierz typy dokumentów:", "webpage", "link", "type", "document_type"],
+    ["Wybierz statusy:", "NEED_MANUAL_REVIEW", "URL_ADDED", "processing_status", "processing_status"],
+  ])("supports only, multiple, ALL and empty for %s", async (heading, only, second, param, criterion) => {
+    mount();
+    await screen.findByRole("link", { name: "Czytaj" });
+    const controls = menu(heading);
+    fireEvent.click(controls.getByRole("button", { name: `Tylko ${only}` }));
+    await waitFor(() => expect(latestParams()[param]).toBe(only));
+    expect(JSON.parse(latestParams()._tel_changed_fields)).toContain(criterion);
+    fireEvent.click(controls.getByLabelText(second));
+    await waitFor(() => expect(latestParams()[param]).toBe(`${only},${second}`));
+    fireEvent.click(controls.getByRole("button", { name: "Zaznacz wszystkie" }));
+    await waitFor(() => expect(latestParams()[param]).toBe("ALL"));
+    const count = requests().length;
+    fireEvent.click(controls.getByRole("button", { name: "Odznacz wszystkie" }));
+    expect(await screen.findByText(/Nie wybrano żadnego typu lub statusu/)).toBeTruthy();
+    expect(requests()).toHaveLength(count);
+    expect(screen.queryByRole("link", { name: "Czytaj" })).toBeNull();
+  });
+  it.each(["/list?type=&status=ALL", "/list?type=ALL&status="])("restores an empty selection without a list request: %s", async url => {
+    mount(url);
+    await screen.findByText(/Nie wybrano żadnego typu lub statusu/);
+    expect(requests()).toHaveLength(0);
+  });
+  it("ignores an in-flight response after deselecting all types", async () => {
+    let resolveList!: (value: unknown) => void;
+    const normalGet = mockedGet.getMockImplementation() as (url: string) => unknown;
+    mockedGet.mockImplementation((url: string) => url.endsWith("/website_list")
+      ? new Promise(resolve => { resolveList = resolve; }) : normalGet(url));
+    mount();
+    await screen.findByLabelText("webpage");
+    fireEvent.click(menu("Wybierz typy dokumentów:").getByRole("button", { name: "Odznacz wszystkie" }));
+    resolveList({ data: { websites: [textItemWithMarkdown], all_results_count: 1 } });
+    await screen.findByText(/Nie wybrano żadnego typu lub statusu/);
+    expect(screen.queryByRole("link", { name: "Czytaj" })).toBeNull();
   });
 });

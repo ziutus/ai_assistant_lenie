@@ -4,7 +4,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import { useNavigate } from "react-router-dom";
 
 
-export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentState }: { formik: any; selectedDocumentType: string; selectedDocumentState: string }) => {
+export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: string; selectedDocumentState: string }) => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
   const [message, setMessage] = React.useState("");
@@ -313,8 +313,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
         {
           params: {
             id: website.id,
-            document_type: selectedDocumentType,
-            processing_status: selectedDocumentState
           },
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -359,8 +357,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
       const response = await axios.get(`${apiUrl}/website_get_next_to_correct`, {
         params: {
           id: website.id,
-          document_type: selectedDocumentType,
-          processing_status: selectedDocumentState,
         },
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -493,8 +489,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
         {
           params: {
             id: website.id,
-            document_type: selectedDocumentType,
-            processing_status: selectedDocumentState
           },
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
