@@ -86,6 +86,9 @@ single document progressively (for example, chunk review) may use a
 
 ### Multi-value filters
 
+The short rule agents must follow when choosing a selection control lives in
+[AGENTS.md](AGENTS.md); keep the two in sync.
+
 Use `src/modules/shared/components/MultiSelectFilter/MultiSelectFilter.tsx`
 for expandable multi-value checkbox filters (contact groups and document
 topics, document types and statuses). It is controlled by `options`, `selectedValues`, `onChange`, and
