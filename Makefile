@@ -183,6 +183,9 @@ gcloud-vpn-stop:    ## Stop the GCP OpenVPN relay VM
 gcloud-vpn-status:  ## Check status of the GCP OpenVPN relay VM
 	gcloud functions call vpn-relay-control --gen2 --region=$(GCLOUD_FUNCTION_REGION) --data='{"action":"status"}'
 
+worktree-clean: ## Remove finished Claude worktrees (stale locks, clean + pushed only; DRY=1 to preview)
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/worktree-clean.ps1 $(if $(DRY),-DryRun)
+
 security-all:   ## Run all security checks
 	@echo "=== Running Semgrep ==="
 	-uvx semgrep --config=auto backend/
