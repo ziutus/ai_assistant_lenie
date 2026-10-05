@@ -68,10 +68,13 @@ OBSIDIAN_REIMPORT = "obsidian_reimport"
 # constant with the wrong, shortened name, so the folder was silently
 # skipped (a "configured subfolder missing" warning) from day one. Fixed in
 # Story 42.2 after NAS verification surfaced it.
+# "Architektura i urbanistyka" was added deliberately (2026-10) so notes written
+# by /lenie-obsidian-note from articles become searchable in Lenie too.
 # The root journal folder is private and carries a personal-data warning.
 PILOT_SUBFOLDERS: tuple[tuple[str, bool], ...] = (
     ("02-wiedza/Informatyka", False),
     ("02-wiedza/Geopolityka i polityka", False),
+    ("02-wiedza/Architektura i urbanistyka", False),
     ("Journal", True),
 )
 

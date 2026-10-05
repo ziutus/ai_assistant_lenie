@@ -516,8 +516,8 @@ The default questions file path is currently hardcoded (Obsidian vault) — see 
 ### `import_control_questions.py`
 
 One-way sync of the Obsidian control-question bank (`_pytania_kontrolne/*.md`) into the `control_questions` DB
-table. Necessary because `_pytania_kontrolne/*.md` falls outside the two pilot subfolders (`02-wiedza/Informatyka`,
-`02-wiedza/Geopolityka i polityka`) that `library/obsidian_reimport_service.py` (Epic 42) gives the backend (NAS)
+table. Necessary because `_pytania_kontrolne/*.md` falls outside the pilot subfolders (`02-wiedza/Informatyka`,
+`02-wiedza/Geopolityka i polityka`, `02-wiedza/Architektura i urbanistyka`) that `library/obsidian_reimport_service.py` (Epic 42) gives the backend (NAS)
 runtime read access to — `library/control_question_selection.py`'s router reads this table, not the filesystem.
 Reuses `parse_sections()`/`TAG_TO_HEADERS` from `control_questions.py` (one heading = one question; body text is
 context/examples for a human author, not sub-questions). Replace semantics per `source_file` — safe to re-run
