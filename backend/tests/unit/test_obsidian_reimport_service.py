@@ -22,6 +22,7 @@ from library.obsidian_reimport_service import (
     execute_obsidian_reimport,
 )
 from library.models.embedding_result import EmbeddingResult
+from library.obsidian_sync_config import ObsidianSyncConfigError
 from library.text_functions import get_hash
 
 
@@ -31,9 +32,14 @@ def _make_vault(tmp_path):
     return tmp_path
 
 
-def _make_config(vault_path):
+def _make_config(vault_path, sync_folders=None):
+    """``sync_folders`` is the raw OBSIDIAN_SYNC_SUBFOLDERS value; None leaves
+    the key absent (transitional fallback to PILOT_SUBFOLDERS)."""
+    values = {"OBSIDIAN_VAULT_PATH": str(vault_path)}
+    if sync_folders is not None:
+        values["OBSIDIAN_SYNC_SUBFOLDERS"] = sync_folders
     cfg = MagicMock()
-    cfg.get.return_value = str(vault_path)
+    cfg.get.side_effect = lambda key, default=None: values.get(key, default)
     cfg.require.return_value = "BAAI/bge-multilingual-gemma2"
     return cfg
 
@@ -423,6 +429,77 @@ class TestSingleNoteReimport:
 
         mock_document_cls.get_by_url.assert_not_called()
         assert summary == {"scanned": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 1}
+
+
+class TestConfiguredSyncFolders:
+    def _run(self, vault, sync_folders, parameters=None):
+        session = MagicMock()
+        job = MagicMock(id="job-cfg", parameters=parameters or {})
+        with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault, sync_folders)), \
+             patch("library.obsidian_reimport_service.Document"), \
+             patch("library.obsidian_reimport_service.DocumentService"), \
+             patch("library.obsidian_reimport_service.DocumentRepository"), \
+             patch("library.obsidian_reimport_service._reimport_one_note", return_value="created") as one_note:
+            summary = execute_obsidian_reimport(session, job)
+        return summary, one_note
+
+    def test_scans_only_configured_folders_with_their_privacy(self, tmp_path):
+        (tmp_path / "Nowy").mkdir()
+        (tmp_path / "Nowy/a.md").write_text("a", encoding="utf-8")
+        (tmp_path / "02-wiedza/Informatyka").mkdir(parents=True)
+        (tmp_path / "02-wiedza/Informatyka/b.md").write_text("b", encoding="utf-8")
+
+        summary, one_note = self._run(tmp_path, '[{"path": "Nowy"}]')
+
+        assert summary["scanned"] == 1
+        args = one_note.call_args.args
+        assert args[-2].name == "a.md"
+        assert args[-1] is True  # is_private defaults to True
+
+    def test_empty_list_disables_sync(self, tmp_path):
+        (tmp_path / "Nowy").mkdir()
+        (tmp_path / "Nowy/a.md").write_text("a", encoding="utf-8")
+
+        summary, one_note = self._run(tmp_path, "[]")
+
+        assert summary["scanned"] == 0
+        one_note.assert_not_called()
+
+    def test_invalid_config_fails_the_job_without_importing(self, tmp_path):
+        (tmp_path / "02-wiedza/Informatyka").mkdir(parents=True)
+        (tmp_path / "02-wiedza/Informatyka/b.md").write_text("b", encoding="utf-8")
+
+        with pytest.raises(ObsidianSyncConfigError):
+            self._run(tmp_path, "not json")
+
+    def test_single_note_outside_configured_folders_is_refused(self, tmp_path):
+        (tmp_path / "Nowy").mkdir()
+        (tmp_path / "Inny").mkdir()
+        (tmp_path / "Inny/a.md").write_text("a", encoding="utf-8")
+
+        summary, one_note = self._run(tmp_path, '[{"path": "Nowy"}]', {"relative_path": "Inny/a.md"})
+
+        assert summary["failed"] == 1
+        one_note.assert_not_called()
+
+    def test_symlinked_note_is_skipped_in_scan_and_refused_for_single_note(self, tmp_path):
+        outside = tmp_path / "poza.md"
+        outside.write_text("sekret", encoding="utf-8")
+        vault = tmp_path / "vault"
+        (vault / "Nowy").mkdir(parents=True)
+        try:
+            (vault / "Nowy/link.md").symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not supported here")
+        config = '[{"path": "Nowy", "is_private": false}]'
+
+        summary, one_note = self._run(vault, config)
+        assert summary["scanned"] == 0
+        one_note.assert_not_called()
+
+        summary, one_note = self._run(vault, config, {"relative_path": "Nowy/link.md"})
+        assert summary["failed"] == 1
+        one_note.assert_not_called()
 
 
 class TestJobTypeRegistration:
