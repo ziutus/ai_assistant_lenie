@@ -5,6 +5,15 @@ import type { ContentGroup } from "../../../../types";
 
 type Props = { documentId: string; position: number };
 
+// Flask's abort() answers with HTML, so a bare response.json() throws "Unexpected token '<'".
+async function readJson(response: Response): Promise<any> {
+  const text = await response.text();
+  try { return JSON.parse(text); } catch {
+    if (response.status === 403) throw new Error("Brak uprawnień: kategorie wymagają klucza API typu user (obecny klucz jest typu service)");
+    throw new Error(`Nieoczekiwana odpowiedź serwera (HTTP ${response.status})`);
+  }
+}
+
 export default function ChapterGroupsPanel({ documentId, position }: Props) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
@@ -22,10 +31,10 @@ export default function ChapterGroupsPanel({ documentId, position }: Props) {
     try {
       const currentResponse = await fetch(base, { headers });
       if (currentResponse.status === 409) { setSupported(false); return; }
-      const currentData = await currentResponse.json();
+      const currentData = await readJson(currentResponse);
       if (!currentResponse.ok) throw new Error(currentData.message || "Nie udało się pobrać kategorii");
       const catalogResponse = await fetch(`${apiUrl}/content_groups`, { headers });
-      const catalogData = await catalogResponse.json();
+      const catalogData = await readJson(catalogResponse);
       const current = Array.isArray(currentData.groups) ? currentData.groups : [];
       setSupported(true); setGroups(current); setSelected(current.map((group: ContentGroup) => group.id));
       setCatalog(Array.isArray(catalogData.content_groups) ? catalogData.content_groups : []);
@@ -35,16 +44,21 @@ export default function ChapterGroupsPanel({ documentId, position }: Props) {
   React.useEffect(() => { void load(); }, [load]);
   const save = async (nextIds = selected) => {
     setError("");
-    const response = await fetch(base, { method: "PATCH", headers, body: JSON.stringify({ group_ids: nextIds }) });
-    const data = await response.json();
-    if (!response.ok) { setError(data.message || "Nie udało się zapisać kategorii"); return; }
-    const next = Array.isArray(data.groups) ? data.groups : [];
-    setGroups(next); setSelected(next.map((group: ContentGroup) => group.id)); setEditing(false);
+    try {
+      const response = await fetch(base, { method: "PATCH", headers, body: JSON.stringify({ group_ids: nextIds }) });
+      const data = await readJson(response);
+      if (!response.ok) { setError(data.message || "Nie udało się zapisać kategorii"); return; }
+      const next = Array.isArray(data.groups) ? data.groups : [];
+      setGroups(next); setSelected(next.map((group: ContentGroup) => group.id)); setEditing(false);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się zapisać kategorii"); }
   };
   const create = async () => {
     const name = newName.trim(); if (!name) return;
-    const response = await fetch(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name, kind: "topic" }) });
-    const data = await response.json();
+    let response: Response; let data: any;
+    try {
+      response = await fetch(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name, kind: "topic" }) });
+      data = await readJson(response);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się utworzyć kategorii"); return; }
     if (!response.ok) { setError(data.message || data.error || "Nie udało się utworzyć kategorii"); return; }
     setCatalog(items => [...items, data].sort((a, b) => a.name.localeCompare(b.name, "pl"))); setNewName("");
     await save([...selected, data.id]);
