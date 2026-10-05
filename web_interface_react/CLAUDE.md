@@ -86,26 +86,22 @@ single document progressively (for example, chunk review) may use a
 
 ### Multi-value filters
 
-When a user can select several values from one category — especially when the
-list can grow — use a compact, expandable multi-select filter rather than a
-permanent row of checkboxes. The trigger must say either `Wszystkie
-[kategorie]` or show the count of selected values. The menu provides
-`Zaznacz wszystkie`, `Odznacz wszystkie`, and `Odwróć wybór` actions.
+Use `src/modules/shared/components/MultiSelectFilter/MultiSelectFilter.tsx`
+for expandable multi-value checkbox filters (contact groups and document
+topics). It is controlled by `options`, `selectedValues`, `onChange`, and
+`labels`, with an optional separate `emptyOption` and `onTelemetry` callback.
+The trigger shows `Wszystkie [kategorie]` or `<Label>: wybrano N`.
+The menu provides `Zaznacz wszystkie`, `Odznacz wszystkie`, and
+`Odwróć wybór`; every option, including the empty value, has a `tylko`
+button that selects that value alone. Every action invokes the telemetry
+callback when supplied. Native `<details>` closes on outside `pointerdown`
+via a document listener and a ref.
 
-The expandable menu must close when the user clicks outside it. Use a ref on
-the native `<details>` element and a `pointerdown` listener on `document`;
-when the event target is outside an open menu, set its `.open` property to
-`false`. This keeps clicks on its checkboxes and action buttons intact while
-making the filter behave like a standard dropdown.
-
-If the domain has a meaningful empty value, include it as a separate choice,
-for example `(bez tematów)`. Preserve the complete filter state in the URL so
-the filtered view can be shared. This pattern is for multi-value filters, not
-for every small single-choice control: a native select, radios, or a few
-standalone toggles can remain clearer.
-
-When this pattern is needed in more than one view, extract a shared component
-instead of copying its markup and state handling.
+Keep filter state and URL persistence in the owning page. Reuse the shared
+component instead of copying the pattern. Inclusion/exclusion filters such
+as contact interests can keep local controls: `tylko` selects one included
+value and removes it from exclusions. Single-choice controls, independent
+boolean toggles, and form fields do not require this pattern.
 
 | Route | Page | Purpose |
 |-------|------|---------|

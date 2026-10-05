@@ -1,3 +1,4 @@
+import MultiSelectFilter from "../components/MultiSelectFilter/MultiSelectFilter";
 import React from "react";
 import axios from "axios";
 import { NavLink, useNavigate, useSearchParams } from "react-router-dom";
@@ -83,7 +84,6 @@ const Contacts = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
-  const groupsFilterRef = React.useRef<HTMLDetailsElement>(null);
   const allGroupValues = [...groups.map((group) => String(group.id)), UNGROUPED_VALUE];
   const effectiveSelectedGroupValues = groupFilterActive ? selectedGroupValues : allGroupValues;
   const isAllGroupsSelected = effectiveSelectedGroupValues.length === allGroupValues.length
@@ -186,17 +186,6 @@ const Contacts = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  React.useEffect(() => {
-    const closeGroupsFilterOnOutsideClick = (event: PointerEvent) => {
-      const filter = groupsFilterRef.current;
-      if (filter?.open && !filter.contains(event.target as Node)) {
-        filter.open = false;
-      }
-    };
-    document.addEventListener("pointerdown", closeGroupsFilterOnOutsideClick);
-    return () => document.removeEventListener("pointerdown", closeGroupsFilterOnOutsideClick);
-  }, []);
-
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const visiblePages = Array.from({ length: totalPages }, (_, index) => index + 1)
     .filter((number) => number === 1 || number === totalPages || Math.abs(number - page) <= 2);
@@ -270,47 +259,23 @@ const Contacts = () => {
           {interests.map(interest => <div key={interest.id}>
             <label><input type="checkbox" checked={interestIds.includes(String(interest.id))} onChange={e =>
               setInterestIds(e.target.checked ? [...interestIds, String(interest.id)] : interestIds.filter(id => id !== String(interest.id)))} />{interest.name}</label>
+            <button type="button" className="button" aria-label={`Tylko ${interest.name}`}
+              style={{ padding: "1px 6px", fontSize: "0.8em" }}
+              onClick={() => {
+                setInterestIds([String(interest.id)]);
+                setExcludedInterestIds(ids => ids.filter(id => id !== String(interest.id)));
+              }}>tylko</button>
             <label><input type="checkbox" checked={excludedInterestIds.includes(String(interest.id))} onChange={e =>
               setExcludedInterestIds(e.target.checked ? [...excludedInterestIds, String(interest.id)] : excludedInterestIds.filter(id => id !== String(interest.id)))} />Wyklucz</label>
           </div>)}
         </details>
-        <details ref={groupsFilterRef} style={{ position: "relative" }}>
-          <summary style={{ cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
-            {isAllGroupsSelected ? "Wszystkie grupy" : `Grupy: wybrano ${effectiveSelectedGroupValues.length}`}
-          </summary>
-          <div style={{ position: "absolute", zIndex: 2, background: "white", border: "1px solid #bbb", borderRadius: 3, padding: 10, minWidth: 260, boxShadow: "0 2px 8px #0002" }}>
-            <div style={{ fontSize: "0.85em", fontWeight: 600, marginBottom: 4 }}>Wybierz widoczne grupy:</div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 5 }}>
-              <button type="button" className="button" onClick={() => { setGroupFilterActive(true); setSelectedGroupValues(allGroupValues); }}>Zaznacz wszystkie</button>
-              <button type="button" className="button" onClick={() => { setGroupFilterActive(true); setSelectedGroupValues([]); }}>Odznacz wszystkie</button>
-              <button type="button" className="button" onClick={() => { setGroupFilterActive(true); setSelectedGroupValues((values) => allGroupValues.filter((value) => !effectiveSelectedGroupValues.includes(value))); }}>Odwróć wybór</button>
-            </div>
-            {groups.map((g) => (
-              <div key={`include-${g.id}`} className="group-filter-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                <label style={{ display: "block", whiteSpace: "nowrap" }}>
-                  <input
-                    type="checkbox"
-                    checked={effectiveSelectedGroupValues.includes(String(g.id))}
-                    onChange={(e) => { setGroupFilterActive(true); setSelectedGroupValues(e.target.checked ? [...effectiveSelectedGroupValues, String(g.id)] : effectiveSelectedGroupValues.filter((value) => value !== String(g.id))); }}
-                  /> {g.name}
-                </label>
-                <button
-                  type="button"
-                  className="group-filter-only button"
-                  style={{ padding: "1px 6px", fontSize: "0.8em" }}
-                  onClick={() => { setGroupFilterActive(true); setSelectedGroupValues([String(g.id)]); }}
-                >only</button>
-              </div>
-            ))}
-            <label style={{ display: "block", whiteSpace: "nowrap", borderTop: "1px solid #ddd", marginTop: 8, paddingTop: 8 }}>
-              <input
-                type="checkbox"
-                checked={effectiveSelectedGroupValues.includes(UNGROUPED_VALUE)}
-                onChange={(e) => { setGroupFilterActive(true); setSelectedGroupValues(e.target.checked ? [...effectiveSelectedGroupValues, UNGROUPED_VALUE] : effectiveSelectedGroupValues.filter((value) => value !== UNGROUPED_VALUE)); }}
-              /> (bez grupy)
-            </label>
-          </div>
-        </details>
+        <MultiSelectFilter
+          options={groups.map(group => ({ value: String(group.id), label: group.name }))}
+          selectedValues={effectiveSelectedGroupValues}
+          onChange={values => { setGroupFilterActive(true); setSelectedGroupValues(values); }}
+          labels={{ all: "Wszystkie grupy", selected: "Grupy", heading: "Wybierz widoczne grupy:" }}
+          emptyOption={{ value: UNGROUPED_VALUE, label: "(bez grupy)" }}
+        />
         <select value={archived} onChange={(e) => setArchived(e.target.value)} style={{ padding: "6px 10px" }}>
           <option value="">Aktywne</option>
           <option value="1">Zarchiwizowane</option>

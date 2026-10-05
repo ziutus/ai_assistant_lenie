@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthorizationState } from "../../../types";
 import { AuthorizationContext } from "../context/authorizationContext";
 import List from "./list";
+import { BrowseTelemetry } from "../utils/browseTelemetry";
 
 vi.mock("axios");
 const mockedGet = axios.get as unknown as ReturnType<typeof vi.fn>;
@@ -129,6 +130,35 @@ describe("List telemetry", () => {
       url.endsWith("/website_list") ? { websites: [], all_results_count: 0 }
         : { states: ["ALL"], types: ["obsidian_note"], errors: [] },
     }));
+  });
+
+  it("marks every topic filter action as manual, including only and the empty option", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: async () => ({
+      content_groups: [{ id: 1, name: "Nauka", kind: "topic" }],
+    }) }));
+    const manual = vi.spyOn(BrowseTelemetry.prototype, "manual");
+    try {
+      render(<AuthorizationContext.Provider value={auth}>
+        <MemoryRouter initialEntries={["/list"]}><List /></MemoryRouter>
+      </AuthorizationContext.Provider>);
+      fireEvent.click(screen.getByText("Wszystkie tematy", { selector: "summary" }));
+      await screen.findByLabelText("Nauka");
+      const actions = [
+        () => fireEvent.click(screen.getByRole("button", { name: "Tylko Nauka" })),
+        () => fireEvent.click(screen.getByRole("button", { name: "Tylko (bez tematów)" })),
+        () => fireEvent.click(screen.getByLabelText("Nauka")),
+        () => fireEvent.click(screen.getByLabelText("(bez tematów)")),
+        ...["Zaznacz wszystkie", "Odznacz wszystkie", "Odwróć wybór"].map(name =>
+          () => fireEvent.click(screen.getByRole("button", { name }))),
+      ];
+      for (const action of actions) {
+        manual.mockClear();
+        action();
+        expect(manual).toHaveBeenCalledExactlyOnceWith("topic_filter_active", "topic_group_ids", "include_without_topics");
+      }
+    } finally {
+      manual.mockRestore();
+    }
   });
 
   it("sends initial remembered/url origins then manual application with a fresh event and browse", async () => {

@@ -1,3 +1,4 @@
+import MultiSelectFilter from "../components/MultiSelectFilter/MultiSelectFilter";
 import { BrowseTelemetry, listOrigins, type BrowseAction } from "../utils/browseTelemetry";
 import React from "react";
 import { useList } from "../hooks/useList";
@@ -52,7 +53,6 @@ const List = () => {
   );
   const [copyMessage, setCopyMessage] = React.useState("");
   const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
-  const topicsFilterRef = React.useRef<HTMLDetailsElement>(null);
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
   const readerListContext = searchParams.toString();
   const [topicFilterActive, setTopicFilterActive] = React.useState(
@@ -74,17 +74,6 @@ const List = () => {
   React.useEffect(() => {
     void fetch(`${apiUrl}/content_groups`, { headers: { "x-api-key": apiKey || "" } }).then(response => response.json()).then(body => setContentGroups(Array.isArray(body.content_groups) ? body.content_groups : [])).catch(() => undefined);
   }, [apiUrl, apiKey]);
-
-  React.useEffect(() => {
-    const closeTopicsFilterOnOutsideClick = (event: PointerEvent) => {
-      const filter = topicsFilterRef.current;
-      if (filter?.open && !filter.contains(event.target as Node)) {
-        filter.open = false;
-      }
-    };
-    document.addEventListener("pointerdown", closeTopicsFilterOnOutsideClick);
-    return () => document.removeEventListener("pointerdown", closeTopicsFilterOnOutsideClick);
-  }, []);
 
   const toggleObsidianExpanded = (id: number) => {
     setExpandedObsidian(prev => {
@@ -379,30 +368,16 @@ const List = () => {
           ); }} />
         Without embedding
       </label>
-      <details ref={topicsFilterRef} style={{ position: "relative", display: "inline-block", marginLeft: 12, verticalAlign: "middle" }}>
-        <summary style={{ cursor: "pointer", padding: "6px 10px", border: "1px solid #bbb", borderRadius: 3 }}>
-          {isAllTopicsSelected ? "Wszystkie tematy" : `Tematy: wybrano ${effectiveSelectedTopicValues.length}`}
-        </summary>
-        <div style={{ position: "absolute", zIndex: 2, background: "white", border: "1px solid #bbb", borderRadius: 3, padding: 10, minWidth: 260, boxShadow: "0 2px 8px #0002" }}>
-          <div style={{ fontSize: "0.85em", fontWeight: 600, marginBottom: 4 }}>Wybierz widoczne tematy:</div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 5 }}>
-            <button type="button" className="button" onClick={() => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues(allTopicValues); }}>Zaznacz wszystkie</button>
-            <button type="button" className="button" onClick={() => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues([]); }}>Odznacz wszystkie</button>
-            <button type="button" className="button" onClick={() => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues(values => allTopicValues.filter(value => !effectiveSelectedTopicValues.includes(value))); }}>Odwróć wybór</button>
-          </div>
-          {contentGroups.filter(group => group.kind === "topic").map(group => (
-            <label key={group.id} style={{ display: "block", whiteSpace: "nowrap" }}>
-              <input type="checkbox" checked={effectiveSelectedTopicValues.includes(String(group.id))}
-                onChange={event => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues(values => event.target.checked ? [...effectiveSelectedTopicValues, String(group.id)] : effectiveSelectedTopicValues.filter(value => value !== String(group.id))); }} /> {group.name}
-            </label>
-          ))}
-          <label style={{ display: "block", whiteSpace: "nowrap", borderTop: "1px solid #ddd", marginTop: 8, paddingTop: 8 }}>
-            <input type="checkbox" checked={effectiveSelectedTopicValues.includes(WITHOUT_TOPICS_VALUE)}
-              onChange={event => { tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics"); setTopicFilterActive(true); setSelectedTopicValues(values => event.target.checked ? [...effectiveSelectedTopicValues, WITHOUT_TOPICS_VALUE] : effectiveSelectedTopicValues.filter(value => value !== WITHOUT_TOPICS_VALUE)); }} /> (bez tematów)
-          </label>
-          <label style={{ display: "block", marginTop: 8 }}>Dopasowanie tematów <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => { tel.manual("topic_match"); setTopicMatch(event.target.value as "any" | "all"); }}><option value="any">Dowolny temat</option><option value="all">Wszystkie tematy</option></select></label>
-        </div>
-      </details>
+      <MultiSelectFilter
+        options={contentGroups.filter(group => group.kind === "topic").map(group => ({ value: String(group.id), label: group.name }))}
+        selectedValues={effectiveSelectedTopicValues}
+        onChange={values => { setTopicFilterActive(true); setSelectedTopicValues(values); }}
+        onTelemetry={() => tel.manual("topic_filter_active", "topic_group_ids", "include_without_topics")}
+        labels={{ all: "Wszystkie tematy", selected: "Tematy", heading: "Wybierz widoczne tematy:" }}
+        emptyOption={{ value: WITHOUT_TOPICS_VALUE, label: "(bez tematów)" }}
+        style={{ display: "inline-block", marginLeft: 12, verticalAlign: "middle" }}
+      />
+      <label style={{ marginLeft: 12 }}>Dopasowanie tematów <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => { tel.manual("topic_match"); setTopicMatch(event.target.value as "any" | "all"); }}><option value="any">Dowolny temat</option><option value="all">Wszystkie tematy</option></select></label>
       <label style={{ marginLeft: 12 }}>Priorytet <select value={priorityGroupId || ""} onChange={event => { tel.manual("priority_group_id"); setPriorityGroupId(event.target.value ? Number(event.target.value) : undefined); }}><option value="">Wszystkie</option>{contentGroups.filter(group => group.kind === "priority").map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
       <label style={{ marginLeft: 12 }}>Sortowanie <select value={groupSort} onChange={event => { tel.manual("sort"); setGroupSort(event.target.value as "newest" | "priority"); }}><option value="priority">Według priorytetu</option><option value="newest">Najnowsze</option></select></label>
       <label style={{ marginLeft: 12 }}><input type="checkbox" checked={withoutPriority} onChange={event => { tel.manual("without_priority", "priority_group_id"); setWithoutPriority(event.target.checked); if (event.target.checked) setPriorityGroupId(undefined); }} /> Bez priorytetu</label>
