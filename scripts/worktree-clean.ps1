@@ -105,7 +105,10 @@ $all = @(Get-Worktrees | Where-Object { $_.Path -like "$wtRoot\*" })
 
 if ($Cwd) {
     # Hook mode: only the worktree containing $Cwd, and only after its session ends.
-    $target = $all | Where-Object { ($Cwd -replace '/', '\') -like "$($_.Path)*" } | Select-Object -First 1
+    $cwdNorm = ($Cwd -replace '/', '\').TrimEnd('\')
+    $target = $all |
+        Where-Object { $cwdNorm -eq $_.Path -or $cwdNorm -like "$($_.Path)\*" } |
+        Sort-Object { $_.Path.Length } -Descending | Select-Object -First 1
     if (-not $target) { exit 0 }
     $lockPid = Get-LockPid $target.Path
     if ($lockPid) {
