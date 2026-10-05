@@ -1,4 +1,4 @@
-"""inotify-based watcher for the Obsidian vault pilot subfolders (Story 42.3).
+"""inotify-based watcher for the Obsidian vault sync subfolders (Story 42.3).
 
 Runs on its own ``watchdog`` Observer thread inside the coordinator
 (``--scheduler``) ``lenie-worker`` process, alongside the existing
@@ -7,7 +7,8 @@ NFS/SMB — see ``infra/docker/compose.nas.yaml``), so kernel inotify events
 are available and reliable.
 
 On a create/modify/move event for a ``.md`` file under one of
-``obsidian_reimport_service.PILOT_SUBFOLDERS``, debounces per relative path
+the configured sync folders (``OBSIDIAN_SYNC_SUBFOLDERS``, see
+``obsidian_sync_config.py``), debounces per relative path
 (editors and Obsidian Sync commonly write a file more than once per logical
 edit) and then enqueues a *targeted* ``obsidian_reimport`` job for that one
 note — see ``obsidian_reimport_service.execute_obsidian_reimport()``'s
@@ -25,7 +26,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -34,7 +35,7 @@ from watchdog.observers import Observer
 
 from library.db.models import Job
 from library.job_queue import enqueue
-from library.obsidian_reimport_service import PILOT_SUBFOLDERS
+from library.obsidian_sync_config import SyncFolder
 
 logger = logging.getLogger(__name__)
 
@@ -120,17 +121,24 @@ class DebouncedReimportHandler(FileSystemEventHandler):
             session.close()
 
 
-def start_watcher(session_factory: Callable[[], Session], vault_path: Path) -> Observer | None:
-    """Start a background Observer watching the pilot subfolders for ``.md``
-    changes. Returns the started Observer, or ``None`` if none of the pilot
-    subfolders exist (nothing to watch)."""
+def start_watcher(
+    session_factory: Callable[[], Session], vault_path: Path, folders: Sequence[SyncFolder]
+) -> Observer | None:
+    """Start a background Observer watching the configured sync folders for
+    ``.md`` changes. Returns the started Observer, or ``None`` if none of the
+    folders exist (nothing to watch). The folder list is fixed for the
+    lifetime of the observer: changing the configuration needs a worker
+    restart, and a folder created later is only picked up after one too."""
     handler = DebouncedReimportHandler(session_factory, vault_path)
     observer = Observer()
     watched_any = False
-    for subfolder, _is_private in PILOT_SUBFOLDERS:
-        folder = vault_path / subfolder
+    for sync_folder in folders:
+        folder = vault_path / sync_folder.path
         if not folder.is_dir():
-            logger.warning("obsidian_vault_watcher: configured subfolder missing: %s", folder)
+            logger.warning(
+                "obsidian_vault_watcher: configured subfolder missing (restart the worker once it exists): %s",
+                folder,
+            )
             continue
         observer.schedule(handler, str(folder), recursive=True)
         watched_any = True
@@ -140,5 +148,5 @@ def start_watcher(session_factory: Callable[[], Session], vault_path: Path) -> O
 
     observer.daemon = True
     observer.start()
-    logger.info("obsidian_vault_watcher: watching pilot subfolders under %s", vault_path)
+    logger.info("obsidian_vault_watcher: watching sync subfolders under %s", vault_path)
     return observer

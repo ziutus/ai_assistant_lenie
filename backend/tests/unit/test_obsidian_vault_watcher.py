@@ -14,7 +14,10 @@ import pytest
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("watchdog")
 
+from library.obsidian_sync_config import SyncFolder
 from library.obsidian_vault_watcher import DebouncedReimportHandler, start_watcher
+
+FOLDERS = (SyncFolder("02-wiedza/Informatyka", False),)
 
 
 def _event(src_path, is_directory=False, dest_path=None):
@@ -143,13 +146,13 @@ class TestDebouncedReimportHandler:
 
 
 class TestStartWatcher:
-    def test_returns_none_when_no_pilot_subfolder_exists(self, tmp_path):
-        assert start_watcher(MagicMock(), tmp_path) is None
+    def test_returns_none_when_no_sync_folder_exists(self, tmp_path):
+        assert start_watcher(MagicMock(), tmp_path, FOLDERS) is None
 
-    def test_starts_observer_when_a_pilot_subfolder_exists(self, tmp_path):
+    def test_starts_observer_when_a_sync_folder_exists(self, tmp_path):
         (tmp_path / "02-wiedza/Informatyka").mkdir(parents=True)
 
-        observer = start_watcher(MagicMock(), tmp_path)
+        observer = start_watcher(MagicMock(), tmp_path, FOLDERS)
         try:
             assert observer is not None
             assert observer.is_alive()

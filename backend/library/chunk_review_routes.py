@@ -1623,7 +1623,7 @@ def document_obsidian_notes(doc_id: int):
 
     # obsidian_note_paths entries are not consistently vault-root-relative —
     # older data omits the `02-wiedza/` prefix the reimporter's Document.url
-    # always carries (obsidian_reimport_service.PILOT_SUBFOLDERS). Try both
+    # always carries (the OBSIDIAN_SYNC_SUBFOLDERS folders). Try both
     # forms so a note saved before this was standardized still resolves.
     def _url_candidates(path: str) -> list[str]:
         candidates = [f"obsidian://{path}"]

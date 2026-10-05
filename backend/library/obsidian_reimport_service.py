@@ -39,6 +39,7 @@ import logging
 import re
 import time
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 
 from ruamel.yaml import YAML
@@ -52,12 +53,18 @@ from library.db.models import Document, DocumentEmbedding, Job
 from library.document_repository import DocumentRepository
 from library.document_service import DocumentService
 from library.job_queue import heartbeat
+from library.obsidian_sync_config import ObsidianSyncConfigError, SyncFolder, load_sync_folders
 from library.text_functions import get_hash
 
 logger = logging.getLogger(__name__)
 
 OBSIDIAN_REIMPORT = "obsidian_reimport"
 
+# Transitional default. The folders synchronized from the vault now come from
+# the ``OBSIDIAN_SYNC_SUBFOLDERS`` config key (see obsidian_sync_config.py);
+# this tuple is only used while that key is absent from the deployment's
+# config, and doubles as the migration snapshot to copy into Vault.
+#
 # Pilot scope per PRD (913 notes) -- Informatyka + Geopolityka only, not all
 # of 02-wiedza. Broadening this is a deliberate future decision, out of scope
 # for this story.
@@ -308,18 +315,38 @@ def _reimport_one_note(
     return "created" if existing is None else "updated"
 
 
-def _resolve_note_path(vault_path: Path, relative_path: str) -> tuple[Path, bool] | None:
+def _is_safe_note(vault_path: Path, note_path: Path, allowed_root: Path) -> bool:
+    """A note is readable only if neither it nor any directory between the
+    vault root and it is a symlink and it really resolves inside ``allowed_root``
+    (a symlink in a synced vault could otherwise point at a file outside the
+    configured folders)."""
+    try:
+        relative = note_path.relative_to(vault_path)
+    except ValueError:
+        return False
+    current = vault_path
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return False
+    resolved = note_path.resolve()
+    return resolved == allowed_root or allowed_root in resolved.parents
+
+
+def _resolve_note_path(
+    vault_path: Path, relative_path: str, folders: Sequence[SyncFolder]
+) -> tuple[Path, bool] | None:
     """Resolve a watcher-supplied relative path, refusing anything outside
-    the configured pilot subfolders (defence in depth against a path-
-    traversal payload reaching this far -- the watcher only ever emits
-    paths it observed under those subfolders itself)."""
-    candidate = (vault_path / relative_path).resolve()
+    the configured sync folders (defence in depth against a path-traversal
+    payload reaching this far -- the watcher only ever emits paths it
+    observed under those folders itself) and anything reached via a symlink."""
     vault_resolved = vault_path.resolve()
-    for subfolder, is_private in PILOT_SUBFOLDERS:
-        allowed_root = (vault_resolved / subfolder).resolve()
-        if candidate == allowed_root or allowed_root in candidate.parents:
-            return candidate, is_private
-    logger.warning("obsidian_reimport: relative_path outside pilot subfolders: %s", relative_path)
+    lexical = vault_path / relative_path
+    for folder in folders:
+        allowed_root = (vault_resolved / folder.path).resolve()
+        if _is_safe_note(vault_path, lexical, allowed_root):
+            return lexical.resolve(), folder.is_private
+    logger.warning("obsidian_reimport: relative_path outside sync folders: %s", relative_path)
     return None
 
 
@@ -337,6 +364,11 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
     cfg = load_config()
     vault_path = Path(cfg.get("OBSIDIAN_VAULT_PATH", "/app/obsidian-vault"))
     model = cfg.require("EMBEDDING_MODEL")
+    try:
+        folders = load_sync_folders(cfg, fallback=PILOT_SUBFOLDERS)
+    except ObsidianSyncConfigError:
+        logger.exception("obsidian_reimport: invalid OBSIDIAN_SYNC_SUBFOLDERS, nothing imported")
+        raise
 
     service = DocumentService(session)
     repo = DocumentRepository(session)
@@ -345,7 +377,7 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
 
     relative_path = job.parameters.get("relative_path") if job.parameters else None
     if relative_path:
-        resolved = _resolve_note_path(vault_path, relative_path)
+        resolved = _resolve_note_path(vault_path, relative_path, folders)
         if resolved is None or not resolved[0].is_file():
             counts["failed"] = 1
             return counts
@@ -357,15 +389,22 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
     # Pace full scans, including unchanged notes; zero disables the pause.
     scan_throttle_seconds = float(cfg.get("OBSIDIAN_SCAN_THROTTLE_SECONDS", "0.2"))
 
-    for subfolder, is_private in PILOT_SUBFOLDERS:
-        folder = vault_path / subfolder
+    vault_resolved = vault_path.resolve()
+    for sync_folder in folders:
+        folder = vault_path / sync_folder.path
         if not folder.is_dir():
             logger.warning("obsidian_reimport: configured subfolder missing: %s", folder)
             continue
+        allowed_root = (vault_resolved / sync_folder.path).resolve()
 
         for note_path in sorted(folder.rglob("*.md")):
+            if not _is_safe_note(vault_path, note_path, allowed_root):
+                logger.warning("obsidian_reimport: skipping note outside sync folder or behind a symlink: %s", note_path)
+                continue
             counts["scanned"] += 1
-            counts[_reimport_one_note(session, service, repo, model, vault_path, note_path, is_private)] += 1
+            counts[
+                _reimport_one_note(session, service, repo, model, vault_path, note_path, sync_folder.is_private)
+            ] += 1
             heartbeat(session, job.id, dict(counts))
             if scan_throttle_seconds > 0:
                 time.sleep(scan_throttle_seconds)

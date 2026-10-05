@@ -162,11 +162,15 @@ def _start_obsidian_watcher() -> None:
         from pathlib import Path
 
         from library.config_loader import load_config
+        from library.obsidian_reimport_service import PILOT_SUBFOLDERS
+        from library.obsidian_sync_config import load_sync_folders
         from library.obsidian_vault_watcher import start_watcher
 
         cfg = load_config()
         vault_path = Path(cfg.get("OBSIDIAN_VAULT_PATH", "/app/obsidian-vault"))
-        start_watcher(get_session, vault_path)
+        # The folder list is read once here; changing OBSIDIAN_SYNC_SUBFOLDERS
+        # needs a worker restart (the watcher's inotify watches are fixed).
+        start_watcher(get_session, vault_path, load_sync_folders(cfg, fallback=PILOT_SUBFOLDERS))
     except Exception:
         logger.exception("failed to start obsidian vault watcher")
 
