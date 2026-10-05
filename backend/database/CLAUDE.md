@@ -288,7 +288,7 @@ in Python (LLM output with stripped diacritics is canonicalized, e.g. "srednia" 
 Lookup/reference table of geopolitical "control questions" (analytical prompts like "Jaką ma armię w porównaniu
 do innych?"), imported from the Obsidian vault's `_pytania_kontrolne/` question bank by
 `imports/import_control_questions.py` — replace semantics per `source_file` (safe to re-run after editing
-questions in Obsidian). The backend (NAS) does have runtime read access to the vault for `library/obsidian_reimport_service.py` (Epic 42), but only under its two pilot subfolders (`02-wiedza/Informatyka`, `02-wiedza/Geopolityka i polityka`) — `_pytania_kontrolne/` is outside that scope, so this table remains the only copy of the question bank available to `library/control_question_selection.py`'s router at runtime.
+questions in Obsidian). The backend (NAS) does have runtime read access to the vault for `library/obsidian_reimport_service.py` (Epic 42), but only under its pilot subfolders (`02-wiedza/Informatyka`, `02-wiedza/Geopolityka i polityka`, `02-wiedza/Architektura i urbanistyka`) — `_pytania_kontrolne/` is outside that scope, so this table remains the only copy of the question bank available to `library/control_question_selection.py`'s router at runtime.
 
 | Column | Type | Description |
 |--------|------|-------------|
