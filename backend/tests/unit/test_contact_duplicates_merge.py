@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from library.contact_duplicates import dismiss_duplicate_pair, dismiss_duplicate_pairs_bulk, find_duplicate_candidates
-from library.contact_merge import merge_contacts
+from library.contact_merge import MERGE_FIELDS, merge_contacts
 from library.db.models import Contact, ContactChangeLog, ContactDuplicateDismissal, ContactRelationship
 
 
@@ -83,6 +83,22 @@ def test_detection_excludes_empty_names_archived_and_dismissed_pairs():
     find_duplicate_candidates(session, include_archived=True)
     sql = str(session.execute.call_args.args[0].compile(dialect=postgresql.dialect()))
     assert "is_archived IS false" not in sql
+
+
+@pytest.mark.parametrize("field", MERGE_FIELDS)
+@pytest.mark.parametrize("left,right,expected", [
+    ("same", "same", True), (None, "value", True), ("value", "", True),
+    ("first", "second", False), (None, [], True),
+    ([{"language": "pl", "native": True}], [{"language": "pl", "native": True}], True),
+    ([], ["PL"], True), (["PL"], ["DE"], False),
+])
+def test_duplicate_auto_mergeable_checks_every_merge_field(field, left, right, expected):
+    first, second = Contact(id=1), Contact(id=2)
+    setattr(first, field, left)
+    setattr(second, field, right)
+    session = MagicMock()
+    session.execute.return_value = [(first, second, 1.0)]
+    assert find_duplicate_candidates(session)[0]["auto_mergeable"] is expected
 
 
 def test_merge_preserves_history_channels_and_resolves_relationship_conflicts():
