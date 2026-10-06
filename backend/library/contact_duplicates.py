@@ -3,6 +3,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import aliased, joinedload, selectinload
 
+from library.contact_merge import MERGE_FIELDS
 from library.db.models import Contact, ContactDuplicateDismissal
 
 NAME_SIMILARITY_THRESHOLD = 0.5
@@ -45,6 +46,12 @@ def find_duplicate_candidates(session, *, include_archived: bool = False) -> lis
             reasons.append("wspólna grupa")
         candidates.append({
             "contact_a": first, "contact_b": second,
+            "auto_mergeable": all(
+                getattr(first, field) == getattr(second, field)
+                or getattr(first, field) in (None, "", [])
+                or getattr(second, field) in (None, "", [])
+                for field in MERGE_FIELDS
+            ),
             "score": min(1.0, float(name_score) + CORROBORATION_BONUS * len(reasons)), "reasons": reasons,
         })
     return sorted(candidates, key=lambda pair: (-pair["score"], pair["contact_a"].id, pair["contact_b"].id))

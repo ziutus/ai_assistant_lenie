@@ -3,17 +3,8 @@ import axios from "axios";
 import { NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 
-const MERGE_FIELDS = [
-  ["first_name", "Imię"], ["last_name", "Nazwisko"], ["gender", "Płeć"], ["display_label", "Nazwa robocza"],
-  ["phone_number", "Główny telefon"], ["email", "Główny e-mail"], ["company", "Firma"], ["position", "Stanowisko"],
-  ["current_city", "Miejscowość"], ["hometown", "Miejscowość rodzinna"], ["birthday", "Data urodzenia"],
-  ["birthday_month", "Miesiąc urodzenia"], ["birthday_day", "Dzień urodzenia"], ["pesel", "PESEL"],
-  ["notes", "Notatki"], ["private_notes", "Notatki prywatne"], ["category_id", "Kategoria"],
-  ["languages", "Języki"], ["nationality", "Obywatelstwo"], ["photo_storage_key", "Zdjęcie"],
-  ["photo_thumbnail_storage_key", "Miniatura zdjęcia"],
-] as const;
-type Field = typeof MERGE_FIELDS[number][0];
-type Choices = Record<Field, "primary" | "duplicate">;
+import { MERGE_FIELDS, Choices, Field, isEmpty, defaultChoices } from "../utils/contactMerge";
+
 interface MergeContact extends Record<string, unknown> {
   id: number;
   display_name: string;
@@ -27,7 +18,6 @@ const COLLECTIONS = [
   ["email_addresses", "Adresy e-mail"], ["events", "Wydarzenia"], ["relationships", "Powiązania"],
   ["organizations", "Organizacje"], ["addresses", "Adresy"], ["education", "Wykształcenie"], ["links", "Linki"],
 ];
-const isEmpty = (value: unknown) => value == null || value === "" || (Array.isArray(value) && value.length === 0);
 const displayValue = (contact: MergeContact, field: Field): React.ReactNode => {
   const value = contact[field];
   if (isEmpty(value)) return "—";
@@ -84,9 +74,7 @@ const ContactMerge = () => {
     }))).then(responses => {
       const pair = responses.map(response => response.data.contact) as [MergeContact, MergeContact];
       setContacts(pair);
-      setChoices(Object.fromEntries(MERGE_FIELDS.map(([field]) => [field,
-        isEmpty(pair[0][field]) && !isEmpty(pair[1][field]) ? "duplicate" : "primary",
-      ])) as Choices);
+      setChoices(defaultChoices(pair[0], pair[1]));
     }).catch(error => {
       if (!controller.signal.aborted) setMessage(`Nie udało się pobrać kontaktów: ${error.response?.data?.message || error.message}`);
     }).finally(() => { if (!controller.signal.aborted) setIsLoading(false); });
@@ -104,6 +92,13 @@ const ContactMerge = () => {
       setMessage(`Nie udało się scalić kontaktów: ${error.response?.data?.message || error.message}`);
     } finally { setIsSaving(false); }
   };
+  const differingFields = contacts ? MERGE_FIELDS.filter(([field]) =>
+    !(isEmpty(contacts[0][field]) && isEmpty(contacts[1][field]))
+    && JSON.stringify(contacts[0][field]) !== JSON.stringify(contacts[1][field])) : [];
+  const nonEmptyCollections = contacts ? COLLECTIONS.filter(([field]) =>
+    count(contacts[0], field) > 0 || count(contacts[1], field) > 0) : [];
+  const nonEmptyChannels = contacts ? CHANNEL_COLLECTIONS.filter(([field]) =>
+    channelEntries(contacts[0], field).length > 0 || channelEntries(contacts[1], field).length > 0) : [];
   return <div>
     <h2>Scalanie kontaktów</h2>
     {isLoading && <div className="loader" />}
@@ -111,9 +106,9 @@ const ContactMerge = () => {
     {contacts && <>
       <p>Scalenie zachowa kontakt A: <strong>{contacts[0].display_name} (#{contacts[0].id})</strong> i usunie kontakt B: <strong>{contacts[1].display_name} (#{contacts[1].id})</strong>. Wybory poniżej określają wyłącznie zachowane wartości pól.</p>
       <button className="button" disabled={isSaving} onClick={() => navigate(`/contacts/merge?a=${b}&b=${a}`)}>Zamień stronami</button>
-      <div className="contact-merge-scroll"><table className="contact-merge-table">
+      {differingFields.length === 0 ? <p>Kontakty są identyczne. Scalenie zachowa #{contacts[0].id} i usunie #{contacts[1].id}.</p> : <div className="contact-merge-scroll"><table className="contact-merge-table">
         <thead><tr><th>Pole</th><th>A: {contacts[0].display_name}</th><th>B: {contacts[1].display_name}</th></tr></thead>
-        <tbody>{MERGE_FIELDS.map(([field, label]) => <tr key={field}>
+        <tbody>{differingFields.map(([field, label]) => <tr key={field}>
           <th scope="row">{label}</th>
           {contacts.map((contact, index) => <td key={contact.id}><label>
             <input type="radio" name={field} disabled={isSaving} checked={choices[field] === (index === 0 ? "primary" : "duplicate")}
@@ -122,13 +117,14 @@ const ContactMerge = () => {
             {displayValue(contact, field)}
           </label></td>)}
         </tr>)}</tbody>
-      </table></div>
-      <h3>Dane łączone automatycznie</h3>
+      </table></div>}
+      <p>{MERGE_FIELDS.length - differingFields.length} pól identycznych lub pustych</p>
+      {nonEmptyCollections.length > 0 && <><h3>Dane łączone automatycznie</h3>
       <p>Wspólne grupy, zainteresowania, kanały i uczestnictwa nie będą powielane. Bezpośrednie powiązania między A i B zostaną usunięte.</p>
-      <ul>{COLLECTIONS.map(([field, label]) => <li key={field}>{label}: A — {count(contacts[0], field)}, B — {count(contacts[1], field)}</li>)}</ul>
-      <h3>Telefony i e-maile po scaleniu (podgląd)</h3>
+      <ul>{nonEmptyCollections.map(([field, label]) => <li key={field}>{label}: A — {count(contacts[0], field)}, B — {count(contacts[1], field)}</li>)}</ul></>}
+      {nonEmptyChannels.length > 0 && <><h3>Telefony i e-maile po scaleniu (podgląd)</h3>
       <p>Kontakt będzie miał wszystkie poniższe wpisy; powtórzone numery i adresy zostaną połączone w jeden. Wybrany wyżej główny telefon/e-mail trafi na początek listy.</p>
-      {CHANNEL_COLLECTIONS.map(([field, label]) => {
+      {nonEmptyChannels.map(([field, label]) => {
         const merged = mergedChannels(contacts, field);
         return <div key={field}>
           <strong>{label}</strong>
@@ -138,7 +134,7 @@ const ContactMerge = () => {
             <li>Po scaleniu ({merged.length}): {merged.map(formatEntry).join(", ") || "—"}</li>
           </ul>
         </div>;
-      })}
+      })}</>}
       <button className="button" disabled={isSaving} onClick={() => void merge()}>{isSaving ? "Scalanie…" : "Scal kontakty"}</button>
     </>}
     {!isSaving && <p><NavLink to="/contacts/duplicates">Wróć</NavLink></p>}
