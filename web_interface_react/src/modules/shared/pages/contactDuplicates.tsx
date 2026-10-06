@@ -1,8 +1,9 @@
 import React from "react";
 import axios from "axios";
-import { NavLink } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { defaultChoices } from "../utils/contactMerge";
+import { isNameOnlyPhoneConflict } from "../utils/contactDuplicatePhones";
 
 interface DuplicateContact {
   id: number;
@@ -27,6 +28,8 @@ interface DuplicatePair {
 
 const ContactDuplicates = () => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const hidePhoneConflict = searchParams.get("hide_phone_conflict") === "1";
   const [pairs, setPairs] = React.useState<DuplicatePair[]>([]);
   const [includeArchived, setIncludeArchived] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -38,6 +41,15 @@ const ContactDuplicates = () => {
   const [mergePending, setMergePending] = React.useState(false);
   const [refresh, setRefresh] = React.useState(0);
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
+  const visiblePairs = React.useMemo(() => hidePhoneConflict
+    ? pairs.filter(pair => !isNameOnlyPhoneConflict(pair)) : pairs, [pairs, hidePhoneConflict]);
+  const hiddenCount = pairs.length - visiblePairs.length;
+  const selectedPairs = visiblePairs.filter(pair => selected.has(`${pair.contact_a.id}-${pair.contact_b.id}`));
+
+  React.useEffect(() => {
+    const visibleKeys = new Set(visiblePairs.map(pair => `${pair.contact_a.id}-${pair.contact_b.id}`));
+    setSelected(current => new Set([...current].filter(key => visibleKeys.has(key))));
+  }, [visiblePairs]);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -94,14 +106,14 @@ const ContactDuplicates = () => {
   };
 
   const dismissSelected = async () => {
-    if (selected.size === 0 || bulkPending || pending.length > 0) return;
-    const selectedPairs = pairs.filter(pair => selected.has(`${pair.contact_a.id}-${pair.contact_b.id}`));
+    if (selectedPairs.length === 0 || bulkPending || pending.length > 0) return;
+    const dismissedKeys = new Set(selectedPairs.map(pair => `${pair.contact_a.id}-${pair.contact_b.id}`));
     setBulkPending(true);
     try {
       await axios.post(`${apiUrl}/contacts/duplicates/dismiss_bulk`, {
         pairs: selectedPairs.map(pair => ({ contact_id_a: pair.contact_a.id, contact_id_b: pair.contact_b.id })),
       }, { headers });
-      setPairs(current => current.filter(pair => !selected.has(`${pair.contact_a.id}-${pair.contact_b.id}`)));
+      setPairs(current => current.filter(pair => !dismissedKeys.has(`${pair.contact_a.id}-${pair.contact_b.id}`)));
       setSelected(new Set()); setMessage("");
     } catch (error: any) {
       setMessage(`Nie udało się odrzucić zaznaczonych par: ${error.response?.data?.message || error.message}`);
@@ -112,24 +124,36 @@ const ContactDuplicates = () => {
 
   return <div className="contact-duplicates">
     <h2>Duplikaty kontaktów</h2>
+    <label className="contact-duplicate-selection"><input type="checkbox" checked={hidePhoneConflict}
+      disabled={bulkPending || mergePending}
+      onChange={event => {
+        const checked = event.target.checked;
+        setSearchParams(current => {
+          const next = new URLSearchParams(current);
+          if (checked) next.set("hide_phone_conflict", "1"); else next.delete("hide_phone_conflict");
+          return next;
+        });
+      }} /> Ukryj pary z różnymi numerami telefonu</label>
     <label><input type="checkbox" checked={includeArchived} disabled={bulkPending || mergePending} onChange={event => setIncludeArchived(event.target.checked)} /> Uwzględnij zarchiwizowane</label>
     <div className="contact-duplicate-toolbar">
       <label className="contact-duplicate-selection">
-        <input type="checkbox" checked={pairs.length > 0 && selected.size === pairs.length}
-          ref={input => { if (input) input.indeterminate = selected.size > 0 && selected.size < pairs.length; }}
-          disabled={isLoading || bulkPending || pairs.length === 0}
+        <input type="checkbox" checked={visiblePairs.length > 0 && selectedPairs.length === visiblePairs.length}
+          ref={input => { if (input) input.indeterminate = selectedPairs.length > 0 && selectedPairs.length < visiblePairs.length; }}
+          disabled={isLoading || bulkPending || visiblePairs.length === 0}
           onChange={event => setSelected(event.target.checked
-            ? new Set(pairs.map(pair => `${pair.contact_a.id}-${pair.contact_b.id}`)) : new Set())} />
+            ? new Set(visiblePairs.map(pair => `${pair.contact_a.id}-${pair.contact_b.id}`)) : new Set())} />
         Zaznacz wszystkie
       </label>
-      <span>Zaznaczono: {selected.size}</span>
-      <button className="button" disabled={selected.size === 0 || bulkPending || mergePending || pending.length > 0}
+      <span>Zaznaczono: {selectedPairs.length}</span>
+      <button className="button" disabled={selectedPairs.length === 0 || bulkPending || mergePending || pending.length > 0}
         onClick={() => void dismissSelected()}>Oznacz zaznaczone jako to nie duplikaty</button>
     </div>
     {isLoading && <div className="loader" />}
     {message && <p className="errorText" role="alert">{message}</p>}
-    {!isLoading && !message && pairs.length === 0 && <p>Brak wykrytych duplikatów.</p>}
-    {pairs.map(pair => <article className="contact-duplicate-card" key={`${pair.contact_a.id}-${pair.contact_b.id}`}>
+    {hiddenCount > 0 && <p>Ukryto {hiddenCount} par z różnymi numerami telefonu</p>}
+    {!isLoading && !message && visiblePairs.length === 0 && <p>{hiddenCount > 0
+      ? "Brak par do wyświetlenia po zastosowaniu filtra." : "Brak wykrytych duplikatów."}</p>}
+    {visiblePairs.map(pair => <article className="contact-duplicate-card" key={`${pair.contact_a.id}-${pair.contact_b.id}`}>
       <label className="contact-duplicate-selection">
         <input type="checkbox" checked={selected.has(`${pair.contact_a.id}-${pair.contact_b.id}`)}
           disabled={bulkPending}
