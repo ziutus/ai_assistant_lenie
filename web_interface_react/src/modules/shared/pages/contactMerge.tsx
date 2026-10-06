@@ -40,6 +40,26 @@ const displayValue = (contact: MergeContact, field: Field): React.ReactNode => {
   if (field === "languages" && Array.isArray(value)) return value.map(item => `${item.language}${item.native ? " (ojczysty)" : item.level ? ` (${item.level})` : ""}`).join(", ");
   return Array.isArray(value) ? value.join(", ") : String(value);
 };
+interface ChannelEntry { value: string; label?: string | null }
+const CHANNEL_COLLECTIONS = [["phone_numbers", "Telefony"], ["email_addresses", "Adresy e-mail"]] as const;
+const channelEntries = (contact: MergeContact, field: string): ChannelEntry[] =>
+  Array.isArray(contact[field]) ? (contact[field] as ChannelEntry[]).filter(entry => entry?.value) : [];
+// Approximate preview key; the backend's normalization is authoritative (PL numbers: +48 prefix is optional).
+const channelKey = (value: string, field: string) => {
+  if (field !== "phone_numbers") return value.trim().toLowerCase();
+  const digits = value.replace(/\D/g, "");
+  return digits.length === 11 && digits.startsWith("48") ? digits.slice(2) : digits;
+};
+const formatEntry = (entry: ChannelEntry) => entry.label ? `${entry.value} (${entry.label})` : entry.value;
+const mergedChannels = (contacts: [MergeContact, MergeContact], field: string): ChannelEntry[] => {
+  const seen = new Set<string>();
+  return [...channelEntries(contacts[0], field), ...channelEntries(contacts[1], field)].filter(entry => {
+    const key = channelKey(entry.value, field);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 const count = (contact: MergeContact, field: string) => contact.merge_counts[field] ?? (Array.isArray(contact[field]) ? contact[field].length : 0);
 
 const ContactMerge = () => {
@@ -106,6 +126,19 @@ const ContactMerge = () => {
       <h3>Dane łączone automatycznie</h3>
       <p>Wspólne grupy, zainteresowania, kanały i uczestnictwa nie będą powielane. Bezpośrednie powiązania między A i B zostaną usunięte.</p>
       <ul>{COLLECTIONS.map(([field, label]) => <li key={field}>{label}: A — {count(contacts[0], field)}, B — {count(contacts[1], field)}</li>)}</ul>
+      <h3>Telefony i e-maile po scaleniu (podgląd)</h3>
+      <p>Kontakt będzie miał wszystkie poniższe wpisy; powtórzone numery i adresy zostaną połączone w jeden. Wybrany wyżej główny telefon/e-mail trafi na początek listy.</p>
+      {CHANNEL_COLLECTIONS.map(([field, label]) => {
+        const merged = mergedChannels(contacts, field);
+        return <div key={field}>
+          <strong>{label}</strong>
+          <ul>
+            <li>A: {channelEntries(contacts[0], field).map(formatEntry).join(", ") || "—"}</li>
+            <li>B: {channelEntries(contacts[1], field).map(formatEntry).join(", ") || "—"}</li>
+            <li>Po scaleniu ({merged.length}): {merged.map(formatEntry).join(", ") || "—"}</li>
+          </ul>
+        </div>;
+      })}
       <button className="button" disabled={isSaving} onClick={() => void merge()}>{isSaving ? "Scalanie…" : "Scal kontakty"}</button>
     </>}
     {!isSaving && <p><NavLink to="/contacts/duplicates">Wróć</NavLink></p>}
