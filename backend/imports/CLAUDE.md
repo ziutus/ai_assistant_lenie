@@ -45,6 +45,38 @@ imports/
 |--------|---------|-----------|
 | `rebuild_image_catalog_from_extracted.py` | One-document pilot: reconstruct missing URL image catalog from original `text_extracted` | ORM (SQLAlchemy); reads in dry-run, writes only with `--apply` |
 
+### `outline_chunk_preview.py`
+
+Read-only preview of outline-aligned chunks for a YouTube transcript without
+`chapter_list`. Requires non-empty `text` and approved `outline_md` with `###`
+topic headings. Fetches only `GET /website_get?id=<id>` using `LENIE_API_KEY`
+as the `x-api-key` header (default base URL: `http://192.168.200.7:5055`).
+Document access is REST-only; there are no REST writes or database connections.
+
+Uses CloudFerro Bielik (`Bielik-11B-v3.0-Instruct`, normal provider configuration)
+to quote topic starts, then validates exact or whitespace/diacritic-normalised
+matches. The CLI suppresses `ai_ask`'s automatic database usage recorder within
+this single-threaded preview process. Running it makes paid LLM requests but
+does not persist chunks, headings, analysis runs, or usage records.
+
+All transcript windows are examined with overlap. Ambiguous, missing, and
+out-of-order boundaries are dropped; the first retained topic starts at zero
+to absorb the introduction. Headings snap backwards to line/sentence starts;
+collisions fail explicitly. The existing chapter splitter caps long topics,
+then chunks under 1000 characters merge backwards (for the first chunk,
+forwards) when the combined text fits `--chunk-size`, including separators.
+Unmergeable small chunks remain visible. Invalid LLM JSON fails explicitly.
+
+**Running** (from `backend/`, with `PYTHONPATH=.` and `LENIE_API_KEY` set):
+```bash
+python -X utf8 imports/outline_chunk_preview.py 10458
+python -X utf8 imports/outline_chunk_preview.py 10458 --chunk-size 5000 --base-url http://192.168.200.7:5055
+```
+
+Prints old size-based and new outline-based chunk counts, lengths, first 100
+and last 80 characters, plus retained/dropped topic offsets. This is a diagnostic
+only; `create_run` and the production pipeline do not use these boundaries.
+
 ### `check_pdf_text_layer.py`
 
 Diagnostic for the book-PDF-import workflow: extracts text page-by-page with `pypdf` and reports what fraction of pages come back empty/near-empty. A high empty-page ratio means the PDF is scanned images with no embedded text layer and needs OCR (`test_code/ocr_mistral.py`, Mistral OCR API); a low ratio means the text layer can be used directly (no OCR cost/latency needed) before running it through `book_normalize.py` / `extract_references.py` and the rest of the chapter-based analysis pipeline. **Does not touch the Lenie database.**
