@@ -2,6 +2,7 @@ from library.browse_event_transport import browse_execution
 from flask import Flask, Response, g, request, abort, jsonify
 from flask_cors import CORS
 import logging
+import json
 import os
 from sqlalchemy import select
 
@@ -3096,6 +3097,16 @@ def website_save():
         value = request.form.get(attr)
         if value is not None:
             attrs[attr] = value
+
+    if 'outline_anchors' in request.form:
+        from library.outline_boundaries import validate_anchor_payload
+
+        raw_anchors = request.form['outline_anchors']
+        try:
+            payload = json.loads(raw_anchors) if raw_anchors else None
+            attrs['outline_anchors'] = None if payload is None else validate_anchor_payload(payload)
+        except ValueError as exc:
+            return {"status": "error", "message": f"Invalid outline_anchors: {exc}"}, 400
 
     session = get_scoped_session()
     service = DocumentService(session)

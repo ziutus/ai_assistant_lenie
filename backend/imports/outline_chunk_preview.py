@@ -1,19 +1,26 @@
 """Read-only REST preview of transcript chunks derived from an approved outline."""
 
 import argparse
+import json
 import os
 import re
+import sys
+from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 import requests
 
 from library.document_analysis_service import CHUNK_CHARS, _chapter_chunks_from_text
 from library.outline_boundaries import (
+    anchors_to_starts,
+    build_anchor_payload,
     insert_topic_headings,
     locate_topic_starts,
     merge_small_chunks,
     parse_outline_topics,
 )
+from library.chunk_llm_analysis import remove_speech_fillers
 from library.text_functions import split_text_into_sentence_chunks
 
 
@@ -42,6 +49,8 @@ def main(argv=None) -> int:
     parser.add_argument("id", type=int, help="YouTube document ID")
     parser.add_argument("--base-url", default="http://192.168.200.7:5055")
     parser.add_argument("--chunk-size", type=int, default=CHUNK_CHARS)
+    parser.add_argument("--quotes", type=Path, help="Session-model starts JSON; skip all LLM calls")
+    parser.add_argument("--emit-anchors", action="store_true", help="Print payload JSON to stdout; preview to stderr")
     args = parser.parse_args(argv)
     api_key = os.environ.get("LENIE_API_KEY")
     if not api_key:
@@ -67,19 +76,64 @@ def main(argv=None) -> int:
         topics = parse_outline_topics(doc["outline_md"])
         if not topics:
             raise ValueError("Outline must contain ### topic headings")
-        text = doc["text"]
-        _show("Old (size-based)", split_text_into_sentence_chunks(text, args.chunk_size))
-        starts = locate_topic_starts(text, topics, llm=_read_only_llm)
-        for topic, offset in zip(topics, starts):
-            print(f"Topic: {topic['title']} | start: {offset if offset is not None else 'DROPPED'}")
-        titles = [topic["title"] for topic in topics]
-        marked = insert_topic_headings(text, starts, titles)
-        retained_titles = [title for title, start in zip(titles, starts) if start is not None]
-        chunks = _chapter_chunks_from_text(marked, retained_titles, args.chunk_size)
-        if chunks is None:
-            raise ValueError("No usable outline boundaries; cannot produce an outline-based preview")
-        _show("New (outline-based)", merge_small_chunks(chunks, max_chars=args.chunk_size))
-    except (requests.RequestException, ValueError) as exc:
+        # Match production step 7, which receives filler-cleaned text.
+        text = remove_speech_fillers(doc["text"])
+        payload = None
+        if args.quotes:
+            quotes = json.loads(args.quotes.read_text(encoding="utf-8-sig"))
+            payload = build_anchor_payload(doc["text"], doc["outline_md"], quotes)
+        else:
+            collected = [set() for _ in topics]
+
+            def capture_llm(**kwargs):
+                response = _read_only_llm(**kwargs)
+                data = json.loads(response if isinstance(response, str) else response.response_text)
+                if not isinstance(data, dict) or not isinstance(data.get("starts"), list):
+                    raise ValueError("Expected an object with a starts array from the boundary locator")
+                for item in data.get("starts", []):
+                    if not isinstance(item, dict):
+                        continue
+                    index, sentence = item.get("id"), item.get("sentence")
+                    if (type(index) is int and 0 <= index < len(topics)
+                            and isinstance(sentence, str) and sentence.strip()):
+                        collected[index].add(sentence)
+                return response
+
+            starts = locate_topic_starts(
+                doc["text"] if args.emit_anchors else text, topics,
+                llm=capture_llm if args.emit_anchors else _read_only_llm,
+            )
+            if args.emit_anchors:
+                quotes = {"starts": [{"id": i, "sentence": next(iter(values)) if len(values) == 1 else None}
+                                     for i, values in enumerate(collected)]}
+                payload = build_anchor_payload(doc["text"], doc["outline_md"], quotes)
+        with redirect_stdout(sys.stderr if args.emit_anchors else sys.stdout):
+            _show("Old (size-based)", split_text_into_sentence_chunks(text, args.chunk_size))
+            if payload is not None:
+                kept = {(a["title"], a["sentence"]) for a in payload["anchors"]}
+                for i, topic in enumerate(topics):
+                    sentence = next((q["sentence"] for q in quotes["starts"] if q["id"] == i), None)
+                    if (topic["title"], sentence) not in kept:
+                        print(f"Topic: {topic['title']} | start: DROPPED")
+                topics = payload["anchors"]
+                starts = anchors_to_starts(text, topics)
+            for topic, offset in zip(topics, starts):
+                print(f"Topic: {topic['title']} | start: {offset if offset is not None else 'DROPPED'}")
+            titles = [topic["title"] for topic in topics]
+            retained_titles = [title for title, start in zip(titles, starts) if start is not None]
+            if len(retained_titles) < 2:
+                print("Fewer than 2 topics located; production will use the size-based split.")
+                chunks = split_text_into_sentence_chunks(text, args.chunk_size)
+            else:
+                marked = insert_topic_headings(text, starts, titles)
+                chunks = _chapter_chunks_from_text(marked, retained_titles, args.chunk_size)
+                if chunks is None:
+                    raise ValueError("No usable outline boundaries; cannot produce an outline-based preview")
+                chunks = merge_small_chunks(chunks, max_chars=args.chunk_size)
+            _show("New (outline-based)", chunks)
+        if args.emit_anchors:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+    except (requests.RequestException, ValueError, OSError) as exc:
         parser.exit(1, f"Preview failed: {exc}\n")
     return 0
 

@@ -53,7 +53,16 @@ topic headings. Fetches only `GET /website_get?id=<id>` using `LENIE_API_KEY`
 as the `x-api-key` header (default base URL: `http://192.168.200.7:5055`).
 Document access is REST-only; there are no REST writes or database connections.
 
-Uses CloudFerro Bielik (`Bielik-11B-v3.0-Instruct`, normal provider configuration)
+With `--quotes FILE.json`, reads `{"starts": [{"id": 0, "sentence": "Exact sentence."}]}`
+from the session model (zero-based topic IDs; `null` for uncertain sentences).
+This path skips the LLM entirely and needs no provider, Vault or DB configuration.
+`--emit-anchors` prints the validated version-1 payload JSON to stdout and sends
+the human-readable preview to stderr, so stdout can be saved as UTF-8 JSON.
+The payload binds anchors to the SHA-256 of the exact `outline_md`. Quotes are
+validated against the source transcript, then located in filler-cleaned text to
+match production step 7. Quotes retain their original wording in the payload.
+
+Without `--quotes`, uses CloudFerro Bielik (`Bielik-11B-v3.0-Instruct`, normal provider configuration)
 to quote topic starts, then validates exact or whitespace/diacritic-normalised
 matches. The CLI suppresses `ai_ask`'s automatic database usage recorder within
 this single-threaded preview process. Running it makes paid LLM requests but
@@ -70,12 +79,16 @@ Unmergeable small chunks remain visible. Invalid LLM JSON fails explicitly.
 **Running** (from `backend/`, with `PYTHONPATH=.` and `LENIE_API_KEY` set):
 ```bash
 python -X utf8 imports/outline_chunk_preview.py 10458
+python -X utf8 imports/outline_chunk_preview.py 10458 --quotes tmp/starts.json --emit-anchors
 python -X utf8 imports/outline_chunk_preview.py 10458 --chunk-size 5000 --base-url http://192.168.200.7:5055
 ```
 
 Prints old size-based and new outline-based chunk counts, lengths, first 100
 and last 80 characters, plus retained/dropped topic offsets. This is a diagnostic
-only; `create_run` and the production pipeline do not use these boundaries.
+only; it never saves the payload. After explicit approval, the skill can store it
+via REST. `create_run` uses stored matching-hash anchors when real chapters are
+absent and speaker labeling has not restructured the transcript. Fewer than two
+located topics are reported as a size-based fallback.
 
 ### `check_pdf_text_layer.py`
 
