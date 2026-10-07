@@ -640,7 +640,8 @@ class DocumentAnalysisService:
 
             # 7. Split into chunks — chapter-aware when the video has a YouTube
             #    chapter_list and speaker labeling didn't restructure the text
-            #    (see _chapter_chunks_from_text); otherwise blind sentence-chunk split.
+            #    (see _chapter_chunks_from_text). Without chapters, try approved
+            #    outline anchors before falling back to the size-based split.
             #    Gated on speaker_labels_applied rather than raw is_multi_speaker: a
             #    stray ">>" with fewer than 2 extracted speakers (or split_only mode,
             #    which skips extraction entirely — see step 4) never rebuilds the
@@ -654,6 +655,35 @@ class DocumentAnalysisService:
                 chunk_texts = _chapter_chunks_from_text(text, chapter_titles, chunk_size)
                 if chunk_texts:
                     log(f"chapter-aware split: {len(chapter_titles)} video chapters detected")
+            elif (
+                not speaker_labels_applied
+                and getattr(doc, "document_type", None) == "youtube"
+                and getattr(doc, "outline_anchors", None) is not None
+            ):
+                from hashlib import sha256
+                from library.outline_boundaries import (
+                    anchors_to_starts, insert_topic_headings, merge_small_chunks, validate_anchor_payload,
+                )
+
+                try:
+                    payload = validate_anchor_payload(doc.outline_anchors)
+                    outline = getattr(doc, "outline_md", None) or ""
+                    if payload["outline_sha256"] != sha256(outline.encode("utf-8")).hexdigest():
+                        log("outline anchors ignored: stale outline hash")
+                    else:
+                        starts = anchors_to_starts(text, payload["anchors"])
+                        titles = [anchor["title"] for anchor in payload["anchors"]]
+                        retained_titles = [title for title, start in zip(titles, starts) if start is not None]
+                        if len(retained_titles) >= 2:
+                            marked = insert_topic_headings(text, starts, titles)
+                            chunks = _chapter_chunks_from_text(marked, retained_titles, chunk_size)
+                            if chunks:
+                                chunk_texts = merge_small_chunks(chunks, max_chars=chunk_size)
+                                log(f"outline-anchor split: {len(retained_titles)} topics located")
+                        else:
+                            log("outline anchors ignored: fewer than 2 topics located")
+                except Exception as exc:
+                    log(f"outline anchors ignored: {exc}")
             if chunk_texts is None:
                 chunk_texts = split_text_into_sentence_chunks(text, chunk_size)
 

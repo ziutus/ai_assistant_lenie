@@ -710,6 +710,7 @@ class Document(Base):
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
     outline_md: Mapped[str | None] = mapped_column(Text)
+    outline_anchors: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     video_description: Mapped[str | None] = mapped_column(Text)
 
     processing_status: Mapped[str] = mapped_column(
@@ -994,6 +995,7 @@ class Document(Base):
             "document_length": self.document_length,
             "chapter_list": self.chapter_list,
             "outline_md": self.outline_md,
+            "outline_anchors": self.outline_anchors,
             "video_description": self.video_description,
             "processing_status": self.processing_status,
             "processing_error_code": self.processing_error_code or "NONE",

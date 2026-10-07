@@ -386,7 +386,7 @@ class DocumentService:
         """Look up or create a document, apply attribute updates, and commit.
 
         Accepted keyword attrs: text, text_md, title, language, tags, search_terms,
-        summary, outline_md, source, byline, email_sender, note.
+        summary, outline_md, outline_anchors, source, byline, email_sender, note.
 
         For webpages ``text_md`` is the canonical editable article body.
         ``text`` is maintained as a derived plain-text compatibility/search
@@ -396,6 +396,12 @@ class DocumentService:
         """
         if not url:
             raise ValueError("Missing data. Make sure you provide 'url'")
+
+        if "outline_anchors" in attrs:
+            from library.outline_boundaries import validate_anchor_payload
+
+            value = attrs["outline_anchors"]
+            attrs["outline_anchors"] = None if value is None or value == "" else validate_anchor_payload(value)
 
         if link_id is not None:
             doc = Document.get_by_id(self.session, int(link_id))
@@ -414,6 +420,9 @@ class DocumentService:
             value = attrs.get(attr)
             if value is not None:
                 setattr(doc, attr, value)
+
+        if "outline_anchors" in attrs:
+            doc.outline_anchors = attrs["outline_anchors"]
 
         # "source" arrives as a NAME (wire format) and resolves to the
         # discovery_sources FK, auto-creating unknown names (stage 11d).

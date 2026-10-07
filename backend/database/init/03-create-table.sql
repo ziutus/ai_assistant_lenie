@@ -23,6 +23,8 @@ create table documents
     original_id          text,
     document_length      integer,
     chapter_list         text,
+    outline_md           text,
+    outline_anchors      jsonb,
     video_description    text,
     processing_status       varchar(50) default 'URL_ADDED'::character varying not null,
     processing_error_code text,

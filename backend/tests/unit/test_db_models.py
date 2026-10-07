@@ -180,7 +180,7 @@ class TestWebDocumentColumns:
         "id", "summary", "url", "language", "tags", "text",
         "paywall", "requires_login", "social_platform", "title", "ingested_at", "document_type",
         "discovery_source_id", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
-        "chapter_list", "outline_md", "processing_status", "processing_error_code",
+        "chapter_list", "outline_md", "outline_anchors", "processing_status", "processing_error_code",
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "byline", "byline_method", "note", "uuid", "collection_id", "text_md",
         "text_extracted", "transcript_needed", "reviewed_at",
@@ -190,7 +190,7 @@ class TestWebDocumentColumns:
     }
 
     def test_column_count(self):
-        assert len(_column_names(Document)) == 45
+        assert len(_column_names(Document)) == 46
 
     def test_all_column_names(self):
         assert _column_names(Document) == self.EXPECTED_COLUMNS
@@ -543,14 +543,14 @@ class TestDict:
         assert doc.dict()["outline_md"] == outline
         assert doc.dict()["chapter_list"] == "0:00 Introduction"
 
-    def test_dict_has_44_keys(self):
+    def test_dict_has_45_keys(self):
         doc = _make_doc(
             title="Test",
             processing_error_code="NONE",
         )
         doc.ingested_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert len(result) == 44
+        assert len(result) == 45
 
     def test_dict_keys(self):
         doc = _make_doc(
@@ -563,7 +563,7 @@ class TestDict:
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "canonical_url", "language", "tags", "text", "paywall", "requires_login", "social_platform", "title",
             "ingested_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
-            "document_length", "chapter_list", "outline_md", "processing_status",
+            "document_length", "chapter_list", "outline_md", "outline_anchors", "processing_status",
             "processing_error_code", "text_raw", "transcript_job_id",
             "ai_summary_needed", "byline", "byline_method", "note", "uuid", "collection_id",
             "text_md", "transcript_needed",
