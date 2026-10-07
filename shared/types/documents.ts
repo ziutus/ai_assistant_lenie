@@ -15,6 +15,7 @@ export interface Document {
   processing_status: string;
   processing_error_code: string;
   chapter_list: string;
+  outline_md: string | null;
   email_sender: string;
   note: string;
   next_id: number | null;
@@ -62,6 +63,7 @@ export const emptyDocument: Document = {
   processing_status: "",
   processing_error_code: "",
   chapter_list: "",
+  outline_md: "",
   email_sender: "",
   note: "",
   next_id: null,

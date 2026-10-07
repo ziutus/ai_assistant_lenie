@@ -315,6 +315,30 @@ class TestCreateDocument:
 
 
 class TestSaveDocument:
+    @pytest.mark.parametrize("outline", ["### Temat\n\nOpis tematu.", ""])
+    def test_outline_update_preserves_transcript_and_chapters(self, outline):
+        session = _make_session()
+        doc = _make_doc(
+            document_type="youtube", text="Original transcript", summary="Summary",
+            chapter_list="0:00 Introduction", outline_md="Old outline",
+        )
+        with patch.object(Document, "get_by_id", return_value=doc):
+            result = DocumentService(session).save_document(
+                url=doc.url, link_id=42, outline_md=outline,
+            )
+        assert result.outline_md == outline
+        assert result.text == "Original transcript"
+        assert result.summary == "Summary"
+        assert result.chapter_list == "0:00 Introduction"
+        session.commit.assert_called_once()
+
+    def test_omitted_outline_is_preserved(self):
+        session = _make_session()
+        doc = _make_doc(document_type="youtube", outline_md="Existing outline")
+        with patch.object(Document, "get_by_id", return_value=doc):
+            DocumentService(session).save_document(url=doc.url, link_id=42, title="New title")
+        assert doc.outline_md == "Existing outline"
+
     def test_webpage_markdown_is_canonical_and_plain_text_is_derived(self):
         session = _make_session()
         doc = _make_doc()

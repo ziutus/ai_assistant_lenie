@@ -1,4 +1,5 @@
 import React from "react";
+import { renderMarkdown } from "./read";
 import axios from "axios";
 import { useFormik } from "formik";
 import { useManageLLM } from "../hooks/useManageLLM";
@@ -34,6 +35,7 @@ const Youtube = () => {
       processing_status: "",
       processing_error_code: "",
       chapter_list: "",
+      outline_md: "",
       note: "",
       next_id: null,
       previous_id: null,
@@ -176,6 +178,12 @@ const Youtube = () => {
             </button>
             {descriptionMessage && <div style={{ marginTop: 8 }}>{descriptionMessage}</div>}
           </section>
+        )}
+        {formik.values.outline_md?.trim() && (
+          <details style={{ marginBottom: 14 }}>
+            <summary style={{ cursor: "pointer" }}>Spis treści (AI)</summary>
+            {renderMarkdown(formik.values.outline_md, [])}
+          </details>
         )}
         {id && transcriptMissing && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>

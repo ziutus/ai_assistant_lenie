@@ -386,7 +386,7 @@ class DocumentService:
         """Look up or create a document, apply attribute updates, and commit.
 
         Accepted keyword attrs: text, text_md, title, language, tags, search_terms,
-        summary, source, byline, email_sender, note.
+        summary, outline_md, source, byline, email_sender, note.
 
         For webpages ``text_md`` is the canonical editable article body.
         ``text`` is maintained as a derived plain-text compatibility/search
@@ -410,7 +410,7 @@ class DocumentService:
         if processing_status is not None:
             doc.set_processing_status(processing_status)
 
-        for attr in ("title", "language", "tags", "search_terms", "summary", "byline", "note"):
+        for attr in ("title", "language", "tags", "search_terms", "summary", "outline_md", "byline", "note"):
             value = attrs.get(attr)
             if value is not None:
                 setattr(doc, attr, value)

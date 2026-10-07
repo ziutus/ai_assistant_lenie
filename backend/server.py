@@ -3089,7 +3089,10 @@ def website_save():
 
     link_id = request.form.get('id')
     attrs = {}
-    for attr in ('text', 'text_md', 'title', 'language', 'tags', 'search_terms', 'summary', 'source', 'byline', 'email_sender', 'note'):
+    for attr in (
+        'text', 'text_md', 'title', 'language', 'tags', 'search_terms', 'summary',
+        'outline_md', 'source', 'byline', 'email_sender', 'note',
+    ):
         value = request.form.get(attr)
         if value is not None:
             attrs[attr] = value

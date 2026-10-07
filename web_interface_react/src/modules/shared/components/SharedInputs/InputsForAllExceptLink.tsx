@@ -128,6 +128,18 @@ const InputsForAllExceptLink = ({
           multiline
         />
       )}
+      {formik.values.document_type === "youtube" && (
+        <Input
+          disabled={isLoading}
+          value={formik.values.outline_md ?? ""}
+          label={"Spis treści (AI) — Markdown:"}
+          onChange={formik.handleChange}
+          id={"outline_md"}
+          name={"outline_md"}
+          type={"text"}
+          multiline
+        />
+      )}
       <Input
         disabled={isLoading}
         value={formik.values.note}
