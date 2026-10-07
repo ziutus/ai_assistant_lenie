@@ -97,6 +97,8 @@ Pokaż najpierw już opracowane lub pominięte, a potem nieopracowane. Nie miesz
 
 Zacznij od `02-wiedza/_index.md` wewnątrz vaulta. Dopasuj temat i słowa kluczowe, a następnie przeczytaj najwyżej 1–2 najbardziej trafne notatki. Użyj wyszukiwania po całym vaulcie dopiero, gdy indeks nie daje wyniku i użytkownik potrzebuje szerszej analizy.
 
+Dla dokumentów `youtube`/`movie` (i każdej innej transkrypcji STT) przeczytaj też `02-wiedza/_słownik omówień i błędów STT.md`. Twórcy YouTube używają omówień, by uniknąć shadow banu (np. „strefa opatrunku" = Strefa Gazy, „państwo położone tam, gdzie chce" = Izrael, „odesłani do Jerozolimy" = zabici), a transkrypcja przenosi je dosłownie razem z błędami STT w nazwach. Interpretuj transkrypcję przez słownik i w notatce zawsze pisz nazwę właściwą, nigdy omówienie. Wpisy oznaczone ❓ to wnioski, nie potwierdzenia — traktuj je jako prawdopodobne. Gdy użytkownik wyjaśni nowe omówienie lub błąd STT, od razu dopisz je do słownika (status ✅, z id dokumentu), aby wiedza była wspólna dla wszystkich modeli i sesji.
+
 Notatka powinna zawierać:
 
 - frontmatter z tagami `wiedza/...`;

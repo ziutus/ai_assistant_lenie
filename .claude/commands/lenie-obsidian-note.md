@@ -201,6 +201,14 @@ The index maps topics/keywords → file paths. Steps:
 4. Open only the 1-2 most relevant files found in the index — read them to check existing content
 5. **Use Grep/Glob only as fallback** if the topic is clearly not covered by the index
 
+**For `youtube`/`movie` documents (and any other STT transcript), also read the glossary:**
+
+```
+C:\Users\ziutus\Obsydian\personal\02-wiedza\_słownik omówień i błędów STT.md
+```
+
+YouTube creators use euphemisms to avoid shadow bans (e.g. "strefa opatrunku" = Strefa Gazy, "państwo położone tam, gdzie chce" = Izrael, "odesłani do Jerozolimy" = zabici), and the transcript carries them verbatim along with STT misspellings of names. Interpret the transcript through the glossary and always write the real name in the note, never the euphemism. Entries marked ❓ are inferences, not confirmed — treat them as likely, not certain. When the user explains a new euphemism or STT error during the session, add it to the glossary right away (status ✅, with the document id) so every model and later session shares it.
+
 Report which notes were found and what they already contain.
 
 ### Step 4: Check geopolitical control questions (if applicable)
