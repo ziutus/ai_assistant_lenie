@@ -48,6 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
+from library.country_gazetteer import count_country_mentions, detect_countries
 from library.content_group_suggestion_service import request_suggestions
 from library.db.models import Document, DocumentEmbedding, Job
 from library.document_repository import DocumentRepository
@@ -164,6 +165,30 @@ def _merge_tags(existing_csv: str | None, new_tags: list[str]) -> str | None:
     return ",".join(merged)
 
 
+# A note about one country names it in the title; broader notes (regional
+# overviews) mention several. Body countries count only when mentioned often
+# enough, capped, so a passing "Rosja" in a note about Sudan adds no tag.
+_BODY_COUNTRY_MIN_MENTIONS = 4
+_BODY_COUNTRY_MAX_TAGS = 3
+
+
+def detect_country_tags(title: str, body: str) -> list[str]:
+    """``kraj-<slug>`` tags for an Obsidian note, from the gazetteer only (no LLM).
+
+    Title countries are always tagged (a note titled "Sudan" is about Sudan,
+    even when its body names the country rarely); body countries need
+    ``_BODY_COUNTRY_MIN_MENTIONS`` mentions, at most ``_BODY_COUNTRY_MAX_TAGS``.
+    Feeds the reader's country map, which renders only for ``kraj-*`` tags.
+    """
+    tags = [f"kraj-{entry.slug}" for entry in detect_countries(title)]
+    frequent = [
+        entry for entry, count in count_country_mentions(body)
+        if count >= _BODY_COUNTRY_MIN_MENTIONS
+    ][:_BODY_COUNTRY_MAX_TAGS]
+    tags += [f"kraj-{entry.slug}" for entry in frequent]
+    return list(dict.fromkeys(tags))
+
+
 def _note_url(relative_path: str) -> str:
     """Synthetic, stable identity key for dedup via Document.get_by_url().
 
@@ -276,14 +301,14 @@ def _reimport_one_note(
                 text_md=body,
                 source="own",
                 is_private=is_private,
-                tags=_merge_tags(None, fm_tags),
+                tags=_merge_tags(None, fm_tags + detect_country_tags(note_path.stem, body)),
             )
         else:
             doc = existing
             doc.text = body
             doc.text_md = body
             doc.title = note_path.stem
-            doc.tags = _merge_tags(doc.tags, fm_tags)
+            doc.tags = _merge_tags(doc.tags, fm_tags + detect_country_tags(note_path.stem, body))
             # Discard stale fragments before re-embedding -- otherwise
             # search would return both the old and new versions.
             repo.embedding_delete(doc.id, model)

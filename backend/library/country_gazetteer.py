@@ -383,3 +383,14 @@ def detect_countries(text: str) -> list[CountryEntry]:
         if any(pattern.regex.search(normalized) for pattern in patterns)
     ]
     return sorted(found, key=lambda e: e.name_pl)
+
+
+def count_country_mentions(text: str) -> list[tuple[CountryEntry, int]]:
+    """Kraje wraz z liczbą dopasowań w tekście (malejąco, potem alfabetycznie) — bez LLM."""
+    normalized = unidecode(text).lower()
+    counted = []
+    for entry, patterns in _compiled_countries():
+        total = sum(len(pattern.regex.findall(normalized)) for pattern in patterns)
+        if total:
+            counted.append((entry, total))
+    return sorted(counted, key=lambda item: (-item[1], item[0].name_pl))
