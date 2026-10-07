@@ -14,6 +14,7 @@ pytest.importorskip("sqlalchemy")
 from library.obsidian_reimport_service import (
     PILOT_SUBFOLDERS,
     _merge_tags,
+    detect_country_tags,
     _normalize_obsidian_tag,
     _note_url,
     _parse_frontmatter,
@@ -651,3 +652,18 @@ def test_reimport_synchronizes_privacy(tmp_path, is_private, unchanged):
     assert result == ("skipped" if unchanged else "updated")
     assert doc.is_private is is_private
     session.commit.assert_called_once()
+
+
+class TestDetectCountryTags:
+    def test_title_country_is_always_tagged(self):
+        assert detect_country_tags("Sudan", "Krótka notatka.") == ["kraj-sudan"]
+
+    def test_passing_body_mention_adds_nothing(self):
+        assert detect_country_tags("Sudan", "Wojna. Rosja wspomniana raz.") == ["kraj-sudan"]
+
+    def test_frequent_body_country_is_tagged(self):
+        body = "Egipt graniczy. Egipt pomaga. Egipt obserwuje. Egipt negocjuje."
+        assert detect_country_tags("Konflikt", body) == ["kraj-egipt"]
+
+    def test_no_countries(self):
+        assert detect_country_tags("Docker", "kontenery i obrazy") == []
