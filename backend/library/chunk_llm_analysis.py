@@ -90,6 +90,38 @@ Fragment transkrypcji:
     return []
 
 
+MONOLOGUE_ROLE = "autor"
+
+
+def monologue_speaker_from_byline(byline: str | None, name: str | None = None) -> list[dict]:
+    """Single-speaker list for a monologue: the author (first byline entry unless `name` is given).
+
+    Returns [] when neither a name nor a byline is available.
+    """
+    chosen = (name or "").strip() or (byline or "").split(",")[0].strip()
+    if not chosen:
+        return []
+    return [{"name": chosen, "role": MONOLOGUE_ROLE, "description": "monolog"}]
+
+
+def is_monologue(speakers: list[dict] | None) -> bool:
+    """True when exactly one speaker is recorded (the author talking alone)."""
+    return bool(speakers) and len(speakers) == 1
+
+
+def speakers_context(speakers: list[dict] | None) -> str:
+    """Prompt line naming the speakers ('' when unknown); a lone speaker is framed as a monologue."""
+    if not speakers:
+        return ""
+    names = ", ".join(
+        f"{sp['name']}" + (f" ({sp.get('role', '')})" if sp.get("role") else "")
+        for sp in speakers
+    )
+    if is_monologue(speakers):
+        return f"Autor i jedyny mówca (monolog): {names}.\n"
+    return f"Uczestnicy rozmowy: {names}.\n"
+
+
 def head_tail_excerpt(text: str, chars: int = 1500) -> str:
     """First and last `chars` characters of text — a byline can appear at either end."""
     text = text.strip()
@@ -251,13 +283,7 @@ def analyze_combined_transcript_chunk(original_text: str, model: str, position: 
                                       prev_context: str = "", next_context: str = "") -> dict:
     """Correct, classify, title and summarize one transcript chunk in one Sherlock call."""
     source_text = remove_speech_fillers(original_text)
-    speakers_ctx = ""
-    if speakers:
-        names = ", ".join(
-            f"{sp['name']}" + (f" ({sp.get('role', '')})" if sp.get("role") else "")
-            for sp in speakers
-        )
-        speakers_ctx = f"Uczestnicy rozmowy: {names}.\n"
+    speakers_ctx = speakers_context(speakers)
     context = ""
     if prev_context:
         context += f"[KONTEKST: koniec poprzedniego fragmentu; nie przepisuj]:\n{prev_context}\n\n"
@@ -366,16 +392,12 @@ def summarize_chunk_text(corrected_text: str, model: str,
     If speakers list is provided, the prompt includes participant names so the
     summary can use real names instead of generic 'Rozmówca'.
     """
-    speakers_ctx = ""
-    if speakers:
-        names = ", ".join(
-            f"{sp['name']}" + (f" ({sp.get('role', '')})" if sp.get("role") else "")
-            for sp in speakers
-        )
-        speakers_ctx = f"Uczestnicy rozmowy: {names}.\n"
+    speakers_ctx = speakers_context(speakers)
+    kind = "wypowiedzi (monologu)" if is_monologue(speakers) else "merytorycznej rozmowy"
+    who = "imienia mówcy" if is_monologue(speakers) else "imion rozmówców"
 
-    prompt = f"""{speakers_ctx}Napisz streszczenie poniższego fragmentu merytorycznej rozmowy w 2-3 zdaniach.
-Skup się na głównych tezach i wnioskach. Używaj imion rozmówców (nie pisz „Rozmówca"). Odpowiedz po polsku.
+    prompt = f"""{speakers_ctx}Napisz streszczenie poniższego fragmentu {kind} w 2-3 zdaniach.
+Skup się na głównych tezach i wnioskach. Używaj {who} (nie pisz „Rozmówca"). Odpowiedz po polsku.
 
 --- TEKST ---
 {corrected_text}
@@ -404,13 +426,7 @@ def analyze_chunk_semantic(corrected_text: str, model: str,
     and only type/topic/summary need to be refreshed.
     Returns dict with corrected_text unchanged.
     """
-    speakers_ctx = ""
-    if speakers:
-        names = ", ".join(
-            f"{sp['name']}" + (f" ({sp.get('role', '')})" if sp.get("role") else "")
-            for sp in speakers
-        )
-        speakers_ctx = f"Uczestnicy rozmowy: {names}.\n"
+    speakers_ctx = speakers_context(speakers)
 
     prompt = f"""{speakers_ctx}Sklasyfikuj poniższy fragment i jeśli to TEMAT — napisz streszczenie.
 
