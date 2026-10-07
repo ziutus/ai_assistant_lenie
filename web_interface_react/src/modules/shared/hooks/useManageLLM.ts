@@ -161,6 +161,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
           language: website.language,
           document_type: website.document_type,
           chapter_list: website.chapter_list,
+          outline_md: website.outline_md,
           byline: website.byline,
           email_sender: website.email_sender,
           note: website.note,
@@ -226,6 +227,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
               ? "NEED_MANUAL_REVIEW"
             : "READY_FOR_EMBEDDING",
           chapter_list: website.chapter_list,
+          outline_md: website.outline_md,
           byline: website.byline,
           email_sender: website.email_sender,
           note: website.note,

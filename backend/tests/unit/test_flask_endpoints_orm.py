@@ -218,6 +218,7 @@ class TestWebsiteGet:
             "paywall": False, "ingested_at": "2026-03-09 10:00:00",
             "document_type": "webpage", "source": None, "published_on": None,
             "original_id": None, "document_length": None, "chapter_list": None,
+            "outline_md": "### Topic\n\nDescription.",
             "processing_status": "URL_ADDED", "processing_error_code": "NONE",
             "text_raw": None, "transcript_job_id": None, "ai_summary_needed": False,
             "byline": None, "note": None, "uuid": None, "collection_id": None,
@@ -236,6 +237,7 @@ class TestWebsiteGet:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["id"] == 42
+        assert data["outline_md"] == "### Topic\n\nDescription."
         assert data["next_id"] == 43
         assert data["embeddings_count"] == 0
         assert data["approved_chunks_count"] == 0
@@ -697,6 +699,21 @@ class TestWebsiteSave:
     def test_missing_url_returns_400(self, client):
         resp = client.post("/website_save", data={}, headers=API_HEADERS)
         assert resp.status_code == 400
+
+    @pytest.mark.parametrize("outline", ["### Topic\n\nDescription.", ""])
+    def test_save_outline_only(self, client, outline):
+        session = MagicMock()
+        session.get.return_value = None
+        with patch("server.get_scoped_session", return_value=session), patch("server.DocumentService") as service:
+            service.return_value.save_document.return_value.id = 42
+            response = client.post("/website_save", data={
+                "id": "42", "url": "https://www.youtube.com/watch?v=example", "outline_md": outline,
+            }, headers=API_HEADERS)
+        assert response.status_code == 200
+        assert service.return_value.save_document.call_args.kwargs == {
+            "url": "https://www.youtube.com/watch?v=example", "link_id": 42,
+            "processing_status": None, "document_type": None, "outline_md": outline,
+        }
 
     def test_only_sets_provided_attributes(self, client):
         mock_doc = MagicMock()
