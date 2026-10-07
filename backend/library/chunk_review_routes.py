@@ -13,6 +13,7 @@ Endpoints:
   GET  /analysis_run/<run_id>/chunks         — run data (chunks + segments;
                                                lite/section_id/positions/offset/limit for books)
   POST /analysis_run/<run_id>/extract_speakers
+  POST /analysis_run/<run_id>/set_monologue_speaker — sole speaker = author (byline), no LLM
   POST /analysis_run/<run_id>/extract_author
   PATCH /analysis_run/<run_id>               — run workflow status
   PATCH /topic_section/<section_id>          — edit section title
@@ -2955,6 +2956,44 @@ def extract_speakers(run_id: int):
     except Exception:
         session.rollback()
         logger.exception("DB save failed for run %d speakers", run_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    return jsonify({"status": "success", "speakers": speakers})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /analysis_run/<run_id>/set_monologue_speaker
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>/set_monologue_speaker", methods=["POST"])
+def set_monologue_speaker(run_id: int):
+    """Mark the run as a monologue: the sole speaker is the document's author.
+
+    No LLM call. The speaker is the first entry of Document.byline, or the
+    optional JSON body field `name`. Saves result to run.speakers.
+    """
+    from library.chunk_llm_analysis import monologue_speaker_from_byline
+
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    doc = session.get(Document, run.document_id)
+    speakers = monologue_speaker_from_byline(getattr(doc, "byline", None), data.get("name"))
+    if not speakers:
+        return jsonify({
+            "status": "error",
+            "message": "Dokument nie ma autora (byline) — podaj nazwę mówcy w polu `name`",
+        }), 400
+
+    run.speakers = speakers
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("DB save failed for run %d monologue speaker", run_id)
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
     return jsonify({"status": "success", "speakers": speakers})

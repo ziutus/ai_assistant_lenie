@@ -539,7 +539,7 @@ class DocumentAnalysisService:
         """
         from library.chunk_llm_analysis import (
             analyze_article_chunk, analyze_chunk, assign_speakers,
-            extract_speaker_info, remove_speech_fillers,
+            extract_speaker_info, monologue_speaker_from_byline, remove_speech_fillers,
         )
         from library.text_functions import split_markdown_into_chunks, split_text_into_sentence_chunks
 
@@ -626,6 +626,11 @@ class DocumentAnalysisService:
                         log(f"speakers={[sp['name'] for sp in speakers]}")
                     except Exception:
                         logger.exception("speaker extraction failed, continuing without speakers")
+                elif not is_multi_speaker:
+                    # No ">>" speaker-change markers: a monologue, so the sole speaker is the author.
+                    speakers = monologue_speaker_from_byline(getattr(doc, "byline", None))
+                    if speakers:
+                        log(f"monologue speaker from byline: {speakers[0]['name']}")
 
             # 5. Label speaker turns from >> markers (must happen before splitting,
             #    so the rewrite prompt sees the [Name]: labels it is asked to preserve)

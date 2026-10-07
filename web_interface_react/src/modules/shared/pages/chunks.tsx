@@ -624,6 +624,7 @@ const Chunks = () => {
   const [reportingIssue, setReportingIssue] = React.useState(false);
   const [runMode, setRunMode]       = React.useState("transcript");
   const [speakers, setSpeakers]     = React.useState<Speaker[]>([]);
+  const isMonologue = speakers.length === 1;
 
   const [loading, setLoading]       = React.useState(false);
   const [error, setError]           = React.useState("");
@@ -668,6 +669,7 @@ const Chunks = () => {
   const [confirmingLineSplit, setConfirmingLineSplit] = React.useState<Record<number, boolean>>({});
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
+  const [settingMonologue, setSettingMonologue] = React.useState(false);
   const [extractingSpeakerFor, setExtractingSpeakerFor] = React.useState<number | null>(null);
   const [extractingAuthorFor, setExtractingAuthorFor] = React.useState<number | null>(null);
   const [extractingAuthorLine, setExtractingAuthorLine] = React.useState<{ chunkId: number; lineIdx: number } | null>(null);
@@ -1554,6 +1556,19 @@ const Chunks = () => {
       else setError("Błąd wykrywania rozmówców");
     } catch { setError("Błąd połączenia przy wykrywaniu rozmówców"); }
     finally { setExtractingSpeakers(false); }
+  };
+
+  // Monologue: the sole speaker is the document's author (byline). No LLM call.
+  const setMonologueSpeaker = async () => {
+    if (!selectedRun) return;
+    setSettingMonologue(true);
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/set_monologue_speaker`, { method: "POST", headers });
+      const data = await r.json();
+      if (data.status === "success") setSpeakers(data.speakers ?? []);
+      else setError("Nie udało się ustawić monologu: " + (data.message ?? ""));
+    } catch { setError("Błąd połączenia przy ustawianiu monologu"); }
+    finally { setSettingMonologue(false); }
   };
 
   // Detect speakers from one specific chunk only — useful when the reviewer has
@@ -3173,7 +3188,7 @@ const Chunks = () => {
           without this an error banner could still show the transcript-only bar. */}
       {!processComplete && selectedRun !== null && !error && runMode !== "article" && (
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#1e3a5f", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <strong style={{ color: "#fff", fontSize: "0.85em" }}>Rozmówcy:</strong>
+          <strong style={{ color: "#fff", fontSize: "0.85em" }}>{isMonologue ? "Jedyny mówca:" : "Rozmówcy:"}</strong>
           {speakers.length > 0 ? (
             <span style={{ fontSize: "0.85em" }}>
               {speakers.map((sp, i) => (
@@ -3187,8 +3202,15 @@ const Chunks = () => {
           ) : (
             <span style={{ color: "#64748b", fontSize: "0.85em", fontStyle: "italic" }}>nie wykryto</span>
           )}
+          {!isMonologue && (
+            <button className="button" onClick={setMonologueSpeaker} disabled={settingMonologue}
+              title="Transkrypcja ma jednego mówcę — autora dokumentu (byline). Bez wywołania LLM."
+              style={{ marginLeft: "auto", fontSize: "0.82em", padding: "3px 10px" }}>
+              {settingMonologue ? "Ustawiam…" : "To monolog (autor)"}
+            </button>
+          )}
           <button className="button" onClick={extractSpeakers} disabled={extractingSpeakers}
-            style={{ marginLeft: "auto", fontSize: "0.82em", padding: "3px 10px" }}>
+            style={{ marginLeft: isMonologue ? "auto" : 0, fontSize: "0.82em", padding: "3px 10px" }}>
             {extractingSpeakers ? "Wykrywam…" : speakers.length > 0 ? `Wykryj ponownie (${speakers.length})` : "Wykryj rozmówców"}
           </button>
         </div>
