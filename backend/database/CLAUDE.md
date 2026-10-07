@@ -86,6 +86,8 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `ingested_at` | `timestamp` | When the document entered Lenie (stage 11g rename from created_at; other tables keep their own created_at) |
 | `document_length` | `integer` | Text length in characters |
 | `chapter_list` | `text` | Chapter/section list (for videos/transcripts) |
+| `outline_md` | `text NULL` | Approved topical Markdown outline, separate from timestamped chapters |
+| `outline_anchors` | `jsonb NULL` | Version 1 payload: `outline_sha256` (UTF-8 SHA-256 of the exact outline) and `anchors` (`title`, verbatim `sentence`), at most 40 |
 | `original_id` | `text` | External identifier (e.g. YouTube video ID) |
 | `transcript_job_id` | `text` | Transcription service job ID |
 | `ai_summary_needed` | `boolean` | Flag: needs AI summary (default: false) |
@@ -95,6 +97,16 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `obsidian_source_hash` | `varchar(64)` | SHA-256 of the source `.md` file's raw content, set only on `document_type='obsidian_note'` rows — change-detection key for `library/obsidian_reimport_service.py` (Epic 42) re-syncing an existing vault note |
 
 **Indexes:** `document_type`, `processing_status`, `ingested_at`, `url`, `collection_id`, `discovery_source_id`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
+
+Migration `c83f0e2a619d` (after `a84d921cf607`) adds nullable `outline_anchors`.
+The session-model skill produces anchors; the backend only validates, stores and
+locates them. `/website_save` accepts JSON in the `outline_anchors` form field;
+an empty field or JSON `null` clears it, omission preserves it. `/website_get`
+returns the JSON object. Sentences must be non-empty and at most 600 characters.
+On YouTube transcripts without `chapter_list`, analysis uses matching-hash anchors
+after filler removal, unless speaker labeling was applied. Stale/invalid anchors,
+fewer than two located topics or a split error fall back to size-based chunks.
+Editing `outline_md` invalidates anchors by hash; it does not change `chapter_list`.
 
 ### Table: `public.document_embeddings`
 
