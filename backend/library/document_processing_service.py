@@ -167,6 +167,14 @@ class DocumentProcessingService:
 
         self._progress(job, "upload_artifacts", document_id)
         artifacts_uploaded = self._upload_artifacts(scratch, document_id)
+        # Recovered document (rules fixed / job re-queued): drop the stale error this
+        # service set on an earlier empty extraction. Any other status/code is not ours.
+        if (
+            getattr(document, "processing_status", None) == "ERROR"
+            and getattr(document, "processing_error_code", None) == "ERROR_DOWNLOAD"
+        ):
+            document.set_processing_status("NEED_MANUAL_REVIEW")
+            document.set_processing_error_code("NONE")
         self.session.commit()
         shutil.rmtree(scratch, ignore_errors=True)
         return {
