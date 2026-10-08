@@ -376,6 +376,25 @@ def _clean_lines_money(lines: list[str], rules=(), host=None, hit_ids=None) -> l
     return cleaned
 
 
+_WP_TAG_LINKS_RE = re.compile(r'^(?:[^\[\].!?:;]{1,60}\[link\d+\]\s*){2,}$')
+
+
+def _drop_trailing_poll(cleaned: list[str]) -> None:
+    """Usuń z końca `cleaned` ankietę: pytanie (linia na '?') i krótkie odpowiedzi nad "Zagłosuj"."""
+    j = len(cleaned) - 1
+    seen = 0
+    while j >= 0 and seen < 8:
+        s = cleaned[j].strip()
+        if s:
+            seen += 1
+            if len(s) > 80:
+                return  # to akapit artykułu, nie pytanie/odpowiedź ankiety
+            if s.endswith("?"):
+                del cleaned[j:]
+                return
+        j -= 1
+
+
 def _clean_lines_wp(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Czyszczenie specyficzne dla wp.pl/o2.pl/tech.wp.pl."""
     lines = _remove_author_bio_paragraph(lines)
@@ -410,6 +429,16 @@ def _clean_lines_wp(lines: list[str], rules=(), host=None, hit_ids=None) -> list
     in_newsletter = False
     for line in lines:
         stripped = line.strip()
+        # Blok polecanych za artykułem (sportowefakty.wp.pl: wersaliki) — koniec treści.
+        if stripped == "WYBRANE DLA CIEBIE":
+            break
+        # Ankieta pod artykułem: pytanie, odpowiedzi, "Zagłosuj, aby zobaczyć wyniki".
+        if stripped == "Zagłosuj, aby zobaczyć wyniki":
+            _drop_trailing_poll(cleaned)
+            continue
+        # Linia samych tagów-linków: "Manchester [link15]Anglia [link16]Premier League [link17]"
+        if _WP_TAG_LINKS_RE.match(stripped):
+            continue
         if stripped == "PREMIUM Zapisz się na newsletter!":
             in_newsletter = True
             continue
