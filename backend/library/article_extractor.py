@@ -118,6 +118,9 @@ PORTAL_FOOTER_MARKERS = {
         "**Masz newsa, zdjęcie lub filmik?",
         "**Czytaj także:**",
         "Oceń jakość naszego artykułu",
+        # sportowefakty.wp.pl nie ma żadnego z powyższych markerów — za artykułem
+        # leży od razu blok komentarzy czytelników.
+        "Komentarze (",
     ],
     "interia": [
         "Masz sugestie, uwagi albo widzisz błąd",
@@ -538,8 +541,11 @@ def extract_article_by_markers(markdown_text: str, markers: dict, url: str = "")
         # Brak footera — użyj LLM markera
         logger.info(f"Article end: LLM line {end_line} (no footer marker found)")
     else:
-        logger.warning("Cannot find article end: no footer marker, no LLM marker")
-        return None
+        # Pusty wynik jest gorszy niż artykuł z doklejonym ogonem strony:
+        # clean_article_text() usuwa typowe artefakty, a recenzent i tak widzi
+        # tekst. Początek (LLM) jest znany, więc bierzemy resztę dokumentu.
+        logger.warning("Cannot find article end: no footer marker, no LLM marker — using end of document")
+        end_line = len(markdown_text.splitlines()) - 1
 
     # Cofnij się przez puste linie na końcu
     lines_list = markdown_text.splitlines()

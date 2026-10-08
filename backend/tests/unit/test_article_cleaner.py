@@ -45,6 +45,39 @@ class TestStripImageMarkers:
         assert strip_image_markers(text) == text
 
 
+class TestSportoweFaktyExtraction:
+    URL = "https://sportowefakty.wp.pl/pilka-nozna/1276910/afera"
+    FIRST = "Czy czeka nas upadek Manchesteru City? Klub przez lata miał świadomie łamać przepisy."
+
+    def _markdown(self):
+        return "\n\n".join([
+            "* [Start](/)",
+            self.FIRST,
+            "Drugi akapit właściwej treści artykułu o sprawie klubu z Manchesteru.",
+            "**Łukasz Kuczera, dziennikarz WP SportoweFakty**",
+            "Komentarze (8)",
+            "Mieszczanie, a nie Obywatele.",
+        ])
+
+    def test_comments_block_is_footer_even_when_llm_end_is_unresolvable(self):
+        markers = {"article_first_sentence": self.FIRST, "article_last_sentence": "Zdanie, którego nie ma w tekście."}
+
+        result = extract_article_by_markers(self._markdown(), markers, url=self.URL)
+
+        assert "dziennikarz WP SportoweFakty" in result
+        assert "Komentarze (8)" not in result
+        assert "Mieszczanie" not in result
+
+    def test_unknown_portal_without_end_marker_falls_back_to_end_of_document(self):
+        markers = {"article_first_sentence": self.FIRST, "article_last_sentence": "Zdanie, którego nie ma w tekście."}
+
+        result = extract_article_by_markers(self._markdown(), markers, url="https://example.test/a")
+
+        assert result is not None
+        assert result.startswith(self.FIRST)
+        assert "Mieszczanie" in result
+
+
 class TestGazetaExtraction:
     URL = "https://wiadomosci.gazeta.pl/swiat/7,123,artykul.html"
 
