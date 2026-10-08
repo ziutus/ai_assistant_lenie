@@ -116,3 +116,60 @@ def test_execute_flags_empty_extraction_as_error(tmp_path):
     assert document.processing_status == "ERROR"
     assert document.processing_error_code == "ERROR_DOWNLOAD"
     assert document.text_md is None
+
+
+def _run_success(tmp_path, processing_status, processing_error_code):
+    document = SimpleNamespace(
+        id=14,
+        uuid="ghi",
+        document_type="webpage",
+        text_md=None,
+        text_extracted=None,
+        url="https://recovered.test",
+        processing_status=processing_status,
+        processing_error_code=processing_error_code,
+    )
+    document.set_processing_status = lambda value: setattr(document, "processing_status", value)
+    document.set_processing_error_code = lambda value: setattr(document, "processing_error_code", value)
+    job = SimpleNamespace(id="job3", parameters={"document_id": 14, "document_uuid": "ghi"}, status="running")
+    storage = MemoryStorage({"ghi.html": b"<p>HTML</p>"})
+
+    class Session:
+        def get(self, model, key):
+            return job if getattr(model, "__name__", "") == "Job" else document
+
+        def commit(self):
+            pass
+
+        def execute(self, statement):
+            return None
+
+    with (
+        patch("library.document_processing_service.extract_article", lambda *a, **k: ("RAW", "ARTICLE")),
+        patch(
+            "library.document_processing_service.clean_article_text",
+            return_value={"text": "CLEAN " * 60, "images": []},
+        ),
+        patch("library.document_images.replace_document_images"),
+    ):
+        result = DocumentProcessingService(Session(), storage, str(tmp_path)).execute(job)
+    return document, result
+
+
+def test_execute_success_clears_stale_download_error(tmp_path):
+    document, result = _run_success(tmp_path, "ERROR", "ERROR_DOWNLOAD")
+
+    assert result["markdown_created"] is True
+    assert document.processing_status == "NEED_MANUAL_REVIEW"
+    assert document.processing_error_code == "NONE"
+
+
+def test_execute_success_keeps_other_status_and_error_code(tmp_path):
+    for status, code in [
+        ("URL_ADDED", "NONE"),
+        ("NEED_MANUAL_REVIEW", "NONE"),
+        ("ERROR", "TEMPORARY_ERROR"),
+        ("NEED_CLEAN_MD", "ERROR_DOWNLOAD"),
+    ]:
+        document, _ = _run_success(tmp_path, status, code)
+        assert (document.processing_status, document.processing_error_code) == (status, code)
