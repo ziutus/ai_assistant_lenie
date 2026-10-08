@@ -118,8 +118,9 @@ PORTAL_FOOTER_MARKERS = {
         "**Masz newsa, zdjęcie lub filmik?",
         "**Czytaj także:**",
         "Oceń jakość naszego artykułu",
-        # sportowefakty.wp.pl nie ma żadnego z powyższych markerów — za artykułem
-        # leży od razu blok komentarzy czytelników.
+        # sportowefakty.wp.pl: blok polecanych jest wersalikami, a za nim leży
+        # blok komentarzy czytelników. Pierwszy z markerów w tekście wygrywa.
+        "WYBRANE DLA CIEBIE",
         "Komentarze (",
     ],
     "interia": [
