@@ -3,6 +3,9 @@ import axios from "axios";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination } from "../components/Pagination/pagination";
+import type { PlaceMarker } from "../components/CountryMap/countryMap";
+
+const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
 // Global organization registry browser (library/organization_registry.py):
 // fuzzy search over organizations/aliases (GET /organizations?q=) and the
@@ -16,6 +19,32 @@ export interface OrganizationItem {
   description: string | null;
   aliases: string[];
   document_count?: number;
+}
+
+interface OrganizationDetail {
+  id: number;
+  canonical_name: string;
+  description: string | null;
+  organization_type: string | null;
+  headquarters_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  website: string | null;
+  obsidian_note_path: string | null;
+}
+
+// Persons / geocoded places co-occurring with the organization in documents
+// (GET /organizations/<id>/related, library/organization_location.py).
+interface RelatedPerson {
+  id: number;
+  canonical_name: string;
+  shared_documents: number;
+}
+
+interface RelatedPlace extends PlaceMarker {
+  display_name: string | null;
+  shared_documents: number;
+  mentions: number;
 }
 
 interface OrganizationAlias {
@@ -100,9 +129,12 @@ const Organizations = () => {
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(Number(searchParams.get("page")) || 1);
   const pageSize = 50;
-  const [organization, setOrganization] = React.useState<
-    { id: number; canonical_name: string; description: string | null; organization_type: string | null } | null
-  >(null);
+  const [organization, setOrganization] = React.useState<OrganizationDetail | null>(null);
+  const [relatedPersons, setRelatedPersons] = React.useState<RelatedPerson[]>([]);
+  const [relatedPlaces, setRelatedPlaces] = React.useState<RelatedPlace[]>([]);
+  const [editAddress, setEditAddress] = React.useState("");
+  const [editWebsite, setEditWebsite] = React.useState("");
+  const [editNotePath, setEditNotePath] = React.useState("");
   const [aliases, setAliases] = React.useState<OrganizationAlias[]>([]);
   const [ambiguousWith, setAmbiguousWith] = React.useState<AmbiguousWith[]>([]);
   const [documents, setDocuments] = React.useState<OrganizationDocument[]>([]);
@@ -167,22 +199,44 @@ const Organizations = () => {
     return list;
   }, [organizations, sortBy]);
 
+  // Headquarters first (labelled), then the places the organization's documents
+  // mention; related places that sit on the headquarters point are dropped.
+  const mapMarkers = React.useMemo<PlaceMarker[]>(() => {
+    const markers: PlaceMarker[] = [];
+    const hasHq = organization?.latitude != null && organization?.longitude != null;
+    if (hasHq) {
+      markers.push({ name: `🏢 Siedziba: ${organization!.headquarters_address ?? organization!.canonical_name}`, lat: organization!.latitude!, lon: organization!.longitude! });
+    }
+    relatedPlaces.forEach((p) => {
+      if (hasHq && Math.abs(p.lat - organization!.latitude!) < 1e-4 && Math.abs(p.lon - organization!.longitude!) < 1e-4) return;
+      markers.push({ name: `${p.name} (dok.: ${p.shared_documents})`, lat: p.lat, lon: p.lon });
+    });
+    return markers;
+  }, [organization, relatedPlaces]);
+
   const loadDetail = async () => {
     if (!id) return;
     setIsLoading(true);
     setMessage("");
     setIsError(false);
     try {
-      const [orgResponse, docsResponse] = await Promise.all([
+      const [orgResponse, docsResponse, relatedResponse] = await Promise.all([
         axios.get(`${apiUrl}/organizations/${id}`, { headers }),
         axios.get(`${apiUrl}/organizations/${id}/documents`, { headers }),
+        // the map/persons panel is optional context — never fail the page over it
+        axios.get(`${apiUrl}/organizations/${id}/related`, { headers }).catch(() => null),
       ]);
       setOrganization(orgResponse.data);
       setAliases(orgResponse.data.aliases ?? []);
       setAmbiguousWith(orgResponse.data.ambiguous_with ?? []);
       setEditDescription(orgResponse.data.description ?? "");
       setEditType(orgResponse.data.organization_type ?? "");
+      setEditAddress(orgResponse.data.headquarters_address ?? "");
+      setEditWebsite(orgResponse.data.website ?? "");
+      setEditNotePath(orgResponse.data.obsidian_note_path ?? "");
       setDocuments(docsResponse.data.documents ?? []);
+      setRelatedPersons(relatedResponse?.data.persons ?? []);
+      setRelatedPlaces(relatedResponse?.data.places ?? []);
     } catch (error: any) {
       console.error("Error fetching organization documents", error);
       setIsError(true);
@@ -196,6 +250,8 @@ const Organizations = () => {
     setAliases([]);
     setAmbiguousWith([]);
     setDocuments([]);
+    setRelatedPersons([]);
+    setRelatedPlaces([]);
     setOccurrences({});
     setIsEditing(false);
     setShowMergePicker(false);
@@ -242,10 +298,24 @@ const Organizations = () => {
     try {
       const response = await axios.patch(`${apiUrl}/organizations/${organization.id}`, {
         description: editDescription, organization_type: editType,
+        headquarters_address: editAddress, website: editWebsite, obsidian_note_path: editNotePath,
       }, { headers: jsonHeaders });
-      setOrganization((prev) => prev ? { ...prev, description: response.data.description, organization_type: response.data.organization_type } : prev);
+      setOrganization((prev) => prev ? {
+        ...prev,
+        description: response.data.description,
+        organization_type: response.data.organization_type,
+        headquarters_address: response.data.headquarters_address,
+        latitude: response.data.latitude,
+        longitude: response.data.longitude,
+        website: response.data.website,
+        obsidian_note_path: response.data.obsidian_note_path,
+      } : prev);
       setIsEditing(false);
-      setMessage("Zapisano zmiany.");
+      setMessage(
+        response.data.headquarters_address && response.data.geocoded === false
+          ? "Zapisano zmiany, ale nie udało się znaleźć współrzędnych dla adresu siedziby."
+          : "Zapisano zmiany.",
+      );
     } catch (error: any) {
       console.error("Error updating organization", error);
       setIsError(true);
@@ -414,10 +484,76 @@ const Organizations = () => {
                 rows={2}
                 style={{ padding: "6px 10px" }}
               />
+              <input
+                type="text"
+                value={editAddress}
+                placeholder="Adres siedziby (np. Aleje Jerozolimskie 1, Warszawa) — wyznacza punkt na mapie"
+                onChange={(e) => setEditAddress(e.target.value)}
+                style={{ padding: "6px 10px" }}
+              />
+              <input
+                type="text"
+                value={editWebsite}
+                placeholder="Strona www (https://...)"
+                onChange={(e) => setEditWebsite(e.target.value)}
+                style={{ padding: "6px 10px" }}
+              />
+              <input
+                type="text"
+                value={editNotePath}
+                placeholder="Notatka Obsidian (ścieżka w vaulcie, np. 02-wiedza/Organizacje/Acme.md)"
+                onChange={(e) => setEditNotePath(e.target.value)}
+                style={{ padding: "6px 10px" }}
+              />
               <div style={{ display: "flex", gap: 8 }}>
                 <button className={"button"} type="button" onClick={saveEdits}>Zapisz</button>
                 <button className={"button"} type="button" onClick={() => setIsEditing(false)}>Anuluj</button>
               </div>
+            </div>
+          )}
+
+          {!isEditing && (organization.headquarters_address || organization.website || organization.obsidian_note_path) && (
+            <div style={{ marginTop: 10, fontSize: "0.9em", color: "#334155" }}>
+              {organization.headquarters_address && <div>🏢 Siedziba: {organization.headquarters_address}</div>}
+              {organization.website && (
+                <div>
+                  🌐 {/^https?:\/\//i.test(organization.website)
+                    ? <a href={organization.website} target="_blank" rel="noopener noreferrer">{organization.website}</a>
+                    : organization.website}
+                </div>
+              )}
+              {organization.obsidian_note_path && <div>📝 Notatka Obsidian: {organization.obsidian_note_path}</div>}
+            </div>
+          )}
+
+          {mapMarkers.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <h3 style={{ margin: "0 0 6px" }}>Mapa ({mapMarkers.length})</h3>
+              <div style={{ height: 360, maxWidth: 720 }}>
+                <React.Suspense fallback={<div style={{ color: "#667" }}>Ładowanie mapy…</div>}>
+                  <CountryMap countries={[]} places={mapMarkers} />
+                </React.Suspense>
+              </div>
+              <div style={{ fontSize: "0.8em", color: "#667", marginTop: 4 }}>
+                Siedziba oraz miejsca wspominane w dokumentach z tą organizacją (tylko zweryfikowane geokoderem).
+              </div>
+            </div>
+          )}
+
+          {relatedPersons.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <h3 style={{ margin: "0 0 6px" }}>Powiązane osoby ({relatedPersons.length})</h3>
+              <div style={{ fontSize: "0.8em", color: "#667", marginBottom: 4 }}>
+                Osoby wspominane w tych samych dokumentach co organizacja (liczba wspólnych dokumentów).
+              </div>
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexWrap: "wrap", gap: "4px 14px" }}>
+                {relatedPersons.map((p) => (
+                  <li key={p.id}>
+                    <NavLink to={`/persons/${p.id}`}>{p.canonical_name}</NavLink>
+                    <span style={{ color: "#667", fontSize: "0.85em" }}> ×{p.shared_documents}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

@@ -2340,6 +2340,14 @@ class Organization(Base):
     canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
     organization_type: Mapped[str | None] = mapped_column(String(30))
     description: Mapped[str | None] = mapped_column(Text)
+    # Headquarters: free-text address plus its geocoded point (geocode_cache,
+    # see library/organization_location.py). Coordinates may also be set by hand.
+    headquarters_address: Mapped[str | None] = mapped_column(Text)
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    website: Mapped[str | None] = mapped_column(Text)
+    # Vault-relative path of the Obsidian note describing the organization.
+    obsidian_note_path: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
