@@ -534,3 +534,66 @@ class TestPersonAliasAdd:
         assert data["aliases"] == ["Starlinek"]
         mock_add.assert_called_once_with(session, person, "Starlinek")
         session.commit.assert_called_once()
+
+
+class TestPlacesMergeGeocodesTarget:
+    """POST /document/<id>/places/merge: a merged target is source='manual' (enrichment skips it)."""
+
+    @staticmethod
+    def _entity(entity_id, text, geocode_id=None):
+        from library.db.models import DocumentEntity
+
+        return DocumentEntity(
+            id=entity_id, document_id=42, entity_type="placeName", entity_text=text,
+            mention_count=1, variants=[], source="ner", geocode_id=geocode_id,
+        )
+
+    @staticmethod
+    def _post(client, source, target, geocode_result=None):
+        session = MagicMock()
+        session.get.side_effect = lambda model, entity_id: {7: source, 8: target}.get(entity_id)
+        geocode = MagicMock(return_value=geocode_result or {"geocoded": True, "same_place_entity": None})
+        with patch("server.get_scoped_session", return_value=session), \
+                patch("server.Document") as MockDoc, \
+                patch("library.entity_review_audit.record_entity_decision") as audit, \
+                patch("library.place_verification.geocode_single_place", geocode):
+            MockDoc.get_by_id.return_value = MagicMock(id=42)
+            resp = client.post(
+                "/document/42/places/merge",
+                json={"source_entity_id": 7, "target_entity_id": 8},
+                headers=API_HEADERS,
+            )
+        return resp, geocode, audit, session
+
+    def test_geocodes_a_target_neither_side_had_geocoded(self, client):
+        source, target = self._entity(7, "Aden"), self._entity(8, "Aden miasto")
+
+        resp, geocode, audit, session = self._post(client, source, target)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["geocoded"] is True
+        geocode.assert_called_once()
+        assert geocode.call_args.args[2] is target
+        session.delete.assert_called_once_with(source)
+        audit.assert_called_once()
+
+    def test_skips_geocoding_when_target_already_has_it(self, client):
+        source, target = self._entity(7, "Aden"), self._entity(8, "Aden miasto", geocode_id=5)
+
+        resp, geocode, _, _ = self._post(client, source, target)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["geocoded"] is True
+        geocode.assert_not_called()
+
+    def test_unresolved_geocode_still_completes_the_merge(self, client):
+        source, target = self._entity(7, "Aden"), self._entity(8, "Aden miasto")
+
+        resp, _, audit, session = self._post(
+            client, source, target, geocode_result={"geocoded": False, "same_place_entity": None},
+        )
+
+        assert resp.status_code == 200
+        assert resp.get_json()["geocoded"] is False
+        session.commit.assert_called_once()
+        audit.assert_called_once()
