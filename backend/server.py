@@ -1582,7 +1582,7 @@ def website_entities_rename(entity_id: int):
     from library.db.models import DocumentEntity
     from library.entity_service import get_document_entities
     from library.entity_review_audit import record_entity_decision
-    from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
+    from library.place_verification import PLACE_ENTITY_TYPES, geocode_single_place, remove_orphaned_tag
 
     data = request.get_json(silent=True)
     name = data.get("text") if isinstance(data, dict) else None
@@ -1597,6 +1597,12 @@ def website_entities_rename(entity_id: int):
         return jsonify(status="error", message="Można poprawiać tylko nazwy miejsc."), 400
 
     conflict_message = 'Takie miejsce już istnieje. Wybierz „Połącz z innym miejscem”.'
+
+    def conflict_response(duplicate):
+        return jsonify(status="error", message=conflict_message, conflict_entity={
+            "id": duplicate.id, "text": duplicate.entity_text, "entity_type": duplicate.entity_type,
+        } if duplicate is not None else None), 409
+
     try:
         duplicate = session.query(DocumentEntity).filter(
             DocumentEntity.document_id == entity.document_id,
@@ -1605,7 +1611,7 @@ def website_entities_rename(entity_id: int):
             DocumentEntity.id != entity.id,
         ).first()
         if duplicate is not None:
-            return jsonify(status="error", message=conflict_message), 409
+            return conflict_response(duplicate)
         old_name = entity.entity_text
         old_variants = list(entity.variants or [])
         document = session.get(Document, entity.document_id)
@@ -1621,6 +1627,8 @@ def website_entities_rename(entity_id: int):
             details={"new_text": name, "variants": old_variants, "removed_tag": removed_tag},
         )
         session.flush()
+        geocoding = geocode_single_place(session, document, entity)
+        session.flush()
         item = next(item for item in get_document_entities(session, entity.document_id)[entity.entity_type]
                     if item["id"] == entity.id)
         item.update(entity_type=entity.entity_type, mention_count=entity.mention_count)
@@ -1628,14 +1636,20 @@ def website_entities_rename(entity_id: int):
     except IntegrityError as exc:
         session.rollback()
         if getattr(exc.orig, "pgcode", None) == "23505":
-            return jsonify(status="error", message=conflict_message), 409
+            duplicate = session.query(DocumentEntity).filter(
+                DocumentEntity.document_id == entity.document_id,
+                DocumentEntity.entity_type == entity.entity_type,
+                DocumentEntity.entity_text == name,
+                DocumentEntity.id != entity.id,
+            ).first()
+            return conflict_response(duplicate)
         logging.exception("entity rename failed for entity %s", entity_id)
         return jsonify(status="error", message="Nie udało się zapisać nazwy miejsca."), 500
     except Exception:
         session.rollback()
         logging.exception("entity rename failed for entity %s", entity_id)
         return jsonify(status="error", message="Nie udało się zapisać nazwy miejsca."), 500
-    return jsonify(status="success", entity=item), 200
+    return jsonify(status="success", entity=item, **geocoding), 200
 
 
 @app.route('/website_entities/<int:entity_id>', methods=['DELETE', 'OPTIONS'])

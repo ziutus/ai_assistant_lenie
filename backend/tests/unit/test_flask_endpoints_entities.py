@@ -276,7 +276,7 @@ class TestWebsiteEntitiesRename:
             "library.entity_service.get_document_entities", return_value={entity_type: [item]}
         ), patch("library.place_verification.remove_orphaned_tag", return_value="miejsce-stare") as remove, patch(
             "library.entity_review_audit.record_entity_decision"
-        ) as audit:
+        ) as audit, patch("library.place_verification._get_or_create_geocode", side_effect=TimeoutError):
             resp = client.patch("/website_entities/7", json={"text": "  Jemen Północny  "}, headers=API_HEADERS)
         assert resp.status_code == 200
         assert resp.content_type == "application/json"
@@ -297,7 +297,8 @@ class TestWebsiteEntitiesRename:
         session = MagicMock()
         session.get.return_value = MagicMock(id=7, document_id=42, entity_type="geogName",
                                              entity_text="Jemenu", variants=[])
-        session.query.return_value.filter.return_value.first.return_value = None if concurrent else MagicMock()
+        duplicate = MagicMock(id=8, entity_text="Jemen", entity_type="geogName")
+        session.query.return_value.filter.return_value.first.side_effect = [None, duplicate] if concurrent else [duplicate]
         if concurrent:
             session.flush.side_effect = IntegrityError("update", {}, MagicMock(pgcode="23505"))
         with patch("server.get_scoped_session", return_value=session), patch(
@@ -306,12 +307,44 @@ class TestWebsiteEntitiesRename:
             resp = client.patch("/website_entities/7", json={"text": "Jemen"}, headers=API_HEADERS)
         assert resp.status_code == 409
         assert "Połącz z innym miejscem" in resp.get_json()["message"]
+        assert resp.get_json()["conflict_entity"] == {"id": 8, "text": "Jemen", "entity_type": "geogName"}
         session.commit.assert_not_called()
         if concurrent:
             session.rollback.assert_called_once()
 
     def test_options(self, client):
         assert client.options("/website_entities/7").status_code == 200
+
+    @pytest.mark.parametrize("failure", [False, True])
+    def test_geocodes_renamed_place(self, client, failure):
+        entity = MagicMock(id=7, document_id=42, entity_type="geogName",
+                           entity_text="Adenu", variants=[], mention_count=1)
+        document = MagicMock(tags="topic")
+        row = MagicMock(id=12, resolved=True, display_name="Aden, Jemen")
+        other = MagicMock(id=8, entity_text="Aden", entity_type="placeName", geocode_id=12, geocode=row)
+        session = MagicMock()
+        session.get.side_effect = [entity, document]
+        session.query.return_value.filter.return_value.first.return_value = None
+        session.query.return_value.filter.return_value.all.return_value = [other]
+        with patch("server.get_scoped_session", return_value=session), patch(
+            "library.place_verification._get_or_create_geocode", return_value=row,
+            side_effect=TimeoutError if failure else None,
+        ) as lookup, patch("library.place_verification.remove_orphaned_tag"), patch(
+            "library.entity_review_audit.record_entity_decision"
+        ), patch("library.entity_service.get_document_entities", return_value={
+            "geogName": [{"id": 7, "text": "Aden"}],
+        }):
+            resp = client.patch("/website_entities/7", json={"text": "Aden"}, headers=API_HEADERS)
+        assert resp.status_code == 200
+        lookup.assert_called_once_with(session, "Aden")
+        assert resp.get_json()["geocoded"] is (not failure)
+        assert resp.get_json()["same_place_entity"] == (None if failure else {
+            "id": 8, "text": "Aden", "entity_type": "placeName",
+        })
+        assert entity.entity_text == "Aden"
+        assert entity.geocode is (None if failure else row)
+        assert document.tags == ("topic" if failure else "topic,miejsce-aden")
+        session.commit.assert_called_once()
 
 
 class TestWebsiteEntitiesDelete:

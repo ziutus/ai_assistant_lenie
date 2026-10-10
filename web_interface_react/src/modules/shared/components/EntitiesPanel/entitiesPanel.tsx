@@ -390,6 +390,10 @@ const EntitiesPanel = ({
   const [renameFor, setRenameFor] = React.useState<EntityItem | null>(null);
   const [renameText, setRenameText] = React.useState("");
   const [isRenaming, setIsRenaming] = React.useState(false);
+  const [mergeHint, setMergeHint] = React.useState<{
+    source: EntityItem; target: EntityItem; conflict: boolean;
+  } | null>(null);
+  const [isMergingPlace, setIsMergingPlace] = React.useState(false);
   const [reviewReason, setReviewReason] = React.useState("");
   const [reviewComment, setReviewComment] = React.useState("");
 
@@ -445,6 +449,7 @@ const EntitiesPanel = ({
     setDeleteFor(null);
     setRenameFor(null);
     setRenameText("");
+    setMergeHint(null);
     setReviewReason("");
     setReviewComment("");
     fetchEntities();
@@ -504,15 +509,23 @@ const EntitiesPanel = ({
   const handleRename = async () => {
     if (renameFor?.id == null || !renameText.trim() || isRenaming) return;
     setIsRenaming(true);
+    setMergeHint(null);
     setMessage("");
     try {
-      await axios.patch(`${apiUrl}/website_entities/${renameFor.id}`,
+      const response = await axios.patch(`${apiUrl}/website_entities/${renameFor.id}`,
         { text: renameText.trim() }, { headers: jsonHeaders });
       setRenameFor(null);
       fetchEntities();
-      setMessage("Nazwa miejsca została poprawiona.");
+      setMessage(`Nazwa miejsca została poprawiona — ${response.data.geocoded
+        ? "miejsce potwierdzone przez geokoder" : "geokoder nie potwierdził"}.`);
+      if (response.data.same_place_entity) {
+        setMergeHint({ source: renameFor, target: response.data.same_place_entity, conflict: false });
+      }
     } catch (error: any) {
       setMessage(error.response?.data?.message || "Nie udało się poprawić nazwy miejsca.");
+      if (error.response?.status === 409 && error.response.data.conflict_entity) {
+        setMergeHint({ source: renameFor, target: error.response.data.conflict_entity, conflict: true });
+      }
     } finally {
       setIsRenaming(false);
     }
@@ -632,24 +645,31 @@ const EntitiesPanel = ({
     }
   };
 
-  const handlePlaceMergePick = async (target: EntityItem) => {
-    if (placeMergeFor?.id == null || target.id == null) {
+  const mergePlaces = async (source: EntityItem | null, target: EntityItem) => {
+    if (source?.id == null || target.id == null || isMergingPlace) {
       return;
     }
     setMessage("");
+    setIsMergingPlace(true);
     try {
       await axios.post(
         `${apiUrl}/document/${docId}/places/merge`,
-        { source_entity_id: placeMergeFor.id, target_entity_id: target.id },
+        { source_entity_id: source.id, target_entity_id: target.id },
         { headers: jsonHeaders },
       );
       setPlaceMergeFor(null);
+      setMergeHint(null);
+      setRenameFor(null);
       fetchEntities();
+      setMessage("Miejsca zostały połączone.");
     } catch (error: any) {
       console.error("Error merging place", error);
       setMessage(`Nie udało się połączyć miejsc: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsMergingPlace(false);
     }
   };
+  const handlePlaceMergePick = (target: EntityItem) => mergePlaces(placeMergeFor, target);
 
   const handleExclude = async (scope: "global" | "author") => {
     if (!excludeFor || !reviewReason || (reviewReason === "other" && !reviewComment.trim())) {
@@ -754,6 +774,7 @@ const EntitiesPanel = ({
     && (reviewReason !== "other" || Boolean(reviewComment.trim()));
 
   const resetFlows = () => {
+    setMergeHint(null);
     setRenameFor(null);
     setDeleteFor(null);
     setExcludeFor(null);
@@ -1006,6 +1027,16 @@ const EntitiesPanel = ({
         actions={editMode ? editActions("placeName") : undefined} />
       <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
 
+      {mergeHint && (
+        <div style={{ marginTop: 8 }}>
+          <span>{mergeHint.conflict
+            ? `Miejsce „${mergeHint.target.text}” już istnieje — połączyć?`
+            : `To samo miejsce co „${mergeHint.target.text}” — połączyć?`}</span>
+          <button type="button" disabled={isMergingPlace}
+            onClick={() => void mergePlaces(mergeHint.source, mergeHint.target)}>Połącz</button>
+          <button type="button" disabled={isMergingPlace} onClick={() => setMergeHint(null)}>Nie</button>
+        </div>
+      )}
       {renameFor && (
         <div onKeyDown={(event) => {
           if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
