@@ -2013,7 +2013,8 @@ def organization_update(organization_id: int):
                     "existing_organization_id": exc.existing_organization_id}, 409
         except SourceConflictError as exc:
             session.rollback()
-            return {"status": "error", "message": str(exc)}, 409
+            return {"status": "error", "message": str(exc),
+                    "existing_organization_id": exc.existing_organization_id}, 409
         except ValueError as exc:
             session.rollback()
             return {"status": "error", "message": str(exc)}, 400
@@ -2170,6 +2171,29 @@ def organization_alias_delete(organization_id: int, alias_id: int):
     return {"status": "success", "deleted_alias_id": alias_id}, 200
 
 
+@app.route('/organizations/<int:organization_id>/merge_preview', methods=['GET'])
+def organization_merge_preview(organization_id: int):
+    """Side-by-side comparison of two organizations and what merging the first into the
+    second (``?target_id=``) would do — read-only. Returns both organizations (name, type,
+    description, aliases, document count, bound information source) and ``effects``: the
+    alias added, aliases moved, documents moved / present in both, entities renamed and what
+    happens to the sources. Backs the confirmation step of every organization merge."""
+    from library.organization_source_sync import merge_preview
+
+    target_id = request.args.get('target_id', type=int)
+    if target_id is None or target_id < 1:
+        return {"status": "error", "message": "target_id is required"}, 400
+
+    session = get_scoped_session()
+    try:
+        preview = merge_preview(session, organization_id, target_id)
+    except LookupError:
+        return {"status": "error", "message": "Organization not found"}, 404
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+    return jsonify({"status": "success", **preview}), 200
+
+
 @app.route('/organizations/<int:organization_id>/merge', methods=['POST', 'OPTIONS'])
 def organization_merge(organization_id: int):
     """Merge one registry organization into another, without a document context.
@@ -2201,8 +2225,11 @@ def organization_merge(organization_id: int):
     if session.get(Organization, target_organization_id) is None:
         return {"status": "error", "message": "Target organization not found"}, 404
 
+    from library.organization_source_sync import merge_organizations
+
     try:
-        result = organization_registry.merge(
+        # Also folds the information sources of both organizations and renames the entities.
+        result = merge_organizations(
             session, organization_id, target_organization_id, make_global_alias=make_global_alias,
         )
         session.commit()
@@ -2301,8 +2328,10 @@ def document_organizations_merge(doc_id: int):
     source_entity_variants = list(source_entity.variants or [])
     target_variants_before = list(target_entity.variants or []) if target_entity is not None else []
 
+    from library.organization_source_sync import merge_organizations
+
     try:
-        result = organization_registry.merge(
+        result = merge_organizations(
             session, source_link.organization_id, target_organization_id,
             make_global_alias=make_global_alias,
         )
