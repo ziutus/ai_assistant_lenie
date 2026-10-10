@@ -3,6 +3,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import type { CountryTag } from "../CountryMap/countryMap";
+import InfoTip from "../InfoTip";
 
 // NER entities detected in the document (backend: GET/POST /website_entities,
 // table document_entities — see docs/ner-integration-plan.md).
@@ -340,8 +341,12 @@ const EntitiesPanel = ({
   onBusyChange,
   onEntitiesChanged,
   countries = [],
+  refreshKey = 0,
 }: {
   docId?: string | number;
+  // Bump to force a full reset + refetch for the same document (e.g. after the
+  // editor reopened it, which deletes all derived entities server-side).
+  refreshKey?: number;
   externalDisabled?: boolean;
   onBusyChange?: (busy: boolean) => void;
   // Fires after a successful refresh/delete/merge/exclude — lets a host page
@@ -364,6 +369,8 @@ const EntitiesPanel = ({
   // web_documents.ner_unavailable_at) — lets us warn instead of implying
   // "no entities" when the real cause was a dead service.
   const [nerUnavailableAt, setNerUnavailableAt] = React.useState<string | null>(null);
+  // miejsce-* tags of Document.tags (summary of verified places), read-only.
+  const [placeTags, setPlaceTags] = React.useState<string[]>([]);
   const [editMode, setEditMode] = React.useState(false);
   // "To inna osoba…" flow: chip whose person link is being re-pointed
   const [mergeFor, setMergeFor] = React.useState<EntityItem | null>(null);
@@ -412,6 +419,7 @@ const EntitiesPanel = ({
       .then((response) => {
         setEntities(response.data.entities);
         setNerUnavailableAt(response.data.ner_unavailable_at ?? null);
+        setPlaceTags(Array.isArray(response.data.place_tags) ? response.data.place_tags : []);
         onEntitiesChanged?.();
       })
       .catch((error) => {
@@ -421,6 +429,8 @@ const EntitiesPanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, apiUrl, apiKey]);
 
+  const sawActiveJobRef = React.useRef(false);
+
   const fetchEnrichmentJob = React.useCallback(() => {
     if (!docId) return;
     axios
@@ -428,7 +438,10 @@ const EntitiesPanel = ({
       .then((response) => {
         const job = response.data.job ?? null;
         setEnrichmentJob(job);
-        if (job?.status === "done") {
+        // Only announce completion of a job watched in this session. A stale
+        // "done" record (e.g. from before the document was reopened for
+        // editing) next to an empty list read as a contradiction.
+        if (job?.status === "done" && sawActiveJobRef.current) {
           setMessage("Pełna weryfikacja encji zakończona.");
         }
       })
@@ -437,7 +450,9 @@ const EntitiesPanel = ({
   }, [docId, apiUrl, apiKey]);
 
   React.useEffect(() => {
+    sawActiveJobRef.current = false;
     setEntities(null);
+    setPlaceTags([]);
     setMessage("");
     setEditMode(false);
     setMergeFor(null);
@@ -454,11 +469,15 @@ const EntitiesPanel = ({
     setReviewComment("");
     fetchEntities();
     fetchEnrichmentJob();
-  }, [docId, fetchEntities, fetchEnrichmentJob]);
+  }, [docId, refreshKey, fetchEntities, fetchEnrichmentJob]);
 
   const enrichmentActive = enrichmentJob?.status === "queued"
     || enrichmentJob?.status === "running"
     || enrichmentJob?.status === "cancel_requested";
+
+  React.useEffect(() => {
+    if (enrichmentActive) sawActiveJobRef.current = true;
+  }, [enrichmentActive]);
 
   React.useEffect(() => {
     if (!enrichmentActive) return undefined;
@@ -1032,6 +1051,29 @@ const EntitiesPanel = ({
       />
       <EntityChips label={"Miejsca"} items={places} menuActions={placeMenuActions}
         actions={editMode ? editActions("placeName") : undefined} />
+      {placeTags.length > 0 && (
+        <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}>
+          Tagi miejsc: {placeTags.join(", ")}
+          <InfoTip label="Czym są tagi miejsc">
+            <strong>Tagi miejsc (miejsce-…)</strong> to podsumowanie miejsc potwierdzonych w tym dokumencie,
+            zapisane w tagach dokumentu. Tu tylko do odczytu.
+            <br /><br />
+            <strong>Jak powstają:</strong> po wykryciu encji worker geokoduje miejsca, a model językowy wybiera
+            te, które dokument faktycznie omawia. Nazwa kanoniczna z geokodera staje się tagiem. „Popraw nazwę”
+            geokoduje poprawioną nazwę i dopisuje jej tag. Tag znika przy usunięciu ostatniej encji tego
+            miejsca oraz przy otwarciu dokumentu do edycji.
+            <br /><br />
+            <strong>Gdzie są używane:</strong> w wyszukiwarce tagi są częścią przeszukiwanego tekstu dokumentu
+            (dopasowanie tekstowe i ocena trafności); nie ma osobnego filtra po tagach. Widać je też w polu
+            tagów edytora i w czytniku. Mapa ich nie używa: kraje bierze z tagów kraj-…, a punkty
+            ze współrzędnych encji.
+            <br /><br />
+            <strong>Inne tagi:</strong> tematyczne (np. geopolityka, wojsko), nadawane przez model; kraj-…
+            (omawiane państwa); tagi z notatek Obsidiana (np. wiedza-…) i własne. Pytania kontrolne są dobierane
+            po zgodności tagów dokumentu z tagami pytań.
+          </InfoTip>
+        </div>
+      )}
       <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
 
       {mergeHint && (

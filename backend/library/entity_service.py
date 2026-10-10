@@ -434,6 +434,13 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         from library.information_provenance import refresh_ner_cited_sources
 
         refresh_ner_cited_sources(session, doc, text, organization_groups)
+    # After a reopen-for-editing every place row is fresh NER output; re-apply the
+    # human renames/merges/deletions recorded in entity_review_decisions so those
+    # corrections of the automation are not lost with the derived data.
+    session.flush()
+    from library.entity_overrides import replay_manual_place_decisions
+
+    replay_manual_place_decisions(session, document_id, doc)
     # Named facilities are semantic entities assembled from a recognised object
     # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra
     # spaCy label.  Flush first so their links can safely refer to new place rows.

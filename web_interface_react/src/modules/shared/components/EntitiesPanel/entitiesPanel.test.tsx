@@ -105,6 +105,63 @@ it("closes on outside pointerdown and Escape, and clears rename on document chan
   expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
 });
 
+it("refetches and clears open forms when refreshKey changes for the same document", async () => {
+  const view = render(<EntitiesPanel docId={10753} refreshKey={0} />);
+  await openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  expect(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeTruthy();
+  const callsBefore = vi.mocked(axios.get).mock.calls.length;
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null }
+    : { entities: { persName: [], orgName: [], geogName: [], placeName: [] } } }));
+  view.rerender(<EntitiesPanel docId={10753} refreshKey={1} />);
+  await waitFor(() => expect(vi.mocked(axios.get).mock.calls.length).toBe(callsBefore + 2));
+  expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
+  expect(screen.queryByRole("button", { name: place.text })).toBeNull();
+});
+
+const emptyEntities = { persName: [], orgName: [], geogName: [], placeName: [] };
+
+it("does not announce completion for a stale finished job it never saw running", async () => {
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: { id: "old", status: "done", progress: null } }
+    : { entities: emptyEntities } }));
+  render(<EntitiesPanel docId={10753} />);
+  await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
+  await act(async () => {});
+  expect(screen.queryByText(/Pełna weryfikacja encji zakończona/)).toBeNull();
+});
+
+it("announces completion after watching a job go from running to done", async () => {
+  let jobCalls = 0;
+  vi.mocked(axios.get).mockImplementation(async (url) => {
+    if (!url.endsWith("enrichment_job")) return { data: { entities: emptyEntities } };
+    jobCalls += 1;
+    return { data: { job: { id: "j", status: jobCalls === 1 ? "running" : "done", progress: null } } };
+  });
+  render(<EntitiesPanel docId={10753} />);
+  expect(await screen.findByText("Pełna weryfikacja encji zakończona.", {}, { timeout: 6000 })).toBeTruthy();
+}, 10000);
+
+it("shows read-only place tags under Miejsca only when the document has them", async () => {
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null }
+    : { entities: { persName: [], orgName: [], geogName: [place], placeName: [] },
+      place_tags: ["miejsce-aden", "miejsce-rijad"] } }));
+  const view = render(<EntitiesPanel docId={10753} />);
+  expect(await screen.findByText("Tagi miejsc: miejsce-aden, miejsce-rijad")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Czym są tagi miejsc" }));
+  expect(screen.getByRole("note").textContent).toContain("nie ma osobnego filtra po tagach");
+  view.unmount();
+
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null }
+    : { entities: { persName: [], orgName: [], geogName: [place], placeName: [] } } }));
+  render(<EntitiesPanel docId={10753} />);
+  await screen.findByRole("button", { name: place.text });
+  expect(screen.queryByText(/Tagi miejsc:/)).toBeNull();
+});
+
 it("preserves reader highlight behavior when menuActions is absent", () => {
   const highlight = vi.fn();
   render(<EntityChips label="Miejsca" items={[place]} highlightMode onHighlight={highlight} />);

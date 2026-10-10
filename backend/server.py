@@ -712,6 +712,12 @@ def website_entities_get():
         "status": "success",
         "id": doc_id,
         "entities": get_document_entities(session, doc_id),
+        # miejsce-* tags are the verified-places summary stored in Document.tags;
+        # read-only here (the panel shows them next to the place chips).
+        "place_tags": sorted(
+            tag.strip() for tag in (doc.tags if isinstance(doc.tags, str) else "").split(",")
+            if tag.strip().startswith("miejsce-")
+        ),
         "ner_unavailable_at": doc.ner_unavailable_at.isoformat() if doc.ner_unavailable_at else None,
         "entities_checked_at": doc.entities_checked_at.isoformat() if doc.entities_checked_at else None,
     }, 200
