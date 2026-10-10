@@ -528,9 +528,20 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                       "variants": row.variants or []}
         if row.entity_type in {*place_types, "orgName"}:
             item["is_country"] = canonical_country_name(row.entity_text) is not None
+        status = row.place_verification_status
+        if row.entity_type in place_types:
+            item["place_verification_status"] = status
+            item["place_review_reason"] = row.place_review_reason
+            if status in ("needs_review", "rejected"):
+                item["verified"] = False
         if row.geocode is not None:
-            item["verified"] = row.geocode.resolved
-            if row.geocode.resolved:
+            item["verified"] = row.geocode.resolved and status not in ("needs_review", "rejected")
+            if status == "needs_review":
+                item["proposed_geocode_id"] = row.geocode.id
+                item["proposed_lat"] = float(row.geocode.lat) if row.geocode.lat is not None else None
+                item["proposed_lon"] = float(row.geocode.lon) if row.geocode.lon is not None else None
+                item["proposed_display_name"] = row.geocode.display_name
+            elif item["verified"]:
                 item["lat"] = float(row.geocode.lat) if row.geocode.lat is not None else None
                 item["lon"] = float(row.geocode.lon) if row.geocode.lon is not None else None
                 item["display_name"] = row.geocode.display_name

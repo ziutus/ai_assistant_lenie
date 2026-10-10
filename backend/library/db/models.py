@@ -1949,6 +1949,8 @@ class DocumentEntity(Base):
     __table_args__ = (UniqueConstraint("document_id", "entity_type", "entity_text"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    place_verification_status: Mapped[str | None] = mapped_column(String(20))
+    place_review_reason: Mapped[str | None] = mapped_column(String(100))
     document_id: Mapped[int] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )

@@ -28,6 +28,61 @@ def run(decisions, entities):
     return session, touched, stats
 
 
+@pytest.mark.parametrize("deleted", [False, True])
+def test_confirmed_location_replays_on_new_id_and_later_delete_wins(deleted):
+    from library.db.models import GeocodeCache
+    row = entity("Huti", variants=["Huty"])
+    row.id = 999
+    rows = [row]
+    session = MagicMock()
+    proposal = GeocodeCache(id=17, query="Huti", resolved=True, display_name="Huti, Ukraina", lat=49, lon=24)
+    session.get.return_value = proposal
+    decisions = [decision("place_confirmed", "Huty", variants=["Huti"], geocode_id=17)]
+    if deleted:
+        decisions.append(decision("deleted", "Huty"))
+    touched, _ = apply_decisions(session, decisions, rows)
+    if deleted:
+        assert rows == []
+        assert touched == {}
+    else:
+        assert row.id == 999
+        assert row.source == "manual"
+        assert row.place_verification_status == "confirmed"
+        assert row.geocode is proposal
+        assert row.geocode_id == 17
+
+
+def test_confirmed_disappeared_mention_does_not_create_entity():
+    session, touched, _ = run([decision("place_confirmed", "Huty", geocode_id=17)], [])
+    assert touched == {}
+    session.add.assert_not_called()
+    session.get.assert_not_called()
+
+
+def test_confirmed_replay_tags_selected_location_without_geocoding():
+    from library.db.models import Document, GeocodeCache
+    row = entity("Huty")
+    doc = Document(id=1, tags="topic")
+    proposal = GeocodeCache(id=17, query="Huty", resolved=True, display_name="Huty, Polska", lat=50, lon=19)
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[decision("place_confirmed", "Huty", geocode_id=17)], [row]]
+    session.get.return_value = proposal
+    with patch("library.place_verification.geocode_single_place") as geocode:
+        replay_manual_place_decisions(session, 1, doc)
+    assert doc.tags == "topic,miejsce-huty"
+    assert row.geocode is proposal
+    geocode.assert_not_called()
+
+
+def test_missing_confirmed_cache_row_requires_review_without_lookup():
+    row = entity("Huty")
+    session = MagicMock()
+    session.get.return_value = None
+    touched, _ = apply_decisions(session, [decision("place_confirmed", "Huty", geocode_id=17)], [row])
+    assert touched == {}
+    assert row.place_verification_status == "needs_review"
+
+
 def test_rename_is_reapplied_to_fresh_ner_row_and_keeps_old_forms_as_variants():
     row = entity("Jemenu Północnego", count=3, variants=["Jemenu Północnym"])
     entities = [row]

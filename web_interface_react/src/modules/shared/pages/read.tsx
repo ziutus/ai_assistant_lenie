@@ -1286,7 +1286,7 @@ const Read: React.FC = () => {
       setEntitiesCheckedAt(data.entities_checked_at ?? null);
       setPlaces(
         items
-          .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
+          .filter((it: any) => it.verified === true && it.place_verification_status !== "needs_review" && it.lat != null && it.lon != null)
           .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
       );
     } catch {
@@ -1330,7 +1330,7 @@ const Read: React.FC = () => {
           placeItems: items,
           facilities: data.entities?.facility ?? [],
           markers: items
-            .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
+            .filter((it: any) => it.verified === true && it.place_verification_status !== "needs_review" && it.lat != null && it.lon != null)
             .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
           countries: data.countries ?? [],
         });

@@ -1658,6 +1658,50 @@ def website_entities_rename(entity_id: int):
     return jsonify(status="success", entity=item, **geocoding), 200
 
 
+@app.route('/website_entities/<int:entity_id>/confirm_place', methods=['POST'])
+def website_entities_confirm_place(entity_id: int):
+    """Approve a displayed geocoder proposal and durably record the selection."""
+    from library.db.models import DocumentEntity, GeocodeCache
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import PLACE_ENTITY_TYPES, geocode_single_place, remove_orphaned_tag
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify(status="error", message="Nieprawidłowe dane."), 400
+    selected_id = data.get("selected_geocode_id")
+    if selected_id is not None and (type(selected_id) is not int or selected_id <= 0):
+        return jsonify(status="error", message="Nieprawidłowy identyfikator lokalizacji."), 400
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type not in PLACE_ENTITY_TYPES:
+        return jsonify(status="error", message="Encja nie jest miejscem."), 400
+    proposal = session.get(GeocodeCache, selected_id) if selected_id is not None else entity.geocode
+    if proposal is None or not proposal.resolved or proposal.lat is None or proposal.lon is None:
+        return jsonify(status="error", message="Brak propozycji lokalizacji."), 409
+    try:
+        document = session.get(Document, entity.document_id)
+        if document is not None and entity.geocode is not None and entity.geocode.id != proposal.id:
+            remove_orphaned_tag(session, document, entity)
+        entity.place_verification_status = "confirmed"
+        entity.place_review_reason = None
+        entity.source = "manual"
+        geocode_single_place(session, document, entity, selected_geocode=proposal)
+        record_entity_decision(
+            session, document_id=entity.document_id, document_entity_id=entity.id,
+            entity_type=entity.entity_type, entity_text=entity.entity_text, decision="place_confirmed",
+            details={"name": entity.entity_text, "variants": list(entity.variants or []),
+                     "geocode_id": proposal.id, "display_name": proposal.display_name},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Place confirmation failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zatwierdzić lokalizacji."), 500
+    return jsonify(status="success"), 200
+
+
 @app.route('/website_entities/<int:entity_id>', methods=['DELETE', 'OPTIONS'])
 def website_entities_delete(entity_id: int):
     """Delete a stored NER entity row (editor UI).
