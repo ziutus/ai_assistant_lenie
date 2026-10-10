@@ -8,6 +8,7 @@
 - [Praca z vaultem](#praca-z-vaultem)
 - [Pakiet zmian](#pakiet-zmian)
 - [Synchronizacja bazy](#synchronizacja-bazy)
+- [Organizacje opisane w artykule](#organizacje-opisane-w-artykule)
 - [Raport](#raport)
 
 ## Środowisko
@@ -133,6 +134,19 @@ Wykonaj ją dopiero po skutecznym zapisie plików:
 - wykonaj zmiany w jednej transakcji bazy i wycofaj ją przy błędzie;
 - nie cofaj automatycznie poprawnie zapisanych plików; zgłoś rozbieżność i zaproponuj naprawę.
 
+## Organizacje opisane w artykule
+
+NER wypełnia globalny rejestr `organizations` samą nazwą (lemat); `description`, `organization_type` i aliasy pozostają puste, dopóki ktoś ich nie uzupełni. Jeśli artykuł **merytorycznie opisuje** organizację (milicja, firma, agencja, partia, grupa), a nie tylko ją wymienia, dołącz do pakietu zmian propozycję wpisów rejestru i wykonaj ją dopiero po zgodzie, po skutecznym zapisie notatek i bazy. Wszystkie wywołania to REST z nagłówkiem `x-api-key` = `$env:LENIE_API_KEY`:
+
+1. Wyszukaj kandydata: `GET /organizations?q=<fragment>` (nazwy kanoniczne i aliasy; używaj charakterystycznego słowa, bo NER zapisuje odmienione lematy).
+2. Duplikaty tej samej organizacji scal: `POST /organizations/<source_id>/merge` z `{"target_organization_id": <id>, "make_global_alias": true}`. Nie scalaj bytów, których tożsamości nie jesteś pewien (partia i jej siły zbrojne to dwa byty).
+3. Pusty lub ubogi opis: `PATCH /organizations/<id>` (`canonical_name`, `organization_type`, `description`). Zmiana nazwy zostawia starą jako alias. Dobrego opisu nie nadpisuj — rozszerz go i pokaż różnicę.
+4. Brak wpisu: `POST /organizations` z nazwą w mianowniku liczby pojedynczej, wolnym tekstem `organization_type` (np. `milicja / formacja zbrojna`, `firma`, `partia / ruch polityczny`) i opisem na 1–3 zdania, tylko z faktów z artykułu lub vaulta.
+5. Aliasy: `POST /organizations/<id>/aliases` z `{"alias", "alias_kind": "manual"|"abbreviation"|"former_name"|"inflection"}`. Kod `409` oznacza, że alias należy do innej organizacji — to duplikat do rozstrzygnięcia scaleniem, nie błąd do obejścia. Niejednoznacznych skrótów nie dodawaj jako globalnych aliasów.
+6. Zweryfikuj `GET /organizations/<id>` i zgłoś nazwę, typ, opis, aliasy oraz `document_count`.
+
+W PowerShell 5.1 ciała żądań z polskimi znakami wysyłaj z małego skryptu Pythona (`requests`, `json.dumps(..., ensure_ascii=False).encode("utf-8")`, nagłówek `Content-Type: application/json; charset=utf-8`), trzymanego poza repozytorium i uruchamianego przez `backend/.venv/Scripts/python.exe -I`. Ten krok nie wymaga bezpośredniego dostępu do bazy.
+
 ## Raport
 
 Po operacji pokaż:
@@ -141,4 +155,5 @@ Po operacji pokaż:
 - zmianę indeksu i cross-reference;
 - UUID dokumentu, `reviewed_at` i zapisane ścieżki dokumentu;
 - pozycje chunków, ich statusy i ścieżki;
+- zmiany w rejestrze organizacji (id, nazwa, typ, opis, aliasy, scalenia);
 - wszelkie niewykonane kroki, bez przedstawiania częściowego wyniku jako pełnego sukcesu.
