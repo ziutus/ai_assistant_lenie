@@ -237,6 +237,46 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set, rules=(), host=Non
     return cleaned
 
 
+_GOOGLE_PROMO_BUTTON_RE = re.compile(r'^Dodaj w Google(?: \[link\d+\])?$')
+_LOGO_MARKER_RE = re.compile(r'^\[img\d+: Logo\]$')
+
+
+def strip_onet_google_promo(text: str | None) -> str | None:
+    """Usuń z już zapisanego text_md blok "Dodaj w Google" (przycisk preferowanego
+    źródła) wraz ze stojącym tuż przed nim markerem logo `[imgN: Logo]`.
+
+    Dla backfillu (imports/strip_onet_google_promo_backfill.py) — przy imporcie
+    robią to _SKIP_IMAGE_URL_PATTERNS i _clean_lines_onet. Zachowuje końce
+    linii; inne markery [imgN]/[linkN] zostają bez zmian.
+    """
+    if not text:
+        return text
+    kept: list[str] = []
+    changed = False
+    for line in text.splitlines(keepends=True):
+        if not _GOOGLE_PROMO_BUTTON_RE.match(line.strip()):
+            kept.append(line)
+            continue
+        changed = True
+        index = len(kept) - 1
+        while index >= 0 and not kept[index].strip():
+            index -= 1
+        if index >= 0 and _LOGO_MARKER_RE.match(kept[index].strip()):
+            del kept[index:]
+        else:
+            while kept and not kept[-1].strip():
+                kept.pop()
+    if not changed:
+        return text
+    # Po usuniętym bloku zostają jego puste separatory — zwiń serie pustych linii
+    result: list[str] = []
+    for line in kept:
+        if not line.strip() and result and not result[-1].strip():
+            continue
+        result.append(line)
+    return "".join(result)
+
+
 def _clean_lines_onet(lines: list[str], rules=(), host=None, hit_ids=None) -> list[str]:
     """Czyszczenie specyficzne dla onet.pl/fakt.pl."""
     skip = {
@@ -264,6 +304,9 @@ def _clean_lines_onet(lines: list[str], rules=(), host=None, hit_ids=None) -> li
 
         # Porównuj treść linii bez prefiksów nagłówkowych (#### Posłuchaj artykułu → Posłuchaj artykułu)
         stripped_content = re.sub(r'^#{1,6}\s+', '', stripped)
+        # Po replace_link linia ma [linkN] na końcu ("Dodaj w Google [link0]") —
+        # zdejmij marker przed porównaniem z zestawem skip
+        stripped_content = re.sub(r'\s{0,100}\[link\d+\]\s*$', '', stripped_content)
         if stripped_content in skip:
             continue
         if stripped.startswith("Zapytaj o więcej Onet Czat z AI"):
@@ -849,6 +892,8 @@ def _strip_leading_onet_ai_summary(text: str) -> str:
 _SKIP_IMAGE_URL_PATTERNS = [
     "onetmobilemainpage/emotion/",
     "onetmobilemainpage/onet30/subServiceLogos/",
+    # Blok "Czytaj nas częściej w Google" / "Dodaj w Google" (preferowane źródło)
+    "cdn.wiadomosci.onet.pl/img/Logo_desktop_Onet",
 ]
 
 

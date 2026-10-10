@@ -22,6 +22,7 @@ imports/
 ├── reattribute_facebook_facts.py # One-off: re-label Facebook facts stored as user_manual (PATCH) back to source "facebook", release the pin
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
 ├── strip_webpage_images_backfill.py  # One-off: strip raw inline images (incl. base64) out of text_md for webpage/link documents
+├── strip_onet_google_promo_backfill.py  # One-off: remove Onet's "Dodaj w Google" promo block (logo marker + button) from stored text_md
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── organization_descriptions_backfill.py  # One-off: LLM-generated short descriptions for organizations missing one (reader tooltip)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
@@ -462,6 +463,20 @@ python imports/rebuild_image_catalog_from_extracted.py --id 10482 --apply  # wri
 - `--id N` — required document id (single-document pilot, no bulk mode)
 - `--apply` — write to the database (default: dry-run only, reports image URLs/alts and counts)
 - `-v` / `--verbose` — enable debug logging
+
+### `strip_onet_google_promo_backfill.py`
+
+One-off backfill: removes Onet's "Czytaj nas częściej w Google" promo block (the `[imgN: Logo]` marker plus the `Dodaj w Google [linkN]` button) from `text_md` of `webpage`/`link` documents imported before `article_cleaner.py` learned to drop it (`strip_onet_google_promo()` is the shared helper; the import path uses `_SKIP_IMAGE_URL_PATTERNS` and `_clean_lines_onet`). Also deletes the URL-sourced `Logo_desktop_Onet.svg` row from `document_images`. Documents with embeddings or analysis runs are reported and skipped unless `--include-analyzed` (then only `text_md` and the logo row change; existing chunks/embeddings keep the old text).
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, writes only with `--apply`.
+
+**Running:**
+```bash
+cd backend
+python imports/strip_onet_google_promo_backfill.py                              # dry-run (default)
+python imports/strip_onet_google_promo_backfill.py --apply
+python imports/strip_onet_google_promo_backfill.py --apply --include-analyzed --id 10752
+```
 
 ### `organization_descriptions_backfill.py`
 

@@ -20,6 +20,7 @@ from library.article_cleaner import (
     clean_article_text,
     resolve_relative_publication_date,
     strip_image_markers,
+    strip_onet_google_promo,
 )
 from library.article_extractor import _detect_portal, extract_article_by_markers
 
@@ -508,6 +509,42 @@ class TestOnetCleaning:
             "Treść artykułu onet.",
         ]
         assert _clean_lines_onet(lines) == ["Treść artykułu onet."]
+
+    def test_onet_skip_entry_with_link_marker_removed(self):
+        # dok. 10752: replace_link dokleja [linkN] przed czyszczeniem linii
+        lines = ["Dodaj w Google [link0]", "#### Obserwuj [link3]", "Treść artykułu onet."]
+        assert _clean_lines_onet(lines) == ["Treść artykułu onet."]
+
+    def test_onet_google_preferred_source_block_removed_end_to_end(self):
+        # dok. 10752: logo Onetu + "Czytaj nas częściej w Google" + przycisk
+        # "Dodaj w Google" (link do google.com/preferences/source)
+        text = (
+            f"{LONG_PARAGRAPH}\n\n"
+            "![Logo](https://cdn.wiadomosci.onet.pl/img/Logo_desktop_Onet.svg)\n\n"
+            "[Dodaj w Google](https://google.com/preferences/source?q=onet.pl)\n\n"
+            "Treść po bloku onet.\n"
+        )
+        result = clean_article_text(text, url="https://www.onet.pl/informacje/onetwiadomosci/x/d1e73h0,79cfc278")
+        assert "Logo" not in result["text"]
+        assert "Dodaj w Google" not in result["text"]
+        assert "[img" not in result["text"]
+        assert LONG_PARAGRAPH in result["text"]
+        assert "Treść po bloku onet." in result["text"]
+        assert not any("Logo_desktop_Onet" in image["url"] for image in result["images"])
+
+    def test_strip_onet_google_promo_removes_logo_and_button_keeping_crlf(self):
+        text = "Akapit przed.\r\n\r\n[img1: Logo]\r\n\r\nDodaj w Google [link0]\r\n\r\nAkapit po.\r\n"
+        assert strip_onet_google_promo(text) == "Akapit przed.\r\n\r\nAkapit po.\r\n"
+
+    def test_strip_onet_google_promo_keeps_other_markers_and_unrelated_logo(self):
+        text = "[img0: Logo]\n\nTreść [link1]\n\n[img2: Zdjęcie]\n\nDodaj w Google [link3]\n\nKoniec.\n"
+        # logo bez przycisku zostaje; przycisk bez logo tuż przed (zdjęcie) nie ruszy zdjęcia
+        assert strip_onet_google_promo(text) == "[img0: Logo]\n\nTreść [link1]\n\n[img2: Zdjęcie]\n\nKoniec.\n"
+
+    def test_strip_onet_google_promo_noop_without_block(self):
+        text = "Zwykły tekst z Google w środku.\n"
+        assert strip_onet_google_promo(text) == text
+        assert strip_onet_google_promo(None) is None
 
     def test_onet_concatenated_speed_buttons_removed(self):
         # dok. 9369: przyciski prędkości audio sklejone w jedną linię.
