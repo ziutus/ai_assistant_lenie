@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import type { CountryTag } from "../CountryMap/countryMap";
 import InfoTip from "../InfoTip";
+import OrganizationMergePreview, { type MergePreviewData } from "./organizationMergePreview";
 
 // NER entities detected in the document (backend: GET/POST /website_entities,
 // table document_entities — see docs/ner-integration-plan.md).
@@ -425,6 +426,15 @@ const EntitiesPanel = ({
   const [renameFor, setRenameFor] = React.useState<EntityItem | null>(null);
   const [renameText, setRenameText] = React.useState("");
   const [isRenaming, setIsRenaming] = React.useState(false);
+  // Confirmation step of every organization merge: side-by-side comparison + what will change.
+  const [mergePreview, setMergePreview] = React.useState<{
+    source: EntityItem;
+    targetOrganizationId: number;
+    targetEntityId?: number;
+    data: MergePreviewData | null;
+    error: string | null;
+  } | null>(null);
+  const [isMergingOrg, setIsMergingOrg] = React.useState(false);
   // "Dane źródła" flow: type / website / description of a cited source (information_sources).
   const [sourceDetailsFor, setSourceDetailsFor] = React.useState<EntityItem | null>(null);
   const [sourceType, setSourceType] = React.useState("");
@@ -488,6 +498,7 @@ const EntitiesPanel = ({
     setEntities(null);
     setPlaceTags([]);
     setSourceDetailsFor(null);
+    setMergePreview(null);
     setMessage("");
     setEditMode(false);
     setMergeFor(null);
@@ -560,6 +571,43 @@ const EntitiesPanel = ({
     onBusyChange?.(false);
   };
 
+  const openMergePreview = async (sourceItem: EntityItem, targetOrganizationId: number, targetEntityId?: number) => {
+    if (sourceItem.organization_id == null) return;
+    setMergePreview({ source: sourceItem, targetOrganizationId, targetEntityId, data: null, error: null });
+    try {
+      const response = await axios.get(`${apiUrl}/organizations/${sourceItem.organization_id}/merge_preview`,
+        { params: { target_id: targetOrganizationId }, headers });
+      setMergePreview((current) => current && { ...current, data: response.data });
+    } catch (error: any) {
+      setMergePreview((current) => current && {
+        ...current, error: error.response?.data?.message || "Nie udało się pobrać porównania organizacji.",
+      });
+    }
+  };
+
+  const confirmMergePreview = async () => {
+    if (!mergePreview?.data || mergePreview.source.id == null || isMergingOrg) return;
+    const { source, targetEntityId, targetOrganizationId, data } = mergePreview;
+    setIsMergingOrg(true);
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/document/${docId}/organizations/merge`, {
+        source_entity_id: source.id,
+        ...(targetEntityId != null ? { target_entity_id: targetEntityId } : { target_organization_id: targetOrganizationId }),
+        make_global_alias: true,
+      }, { headers: jsonHeaders });
+      setMergePreview(null);
+      setRenameFor(null);
+      setOrgMergeFor(null);
+      fetchEntities();
+      setMessage(`Połączono organizacje: „${data.source.canonical_name}” → „${data.target.canonical_name}”.`);
+    } catch (error: any) {
+      setMessage(`Nie udało się połączyć organizacji: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsMergingOrg(false);
+    }
+  };
+
   // Renaming an organization is global (registry + every document entity + the cited
   // source bound to it); the backend keeps the old name as an alias and merges a
   // same-named duplicate source.
@@ -583,6 +631,12 @@ const EntitiesPanel = ({
         setRenameFor(null);
         fetchEntities();
         setMessage("Ta organizacja już nie istnieje. Odświeżono listę.");
+      } else if (status === 409 && error.response?.data?.existing_organization_id != null) {
+        // The name is taken: this is really a merge into that organization — show the comparison.
+        const source = renameFor;
+        setMessage(`Nazwa „${renameText.trim()}” należy już do innej organizacji (id ${error.response.data.existing_organization_id}). Sprawdź porównanie poniżej i potwierdź połączenie.`);
+        setRenameFor(null);
+        void openMergePreview(source, error.response.data.existing_organization_id);
       } else if (status === 409) {
         setMessage(`${error.response?.data?.message || "Taka nazwa już istnieje."} Użyj „Połącz z inną organizacją”.`);
       } else {
@@ -908,6 +962,7 @@ const EntitiesPanel = ({
     setAliasFor(null);
     setOrgDescriptionFor(null);
     setSourceDetailsFor(null);
+    setMergePreview(null);
     setReviewReason("");
     setReviewComment("");
   };
@@ -1323,7 +1378,15 @@ const EntitiesPanel = ({
               <div style={{ color: "#667", fontSize: "0.85em" }}>W tym dokumencie:</div>
               {organizations.filter((o) => o.id !== orgMergeFor.id).map((o) => (
                 <div key={o.id} style={{ padding: "3px 0" }}>
-                  <button className={"button"} type="button" onClick={() => handleOrgMergePick({ targetEntityId: o.id })}>
+                  <button className={"button"} type="button" onClick={() => {
+                    if (o.organization_id != null) {
+                      const source = orgMergeFor;
+                      setOrgMergeFor(null);
+                      void openMergePreview(source, o.organization_id, o.id);
+                    } else {
+                      void handleOrgMergePick({ targetEntityId: o.id });
+                    }
+                  }}>
                     wybierz
                   </button>
                   {" "}<strong>{o.text}</strong>
@@ -1340,7 +1403,11 @@ const EntitiesPanel = ({
           />
           {orgSearchResults.filter((o) => o.id !== orgMergeFor.organization_id).map((o) => (
             <div key={o.id} style={{ padding: "3px 0" }}>
-              <button className={"button"} type="button" onClick={() => handleOrgMergePick({ targetOrganizationId: o.id })}>
+              <button className={"button"} type="button" onClick={() => {
+                const source = orgMergeFor;
+                setOrgMergeFor(null);
+                void openMergePreview(source, o.id);
+              }}>
                 wybierz
               </button>
               {" "}<strong>{o.canonical_name}</strong>
@@ -1350,6 +1417,20 @@ const EntitiesPanel = ({
           ))}
         </div>
       )}
+
+      {mergePreview && (mergePreview.data ? (
+        <OrganizationMergePreview
+          preview={mergePreview.data}
+          busy={isMergingOrg}
+          onConfirm={() => void confirmMergePreview()}
+          onCancel={() => setMergePreview(null)}
+        />
+      ) : (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
+          {mergePreview.error ?? "Pobieram porównanie organizacji…"}
+          <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setMergePreview(null)}>✕ zamknij</button>
+        </div>
+      ))}
 
       {placeMergeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
