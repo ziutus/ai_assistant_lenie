@@ -55,6 +55,7 @@ interface InputsForAllExceptLinkProps {
   // sense for webpage documents, so only the webpage editor passes true.
   showCleanText?: boolean;
   onProcessingChange?: (busy: boolean) => void;
+  entitiesRefreshKey?: number;
 }
 
 const InputsForAllExceptLink = ({
@@ -63,6 +64,7 @@ const InputsForAllExceptLink = ({
   isLoading,
   showCleanText,
   onProcessingChange,
+  entitiesRefreshKey,
 }: InputsForAllExceptLinkProps) => {
   return (
     <>
@@ -156,7 +158,8 @@ const InputsForAllExceptLink = ({
           <p style={{ margin: "5px 0 10px", color: "#475569" }}>
             Wykrywanie oraz weryfikacja encji działają w tle — możesz dalej edytować dokument.
           </p>
-          <EntitiesPanel docId={formik.values.id} externalDisabled={isLoading} onBusyChange={onProcessingChange} />
+          <EntitiesPanel docId={formik.values.id} externalDisabled={isLoading} onBusyChange={onProcessingChange}
+            refreshKey={entitiesRefreshKey} />
         </section>
       )}
     </>

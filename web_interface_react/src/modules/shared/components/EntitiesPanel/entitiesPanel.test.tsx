@@ -105,6 +105,21 @@ it("closes on outside pointerdown and Escape, and clears rename on document chan
   expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
 });
 
+it("refetches and clears open forms when refreshKey changes for the same document", async () => {
+  const view = render(<EntitiesPanel docId={10753} refreshKey={0} />);
+  await openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  expect(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeTruthy();
+  const callsBefore = vi.mocked(axios.get).mock.calls.length;
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null }
+    : { entities: { persName: [], orgName: [], geogName: [], placeName: [] } } }));
+  view.rerender(<EntitiesPanel docId={10753} refreshKey={1} />);
+  await waitFor(() => expect(vi.mocked(axios.get).mock.calls.length).toBe(callsBefore + 2));
+  expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
+  expect(screen.queryByRole("button", { name: place.text })).toBeNull();
+});
+
 it("preserves reader highlight behavior when menuActions is absent", () => {
   const highlight = vi.fn();
   render(<EntityChips label="Miejsca" items={[place]} highlightMode onHighlight={highlight} />);

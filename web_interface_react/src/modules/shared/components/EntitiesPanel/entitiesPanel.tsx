@@ -340,8 +340,12 @@ const EntitiesPanel = ({
   onBusyChange,
   onEntitiesChanged,
   countries = [],
+  refreshKey = 0,
 }: {
   docId?: string | number;
+  // Bump to force a full reset + refetch for the same document (e.g. after the
+  // editor reopened it, which deletes all derived entities server-side).
+  refreshKey?: number;
   externalDisabled?: boolean;
   onBusyChange?: (busy: boolean) => void;
   // Fires after a successful refresh/delete/merge/exclude — lets a host page
@@ -454,7 +458,7 @@ const EntitiesPanel = ({
     setReviewComment("");
     fetchEntities();
     fetchEnrichmentJob();
-  }, [docId, fetchEntities, fetchEnrichmentJob]);
+  }, [docId, refreshKey, fetchEntities, fetchEnrichmentJob]);
 
   const enrichmentActive = enrichmentJob?.status === "queued"
     || enrichmentJob?.status === "running"

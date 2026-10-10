@@ -66,8 +66,23 @@ def reopen_document_for_editing(session, document_id: int) -> dict:
         result = session.execute(delete(model).where(model.document_id == document_id))
         removed[model.__tablename__] = result.rowcount
 
+    # Place tags (miejsce-*) and the NER check markers are derived from the
+    # entities deleted above; leaving them would show a document with no
+    # entities as "already checked". Other tags (thematic, kraj-*) stay.
+    existing_tags = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+    kept_tags = [t for t in existing_tags if not t.startswith("miejsce-")]
+    place_tags_removed = len(existing_tags) - len(kept_tags)
+    doc.tags = ",".join(kept_tags)
+    doc.entities_checked_at = None
+    doc.ner_unavailable_at = None
+
     doc.processing_status = StalkerDocumentStatus.NEED_CLEAN_MD.name
     doc.processing_error_code = None
     doc.quality = None
     session.commit()
-    return {"document_id": document_id, "processing_status": doc.processing_status, "removed": removed}
+    return {
+        "document_id": document_id,
+        "processing_status": doc.processing_status,
+        "removed": removed,
+        "place_tags_removed": place_tags_removed,
+    }

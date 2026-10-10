@@ -15,6 +15,8 @@ const Webpage = () => {
   const { selectedDocumentType, selectedDocumentState, apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [panelBusy, setPanelBusy] = React.useState(false);
   const [reopening, setReopening] = React.useState(false);
+  // Bumped after reopen_editing so the entities panel drops its stale list.
+  const [entitiesRefreshKey, setEntitiesRefreshKey] = React.useState(0);
 
   React.useEffect(() => {
     if (id) {
@@ -108,6 +110,7 @@ const Webpage = () => {
       await axios.post(`${apiUrl}/document/${id}/reopen_editing`, {}, {
         headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` },
       });
+      setEntitiesRefreshKey((key) => key + 1);
       await handleGetLinkByID(id);
     } finally {
       setReopening(false);
@@ -199,6 +202,7 @@ const Webpage = () => {
           formik={formik}
           isLoading={pageBusy || contentLocked}
           onProcessingChange={setPanelBusy}
+          entitiesRefreshKey={entitiesRefreshKey}
           handleRemoveNotNeededText={handleRemoveNotNeededText}
           showCleanText
         />
