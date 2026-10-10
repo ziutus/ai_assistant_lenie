@@ -2330,6 +2330,14 @@ def document_places_merge(doc_id: int):
         merge_document_entities(source_entity, target_entity)
         session.delete(source_entity)
         session.flush()
+        # A merged target is source='manual', which place enrichment skips, so a
+        # target neither side had geocoded would stay unverified forever. One
+        # cached lookup; failures are swallowed inside geocode_single_place().
+        geocoded = target_entity.geocode_id is not None
+        if not geocoded:
+            from library.place_verification import geocode_single_place
+
+            geocoded = geocode_single_place(session, doc, target_entity)["geocoded"]
         record_entity_decision(
             session,
             document_id=doc_id,
@@ -2357,6 +2365,7 @@ def document_places_merge(doc_id: int):
         "entity_text": target_entity.entity_text,
         "mention_count": target_entity.mention_count,
         "variants": target_entity.variants,
+        "geocoded": geocoded,
     }), 200
 
 
