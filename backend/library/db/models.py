@@ -2366,6 +2366,34 @@ class Organization(Base):
         return f"Organization(id={self.id!r}, canonical_name={self.canonical_name!r})"
 
 
+class OrganizationCountry(Base):
+    """Country an organization is tied to, with the kind of tie.
+
+    country_slug follows the ``kraj-<slug>`` tag convention
+    (library/country_gazetteer.py). relation: based_in | operates_in |
+    linked_to — one organization can hold several rows, even for one country
+    (e.g. based in and operating in it).
+    """
+
+    __tablename__ = "organization_countries"
+    __table_args__ = (UniqueConstraint("organization_id", "country_slug", "relation"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False,
+    )
+    country_slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    relation: Mapped[str] = mapped_column(String(20), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return (f"OrganizationCountry(id={self.id!r}, organization_id={self.organization_id!r}, "
+                f"country_slug={self.country_slug!r}, relation={self.relation!r})")
+
+
 class OrganizationAlias(Base):
     """Spelling variant of an organization's name seen in articles.
 

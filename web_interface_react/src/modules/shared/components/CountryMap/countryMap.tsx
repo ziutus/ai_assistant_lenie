@@ -8,7 +8,17 @@ import { ISO3_TO_NAME_PL } from "../../data/countryNames";
 export interface CountryTag {
   slug: string;
   name_pl: string;
+  /** Optional kind of tie (organization pages): tints the country and labels it. */
+  relation?: string;
+  relation_label?: string;
 }
+
+/** Tint per tie, strongest first — a country with several ties takes the first one's colour. */
+const RELATION_STYLES: { relation: string; label: string; fill: string; stroke: string }[] = [
+  { relation: "based_in", label: "siedziba w", fill: "#0369a1", stroke: "#0c4a6e" },
+  { relation: "operates_in", label: "działa w", fill: "#ea580c", stroke: "#9a3412" },
+  { relation: "linked_to", label: "powiązana z", fill: "#7c3aed", stroke: "#4c1d95" },
+];
 
 /** Verified NER place (stage 3, geocode_cache coords) rendered as a point marker. */
 export interface PlaceMarker {
@@ -30,6 +40,8 @@ interface Props {
   countries: CountryTag[];
   places?: PlaceMarker[];
   pipelines?: PipelineLine[];
+  /** Heading above the map; defaults to the article wording used by the reader. */
+  title?: string;
 }
 
 const GEOJSON_URL = "/geo/world-countries.geo.json";
@@ -80,7 +92,7 @@ const FitToPlaces: React.FC<{ places: PlaceMarker[] }> = ({ places }) => {
  *  missing from the (lightweight, ~250KB) bundled GeoJSON won't appear on the map — they're
  *  still listed in the reader's "Encje" → "Państwa" block (EntitiesPanel), so nothing is
  *  silently dropped; this component itself no longer renders a text fallback list. */
-const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] }) => {
+const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [], title }) => {
   const [geoData, setGeoData] = React.useState<GeoJSON.FeatureCollection | null>(null);
   const [error, setError] = React.useState(false);
 
@@ -98,9 +110,30 @@ const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] })
     [countries]
   );
 
+  // ISO3 -> every tie label of that country ("działa w", "powiązana z"), and
+  // the strongest relation for tinting. Empty when no country carries a relation.
+  const relationsByIso = React.useMemo(() => {
+    const map = new Map<string, { relations: Set<string>; labels: string[] }>();
+    countries.forEach(c => {
+      const iso = COUNTRY_SLUG_TO_ISO3[c.slug];
+      if (!iso || !c.relation) return;
+      const entry = map.get(iso) ?? { relations: new Set<string>(), labels: [] };
+      entry.relations.add(c.relation);
+      const label = c.relation_label ?? RELATION_STYLES.find(r => r.relation === c.relation)?.label ?? c.relation;
+      if (!entry.labels.includes(label)) entry.labels.push(label);
+      map.set(iso, entry);
+    });
+    return map;
+  }, [countries]);
+
   const style = React.useCallback(
-    (feature?: GeoJSON.Feature): L.PathOptions => (matchedIso.has(String(feature?.id)) ? MATCHED_STYLE : UNMATCHED_STYLE),
-    [matchedIso]
+    (feature?: GeoJSON.Feature): L.PathOptions => {
+      const iso = String(feature?.id);
+      if (!matchedIso.has(iso)) return UNMATCHED_STYLE;
+      const tint = RELATION_STYLES.find(r => relationsByIso.get(iso)?.relations.has(r.relation));
+      return tint ? { ...MATCHED_STYLE, fillColor: tint.fill, color: tint.stroke } : MATCHED_STYLE;
+    },
+    [matchedIso, relationsByIso]
   );
 
   // Every country gets its Polish name (ISO3_TO_NAME_PL — the bundled GeoJSON
@@ -115,12 +148,13 @@ const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] })
       const namePl = ISO3_TO_NAME_PL[String(feature.id)];
       if (!namePl) return;
       const matched = matchedIso.has(String(feature.id));
-      layer.bindTooltip(namePl, {
+      const labels = relationsByIso.get(String(feature.id))?.labels;
+      layer.bindTooltip(labels?.length ? `${namePl} · ${labels.join(", ")}` : namePl, {
         permanent: true, direction: "center",
         className: matched ? "country-label" : "country-label-dim",
       });
     },
-    [matchedIso]
+    [matchedIso, relationsByIso]
   );
 
   if ((countries.length === 0 && places.length === 0 && pipelines.length === 0) || error) return null;
@@ -152,8 +186,18 @@ const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] })
         .country-label-dim::before { display: none; }
       `}</style>
       <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>
-        🌍 {places.length > 0 ? "Kraje i miejsca w artykule" : "Kraje w artykule"}
+        🌍 {title ?? (places.length > 0 ? "Kraje i miejsca w artykule" : "Kraje w artykule")}
       </strong>
+      {relationsByIso.size > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", fontSize: "0.8em", marginBottom: 6 }}>
+          {RELATION_STYLES.filter(r => [...relationsByIso.values()].some(v => v.relations.has(r.relation))).map(r => (
+            <span key={r.relation}>
+              <span style={{ display: "inline-block", width: 10, height: 10, background: r.fill, borderRadius: 2, marginRight: 4 }} />
+              {r.label}
+            </span>
+          ))}
+        </div>
+      )}
       {geoData && (
         <div style={{ height: 340, borderRadius: 6, overflow: "hidden" }}>
           <MapContainer
@@ -168,7 +212,7 @@ const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] })
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
             <GeoJSON
-              key={[...matchedIso].sort().join(",")}
+              key={[...matchedIso].sort().join(",") + "|" + [...relationsByIso].map(([iso, v]) => `${iso}:${[...v.relations].sort()}`).sort().join(",")}
               data={geoData}
               style={style}
               onEachFeature={onEachFeature}
