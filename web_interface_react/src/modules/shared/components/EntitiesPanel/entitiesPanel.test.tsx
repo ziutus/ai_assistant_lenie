@@ -68,6 +68,17 @@ it("shows a backend conflict and keeps the form open", async () => {
   expect(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeTruthy();
 });
 
+it("reloads the list and closes the form when the renamed entity no longer exists", async () => {
+  vi.mocked(axios.patch).mockRejectedValue({ response: { status: 404, data: { message: "Nie znaleziono encji." } } });
+  render(<EntitiesPanel docId={10753} />);
+  await openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
+  expect(await screen.findByText(/Ta encja już nie istnieje/)).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
+  expect(axios.get).toHaveBeenCalledTimes(3);
+});
+
 it.each(["× Usuń encję", "🚫 Usuń i nie wykrywaj więcej", "Połącz z innym miejscem"])(
   "opens the existing %s flow without edit mode", async (action) => {
     render(<EntitiesPanel docId={10753} />);

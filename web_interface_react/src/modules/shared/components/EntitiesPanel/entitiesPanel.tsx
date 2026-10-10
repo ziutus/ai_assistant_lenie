@@ -523,6 +523,13 @@ const EntitiesPanel = ({
       }
     } catch (error: any) {
       setMessage(error.response?.data?.message || "Nie udało się poprawić nazwy miejsca.");
+      if (error.response?.status === 404) {
+        // Stale list: the entity is gone (e.g. the document was reopened for
+        // editing, which deletes its derived entities) — reload what exists.
+        setRenameFor(null);
+        fetchEntities();
+        setMessage("Ta encja już nie istnieje (dokument mógł zostać otwarty do edycji lub encje wykryto ponownie). Odświeżono listę.");
+      }
       if (error.response?.status === 409 && error.response.data.conflict_entity) {
         setMergeHint({ source: renameFor, target: error.response.data.conflict_entity, conflict: true });
       }
