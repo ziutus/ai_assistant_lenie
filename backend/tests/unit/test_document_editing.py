@@ -15,9 +15,27 @@ def test_reopen_invalidates_derived_rows_and_resets_status():
     assert len(result["removed"]) == 15
     assert "document_organizations" in result["removed"]
     assert set(result["removed"].values()) == {2}
+    assert result["enrichment_jobs_removed"] == 2
     assert document.processing_status == "NEED_CLEAN_MD"
     assert document.processing_error_code is None
     session.commit.assert_called_once()
+
+
+def test_reopen_refuses_while_entity_enrichment_is_active():
+    session = MagicMock()
+    session.get.return_value = MagicMock(id=42)
+    # 1st scalar: no active DocumentAnalysisJob; 2nd: an active entity_enrichment job.
+    session.scalar.side_effect = [None, MagicMock(status="running")]
+
+    try:
+        reopen_document_for_editing(session, 42)
+    except RuntimeError as exc:
+        assert "still running" in str(exc)
+    else:
+        raise AssertionError("Expected active entity enrichment to block reopening")
+
+    session.execute.assert_not_called()
+    session.commit.assert_not_called()
 
 
 def test_reopen_clears_place_tags_and_ner_markers_but_keeps_other_tags():

@@ -18,6 +18,7 @@ from library.db.models import (
     DocumentReference,
     DocumentTimePeriod,
     DocumentTone,
+    Job,
     NerTemporalCandidate,
 )
 from library.models.stalker_document_status import StalkerDocumentStatus
@@ -44,6 +45,19 @@ def reopen_document_for_editing(session, document_id: int) -> dict:
     if active_job is not None:
         raise RuntimeError("Document analysis is still running")
 
+    # Entity verification runs as a generic queue job (not a DocumentAnalysisJob).
+    # Reopening while one is active would let it write places/persons for text
+    # that is about to change; finished ones are history of the deleted entities.
+    enrichment_scope = (
+        Job.type == "entity_enrichment",
+        Job.parameters["document_id"].as_integer() == document_id,
+    )
+    active_enrichment = session.scalar(select(Job).where(
+        *enrichment_scope, Job.status.in_(("queued", "running", "cancel_requested")),
+    ).limit(1))
+    if active_enrichment is not None:
+        raise RuntimeError("Document analysis is still running")
+
     models = (
         DocumentEmbedding,
         DocumentCitedPublication,
@@ -66,6 +80,8 @@ def reopen_document_for_editing(session, document_id: int) -> dict:
         result = session.execute(delete(model).where(model.document_id == document_id))
         removed[model.__tablename__] = result.rowcount
 
+    enrichment_jobs_removed = session.execute(delete(Job).where(*enrichment_scope)).rowcount
+
     # Place tags (miejsce-*) and the NER check markers are derived from the
     # entities deleted above; leaving them would show a document with no
     # entities as "already checked". Other tags (thematic, kraj-*) stay.
@@ -85,4 +101,5 @@ def reopen_document_for_editing(session, document_id: int) -> dict:
         "processing_status": doc.processing_status,
         "removed": removed,
         "place_tags_removed": place_tags_removed,
+        "enrichment_jobs_removed": enrichment_jobs_removed,
     }

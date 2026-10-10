@@ -120,6 +120,29 @@ it("refetches and clears open forms when refreshKey changes for the same documen
   expect(screen.queryByRole("button", { name: place.text })).toBeNull();
 });
 
+const emptyEntities = { persName: [], orgName: [], geogName: [], placeName: [] };
+
+it("does not announce completion for a stale finished job it never saw running", async () => {
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: { id: "old", status: "done", progress: null } }
+    : { entities: emptyEntities } }));
+  render(<EntitiesPanel docId={10753} />);
+  await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
+  await act(async () => {});
+  expect(screen.queryByText(/Pełna weryfikacja encji zakończona/)).toBeNull();
+});
+
+it("announces completion after watching a job go from running to done", async () => {
+  let jobCalls = 0;
+  vi.mocked(axios.get).mockImplementation(async (url) => {
+    if (!url.endsWith("enrichment_job")) return { data: { entities: emptyEntities } };
+    jobCalls += 1;
+    return { data: { job: { id: "j", status: jobCalls === 1 ? "running" : "done", progress: null } } };
+  });
+  render(<EntitiesPanel docId={10753} />);
+  expect(await screen.findByText("Pełna weryfikacja encji zakończona.", {}, { timeout: 6000 })).toBeTruthy();
+}, 10000);
+
 it("preserves reader highlight behavior when menuActions is absent", () => {
   const highlight = vi.fn();
   render(<EntityChips label="Miejsca" items={[place]} highlightMode onHighlight={highlight} />);

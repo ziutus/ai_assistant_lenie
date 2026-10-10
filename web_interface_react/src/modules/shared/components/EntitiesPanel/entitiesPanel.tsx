@@ -425,6 +425,8 @@ const EntitiesPanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, apiUrl, apiKey]);
 
+  const sawActiveJobRef = React.useRef(false);
+
   const fetchEnrichmentJob = React.useCallback(() => {
     if (!docId) return;
     axios
@@ -432,7 +434,10 @@ const EntitiesPanel = ({
       .then((response) => {
         const job = response.data.job ?? null;
         setEnrichmentJob(job);
-        if (job?.status === "done") {
+        // Only announce completion of a job watched in this session. A stale
+        // "done" record (e.g. from before the document was reopened for
+        // editing) next to an empty list read as a contradiction.
+        if (job?.status === "done" && sawActiveJobRef.current) {
           setMessage("Pełna weryfikacja encji zakończona.");
         }
       })
@@ -441,6 +446,7 @@ const EntitiesPanel = ({
   }, [docId, apiUrl, apiKey]);
 
   React.useEffect(() => {
+    sawActiveJobRef.current = false;
     setEntities(null);
     setMessage("");
     setEditMode(false);
@@ -463,6 +469,10 @@ const EntitiesPanel = ({
   const enrichmentActive = enrichmentJob?.status === "queued"
     || enrichmentJob?.status === "running"
     || enrichmentJob?.status === "cancel_requested";
+
+  React.useEffect(() => {
+    if (enrichmentActive) sawActiveJobRef.current = true;
+  }, [enrichmentActive]);
 
   React.useEffect(() => {
     if (!enrichmentActive) return undefined;
