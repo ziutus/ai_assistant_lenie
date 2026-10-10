@@ -3,7 +3,9 @@ import axios from "axios";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination } from "../components/Pagination/pagination";
-import type { PlaceMarker } from "../components/CountryMap/countryMap";
+import type { CountryTag, PlaceMarker } from "../components/CountryMap/countryMap";
+import { COUNTRY_SLUG_TO_ISO3 } from "../data/countryIso";
+import { ISO3_TO_NAME_PL } from "../data/countryNames";
 
 const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
@@ -40,6 +42,35 @@ interface RelatedPerson {
   canonical_name: string;
   shared_documents: number;
 }
+
+// A country the organization is tied to (GET /organizations/<id>/countries):
+// relation is based_in | operates_in | linked_to.
+interface OrganizationCountryTie {
+  id: number;
+  country_slug: string;
+  name_pl: string;
+  relation: string;
+  relation_label: string;
+  note: string | null;
+}
+
+// kraj-* tags of the organization's documents — candidates, never auto-assigned.
+interface CountrySuggestion {
+  country_slug: string;
+  name_pl: string;
+  documents: number;
+}
+
+const COUNTRY_RELATIONS: Record<string, string> = {
+  based_in: "siedziba w",
+  operates_in: "działa w",
+  linked_to: "powiązana z",
+};
+
+// Selectable countries: every slug the map can draw, labelled in Polish.
+const COUNTRY_OPTIONS = Object.entries(COUNTRY_SLUG_TO_ISO3)
+  .map(([slug, iso]) => ({ slug, name: ISO3_TO_NAME_PL[iso] ?? slug }))
+  .sort((a, b) => a.name.localeCompare(b.name, "pl"));
 
 interface RelatedPlace extends PlaceMarker {
   display_name: string | null;
@@ -132,6 +163,11 @@ const Organizations = () => {
   const [organization, setOrganization] = React.useState<OrganizationDetail | null>(null);
   const [relatedPersons, setRelatedPersons] = React.useState<RelatedPerson[]>([]);
   const [relatedPlaces, setRelatedPlaces] = React.useState<RelatedPlace[]>([]);
+  const [countryTies, setCountryTies] = React.useState<OrganizationCountryTie[]>([]);
+  const [countrySuggestions, setCountrySuggestions] = React.useState<CountrySuggestion[]>([]);
+  const [newCountrySlug, setNewCountrySlug] = React.useState("");
+  const [newCountryRelation, setNewCountryRelation] = React.useState("operates_in");
+  const [newCountryNote, setNewCountryNote] = React.useState("");
   const [editAddress, setEditAddress] = React.useState("");
   const [editWebsite, setEditWebsite] = React.useState("");
   const [editNotePath, setEditNotePath] = React.useState("");
@@ -214,17 +250,25 @@ const Organizations = () => {
     return markers;
   }, [organization, relatedPlaces]);
 
+  const countryTags = React.useMemo<CountryTag[]>(
+    () => countryTies.map((t) => ({
+      slug: t.country_slug, name_pl: t.name_pl, relation: t.relation, relation_label: t.relation_label,
+    })),
+    [countryTies],
+  );
+
   const loadDetail = async () => {
     if (!id) return;
     setIsLoading(true);
     setMessage("");
     setIsError(false);
     try {
-      const [orgResponse, docsResponse, relatedResponse] = await Promise.all([
+      const [orgResponse, docsResponse, relatedResponse, countriesResponse] = await Promise.all([
         axios.get(`${apiUrl}/organizations/${id}`, { headers }),
         axios.get(`${apiUrl}/organizations/${id}/documents`, { headers }),
-        // the map/persons panel is optional context — never fail the page over it
+        // the map/persons/countries panels are optional context — never fail the page over them
         axios.get(`${apiUrl}/organizations/${id}/related`, { headers }).catch(() => null),
+        axios.get(`${apiUrl}/organizations/${id}/countries`, { headers }).catch(() => null),
       ]);
       setOrganization(orgResponse.data);
       setAliases(orgResponse.data.aliases ?? []);
@@ -237,6 +281,8 @@ const Organizations = () => {
       setDocuments(docsResponse.data.documents ?? []);
       setRelatedPersons(relatedResponse?.data.persons ?? []);
       setRelatedPlaces(relatedResponse?.data.places ?? []);
+      setCountryTies(countriesResponse?.data.countries ?? []);
+      setCountrySuggestions(countriesResponse?.data.suggestions ?? []);
     } catch (error: any) {
       console.error("Error fetching organization documents", error);
       setIsError(true);
@@ -252,6 +298,10 @@ const Organizations = () => {
     setDocuments([]);
     setRelatedPersons([]);
     setRelatedPlaces([]);
+    setCountryTies([]);
+    setCountrySuggestions([]);
+    setNewCountrySlug("");
+    setNewCountryNote("");
     setOccurrences({});
     setIsEditing(false);
     setShowMergePicker(false);
@@ -261,6 +311,44 @@ const Organizations = () => {
     loadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const reloadCountries = async (organizationId: number) => {
+    const response = await axios.get(`${apiUrl}/organizations/${organizationId}/countries`, { headers });
+    setCountryTies(response.data.countries ?? []);
+    setCountrySuggestions(response.data.suggestions ?? []);
+  };
+
+  const addCountryTie = async (slug: string, relation: string, note = "") => {
+    if (!organization || !slug) return;
+    setMessage("");
+    setIsError(false);
+    try {
+      await axios.post(`${apiUrl}/organizations/${organization.id}/countries`, {
+        country_slug: slug, relation, note,
+      }, { headers: jsonHeaders });
+      setNewCountrySlug("");
+      setNewCountryNote("");
+      await reloadCountries(organization.id);
+    } catch (error: any) {
+      console.error("Error adding country", error);
+      setIsError(true);
+      setMessage(`Nie udało się dodać kraju: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const removeCountryTie = async (tieId: number) => {
+    if (!organization) return;
+    setMessage("");
+    setIsError(false);
+    try {
+      await axios.delete(`${apiUrl}/organizations/${organization.id}/countries/${tieId}`, { headers });
+      await reloadCountries(organization.id);
+    } catch (error: any) {
+      console.error("Error removing country", error);
+      setIsError(true);
+      setMessage(`Nie udało się usunąć kraju: ${error.response?.data?.message || error.message}`);
+    }
+  };
 
   const toggleOccurrences = async (doc: OrganizationDocument) => {
     if (!doc.raw_mention) return;
@@ -526,19 +614,89 @@ const Organizations = () => {
             </div>
           )}
 
-          {mapMarkers.length > 0 && (
+          {(mapMarkers.length > 0 || countryTies.length > 0) && (
             <div style={{ marginTop: 12 }}>
-              <h3 style={{ margin: "0 0 6px" }}>Mapa ({mapMarkers.length})</h3>
-              <div style={{ height: 360, maxWidth: 720 }}>
+              <h3 style={{ margin: "0 0 6px" }}>Mapa</h3>
+              <div style={{ maxWidth: 720 }}>
                 <React.Suspense fallback={<div style={{ color: "#667" }}>Ładowanie mapy…</div>}>
-                  <CountryMap countries={[]} places={mapMarkers} />
+                  <CountryMap countries={countryTags} places={mapMarkers} title="Kraje i miejsca organizacji" />
                 </React.Suspense>
               </div>
               <div style={{ fontSize: "0.8em", color: "#667", marginTop: 4 }}>
-                Siedziba oraz miejsca wspominane w dokumentach z tą organizacją (tylko zweryfikowane geokoderem).
+                Kolorem zaznaczone kraje przypisane organizacji; punkty to siedziba oraz miejsca wspominane
+                w dokumentach z tą organizacją (tylko zweryfikowane geokoderem).
               </div>
             </div>
           )}
+
+          <div style={{ marginTop: 12 }}>
+            <h3 style={{ margin: "0 0 6px" }}>Kraje ({countryTies.length})</h3>
+            {countryTies.length === 0 && <div style={{ color: "#667", fontSize: "0.9em" }}>Brak przypisanych krajów.</div>}
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {countryTies.map((tie) => (
+                <li key={tie.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
+                  <strong>{tie.name_pl}</strong>
+                  <span style={{ color: "#0369a1", fontSize: "0.85em" }}>{tie.relation_label}</span>
+                  {tie.note && <span style={{ color: "#667", fontSize: "0.85em" }}>— {tie.note}</span>}
+                  <button
+                    type="button"
+                    onClick={() => removeCountryTie(tie.id)}
+                    title="Usuń kraj"
+                    style={{ border: "none", background: "none", color: "#a33", cursor: "pointer" }}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 6 }}>
+              <select value={newCountryRelation} onChange={(e) => setNewCountryRelation(e.target.value)} style={{ padding: "4px 8px" }}>
+                {Object.entries(COUNTRY_RELATIONS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <select value={newCountrySlug} onChange={(e) => setNewCountrySlug(e.target.value)} style={{ padding: "4px 8px", minWidth: 200 }}>
+                <option value="">— wybierz kraj —</option>
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c.slug} value={c.slug}>{c.name}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={newCountryNote}
+                placeholder="Notatka (opcjonalnie)"
+                onChange={(e) => setNewCountryNote(e.target.value)}
+                style={{ padding: "4px 8px", minWidth: 200 }}
+              />
+              <button
+                className={"button"}
+                type="button"
+                disabled={!newCountrySlug}
+                onClick={() => addCountryTie(newCountrySlug, newCountryRelation, newCountryNote)}
+              >
+                Dodaj kraj
+              </button>
+            </div>
+            {countrySuggestions.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: "0.85em", color: "#667" }}>
+                Kraje z dokumentów organizacji (kliknij, by dodać wybraną relacją):{" "}
+                {countrySuggestions.map((s) => (
+                  <button
+                    key={s.country_slug}
+                    type="button"
+                    onClick={() => addCountryTie(s.country_slug, newCountryRelation)}
+                    title={`Dodaj: ${COUNTRY_RELATIONS[newCountryRelation]} ${s.name_pl}`}
+                    style={{
+                      marginRight: 6, padding: "1px 8px", border: "1px solid #cbd5e1", borderRadius: 10,
+                      background: "#f8fafc", color: "#334155", cursor: "pointer",
+                    }}
+                  >
+                    + {s.name_pl} ×{s.documents}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {relatedPersons.length > 0 && (
             <div style={{ marginTop: 12 }}>

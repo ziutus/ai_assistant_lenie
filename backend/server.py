@@ -1959,6 +1959,69 @@ def _organization_location_fields(organization) -> dict:
     }
 
 
+@app.route('/organizations/<int:organization_id>/countries', methods=['GET', 'POST', 'OPTIONS'])
+def organization_countries(organization_id: int):
+    """Countries an organization is based in / operates in / linked to.
+
+    GET: {countries, suggestions, relations} — suggestions are the kraj-* tags of
+    the organization's documents (candidates only, never auto-assigned).
+    POST: {"country_slug": "jemen", "relation": "operates_in", "note": "..."}
+    (relation: based_in | operates_in | linked_to); 201 when created, 200 when
+    the pair already existed."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library import organization_location
+    from library.db.models import Organization
+
+    session = get_scoped_session()
+    if session.get(Organization, organization_id) is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+
+    if request.method == 'GET':
+        return {
+            "status": "success",
+            "countries": organization_location.list_countries(session, organization_id),
+            "suggestions": organization_location.country_suggestions(session, organization_id),
+            "relations": organization_location.COUNTRY_RELATIONS,
+        }, 200
+
+    data = request.get_json(silent=True) or {}
+    try:
+        country, created = organization_location.add_country(
+            session, organization_id, data.get('country_slug'), data.get('relation'), data.get('note'))
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        logging.exception("organization country add failed for %s", organization_id)
+        return {"status": "error", "message": "DB error"}, 500
+    return {"status": "success", "country": country}, 201 if created else 200
+
+
+@app.route('/organizations/<int:organization_id>/countries/<int:row_id>', methods=['DELETE', 'OPTIONS'])
+def organization_country_delete(organization_id: int, row_id: int):
+    """Remove one country tie of an organization."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library import organization_location
+
+    session = get_scoped_session()
+    try:
+        removed = organization_location.remove_country(session, organization_id, row_id)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("organization country delete failed for %s/%s", organization_id, row_id)
+        return {"status": "error", "message": "DB error"}, 500
+    if not removed:
+        return {"status": "error", "message": "Country tie not found"}, 404
+    return {"status": "success"}, 200
+
+
 @app.route('/organizations/<int:organization_id>/related', methods=['GET'])
 def organization_related(organization_id: int):
     """Persons and geocoded places that co-occur with an organization in documents —
