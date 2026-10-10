@@ -211,6 +211,49 @@ def _retry_after_stripping_country(session, entity_text: str) -> tuple[str, Geoc
     return canonical_remainder, row
 
 
+def geocode_single_place(session, doc, entity: DocumentEntity) -> dict:
+    """Geocode a manually confirmed place without changing its name or running LLMs."""
+    result = {"geocoded": False, "same_place_entity": None}
+    entity.geocode = None
+    entity.geocode_id = None
+    try:
+        with session.begin_nested():
+            row = _get_or_create_geocode(session, entity.entity_text)
+            if not row.resolved:
+                retry = _retry_after_stripping_country(session, entity.entity_text)
+                if retry is not None:
+                    _, row = retry
+    except Exception:
+        logger.exception("Single-place geocoding failed for entity %s", entity.id)
+        return result
+    if not row.resolved:
+        return result
+
+    entity.geocode = row
+    canonical = canonical_place_name(entity.entity_text, row.display_name or "")
+    tag = f"miejsce-{_slugify(canonical)}"
+    if doc is not None:
+        tags = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+        if tag not in tags:
+            doc.tags = ",".join([*tags, tag])
+    result["geocoded"] = True
+    others = session.query(DocumentEntity).filter(
+        DocumentEntity.document_id == entity.document_id,
+        DocumentEntity.entity_type.in_(PLACE_ENTITY_TYPES),
+        DocumentEntity.id != entity.id,
+    ).all()
+    for other in others:
+        if other.geocode is not None and other.geocode.resolved and (
+            other.geocode_id == row.id
+            or canonical_place_name(other.entity_text, other.geocode.display_name or "") == canonical
+        ):
+            result["same_place_entity"] = {
+                "id": other.id, "text": other.entity_text, "entity_type": other.entity_type,
+            }
+            break
+    return result
+
+
 def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> str | None:
     """Drop a miejsce-* tag after its last supporting entity is deleted.
 
@@ -371,7 +414,9 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
 
     checked = 0
     resolved_names: list[str] = []
-    candidates = [ent for ent in entities if not _is_country(ent.entity_text)]
+    # Human corrections/merges must survive enrichment as well as NER refresh:
+    # canonicalization and context classification can otherwise rename/retype them.
+    candidates = [ent for ent in entities if ent.source != "manual" and not _is_country(ent.entity_text)]
     for index, ent in enumerate(candidates, start=1):
         if progress_callback is not None:
             progress_callback(index, len(candidates))

@@ -15,6 +15,7 @@ from library.place_verification import (  # noqa: E402
     _relabel_alias_hit,
     _retry_after_stripping_country,
     _slugify,
+    geocode_single_place,
     remove_orphaned_tag,
     verify_document_places,
 )
@@ -48,6 +49,61 @@ def _session_with_entities(entities, cached_geocode=None, existing_org_row=None)
     cache_query.filter.return_value.one_or_none.return_value = cached_geocode
     session.query.side_effect = lambda model: cache_query if model is GeocodeCache else entity_query
     return session
+
+
+@pytest.mark.parametrize("geocode", [None, _resolved_geocode("Inna nazwa")])
+def test_manual_place_is_not_renamed_or_reclassified(geocode):
+    ent = _entity("Jemen Północny", geocode=geocode)
+    ent.source = "manual"
+    session = _session_with_entities([ent])
+    with patch("library.place_verification._get_or_create_geocode") as geocode_lookup, patch(
+        "library.place_context_classifier.classify_place_context_candidates"
+    ) as classify:
+        result = verify_document_places(session, MagicMock(id=42), "Tekst o Jemenie Północnym")
+    assert result == {"checked": 0, "resolved": [], "tagged": []}
+    assert ent.entity_text == "Jemen Północny"
+    assert ent.source == "manual"
+    geocode_lookup.assert_not_called()
+    classify.assert_not_called()
+    session.delete.assert_not_called()
+
+
+@pytest.mark.parametrize("same_id", [False, True])
+@pytest.mark.parametrize("retry", [False, True])
+def test_single_place_preserves_name_tags_and_suggests_merge(same_id, retry):
+    row = _resolved_geocode("Aden, Jemen")
+    row.id = 12
+    ent = _entity("Adenu")
+    ent.id, ent.document_id = 7, 42
+    other = _entity("Aden", etype="placeName", geocode_id=12 if same_id else 13, geocode=row)
+    other.id = 8
+    session = _session_with_entities([other])
+    doc = MagicMock(tags="topic,miejsce-aden")
+    with patch("library.place_verification._get_or_create_geocode",
+               return_value=MagicMock(resolved=False) if retry else row), patch(
+        "library.place_verification._retry_after_stripping_country", return_value=("Aden", row)
+    ) as retry_lookup, patch("library.place_context_classifier.classify_place_context_candidates") as classify:
+        result = geocode_single_place(session, doc, ent)
+    assert result == {"geocoded": True, "same_place_entity": {
+        "id": 8, "text": "Aden", "entity_type": "placeName",
+    }}
+    assert ent.entity_text == "Adenu"
+    assert ent.geocode is row
+    assert doc.tags == "topic,miejsce-aden"
+    assert retry_lookup.call_count == int(retry)
+    classify.assert_not_called()
+
+
+def test_single_place_unresolved_does_not_tag_or_suggest_merge():
+    ent = _entity("Unknown")
+    doc = MagicMock(tags="topic")
+    with patch("library.place_verification._get_or_create_geocode", return_value=MagicMock(resolved=False)), patch(
+        "library.place_verification._retry_after_stripping_country", return_value=None,
+    ):
+        result = geocode_single_place(MagicMock(), doc, ent)
+    assert result == {"geocoded": False, "same_place_entity": None}
+    assert ent.geocode is None
+    assert doc.tags == "topic"
 
 
 class TestSlugify:

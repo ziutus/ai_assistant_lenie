@@ -125,6 +125,11 @@ const chipActionStyle: React.CSSProperties = {
   lineHeight: 1,
 };
 
+interface MenuEntry {
+  label: string;
+  action: () => void;
+}
+
 export const EntityChips = ({
   label,
   items,
@@ -135,6 +140,7 @@ export const EntityChips = ({
   actions,
   highlightMode,
   onHighlight,
+  menuActions,
 }: {
   label: string;
   items: EntityItem[];
@@ -150,11 +156,34 @@ export const EntityChips = ({
   searchUnresolvedPersons?: boolean;
   // Edit-mode buttons rendered inside each chip — used by the editor panel.
   actions?: (item: EntityItem) => React.ReactNode;
+  menuActions?: (item: EntityItem) => MenuEntry[];
   // When true, every chip becomes a click-to-highlight button (calls
   // onHighlight instead of navigating) — used by the reader's mode toggle.
   highlightMode?: boolean;
   onHighlight?: (item: EntityItem) => void;
 }) => {
+  const [openMenu, setOpenMenu] = React.useState<string | null>(null);
+  const menuRef = React.useRef<HTMLSpanElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement | null>(null);
+  React.useEffect(() => {
+    if (openMenu === null) return;
+    const outside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpenMenu(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenMenu(null);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [openMenu]);
+  React.useEffect(() => setOpenMenu(null), [items, menuActions]);
   if (!items.length) {
     return null;
   }
@@ -163,6 +192,9 @@ export const EntityChips = ({
     <div style={{ marginTop: "6px" }}>
       <strong>{label}:</strong>{" "}
       {alphabeticalItems.map((item) => {
+        const key = `${item.entity_type ?? ""}:${item.id ?? item.text}`;
+        const entries = menuActions?.(item) ?? [];
+        const menuOpen = openMenu === key;
         const isResolvedPerson = item.person_id != null;
         const personTitle = isResolvedPerson
           ? [item.canonical_name, item.person_description, item.wikidata_qid, item.confidence]
@@ -176,9 +208,11 @@ export const EntityChips = ({
           : undefined;
         const chip = (
           <span
-            key={item.text}
+            key={key}
+            ref={menuOpen ? menuRef : undefined}
             style={{
               ...chipStyle,
+              position: "relative",
               ...(item.verified === true ? { background: "#e6f4ea", border: "1px solid #7cb98a" } : {}),
               ...(item.verified === false ? { opacity: 0.55 } : {}),
               ...(isResolvedPerson ? { background: "#e3edf9", border: "1px solid #7ba3d0" } : {}),
@@ -188,7 +222,13 @@ export const EntityChips = ({
               ?? facilityTitle
               ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
           >
-            {item.text}
+            {entries.length ? (
+              <button type="button" aria-label={item.text} aria-haspopup="menu" aria-expanded={menuOpen}
+                style={{ border: 0, background: "transparent", padding: 0, color: "inherit", font: "inherit", cursor: "pointer" }}
+                onClick={(event) => { triggerRef.current = event.currentTarget; setOpenMenu(menuOpen ? null : key); }}>
+                {item.text}
+              </button>
+            ) : item.text}
             {item.pipeline && <span title={`Rurociąg (${item.pipeline.substance ?? "?"}) — dane © OpenStreetMap`}> 🛢️</span>}
             {item.organization_description && <span title={item.organization_description} style={{ color: "#667" }}> ℹ️</span>}
             {item.facility_description && <span title={facilityTitle} style={{ color: "#667" }}> ℹ️</span>}
@@ -200,8 +240,24 @@ export const EntityChips = ({
             )}
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
             {actions && actions(item)}
+            {menuOpen && entries.length > 0 && (
+              <span role="menu" aria-label={`Działania: ${item.text}`}
+                style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, padding: 4,
+                  background: "white", border: "1px solid #b9c8de", borderRadius: 6, minWidth: 230,
+                  boxShadow: "0 2px 8px #0002" }}>
+                {entries.map((entry) => (
+                  <button key={entry.label} type="button" role="menuitem"
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px",
+                      background: "transparent", border: 0, cursor: "pointer" }}
+                    onClick={() => { setOpenMenu(null); entry.action(); }}>
+                    {entry.label}
+                  </button>
+                ))}
+              </span>
+            )}
           </span>
         );
+        if (entries.length) return chip;
         if (highlightMode && onHighlight) {
           return (
             <button
@@ -331,6 +387,13 @@ const EntitiesPanel = ({
   // "Wyklucz" flow: entity to suppress in future NER runs (ner_exclusions)
   const [excludeFor, setExcludeFor] = React.useState<{ item: EntityItem; entityType: string } | null>(null);
   const [deleteFor, setDeleteFor] = React.useState<EntityItem | null>(null);
+  const [renameFor, setRenameFor] = React.useState<EntityItem | null>(null);
+  const [renameText, setRenameText] = React.useState("");
+  const [isRenaming, setIsRenaming] = React.useState(false);
+  const [mergeHint, setMergeHint] = React.useState<{
+    source: EntityItem; target: EntityItem; conflict: boolean;
+  } | null>(null);
+  const [isMergingPlace, setIsMergingPlace] = React.useState(false);
   const [reviewReason, setReviewReason] = React.useState("");
   const [reviewComment, setReviewComment] = React.useState("");
 
@@ -384,6 +447,9 @@ const EntitiesPanel = ({
     setOrgDescriptionFor(null);
     setExcludeFor(null);
     setDeleteFor(null);
+    setRenameFor(null);
+    setRenameText("");
+    setMergeHint(null);
     setReviewReason("");
     setReviewComment("");
     fetchEntities();
@@ -438,6 +504,38 @@ const EntitiesPanel = ({
     }
     setIsRefreshing(false);
     onBusyChange?.(false);
+  };
+
+  const handleRename = async () => {
+    if (renameFor?.id == null || !renameText.trim() || isRenaming) return;
+    setIsRenaming(true);
+    setMergeHint(null);
+    setMessage("");
+    try {
+      const response = await axios.patch(`${apiUrl}/website_entities/${renameFor.id}`,
+        { text: renameText.trim() }, { headers: jsonHeaders });
+      setRenameFor(null);
+      fetchEntities();
+      setMessage(`Nazwa miejsca została poprawiona — ${response.data.geocoded
+        ? "miejsce potwierdzone przez geokoder" : "geokoder nie potwierdził"}.`);
+      if (response.data.same_place_entity) {
+        setMergeHint({ source: renameFor, target: response.data.same_place_entity, conflict: false });
+      }
+    } catch (error: any) {
+      setMessage(error.response?.data?.message || "Nie udało się poprawić nazwy miejsca.");
+      if (error.response?.status === 404) {
+        // Stale list: the entity is gone (e.g. the document was reopened for
+        // editing, which deletes its derived entities) — reload what exists.
+        setRenameFor(null);
+        fetchEntities();
+        setMessage("Ta encja już nie istnieje (dokument mógł zostać otwarty do edycji lub encje wykryto ponownie). Odświeżono listę.");
+      }
+      if (error.response?.status === 409 && error.response.data.conflict_entity) {
+        setMergeHint({ source: renameFor, target: error.response.data.conflict_entity, conflict: true });
+      }
+    } finally {
+      setIsRenaming(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -554,24 +652,31 @@ const EntitiesPanel = ({
     }
   };
 
-  const handlePlaceMergePick = async (target: EntityItem) => {
-    if (placeMergeFor?.id == null || target.id == null) {
+  const mergePlaces = async (source: EntityItem | null, target: EntityItem) => {
+    if (source?.id == null || target.id == null || isMergingPlace) {
       return;
     }
     setMessage("");
+    setIsMergingPlace(true);
     try {
       await axios.post(
         `${apiUrl}/document/${docId}/places/merge`,
-        { source_entity_id: placeMergeFor.id, target_entity_id: target.id },
+        { source_entity_id: source.id, target_entity_id: target.id },
         { headers: jsonHeaders },
       );
       setPlaceMergeFor(null);
+      setMergeHint(null);
+      setRenameFor(null);
       fetchEntities();
+      setMessage("Miejsca zostały połączone.");
     } catch (error: any) {
       console.error("Error merging place", error);
       setMessage(`Nie udało się połączyć miejsc: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsMergingPlace(false);
     }
   };
+  const handlePlaceMergePick = (target: EntityItem) => mergePlaces(placeMergeFor, target);
 
   const handleExclude = async (scope: "global" | "author") => {
     if (!excludeFor || !reviewReason || (reviewReason === "other" && !reviewComment.trim())) {
@@ -675,6 +780,29 @@ const EntitiesPanel = ({
   const reviewFormValid = Boolean(reviewReason)
     && (reviewReason !== "other" || Boolean(reviewComment.trim()));
 
+  const resetFlows = () => {
+    setMergeHint(null);
+    setRenameFor(null);
+    setDeleteFor(null);
+    setExcludeFor(null);
+    setMergeFor(null);
+    setOrgMergeFor(null);
+    setPlaceMergeFor(null);
+    setAliasFor(null);
+    setOrgDescriptionFor(null);
+    setReviewReason("");
+    setReviewComment("");
+  };
+  const placeMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
+    { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },
+    ...(places.some((place) => place.id != null && place.id !== item.id)
+      ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeFor(item); } }] : []),
+    { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
+    { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
+      resetFlows(); setExcludeFor({ item, entityType: item.entity_type! });
+    } },
+  ];
+
   const reviewFields = (
     <>
       <label style={{ display: "block", marginTop: 6 }}>
@@ -710,7 +838,7 @@ const EntitiesPanel = ({
         style={{ ...chipActionStyle, color: "#a33" }}
         title="Usuń encję (dla osoby usuwa też powiązanie z rejestrem)"
         onClick={() => {
-          setDeleteFor(item);
+          setRenameFor(null); setDeleteFor(item);
           setExcludeFor(null);
           setMergeFor(null);
           setOrgMergeFor(null);
@@ -730,7 +858,7 @@ const EntitiesPanel = ({
           // The places section combines geogName and placeName visually.
           // Use the item type there; '*' is only appropriate when explicitly
           // requested, never as a side effect of that presentation grouping.
-          setExcludeFor({ item, entityType: item.entity_type ?? entityType });
+          setRenameFor(null); setExcludeFor({ item, entityType: item.entity_type ?? entityType });
           setDeleteFor(null);
           setMergeFor(null);
           setOrgMergeFor(null);
@@ -747,7 +875,7 @@ const EntitiesPanel = ({
           type="button"
           style={{ ...chipActionStyle, color: "#1d5ca8" }}
           title="To inna osoba — wskaż właściwą w rejestrze"
-          onClick={() => { setMergeFor(item); setAliasFor(null); setSearchQ(""); setSearchResults([]); }}
+          onClick={() => { setRenameFor(null); setMergeFor(item); setAliasFor(null); setSearchQ(""); setSearchResults([]); }}
         >
           ↷
         </button>
@@ -758,7 +886,7 @@ const EntitiesPanel = ({
           style={{ ...chipActionStyle, color: "#1d5ca8" }}
           title="Połącz z inną organizacją (globalnie, dla wszystkich dokumentów)"
           onClick={() => {
-            setOrgMergeFor(item);
+            setRenameFor(null); setOrgMergeFor(item);
             setDeleteFor(null);
             setExcludeFor(null);
             setMergeFor(null);
@@ -777,7 +905,7 @@ const EntitiesPanel = ({
           style={{ ...chipActionStyle, color: "#667" }}
           title="Dodaj/edytuj krótki opis (widoczny jako podpowiedź w czytniku)"
           onClick={() => {
-            setOrgDescriptionFor(item);
+            setRenameFor(null); setOrgDescriptionFor(item);
             setOrgDescriptionText(item.organization_description ?? "");
             setDeleteFor(null);
             setExcludeFor(null);
@@ -801,7 +929,7 @@ const EntitiesPanel = ({
           style={{ ...chipActionStyle, color: "#1d5ca8" }}
           title="To nie organizacja, tylko miejsce — połącz z miejscem w tym dokumencie"
           onClick={() => {
-            setPlaceMergeFor(item);
+            setRenameFor(null); setPlaceMergeFor(item);
             setDeleteFor(null);
             setExcludeFor(null);
             setMergeFor(null);
@@ -818,7 +946,7 @@ const EntitiesPanel = ({
           style={{ ...chipActionStyle, color: "#1d5ca8" }}
           title="Połącz z innym miejscem w tym dokumencie"
           onClick={() => {
-            setPlaceMergeFor(item);
+            setRenameFor(null); setPlaceMergeFor(item);
             setDeleteFor(null);
             setExcludeFor(null);
             setMergeFor(null);
@@ -834,7 +962,7 @@ const EntitiesPanel = ({
           type="button"
           style={{ ...chipActionStyle, color: "#2e7d43" }}
           title="Dodaj alias (przezwisko) do tej osoby"
-          onClick={() => { setAliasFor(item); setMergeFor(null); setAliasText(""); }}
+          onClick={() => { setRenameFor(null); setAliasFor(item); setMergeFor(null); setAliasText(""); }}
         >
           +
         </button>
@@ -850,7 +978,7 @@ const EntitiesPanel = ({
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby, miejsca i obiekty"}
         </button>
         {!isEmpty && (
-          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setPlaceMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
+          <button className={"button"} type="button" onClick={() => { setRenameFor(null); setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setPlaceMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
             {editMode ? "Zakończ edycję" : "Edytuj"}
           </button>
         )}
@@ -902,10 +1030,38 @@ const EntitiesPanel = ({
         linkOrganizations
         actions={editMode ? editActions("orgName") : undefined}
       />
-      <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions("placeName") : undefined} />
+      <EntityChips label={"Miejsca"} items={places} menuActions={placeMenuActions}
+        actions={editMode ? editActions("placeName") : undefined} />
       <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
 
-      {editMode && deleteFor && (
+      {mergeHint && (
+        <div style={{ marginTop: 8 }}>
+          <span>{mergeHint.conflict
+            ? `Miejsce „${mergeHint.target.text}” już istnieje — połączyć?`
+            : `To samo miejsce co „${mergeHint.target.text}” — połączyć?`}</span>
+          <button type="button" disabled={isMergingPlace}
+            onClick={() => void mergePlaces(mergeHint.source, mergeHint.target)}>Połącz</button>
+          <button type="button" disabled={isMergingPlace} onClick={() => setMergeHint(null)}>Nie</button>
+        </div>
+      )}
+      {renameFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void handleRename();
+          }
+        }}
+          style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>Popraw nazwę miejsca
+            <input autoFocus value={renameText} maxLength={500} disabled={isRenaming}
+              onChange={(event) => setRenameText(event.target.value)} />
+          </label>
+          <button type="button" className="button" disabled={isRenaming || !renameText.trim()}
+            onClick={() => void handleRename()}>Zatwierdź</button>
+          <button type="button" disabled={isRenaming} onClick={() => setRenameFor(null)}>Anuluj</button>
+        </div>
+      )}
+
+      {deleteFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#fff4f0", borderRadius: 6 }}>
           <div>Usuń „{deleteFor.text}” i zapisz informację o błędzie:</div>
           {reviewFields}
@@ -928,7 +1084,7 @@ const EntitiesPanel = ({
         </div>
       )}
 
-      {editMode && excludeFor && (
+      {excludeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#fff4f0", borderRadius: 6 }}>
           <div style={{ marginBottom: 4 }}>
             Nie wykrywaj więcej „{excludeFor.item.text}":
@@ -1006,7 +1162,7 @@ const EntitiesPanel = ({
         </div>
       )}
 
-      {editMode && placeMergeFor && (
+      {placeMergeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
           <div style={{ marginBottom: 4 }}>
             Połącz „{placeMergeFor.text}" z innym miejscem w tym dokumencie:
