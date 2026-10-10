@@ -368,6 +368,8 @@ const EntitiesPanel = ({
   // web_documents.ner_unavailable_at) — lets us warn instead of implying
   // "no entities" when the real cause was a dead service.
   const [nerUnavailableAt, setNerUnavailableAt] = React.useState<string | null>(null);
+  // miejsce-* tags of Document.tags (summary of verified places), read-only.
+  const [placeTags, setPlaceTags] = React.useState<string[]>([]);
   const [editMode, setEditMode] = React.useState(false);
   // "To inna osoba…" flow: chip whose person link is being re-pointed
   const [mergeFor, setMergeFor] = React.useState<EntityItem | null>(null);
@@ -416,6 +418,7 @@ const EntitiesPanel = ({
       .then((response) => {
         setEntities(response.data.entities);
         setNerUnavailableAt(response.data.ner_unavailable_at ?? null);
+        setPlaceTags(Array.isArray(response.data.place_tags) ? response.data.place_tags : []);
         onEntitiesChanged?.();
       })
       .catch((error) => {
@@ -448,6 +451,7 @@ const EntitiesPanel = ({
   React.useEffect(() => {
     sawActiveJobRef.current = false;
     setEntities(null);
+    setPlaceTags([]);
     setMessage("");
     setEditMode(false);
     setMergeFor(null);
@@ -1046,6 +1050,12 @@ const EntitiesPanel = ({
       />
       <EntityChips label={"Miejsca"} items={places} menuActions={placeMenuActions}
         actions={editMode ? editActions("placeName") : undefined} />
+      {placeTags.length > 0 && (
+        <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}
+          title="Tagi dokumentu nadawane po weryfikacji miejsc (tylko do odczytu)">
+          Tagi miejsc: {placeTags.join(", ")}
+        </div>
+      )}
       <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
 
       {mergeHint && (

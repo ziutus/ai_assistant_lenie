@@ -143,6 +143,23 @@ it("announces completion after watching a job go from running to done", async ()
   expect(await screen.findByText("Pełna weryfikacja encji zakończona.", {}, { timeout: 6000 })).toBeTruthy();
 }, 10000);
 
+it("shows read-only place tags under Miejsca only when the document has them", async () => {
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null }
+    : { entities: { persName: [], orgName: [], geogName: [place], placeName: [] },
+      place_tags: ["miejsce-aden", "miejsce-rijad"] } }));
+  const view = render(<EntitiesPanel docId={10753} />);
+  expect(await screen.findByText("Tagi miejsc: miejsce-aden, miejsce-rijad")).toBeTruthy();
+  view.unmount();
+
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null }
+    : { entities: { persName: [], orgName: [], geogName: [place], placeName: [] } } }));
+  render(<EntitiesPanel docId={10753} />);
+  await screen.findByRole("button", { name: place.text });
+  expect(screen.queryByText(/Tagi miejsc:/)).toBeNull();
+});
+
 it("preserves reader highlight behavior when menuActions is absent", () => {
   const highlight = vi.fn();
   render(<EntityChips label="Miejsca" items={[place]} highlightMode onHighlight={highlight} />);

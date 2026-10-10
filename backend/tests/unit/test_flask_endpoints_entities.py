@@ -46,7 +46,9 @@ class TestWebsiteEntitiesGet:
     def test_returns_grouped_entities(self, client):
         with patch("server.get_scoped_session", return_value=MagicMock()):
             with patch("server.Document") as MockDoc:
-                MockDoc.get_by_id.return_value = MagicMock(ner_unavailable_at=None)
+                MockDoc.get_by_id.return_value = MagicMock(
+                    ner_unavailable_at=None, entities_checked_at=None, tags=None,
+                )
                 with patch("library.entity_service.get_document_entities", return_value=GROUPED):
                     resp = client.get("/website_entities?id=42", headers=API_HEADERS)
 
@@ -56,6 +58,19 @@ class TestWebsiteEntitiesGet:
         assert data["id"] == 42
         assert data["entities"] == GROUPED
         assert data["ner_unavailable_at"] is None
+        assert data["place_tags"] == []
+
+    def test_returns_only_place_tags_sorted(self, client):
+        with patch("server.get_scoped_session", return_value=MagicMock()):
+            with patch("server.Document") as MockDoc:
+                MockDoc.get_by_id.return_value = MagicMock(
+                    ner_unavailable_at=None, entities_checked_at=None,
+                    tags="geopolityka,miejsce-rijad, miejsce-aden ,kraj-jemen,miejsce-dammaj",
+                )
+                with patch("library.entity_service.get_document_entities", return_value=GROUPED):
+                    resp = client.get("/website_entities?id=42", headers=API_HEADERS)
+
+        assert resp.get_json()["place_tags"] == ["miejsce-aden", "miejsce-dammaj", "miejsce-rijad"]
 
     def test_returns_ner_unavailable_timestamp_when_set(self, client):
         import datetime as dt
@@ -63,7 +78,7 @@ class TestWebsiteEntitiesGet:
         with patch("server.get_scoped_session", return_value=MagicMock()):
             with patch("server.Document") as MockDoc:
                 MockDoc.get_by_id.return_value = MagicMock(
-                    ner_unavailable_at=dt.datetime(2026, 7, 15, 6, 44, 0),
+                    ner_unavailable_at=dt.datetime(2026, 7, 15, 6, 44, 0), entities_checked_at=None,
                 )
                 with patch("library.entity_service.get_document_entities", return_value=GROUPED):
                     resp = client.get("/website_entities?id=42", headers=API_HEADERS)
