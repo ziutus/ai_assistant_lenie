@@ -1894,12 +1894,41 @@ def organization_get(organization_id: int):
         "canonical_name": organization.canonical_name,
         "organization_type": organization.organization_type,
         "description": organization.description,
+        **_organization_location_fields(organization),
         "aliases": [
             {"id": a.id, "alias": a.alias, "alias_kind": a.alias_kind, "created_by": a.created_by}
             for a in organization.aliases
         ],
         "document_count": document_count or 0,
         "ambiguous_with": ambiguous_with,
+    }, 200
+
+
+def _organization_location_fields(organization) -> dict:
+    """Headquarters / website / Obsidian-note fields shared by the GET and PATCH responses."""
+    return {
+        "headquarters_address": organization.headquarters_address,
+        "latitude": float(organization.latitude) if organization.latitude is not None else None,
+        "longitude": float(organization.longitude) if organization.longitude is not None else None,
+        "website": organization.website,
+        "obsidian_note_path": organization.obsidian_note_path,
+    }
+
+
+@app.route('/organizations/<int:organization_id>/related', methods=['GET'])
+def organization_related(organization_id: int):
+    """Persons and geocoded places that co-occur with an organization in documents —
+    the data behind the map and the "powiązane osoby" panel on /organizations/:id."""
+    from library import organization_location
+    from library.db.models import Organization
+
+    session = get_scoped_session()
+    if session.get(Organization, organization_id) is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+    return {
+        "status": "success",
+        "persons": organization_location.related_persons(session, organization_id),
+        "places": organization_location.related_places(session, organization_id),
     }, 200
 
 
@@ -1996,6 +2025,30 @@ def organization_update(organization_id: int):
         set_description(organization, linked_source, (data.get('description') or "").strip() or None)
     if 'organization_type' in data:
         organization.organization_type = (data.get('organization_type') or "").strip() or None
+    for field in ('website', 'obsidian_note_path'):
+        if field in data:
+            setattr(organization, field, (data.get(field) or "").strip() or None)
+
+    geocoded = None
+    if 'headquarters_address' in data:
+        from library import organization_location
+        organization.headquarters_address = (data.get('headquarters_address') or "").strip() or None
+        has_manual_point = data.get('latitude') is not None and data.get('longitude') is not None
+        if not has_manual_point:
+            geocoded = organization_location.geocode_headquarters(session, organization)
+    if 'latitude' in data or 'longitude' in data:
+        try:
+            lat, lon = data.get('latitude'), data.get('longitude')
+            if lat in (None, "") and lon in (None, ""):
+                organization.latitude = organization.longitude = None
+            else:
+                lat, lon = float(lat), float(lon)
+                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                    raise ValueError("coordinates out of range")
+                organization.latitude, organization.longitude = lat, lon
+        except (TypeError, ValueError):
+            session.rollback()
+            return {"status": "error", "message": "latitude and longitude must both be valid coordinates"}, 400
 
     try:
         session.commit()
@@ -2008,6 +2061,8 @@ def organization_update(organization_id: int):
                     "canonical_name": organization.canonical_name,
                     "description": organization.description,
                     "organization_type": organization.organization_type,
+                    **_organization_location_fields(organization),
+                    "geocoded": geocoded,
                     "rename": rename_result}), 200
 
 
