@@ -559,6 +559,10 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             if source_link is not None:
                 item["information_source_id"] = source_link.source_id
                 item["source_evidence"] = source_link.evidence_excerpt
+                item["information_source_name"] = source_link.source.canonical_name
+                item["information_source_type"] = source_link.source.source_type
+                item["information_source_domain"] = source_link.source.domain
+                item["information_source_description"] = source_link.source.description
             organization_link = organization_links_by_entity.get(row.id)
             if organization_link is not None:
                 item["organization_id"] = organization_link.organization_id

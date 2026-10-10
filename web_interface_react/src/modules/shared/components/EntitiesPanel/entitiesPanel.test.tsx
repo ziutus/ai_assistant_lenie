@@ -1,5 +1,7 @@
 import axios from "axios";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type React from "react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import EntitiesPanel, { EntityChips } from "./entitiesPanel";
 
@@ -160,6 +162,125 @@ it("shows read-only place tags under Miejsca only when the document has them", a
   render(<EntitiesPanel docId={10753} />);
   await screen.findByRole("button", { name: place.text });
   expect(screen.queryByText(/Tagi miejsc:/)).toBeNull();
+});
+
+// ── Cited sources / organizations: rename + source details ─────────────────────────
+const citedOrg = {
+  id: 11, text: "telegrapha", count: 1, organization_id: 842, information_source_id: 200,
+  information_source_name: "telegrapha", information_source_type: "organization",
+  information_source_domain: null, information_source_description: null, organization_description: null,
+};
+const mockOrgEntities = (org: Record<string, unknown> = citedOrg) => {
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null }
+    : { entities: { persName: [], orgName: [org], geogName: [], placeName: [] } } }));
+};
+const renderInRouter = (ui: React.ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
+const openOrgMenu = async (name = "telegrapha") => {
+  await screen.findByRole("button", { name });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name }));
+};
+
+it("offers the organization menu on a cited source, including a link to the sources registry", async () => {
+  mockOrgEntities();
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu();
+
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
+    "Połącz z inną organizacją", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
+  ]);
+  expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
+    .toBe("/information-sources?id=200");
+});
+
+it("renames an organization globally and reports the merged source", async () => {
+  mockOrgEntities();
+  vi.mocked(axios.patch).mockResolvedValue({ data: {
+    canonical_name: "The Telegraph",
+    rename: { old_name: "telegrapha", source: { action: "merged", source_id: 75 } },
+  } });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  const input = screen.getByRole("textbox", { name: /Popraw nazwę organizacji/ });
+  expect((input as HTMLInputElement).value).toBe("telegrapha");
+  fireEvent.change(input, { target: { value: " The Telegraph " } });
+  fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
+
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith("/organizations/842",
+    { canonical_name: "The Telegraph" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/Nazwa organizacji poprawiona: „telegrapha” → „The Telegraph”\. Źródło scalono/))
+    .toBeTruthy();
+  expect(axios.patch).not.toHaveBeenCalledWith(expect.stringContaining("/website_entities/"), expect.anything(), expect.anything());
+  expect(axios.get).toHaveBeenCalledTimes(3);
+});
+
+it("shows the backend conflict when the corrected organization name is taken", async () => {
+  mockOrgEntities();
+  vi.mocked(axios.patch).mockRejectedValue({ response: { status: 409, data: { message: "Nazwa zajęta." } } });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
+
+  expect(await screen.findByText("Nazwa zajęta. Użyj „Połącz z inną organizacją”.")).toBeTruthy();
+});
+
+it("saves source type, website and description from 'Dane źródła'", async () => {
+  mockOrgEntities({ ...citedOrg, organization_description: "stary opis" });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dane źródła (typ, strona, opis)" }));
+
+  expect((screen.getByLabelText(/Typ źródła/) as HTMLInputElement).value).toBe("organization");
+  expect((screen.getByLabelText(/Opis \(np\./) as HTMLTextAreaElement).value).toBe("stary opis");
+  fireEvent.change(screen.getByLabelText(/Typ źródła/), { target: { value: " newspaper " } });
+  fireEvent.change(screen.getByLabelText(/Strona/), { target: { value: "https://www.telegraph.co.uk/" } });
+  fireEvent.change(screen.getByLabelText(/Opis \(np\./), { target: { value: "Brytyjski dziennik, 1855" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith("/information_sources/200", {
+    source_type: "newspaper", domain: "https://www.telegraph.co.uk/", description: "Brytyjski dziennik, 1855",
+  }, { headers: expect.any(Object) }));
+  expect(await screen.findByText("Dane źródła zapisane.")).toBeTruthy();
+});
+
+it("shows the backend validation message for bad source details and keeps the form", async () => {
+  mockOrgEntities();
+  vi.mocked(axios.patch).mockRejectedValue({ response: { status: 400, data: { message: "domain must be a host name" } } });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dane źródła (typ, strona, opis)" }));
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+
+  expect(await screen.findByText("domain must be a host name")).toBeTruthy();
+  expect(screen.getByLabelText(/Strona/)).toBeTruthy();
+});
+
+it("uses type, website and description as the cited source tooltip", async () => {
+  mockOrgEntities({
+    ...citedOrg, text: "The Telegraph", information_source_type: "newspaper",
+    information_source_domain: "telegraph.co.uk", information_source_description: "Brytyjski dziennik, 1855",
+  });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  const chip = (await screen.findByRole("button", { name: "The Telegraph" })).parentElement as HTMLElement;
+
+  expect(chip.getAttribute("title")).toBe("newspaper · telegraph.co.uk · Brytyjski dziennik, 1855");
+});
+
+it("an organization that is not a source gets 'Opis organizacji' and the registry link", async () => {
+  mockOrgEntities({ id: 12, text: "ONZ", count: 3, organization_id: 5, organization_description: null });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu("ONZ");
+
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
+    "Połącz z inną organizacją", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
+  expect(screen.getByText(/Krótki opis dla:/)).toBeTruthy();
 });
 
 it("preserves reader highlight behavior when menuActions is absent", () => {

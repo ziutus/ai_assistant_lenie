@@ -597,3 +597,98 @@ class TestPlacesMergeGeocodesTarget:
         assert resp.get_json()["geocoded"] is False
         session.commit.assert_called_once()
         audit.assert_called_once()
+
+
+class TestInformationSourceUpdate:
+    @staticmethod
+    def _patch(client, body, source):
+        session = MagicMock()
+        session.get.return_value = source
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/information_sources/75", json=body, headers=API_HEADERS)
+        return resp, session
+
+    def test_unknown_source_returns_404(self, client):
+        resp, _ = self._patch(client, {"domain": "telegraph.co.uk"}, None)
+        assert resp.status_code == 404
+
+    def test_body_must_be_an_object(self, client):
+        from library.db.models import InformationSource
+
+        resp, session = self._patch(client, ["domain"], InformationSource(id=75, canonical_name="The Telegraph"))
+        assert resp.status_code == 400
+        session.commit.assert_not_called()
+
+    def test_updates_type_domain_and_description(self, client):
+        from library.db.models import InformationSource
+
+        source = InformationSource(id=75, canonical_name="The Telegraph")
+        resp, session = self._patch(client, {
+            "source_type": "newspaper", "domain": "https://www.telegraph.co.uk/", "description": "Dziennik, 1855",
+        }, source)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert (data["source_type"], data["domain"], data["description"]) == (
+            "newspaper", "telegraph.co.uk", "Dziennik, 1855")
+        session.commit.assert_called_once()
+
+    def test_bad_domain_returns_400_and_rolls_back(self, client):
+        from library.db.models import InformationSource
+
+        resp, session = self._patch(client, {"domain": "nie domena"}, InformationSource(id=75, canonical_name="X"))
+
+        assert resp.status_code == 400
+        session.rollback.assert_called_once()
+        session.commit.assert_not_called()
+
+
+class TestOrganizationRenameSyncsSource:
+    @staticmethod
+    def _patch(client, body, rename_side_effect=None, rename_result=None):
+        from library.db.models import Organization
+
+        session = MagicMock()
+        session.get.return_value = Organization(id=842, canonical_name="telegrapha")
+        session.scalar.return_value = None
+        with patch("server.get_scoped_session", return_value=session), \
+                patch("library.organization_source_sync.rename_organization",
+                      side_effect=rename_side_effect, return_value=rename_result) as rename:
+            resp = client.patch("/organizations/842", json=body, headers=API_HEADERS)
+        return resp, rename, session
+
+    def test_rename_goes_through_the_syncing_helper_and_reports_the_result(self, client):
+        result = {"old_name": "telegrapha", "source": {"action": "merged", "source_id": 75}}
+
+        resp, rename, session = self._patch(client, {"canonical_name": "The Telegraph"}, rename_result=result)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["rename"] == result
+        assert rename.call_args.args[2] == "The Telegraph"
+        session.commit.assert_called_once()
+
+    def test_source_belonging_to_another_organization_returns_409(self, client):
+        from library.organization_source_sync import SourceConflictError
+
+        resp, _, session = self._patch(
+            client, {"canonical_name": "The Telegraph"}, rename_side_effect=SourceConflictError("zajęte"),
+        )
+
+        assert resp.status_code == 409
+        assert resp.get_json()["message"] == "zajęte"
+        session.rollback.assert_called_once()
+        session.commit.assert_not_called()
+
+    def test_description_is_shared_with_the_bound_source(self, client):
+        from library.db.models import InformationSource, Organization
+
+        organization = Organization(id=842, canonical_name="The Telegraph")
+        source = InformationSource(id=75, canonical_name="The Telegraph", organization_id=842)
+        session = MagicMock()
+        session.get.return_value = organization
+        session.scalar.return_value = source
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/organizations/842", json={"description": "Dziennik"}, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        assert organization.description == source.description == "Dziennik"
