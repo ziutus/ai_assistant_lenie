@@ -49,6 +49,11 @@ export interface EntityItem {
   // Organization classified as an explicitly cited information source.
   information_source_id?: number;
   source_evidence?: string | null;
+  // The information source record behind a cited source (library/organization_source_sync.py).
+  information_source_name?: string;
+  information_source_type?: string | null;
+  information_source_domain?: string | null;
+  information_source_description?: string | null;
   // Global organization registry (orgName only) — present once resolved
   // (library/organization_registry.py). Lets the editor offer "Połącz z…".
   organization_id?: number;
@@ -128,8 +133,21 @@ const chipActionStyle: React.CSSProperties = {
 
 interface MenuEntry {
   label: string;
-  action: () => void;
+  action?: () => void;
+  // Navigation entry (rendered as a router link) instead of an in-panel action.
+  to?: string;
 }
+
+// Tooltip for a chip that is a cited source: "gazeta · telegraph.co.uk · opis".
+const sourceTitleOf = (item: EntityItem): string | undefined => {
+  if (item.information_source_id == null) return undefined;
+  const title = [
+    item.information_source_type,
+    item.information_source_domain,
+    item.information_source_description ?? item.organization_description,
+  ].filter(Boolean).join(" · ");
+  return title || undefined;
+};
 
 export const EntityChips = ({
   label,
@@ -219,6 +237,7 @@ export const EntityChips = ({
               ...(isResolvedPerson ? { background: "#e3edf9", border: "1px solid #7ba3d0" } : {}),
             }}
             title={personTitle
+              ?? sourceTitleOf(item)
               ?? item.organization_description
               ?? facilityTitle
               ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
@@ -231,7 +250,10 @@ export const EntityChips = ({
               </button>
             ) : item.text}
             {item.pipeline && <span title={`Rurociąg (${item.pipeline.substance ?? "?"}) — dane © OpenStreetMap`}> 🛢️</span>}
-            {item.organization_description && <span title={item.organization_description} style={{ color: "#667" }}> ℹ️</span>}
+            {(item.organization_description || item.information_source_description) && (
+              <span title={item.information_source_description ?? item.organization_description ?? undefined}
+                style={{ color: "#667" }}> ℹ️</span>
+            )}
             {item.facility_description && <span title={facilityTitle} style={{ color: "#667" }}> ℹ️</span>}
             {item.verified === true && <span style={{ color: "#2e7d43" }}> ✓</span>}
             {isResolvedPerson && (
@@ -246,11 +268,17 @@ export const EntityChips = ({
                 style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, padding: 4,
                   background: "white", border: "1px solid #b9c8de", borderRadius: 6, minWidth: 230,
                   boxShadow: "0 2px 8px #0002" }}>
-                {entries.map((entry) => (
+                {entries.map((entry) => entry.to ? (
+                  <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => setOpenMenu(null)}
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px",
+                      color: "inherit", textDecoration: "none", boxSizing: "border-box" }}>
+                    {entry.label}
+                  </Link>
+                ) : (
                   <button key={entry.label} type="button" role="menuitem"
                     style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px",
                       background: "transparent", border: 0, cursor: "pointer" }}
-                    onClick={() => { setOpenMenu(null); entry.action(); }}>
+                    onClick={() => { setOpenMenu(null); entry.action?.(); }}>
                     {entry.label}
                   </button>
                 ))}
@@ -397,6 +425,12 @@ const EntitiesPanel = ({
   const [renameFor, setRenameFor] = React.useState<EntityItem | null>(null);
   const [renameText, setRenameText] = React.useState("");
   const [isRenaming, setIsRenaming] = React.useState(false);
+  // "Dane źródła" flow: type / website / description of a cited source (information_sources).
+  const [sourceDetailsFor, setSourceDetailsFor] = React.useState<EntityItem | null>(null);
+  const [sourceType, setSourceType] = React.useState("");
+  const [sourceDomain, setSourceDomain] = React.useState("");
+  const [sourceDescription, setSourceDescription] = React.useState("");
+  const [isSavingSource, setIsSavingSource] = React.useState(false);
   const [mergeHint, setMergeHint] = React.useState<{
     source: EntityItem; target: EntityItem; conflict: boolean;
   } | null>(null);
@@ -453,6 +487,7 @@ const EntitiesPanel = ({
     sawActiveJobRef.current = false;
     setEntities(null);
     setPlaceTags([]);
+    setSourceDetailsFor(null);
     setMessage("");
     setEditMode(false);
     setMergeFor(null);
@@ -525,7 +560,70 @@ const EntitiesPanel = ({
     onBusyChange?.(false);
   };
 
+  // Renaming an organization is global (registry + every document entity + the cited
+  // source bound to it); the backend keeps the old name as an alias and merges a
+  // same-named duplicate source.
+  const handleOrganizationRename = async () => {
+    if (renameFor?.organization_id == null || !renameText.trim() || isRenaming) return;
+    setIsRenaming(true);
+    setMessage("");
+    try {
+      const response = await axios.patch(`${apiUrl}/organizations/${renameFor.organization_id}`,
+        { canonical_name: renameText.trim() }, { headers: jsonHeaders });
+      const rename = response.data.rename;
+      setRenameFor(null);
+      fetchEntities();
+      const sourceNote = rename?.source?.action === "merged"
+        ? " Źródło scalono z istniejącym wpisem o tej nazwie."
+        : rename?.source?.action === "renamed" ? " Nazwa źródła zmieniona." : "";
+      setMessage(`Nazwa organizacji poprawiona: „${rename?.old_name ?? renameFor.text}” → „${response.data.canonical_name}”.${sourceNote}`);
+    } catch (error: any) {
+      const status = error.response?.status;
+      if (status === 404) {
+        setRenameFor(null);
+        fetchEntities();
+        setMessage("Ta organizacja już nie istnieje. Odświeżono listę.");
+      } else if (status === 409) {
+        setMessage(`${error.response?.data?.message || "Taka nazwa już istnieje."} Użyj „Połącz z inną organizacją”.`);
+      } else {
+        setMessage(error.response?.data?.message || "Nie udało się poprawić nazwy organizacji.");
+      }
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const handleSourceDetailsSubmit = async () => {
+    if (sourceDetailsFor?.information_source_id == null || isSavingSource) return;
+    setIsSavingSource(true);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/information_sources/${sourceDetailsFor.information_source_id}`, {
+        source_type: sourceType.trim(),
+        domain: sourceDomain.trim(),
+        description: sourceDescription.trim(),
+      }, { headers: jsonHeaders });
+      setSourceDetailsFor(null);
+      fetchEntities();
+      setMessage("Dane źródła zapisane.");
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        setSourceDetailsFor(null);
+        fetchEntities();
+        setMessage("To źródło już nie istnieje. Odświeżono listę.");
+      } else {
+        setMessage(error.response?.data?.message || "Nie udało się zapisać danych źródła.");
+      }
+    } finally {
+      setIsSavingSource(false);
+    }
+  };
+
   const handleRename = async () => {
+    if (renameFor?.organization_id != null) {
+      await handleOrganizationRename();
+      return;
+    }
     if (renameFor?.id == null || !renameText.trim() || isRenaming) return;
     setIsRenaming(true);
     setMergeHint(null);
@@ -809,8 +907,49 @@ const EntitiesPanel = ({
     setPlaceMergeFor(null);
     setAliasFor(null);
     setOrgDescriptionFor(null);
+    setSourceDetailsFor(null);
     setReviewReason("");
     setReviewComment("");
+  };
+  const organizationMenuActions = (item: EntityItem): MenuEntry[] => {
+    if (item.id == null) return [];
+    const entries: MenuEntry[] = [];
+    if (item.information_source_id != null) {
+      entries.push({ label: "Otwórz w rejestrze źródeł", to: `/information-sources?id=${item.information_source_id}` });
+    } else if (item.organization_id != null) {
+      entries.push({ label: "Otwórz w rejestrze organizacji", to: `/organizations/${item.organization_id}` });
+    }
+    if (item.organization_id != null) {
+      entries.push({ label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } });
+    }
+    if (item.information_source_id != null) {
+      entries.push({ label: "Dane źródła (typ, strona, opis)", action: () => {
+        resetFlows();
+        setSourceDetailsFor(item);
+        setSourceType(item.information_source_type ?? "");
+        setSourceDomain(item.information_source_domain ?? "");
+        setSourceDescription(item.information_source_description ?? item.organization_description ?? "");
+      } });
+    } else if (item.organization_id != null) {
+      entries.push({ label: "Opis organizacji", action: () => {
+        resetFlows();
+        setOrgDescriptionFor(item);
+        setOrgDescriptionText(item.organization_description ?? "");
+      } });
+    }
+    if (item.organization_id != null) {
+      entries.push({ label: "Połącz z inną organizacją", action: () => {
+        resetFlows();
+        setOrgMergeFor(item);
+        setOrgSearchQ("");
+        setOrgSearchResults([]);
+      } });
+    }
+    entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
+    entries.push({ label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
+      resetFlows(); setExcludeFor({ item, entityType: "orgName" });
+    } });
+    return entries;
   };
   const placeMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },
@@ -1041,12 +1180,14 @@ const EntitiesPanel = ({
         label={"Źródła cytowane"}
         items={citedSources}
         linkInformationSources
+        menuActions={organizationMenuActions}
         actions={editMode ? editActions("orgName") : undefined}
       />
       <EntityChips
         label={"Organizacje"}
         items={otherOrganizations}
         linkOrganizations
+        menuActions={organizationMenuActions}
         actions={editMode ? editActions("orgName") : undefined}
       />
       <EntityChips label={"Miejsca"} items={places} menuActions={placeMenuActions}
@@ -1093,10 +1234,16 @@ const EntitiesPanel = ({
           }
         }}
           style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
-          <label>Popraw nazwę miejsca
+          <label>{renameFor.organization_id != null ? "Popraw nazwę organizacji" : "Popraw nazwę miejsca"}
             <input autoFocus value={renameText} maxLength={500} disabled={isRenaming}
               onChange={(event) => setRenameText(event.target.value)} />
           </label>
+          {renameFor.organization_id != null && (
+            <div style={{ color: "#667", fontSize: "0.85em" }}>
+              Zmiana jest globalna: dotyczy rejestru organizacji, tego i innych dokumentów oraz powiązanego
+              źródła. Stara nazwa zostaje aliasem.
+            </div>
+          )}
           <button type="button" className="button" disabled={isRenaming || !renameText.trim()}
             onClick={() => void handleRename()}>Zatwierdź</button>
           <button type="button" disabled={isRenaming} onClick={() => setRenameFor(null)}>Anuluj</button>
@@ -1165,7 +1312,7 @@ const EntitiesPanel = ({
         </div>
       )}
 
-      {editMode && orgMergeFor && (
+      {orgMergeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
           <div style={{ marginBottom: 4 }}>
             Połącz „{orgMergeFor.text}" z inną organizacją (globalnie — obowiązuje też w przyszłych dokumentach):
@@ -1219,7 +1366,39 @@ const EntitiesPanel = ({
         </div>
       )}
 
-      {editMode && orgDescriptionFor && (
+      {sourceDetailsFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0fff4", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            Dane źródła: <strong>{sourceDetailsFor.text}</strong>
+            <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setSourceDetailsFor(null)}>✕ anuluj</button>
+          </div>
+          <label style={{ display: "block" }}>Typ źródła
+            <input list="entities-source-types" value={sourceType} maxLength={30} disabled={isSavingSource}
+              placeholder="np. gazeta, portal, agencja" onChange={(event) => setSourceType(event.target.value)}
+              style={{ padding: "4px 8px", marginLeft: 6, width: 220 }} />
+            <datalist id="entities-source-types">
+              {["newspaper", "portal", "news agency", "agency", "institution", "company", "organization"].map((type) => (
+                <option key={type} value={type} />
+              ))}
+            </datalist>
+          </label>
+          <label style={{ display: "block", marginTop: 4 }}>Strona (adres lub domena)
+            <input value={sourceDomain} disabled={isSavingSource} placeholder="np. https://www.telegraph.co.uk/"
+              onChange={(event) => setSourceDomain(event.target.value)}
+              style={{ padding: "4px 8px", marginLeft: 6, width: 280 }} />
+          </label>
+          <label style={{ display: "block", marginTop: 4 }}>Opis (np. rok założenia, kraj, profil)
+            <textarea value={sourceDescription} disabled={isSavingSource} rows={3} maxLength={2000}
+              placeholder="np. brytyjski dziennik założony w 1855 w Londynie"
+              onChange={(event) => setSourceDescription(event.target.value)}
+              style={{ display: "block", padding: "4px 8px", width: "min(520px, 95%)" }} />
+          </label>
+          <button className={"button"} type="button" style={{ marginTop: 6 }} disabled={isSavingSource}
+            onClick={() => void handleSourceDetailsSubmit()}>Zapisz</button>
+        </div>
+      )}
+
+      {orgDescriptionFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0fff4", borderRadius: 6 }}>
           <div style={{ marginBottom: 4 }}>
             Krótki opis dla: <strong>{orgDescriptionFor.text}</strong> (widoczny jako podpowiedź na chipie w czytniku)

@@ -1957,8 +1957,11 @@ def organization_update(organization_id: int):
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
+    from sqlalchemy import select as sa_select
+
     from library import organization_registry
-    from library.db.models import Organization
+    from library.db.models import InformationSource, Organization
+    from library.organization_source_sync import SourceConflictError, rename_organization, set_description
 
     session = get_scoped_session()
     organization = session.get(Organization, organization_id)
@@ -1966,21 +1969,30 @@ def organization_update(organization_id: int):
         return {"status": "error", "message": "Organization not found"}, 404
 
     data = request.get_json(silent=True) or {}
+    rename_result = None
     if 'canonical_name' in data:
         new_name = (data.get('canonical_name') or "").strip()
         if not new_name:
             return {"status": "error", "message": "canonical_name must not be empty"}, 400
         try:
-            organization_registry.rename(session, organization, new_name)
+            # Also renames the document entities and the information source bound
+            # to this organization (merging a same-named duplicate source).
+            rename_result = rename_organization(session, organization, new_name)
         except organization_registry.AliasConflictError as exc:
             session.rollback()
             return {"status": "error", "message": str(exc),
                     "existing_organization_id": exc.existing_organization_id}, 409
+        except SourceConflictError as exc:
+            session.rollback()
+            return {"status": "error", "message": str(exc)}, 409
         except ValueError as exc:
             session.rollback()
             return {"status": "error", "message": str(exc)}, 400
     if 'description' in data:
-        organization.description = (data.get('description') or "").strip() or None
+        # One description for the organization and the information source bound to it.
+        linked_source = session.scalar(sa_select(InformationSource).where(
+            InformationSource.organization_id == organization.id))
+        set_description(organization, linked_source, (data.get('description') or "").strip() or None)
     if 'organization_type' in data:
         organization.organization_type = (data.get('organization_type') or "").strip() or None
 
@@ -1994,7 +2006,46 @@ def organization_update(organization_id: int):
     return jsonify({"status": "success", "id": organization.id,
                     "canonical_name": organization.canonical_name,
                     "description": organization.description,
-                    "organization_type": organization.organization_type}), 200
+                    "organization_type": organization.organization_type,
+                    "rename": rename_result}), 200
+
+
+@app.route('/information_sources/<int:source_id>', methods=['PATCH', 'OPTIONS'])
+def information_source_update(source_id: int):
+    """Edit an information source's type, domain and description — the data shown for a
+    cited source in the entities panel. Body: any of {"source_type", "domain",
+    "description"}; an empty string clears a field. The domain is normalized from a pasted
+    URL ("https://www.telegraph.co.uk/" -> "telegraph.co.uk"). The description is shared
+    with the organization bound to the source (one text for both)."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import InformationSource
+    from library.organization_source_sync import update_source_details
+
+    session = get_scoped_session()
+    source = session.get(InformationSource, source_id)
+    if source is None:
+        return {"status": "error", "message": "Information source not found"}, 404
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return {"status": "error", "message": "JSON object body required"}, 400
+    try:
+        update_source_details(session, source, data)
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        logging.exception("information source update failed for %s", source_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "id": source.id, "canonical_name": source.canonical_name,
+                    "source_type": source.source_type, "domain": source.domain,
+                    "description": source.description,
+                    "organization_id": source.organization_id}), 200
 
 
 @app.route('/organizations/<int:organization_id>/aliases', methods=['POST', 'OPTIONS'])
