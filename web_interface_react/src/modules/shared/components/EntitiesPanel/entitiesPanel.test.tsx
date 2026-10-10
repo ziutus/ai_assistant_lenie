@@ -150,6 +150,8 @@ it("shows read-only place tags under Miejsca only when the document has them", a
       place_tags: ["miejsce-aden", "miejsce-rijad"] } }));
   const view = render(<EntitiesPanel docId={10753} />);
   expect(await screen.findByText("Tagi miejsc: miejsce-aden, miejsce-rijad")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Czym są tagi miejsc" }));
+  expect(screen.getByRole("note").textContent).toContain("nie ma osobnego filtra po tagach");
   view.unmount();
 
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")

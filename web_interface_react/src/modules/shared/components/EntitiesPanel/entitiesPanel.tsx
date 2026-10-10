@@ -3,6 +3,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import type { CountryTag } from "../CountryMap/countryMap";
+import InfoTip from "../InfoTip";
 
 // NER entities detected in the document (backend: GET/POST /website_entities,
 // table document_entities — see docs/ner-integration-plan.md).
@@ -1051,9 +1052,26 @@ const EntitiesPanel = ({
       <EntityChips label={"Miejsca"} items={places} menuActions={placeMenuActions}
         actions={editMode ? editActions("placeName") : undefined} />
       {placeTags.length > 0 && (
-        <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}
-          title="Tagi dokumentu nadawane po weryfikacji miejsc (tylko do odczytu)">
+        <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}>
           Tagi miejsc: {placeTags.join(", ")}
+          <InfoTip label="Czym są tagi miejsc">
+            <strong>Tagi miejsc (miejsce-…)</strong> to podsumowanie miejsc potwierdzonych w tym dokumencie,
+            zapisane w tagach dokumentu. Tu tylko do odczytu.
+            <br /><br />
+            <strong>Jak powstają:</strong> po wykryciu encji worker geokoduje miejsca, a model językowy wybiera
+            te, które dokument faktycznie omawia. Nazwa kanoniczna z geokodera staje się tagiem. „Popraw nazwę”
+            geokoduje poprawioną nazwę i dopisuje jej tag. Tag znika przy usunięciu ostatniej encji tego
+            miejsca oraz przy otwarciu dokumentu do edycji.
+            <br /><br />
+            <strong>Gdzie są używane:</strong> w wyszukiwarce tagi są częścią przeszukiwanego tekstu dokumentu
+            (dopasowanie tekstowe i ocena trafności); nie ma osobnego filtra po tagach. Widać je też w polu
+            tagów edytora i w czytniku. Mapa ich nie używa: kraje bierze z tagów kraj-…, a punkty
+            ze współrzędnych encji.
+            <br /><br />
+            <strong>Inne tagi:</strong> tematyczne (np. geopolityka, wojsko), nadawane przez model; kraj-…
+            (omawiane państwa); tagi z notatek Obsidiana (np. wiedza-…) i własne. Pytania kontrolne są dobierane
+            po zgodności tagów dokumentu z tagami pytań.
+          </InfoTip>
         </div>
       )}
       <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
