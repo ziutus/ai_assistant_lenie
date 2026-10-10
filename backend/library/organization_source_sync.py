@@ -35,6 +35,10 @@ _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\
 class SourceConflictError(ValueError):
     """The corrected name belongs to an information source of another organization."""
 
+    def __init__(self, message: str, existing_organization_id: int | None = None):
+        super().__init__(message)
+        self.existing_organization_id = existing_organization_id
+
 
 def normalize_domain(value: str | None) -> str | None:
     """Reduce a pasted URL or host to a bare lowercase domain ("https://www.telegraph.co.uk/" -> "telegraph.co.uk")."""
@@ -68,8 +72,14 @@ def _add_alias(session, source: InformationSource, alias: str) -> None:
     session.add(InformationSourceAlias(source=source, alias=alias))
 
 
-def _merge_sources(session, source: InformationSource, target: InformationSource) -> None:
-    """Fold ``source`` into ``target``: move links and aliases, keep the organization binding, delete ``source``."""
+def _merge_sources(session, source: InformationSource, target: InformationSource, *,
+                   adopt_organization: bool = True) -> None:
+    """Fold ``source`` into ``target``: move links and aliases, delete ``source``.
+
+    ``adopt_organization``: the target takes over the source's organization binding (a rename
+    folding the lemma-named source into the proper one). False when the target already belongs
+    to its own organization (an organization merge) — the binding of ``source`` is simply dropped.
+    """
     for link in session.scalars(
         select(DocumentInformationSource).where(DocumentInformationSource.source_id == source.id)
     ).all():
@@ -102,7 +112,8 @@ def _merge_sources(session, source: InformationSource, target: InformationSource
     organization_id = source.organization_id
     source.organization_id = None
     session.flush()  # organization_id is unique: free it before the target takes it
-    target.organization_id = organization_id
+    if adopt_organization:
+        target.organization_id = organization_id
     session.delete(source)
     session.flush()
 
@@ -117,7 +128,8 @@ def _sync_source_name(session, organization: Organization, old_name: str, new_na
     ))
     if duplicate is not None and duplicate.organization_id not in (None, organization.id):
         raise SourceConflictError(
-            f"Źródło „{duplicate.canonical_name}” jest już powiązane z inną organizacją (id {duplicate.organization_id})."
+            f"Źródło „{duplicate.canonical_name}” jest już powiązane z inną organizacją (id {duplicate.organization_id}).",
+            existing_organization_id=duplicate.organization_id,
         )
     if source is None:
         if duplicate is None:
@@ -201,3 +213,120 @@ def update_source_details(session, source: InformationSource, data: dict) -> Inf
         organization = session.get(Organization, source.organization_id) if source.organization_id else None
         set_description(organization, source, text)
     return source
+
+
+def _bound_source(session, organization_id: int) -> InformationSource | None:
+    return session.scalar(select(InformationSource).where(InformationSource.organization_id == organization_id))
+
+
+def merge_organizations(session, source_id: int, target_id: int, *, make_global_alias: bool = True) -> dict:
+    """``organization_registry.merge()`` plus what it does not know about: information sources and entity names.
+
+    The registry merge re-points document links and aliases but would leave the source bound to
+    the deleted organization orphaned (FK ``SET NULL``) and the entity chips under the old name.
+    Here the information sources are folded first (both organizations have one: the lemma-named
+    one is merged into the target's; only the merged-away one has one: it becomes the target's,
+    renamed), then the registry merge runs, then every document entity of the target carries the
+    target's canonical name. The caller commits.
+    """
+    source_org = session.get(Organization, source_id)
+    target_org = session.get(Organization, target_id)
+    if source_org is None or target_org is None:
+        raise LookupError("organization not found")
+    if source_id == target_id:
+        raise ValueError("source_organization_id points at the same organization as target")
+
+    source_of_merged = _bound_source(session, source_id)
+    source_of_target = _bound_source(session, target_id)
+    source_action = "none"
+    if source_of_merged is not None and source_of_target is not None:
+        _merge_sources(session, source_of_merged, source_of_target, adopt_organization=False)
+        source_action = "merged"
+    elif source_of_merged is not None:
+        old_source_name = source_of_merged.canonical_name
+        source_of_merged.organization_id = target_org.id
+        session.flush()
+        source_action = _sync_source_name(session, target_org, old_source_name, target_org.canonical_name)["action"]
+
+    result = organization_registry.merge(session, source_id, target_id, make_global_alias=make_global_alias)
+    result.update(_rename_entities(session, target_org, target_org.canonical_name))
+    result["source"] = {"action": source_action}
+    return result
+
+
+def _source_summary(session, source: InformationSource | None) -> dict | None:
+    if source is None:
+        return None
+    count = session.scalar(
+        select(func.count(func.distinct(DocumentInformationSource.document_id)))
+        .where(DocumentInformationSource.source_id == source.id)
+    )
+    return {
+        "id": source.id, "canonical_name": source.canonical_name, "source_type": source.source_type,
+        "domain": source.domain, "description": source.description,
+        "aliases": [alias.alias for alias in source.aliases], "document_count": int(count or 0),
+    }
+
+
+def _document_ids(session, organization_id: int) -> set[int]:
+    return set(session.scalars(
+        select(DocumentOrganization.document_id).where(DocumentOrganization.organization_id == organization_id)
+    ).all())
+
+
+def _organization_summary(session, organization: Organization, document_ids: set[int]) -> dict:
+    return {
+        "id": organization.id, "canonical_name": organization.canonical_name,
+        "organization_type": organization.organization_type, "description": organization.description,
+        "aliases": [alias.alias for alias in organization.aliases], "document_count": len(document_ids),
+        "information_source": _source_summary(session, _bound_source(session, organization.id)),
+    }
+
+
+def merge_preview(session, source_id: int, target_id: int) -> dict:
+    """What ``merge_organizations(source_id -> target_id)`` would do, without changing anything."""
+    source_org = session.get(Organization, source_id)
+    target_org = session.get(Organization, target_id)
+    if source_org is None or target_org is None:
+        raise LookupError("organization not found")
+    if source_id == target_id:
+        raise ValueError("source_organization_id points at the same organization as target")
+
+    source_documents = _document_ids(session, source_id)
+    target_documents = _document_ids(session, target_id)
+    source_summary = _organization_summary(session, source_org, source_documents)
+    target_summary = _organization_summary(session, target_org, target_documents)
+
+    target_names = {target_org.canonical_name.casefold(), *(alias.alias.casefold() for alias in target_org.aliases)}
+    entity_texts = session.scalars(
+        select(DocumentEntity.entity_text)
+        .join(DocumentOrganization, DocumentOrganization.document_entity_id == DocumentEntity.id)
+        .where(DocumentOrganization.organization_id == source_id, DocumentEntity.entity_type == "orgName")
+    ).all()
+
+    source_data, target_data = source_summary["information_source"], target_summary["information_source"]
+    dropped_fields: list[str] = []
+    if source_data and target_data:
+        source_action = "merge_sources"
+        dropped_fields = [
+            field for field in ("source_type", "domain", "description")
+            if source_data[field] and target_data[field] and source_data[field] != target_data[field]
+        ]
+    elif source_data:
+        source_action = "move_source"
+    else:
+        source_action = "none"
+
+    return {
+        "source": source_summary,
+        "target": target_summary,
+        "effects": {
+            "alias_added": source_org.canonical_name if source_org.canonical_name.casefold() not in target_names else None,
+            "aliases_moved": [alias.alias for alias in source_org.aliases if alias.alias.casefold() not in target_names],
+            "documents_moved": len(source_documents - target_documents),
+            "documents_in_both": len(source_documents & target_documents),
+            "entities_renamed": sum(1 for text in entity_texts if text.casefold() != target_org.canonical_name.casefold()),
+            "source_action": source_action,
+            "source_fields_dropped": dropped_fields,
+        },
+    }

@@ -692,3 +692,59 @@ class TestOrganizationRenameSyncsSource:
 
         assert resp.status_code == 200
         assert organization.description == source.description == "Dziennik"
+
+    def test_source_conflict_exposes_the_owning_organization_for_a_merge(self, client):
+        from library.organization_source_sync import SourceConflictError
+
+        resp, _, _ = self._patch(
+            client, {"canonical_name": "The Telegraph"},
+            rename_side_effect=SourceConflictError("zajęte", existing_organization_id=281),
+        )
+
+        assert resp.status_code == 409
+        assert resp.get_json()["existing_organization_id"] == 281
+
+
+class TestOrganizationMergePreview:
+    @staticmethod
+    def _get(client, query, *, preview=None, error=None):
+        with patch("server.get_scoped_session", return_value=MagicMock()), \
+                patch("library.organization_source_sync.merge_preview",
+                      side_effect=error, return_value=preview) as mock_preview:
+            resp = client.get(f"/organizations/842/merge_preview{query}", headers=API_HEADERS)
+        return resp, mock_preview
+
+    def test_target_id_is_required(self, client):
+        resp, mock_preview = self._get(client, "")
+        assert resp.status_code == 400
+        mock_preview.assert_not_called()
+
+    def test_returns_the_comparison(self, client):
+        preview = {"source": {"id": 842}, "target": {"id": 281}, "effects": {"source_action": "merge_sources"}}
+
+        resp, mock_preview = self._get(client, "?target_id=281", preview=preview)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["effects"] == preview["effects"]
+        assert mock_preview.call_args.args[1:] == (842, 281)
+
+    def test_unknown_organization_is_404_and_same_organization_is_400(self, client):
+        assert self._get(client, "?target_id=999", error=LookupError("x"))[0].status_code == 404
+        assert self._get(client, "?target_id=842", error=ValueError("same"))[0].status_code == 400
+
+
+class TestOrganizationMergeKeepsSourcesInStep:
+    def test_registry_merge_endpoint_goes_through_the_syncing_helper(self, client):
+        from library.db.models import Organization
+
+        session = MagicMock()
+        session.get.return_value = Organization(id=842, canonical_name="Emiraty")
+        result = {"organization_id": 281, "canonical_name": "ZEA", "source": {"action": "merged"}}
+        with patch("server.get_scoped_session", return_value=session), \
+                patch("library.organization_source_sync.merge_organizations", return_value=result) as merge:
+            resp = client.post("/organizations/842/merge", json={"target_organization_id": 281},
+                               headers=API_HEADERS)
+
+        assert resp.status_code == 200 and resp.get_json()["source"] == {"action": "merged"}
+        assert merge.call_args.args[1:] == (842, 281)
+        session.commit.assert_called_once()

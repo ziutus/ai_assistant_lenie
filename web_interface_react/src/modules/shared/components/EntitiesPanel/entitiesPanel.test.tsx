@@ -228,6 +228,99 @@ it("shows the backend conflict when the corrected organization name is taken", a
   expect(await screen.findByText("Nazwa zajęta. Użyj „Połącz z inną organizacją”.")).toBeTruthy();
 });
 
+const mergePreviewPayload = {
+  status: "success",
+  source: {
+    id: 842, canonical_name: "telegrapha", organization_type: null, description: null, aliases: [],
+    document_count: 3,
+    information_source: { id: 200, canonical_name: "telegrapha", source_type: "organization", domain: null,
+      description: null, document_count: 3 },
+  },
+  target: {
+    id: 281, canonical_name: "Zjednoczone Emiraty Arabskie", organization_type: "country", description: "Państwo w Azji",
+    aliases: ["ZEA"], document_count: 12,
+    information_source: { id: 75, canonical_name: "Zjednoczone Emiraty Arabskie", source_type: "country",
+      domain: "government.ae", description: null, document_count: 9 },
+  },
+  effects: {
+    alias_added: "telegrapha", aliases_moved: [], documents_moved: 2, documents_in_both: 1, entities_renamed: 3,
+    source_action: "merge_sources", source_fields_dropped: ["source_type"],
+  },
+};
+const mockOrgEntitiesWithPreview = () => {
+  vi.mocked(axios.get).mockImplementation(async (url) => {
+    if (url.endsWith("enrichment_job")) return { data: { job: null } };
+    if (url.endsWith("/merge_preview")) return { data: mergePreviewPayload };
+    if (url.endsWith("/organizations")) {
+      return { data: { entries: [{ id: 281, canonical_name: "Zjednoczone Emiraty Arabskie", aliases: ["ZEA"], document_count: 12 }] } };
+    }
+    return { data: { entities: { persName: [], orgName: [citedOrg], geogName: [], placeName: [] } } };
+  });
+};
+
+it("turns a taken organization name into a merge with a side-by-side preview and a Połącz button", async () => {
+  mockOrgEntitiesWithPreview();
+  vi.mocked(axios.patch).mockRejectedValue({ response: { status: 409, data: {
+    message: "alias 'Zjednoczone Emiraty Arabskie' already belongs to organization 281", existing_organization_id: 281,
+  } } });
+  vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  fireEvent.change(screen.getByRole("textbox", { name: /Popraw nazwę organizacji/ }),
+    { target: { value: "Zjednoczone Emiraty Arabskie" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
+
+  expect(await screen.findByText("Łączona (zniknie)")).toBeTruthy();
+  expect(axios.get).toHaveBeenCalledWith("/organizations/842/merge_preview",
+    { params: { target_id: 281 }, headers: expect.any(Object) });
+  expect(screen.getByText("Państwo w Azji")).toBeTruthy();
+  expect(screen.getByText(/2 dok\. zostanie powiązanych/)).toBeTruthy();
+  expect(screen.getByText(/1 dok\. ma obie organizacje/)).toBeTruthy();
+  expect(screen.getByText(/3 encji w dokumentach zmieni nazwę/)).toBeTruthy();
+  expect(screen.getByText(/Utracone dane źródła \(cel ma własne\): typ/)).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: /Popraw nazwę organizacji/ })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Połącz" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/10753/organizations/merge",
+    { source_entity_id: 11, target_organization_id: 281, make_global_alias: true }, { headers: expect.any(Object) }));
+  expect(await screen.findByText("Połączono organizacje: „telegrapha” → „Zjednoczone Emiraty Arabskie”.")).toBeTruthy();
+  expect(screen.queryByText("Łączona (zniknie)")).toBeNull();
+});
+
+it("shows the comparison before a registry merge and does nothing on Anuluj", async () => {
+  mockOrgEntitiesWithPreview();
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Połącz z inną organizacją" }));
+  fireEvent.change(screen.getByPlaceholderText("Nazwa organizacji…"), { target: { value: "Emirat" } });
+  await screen.findByText("ZEA", { exact: false });
+  fireEvent.click(screen.getAllByRole("button", { name: "wybierz" })[0]);
+
+  expect(await screen.findByText("Łączona (zniknie)")).toBeTruthy();
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Anuluj" }));
+  expect(screen.queryByText("Łączona (zniknie)")).toBeNull();
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+it("reports a failed preview instead of merging blind", async () => {
+  vi.mocked(axios.get).mockImplementation(async (url) => {
+    if (url.endsWith("enrichment_job")) return { data: { job: null } };
+    if (url.endsWith("/merge_preview")) throw { response: { status: 404, data: { message: "Organization not found" } } };
+    return { data: { entities: { persName: [], orgName: [citedOrg], geogName: [], placeName: [] } } };
+  });
+  vi.mocked(axios.patch).mockRejectedValue({ response: { status: 409, data: { existing_organization_id: 281 } } });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
+
+  expect(await screen.findByText(/Organization not found/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Połącz" })).toBeNull();
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
 it("saves source type, website and description from 'Dane źródła'", async () => {
   mockOrgEntities({ ...citedOrg, organization_description: "stary opis" });
   renderInRouter(<EntitiesPanel docId={10753} />);
