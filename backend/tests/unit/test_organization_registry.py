@@ -220,6 +220,7 @@ class TestMerge:
             _execute_result(first=None),        # add_alias: no conflict
             _execute_result(all_=[link]),        # source_links
             _execute_result(first=None),         # no existing target link for this document
+            _execute_result(), _execute_result(),  # absorb_organization: target/source country ties
             _execute_result(scalar=0),           # remaining links count (orphan check)
         ]
 
@@ -248,6 +249,7 @@ class TestMerge:
             _execute_result(first=None),   # add_alias(target, source.canonical_name): no conflict
             _execute_result(first=None),   # alias loop: not already on target
             _execute_result(all_=[]),      # source_links
+            _execute_result(), _execute_result(),  # absorb_organization: target/source country ties
             _execute_result(scalar=0),     # orphan check
         ]
 
@@ -268,6 +270,7 @@ class TestMerge:
             # make_global_alias=False -> add_alias() is never called, no conflict-check execute
             _execute_result(all_=[source_link]),                 # source_links
             _execute_result(first=target_link_already_exists),   # target already linked for this doc
+            _execute_result(), _execute_result(),                # absorb_organization: country ties
             _execute_result(scalar=1),                           # remaining links count -> not orphaned
         ]
 

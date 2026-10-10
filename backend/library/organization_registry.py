@@ -359,6 +359,12 @@ def merge(session, source_organization_id: int, target_organization_id: int, *,
             link.organization_id = target.id
     session.flush()
 
+    # Country ties and headquarters/website/note must move before the source
+    # row is deleted (organization_countries cascades on delete).
+    from library.organization_location import absorb_organization
+    absorb_organization(session, source, target)
+    session.flush()
+
     organization_deleted = _delete_organization_if_orphaned(session, source.id)
     return {
         "organization_id": target.id,
