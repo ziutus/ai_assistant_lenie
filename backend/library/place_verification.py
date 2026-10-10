@@ -371,7 +371,9 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
 
     checked = 0
     resolved_names: list[str] = []
-    candidates = [ent for ent in entities if not _is_country(ent.entity_text)]
+    # Human corrections/merges must survive enrichment as well as NER refresh:
+    # canonicalization and context classification can otherwise rename/retype them.
+    candidates = [ent for ent in entities if ent.source != "manual" and not _is_country(ent.entity_text)]
     for index, ent in enumerate(candidates, start=1):
         if progress_callback is not None:
             progress_callback(index, len(candidates))

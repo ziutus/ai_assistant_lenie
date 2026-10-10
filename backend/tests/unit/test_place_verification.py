@@ -50,6 +50,23 @@ def _session_with_entities(entities, cached_geocode=None, existing_org_row=None)
     return session
 
 
+@pytest.mark.parametrize("geocode", [None, _resolved_geocode("Inna nazwa")])
+def test_manual_place_is_not_renamed_or_reclassified(geocode):
+    ent = _entity("Jemen Północny", geocode=geocode)
+    ent.source = "manual"
+    session = _session_with_entities([ent])
+    with patch("library.place_verification._get_or_create_geocode") as geocode_lookup, patch(
+        "library.place_context_classifier.classify_place_context_candidates"
+    ) as classify:
+        result = verify_document_places(session, MagicMock(id=42), "Tekst o Jemenie Północnym")
+    assert result == {"checked": 0, "resolved": [], "tagged": []}
+    assert ent.entity_text == "Jemen Północny"
+    assert ent.source == "manual"
+    geocode_lookup.assert_not_called()
+    classify.assert_not_called()
+    session.delete.assert_not_called()
+
+
 class TestSlugify:
     def test_polish_diacritics_and_spaces(self):
         assert _slugify("Cieśnina Ormuz") == "ciesnina-ormuz"

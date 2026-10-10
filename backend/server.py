@@ -1575,6 +1575,69 @@ def person_alias_add(person_id: int):
                     "aliases": [a.alias for a in person.aliases]}), 200
 
 
+@app.route('/website_entities/<int:entity_id>', methods=['PATCH'])
+def website_entities_rename(entity_id: int):
+    """Correct a place name while retaining its original chapter-matching forms."""
+    from sqlalchemy.exc import IntegrityError
+    from library.db.models import DocumentEntity
+    from library.entity_service import get_document_entities
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
+
+    data = request.get_json(silent=True)
+    name = data.get("text") if isinstance(data, dict) else None
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 500:
+        return jsonify(status="error", message="Nazwa musi zawierać od 1 do 500 znaków."), 400
+    name = name.strip()
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type not in PLACE_ENTITY_TYPES:
+        return jsonify(status="error", message="Można poprawiać tylko nazwy miejsc."), 400
+
+    conflict_message = 'Takie miejsce już istnieje. Wybierz „Połącz z innym miejscem”.'
+    try:
+        duplicate = session.query(DocumentEntity).filter(
+            DocumentEntity.document_id == entity.document_id,
+            DocumentEntity.entity_type == entity.entity_type,
+            DocumentEntity.entity_text == name,
+            DocumentEntity.id != entity.id,
+        ).first()
+        if duplicate is not None:
+            return jsonify(status="error", message=conflict_message), 409
+        old_name = entity.entity_text
+        old_variants = list(entity.variants or [])
+        document = session.get(Document, entity.document_id)
+        removed_tag = remove_orphaned_tag(session, document, entity) if document is not None else None
+        entity.entity_text = name
+        entity.variants = list(dict.fromkeys([*old_variants, old_name, name]))
+        entity.source = "manual"
+        entity.geocode = None
+        entity.geocode_id = None
+        record_entity_decision(
+            session, document_id=entity.document_id, document_entity_id=entity.id,
+            entity_type=entity.entity_type, entity_text=old_name, decision="renamed",
+            details={"new_text": name, "variants": old_variants, "removed_tag": removed_tag},
+        )
+        session.flush()
+        item = next(item for item in get_document_entities(session, entity.document_id)[entity.entity_type]
+                    if item["id"] == entity.id)
+        item.update(entity_type=entity.entity_type, mention_count=entity.mention_count)
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if getattr(exc.orig, "pgcode", None) == "23505":
+            return jsonify(status="error", message=conflict_message), 409
+        logging.exception("entity rename failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zapisać nazwy miejsca."), 500
+    except Exception:
+        session.rollback()
+        logging.exception("entity rename failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zapisać nazwy miejsca."), 500
+    return jsonify(status="success", entity=item), 200
+
+
 @app.route('/website_entities/<int:entity_id>', methods=['DELETE', 'OPTIONS'])
 def website_entities_delete(entity_id: int):
     """Delete a stored NER entity row (editor UI).
