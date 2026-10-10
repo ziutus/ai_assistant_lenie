@@ -65,7 +65,11 @@ flowchart TD
     PLAUS -->|"nie"| RETRY["Fallbacki (kolejno):<br/>country_gazetteer.strip_country_edge()<br/>city / geo_feature / region_gazetteer<br/>geocode_aliases.geocode_alias()<br/>geocode_aliases.geocode_country_hint()<br/>synteyczny centroid (makroregiony)"]
     RETRY --> LIQ
     PLAUS -->|"tak"| RESOLVED
-    RESOLVED --> CTX["place_context_classifier<br/>-> ner_context_classifications"]
+    RESOLVED --> GENERIC{"generic_place_names<br/>cała nazwa lub wariant?"}
+    GENERIC -->|"tak"| REVIEW["needs_review<br/>propozycja lokalizacji bez tagu"]
+    REVIEW -->|"człowiek: confirm_place"| CONFIRMED["confirmed + manual<br/>audyt place_confirmed"]
+    CONFIRMED --> TAG
+    GENERIC -->|"nie"| CTX["place_context_classifier<br/>-> ner_context_classifications"]
     CTX -->|"not_place"| DROP1["odrzucone<br/>(homonim, system uzbrojenia...)"]
     CTX -->|"organization"| ORG[["Organizacje"]]
     CTX -->|"place"| LLM["article_tagging.confirm_places_with_llm()"]
@@ -358,3 +362,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod + migracja — krytyczne błędy etapów propagują `EntityEnrichmentCriticalError`; błędy integralności przechodzą bezpośrednio do `needs_intervention`, błędy przejściowe są retryowane (30 s / 120 s / 600 s), a po ostatniej próbie również kończą się `needs_intervention`. Lookup infrastruktury pozostał etapem opcjonalnym i może zwrócić warning.
 - **Test regresyjny:** `backend/tests/unit/test_entity_enrichment_service.py`, `backend/tests/unit/test_worker.py`.
 - **Status:** żywy bug naprawiony w kodzie; wymaga deployu migracji i obrazu backendu.
+
+### E017 — Generyczne nazwy „Huty” i „Południe” uznane za konkretne miejsca (dok. #10753, PR n/d, 2026-10-10)
+
+- **Typ encji:** geogName / placeName
+- **Kategoria:** T13 — rzeczownik pospolity lub kierunek geograficzny jako nazwa miejsca.
+- **Zdanie źródłowe:** nie przytoczono — diagnoza oparta na zgłoszeniu dla dokumentu #10753, bez odczytu bazy NAS.
+- **Objaw:** „Huty” otrzymały lokalizację wsi na Ukrainie (query `Huti`), a „Południe” lokalizację dzielnicy Koszyc; powstały nieuzasadnione tagi miejsc.
+- **Przyczyna źródłowa:** trafienie geokodera było traktowane jako podstawa kanonikalizacji i scalania, a próg wzmianek oraz LLM istotności nie wymagały rozstrzygnięcia wieloznaczności przez człowieka.
+- **Poprawka:** kod + migracja — `generic_place_names` sprawdza całe nazwy, warianty i propozycję przed scalaniem; status `needs_review` blokuje automatyczne tagowanie i zaakceptowane współrzędne. Człowiek zatwierdza konkretną propozycję przez `confirm_place`; audyt `place_confirmed` odtwarza wybraną lokalizację po refreshu, późniejsze DELETE wygrywa. Skrypt `reconcile_generic_place_tags.py` usuwa wyłącznie tagi bez wsparcia innej zaakceptowanej encji i nie zmienia globalnego cache.
+- **Test regresyjny:** `backend/tests/unit/test_generic_place_names.py`, `test_entity_overrides.py`, `test_flask_endpoints_entities.py`, `test_entity_service.py`, `test_place_context_classifier.py`.
+- **Status:** żywy bug naprawiony w kodzie; dane #10753 niezmienione, migracja i rekonsyliacja nieuruchomione.
