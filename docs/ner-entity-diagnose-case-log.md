@@ -138,6 +138,23 @@ zawsze idzie przez PR, nie przez REST/SQL na NAS:
 | `library/region_gazetteer.py` | zagraniczne regiony administracyjne/stany (np. Kordofan) |
 | `library/geocode_aliases.py` | `geocode_alias()` (transliteracja/inna pisownia w OSM) + `geocode_country_hint()` (bias przez `countrycodes`) + syntetyczne centroidy makroregionów geopolitycznych |
 
+## Gdzie zbierane są dane o poprawkach
+
+Poprawki ręczne nie znikają bez śladu — do analizy potrzeb na przyszłość służą:
+
+- `ner_corrections` — reguły przemianowania wraz z `reason`, `approved_by`,
+  `source_document_id`, `created_at` (kto, dlaczego i na podstawie którego
+  dokumentu zatwierdził poprawkę),
+- `ner_correction_applications` — jeden wiersz za każdym razem, gdy reguła
+  faktycznie zadziałała w jakimś dokumencie (jak często dana pomyłka wraca),
+- `ner_exclusions` — fałszywe pozytywy usuwane w całości,
+- ten dziennik — kategoria przyczyny (taksonomia poniżej) dla każdego
+  zdiagnozowanego przypadku.
+
+Zliczenie wystąpień kategorii w dzienniku i zadziałań reguł w
+`ner_correction_applications` pokazuje, które klasy błędów warto naprawiać w
+kodzie (zamiast kolejnej ręcznej reguły).
+
 ## Taksonomia przyczyn błędów
 
 | Kod | Kategoria | Mechanizm | Przykład | Referencja |
@@ -149,7 +166,7 @@ zawsze idzie przez PR, nie przez REST/SQL na NAS:
 | T5 | Inna transliteracja w OSM | LocationIQ/OSM indeksuje miejsce pod inną (np. angielską) pisownią | "Al-Faszir" → "El Fasher" | E004, E005 |
 | T6 | Metonimia instytucjonalna | Nazwa siedziby władzy oznacza w tekście instytucję, nie fizyczne miejsce | "Biały Dom", "Kreml" | E012 |
 | T7 | Region geopolityczny bez punktowej lokalizacji | Pojęcie geopolityczne, brak jednego wiarygodnego geokodowalnego punktu | "Sahel", "Bliski Wschód" | E010 |
-| T8 | Rzeczownik pospolity jako nazwa własna | spaCy błędnie oznacza rzeczownik pospolity (zwł. na początku zdania) jako `geogName`/`placeName` | "Lotnisko w Chartumie..." | E008 |
+| T8 | Rzeczownik pospolity jako nazwa własna | spaCy błędnie oznacza rzeczownik pospolity (zwł. na początku zdania albo nagłówka) jako `geogName`/`placeName`, albo dokleja go do sąsiedniej nazwy własnej (`orgName`) | "Lotnisko w Chartumie...", nagłówek "Arsenał Huti" | E008, E017 |
 | T9 | Fałszywy pozytyw spaCy / artefakt segmentacji | Fragment tekstu (artefakt STT, oderwany prefiks) błędnie oznaczony jako encja | osierocone "Al-" | E014 |
 | T10 | Niejednoznaczna nazwa organizacji (kolizja) | Ta sama nazwa/skrót oznacza różne, niepowiązane organizacje | "Africa Corps" (Rosja 2023+) vs "Afrika Korps" (III Rzesza) | E003 |
 | T11 | Stare dane pod już naprawionym mechanizmem | Rekord powstał przed wdrożeniem poprawki; obecny kod poprawnie obsługuje ten kształt danych | Organization 485 (ECFR) | E013 |
@@ -358,3 +375,15 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod + migracja — krytyczne błędy etapów propagują `EntityEnrichmentCriticalError`; błędy integralności przechodzą bezpośrednio do `needs_intervention`, błędy przejściowe są retryowane (30 s / 120 s / 600 s), a po ostatniej próbie również kończą się `needs_intervention`. Lookup infrastruktury pozostał etapem opcjonalnym i może zwrócić warning.
 - **Test regresyjny:** `backend/tests/unit/test_entity_enrichment_service.py`, `backend/tests/unit/test_worker.py`.
 - **Status:** żywy bug naprawiony w kodzie; wymaga deployu migracji i obrazu backendu.
+
+### E017 — "Arsenał Huti" jako organizacja zamiast "Huti" (dok. #10756, 2026-10-11)
+
+- **Typ encji:** orgName
+- **Kategoria:** T8 — rzeczownik pospolity jako nazwa własna (doklejony do nazwy własnej na początku nagłówka)
+- **Zdanie źródłowe:** "## Arsenał Huti" (nagłówek sekcji w `text_md`; w treści pod nim: "Eksperci szacują, że Huti mają od 100 do 200 dalekosiężnych pocisków balistycznych…")
+- **Objaw:** w panelu encji dokumentu obok "Huti" (14 wzmianek) pojawiła się osobna organizacja "Arsenał Huti" (1 wzmianka).
+- **Przyczyna źródłowa:** spaCy `pl_core_news_lg` oznaczył cały dwuwyrazowy nagłówek jako jeden `orgName`; "Arsenał" jest wielką literą tylko dlatego, że otwiera nagłówek. `organization_registry` dopasowuje wyłącznie dokładnie, więc założył nową organizację #851. Rekordy powstały dziś na aktualnym kodzie — to nie stare dane (Etap 2b).
+- **Poprawka:** dane — reguła `ner_corrections` #8 (`Arsenał Huti` → `Huti`, `orgName`, global; działa na kolejne dokumenty i scala liczniki), w dok. #10756 usunięty wiersz `document_entities` #14977 i `mention_count` "Huti" podniesiony do 15, organizacja #851 usunięta (nie scalana, żeby "Arsenał Huti" nie został aliasem).
+- **Opcja na przyszłość (nie wdrożona):** spłaszczanie wielkości liter pierwszego słowa nagłówka markdownowego przed NER — dopiero po zebraniu kilku podobnych przypadków.
+- **Test regresyjny:** brak — czysto danowa poprawka, wpis w `ner_corrections` #8 dokumentuje przypadek.
+- **Status:** tylko dane bez zmiany kodu
