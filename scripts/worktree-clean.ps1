@@ -12,7 +12,11 @@
   A worktree is removed only when ALL of these hold:
     - no live process holds its lock (a lock whose pid is dead is removed first),
     - `git status` is clean (no modified or untracked files),
-    - HEAD is already on a remote branch (nothing unpushed).
+    - the work is safe elsewhere: HEAD is on a remote branch, OR every commit already
+      has a patch-equivalent on origin/main, OR `gh` reports the branch's PR as MERGED
+      with its head commit equal to HEAD (squash-merge with the remote branch deleted).
+  Junctions to shared .venv / node_modules are unlinked (`cmd /c rmdir`) BEFORE any
+  delete, because PowerShell 5.1 recursive delete follows them into the main checkout.
   Local branches are never deleted - they are only listed in the log.
   Worktrees outside .claude/worktrees/ (e.g. Codex ones) are never touched.
 #>
@@ -37,6 +41,7 @@ if (-not $repoRoot) { exit 0 }
 # Never keep a handle on a worktree directory we may be about to delete.
 Set-Location $repoRoot
 
+git fetch origin main -q 2>$null
 $wtRoot = (Join-Path $repoRoot '.claude\worktrees')
 $logFile = Join-Path $repoRoot '.claude\worktree-clean.log'
 
@@ -44,6 +49,45 @@ function Write-Log([string]$Message) {
     $line = '{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), $Message
     Write-Host $line
     try { Add-Content -Path $logFile -Value $line -Encoding utf8 } catch {}
+}
+
+# Junctions Claude puts in each worktree (AGENTS.md "Git worktrees on Windows").
+$script:JunctionRelPaths = @('backend\.venv', 'backend\.venv_wsl', 'ner_service\.venv', 'web_interface_react\node_modules')
+
+function Remove-WorktreeDir([string]$Path) {
+    # Unlink the known junctions first (rmdir on a junction never touches its target).
+    foreach ($rel in $script:JunctionRelPaths) {
+        $p = Join-Path $Path $rel
+        if (Test-Path -LiteralPath $p) {
+            $item = Get-Item -LiteralPath $p -Force
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { cmd /c rmdir "`"$p`"" 2>$null | Out-Null }
+        }
+    }
+    # Refuse to recurse if any other reparse point is left: an unknown link could lead into the main checkout.
+    $left = @(Get-ChildItem -LiteralPath $Path -Recurse -Force -Directory -Attributes ReparsePoint -ErrorAction SilentlyContinue)
+    if ($left.Count -gt 0) { Write-Log "  refusing to delete $Path - unexpected reparse point: $($left[0].FullName)"; return $false }
+    for ($i = 0; $i -lt 5 -and (Test-Path -LiteralPath $Path); $i++) {
+        cmd /c rmdir /s /q "`"$Path`"" 2>$null | Out-Null
+        if (Test-Path -LiteralPath $Path) { Start-Sleep -Seconds 1 }
+    }
+    if (Test-Path -LiteralPath $Path) {
+        Write-Log "  still present: $Path (file in use, or ACL-locked leftovers such as .pytest_cache from a sandboxed tool)"
+        Write-Log "  fix from an ELEVATED shell: takeown /F `"$Path`" /R /A /D Y; icacls `"$Path`" /grant Administrators:F /T /C /Q; rmdir /s /q `"$Path`""
+        return $false
+    }
+    return $true
+}
+
+function Test-WorkMerged([string]$Path, [string]$Branch) {
+    if (git -C $Path branch -r --contains HEAD 2>$null) { return 'on a remote branch' }
+    $unique = @(git -C $Path cherry origin/main HEAD 2>$null | Where-Object { $_ -like '+*' })
+    if ($unique.Count -eq 0) { return 'all commits patch-equivalent on origin/main' }
+    if ($Branch -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+        $head = git -C $Path rev-parse HEAD
+        $pr = gh pr list --head $Branch --state merged --json headRefOid --jq '.[0].headRefOid' 2>$null
+        if ($pr -and $pr -eq $head) { return 'PR merged (head == HEAD)' }
+    }
+    return $null
 }
 
 function Get-Worktrees {
@@ -84,20 +128,18 @@ function Invoke-CleanWorktree($Wt) {
 
     $dirty = git -C $path status --porcelain
     if ($dirty) { Write-Log "KEEP $name - uncommitted changes"; return }
-    $onRemote = git -C $path branch -r --contains HEAD 2>$null
-    if (-not $onRemote) { Write-Log "KEEP $name - HEAD not on any remote branch (unpushed commits)"; return }
+    $why = Test-WorkMerged $path $Wt.Branch
+    if (-not $why) { Write-Log "KEEP $name - unpushed/unmerged commits (not on remote, not on origin/main, no merged PR)"; return }
 
     if ($DryRun) { Write-Log "DRYRUN would remove $name (branch $($Wt.Branch))"; return }
 
     if ($lockPid) { git worktree unlock $path 2>$null }
+    # Unlink junctions + delete the directory ourselves; `git worktree remove` alone would follow them.
+    $null = Remove-WorktreeDir $path
     git worktree remove --force $path 2>$null | Out-Null
-    # The directory can linger on Windows while another process still holds a handle.
-    for ($i = 0; $i -lt 5 -and (Test-Path $path); $i++) {
-        Start-Sleep -Seconds 1
-        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-Path $path) { Write-Log "PARTIAL $name - unregistered, directory still locked by another process: $path" }
-    else { Write-Log "REMOVED $name" }
+    git worktree prune
+    if (Test-Path -LiteralPath $path) { Write-Log "PARTIAL $name - unregistered, directory remains: $path" }
+    else { Write-Log "REMOVED $name ($why)" }
     if ($Wt.Branch) { Write-Log "  branch '$($Wt.Branch)' kept - delete it manually if no longer needed" }
 }
 
@@ -144,9 +186,8 @@ if (-not $Cwd -and (Test-Path $wtRoot)) {
             if ($real) { Write-Log "ORPHAN $($dir.Name) - contains files, left alone"; continue }
         }
         if ($dead -and -not $DryRun) {
-            Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
-            if (Test-Path $dir.FullName) { Write-Log "ORPHAN $($dir.Name) - could not delete (in use)" }
-            else { Write-Log "ORPHAN $($dir.Name) - deleted" }
+            if (Remove-WorktreeDir $dir.FullName) { Write-Log "ORPHAN $($dir.Name) - deleted" }
+            else { Write-Log "ORPHAN $($dir.Name) - could not delete" }
         } elseif ($dead) { Write-Log "DRYRUN would delete orphan $($dir.Name)" }
         else { Write-Log "ORPHAN $($dir.Name) - not registered but its gitdir exists, left alone" }
     }
