@@ -36,10 +36,33 @@ it("shows the full proposal and confirms it without edit mode", async () => {
   await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(3));
 });
 
+it("rejects a location proposal without editing the name", async () => {
+  const proposed = { id: 7, text: "Huty", count: 4, verified: false, place_verification_status: "needs_review",
+    proposed_geocode_id: 17, proposed_display_name: "Huti, obwód lwowski, Ukraina", proposed_lat: 49, proposed_lon: 24 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [], geogName: [proposed], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  render(<EntitiesPanel docId={10753} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Odrzuć propozycję" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/7/reject_place",
+    {}, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/Propozycja lokalizacji dla „Huty” odrzucona/)).toBeTruthy();
+});
+
+it("changes a place into an organization from the menu", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", organization_name: "Huti" } });
+  render(<EntitiesPanel docId={10753} />);
+  await openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na organizację" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/7/to_organization",
+    {}, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na organizację: Huti/)).toBeTruthy();
+});
+
 it("renames a place without edit mode and refetches entities", async () => {
   render(<EntitiesPanel docId={10753} />);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(4);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(5);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);

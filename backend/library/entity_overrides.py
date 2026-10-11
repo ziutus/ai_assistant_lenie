@@ -25,7 +25,9 @@ from library.entity_service import MERGEABLE_PLACE_SOURCE_TYPES, PLACE_TYPES, me
 
 logger = logging.getLogger(__name__)
 
-REPLAYED_DECISIONS = ("renamed", "place_merged", "place_confirmed", "deleted", "rejected")
+REPLAYED_DECISIONS = (
+    "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "deleted", "rejected",
+)
 
 
 def _exact(entities: list[DocumentEntity], name: str, types: tuple[str, ...]) -> DocumentEntity | None:
@@ -43,6 +45,57 @@ def _by_name_or_variant(entities: list[DocumentEntity], name: str, types: tuple[
          if e.entity_type in types and key in {v.casefold() for v in (e.variants or [])}),
         None,
     )
+
+
+def convert_place_to_organization(session, entity: DocumentEntity):
+    """Retype a place entity as an organization of the same document.
+
+    The mention is resolved against the global organization registry (alias or
+    canonical match, else a new ``Organization``) and replaces the place row
+    with a ``source='manual'`` ``orgName`` row, so it survives entity refreshes
+    like any manual merge. Queues changes without committing; the caller drops
+    the place's ``miejsce-*`` tag first, while the row still has its geocode.
+    Returns ``(orgName entity, Organization)``.
+    """
+    from library.db.models import DocumentOrganization
+    from library.organization_registry import resolve_or_create
+
+    surface_forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
+    organization, confidence = resolve_or_create(session, entity.entity_text, surface_forms)
+    canonical = organization.canonical_name
+    variants = [value for value in surface_forms if value.casefold() != canonical.casefold()]
+    document_id, count = entity.document_id, entity.mention_count
+    session.delete(entity)
+    session.flush()
+
+    target = session.scalar(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id,
+        DocumentEntity.entity_type == "orgName",
+        DocumentEntity.entity_text == canonical,
+    ))
+    if target is not None:
+        target.mention_count = (target.mention_count or 0) + (count or 0)
+        target.variants = list(dict.fromkeys([*(target.variants or []), *variants]))
+        target.source = "manual"
+    else:
+        target = DocumentEntity(
+            document_id=document_id, entity_type="orgName", entity_text=canonical,
+            mention_count=count, variants=variants, source="manual",
+        )
+        session.add(target)
+    session.flush()
+    link = session.scalar(select(DocumentOrganization).where(
+        DocumentOrganization.document_id == document_id,
+        DocumentOrganization.organization_id == organization.id,
+    ))
+    if link is None:
+        session.add(DocumentOrganization(
+            document_id=document_id, organization_id=organization.id,
+            document_entity_id=target.id, confidence=confidence,
+        ))
+    elif link.document_entity_id is None:
+        link.document_entity_id = target.id
+    return target, organization
 
 
 def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple[dict[int, DocumentEntity], dict]:
@@ -85,6 +138,22 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             row.source = "manual"
             touched[id(row)] = row
             stats["confirmed"] = stats.get("confirmed", 0) + 1
+        elif decision.decision == "place_rejected":
+            row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
+            if row is None:
+                continue
+            row.place_verification_status = "rejected"
+            row.place_review_reason = "rejected_by_user"
+            row.source = "manual"
+            stats["place_rejected"] = stats.get("place_rejected", 0) + 1
+        elif decision.decision == "place_to_organization":
+            row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
+            if row is None:
+                continue
+            convert_place_to_organization(session, row)
+            entities.remove(row)
+            touched.pop(id(row), None)
+            stats["to_organization"] = stats.get("to_organization", 0) + 1
         elif decision.decision == "renamed":
             new_name = (details.get("new_text") or "").strip()
             row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)

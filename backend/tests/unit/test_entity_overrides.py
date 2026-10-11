@@ -83,6 +83,31 @@ def test_missing_confirmed_cache_row_requires_review_without_lookup():
     assert row.place_verification_status == "needs_review"
 
 
+def test_rejected_proposal_is_replayed_as_unlocated_manual_place():
+    row = entity("Huty")
+    _, touched, stats = run([decision("place_rejected", "Huty")], [row])
+    assert row.place_verification_status == "rejected"
+    assert row.source == "manual"
+    assert stats["place_rejected"] == 1
+
+
+def test_place_to_organization_is_replayed_and_drops_the_place_row():
+    from library.db.models import DocumentEntity, Organization
+    row = entity("Huti", count=3, variants=["Huty"])
+    rows = [row]
+    session = MagicMock()
+    session.scalar.return_value = None
+    organization = Organization(id=5, canonical_name="Huti")
+    with patch("library.organization_registry.resolve_or_create", return_value=(organization, "canonical_matched")):
+        touched, stats = apply_decisions(session, [decision("place_to_organization", "Huti")], rows)
+    assert rows == []
+    session.delete.assert_called_once_with(row)
+    created = next(c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], DocumentEntity))
+    assert (created.entity_type, created.entity_text, created.mention_count) == ("orgName", "Huti", 3)
+    assert created.variants == ["Huty"]
+    assert stats["to_organization"] == 1
+
+
 def test_rename_is_reapplied_to_fresh_ner_row_and_keeps_old_forms_as_variants():
     row = entity("Jemenu Północnego", count=3, variants=["Jemenu Północnym"])
     entities = [row]
