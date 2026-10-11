@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from library.ner_corrections import apply_ner_corrections  # noqa: E402
+from library.ner_corrections import apply_ner_corrections, build_corrections_stats  # noqa: E402
 
 
 def _rule(match_lemma, corrected_text, *, id=1, match_entity_type="*", corrected_entity_type=None,
@@ -124,3 +124,26 @@ class TestApplyNerCorrections:
         apply_ner_corrections(session, 1, groups, None)
         assert ("orgName", "siła Zbrojny Sudan") in groups
         session.add_all.assert_not_called()
+
+
+class TestBuildCorrectionsStats:
+    def _rule(self, id, text):
+        rule = MagicMock()
+        rule.id, rule.match_lemma, rule.match_entity_type = id, text, "orgName"
+        rule.corrected_text, rule.corrected_entity_type, rule.scope = "Huti", None, "global"
+        rule.reason, rule.approved_by, rule.source_document_id, rule.created_at = "r", "k", 10756, None
+        return rule
+
+    def test_sorts_by_usage_and_counts_unused(self):
+        import datetime
+        last = datetime.datetime(2026, 10, 12, 8, 0)
+        stats = build_corrections_stats(
+            [self._rule(8, "Arsenał Huti"), self._rule(9, "inna")],
+            {8: (3, 2, last)}, [("orgName", "orgName", 3, 2)], [("persName", 4)],
+        )
+        assert [r["id"] for r in stats["rules"]] == [8, 9]
+        assert stats["rules"][0]["applications"] == 3 and stats["rules"][0]["last_applied_at"] == last.isoformat()
+        assert stats["rules"][1]["applications"] == 0 and stats["rules"][1]["last_applied_at"] is None
+        assert stats["totals"] == {"rules": 2, "unused_rules": 1, "applications": 3, "exclusions": 4}
+        assert stats["by_type"][0]["documents"] == 2
+        assert stats["exclusions_by_type"] == [{"entity_type": "persName", "rules": 4}]

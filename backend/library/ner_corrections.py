@@ -14,9 +14,9 @@ actually fired (NerCorrectionApplication).
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from library.db.models import NerCorrection, NerCorrectionApplication
+from library.db.models import NerCorrection, NerCorrectionApplication, NerExclusion
 from library.ner_normalization import normalize_ner_text
 
 logger = logging.getLogger(__name__)
@@ -111,3 +111,65 @@ def apply_ner_corrections(session, document_id: int, groups: dict[tuple[str, str
 
     if applications:
         session.add_all(applications)
+
+
+def build_corrections_stats(rules, usage_by_rule: dict, pair_rows: list, exclusion_rows: list) -> dict:
+    """Shape raw query results into the payload behind GET /ner_corrections/stats.
+
+    `usage_by_rule`: {correction_id: (applications, distinct_documents, last_applied_at)};
+    `pair_rows`: [(type_before, type_after, applications, distinct_documents)];
+    `exclusion_rows`: [(entity_type, rules_count)]. Pure — no DB access — so it is unit-testable.
+    """
+    items = []
+    for rule in rules:
+        applications, documents, last_applied = usage_by_rule.get(rule.id, (0, 0, None))
+        items.append({
+            "id": rule.id, "match_lemma": rule.match_lemma, "match_entity_type": rule.match_entity_type,
+            "corrected_text": rule.corrected_text, "corrected_entity_type": rule.corrected_entity_type,
+            "scope": rule.scope, "reason": rule.reason, "approved_by": rule.approved_by,
+            "source_document_id": rule.source_document_id,
+            "created_at": rule.created_at.isoformat() if rule.created_at else None,
+            "applications": applications, "documents": documents,
+            "last_applied_at": last_applied.isoformat() if last_applied else None,
+        })
+    items.sort(key=lambda item: (-item["applications"], item["id"]))
+    return {
+        "totals": {
+            "rules": len(items),
+            "unused_rules": sum(1 for item in items if item["applications"] == 0),
+            "applications": sum(item["applications"] for item in items),
+            "exclusions": sum(count for _, count in exclusion_rows),
+        },
+        "rules": items,
+        "by_type": [
+            {"type_before": before, "type_after": after, "applications": applications, "documents": documents}
+            for before, after, applications, documents in pair_rows
+        ],
+        "exclusions_by_type": [{"entity_type": entity_type, "rules": count} for entity_type, count in exclusion_rows],
+    }
+
+
+def corrections_stats(session) -> dict:
+    """How often each approved NER correction actually fired — input for deciding which classes of
+    mistake deserve a code fix instead of yet another manual rule."""
+    rules = list(session.execute(select(NerCorrection)).scalars().all())
+    app = NerCorrectionApplication
+    usage = {
+        correction_id: (applications, documents, last_applied)
+        for correction_id, applications, documents, last_applied in session.execute(
+            select(app.correction_id, func.count(app.id), func.count(func.distinct(app.document_id)),
+                   func.max(app.applied_at))
+            .where(app.correction_id.isnot(None)).group_by(app.correction_id)
+        ).all()
+    }
+    pairs = [tuple(row) for row in session.execute(
+        select(app.entity_type_before, app.entity_type_after, func.count(app.id),
+               func.count(func.distinct(app.document_id)))
+        .group_by(app.entity_type_before, app.entity_type_after)
+        .order_by(func.count(app.id).desc())
+    ).all()]
+    exclusions = [tuple(row) for row in session.execute(
+        select(NerExclusion.entity_type, func.count(NerExclusion.id))
+        .group_by(NerExclusion.entity_type).order_by(func.count(NerExclusion.id).desc())
+    ).all()]
+    return build_corrections_stats(rules, usage, pairs, exclusions)
