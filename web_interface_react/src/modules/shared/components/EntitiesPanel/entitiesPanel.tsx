@@ -653,7 +653,12 @@ const EntitiesPanel = ({
       } else if (status === 409) {
         setMessage(`${error.response?.data?.message || "Taka nazwa już istnieje."} Użyj „Połącz z inną organizacją”.`);
       } else {
-        setMessage(error.response?.data?.message || "Nie udało się poprawić nazwy organizacji.");
+        // Everything needed to reproduce the failure: document, names before/after, and why.
+        const reason = error.response
+          ? `${error.response.data?.message || "brak komunikatu z serwera"} (HTTP ${status})`
+          : `${error.message || "brak odpowiedzi serwera"} (brak odpowiedzi HTTP)`;
+        setMessage(`Nie udało się poprawić nazwy organizacji. Dokument: ${docId}, organizacja: ${renameFor.organization_id}, `
+          + `nazwa początkowa: „${renameFor.text}”, nazwa końcowa: „${renameText.trim()}”. Przyczyna: ${reason}`);
       }
     } finally {
       setIsRenaming(false);
