@@ -2125,6 +2125,12 @@ def organization_update(organization_id: int):
         except ValueError as exc:
             session.rollback()
             return {"status": "error", "message": str(exc)}, 400
+        except Exception as exc:
+            session.rollback()
+            logging.exception("organization rename failed: id=%s %r -> %r", organization_id,
+                              organization.canonical_name, new_name)
+            return {"status": "error",
+                    "message": f"Błąd serwera przy zmianie nazwy: {type(exc).__name__}: {str(exc)[:300]}"}, 500
     if 'description' in data:
         # One description for the organization and the information source bound to it.
         linked_source = session.scalar(sa_select(InformationSource).where(

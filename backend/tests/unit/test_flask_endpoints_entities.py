@@ -706,6 +706,16 @@ class TestOrganizationRenameSyncsSource:
         session.rollback.assert_called_once()
         session.commit.assert_not_called()
 
+    def test_unexpected_error_returns_500_with_a_reason_and_rolls_back(self, client):
+        resp, _, session = self._patch(
+            client, {"canonical_name": "The Telegraph"}, rename_side_effect=RuntimeError("duplicate key"),
+        )
+
+        assert resp.status_code == 500
+        assert "RuntimeError: duplicate key" in resp.get_json()["message"]
+        session.rollback.assert_called_once()
+        session.commit.assert_not_called()
+
     def test_description_is_shared_with_the_bound_source(self, client):
         from library.db.models import InformationSource, Organization
 
