@@ -2586,6 +2586,65 @@ class DocumentLink(Base):
         )
 
 
+class ProjectCard(Base):
+    """A hands-on project card (e.g. a "Robotyka – 100 projektów" toy build).
+
+    A card is a structured record, not a long text: age range, duration,
+    difficulty and the material/step lists are queryable so the library can be
+    filtered by the child's age. Identified by ``(series, number)`` so
+    re-importing the source file updates the same row. Structured list fields
+    (materials, tools, steps, ...) are JSONB; see ``library/project_cards.py``.
+    """
+
+    __tablename__ = "project_cards"
+    __table_args__ = (
+        UniqueConstraint("series", "number", name="uq_project_cards_series_number"),
+        CheckConstraint("difficulty BETWEEN 1 AND 3", name="ck_project_cards_difficulty"),
+        CheckConstraint("age_min IS NULL OR age_max IS NULL OR age_min <= age_max", name="ck_project_cards_age_range"),
+        Index("idx_project_cards_age", "age_min", "age_max"),
+        Index("idx_project_cards_group", "group_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    series: Mapped[str] = mapped_column(String(100), nullable=False)
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    topic: Mapped[str | None] = mapped_column(Text)
+    group_name: Mapped[str | None] = mapped_column(String(100))
+    tagline: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    mechanism: Mapped[str | None] = mapped_column(Text)
+    how_it_works: Mapped[str | None] = mapped_column(Text)
+    age_min: Mapped[int | None] = mapped_column(SmallInteger)
+    age_max: Mapped[int | None] = mapped_column(SmallInteger)
+    time_min: Mapped[int | None] = mapped_column(Integer)
+    time_max: Mapped[int | None] = mapped_column(Integer)
+    difficulty: Mapped[int | None] = mapped_column(SmallInteger)
+    needs_adult: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    materials: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    tools: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    steps: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    troubleshooting: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    variants: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    safety: Mapped[str | None] = mapped_column(Text)
+    what_child_does: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    what_adult_does: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    safety_checklist: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="imported")
+    review_notes: Mapped[str | None] = mapped_column(Text)
+    import_flags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    source_file: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"ProjectCard(id={self.id!r}, series={self.series!r}, number={self.number!r}, title={self.title!r})"
+
+
 class User(Base):
     """Reader identity (household trust model).
 
