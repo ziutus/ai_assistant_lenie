@@ -17,6 +17,7 @@ import Chunks from "./modules/shared/pages/chunks";
 import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
+import NerCorrections from "./modules/shared/pages/nerCorrections";
 import Organizations from "./modules/shared/pages/organizations";
 import ToolRecommendations from "./modules/shared/pages/toolRecommendations";
 import Tools from "./modules/shared/pages/tools";
@@ -89,6 +90,7 @@ function App() {
                   <Route path="/list" element={<List />} />
                   <Route path="/persons/:id?" element={<Persons />} />
                   <Route path="/persons-review" element={<PersonsReview />} />
+                  <Route path="/ner-corrections" element={<NerCorrections />} />
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/contacts" element={<Contacts />} />

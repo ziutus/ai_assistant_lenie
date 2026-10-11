@@ -2917,6 +2917,17 @@ def ner_corrections_list():
             "corrections": [_correction_dict(r) for r in rows]}, 200
 
 
+@app.route('/ner_corrections/stats', methods=['GET'])
+def ner_corrections_stats():
+    """Usage statistics of the NER correction dictionary: per rule how many times it fired and in how
+    many documents (ner_correction_applications), unused rules, application counts per type change and
+    the number of exclusion rules — shows which mistakes recur and deserve a code fix."""
+    from library.ner_corrections import corrections_stats
+
+    session = get_scoped_session()
+    return {"status": "success", **corrections_stats(session)}, 200
+
+
 @app.route('/ner_corrections', methods=['POST', 'OPTIONS'])
 def ner_corrections_add():
     """Approve a correction rule. Body (JSON): {"match_lemma": "...", "corrected_text": "...",
