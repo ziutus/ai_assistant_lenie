@@ -53,6 +53,72 @@ def test_confirm_place(client, case, expected):
     else:
         session.commit.assert_not_called()
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_place", 400),
+                                           ("confirmed", 409), ("rollback", 500)])
+def test_reject_place(client, case, expected):
+    from library.db.models import DocumentEntity, EntityReviewDecision, GeocodeCache
+    proposal = GeocodeCache(id=7, query="Huti", resolved=True, lat=49, lon=24, display_name="Huti, Ukraina")
+    entity = DocumentEntity(id=1, document_id=10753, entity_type="placeName", entity_text="Huty",
+                            variants=["Huty"], source="ner", geocode=proposal,
+                            place_verification_status="confirmed" if case == "confirmed" else "needs_review")
+    if case == "not_place":
+        entity.entity_type = "orgName"
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: None if case == "missing" else entity
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    with patch("server.get_scoped_session", return_value=session):
+        response = client.post("/website_entities/1/reject_place", headers=API_HEADERS)
+    assert response.status_code == expected
+    if expected == 200:
+        assert entity.place_verification_status == "rejected"
+        assert entity.source == "manual"
+        audit = next(call.args[0] for call in session.add.call_args_list
+                     if isinstance(call.args[0], EntityReviewDecision))
+        assert audit.decision == "place_rejected"
+        assert audit.details["geocode_id"] == 7
+        session.commit.assert_called_once()
+    elif case == "rollback":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_place", 400), ("rollback", 500)])
+def test_place_to_organization(client, case, expected):
+    from library.db.models import Document, DocumentEntity, EntityReviewDecision, Organization
+    entity = DocumentEntity(id=1, document_id=10753, entity_type="placeName", entity_text="Huti",
+                            mention_count=3, variants=["Huty"], source="ner")
+    if case == "not_place":
+        entity.entity_type = "orgName"
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        (None if case == "missing" else entity) if model is DocumentEntity else Document(id=10753, tags=""))
+    session.scalar.return_value = None
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    organization = Organization(id=5, canonical_name="Huti")
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.organization_registry.resolve_or_create", return_value=(organization, "canonical_matched")
+    ):
+        response = client.post("/website_entities/1/to_organization", headers=API_HEADERS)
+    assert response.status_code == expected
+    if expected == 200:
+        added = [call.args[0] for call in session.add.call_args_list]
+        org_entity = next(row for row in added if isinstance(row, DocumentEntity))
+        assert (org_entity.entity_type, org_entity.entity_text, org_entity.source) == ("orgName", "Huti", "manual")
+        assert org_entity.mention_count == 3
+        assert org_entity.variants == ["Huty"]
+        assert next(row for row in added if isinstance(row, EntityReviewDecision)).decision == "place_to_organization"
+        session.delete.assert_called_once_with(entity)
+        assert response.get_json()["organization_name"] == "Huti"
+        session.commit.assert_called_once()
+    elif case == "rollback":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
 GROUPED = {
     "persName": [{"text": "Tusk", "count": 2}],
     "geogName": [{"text": "cieśnina Ormuz", "count": 1}],

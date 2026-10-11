@@ -1702,6 +1702,73 @@ def website_entities_confirm_place(entity_id: int):
     return jsonify(status="success"), 200
 
 
+@app.route('/website_entities/<int:entity_id>/reject_place', methods=['POST'])
+def website_entities_reject_place(entity_id: int):
+    """Dismiss a geocoder proposal held at ``needs_review``: the place stays unlocated, without a tag."""
+    from library.db.models import DocumentEntity
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import PLACE_ENTITY_TYPES
+
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type not in PLACE_ENTITY_TYPES:
+        return jsonify(status="error", message="Encja nie jest miejscem."), 400
+    if entity.place_verification_status != "needs_review":
+        return jsonify(status="error", message="Miejsce nie czeka na potwierdzenie."), 409
+    try:
+        proposal = entity.geocode
+        entity.place_verification_status = "rejected"
+        entity.place_review_reason = "rejected_by_user"
+        entity.source = "manual"
+        record_entity_decision(
+            session, document_id=entity.document_id, document_entity_id=entity.id,
+            entity_type=entity.entity_type, entity_text=entity.entity_text, decision="place_rejected",
+            details={"name": entity.entity_text, "variants": list(entity.variants or []),
+                     "geocode_id": proposal.id if proposal is not None else None},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Place proposal rejection failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się odrzucić propozycji."), 500
+    return jsonify(status="success"), 200
+
+
+@app.route('/website_entities/<int:entity_id>/to_organization', methods=['POST'])
+def website_entities_to_organization(entity_id: int):
+    """Retype a place entity as an organization (NER mislabelled it, e.g. "Huti")."""
+    from library.db.models import DocumentEntity
+    from library.entity_overrides import convert_place_to_organization
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
+
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type not in PLACE_ENTITY_TYPES:
+        return jsonify(status="error", message="Encja nie jest miejscem."), 400
+    try:
+        document = session.get(Document, entity.document_id)
+        old_text, old_type, old_variants = entity.entity_text, entity.entity_type, list(entity.variants or [])
+        removed_tag = remove_orphaned_tag(session, document, entity) if document is not None else None
+        record_entity_decision(
+            session, document_id=entity.document_id, document_entity_id=entity.id,
+            entity_type=old_type, entity_text=old_text, decision="place_to_organization",
+            details={"variants": old_variants, "removed_tag": removed_tag},
+        )
+        new_entity, organization = convert_place_to_organization(session, entity)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Place to organization conversion failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zmienić miejsca na organizację."), 500
+    return jsonify(status="success", entity_id=new_entity.id, organization_id=organization.id,
+                   organization_name=organization.canonical_name, removed_tag=removed_tag), 200
+
+
 @app.route('/website_entities/<int:entity_id>', methods=['DELETE', 'OPTIONS'])
 def website_entities_delete(entity_id: int):
     """Delete a stored NER entity row (editor UI).

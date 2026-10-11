@@ -960,6 +960,34 @@ const EntitiesPanel = ({
     }
   };
 
+  const rejectPlace = async (item: EntityItem) => {
+    if (item.id == null) return;
+    setConfirmingPlace(item.id);
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/website_entities/${item.id}/reject_place`, {}, { headers: jsonHeaders });
+      setMessage(`Propozycja lokalizacji dla „${item.text}” odrzucona — miejsce zostaje bez lokalizacji.`);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się odrzucić propozycji: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setConfirmingPlace(null);
+    }
+  };
+
+  const changePlaceToOrganization = async (item: EntityItem) => {
+    if (item.id == null) return;
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${item.id}/to_organization`, {},
+        { headers: jsonHeaders });
+      setMessage(`„${item.text}” zmienione na organizację: ${response.data.organization_name}.`);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się zmienić na organizację: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   if (!docId) {
     return null;
   }
@@ -1044,6 +1072,7 @@ const EntitiesPanel = ({
     { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },
     ...(places.some((place) => place.id != null && place.id !== item.id)
       ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeFor(item); } }] : []),
+    { label: "Zmień na organizację", action: () => { resetFlows(); void changePlaceToOrganization(item); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: item.entity_type! });
@@ -1285,6 +1314,10 @@ const EntitiesPanel = ({
             && item.proposed_lat != null && item.proposed_lon != null && (
             <button type="button" className="button" disabled={confirmingPlace !== null}
               onClick={() => void confirmPlace(item)}>Zatwierdź tę lokalizację</button>
+          )}
+          {item.place_verification_status === "needs_review" && (
+            <button type="button" className="button" disabled={confirmingPlace !== null}
+              onClick={() => void rejectPlace(item)}>Odrzuć propozycję</button>
           )}
           {editMode && editActions("placeName")(item)}
         </>} />
