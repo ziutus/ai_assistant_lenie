@@ -180,6 +180,18 @@ const ProjectCard = () => {
         {card.group_name && <span style={chip("#f1f5f9")}>{card.group_name}</span>}
         {card.mechanism && <span style={chip("#f1f5f9")}>{card.mechanism}</span>}
       </div>
+      <div className="no-print" style={{ margin: "6px 0" }}>
+        {card.has_source_pdf ? (
+          <button className={"button"} type="button" onClick={openSourcePdf}>📄 Otwórz oryginał PDF</button>
+        ) : (
+          <span style={{ color: "#667" }}>Brak oryginału PDF (wgraj go na dole strony).</span>
+        )}
+        {message && (
+          <span className={isError ? "errorText" : undefined} style={isError ? { marginLeft: 10 } : { marginLeft: 10, color: "#2e7d43" }}>
+            {message}
+          </span>
+        )}
+      </div>
       {card.tagline && <p style={{ fontStyle: "italic", margin: "4px 0" }}>{card.tagline}</p>}
       {card.description && <p style={{ color: "#445" }}>{card.description}</p>}
       {card.illustration_svg && (
