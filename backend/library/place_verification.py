@@ -53,6 +53,7 @@ from unidecode import unidecode
 
 from library.db.models import DocumentEntity, DocumentOrganization, GeocodeCache
 from library.geocode_aliases import geocode_alias, geocode_country_hint
+from library.generic_place_names import match_generic_place_name
 from library.geopolitical_region_gazetteer import geopolitical_region_centroid
 from library.locationiq_client import canonical_place_name, geocode, is_plausible_match
 
@@ -211,31 +212,60 @@ def _retry_after_stripping_country(session, entity_text: str) -> tuple[str, Geoc
     return canonical_remainder, row
 
 
-def geocode_single_place(session, doc, entity: DocumentEntity) -> dict:
-    """Geocode a manually confirmed place without changing its name or running LLMs."""
-    result = {"geocoded": False, "same_place_entity": None}
-    entity.geocode = None
-    entity.geocode_id = None
-    try:
-        with session.begin_nested():
-            row = _get_or_create_geocode(session, entity.entity_text)
-            if not row.resolved:
-                retry = _retry_after_stripping_country(session, entity.entity_text)
-                if retry is not None:
-                    _, row = retry
-    except Exception:
-        logger.exception("Single-place geocoding failed for entity %s", entity.id)
-        return result
-    if not row.resolved:
-        return result
+def place_needs_review(entity: DocumentEntity) -> bool:
+    """Keep generic names blocked independently of geocoder/LLM confidence."""
+    if entity.place_verification_status in ("needs_review", "rejected"):
+        return True
+    if entity.place_verification_status == "confirmed" or entity.source == "manual":
+        return False
+    canonical = None
+    if entity.geocode is not None:
+        canonical = canonical_place_name(entity.entity_text, entity.geocode.display_name or "")
+    rule = match_generic_place_name(entity.entity_text, entity.variants, canonical)
+    if rule is not None:
+        entity.place_verification_status = "needs_review"
+        entity.place_review_reason = rule.id
+    return rule is not None
 
-    entity.geocode = row
-    canonical = canonical_place_name(entity.entity_text, row.display_name or "")
+
+def add_place_tag(doc, entity: DocumentEntity) -> str | None:
+    """Shared last gate before writing a place tag; never changes the cache."""
+    if place_needs_review(entity) or entity.geocode is None or not entity.geocode.resolved:
+        return None
+    canonical = canonical_place_name(entity.entity_text, entity.geocode.display_name or "")
     tag = f"miejsce-{_slugify(canonical)}"
     if doc is not None:
         tags = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
         if tag not in tags:
             doc.tags = ",".join([*tags, tag])
+    return tag
+
+
+def geocode_single_place(session, doc, entity: DocumentEntity, selected_geocode=None) -> dict:
+    """Geocode a manually confirmed place without changing its name or running LLMs."""
+    result = {"geocoded": False, "same_place_entity": None}
+    entity.geocode = None
+    entity.geocode_id = None
+    if selected_geocode is not None:
+        row = selected_geocode
+    else:
+        try:
+            with session.begin_nested():
+                row = _get_or_create_geocode(session, entity.entity_text)
+                if not row.resolved:
+                    retry = _retry_after_stripping_country(session, entity.entity_text)
+                    if retry is not None:
+                        _, row = retry
+        except Exception:
+            logger.exception("Single-place geocoding failed for entity %s", entity.id)
+            return result
+    if not row.resolved:
+        return result
+
+    entity.geocode = row
+    entity.geocode_id = row.id
+    canonical = canonical_place_name(entity.entity_text, row.display_name or "")
+    add_place_tag(doc, entity)
     result["geocoded"] = True
     others = session.query(DocumentEntity).filter(
         DocumentEntity.document_id == entity.document_id,
@@ -286,7 +316,7 @@ def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> st
         .all()
     )
     for ent in remaining:
-        if ent.geocode is not None and ent.geocode.resolved:
+        if not place_needs_review(ent) and ent.geocode is not None and ent.geocode.resolved:
             other_canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
             if f"miejsce-{_slugify(other_canonical)}" == tag:
                 return None
@@ -364,6 +394,9 @@ def _canonicalize_and_merge_places(session, candidates: list[DocumentEntity]) ->
     by_canonical: dict[str, list[DocumentEntity]] = {}
     unresolved: list[DocumentEntity] = []
     for ent in candidates:
+        if place_needs_review(ent):
+            unresolved.append(ent)
+            continue
         if ent.geocode is None or not ent.geocode.resolved:
             unresolved.append(ent)
             continue
@@ -416,8 +449,13 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
     resolved_names: list[str] = []
     # Human corrections/merges must survive enrichment as well as NER refresh:
     # canonicalization and context classification can otherwise rename/retype them.
-    candidates = [ent for ent in entities if ent.source != "manual" and not _is_country(ent.entity_text)]
+    for ent in entities:
+        if ent.place_verification_status == "confirmed":
+            add_place_tag(doc, ent)
+    candidates = [ent for ent in entities if ent.source != "manual"
+                  and ent.place_verification_status != "confirmed" and not _is_country(ent.entity_text)]
     for index, ent in enumerate(candidates, start=1):
+        place_needs_review(ent)
         if progress_callback is not None:
             progress_callback(index, len(candidates))
         resolved_name = ent.entity_text
@@ -451,9 +489,12 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
     # there IS no single correct place to alias it to).
     unresolved_by_text: dict[str, DocumentEntity] = {}
     for ent in candidates:
+        if place_needs_review(ent):
+            continue
         if ent.geocode is not None and ent.geocode.resolved:
             canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
             group = groups.setdefault(canonical, {"mentions": 0, "surface": ent.entity_text, "surface_mentions": 0})
+            group.setdefault("variants", []).extend(ent.variants or [])
             mentions = ent.mention_count or 1
             group["mentions"] += mentions
             if mentions > group["surface_mentions"]:
@@ -515,6 +556,8 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
         existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
         existing_set = set(existing)
         for name in confirmed:
+            if place_needs_review(entity_by_canonical[name]):
+                continue
             tag = f"miejsce-{_slugify(name)}"
             if tag and tag not in existing_set:
                 tagged.append(tag)
@@ -525,7 +568,9 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
     if unresolved_by_text:
         from library.place_context_classifier import classify_place_context_candidates
 
-        unresolved_groups = {text_: {"surface": text_} for text_ in unresolved_by_text}
+        unresolved_groups = {
+            text_: {"surface": text_, "variants": ent.variants or []} for text_, ent in unresolved_by_text.items()
+        }
         unresolved_results = classify_place_context_candidates(text, doc.title or "", unresolved_groups, doc.id)
         if unresolved_results:
             from library.db.models import NerContextClassification

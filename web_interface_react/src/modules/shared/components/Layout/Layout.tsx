@@ -111,6 +111,14 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           Persons Review
         </NavLink>
         <NavLink
+          to="/ner-corrections"
+          className={({ isActive }) =>
+            isActive ? classes.activeLink : classes.link
+          }
+        >
+          NER Corrections
+        </NavLink>
+        <NavLink
           to="/organizations"
           className={({ isActive }) =>
             isActive ? classes.activeLink : classes.link

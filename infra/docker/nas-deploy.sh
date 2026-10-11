@@ -133,7 +133,7 @@ preflight_nas() {
         "sh -s -- '${NAS_DOCKER}' '${NAS_DATA_ROOT}'" <<'REMOTE'
 D=$1; R=$2
 echo "UPTIME_S=$(cut -d. -f1 /proc/uptime)"
-echo "OOPS=$(dmesg 2>/dev/null | grep -ciE '\bOops:|\bBUG: |unable to handle (kernel|page)|general protection fault|Call Trace|kernel panic|hung task|blocked for more than')"
+echo "OOPS=$(dmesg 2>/dev/null | grep -v ' traps: ' | grep -ciE '\bOops:|\bBUG: |unable to handle (kernel|page)|general protection fault|Call Trace|kernel panic|hung task|blocked for more than')"
 for f in lenie-compose/compose.nas.yaml lenie-env/.env vault/config/vault.hcl; do
     [ -f "$R/$f" ] || echo "MISSING=$f"
 done

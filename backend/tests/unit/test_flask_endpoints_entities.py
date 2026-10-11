@@ -9,6 +9,50 @@ pytest.importorskip("flask")
 
 API_HEADERS = {"x-api-key": "test-api-key"}
 
+
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("no_proposal", 409),
+                                           ("not_place", 400), ("selected", 200), ("rollback", 500)])
+def test_confirm_place(client, case, expected):
+    from library.db.models import Document, DocumentEntity, GeocodeCache, EntityReviewDecision
+    proposal = GeocodeCache(id=7, query="Huti", resolved=True, lat=49, lon=24, display_name="Huti, Ukraina")
+    selected = GeocodeCache(id=8, query="Huty", resolved=True, lat=50, lon=19, display_name="Huty, Polska")
+    entity = DocumentEntity(id=1, document_id=10753, entity_type="placeName", entity_text="Huty",
+                            variants=["Huty"], source="ner", geocode=proposal, place_verification_status="needs_review")
+    doc = Document(id=10753, tags="topic")
+    if case == "not_place":
+        entity.entity_type = "orgName"
+    if case == "no_proposal":
+        entity.geocode = None
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        (None if case == "missing" else entity) if model is DocumentEntity
+        else selected if model is GeocodeCache else doc
+    )
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.place_verification._get_or_create_geocode"
+    ) as lookup:
+        response = client.post("/website_entities/1/confirm_place", headers=API_HEADERS,
+                               json={"selected_geocode_id": 8} if case == "selected" else {})
+    assert response.status_code == expected
+    lookup.assert_not_called()
+    if expected == 200:
+        assert entity.place_verification_status == "confirmed"
+        assert entity.source == "manual"
+        assert entity.geocode is (selected if case == "selected" else proposal)
+        assert "miejsce-" in doc.tags
+        audit = next(call.args[0] for call in session.add.call_args_list
+                     if isinstance(call.args[0], EntityReviewDecision))
+        assert audit.decision == "place_confirmed"
+        assert audit.details["geocode_id"] == entity.geocode.id
+        assert audit.details["variants"] == ["Huty"]
+        session.commit.assert_called_once()
+    elif case == "rollback":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
 GROUPED = {
     "persName": [{"text": "Tusk", "count": 2}],
     "geogName": [{"text": "cieśnina Ormuz", "count": 1}],
@@ -109,35 +153,22 @@ class TestWebsiteEntitiesRefresh:
                 resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
         assert resp.status_code == 400
 
-    def test_refreshes_verifies_and_returns_entities(self, client):
-        doc = MagicMock(text_md="# Artykuł o Tusku", text=None)
+    def test_refresh_queues_enrichment_and_returns_entities(self, client):
+        doc = MagicMock(text_md="Article", text=None)
         session = MagicMock()
-        with patch("server.get_scoped_session", return_value=session):
-            with patch("server.Document") as MockDoc:
-                MockDoc.get_by_id.return_value = doc
-                with patch("library.entity_service.refresh_document_entities", return_value=[MagicMock()] * 2) as mock_refresh:
-                    with patch("library.place_verification.verify_document_places",
-                               return_value={"checked": 1, "resolved": ["Kijów"], "tagged": ["miejsce-kijow"]}) as mock_verify:
-                        with patch("library.person_registry.resolve_document_persons",
-                                   return_value={"linked": [("Tusk", "Donald Tusk", "wikidata_matched")], "skipped": []}) as mock_persons:
-                            with patch("library.overpass_client.attach_document_pipelines",
-                                       return_value={"checked": 1, "resolved": ["Baltic Pipe"]}) as mock_pipes:
-                                with patch("library.entity_service.get_document_entities", return_value=GROUPED):
-                                    resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
-
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["status"] == "success"
-        assert data["refreshed"] == 2
-        assert data["place_tags"] == ["miejsce-kijow"]
-        assert data["persons_linked"] == 1
-        assert data["pipelines"] == ["Baltic Pipe"]
-        assert data["entities"] == GROUPED
-        mock_refresh.assert_called_once_with(session, 42, "# Artykuł o Tusku")
-        mock_verify.assert_called_once_with(session, doc, "# Artykuł o Tusku")
-        mock_persons.assert_called_once_with(session, doc, "# Artykuł o Tusku")
-        mock_pipes.assert_called_once_with(session, 42)
-        assert session.commit.call_count == 4  # refresh + miejsca + osoby + rurociągi
+        with patch("server.get_scoped_session", return_value=session), patch("server.Document") as model, patch(
+            "library.entity_service.refresh_document_entities", return_value=[MagicMock()] * 2
+        ) as refresh, patch("library.entity_service.get_document_entities", return_value=GROUPED), patch(
+            "library.entity_enrichment_service.ensure_entity_enrichment_job", return_value=None
+        ) as enqueue, patch("library.place_verification.verify_document_places") as verify:
+            model.get_by_id.return_value = doc
+            response = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+        assert response.status_code == 202
+        assert response.get_json()["refreshed"] == 2
+        assert response.get_json()["entities"] == GROUPED
+        refresh.assert_called_once_with(session, 42, "Article")
+        enqueue.assert_called_once()
+        verify.assert_not_called()
 
     def test_ner_service_unavailable_returns_503(self, client):
         from library.ner_client import NERServiceUnavailable
@@ -156,22 +187,18 @@ class TestWebsiteEntitiesRefresh:
         assert data["status"] == "error"
         assert data["ner_unavailable"] is True
 
-    def test_place_verification_failure_does_not_fail_request(self, client):
-        doc = MagicMock(text_md="# Artykuł", text=None)
-        session = MagicMock()
-        with patch("server.get_scoped_session", return_value=session):
-            with patch("server.Document") as MockDoc:
-                MockDoc.get_by_id.return_value = doc
-                with patch("library.entity_service.refresh_document_entities", return_value=[MagicMock()]):
-                    with patch("library.place_verification.verify_document_places", side_effect=RuntimeError("boom")):
-                        with patch("library.person_registry.resolve_document_persons",
-                                   return_value={"linked": [], "skipped": []}):
-                            with patch("library.entity_service.get_document_entities", return_value=GROUPED):
-                                resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
-
-        assert resp.status_code == 200
-        assert resp.get_json()["place_tags"] == []
-        session.rollback.assert_called_once()
+    def test_refresh_does_not_run_place_verification_inline(self, client):
+        doc = MagicMock(text_md="Article", text=None)
+        with patch("server.get_scoped_session", return_value=MagicMock()), patch("server.Document") as model, patch(
+            "library.entity_service.refresh_document_entities", return_value=[]
+        ), patch("library.entity_service.get_document_entities", return_value=GROUPED), patch(
+            "library.place_verification.verify_document_places", side_effect=RuntimeError("offline")
+        ) as verify:
+            model.get_by_id.return_value = doc
+            response = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+        assert response.status_code == 202
+        assert response.get_json()["enrichment_job"] is None
+        verify.assert_not_called()
 
 
 class TestEntityOccurrences:

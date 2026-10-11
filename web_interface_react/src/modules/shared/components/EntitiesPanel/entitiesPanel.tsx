@@ -35,7 +35,13 @@ export interface EntityItem {
     geojson?: { type: string; coordinates: [number, number][][] } | null;
   };
   // Stage-3 place verification (geogName/placeName only): absent = not checked,
-  // true = geocoder confirmed (lat/lon/display_name present), false = not a real place
+  // true = accepted geocoder result; false includes proposals awaiting human review.
+  place_verification_status?: "needs_review" | "confirmed" | "rejected" | null;
+  place_review_reason?: string | null;
+  proposed_geocode_id?: number;
+  proposed_display_name?: string | null;
+  proposed_lat?: number | null;
+  proposed_lon?: number | null;
   verified?: boolean;
   lat?: number | null;
   lon?: number | null;
@@ -234,13 +240,14 @@ export const EntityChips = ({
               ...chipStyle,
               position: "relative",
               ...(item.verified === true ? { background: "#e6f4ea", border: "1px solid #7cb98a" } : {}),
-              ...(item.verified === false ? { opacity: 0.55 } : {}),
+              ...(item.verified === false && item.place_verification_status !== "needs_review" ? { opacity: 0.55 } : {}),
               ...(isResolvedPerson ? { background: "#e3edf9", border: "1px solid #7ba3d0" } : {}),
             }}
             title={personTitle
               ?? sourceTitleOf(item)
               ?? item.organization_description
               ?? facilityTitle
+              ?? (item.place_verification_status === "needs_review" ? "Wymaga potwierdzenia" : undefined)
               ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
           >
             {entries.length ? (
@@ -256,6 +263,12 @@ export const EntityChips = ({
                 style={{ color: "#667" }}> ℹ️</span>
             )}
             {item.facility_description && <span title={facilityTitle} style={{ color: "#667" }}> ℹ️</span>}
+            {item.place_verification_status === "needs_review" && <span style={{ color: "#92400e" }}>
+              {" "}Wymaga potwierdzenia
+              {item.proposed_display_name && <span style={{ display: "block" }}>
+                Propozycja lokalizacji: {item.proposed_display_name}
+              </span>}
+            </span>}
             {item.verified === true && <span style={{ color: "#2e7d43" }}> ✓</span>}
             {isResolvedPerson && (
               <span style={{ color: item.confidence === "manual_review" ? "#b45309" : "#1d5ca8" }}>
@@ -926,6 +939,22 @@ const EntitiesPanel = ({
     }
   };
 
+  const [confirmingPlace, setConfirmingPlace] = React.useState<number | null>(null);
+  const confirmPlace = async (item: EntityItem) => {
+    if (item.id == null) return;
+    setConfirmingPlace(item.id);
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/website_entities/${item.id}/confirm_place`,
+        { selected_geocode_id: item.proposed_geocode_id }, { headers: jsonHeaders });
+      await fetchEntities();
+    } catch {
+      setMessage("Nie udało się zatwierdzić lokalizacji.");
+    } finally {
+      setConfirmingPlace(null);
+    }
+  };
+
   if (!docId) {
     return null;
   }
@@ -1246,7 +1275,14 @@ const EntitiesPanel = ({
         actions={editMode ? editActions("orgName") : undefined}
       />
       <EntityChips label={"Miejsca"} items={places} menuActions={placeMenuActions}
-        actions={editMode ? editActions("placeName") : undefined} />
+        actions={(item) => <>
+          {item.place_verification_status === "needs_review" && item.proposed_geocode_id != null
+            && item.proposed_lat != null && item.proposed_lon != null && (
+            <button type="button" className="button" disabled={confirmingPlace !== null}
+              onClick={() => void confirmPlace(item)}>Zatwierdź tę lokalizację</button>
+          )}
+          {editMode && editActions("placeName")(item)}
+        </>} />
       {placeTags.length > 0 && (
         <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}>
           Tagi miejsc: {placeTags.join(", ")}

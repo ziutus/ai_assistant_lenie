@@ -65,7 +65,11 @@ flowchart TD
     PLAUS -->|"nie"| RETRY["Fallbacki (kolejno):<br/>country_gazetteer.strip_country_edge()<br/>city / geo_feature / region_gazetteer<br/>geocode_aliases.geocode_alias()<br/>geocode_aliases.geocode_country_hint()<br/>synteyczny centroid (makroregiony)"]
     RETRY --> LIQ
     PLAUS -->|"tak"| RESOLVED
-    RESOLVED --> CTX["place_context_classifier<br/>-> ner_context_classifications"]
+    RESOLVED --> GENERIC{"generic_place_names<br/>cała nazwa lub wariant?"}
+    GENERIC -->|"tak"| REVIEW["needs_review<br/>propozycja lokalizacji bez tagu"]
+    REVIEW -->|"człowiek: confirm_place"| CONFIRMED["confirmed + manual<br/>audyt place_confirmed"]
+    CONFIRMED --> TAG
+    GENERIC -->|"nie"| CTX["place_context_classifier<br/>-> ner_context_classifications"]
     CTX -->|"not_place"| DROP1["odrzucone<br/>(homonim, system uzbrojenia...)"]
     CTX -->|"organization"| ORG[["Organizacje"]]
     CTX -->|"place"| LLM["article_tagging.confirm_places_with_llm()"]
@@ -166,7 +170,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T5 | Inna transliteracja w OSM | LocationIQ/OSM indeksuje miejsce pod inną (np. angielską) pisownią | "Al-Faszir" → "El Fasher" | E004, E005 |
 | T6 | Metonimia instytucjonalna | Nazwa siedziby władzy oznacza w tekście instytucję, nie fizyczne miejsce | "Biały Dom", "Kreml" | E012 |
 | T7 | Region geopolityczny bez punktowej lokalizacji | Pojęcie geopolityczne, brak jednego wiarygodnego geokodowalnego punktu | "Sahel", "Bliski Wschód" | E010 |
-| T8 | Rzeczownik pospolity jako nazwa własna | spaCy błędnie oznacza rzeczownik pospolity (zwł. na początku zdania albo nagłówka) jako `geogName`/`placeName`, albo dokleja go do sąsiedniej nazwy własnej (`orgName`) | "Lotnisko w Chartumie...", nagłówek "Arsenał Huti" | E008, E017 |
+| T8 | Rzeczownik pospolity jako nazwa własna | spaCy błędnie oznacza rzeczownik pospolity (zwł. na początku zdania albo nagłówka) jako `geogName`/`placeName`, albo dokleja go do sąsiedniej nazwy własnej (`orgName`) | "Lotnisko w Chartumie...", nagłówek "Arsenał Huti" | E008, E018 |
 | T9 | Fałszywy pozytyw spaCy / artefakt segmentacji | Fragment tekstu (artefakt STT, oderwany prefiks) błędnie oznaczony jako encja | osierocone "Al-" | E014 |
 | T10 | Niejednoznaczna nazwa organizacji (kolizja) | Ta sama nazwa/skrót oznacza różne, niepowiązane organizacje | "Africa Corps" (Rosja 2023+) vs "Afrika Korps" (III Rzesza) | E003 |
 | T11 | Stare dane pod już naprawionym mechanizmem | Rekord powstał przed wdrożeniem poprawki; obecny kod poprawnie obsługuje ten kształt danych | Organization 485 (ECFR) | E013 |
@@ -376,7 +380,18 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Test regresyjny:** `backend/tests/unit/test_entity_enrichment_service.py`, `backend/tests/unit/test_worker.py`.
 - **Status:** żywy bug naprawiony w kodzie; wymaga deployu migracji i obrazu backendu.
 
-### E017 — "Arsenał Huti" jako organizacja zamiast "Huti" (dok. #10756, 2026-10-11)
+### E017 — Generyczne nazwy „Huty” i „Południe” uznane za konkretne miejsca (dok. #10753, PR n/d, 2026-10-10)
+
+- **Typ encji:** geogName / placeName
+- **Kategoria:** T13 — rzeczownik pospolity lub kierunek geograficzny jako nazwa miejsca.
+- **Zdanie źródłowe:** nie przytoczono — diagnoza oparta na zgłoszeniu dla dokumentu #10753, bez odczytu bazy NAS.
+- **Objaw:** „Huty” otrzymały lokalizację wsi na Ukrainie (query `Huti`), a „Południe” lokalizację dzielnicy Koszyc; powstały nieuzasadnione tagi miejsc.
+- **Przyczyna źródłowa:** trafienie geokodera było traktowane jako podstawa kanonikalizacji i scalania, a próg wzmianek oraz LLM istotności nie wymagały rozstrzygnięcia wieloznaczności przez człowieka.
+- **Poprawka:** kod + migracja — `generic_place_names` sprawdza całe nazwy, warianty i propozycję przed scalaniem; status `needs_review` blokuje automatyczne tagowanie i zaakceptowane współrzędne. Człowiek zatwierdza konkretną propozycję przez `confirm_place`; audyt `place_confirmed` odtwarza wybraną lokalizację po refreshu, późniejsze DELETE wygrywa. Skrypt `reconcile_generic_place_tags.py` usuwa wyłącznie tagi bez wsparcia innej zaakceptowanej encji i nie zmienia globalnego cache.
+- **Test regresyjny:** `backend/tests/unit/test_generic_place_names.py`, `test_entity_overrides.py`, `test_flask_endpoints_entities.py`, `test_entity_service.py`, `test_place_context_classifier.py`.
+- **Status:** żywy bug naprawiony w kodzie; dane #10753 niezmienione, migracja i rekonsyliacja nieuruchomione.
+
+### E018 — "Arsenał Huti" jako organizacja zamiast "Huti" (dok. #10756, 2026-10-11)
 
 - **Typ encji:** orgName
 - **Kategoria:** T8 — rzeczownik pospolity jako nazwa własna (doklejony do nazwy własnej na początku nagłówka)

@@ -20,12 +20,12 @@ import logging
 
 from sqlalchemy import select
 
-from library.db.models import DocumentEntity, EntityReviewDecision
+from library.db.models import DocumentEntity, EntityReviewDecision, GeocodeCache
 from library.entity_service import MERGEABLE_PLACE_SOURCE_TYPES, PLACE_TYPES, merge_document_entities
 
 logger = logging.getLogger(__name__)
 
-REPLAYED_DECISIONS = ("renamed", "place_merged", "deleted", "rejected")
+REPLAYED_DECISIONS = ("renamed", "place_merged", "place_confirmed", "deleted", "rejected")
 
 
 def _exact(entities: list[DocumentEntity], name: str, types: tuple[str, ...]) -> DocumentEntity | None:
@@ -64,7 +64,28 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
 
     for decision in decisions:
         details = decision.details or {}
-        if decision.decision == "renamed":
+        if decision.decision == "place_confirmed":
+            row = None
+            for name in (decision.entity_text, *details.get("variants", [])):
+                row = _by_name_or_variant(entities, name, PLACE_TYPES)
+                if row is not None:
+                    break
+            if row is None:
+                continue
+            proposal = session.get(GeocodeCache, details.get("geocode_id"))
+            # Never substitute a new first hit if the selected cache row disappeared.
+            if proposal is None:
+                row.place_verification_status = "needs_review"
+                row.place_review_reason = "confirmed_geocode_missing"
+                continue
+            row.geocode = proposal
+            row.geocode_id = proposal.id
+            row.place_verification_status = "confirmed"
+            row.place_review_reason = None
+            row.source = "manual"
+            touched[id(row)] = row
+            stats["confirmed"] = stats.get("confirmed", 0) + 1
+        elif decision.decision == "renamed":
             new_name = (details.get("new_text") or "").strip()
             row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
             if not new_name or row is None or row.entity_text.casefold() == new_name.casefold():
@@ -103,6 +124,10 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
         else:  # deleted / rejected: exact text only, never a merged row hiding behind a variant
             row = _exact(entities, decision.entity_text, PLACE_TYPES)
             if row is None:
+                confirmed = _by_name_or_variant(list(touched.values()), decision.entity_text, PLACE_TYPES)
+                if confirmed is not None and confirmed.place_verification_status == "confirmed":
+                    row = confirmed
+            if row is None:
                 continue
             drop(row)
             stats["deleted"] += 1
@@ -136,9 +161,12 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
     touched, stats = apply_decisions(session, decisions, entities)
 
     if touched:
-        from library.place_verification import geocode_single_place
+        from library.place_verification import add_place_tag, geocode_single_place
 
         for row in touched.values():
+            if row.place_verification_status == "confirmed":
+                add_place_tag(doc, row)
+                continue
             if row.geocode_id is None:
                 try:
                     geocode_single_place(session, doc, row)

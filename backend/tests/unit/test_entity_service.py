@@ -393,6 +393,21 @@ class TestIsExcluded:
 
 
 class TestGetDocumentEntities:
+    def test_needs_review_exposes_proposal_without_accepted_coordinates(self):
+        from library.db.models import DocumentEntity, GeocodeCache
+        row = DocumentEntity(id=7, entity_type="placeName", entity_text="Huty", mention_count=4,
+                             variants=["Huty"], place_verification_status="needs_review",
+                             place_review_reason="generic_huty")
+        row.geocode = GeocodeCache(id=9, query="Huti", resolved=True, lat=49, lon=24, display_name="Huti, Ukraina")
+        session = MagicMock()
+        session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
+        item = get_document_entities(session, 10753)["placeName"][0]
+        assert item["verified"] is False
+        assert item["proposed_display_name"] == "Huti, Ukraina"
+        assert item["proposed_geocode_id"] == 9
+        assert item["place_review_reason"] == "generic_huty"
+        assert "lat" not in item and "lon" not in item and "display_name" not in item
+
     def test_filters_facility_by_alias_used_in_chapter(self):
         grouped = filter_entities_to_text({
             "facility": [{
@@ -415,8 +430,10 @@ class TestGetDocumentEntities:
 
     def test_groups_by_type(self):
         row1 = MagicMock(id=1, entity_type="persName", entity_text="Tusk", mention_count=2, geocode=None,
+                         place_verification_status=None, place_review_reason=None,
                          variants=["Tuska", "Tusk"])
         row2 = MagicMock(id=2, entity_type="geogName", entity_text="kotlina kłodzki", mention_count=1, geocode=None,
+                         place_verification_status=None, place_review_reason=None,
                          variants=["Kotlinie Kłodzkiej"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row1, row2]
@@ -427,7 +444,7 @@ class TestGetDocumentEntities:
             "persName": [{"id": 1, "text": "Tusk", "count": 2, "variants": ["Tuska", "Tusk"]}],
             "orgName": [],
             "geogName": [{"id": 2, "text": "kotlina kłodzki", "count": 1, "variants": ["Kotlinie Kłodzkiej"],
-                          "is_country": False}],
+                          "is_country": False, "place_verification_status": None, "place_review_reason": None}],
             "placeName": [],
             "facility": [],
         }
@@ -435,7 +452,8 @@ class TestGetDocumentEntities:
     def test_groups_organization_without_geocoding_fields(self):
         row = MagicMock(
             id=4, entity_type="orgName", entity_text="Bloomberg",
-            mention_count=1, geocode=None, variants=["Bloomberg"],
+            mention_count=1, geocode=None,
+                         place_verification_status=None, place_review_reason=None, variants=["Bloomberg"],
         )
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -451,6 +469,7 @@ class TestGetDocumentEntities:
     def test_verified_place_carries_geocode_fields(self):
         geo = MagicMock(resolved=True, lat=50.45, lon=30.52, display_name="Kyiv, Ukraine")
         row = MagicMock(id=3, entity_type="placeName", entity_text="Kijów", mention_count=3, geocode=geo,
+                        place_verification_status=None, place_review_reason=None,
                         variants=["Kijowa"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -458,13 +477,15 @@ class TestGetDocumentEntities:
         grouped = get_document_entities(session, 42)
 
         assert grouped["placeName"] == [{
-            "id": 3, "text": "Kijów", "count": 3, "variants": ["Kijowa"], "is_country": False, "verified": True,
+            "id": 3, "text": "Kijów", "count": 3, "variants": ["Kijowa"], "place_verification_status": None,
+            "place_review_reason": None, "is_country": False, "verified": True,
             "lat": 50.45, "lon": 30.52, "display_name": "Kyiv, Ukraine",
         }]
 
     def test_unresolved_place_marked_not_verified(self):
         geo = MagicMock(resolved=False)
         row = MagicMock(id=4, entity_type="geogName", entity_text="Jagami", mention_count=1, geocode=geo,
+                        place_verification_status=None, place_review_reason=None,
                         variants=[])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -472,7 +493,8 @@ class TestGetDocumentEntities:
         grouped = get_document_entities(session, 42)
 
         assert grouped["geogName"] == [{"id": 4, "text": "Jagami", "count": 1, "variants": [],
-                                        "is_country": False, "verified": False}]
+                                        "place_verification_status": None,
+                                        "place_review_reason": None, "is_country": False, "verified": False}]
 
     def test_country_substring_in_a_place_name_is_not_flagged_as_country(self):
         """doc #9394: "Port Sudan" contains "Sudan" but is a city, not the
@@ -481,6 +503,7 @@ class TestGetDocumentEntities:
         (detect_countries() over-matched this and silently dropped "Port
         Sudan" out of place_verification.py's geocoding candidates)."""
         row = MagicMock(id=5, entity_type="placeName", entity_text="Port Sudan", mention_count=2, geocode=None,
+                         place_verification_status=None, place_review_reason=None,
                         variants=["Port Sudanu"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -489,10 +512,12 @@ class TestGetDocumentEntities:
 
         assert grouped["placeName"] == [{
             "id": 5, "text": "Port Sudan", "count": 2, "variants": ["Port Sudanu"], "is_country": False,
+            "place_verification_status": None, "place_review_reason": None,
         }]
 
     def test_actual_country_name_is_flagged_as_country(self):
         row = MagicMock(id=6, entity_type="placeName", entity_text="Sudan", mention_count=13, geocode=None,
+                         place_verification_status=None, place_review_reason=None,
                         variants=["Sudanie", "Sudanu"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -501,6 +526,7 @@ class TestGetDocumentEntities:
 
         assert grouped["placeName"] == [{
             "id": 6, "text": "Sudan", "count": 13, "variants": ["Sudanie", "Sudanu"], "is_country": True,
+            "place_verification_status": None, "place_review_reason": None,
         }]
 
     def test_empty_document_returns_all_type_keys(self):

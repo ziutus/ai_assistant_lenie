@@ -14,6 +14,13 @@ from library.place_context_classifier import (
 )
 
 
+def test_snippets_match_whole_words_and_use_actual_variants():
+    groups = {"Huta": {"surface": "Huta", "variants": ["huty"]}}
+    assert _candidate_payloads("Hutach i huty", groups)[0]["surfaces"] == ["huty"]
+    assert _candidate_payloads("Hutach", groups) == []
+
+
+
 def test_candidate_payloads_use_surface_form_for_snippet_lookup():
     groups = {
         "Pilica": {"mentions": 3, "surface": "Pilica", "surface_mentions": 3},
@@ -70,7 +77,7 @@ def test_high_confidence_organization_is_marked_for_dropping_and_routing():
     kontrolują narrację" — metonymic reference to Russia's leadership, not
     the literal building. Must be dropped from place tagging AND flagged for
     organization routing (place_verification._reclassify_as_organization)."""
-    groups = {"Kreml": {"surface": "Kreml"}}
+    groups = {"Kreml": {"surface": "Kreml", "variants": ["Kremlu"]}}
     response = MagicMock()
     response.response_text = (
         '{"results":[{"id":0,"class":"organization","confidence":"high",'

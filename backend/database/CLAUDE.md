@@ -210,6 +210,8 @@ Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-inte
 | `mention_count` | `integer NOT NULL DEFAULT 1` | Number of mentions aggregated into this row |
 | `variants` | `text[] NOT NULL DEFAULT '{}'` | Distinct surface forms as seen in the text ("Kijów", "Kijowa") — matched by the chapter-scoped entity filter (`entity_service.filter_entities_to_text`) regardless of inflection; empty = row predates the column (refilled on next refresh) |
 | `geocode_id` | `integer` | FK → `geocode_cache.id` (`SET NULL` on delete) — stage-3 geocoder verdict for place entities; `NULL` = not checked yet |
+| `place_verification_status` | `varchar(20) NULL` | `needs_review`, `confirmed`, `rejected`; NULL retains the ordinary verification path |
+| `place_review_reason` | `varchar(100) NULL` | Generic-name rule ID or missing confirmed geocode reason |
 | `created_at` | `timestamp` | Row creation timestamp |
 
 **Constraints/indexes:** UNIQUE `(document_id, entity_type, entity_text)`; indexes on `document_id`, `entity_type` and `geocode_id`.

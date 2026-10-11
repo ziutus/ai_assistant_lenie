@@ -21,6 +21,21 @@ const openMenu = async () => {
   fireEvent.click(screen.getByRole("button", { name: place.text }));
 };
 
+it("shows the full proposal and confirms it without edit mode", async () => {
+  const proposed = { id: 7, text: "Huty", count: 4, verified: false, place_verification_status: "needs_review",
+    proposed_geocode_id: 17, proposed_display_name: "Huti, obwód lwowski, Ukraina", proposed_lat: 49, proposed_lon: 24 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [], geogName: [proposed], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  render(<EntitiesPanel docId={10753} />);
+  expect(await screen.findByText(/Wymaga potwierdzenia/)).toBeTruthy();
+  expect(screen.getByText("Propozycja lokalizacji: Huti, obwód lwowski, Ukraina")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Zatwierdź tę lokalizację" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/7/confirm_place",
+    { selected_geocode_id: 17 }, { headers: expect.any(Object) }));
+  await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(3));
+});
+
 it("renames a place without edit mode and refetches entities", async () => {
   render(<EntitiesPanel docId={10753} />);
   await openMenu();
