@@ -51,6 +51,82 @@ def _session_with_entities(entities, cached_geocode=None, existing_org_row=None)
     return session
 
 
+CONTEXT_NOT_PLACE_SENTENCE = (
+    "Iran ma wiele obciążeń, więc chce odwrócić uwagę Amerykanów i Izraelczyków, "
+    "tak aby linia frontu przebiegała w Sanie, a nie w Teheranie."
+)
+
+
+@pytest.fixture
+def context_not_place_result():
+    return {
+        "key": "Izraelczyków", "entity_text": "Izraelczyków", "context": CONTEXT_NOT_PLACE_SENTENCE,
+        "predicted_class": "not_place", "confidence": "high",
+        "rationale": "grupa narodowościowa, a nie miejsce", "model": "Bielik",
+        "dropped": True, "organization": False,
+    }
+
+
+@pytest.mark.parametrize("resolved", [False, True])
+@pytest.mark.parametrize("verdict", ["not_place", "organization", "low_confidence"])
+def test_context_not_place_rejects_entity(resolved, verdict, context_not_place_result):
+    geo = _resolved_geocode("Izraelczyków") if resolved else MagicMock(resolved=False)
+    ent = _entity("Izraelczyków", etype="placeName", geocode_id=7, geocode=geo, mention_count=3)
+    ent.source, ent.place_verification_status, ent.place_review_reason = "ner", None, None
+    ent.variants = []
+    session = _session_with_entities([ent])
+    doc = MagicMock(id=10756, title="", tags="")
+    if verdict == "organization":
+        context_not_place_result.update(predicted_class="organization", organization=True)
+    elif verdict == "low_confidence":
+        context_not_place_result.update(confidence="low", dropped=False)
+    with patch("library.place_context_classifier.classify_place_context_candidates",
+               return_value=[context_not_place_result]) as classify, patch(
+        "library.place_verification._reclassify_as_organization"
+    ) as reclassify, patch("library.article_tagging.confirm_places_with_llm") as relevance:
+        summary = verify_document_places(session, doc, CONTEXT_NOT_PLACE_SENTENCE)
+        classify.assert_called_once()
+        assert classify.call_args.args[0] == CONTEXT_NOT_PLACE_SENTENCE
+        if verdict == "not_place":
+            assert ent.place_verification_status == "rejected"
+            assert ent.place_review_reason == "context_not_place"
+            assert summary["tagged"] == []
+            assert doc.tags == ""
+            # A hybrid rerun must neither classify nor tag the rejected row again.
+            classify.reset_mock()
+            assert verify_document_places(session, doc, CONTEXT_NOT_PLACE_SENTENCE)["tagged"] == []
+            classify.assert_not_called()
+        else:
+            assert ent.place_verification_status is None
+            assert ent.place_review_reason is None
+        if verdict == "organization":
+            reclassify.assert_called_once_with(session, doc, ent)
+            assert summary["tagged"] == []
+        else:
+            reclassify.assert_not_called()
+        relevance.assert_not_called()
+    audit = session.add_all.call_args.args[0][0]
+    assert audit.predicted_class == context_not_place_result["predicted_class"]
+    assert audit.context_excerpt == CONTEXT_NOT_PLACE_SENTENCE
+    session.delete.assert_not_called()
+
+
+@pytest.mark.parametrize("status,source", [("confirmed", "ner"), (None, "manual")])
+@pytest.mark.parametrize("resolved", [False, True])
+def test_context_not_place_preserves_human_decision(status, source, resolved, context_not_place_result):
+    geo = _resolved_geocode("Izraelczyków") if resolved else MagicMock(resolved=False)
+    ent = _entity("Izraelczyków", etype="placeName", geocode_id=7, geocode=geo)
+    ent.place_verification_status, ent.source, ent.place_review_reason = status, source, "human_decision"
+    with patch("library.place_context_classifier.classify_place_context_candidates",
+               return_value=[context_not_place_result]) as classify:
+        verify_document_places(_session_with_entities([ent]), MagicMock(id=10756, tags=""),
+                               CONTEXT_NOT_PLACE_SENTENCE)
+    classify.assert_not_called()
+    assert ent.place_verification_status == status
+    assert ent.place_review_reason == "human_decision"
+    assert ent.source == source
+
+
 @pytest.mark.parametrize("geocode", [None, _resolved_geocode("Inna nazwa")])
 def test_manual_place_is_not_renamed_or_reclassified(geocode):
     ent = _entity("Jemen Północny", geocode=geocode)
