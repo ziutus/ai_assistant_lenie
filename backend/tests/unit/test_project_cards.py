@@ -209,3 +209,41 @@ def test_import_endpoint(client):
         broken = client.post("/project_cards/import", json={"cards": "x"})
     assert response.get_json()["created"] == 2
     assert missing.status_code == 400 and broken.status_code == 400
+
+
+_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" font-size="3"/></svg>'
+
+
+def test_illustration_svg_accepts_plain_svg_and_clears_on_empty():
+    assert validate_fields({"illustration_svg": f"  {_SVG}\n"})["illustration_svg"] == _SVG
+    assert validate_fields({"illustration_svg": ""})["illustration_svg"] is None
+    assert validate_fields({"illustration_svg": None})["illustration_svg"] is None
+
+
+@pytest.mark.parametrize("bad", [
+    "<p>nie svg</p>",
+    '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" onload="x()"></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><a href="https://evil.test"><rect/></a></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(x)</style></svg>',
+    '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    "<svg>niedomknięte",
+    123,
+])
+def test_illustration_svg_rejects_active_or_malformed_content(bad):
+    with pytest.raises(ProjectCardError):
+        validate_fields({"illustration_svg": bad})
+
+
+def test_illustration_svg_rejects_oversized_document():
+    with pytest.raises(ProjectCardError, match="larger"):
+        validate_fields({"illustration_svg": "<svg>" + "x" * 100_001 + "</svg>"})
+
+
+def test_illustration_svg_in_detail_only_and_flag_in_summary():
+    card = _card(illustration_svg=_SVG)
+    assert card_to_dict(card)["has_illustration"] is True
+    assert "illustration_svg" not in card_to_dict(card)
+    assert card_to_dict(card, detail=True)["illustration_svg"] == _SVG
+    assert card_to_dict(_card())["has_illustration"] is False

@@ -22,6 +22,7 @@ interface ProjectCardDetail extends ProjectCardSummary {
   safety_checklist: string[];
   review_notes: string | null;
   import_flags: string[];
+  illustration_svg: string | null;
 }
 
 const sectionTitle: React.CSSProperties = { marginTop: 18, marginBottom: 6 };
@@ -138,6 +139,14 @@ const ProjectCard = () => {
       </div>
       {card.tagline && <p style={{ fontStyle: "italic", margin: "4px 0" }}>{card.tagline}</p>}
       {card.description && <p style={{ color: "#445" }}>{card.description}</p>}
+      {card.illustration_svg && (
+        // Rendered through <img> so the SVG stays passive (no scripts); the backend also rejects active content.
+        <img
+          src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(card.illustration_svg)}`}
+          alt={`Ilustracja: ${card.title}`}
+          style={{ width: "100%", maxWidth: 640, height: "auto", display: "block", margin: "10px 0", borderRadius: 10 }}
+        />
+      )}
       {card.how_it_works && (
         <>
           <h3 style={sectionTitle}>Jak to działa</h3>

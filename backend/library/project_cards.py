@@ -15,6 +15,7 @@ returns cards starting up to N years above the child's age, flagged
 from __future__ import annotations
 
 import datetime
+import re
 from dataclasses import dataclass
 
 from sqlalchemy import func, or_, select
@@ -41,7 +42,17 @@ _INT_RANGES = {"age_min": (0, 18), "age_max": (0, 18), "time_min": (0, 1440), "t
                "difficulty": (1, 3)}
 _STRING_LIST_FIELDS = ("tools", "variants", "what_child_does", "what_adult_does", "safety_checklist", "steps")
 EDITABLE_FIELDS = (*_TEXT_FIELDS, *_INT_RANGES, "needs_adult", *_STRING_LIST_FIELDS, "materials",
-                   "troubleshooting", "review_status")
+                   "troubleshooting", "review_status", "illustration_svg")
+
+MAX_SVG_BYTES = 100_000
+# The SVG is rendered by the browser through <img src="data:..."> (scripts never run there),
+# but it is still stored from a request body, so keep it passive: no scripting, embedded
+# documents, event handlers or external references.
+_SVG_FORBIDDEN = re.compile(
+    r"<\s*(?:script|foreignObject|iframe|object|embed|style|image|use)\b|(?<![\w-])on[a-z]+\s*=|javascript:|"
+    r"<!ENTITY|<!DOCTYPE|href\s*=",
+    re.IGNORECASE,
+)
 
 
 class ProjectCardError(ValueError):
@@ -95,6 +106,21 @@ def _troubleshooting(value) -> list[dict]:
     return out
 
 
+def _svg(value) -> str | None:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if not isinstance(value, str):
+        raise ProjectCardError("illustration_svg must be a string")
+    svg = value.strip()
+    if len(svg.encode("utf-8")) > MAX_SVG_BYTES:
+        raise ProjectCardError(f"illustration_svg is larger than {MAX_SVG_BYTES} bytes")
+    if not re.match(r"<svg[\s>]", svg, re.IGNORECASE) or not svg.lower().rstrip().endswith("</svg>"):
+        raise ProjectCardError("illustration_svg must be a single <svg>...</svg> document")
+    if _SVG_FORBIDDEN.search(svg):
+        raise ProjectCardError("illustration_svg may not contain scripts, handlers, external references or DTDs")
+    return svg
+
+
 def validate_fields(data: dict) -> dict:
     """Validate a (partial) payload of editable fields; unknown keys are rejected."""
     unknown = sorted(set(data) - set(EDITABLE_FIELDS))
@@ -124,6 +150,8 @@ def validate_fields(data: dict) -> dict:
             out[key] = _materials(value)
         elif key == "troubleshooting":
             out[key] = _troubleshooting(value)
+        elif key == "illustration_svg":
+            out[key] = _svg(value)
         elif key == "review_status":
             if value not in REVIEW_STATUSES:
                 raise ProjectCardError(f"review_status must be one of {', '.join(REVIEW_STATUSES)}")
@@ -276,11 +304,14 @@ _SUMMARY_FIELDS = (
 _DETAIL_FIELDS = (
     *_SUMMARY_FIELDS, "description", "how_it_works", "materials", "tools", "steps", "troubleshooting", "variants",
     "safety", "what_child_does", "what_adult_does", "safety_checklist", "review_notes", "import_flags",
+    "illustration_svg",
 )
 
 
 def card_to_dict(card: ProjectCard, *, detail: bool = False, age: int | None = None, stretch: int = 0) -> dict:
     data = {key: getattr(card, key) for key in (_DETAIL_FIELDS if detail else _SUMMARY_FIELDS)}
+    if not detail:
+        data["has_illustration"] = bool(card.illustration_svg)
     if age is not None:
         data["age_fit"] = age_fit(card, age, stretch)
     return data
