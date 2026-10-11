@@ -561,9 +561,14 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                     len(dropped_names), doc.id, dropped_names,
                 )
             for result in context_results:
+                ent = entity_by_canonical.get(result["key"])
+                if (result["predicted_class"] == "not_place" and result["dropped"]
+                        and not result["organization"] and ent is not None
+                        and ent.place_verification_status != "confirmed" and ent.source != "manual"):
+                    ent.place_verification_status = "rejected"
+                    ent.place_review_reason = "context_not_place"
                 if not result["organization"]:
                     continue
-                ent = entity_by_canonical.get(result["key"])
                 if ent is not None:
                     _reclassify_as_organization(session, doc, ent)
 
@@ -615,6 +620,13 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                 )
                 for result in unresolved_results
             ])
+            for result in unresolved_results:
+                ent = unresolved_by_text.get(result["key"])
+                if (result["predicted_class"] == "not_place" and result["dropped"]
+                        and not result["organization"] and ent is not None
+                        and ent.place_verification_status != "confirmed" and ent.source != "manual"):
+                    ent.place_verification_status = "rejected"
+                    ent.place_review_reason = "context_not_place"
             organization_texts = [result["key"] for result in unresolved_results if result["organization"]]
             for text_ in organization_texts:
                 ent = unresolved_by_text.get(text_)

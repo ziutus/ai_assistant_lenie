@@ -175,8 +175,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T10 | Niejednoznaczna nazwa organizacji (kolizja) | Ta sama nazwa/skrót oznacza różne, niepowiązane organizacje | "Africa Corps" (Rosja 2023+) vs "Afrika Korps" (III Rzesza) | E003 |
 | T11 | Stare dane pod już naprawionym mechanizmem | Rekord powstał przed wdrożeniem poprawki; obecny kod poprawnie obsługuje ten kształt danych | Organization 485 (ECFR) | E013 |
 | T12 | Kolizja kanonikalizacji w transakcji | Poprawiony wariant encji zbiega się z już istniejącym wierszem, a ORM próbuje zmienić klucz unikalny przed etapem scalenia | "Al-Faszirze Emiraty" + "Al-Faszir" | E015 |
+| T14 | Werdykt klasyfikatora kontekstu bez skutku na encji | `not_place/high` blokuje tag, ale nie odrzuca wiersza encji | "Izraelczyków" | E019 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T12,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T15,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -402,3 +403,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Opcja na przyszłość (nie wdrożona):** spłaszczanie wielkości liter pierwszego słowa nagłówka markdownowego przed NER — dopiero po zebraniu kilku podobnych przypadków.
 - **Test regresyjny:** brak — czysto danowa poprawka, wpis w `ner_corrections` #8 dokumentuje przypadek.
 - **Status:** tylko dane bez zmiany kodu
+
+### E019 — „Izraelczyków” pozostaje miejscem po werdykcie `not_place/high` (dok. #10756, PR n/d, 2026-10-11)
+
+- **Typ encji:** placeName
+- **Kategoria:** T14 — werdykt klasyfikatora kontekstu bez skutku na encji.
+- **Zdanie źródłowe:** "Iran ma wiele obciążeń, więc chce odwrócić uwagę Amerykanów i Izraelczyków, tak aby linia frontu przebiegała w Sanie, a nie w Teheranie."
+- **Objaw:** „Izraelczyków” (`document_entities.id=14994`, geokodowanie nierozwiązane) nadal widoczne jako miejsce mimo werdyktu `not_place/high` z uzasadnieniem „grupa narodowościowa, a nie miejsce”. Ten sam problem dotyczył „Amerykanów”, „Qasef” (dron), „Scud” (pocisk), „al-Muslimi” (nazwisko) i „Zachodzie”.
+- **Przyczyna źródłowa:** `verify_document_places()` zapisywało `dropped=True` w `NerContextClassification` i usuwało rozpoznane miejsce z grup do tagowania, ale nie zmieniało statusu `DocumentEntity`; ścieżka nierozwiązanego geokodowania tylko zapisywała audyt.
+- **Poprawka:** kod — `backend/library/place_verification.py` ustawia `place_verification_status='rejected'` i `place_review_reason='context_not_place'` w obu ścieżkach dla `not_place/high`. Zachowuje wiersz, audyt, ochronę `confirmed`/`source='manual'` i osobną reklasyfikację `organization`. `place_needs_review()` blokuje dalsze tagowanie; API zwraca `verified=false`, panel przygasza encję, mapa ją pomija. Poprawka danych dokumentu #10756 została wykonana osobno.
+- **Test regresyjny:** `backend/tests/unit/test_place_verification.py::test_context_not_place_rejects_entity` (obie ścieżki, ponowne uruchomienie, organizacja i niska pewność) oraz `test_context_not_place_preserves_human_decision` (decyzje człowieka).
+- **Status:** żywy bug naprawiony w kodzie.
