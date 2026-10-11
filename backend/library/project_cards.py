@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass
 
 from sqlalchemy import func, or_, select
+from unidecode import unidecode
 
 from library.db.models import ProjectCard
 
@@ -57,6 +58,24 @@ _SVG_FORBIDDEN = re.compile(
 
 class ProjectCardError(ValueError):
     """Invalid card payload."""
+
+
+MAX_PDF_BYTES = 60 * 1024 * 1024
+
+
+def source_pdf_key(series: str, number: int) -> str:
+    """Object-storage key of a card's original PDF, stable per (series, number)."""
+    slug = re.sub(r"[^a-z0-9]+", "-", unidecode(series).lower()).strip("-") or "series"
+    return f"project_cards/{slug}/{number:03d}.pdf"
+
+
+def validate_pdf(data: bytes) -> None:
+    if not data:
+        raise ProjectCardError("file is empty")
+    if len(data) > MAX_PDF_BYTES:
+        raise ProjectCardError(f"PDF is larger than {MAX_PDF_BYTES // (1024 * 1024)} MB")
+    if not data.startswith(b"%PDF-"):
+        raise ProjectCardError("file is not a PDF")
 
 
 def group_label(raw: str | None) -> str | None:
@@ -310,6 +329,7 @@ _DETAIL_FIELDS = (
 
 def card_to_dict(card: ProjectCard, *, detail: bool = False, age: int | None = None, stretch: int = 0) -> dict:
     data = {key: getattr(card, key) for key in (_DETAIL_FIELDS if detail else _SUMMARY_FIELDS)}
+    data["has_source_pdf"] = bool(card.source_pdf_key)
     if not detail:
         data["has_illustration"] = bool(card.illustration_svg)
     if age is not None:

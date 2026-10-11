@@ -23,6 +23,7 @@ interface ProjectCardDetail extends ProjectCardSummary {
   review_notes: string | null;
   import_flags: string[];
   illustration_svg: string | null;
+  has_source_pdf: boolean;
 }
 
 const sectionTitle: React.CSSProperties = { marginTop: 18, marginBottom: 6 };
@@ -106,6 +107,48 @@ const ProjectCard = () => {
       console.error("Error saving project card", e);
       setIsError(true);
       setMessage(`Nie udało się zapisać: ${e.response?.data?.message || e.message}`);
+    }
+    setIsSaving(false);
+  };
+
+  const reportError = (prefix: string, e: any) => {
+    console.error(prefix, e);
+    setIsError(true);
+    setMessage(`${prefix}: ${e.response?.data?.message || e.message}`);
+  };
+
+  // A plain link cannot send x-api-key, so ask for a presigned URL (MinIO) and open that;
+  // storage without presigned links falls back to fetching the bytes as a blob.
+  const openSourcePdf = async () => {
+    setMessage("");
+    setIsError(false);
+    try {
+      const link = await axios.get(`${apiUrl}/project_cards/${id}/source_pdf`, { headers });
+      if (link.data.url) {
+        window.open(link.data.url, "_blank", "noopener");
+        return;
+      }
+      const file = await axios.get(`${apiUrl}/project_cards/${id}/source_pdf`, {
+        headers, params: { download: "1" }, responseType: "blob",
+      });
+      window.open(URL.createObjectURL(file.data), "_blank", "noopener");
+    } catch (e: any) {
+      reportError("Nie udało się otworzyć oryginału", e);
+    }
+  };
+
+  const uploadSourcePdf = async (file: File) => {
+    setIsSaving(true);
+    setMessage("");
+    setIsError(false);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      await axios.post(`${apiUrl}/project_cards/${id}/source_pdf`, body, { headers: { "x-api-key": `${apiKey}` } });
+      setCard((current) => (current ? { ...current, has_source_pdf: true } : current));
+      setMessage("Wgrano oryginał PDF.");
+    } catch (e: any) {
+      reportError("Nie udało się wgrać PDF-a", e);
     }
     setIsSaving(false);
   };
@@ -259,6 +302,25 @@ const ProjectCard = () => {
             Oznacz jako sprawdzoną
           </button>
           <button className={"button"} type="button" onClick={() => window.print()}>Drukuj</button>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <strong>Oryginał PDF:</strong>
+          {card.has_source_pdf ? (
+            <button className={"button"} type="button" onClick={openSourcePdf}>Otwórz oryginał</button>
+          ) : (
+            <span style={{ color: "#667" }}>nie wgrano</span>
+          )}
+          <label className={"button"} style={{ cursor: isSaving ? "default" : "pointer" }}>
+            {card.has_source_pdf ? "Zamień PDF" : "Wgraj PDF"}
+            <input
+              type="file" accept="application/pdf,.pdf" disabled={isSaving} style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) uploadSourcePdf(file);
+              }}
+            />
+          </label>
         </div>
         {message && (
           <p className={isError ? "errorText" : undefined} style={isError ? undefined : { color: "#2e7d43" }}>{message}</p>

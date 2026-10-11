@@ -236,6 +236,86 @@ def test_illustration_svg_rejects_active_or_malformed_content(bad):
         validate_fields({"illustration_svg": bad})
 
 
+def test_source_pdf_key_is_stable_and_ascii():
+    from library.project_cards import source_pdf_key
+
+    assert source_pdf_key("Niesamowite Maszyny", 1) == "project_cards/niesamowite-maszyny/001.pdf"
+    assert source_pdf_key("Łódź & Co", 56) == "project_cards/lodz-co/056.pdf"
+
+
+@pytest.mark.parametrize("data", [b"", b"nie pdf", b"<html>%PDF-</html>"])
+def test_validate_pdf_rejects_non_pdf(data):
+    from library.project_cards import validate_pdf
+
+    with pytest.raises(ProjectCardError):
+        validate_pdf(data)
+
+
+class _FakeStorage:
+    def __init__(self, url="https://minio.test/signed"):
+        self.objects, self.url = {}, url
+
+    def put_bytes(self, key, data, content_type=None):
+        self.objects[key] = (data, content_type)
+
+    def get_bytes(self, key):
+        return self.objects[key][0]
+
+    def presigned_get_url(self, key, expires_in=3600):
+        return self.url
+
+
+def _post_pdf(client, session, storage, content=b"%PDF-1.4 test", name="001 - Waga.pdf", field="file"):
+    import io
+
+    with patch.object(routes, "get_scoped_session", return_value=session), \
+            patch.object(routes, "_storage", return_value=storage):
+        return client.post("/project_cards/1/source_pdf", data={field: (io.BytesIO(content), name)},
+                           content_type="multipart/form-data")
+
+
+def test_upload_source_pdf_stores_file_and_sets_key(client):
+    card = _card(series="Niesamowite Maszyny", number=1, source_file=None)
+    session, storage = MagicMock(), _FakeStorage()
+    session.get.return_value = card
+    response = _post_pdf(client, session, storage)
+    assert response.status_code == 200 and response.get_json()["bytes"] == len(b"%PDF-1.4 test")
+    assert storage.objects["project_cards/niesamowite-maszyny/001.pdf"] == (b"%PDF-1.4 test", "application/pdf")
+    assert card.source_pdf_key == "project_cards/niesamowite-maszyny/001.pdf"
+    assert card.source_file == "001 - Waga.pdf"
+    session.commit.assert_called_once()
+
+
+def test_upload_source_pdf_rejects_bad_input(client):
+    session = MagicMock()
+    session.get.return_value = _card()
+    assert _post_pdf(client, session, _FakeStorage(), content=b"GIF89a").status_code == 400
+    assert _post_pdf(client, session, _FakeStorage(), field="other").status_code == 400
+    session.get.return_value = None
+    assert _post_pdf(client, session, _FakeStorage()).status_code == 404
+
+
+def test_get_source_pdf_returns_presigned_url_or_bytes(client):
+    session = MagicMock()
+    storage = _FakeStorage()
+    storage.objects["k"] = (b"%PDF-1.4 x", "application/pdf")
+    session.get.return_value = _card(source_pdf_key="k", number=1)
+    with patch.object(routes, "get_scoped_session", return_value=session), \
+            patch.object(routes, "_storage", return_value=storage):
+        link = client.get("/project_cards/1/source_pdf")
+        download = client.get("/project_cards/1/source_pdf?download=1")
+        session.get.return_value = _card(source_pdf_key=None)
+        missing = client.get("/project_cards/1/source_pdf")
+    assert link.get_json()["url"] == "https://minio.test/signed"
+    assert download.data == b"%PDF-1.4 x" and download.mimetype == "application/pdf"
+    assert missing.status_code == 404
+
+
+def test_has_source_pdf_flag():
+    assert card_to_dict(_card(source_pdf_key="k"))["has_source_pdf"] is True
+    assert card_to_dict(_card(), detail=True)["has_source_pdf"] is False
+
+
 def test_illustration_svg_rejects_oversized_document():
     with pytest.raises(ProjectCardError, match="larger"):
         validate_fields({"illustration_svg": "<svg>" + "x" * 100_001 + "</svg>"})

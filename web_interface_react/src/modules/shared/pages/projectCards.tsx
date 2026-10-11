@@ -26,6 +26,8 @@ export interface ProjectCardSummary {
   needs_adult: boolean;
   review_status: "imported" | "needs_review" | "reviewed";
   age_fit?: "ok" | "stretch" | null;
+  has_source_pdf?: boolean;
+  has_illustration?: boolean;
 }
 
 interface GroupCount {
@@ -199,6 +201,8 @@ const ProjectCards = () => {
               {card.time_min !== null && <span style={chip("#f1f5f9")}>{card.time_min} min</span>}
               {card.needs_adult && <span style={chip("#fff7ed")}>z dorosłym</span>}
               {card.age_fit === "stretch" && <span style={chip("#fef3c7")}>do spróbowania z dorosłym</span>}
+              {card.has_illustration && <span style={chip("#ecfeff")} title="Ma własną ilustrację">🖼</span>}
+              {card.has_source_pdf && <span style={chip("#f5f3ff")} title="Wgrano oryginał PDF">PDF</span>}
               <span style={chip(card.review_status === "reviewed" ? "#dcfce7" : "#f3f4f6")}>
                 {reviewLabel[card.review_status] ?? card.review_status}
               </span>

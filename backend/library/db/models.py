@@ -2631,6 +2631,7 @@ class ProjectCard(Base):
     what_adult_does: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     safety_checklist: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     illustration_svg: Mapped[str | None] = mapped_column(Text)
+    source_pdf_key: Mapped[str | None] = mapped_column(Text)
     review_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="imported")
     review_notes: Mapped[str | None] = mapped_column(Text)
     import_flags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))

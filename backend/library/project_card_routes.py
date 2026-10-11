@@ -7,13 +7,15 @@ Endpoints (x-api-key required via the global before_request):
   GET   /project_cards/<id>           — full card
   PATCH /project_cards/<id>           — edit fields / mark reviewed
   POST  /project_cards/import         — bulk upsert {cards: [...], series?}
+  POST  /project_cards/<id>/source_pdf — multipart 'file': store the original PDF in object storage
+  GET   /project_cards/<id>/source_pdf — {url} (presigned) or the PDF bytes with ?download=1
 
 See ``library/project_cards.py`` for the age-filter semantics and import rules.
 """
 
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from library.db.engine import get_scoped_session
 from library.db.models import ProjectCard
@@ -24,8 +26,10 @@ from library.project_cards import (
     card_to_dict,
     group_counts,
     list_cards,
+    source_pdf_key,
     update_card,
     upsert_cards,
+    validate_pdf,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,6 +130,66 @@ def patch_project_card(card_id: int):
         session.rollback()
         return _error(str(exc))
     return jsonify({"status": "success", "card": card_to_dict(card, detail=True)})
+
+
+def _storage():
+    from library.config_loader import load_config
+    from library.storage import storage_from_config
+
+    return storage_from_config(load_config())
+
+
+@bp.route("/project_cards/<int:card_id>/source_pdf", methods=["POST"])
+def upload_source_pdf(card_id: int):
+    session = get_scoped_session()
+    card = session.get(ProjectCard, card_id)
+    if card is None:
+        return _error("Project card not found", 404)
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return _error("multipart field 'file' is required")
+    data = uploaded.read()
+    try:
+        validate_pdf(data)
+    except ProjectCardError as exc:
+        return _error(str(exc))
+    key = source_pdf_key(card.series, card.number)
+    try:
+        _storage().put_bytes(key, data, content_type="application/pdf")
+        card.source_pdf_key = key
+        if not card.source_file:
+            card.source_file = uploaded.filename
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Could not store source PDF for project card %s", card_id)
+        return _error("Could not store the PDF", 500)
+    return jsonify({"status": "success", "has_source_pdf": True, "bytes": len(data)})
+
+
+@bp.route("/project_cards/<int:card_id>/source_pdf", methods=["GET"])
+def get_source_pdf(card_id: int):
+    """JSON ``{url}`` with a presigned link, or the PDF bytes with ``?download=1``.
+
+    The browser cannot send ``x-api-key`` on a plain link, so the presigned URL is the
+    normal path; ``?download=1`` is the fallback for storage without presigned links.
+    """
+    card = get_scoped_session().get(ProjectCard, card_id)
+    if card is None:
+        return _error("Project card not found", 404)
+    if not card.source_pdf_key:
+        return _error("This card has no source PDF", 404)
+    storage = _storage()
+    if request.args.get("download") in {"1", "true", "yes"}:
+        try:
+            data = storage.get_bytes(card.source_pdf_key)
+        except Exception:
+            logger.exception("Could not read source PDF for project card %s", card_id)
+            return _error("Could not read the PDF", 500)
+        return Response(data, mimetype="application/pdf", headers={
+            "Content-Disposition": f'inline; filename="{card.number:03d}.pdf"',
+        })
+    return jsonify({"status": "success", "url": storage.presigned_get_url(card.source_pdf_key)})
 
 
 @bp.route("/project_cards/import", methods=["POST"])
