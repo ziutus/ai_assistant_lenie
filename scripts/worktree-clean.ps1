@@ -71,6 +71,13 @@ function Remove-WorktreeDir([string]$Path) {
         if (Test-Path -LiteralPath $Path) { Start-Sleep -Seconds 1 }
     }
     if (Test-Path -LiteralPath $Path) {
+        # A Codex app-server broker started with --cwd <worktree> keeps a handle on the directory.
+        $fwd = ($Path -replace '\\', '/')
+        $brokers = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like '*app-server-broker.mjs*' -and $_.CommandLine -like "*$fwd*" })
+        foreach ($b in $brokers) {
+            Write-Log "  held by Codex broker pid $($b.ProcessId) (started $($b.CreationDate.ToString('MM-dd HH:mm'))) - if no Codex job is running there: Stop-Process -Id $($b.ProcessId)"
+        }
         Write-Log "  still present: $Path (file in use, or ACL-locked leftovers such as .pytest_cache from a sandboxed tool)"
         Write-Log "  fix from an ELEVATED shell: takeown /F `"$Path`" /R /A /D Y; icacls `"$Path`" /grant Administrators:F /T /C /Q; rmdir /s /q `"$Path`""
         return $false

@@ -37,8 +37,10 @@ and `web_interface_react/node_modules` (see AGENTS.md, "Git worktrees on Windows
   sandboxed tool (Codex); even `icacls` is denied. This needs an elevated shell. Give the user
   the exact command from the log (`takeown /F <dir> /R /A /D Y; icacls <dir> /grant Administrators:F /T /C /Q; rmdir /s /q <dir>`)
   to run as Administrator (`! ` prefix does not elevate).
-- **"file in use"** - another process holds a handle (an open editor/terminal/Claude session in
-  that directory). Ask the user to close it, then rerun.
+- **"file in use"** - another process holds a handle. Most often a stale Codex
+  `app-server-broker.mjs` (a `node.exe` started with `--cwd <worktree>`, often days old); the script
+  logs its pid. Show the user the pid/start time and ask before `Stop-Process` - the broker may
+  belong to a running Codex job. Otherwise an open editor/terminal/Claude session; ask to close it, then rerun.
 - **Locked worktrees whose pid is a live session** are skipped on purpose.
 
 ## Rules
