@@ -17,6 +17,7 @@ import requests
 from library.city_gazetteer import canonical_city_name
 from library.geo_feature_gazetteer import canonical_geo_feature_name
 from library.geopolitical_region_gazetteer import canonical_geopolitical_region_name
+from library.historical_state_gazetteer import canonical_historical_state_name
 from library.region_gazetteer import canonical_region_name
 from library.ner_normalization import (
     canonical_country_for_surface,
@@ -324,7 +325,16 @@ def aggregate_entities_detailed(
             if country is None and geo_feature is None and city is None and region is None and label in PLACE_TYPES
             else None
         )
-        base = country or geo_feature or city or region or geo_region or lemma
+        # Historical states (historical_state_gazetteer.py, e.g. "Jugosławia",
+        # "ZSRR") no longer exist, so no geocoder knows them; place_verification
+        # synthesizes a resolved "historical" row for them. Checked last, disjoint.
+        historical = (
+            canonical_historical_state_name(surface)
+            if country is None and geo_feature is None and city is None and region is None
+            and geo_region is None and label in PLACE_TYPES
+            else None
+        )
+        base = country or geo_feature or city or region or geo_region or historical or lemma
         key = (label, base.casefold())
         group = preliminary.setdefault(
             key,

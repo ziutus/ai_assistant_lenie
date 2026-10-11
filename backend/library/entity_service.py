@@ -545,6 +545,9 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["lat"] = float(row.geocode.lat) if row.geocode.lat is not None else None
                 item["lon"] = float(row.geocode.lon) if row.geocode.lon is not None else None
                 item["display_name"] = row.geocode.display_name
+                historical = (row.geocode.raw or {}).get("historical") if row.geocode.osm_type == "historical_state" else None
+                if historical:
+                    item["historical"] = historical
         if row.entity_type in place_types and row.entity_text in pipelines_by_query:
             infra = pipelines_by_query[row.entity_text]
             item["pipeline"] = {

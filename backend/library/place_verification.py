@@ -34,6 +34,11 @@ geopolitical_region_gazetteer.py) never reach the live geocoder at all:
 GeocodeCache row for them instead, since a live LocationIQ query for these
 names is unreliable by construction (doc #9394's "Sahel" investigation).
 
+Historical states ("Jugosławia", "ZSRR" - historical_state_gazetteer.py) get the
+same treatment, additionally flagged `historical` (period + successors in
+`GeocodeCache.raw`) so the UI shows them as historical, not as a normal
+geocoder-confirmed place.
+
 A name that never resolves at all (the geocoder has nothing plausible to
 offer) is also run past place_context_classifier.py, which now recognizes a
 third outcome besides place/not_place: a government-seat building name used
@@ -55,6 +60,7 @@ from library.db.models import DocumentEntity, DocumentOrganization, GeocodeCache
 from library.geocode_aliases import geocode_alias, geocode_country_hint
 from library.generic_place_names import match_generic_place_name
 from library.geopolitical_region_gazetteer import geopolitical_region_centroid
+from library.historical_state_gazetteer import historical_state
 from library.locationiq_client import canonical_place_name, geocode, is_plausible_match
 
 logger = logging.getLogger(__name__)
@@ -122,6 +128,26 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
     so no relabeling is needed and is_plausible_match() keeps comparing the
     original short query.
     """
+    historical = historical_state(query)
+    if historical is not None:
+        # Historical state (Jugosławia, ZSRR...) - no geocoder knows a state
+        # that no longer exists. Synthesize a resolved row and keep the period
+        # in `raw` so the API can flag the place as historical.
+        row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
+        if row is None:
+            row = GeocodeCache(query=query)
+            session.add(row)
+        row.resolved = True
+        row.display_name = query
+        row.lat = historical.lat
+        row.lon = historical.lon
+        row.osm_class = "boundary"
+        row.osm_type = "historical_state"
+        row.importance = None
+        row.raw = {"historical": historical.info()}
+        session.flush()
+        return row
+
     centroid = geopolitical_region_centroid(query)
     if centroid is not None:
         # Known geopolitical macro-region (Sahel, Bliski Wschód...) — never

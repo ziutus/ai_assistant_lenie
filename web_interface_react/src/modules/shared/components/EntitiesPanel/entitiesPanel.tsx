@@ -46,6 +46,9 @@ export interface EntityItem {
   lat?: number | null;
   lon?: number | null;
   display_name?: string;
+  // Historical state or territory (Jugosławia, ZSRR...) resolved from the
+  // curated gazetteer, not by the geocoder (library/historical_state_gazetteer.py).
+  historical?: { year_from: number; year_to: number; successors: string };
   // Stage-4 person resolution (persName only): present when linked to a Person
   link_id?: number;
   person_id?: number;
@@ -232,6 +235,9 @@ export const EntityChips = ({
               .filter(Boolean)
               .join(" | ")
           : undefined;
+        const historicalTitle = item.historical
+          ? `Państwo historyczne (${item.historical.year_from}–${item.historical.year_to}). Następcy: ${item.historical.successors}`
+          : undefined;
         const chip = (
           <span
             key={key}
@@ -240,10 +246,11 @@ export const EntityChips = ({
               ...chipStyle,
               position: "relative",
               ...(item.verified === true ? { background: "#e6f4ea", border: "1px solid #7cb98a" } : {}),
+              ...(item.historical ? { background: "#fdf3e1", border: "1px solid #d9a441" } : {}),
               ...(item.verified === false && item.place_verification_status !== "needs_review" ? { opacity: 0.55 } : {}),
               ...(isResolvedPerson ? { background: "#e3edf9", border: "1px solid #7ba3d0" } : {}),
             }}
-            title={personTitle
+            title={historicalTitle ?? personTitle
               ?? sourceTitleOf(item)
               ?? item.organization_description
               ?? facilityTitle
@@ -269,7 +276,8 @@ export const EntityChips = ({
                 Propozycja lokalizacji: {item.proposed_display_name}
               </span>}
             </span>}
-            {item.verified === true && <span style={{ color: "#2e7d43" }}> ✓</span>}
+            {item.verified === true && !item.historical && <span style={{ color: "#2e7d43" }}> ✓</span>}
+            {item.historical && <span style={{ color: "#a86a0a" }}> 🕰️</span>}
             {isResolvedPerson && (
               <span style={{ color: item.confidence === "manual_review" ? "#b45309" : "#1d5ca8" }}>
                 {" "}{item.confidence === "manual_review" ? "?" : "✓"}
