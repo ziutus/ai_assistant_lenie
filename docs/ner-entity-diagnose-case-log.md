@@ -414,3 +414,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — `backend/library/place_verification.py` ustawia `place_verification_status='rejected'` i `place_review_reason='context_not_place'` w obu ścieżkach dla `not_place/high`. Zachowuje wiersz, audyt, ochronę `confirmed`/`source='manual'` i osobną reklasyfikację `organization`. `place_needs_review()` blokuje dalsze tagowanie; API zwraca `verified=false`, panel przygasza encję, mapa ją pomija. Dane dokumentu #10756: 7 wierszy z werdyktem `not_place/high` (id 14971, 14974, 14990, 14991, 14994, 14998, 15002) ustawiono SQL-em na `rejected`/`context_not_place` (stan identyczny z tym, który nowy kod ustawia sam); endpoint `reject_place` nie nadawał się, bo wymaga statusu `needs_review`.
 - **Test regresyjny:** `backend/tests/unit/test_place_verification.py::test_context_not_place_rejects_entity` (obie ścieżki, ponowne uruchomienie, organizacja i niska pewność) oraz `test_context_not_place_preserves_human_decision` (decyzje człowieka).
 - **Status:** żywy bug naprawiony w kodzie.
+
+### E020 — „Al-muslimi" jako osoba i miejsce naraz; brak wglądu w decyzje automatyczne (dok. #10756, 2026-10-12)
+
+- **Typ encji:** geogName/placeName obok persName
+- **Kategoria:** T14 — werdykt klasyfikatora kontekstu bez skutku widocznego dla użytkownika.
+- **Zdanie źródłowe:** wzmianki o badaczu Farei al-Muslimim; ten sam token spaCy oznaczył raz jako `persName`, raz jako `geogName`.
+- **Objaw:** w panelu encji „Al-muslimi" widniało jednocześnie jako osoba (poprawnie, Wikidata Q15991776) i jako przygaszone miejsce (`rejected` po poprawce E019).
+- **Przyczyna źródłowa:** NER zapisuje etykiety jako osobne wiersze `(entity_type, lemma)`, więc podwójne oznaczenie jest możliwe; klasyfikatory kontekstu rozstrzygają je poprawnie (`person` oraz `not_place/high`), ale tabela `ner_context_classifications` nie była nigdzie wystawiona, więc nie dało się ocenić tych decyzji bez SQL-a, a odrzucone miejsca zostawały widoczne.
+- **Poprawka:** kod — read-only `GET /ner_context_decisions` (`library/ner_decisions.py`), strona `/ner-decisions` z filtrami w URL i paginacją, odrzucone miejsca ukryte w panelu encji i w czytniku, a w panelu zwijany wiersz „Odrzucone miejsca (N)" z uzasadnieniem klasyfikatora.
+- **Test regresyjny:** `backend/tests/unit/test_ner_decisions.py`, `rejectedPlaces.test.tsx`, `nerDecisions.test.tsx`.
+- **Status:** żywy bug naprawiony w kodzie (funkcja przeglądowa); brak zmian w danych.
