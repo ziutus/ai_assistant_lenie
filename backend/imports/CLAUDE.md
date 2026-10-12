@@ -544,6 +544,18 @@ python imports/backfill_obsidian_content_groups.py --apply --limit 20
 - `--limit N` — max number of documents to process
 - `--force` — also re-enqueue documents that already have a content group membership
 
+### `create_country_organizations.py`
+
+Creates or promotes one registry organization per country of `library/country_gazetteer.py` (`organization_type='country'`, a `based_in` tie to the `kraj-<slug>`, `primary_note_document_id` pointing at the imported `…/Kraje/…/<Country>.md` note when exactly one file name matches — case- and diacritic-insensitive). An existing organization is promoted only when its canonical name matches; a match through an alias alone (an NER lemma such as "Male" with alias "Mali"), another organization type or several candidates are reported as `CONFLICT` and left untouched for a human to rename/merge first. No aliases are generated and `description` stays empty (the note holds the text). Planning is pure (`library/country_organizations.py`, tests: `tests/unit/test_country_organizations.py`); the report lists countries whose note is missing or ambiguous.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, writes only with `--apply`.
+
+```bash
+cd backend
+python imports/create_country_organizations.py            # dry-run (default): counts + PROMOTE / CONFLICT / NOTE lines
+python imports/create_country_organizations.py --apply
+```
+
 ### `youtube_batch_analyze.py`
 
 Bielik LLM chunk analysis of an **existing** document (by `--doc_id`): chunk splitting, speaker extraction/labeling, two-pass rewrite + summarize, topic grouping, synthesis, DB persistence. Moved from `test_code/` — the pipeline lives in `library/document_analysis_service.py` + `library/chunk_llm_analysis.py` (shared with Flask `chunk_review_routes.py`); file exports in `library/analysis_exports.py`. For a brand-new video, use `youtube_add.py <URL> --analyze` instead.
