@@ -2,7 +2,18 @@ import React from "react";
 import axios from "axios";
 import { NavLink, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
-import { ageLabel, difficultyLabel, ProjectCardSummary, reviewLabel } from "./projectCards";
+import { ageLabel, difficultyLabel, kindLabel, ProjectCardSummary, reviewLabel } from "./projectCards";
+
+interface CardSection {
+  role: string;
+  title: string;
+  format: "text" | "list" | "steps";
+  content: string | string[];
+  hidden: boolean;
+}
+
+// Sections shown before the materials/steps; everything else follows the steps.
+const LEAD_ROLES = ["puzzle", "how_to_play", "hint"];
 
 // One project card (GET/PATCH /project_cards/:id): the steps to follow with the
 // child, plus a small review form (age, difficulty, status, notes) so a card
@@ -24,6 +35,7 @@ interface ProjectCardDetail extends ProjectCardSummary {
   import_flags: string[];
   illustration_svg: string | null;
   has_source_pdf: boolean;
+  sections: CardSection[];
 }
 
 const sectionTitle: React.CSSProperties = { marginTop: 18, marginBottom: 6 };
@@ -44,6 +56,8 @@ const ProjectCard = () => {
   const [isSaving, setIsSaving] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
+  // Spoiler sections (puzzle answers) stay hidden until the reader asks for them.
+  const [revealed, setRevealed] = React.useState<Record<number, boolean>>({});
   const [form, setForm] = React.useState({ age_min: "", age_max: "", difficulty: "", review_status: "", review_notes: "" });
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
@@ -161,6 +175,37 @@ const ProjectCard = () => {
   });
   const fieldStyle: React.CSSProperties = { padding: "4px 8px" };
 
+  const indexed = (card.sections ?? []).map((section, index) => ({ section, index }));
+  const leadSections = indexed.filter(({ section }) => LEAD_ROLES.includes(section.role));
+  const restSections = indexed.filter(({ section }) => !LEAD_ROLES.includes(section.role));
+  const renderSection = ({ section, index }: { section: CardSection; index: number }) => {
+    const isHidden = section.hidden && !revealed[index];
+    const emphasis = section.role === "key_tip" || section.role === "tip";
+    return (
+      <div
+        key={index}
+        style={emphasis ? { background: "#fffbeb", borderLeft: "4px solid #f59e0b", padding: "4px 12px", margin: "12px 0" } : undefined}
+      >
+        <h3 style={sectionTitle}>{section.title}</h3>
+        {isHidden ? (
+          <button className={"button no-print"} type="button" onClick={() => setRevealed({ ...revealed, [index]: true })}>
+            Pokaż (spoiler)
+          </button>
+        ) : section.format === "text" ? (
+          <p style={{ margin: 0, whiteSpace: "pre-line" }}>{section.content as string}</p>
+        ) : section.format === "steps" ? (
+          <ol style={{ margin: 0, paddingLeft: 24 }}>
+            {(section.content as string[]).map((item, itemIndex) => (
+              <li key={itemIndex} style={{ marginBottom: 4 }}>{item}</li>
+            ))}
+          </ol>
+        ) : (
+          <BulletList items={section.content as string[]} />
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ maxWidth: 820 }}>
       <p style={{ marginBottom: 6 }}>
@@ -170,6 +215,7 @@ const ProjectCard = () => {
         <span style={{ color: "#667" }}>№ {String(card.number).padStart(3, "0")}</span> {card.title}
       </h2>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        {card.kind !== "project" && <span style={chip("#fdf2f8")}>{kindLabel[card.kind] ?? card.kind}</span>}
         <span style={chip("#eef2ff")}>{ageLabel(card.age_min, card.age_max)} lat</span>
         <span style={chip("#f1f5f9")}>{difficultyLabel(card.difficulty)}</span>
         {card.time_min !== null && <span style={chip("#f1f5f9")}>{card.time_min} min</span>}
@@ -226,12 +272,18 @@ const ProjectCard = () => {
         </div>
       )}
 
-      <h3 style={sectionTitle}>Materiały</h3>
-      <ul style={{ margin: 0, paddingLeft: 20 }}>
-        {card.materials.map((material, index) => (
-          <li key={index}>{[material.qty, material.name].filter(Boolean).join(" × ")}</li>
-        ))}
-      </ul>
+      {leadSections.map(renderSection)}
+
+      {card.materials.length > 0 && (
+        <>
+          <h3 style={sectionTitle}>Materiały</h3>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {card.materials.map((material, index) => (
+              <li key={index}>{[material.qty, material.name].filter(Boolean).join(" × ")}</li>
+            ))}
+          </ul>
+        </>
+      )}
       {card.tools.length > 0 && (
         <>
           <h3 style={sectionTitle}>Narzędzia</h3>
@@ -239,12 +291,18 @@ const ProjectCard = () => {
         </>
       )}
 
-      <h3 style={sectionTitle}>Kroki</h3>
-      <ol style={{ margin: 0, paddingLeft: 24 }}>
-        {card.steps.map((step, index) => (
-          <li key={index} style={{ marginBottom: 4 }}>{step}</li>
-        ))}
-      </ol>
+      {card.steps.length > 0 && (
+        <>
+          <h3 style={sectionTitle}>Kroki</h3>
+          <ol style={{ margin: 0, paddingLeft: 24 }}>
+            {card.steps.map((step, index) => (
+              <li key={index} style={{ marginBottom: 4 }}>{step}</li>
+            ))}
+          </ol>
+        </>
+      )}
+
+      {restSections.map(renderSection)}
 
       {card.troubleshooting.length > 0 && (
         <>

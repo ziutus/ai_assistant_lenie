@@ -40,10 +40,20 @@ GROUP_LABELS = {
 _TEXT_FIELDS = ("title", "topic", "group_name", "tagline", "description", "mechanism", "how_it_works", "safety",
                 "review_notes")
 _INT_RANGES = {"age_min": (0, 18), "age_max": (0, 18), "time_min": (0, 1440), "time_max": (0, 1440),
-               "difficulty": (1, 3)}
+               "difficulty": (1, 3), "source_page": (1, 5000)}
 _STRING_LIST_FIELDS = ("tools", "variants", "what_child_does", "what_adult_does", "safety_checklist", "steps")
 EDITABLE_FIELDS = (*_TEXT_FIELDS, *_INT_RANGES, "needs_adult", *_STRING_LIST_FIELDS, "materials",
-                   "troubleshooting", "review_status", "illustration_svg")
+                   "troubleshooting", "review_status", "illustration_svg", "kind", "sections")
+
+# What a card is: a hands-on build, a kitchen-science experiment, a toddler craft or a brain teaser.
+KINDS = ("project", "experiment", "craft", "puzzle")
+# Roles of the free-form ``sections`` (everything a card has beyond the dedicated fields). Unknown
+# roles from a parser are stored as "other"; the UI hides ``hidden`` sections (puzzle answers).
+SECTION_ROLES = ("explanation", "puzzle", "analysis", "hint", "solution", "answer", "tip", "key_tip",
+                 "how_to_play", "other")
+SECTION_FORMATS = ("text", "list", "steps")
+MAX_SECTIONS = 30
+MAX_SECTION_CHARS = 20_000
 
 MAX_SVG_BYTES = 100_000
 # The SVG is rendered by the browser through <img src="data:..."> (scripts never run there),
@@ -125,6 +135,37 @@ def _troubleshooting(value) -> list[dict]:
     return out
 
 
+def _sections(value) -> list[dict]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > MAX_SECTIONS:
+        raise ProjectCardError(f"sections must be a list of at most {MAX_SECTIONS} objects")
+    out = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ProjectCardError("each section must be an object")
+        title = _clean_text(item.get("title"))
+        if not title:
+            raise ProjectCardError("each section needs a title")
+        fmt = item.get("format", "text")
+        if fmt not in SECTION_FORMATS:
+            raise ProjectCardError(f"section format must be one of {', '.join(SECTION_FORMATS)}")
+        content = item.get("content")
+        if fmt == "text":
+            content = _clean_text(content) or ""
+        else:
+            content = _string_list(content, "section content")
+        if len(content if isinstance(content, str) else " ".join(content)) > MAX_SECTION_CHARS:
+            raise ProjectCardError(f"section content is longer than {MAX_SECTION_CHARS} characters")
+        role = item.get("role")
+        hidden = item.get("hidden", False)
+        if not isinstance(hidden, bool):
+            raise ProjectCardError("section hidden must be a boolean")
+        out.append({"role": role if role in SECTION_ROLES else "other", "title": title, "format": fmt,
+                    "content": content, "hidden": hidden})
+    return out
+
+
 def _svg(value) -> str | None:
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
@@ -171,6 +212,12 @@ def validate_fields(data: dict) -> dict:
             out[key] = _troubleshooting(value)
         elif key == "illustration_svg":
             out[key] = _svg(value)
+        elif key == "sections":
+            out[key] = _sections(value)
+        elif key == "kind":
+            if value not in KINDS:
+                raise ProjectCardError(f"kind must be one of {', '.join(KINDS)}")
+            out[key] = value
         elif key == "review_status":
             if value not in REVIEW_STATUSES:
                 raise ProjectCardError(f"review_status must be one of {', '.join(REVIEW_STATUSES)}")
@@ -193,17 +240,24 @@ def normalize_import_card(raw: dict, series: str = DEFAULT_SERIES) -> dict:
     except (KeyError, TypeError, ValueError) as exc:
         raise ProjectCardError("card needs an integer 'number'") from exc
     fields = {key: raw[key] for key in EDITABLE_FIELDS if key in raw}
-    if "group_name" not in fields and raw.get("group_raw"):
-        fields["group_name"] = group_label(raw["group_raw"])
+    if "group_name" not in fields:
+        # Robotyka cards carry a letter-spaced footer name, the card-book family a readable chapter title.
+        group = group_label(raw["group_raw"]) if raw.get("group_raw") else _clean_text(raw.get("chapter"))
+        if group:
+            fields["group_name"] = group
+    fields.setdefault("kind", "project")
     fields.setdefault("review_status", "needs_review" if raw.get("flags") else "imported")
     cleaned = validate_fields(fields)
     if not cleaned.get("title"):
         raise ProjectCardError(f"card {number} has no title")
+    flags = [str(flag) for flag in raw.get("flags", [])]
+    if raw.get("age_source") == "cover":
+        flags.append("age_from_cover")  # the printed age belongs to the whole book, not to this card
     cleaned.update({
         "series": _clean_text(raw.get("series")) or series,
         "number": number,
-        "import_flags": [str(flag) for flag in raw.get("flags", [])],
-        "source_file": _clean_text(raw.get("file")),
+        "import_flags": flags,
+        "source_file": _clean_text(raw.get("source_file")) or _clean_text(raw.get("file")),
     })
     return cleaned
 
@@ -277,11 +331,17 @@ def list_cards(
     query: str | None = None,
     review_status: str | None = None,
     needs_adult: bool | None = None,
+    kind: str | None = None,
+    series: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[ProjectCard], int]:
     """Return one page of matching cards and the total number of matches."""
     stmt = select(ProjectCard)
+    if kind:
+        stmt = stmt.where(ProjectCard.kind == kind)
+    if series:
+        stmt = stmt.where(ProjectCard.series == series)
     if age is not None:
         stmt = stmt.where(
             ProjectCard.age_min.is_not(None),
@@ -309,21 +369,37 @@ def list_cards(
     return list(session.execute(page).scalars()), total
 
 
-def group_counts(session) -> list[dict]:
+def group_counts(session, *, series: str | None = None) -> list[dict]:
+    stmt = select(ProjectCard.group_name, func.count()).group_by(ProjectCard.group_name)
+    if series:
+        stmt = stmt.where(ProjectCard.series == series)
+    return [{"name": name, "count": count} for name, count in session.execute(stmt.order_by(ProjectCard.group_name))
+            if name]
+
+
+def series_counts(session) -> list[dict]:
+    """Every series with its kind and card count, for the list filters."""
     rows = session.execute(
-        select(ProjectCard.group_name, func.count()).group_by(ProjectCard.group_name).order_by(ProjectCard.group_name)
+        select(ProjectCard.series, ProjectCard.kind, func.count())
+        .group_by(ProjectCard.series, ProjectCard.kind).order_by(ProjectCard.series)
     ).all()
-    return [{"name": name, "count": count} for name, count in rows if name]
+    return [{"name": name, "kind": kind, "count": count} for name, kind, count in rows]
+
+
+def series_pdf_key(series: str) -> str:
+    """Object-storage key of the one PDF a whole series was printed in (card-book families)."""
+    slug = re.sub(r"[^a-z0-9]+", "-", unidecode(series).lower()).strip("-") or "series"
+    return f"project_cards/{slug}/book.pdf"
 
 
 _SUMMARY_FIELDS = (
-    "id", "series", "number", "title", "topic", "group_name", "tagline", "mechanism", "age_min", "age_max",
-    "time_min", "time_max", "difficulty", "needs_adult", "review_status", "source_file",
+    "id", "series", "number", "kind", "title", "topic", "group_name", "tagline", "mechanism", "age_min", "age_max",
+    "time_min", "time_max", "difficulty", "needs_adult", "review_status", "source_file", "source_page",
 )
 _DETAIL_FIELDS = (
     *_SUMMARY_FIELDS, "description", "how_it_works", "materials", "tools", "steps", "troubleshooting", "variants",
     "safety", "what_child_does", "what_adult_does", "safety_checklist", "review_notes", "import_flags",
-    "illustration_svg",
+    "illustration_svg", "sections",
 )
 
 

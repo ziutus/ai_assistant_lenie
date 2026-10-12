@@ -2603,6 +2603,7 @@ class ProjectCard(Base):
         CheckConstraint("age_min IS NULL OR age_max IS NULL OR age_min <= age_max", name="ck_project_cards_age_range"),
         Index("idx_project_cards_age", "age_min", "age_max"),
         Index("idx_project_cards_group", "group_name"),
+        Index("idx_project_cards_kind", "kind"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -2632,6 +2633,9 @@ class ProjectCard(Base):
     safety_checklist: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     illustration_svg: Mapped[str | None] = mapped_column(Text)
     source_pdf_key: Mapped[str | None] = mapped_column(Text)
+    source_page: Mapped[int | None] = mapped_column(SmallInteger)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default="project")
+    sections: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     review_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="imported")
     review_notes: Mapped[str | None] = mapped_column(Text)
     import_flags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))

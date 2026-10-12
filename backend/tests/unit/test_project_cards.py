@@ -316,6 +316,129 @@ def test_has_source_pdf_flag():
     assert card_to_dict(_card(), detail=True)["has_source_pdf"] is False
 
 
+def _section(**overrides):
+    section = {"role": "explanation", "title": "Dlaczego to działa", "format": "text", "content": "Gęstość.",
+               "hidden": False}
+    section.update(overrides)
+    return section
+
+
+def test_sections_are_validated_and_unknown_roles_become_other():
+    cleaned = validate_fields({"sections": [
+        _section(),
+        _section(role="solution", format="steps", content=["Krok", " Drugi "], hidden=True),
+        _section(role="coś nowego", title="Inne"),
+    ]})["sections"]
+    assert cleaned[1]["content"] == ["Krok", "Drugi"] and cleaned[1]["hidden"] is True
+    assert cleaned[2]["role"] == "other"
+    assert validate_fields({"sections": None})["sections"] == []
+
+
+@pytest.mark.parametrize("bad", [
+    "nie lista",
+    [{"title": ""}],
+    [_section(format="html")],
+    [_section(hidden="tak")],
+    [_section(format="list", content="to nie lista")],
+    [_section(content="x" * 20_001)],
+    [_section()] * 31,
+    ["nie obiekt"],
+])
+def test_sections_reject_malformed_input(bad):
+    with pytest.raises(ProjectCardError):
+        validate_fields({"sections": bad})
+
+
+def test_kind_is_validated():
+    assert validate_fields({"kind": "puzzle"})["kind"] == "puzzle"
+    with pytest.raises(ProjectCardError):
+        validate_fields({"kind": "game"})
+
+
+def test_normalize_import_card_for_card_book_family():
+    card = normalize_import_card({
+        "number": "007", "title": "Magia Pływającego Jajka", "series": "Domowe Eksperymenty Naukowe",
+        "kind": "experiment", "chapter": "Woda i ciecze", "age_min": 6, "age_max": 12, "age_source": "cover",
+        "time_min": 3, "time_max": 3, "source_file": "pl_200.pdf", "source_page": 9, "flags": [],
+        "sections": [_section()], "time_raw": "3 MIN",
+    })
+    assert card["kind"] == "experiment" and card["group_name"] == "Woda i ciecze"
+    assert card["source_file"] == "pl_200.pdf" and card["source_page"] == 9 and card["number"] == 7
+    assert card["import_flags"] == ["age_from_cover"] and card["review_status"] == "imported"
+    assert card["sections"][0]["role"] == "explanation"
+
+
+def test_normalize_import_card_defaults_kind_to_project():
+    assert normalize_import_card(_raw())["kind"] == "project"
+
+
+def test_card_to_dict_exposes_kind_sections_and_page():
+    card = _card(kind="puzzle", sections=[_section()], source_page=12)
+    assert card_to_dict(card)["kind"] == "puzzle" and card_to_dict(card)["source_page"] == 12
+    assert "sections" not in card_to_dict(card)
+    assert card_to_dict(card, detail=True)["sections"][0]["title"] == "Dlaczego to działa"
+
+
+def test_list_filters_by_kind_and_series_and_returns_facets(client):
+    with patch.object(routes, "get_scoped_session", return_value=MagicMock()), \
+            patch.object(routes, "list_cards", return_value=([_card()], 1)) as list_cards, \
+            patch.object(routes, "group_counts", return_value=[]), \
+            patch.object(routes, "series_counts", return_value=[{"name": "S", "kind": "puzzle", "count": 1}]):
+        response = client.get("/project_cards?kind=puzzle&series=S")
+        bad = client.get("/project_cards?kind=game")
+    body = response.get_json()
+    assert list_cards.call_args.kwargs["kind"] == "puzzle" and list_cards.call_args.kwargs["series"] == "S"
+    assert body["series"][0]["kind"] == "puzzle" and "puzzle" in body["kinds"]
+    assert bad.status_code == 400
+
+
+def test_series_pdf_key():
+    from library.project_cards import series_pdf_key
+
+    assert series_pdf_key("Laboratorium Logiki") == "project_cards/laboratorium-logiki/book.pdf"
+
+
+def _post_series_pdf(client, session, storage, *, series="Laboratorium Logiki", content=b"%PDF-1.7 book"):
+    import io
+
+    data = {"file": (io.BytesIO(content), "book.pdf")}
+    if series is not None:
+        data["series"] = series
+    with patch.object(routes, "get_scoped_session", return_value=session), \
+            patch.object(routes, "_storage", return_value=storage):
+        return client.post("/project_cards/series_pdf", data=data, content_type="multipart/form-data")
+
+
+def test_series_pdf_is_stored_once_and_linked_to_every_card(client):
+    cards = [_card(id=1, number=1), _card(id=2, number=2)]
+    session, storage = MagicMock(), _FakeStorage()
+    session.query.return_value.filter.return_value.all.return_value = cards
+    response = _post_series_pdf(client, session, storage)
+    assert response.get_json()["cards"] == 2
+    assert list(storage.objects) == ["project_cards/laboratorium-logiki/book.pdf"]
+    assert all(card.source_pdf_key == "project_cards/laboratorium-logiki/book.pdf" for card in cards)
+    session.commit.assert_called_once()
+
+
+def test_series_pdf_rejects_bad_requests(client):
+    session = MagicMock()
+    session.query.return_value.filter.return_value.all.return_value = []
+    assert _post_series_pdf(client, session, _FakeStorage(), series=None).status_code == 400
+    assert _post_series_pdf(client, session, _FakeStorage(), content=b"GIF89a").status_code == 400
+    assert _post_series_pdf(client, session, _FakeStorage()).status_code == 404
+
+
+def test_source_pdf_link_opens_the_card_page_for_series_pdfs(client):
+    session, storage = MagicMock(), _FakeStorage()
+    session.get.return_value = _card(source_pdf_key="project_cards/s/book.pdf", source_page=42)
+    with patch.object(routes, "get_scoped_session", return_value=session), \
+            patch.object(routes, "_storage", return_value=storage):
+        book = client.get("/project_cards/1/source_pdf").get_json()["url"]
+        session.get.return_value = _card(source_pdf_key="project_cards/s/001.pdf", source_page=42)
+        single = client.get("/project_cards/1/source_pdf").get_json()["url"]
+    assert book == "https://minio.test/signed#page=42" and single == "https://minio.test/signed"
+
+
 def test_illustration_svg_rejects_oversized_document():
     with pytest.raises(ProjectCardError, match="larger"):
         validate_fields({"illustration_svg": "<svg>" + "x" * 100_001 + "</svg>"})
