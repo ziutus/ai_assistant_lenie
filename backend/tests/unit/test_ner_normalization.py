@@ -1,5 +1,8 @@
 import logging
 
+import pytest
+from unidecode import unidecode
+
 from library import ner_normalization
 from library.ner_normalization import (
     normalize_ner_text,
@@ -12,6 +15,7 @@ def test_missing_rules_file_falls_back_to_empty_rules(monkeypatch, tmp_path, cap
     missing_path = tmp_path / "missing-ner-normalization.json"
     monkeypatch.setattr(ner_normalization, "RULES_PATH", missing_path)
     ner_normalization.load_ner_normalization_rules.cache_clear()
+    ner_normalization.load_demonym_patterns.cache_clear()
 
     try:
         with caplog.at_level(logging.WARNING, logger=ner_normalization.__name__):
@@ -22,6 +26,97 @@ def test_missing_rules_file_falls_back_to_empty_rules(monkeypatch, tmp_path, cap
         assert not ner_normalization.is_rejected_surface_lemma_pair("Dana", "Dan", "PROPN")
     finally:
         ner_normalization.load_ner_normalization_rules.cache_clear()
+        ner_normalization.load_demonym_patterns.cache_clear()
+
+
+# Explicit paradigms keep the expectations independent of the regex endings.
+DEMONYM_FORMS = [
+    ("Izrael", "Izraelczyk Izraelczyka Izraelczykowi Izraelczykiem Izraelczyku "
+     "Izraelczycy Izraelczyków Izraelczykom Izraelczykami Izraelczykach "
+     "Izraelka Izraelki Izraelce Izraelkę Izraelką Izraelko Izraelek Izraelkom Izraelkami Izraelkach"),
+    ("Stany Zjednoczone", "Amerykanin Amerykanina Amerykaninowi Amerykaninem Amerykaninie "
+     "Amerykanie Amerykanów Amerykanom Amerykanami Amerykanach "
+     "Amerykanka Amerykanki Amerykance Amerykankę Amerykanką Amerykanko "
+     "Amerykanek Amerykankom Amerykankami Amerykankach"),
+    ("Iran", "Irańczyk Irańczyka Irańczykowi Irańczykiem Irańczyku "
+     "Irańczycy Irańczyków Irańczykom Irańczykami Irańczykach "
+     "Iranka Iranki Irance Irankę Iranką Iranko Iranek Irankom Irankami Irankach"),
+    ("Rosja", "Rosjanin Rosjanina Rosjaninowi Rosjaninem Rosjaninie "
+     "Rosjanie Rosjan Rosjanom Rosjanami Rosjanach "
+     "Rosjanka Rosjanki Rosjance Rosjankę Rosjanką Rosjanko Rosjanek Rosjankom Rosjankami Rosjankach"),
+    ("Ukraina", "Ukrainiec Ukraińca Ukraińcowi Ukraińcem Ukraińcu "
+     "Ukraińcy Ukraińców Ukraińcom Ukraińcami Ukraińcach "
+     "Ukrainka Ukrainki Ukraince Ukrainkę Ukrainką Ukrainko Ukrainek Ukrainkom Ukrainkami Ukrainkach"),
+    ("Chiny", "Chińczyk Chińczyka Chińczykowi Chińczykiem Chińczyku "
+     "Chińczycy Chińczyków Chińczykom Chińczykami Chińczykach "
+     "Chinka Chinki Chince Chinkę Chinką Chinko Chinek Chinkom Chinkami Chinkach"),
+    ("Jemen", "Jemeńczyk Jemeńczyka Jemeńczykowi Jemeńczykiem Jemeńczyku "
+     "Jemeńczycy Jemeńczyków Jemeńczykom Jemeńczykami Jemeńczykach "
+     "Jemenka Jemenki Jemence Jemenkę Jemenką Jemenko Jemenek Jemenkom Jemenkami Jemenkach"),
+    ("Arabia Saudyjska", "Saudyjczyk Saudyjczyka Saudyjczykowi Saudyjczykiem Saudyjczyku "
+     "Saudyjczycy Saudyjczyków Saudyjczykom Saudyjczykami Saudyjczykach "
+     "Saudyjka Saudyjki Saudyjce Saudyjkę Saudyjką Saudyjko Saudyjek Saudyjkom Saudyjkami Saudyjkach"),
+    ("Syria", "Syryjczyk Syryjczyka Syryjczykowi Syryjczykiem Syryjczyku "
+     "Syryjczycy Syryjczyków Syryjczykom Syryjczykami Syryjczykach "
+     "Syryjka Syryjki Syryjce Syryjkę Syryjką Syryjko Syryjek Syryjkom Syryjkami Syryjkach"),
+    ("Liban", "Libańczyk Libańczyka Libańczykowi Libańczykiem Libańczyku "
+     "Libańczycy Libańczyków Libańczykom Libańczykami Libańczykach "
+     "Libanka Libanki Libance Libankę Libanką Libanko Libanek Libankom Libankami Libankach"),
+    ("Polska", "Polak Polaka Polakowi Polakiem Polaku Polacy Polaków Polakom Polakami Polakach "
+     "Polka Polki Polce Polkę Polką Polko Polek Polkom Polkami Polkach"),
+    ("Francja", "Francuz Francuza Francuzowi Francuzem Francuzie Francuzi Francuzów "
+     "Francuzom Francuzami Francuzach Francuzka Francuzki Francuzce Francuzkę Francuzką Francuzko "
+     "Francuzek Francuzkom Francuzkami Francuzkach"),
+    ("Wielka Brytania", "Brytyjczyk Brytyjczyka Brytyjczykowi Brytyjczykiem Brytyjczyku "
+     "Brytyjczycy Brytyjczyków Brytyjczykom Brytyjczykami Brytyjczykach "
+     "Brytyjka Brytyjki Brytyjce Brytyjkę Brytyjką Brytyjko Brytyjek Brytyjkom Brytyjkami Brytyjkach"),
+]
+
+
+@pytest.mark.parametrize("country,surface", [
+    (country, surface) for country, forms in DEMONYM_FORMS for surface in forms.split()
+])
+def test_demonym_case_forms(country, surface):
+    assert ner_normalization.canonical_country_for_demonym_pattern(surface) == country
+    assert ner_normalization.canonical_country_for_surface(surface) == country
+    assert ner_normalization.canonical_country_for_demonym_pattern(unidecode(surface).upper()) == country
+
+
+@pytest.mark.parametrize("surface", [
+    "Polkowice", "Ameryka", "Ameryce", "Niemcy", "Niemiec", "Arabowie", "Kurdowie",
+    "Palestyńczycy", "Turcy", "Włosi", "Izraelski", "izraelski", "Irankowie", "Rosjanów",
+    "Izraelczykówka", "przedIzraelczyk", "Polka extra", "Polka\n", "", " ", None,
+])
+def test_demonym_patterns_do_not_match_unlisted_words(surface):
+    assert ner_normalization.canonical_country_for_demonym_pattern(surface) is None
+
+
+@pytest.mark.parametrize("surface,country", [
+    ("Niemcy", "Niemcy"), ("Niemiec", "Niemcy"), ("Izraelski", "Izrael"),
+    ("Turcy", "Turcja"), ("Włosi", "Włochy"), ("Węgrzy", "Węgry"),
+])
+def test_existing_country_fallback_and_exact_demonyms_remain(surface, country):
+    assert ner_normalization.canonical_country_for_surface(surface) == country
+
+
+def test_invalid_demonym_regex_is_skipped_and_patterns_are_cached(monkeypatch, caplog):
+    calls = []
+
+    def rules():
+        calls.append(True)
+        return {"demonym_patterns": {"Izrael": ["[", "izraelczyk"]}}
+
+    monkeypatch.setattr(ner_normalization, "load_ner_normalization_rules", rules)
+    ner_normalization.load_demonym_patterns.cache_clear()
+    try:
+        with caplog.at_level(logging.WARNING, logger=ner_normalization.__name__):
+            assert ner_normalization.canonical_country_for_demonym_pattern("Izraelczyk") == "Izrael"
+            assert ner_normalization.canonical_country_for_demonym_pattern("Izraelczyk") == "Izrael"
+        assert calls == [True]
+        assert "Invalid demonym pattern for Izrael" in caplog.text
+        assert len(caplog.records) == 1
+    finally:
+        ner_normalization.load_demonym_patterns.cache_clear()
 
 
 class TestStripMarkdownEmphasis:

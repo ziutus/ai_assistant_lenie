@@ -262,6 +262,64 @@ class TestAggregateEntitiesDetailed:
 
 
 class TestAggregateNormalization:
+    def test_doc_10756_demonyms_merge_with_country_mentions(self):
+        # Real sentence from doc #10756; raw NER retained the inflected lemmas.
+        sentence = (
+            "Iran ma wiele obciążeń, więc chce odwrócić uwagę Amerykanów i Izraelczyków, "
+            "tak aby linia frontu przebiegała w Sanie, a nie w Teheranie."
+        )
+        entities = [
+            {"text": "Amerykanów", "label": "placeName", "lemma": "Amerykanów", "pos": "NOUN"},
+            {"text": "Izraelczyków", "label": "placeName", "lemma": "Izraelczyków", "pos": "NOUN"},
+        ]
+        assert all(entity["text"] in sentence for entity in entities)
+        entities += [
+            {"text": "Stany Zjednoczone", "label": "placeName", "lemma": "Stany Zjednoczone", "pos": "PROPN"},
+            {"text": "Izrael", "label": "placeName", "lemma": "Izrael", "pos": "PROPN"},
+        ]
+        assert aggregate_entities(entities) == {
+            ("placeName", "Stany Zjednoczone"): 2,
+            ("placeName", "Izrael"): 2,
+        }
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Stany Zjednoczone"): {
+                "count": 2,
+                "variants": ["Amerykanów", "Stany Zjednoczone"],
+                "raw_lemmas": ["Amerykanów", "Stany Zjednoczone"],
+            },
+            ("placeName", "Izrael"): {
+                "count": 2,
+                "variants": ["Izraelczyków", "Izrael"],
+                "raw_lemmas": ["Izraelczyków", "Izrael"],
+            },
+        }
+
+    @pytest.mark.parametrize("label,expected_label", [
+        ("placeName", "placeName"), ("geogName", "geogName"), ("orgName", "placeName"),
+    ])
+    @pytest.mark.parametrize("pos", ["NOUN", "PROPN"])
+    def test_demonym_patterns_apply_to_country_check_labels(self, label, expected_label, pos):
+        entities = [{"text": "Amerykanów", "label": label, "lemma": "Amerykanów", "pos": pos}]
+        assert aggregate_entities(entities) == {(expected_label, "Stany Zjednoczone"): 1}
+
+    @pytest.mark.parametrize("surface,pos", [
+        ("Amerykanów", "ADJ"), ("Amerykanów", "VERB"), ("Izraelski", "ADJ"),
+        ("amerykanów", "NOUN"), ("izraelski", "ADJ"),
+    ])
+    def test_demonym_patterns_preserve_pos_and_case_filters(self, surface, pos):
+        entities = [{"text": surface, "label": "placeName", "lemma": surface, "pos": pos}]
+        assert aggregate_entities(entities) == {}
+
+    def test_demonym_pattern_does_not_canonicalize_person_label(self):
+        entities = [{"text": "Amerykanów", "label": "persName", "lemma": "Amerykanów", "pos": "NOUN"}]
+        assert aggregate_entities(entities) == {("persName", "Amerykanów"): 1}
+
+    def test_exact_demonym_keeps_surface_variant(self):
+        entities = [{"text": "Turcy", "label": "placeName", "lemma": "Turk", "pos": "NOUN"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Turcja"): {"count": 1, "variants": ["Turcy"], "raw_lemmas": ["Turk"]},
+        }
+
     def test_lowercase_legacy_country_forms_are_rejected(self):
         entities = [
             {"text": "Polska", "label": "placeName", "lemma": "Polska"},
