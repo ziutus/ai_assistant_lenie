@@ -13,6 +13,60 @@
     "włosi": "Włochy",
     "wlosi": "Włochy"
   },
+  "demonym_patterns": {
+    "Izrael": [
+      "izrael(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "izrael(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Stany Zjednoczone": [
+      "amerykan(?:in|ina|inowi|inem|inie|ie|ow|om|ami|ach)",
+      "amerykan(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Iran": [
+      "iran(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "iran(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Rosja": [
+      "rosjan(?:in|ina|inowi|inem|inie|ie|om|ami|ach|)",
+      "rosjan(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Ukraina": [
+      "ukrain(?:iec|ca|cowi|cem|cu|cy|cow|com|cami|cach)",
+      "ukrain(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Chiny": [
+      "chin(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "chin(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Jemen": [
+      "jemen(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "jemen(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Arabia Saudyjska": [
+      "saudyj(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "saudyj(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Syria": [
+      "syryj(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "syryj(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Liban": [
+      "liban(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "liban(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Polska": [
+      "pol(?:ak|aka|akowi|akiem|aku|acy|akow|akom|akami|akach)",
+      "pol(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Francja": [
+      "francuz(?:a|owi|em|ie|i|ow|om|ami|ach|)",
+      "francuz(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
+    "Wielka Brytania": [
+      "brytyj(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "brytyj(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ]
+  },
   "reject_surface_lemma_pairs": [
     {
       "surface": "Dana",

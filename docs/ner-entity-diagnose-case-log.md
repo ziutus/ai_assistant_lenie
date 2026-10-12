@@ -176,6 +176,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T11 | Stare dane pod już naprawionym mechanizmem | Rekord powstał przed wdrożeniem poprawki; obecny kod poprawnie obsługuje ten kształt danych | Organization 485 (ECFR) | E013 |
 | T12 | Kolizja kanonikalizacji w transakcji | Poprawiony wariant encji zbiega się z już istniejącym wierszem, a ORM próbuje zmienić klucz unikalny przed etapem scalenia | "Al-Faszirze Emiraty" + "Al-Faszir" | E015 |
 | T14 | Werdykt klasyfikatora kontekstu bez skutku na encji | `not_place/high` blokuje tag, ale nie odrzuca wiersza encji | "Izraelczyków" | E019 |
+| T15 | Etnonim jako miejsce | Odmieniona nazwa mieszkańców nie trafia do normalizacji kraju i jest odrzucana jako `not_place` | „Izraelczyków”, „Amerykanów” | E021 |
 
 Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T15,
 ...) zamiast naciągać istniejącą.
@@ -425,3 +426,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — read-only `GET /ner_context_decisions` (`library/ner_decisions.py`), strona `/ner-decisions` z filtrami w URL i paginacją, odrzucone miejsca ukryte w panelu encji i w czytniku, a w panelu zwijany wiersz „Odrzucone miejsca (N)" z uzasadnieniem klasyfikatora.
 - **Test regresyjny:** `backend/tests/unit/test_ner_decisions.py`, `rejectedPlaces.test.tsx`, `nerDecisions.test.tsx`.
 - **Status:** żywy bug naprawiony w kodzie (funkcja przeglądowa); brak zmian w danych.
+
+### E021 — „Izraelczyków” / „Amerykanów” jako metonimiczne wzmianki krajów (dok. #10756, 2026-10-12)
+
+- **Typ encji:** placeName
+- **Kategoria:** T15 — etnonim jako miejsce.
+- **Zdanie źródłowe:** "Iran ma wiele obciążeń, więc chce odwrócić uwagę Amerykanów i Izraelczyków, tak aby linia frontu przebiegała w Sanie, a nie w Teheranie."
+- **Objaw:** NER zwraca etnonimy jako `placeName`/`NOUN` z odmienionymi lematami; klasyfikator odrzuca je jako `not_place`, tracąc oczekiwane wzmianki Stanów Zjednoczonych i Izraela.
+- **Przyczyna źródłowa:** dokładna lista `demonyms` nie obejmuje odmiany nazw mieszkańców. E019 poprawia odrzucanie nie-miejsc, ale nie realizuje zaakceptowanej metonimii mieszkańcy → kraj.
+- **Poprawka:** kod — `demonym_patterns` w `backend/data/ner_normalization.json` obejmuje 13 rodzin (Izrael, Stany Zjednoczone, Iran, Rosja, Ukraina, Chiny, Jemen, Arabia Saudyjska, Syria, Liban, Polska, Francja, Wielka Brytania). `ner_normalization.py` kompiluje wzorce raz, pomija błędny regex z ostrzeżeniem i dopasowuje całą formę po `unidecode().casefold()`, po dokładnym `demonyms`, przed istniejącym fallbackiem kraju. Wyłącznie zamknięte końcówki; brak otwartych prefiksów i dopasowania „Polkowice”. Agregacja zachowuje warianty i sumuje liczniki pod krajem; filtry etykiet, POS i małej litery pozostają bez zmian. Istniejący fallback dla „Niemcy”/„Niemiec” i „Izraelski” pozostaje; nowe wzorce ich nie obejmują. Dane #10756 naprawione osobno, poza tą zmianą kodu.
+- **Test regresyjny:** `backend/tests/unit/test_ner_normalization.py` — odmiana wszystkich rodzin, negatywne dopasowania samych wzorców, niezmieniony fallback, cache i błędny regex; `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_10756_demonyms_merge_with_country_mentions` — rzeczywiste zdanie, scalenie z osobnymi wzmiankami krajów, liczniki i warianty; dodatkowo ochrona filtrów i wariantu „Turcy”.
+- **Status:** żywy bug naprawiony w kodzie; dane #10756 naprawione osobno

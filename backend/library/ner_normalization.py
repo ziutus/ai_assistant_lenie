@@ -7,6 +7,8 @@ import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
+from unidecode import unidecode
+
 from library.country_gazetteer import canonical_country_name
 
 logger = logging.getLogger(__name__)
@@ -167,6 +169,28 @@ def load_ner_normalization_rules() -> dict:
         return {}
 
 
+@lru_cache(maxsize=1)
+def load_demonym_patterns() -> tuple[tuple[str, re.Pattern[str]], ...]:
+    """Compile curated, closed demonym patterns once; skip malformed regexes."""
+    compiled = []
+    for country, patterns in load_ner_normalization_rules().get("demonym_patterns", {}).items():
+        for pattern in patterns:
+            try:
+                compiled.append((country, re.compile(pattern)))
+            except re.error as exc:
+                logger.warning("Invalid demonym pattern for %s: %r (%s)", country, pattern, exc)
+    return tuple(compiled)
+
+
+def canonical_country_for_demonym_pattern(surface: str | None) -> str | None:
+    """Match only curated demonym patterns, without the country gazetteer fallback."""
+    folded = unidecode(surface or "").casefold()
+    for country, pattern in load_demonym_patterns():
+        if pattern.fullmatch(folded):
+            return country
+    return None
+
+
 def canonical_country_for_surface(surface: str) -> str | None:
     """Map one surface form to a canonical country, including curated aliases."""
     normalized = normalize_ner_text(surface)
@@ -181,6 +205,9 @@ def canonical_country_for_surface(surface: str) -> str | None:
         for key, value in rules.get("demonyms", {}).items()
     }
     demonym_country = demonyms.get(normalized.casefold())
+    if demonym_country:
+        return demonym_country
+    demonym_country = canonical_country_for_demonym_pattern(normalized)
     if demonym_country:
         return demonym_country
     return canonical_country_name(normalized)
