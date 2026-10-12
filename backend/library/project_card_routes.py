@@ -21,11 +21,14 @@ from library.db.engine import get_scoped_session
 from library.db.models import ProjectCard
 from library.project_cards import (
     DEFAULT_SERIES,
+    KINDS,
     REVIEW_STATUSES,
     ProjectCardError,
     card_to_dict,
     group_counts,
     list_cards,
+    series_counts,
+    series_pdf_key,
     source_pdf_key,
     update_card,
     upsert_cards,
@@ -81,8 +84,12 @@ def get_project_cards():
         review_status = request.args.get("review_status") or None
         if review_status and review_status not in REVIEW_STATUSES:
             raise ProjectCardError(f"review_status must be one of {', '.join(REVIEW_STATUSES)}")
+        kind = request.args.get("kind") or None
+        if kind and kind not in KINDS:
+            raise ProjectCardError(f"kind must be one of {', '.join(KINDS)}")
     except ProjectCardError as exc:
         return _error(str(exc))
+    series = request.args.get("series") or None
     cards, total = list_cards(
         session,
         age=age,
@@ -93,6 +100,8 @@ def get_project_cards():
         query=request.args.get("q") or None,
         review_status=review_status,
         needs_adult=needs_adult,
+        kind=kind,
+        series=series,
         limit=limit,
         offset=offset,
     )
@@ -102,7 +111,9 @@ def get_project_cards():
         "limit": limit,
         "offset": offset,
         "cards": [card_to_dict(card, age=age, stretch=stretch) for card in cards],
-        "groups": group_counts(session),
+        "groups": group_counts(session, series=series),
+        "series": series_counts(session),
+        "kinds": list(KINDS),
         "review_statuses": list(REVIEW_STATUSES),
     })
 
@@ -189,7 +200,39 @@ def get_source_pdf(card_id: int):
         return Response(data, mimetype="application/pdf", headers={
             "Content-Disposition": f'inline; filename="{card.number:03d}.pdf"',
         })
-    return jsonify({"status": "success", "url": storage.presigned_get_url(card.source_pdf_key)})
+    url = storage.presigned_get_url(card.source_pdf_key)
+    if url and card.source_page and card.source_pdf_key.endswith("/book.pdf"):
+        url = f"{url}#page={card.source_page}"  # one PDF holds the whole series: open at this card's page
+    return jsonify({"status": "success", "url": url})
+
+
+@bp.route("/project_cards/series_pdf", methods=["POST"])
+def upload_series_pdf():
+    """Store ONE PDF for a whole series (card books) and point every card of it there."""
+    uploaded = request.files.get("file")
+    series = (request.form.get("series") or "").strip()
+    if uploaded is None or not uploaded.filename or not series:
+        return _error("multipart fields 'file' and 'series' are required")
+    data = uploaded.read()
+    try:
+        validate_pdf(data)
+    except ProjectCardError as exc:
+        return _error(str(exc))
+    session = get_scoped_session()
+    cards = session.query(ProjectCard).filter(ProjectCard.series == series).all()
+    if not cards:
+        return _error(f"No cards in series '{series}'", 404)
+    key = series_pdf_key(series)
+    try:
+        _storage().put_bytes(key, data, content_type="application/pdf")
+        for card in cards:
+            card.source_pdf_key = key
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Could not store the series PDF for %s", series)
+        return _error("Could not store the PDF", 500)
+    return jsonify({"status": "success", "cards": len(cards), "bytes": len(data)})
 
 
 @bp.route("/project_cards/import", methods=["POST"])

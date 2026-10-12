@@ -25,7 +25,9 @@ export interface ProjectCardSummary {
   difficulty: number | null;
   needs_adult: boolean;
   review_status: "imported" | "needs_review" | "reviewed";
-  age_fit?: "ok" | "stretch" | null;
+  kind: string;
+  source_page?: number | null;
+  age_fit?: "ok" | "stretch" | "unknown" | null;
   has_source_pdf?: boolean;
   has_illustration?: boolean;
 }
@@ -35,7 +37,20 @@ interface GroupCount {
   count: number;
 }
 
-export const difficultyLabel = (difficulty: number | null) =>
+interface SeriesCount {
+  name: string;
+  kind: string;
+  count: number;
+}
+
+export const kindLabel: Record<string, string> = {
+  project: "Projekt",
+  experiment: "Eksperyment",
+  craft: "Praca plastyczna",
+  puzzle: "Zagadka",
+};
+
+export const difficultyLabel =(difficulty: number | null) =>
   difficulty === 1 ? "Łatwy" : difficulty === 2 ? "Średni" : difficulty === 3 ? "Trudny" : "—";
 
 export const reviewLabel: Record<string, string> = {
@@ -63,6 +78,7 @@ const ProjectCards = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [cards, setCards] = React.useState<ProjectCardSummary[]>([]);
   const [groups, setGroups] = React.useState<GroupCount[]>([]);
+  const [seriesList, setSeriesList] = React.useState<SeriesCount[]>([]);
   const [total, setTotal] = React.useState(0);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -72,6 +88,8 @@ const ProjectCards = () => {
   const stretch = searchParams.get("stretch") === "1";
   const maxDifficulty = searchParams.get("max_difficulty") ?? "";
   const group = searchParams.get("group") ?? "";
+  const kind = searchParams.get("kind") ?? "";
+  const series = searchParams.get("series") ?? "";
   const reviewStatus = searchParams.get("review_status") ?? "";
   const appliedQuery = searchParams.get("q") ?? "";
   const requestedPage = Number(searchParams.get("page") ?? "1");
@@ -100,6 +118,8 @@ const ProjectCards = () => {
       }
       if (maxDifficulty) params.max_difficulty = maxDifficulty;
       if (group) params.group = group;
+      if (kind) params.kind = kind;
+      if (series) params.series = series;
       if (reviewStatus) params.review_status = reviewStatus;
       if (appliedQuery.trim()) params.q = appliedQuery.trim();
       try {
@@ -107,6 +127,7 @@ const ProjectCards = () => {
         if (cancelled) return;
         setCards(response.data.cards ?? []);
         setGroups(response.data.groups ?? []);
+        setSeriesList(response.data.series ?? []);
         setTotal(response.data.total ?? 0);
       } catch (e: any) {
         if (cancelled) return;
@@ -124,7 +145,7 @@ const ProjectCards = () => {
     return () => {
       cancelled = true;
     };
-  }, [age, stretch, maxDifficulty, group, reviewStatus, appliedQuery, page, pageSize, apiUrl, apiKey]);
+  }, [age, stretch, maxDifficulty, group, kind, series, reviewStatus, appliedQuery, page, pageSize, apiUrl, apiKey]);
 
   const fieldStyle: React.CSSProperties = { padding: "4px 8px" };
   const chip = (background: string): React.CSSProperties => ({
@@ -161,6 +182,18 @@ const ProjectCards = () => {
           <option value="">Każdy poziom</option>
           <option value="1">Tylko łatwe</option>
           <option value="2">Do średnich</option>
+        </select>
+        <select value={kind} onChange={(e) => updateParams({ kind: e.target.value, series: "", group: "" })} style={fieldStyle}>
+          <option value="">Każdy rodzaj</option>
+          {Object.entries(kindLabel).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+        <select value={series} onChange={(e) => updateParams({ series: e.target.value, group: "" })} style={fieldStyle}>
+          <option value="">Wszystkie serie</option>
+          {seriesList.filter((s) => !kind || s.kind === kind).map((s) => (
+            <option key={s.name} value={s.name}>{s.name} ({s.count})</option>
+          ))}
         </select>
         <select value={group} onChange={(e) => updateParams({ group: e.target.value })} style={fieldStyle}>
           <option value="">Wszystkie grupy</option>
@@ -199,8 +232,10 @@ const ProjectCards = () => {
               <span style={chip("#eef2ff")}>{ageLabel(card.age_min, card.age_max)} lat</span>
               <span style={chip("#f1f5f9")}>{difficultyLabel(card.difficulty)}</span>
               {card.time_min !== null && <span style={chip("#f1f5f9")}>{card.time_min} min</span>}
+              {card.kind !== "project" && <span style={chip("#fdf2f8")}>{kindLabel[card.kind] ?? card.kind}</span>}
               {card.needs_adult && <span style={chip("#fff7ed")}>z dorosłym</span>}
               {card.age_fit === "stretch" && <span style={chip("#fef3c7")}>do spróbowania z dorosłym</span>}
+              {card.age_fit === "unknown" && <span style={chip("#f3f4f6")} title="Książka nie podaje wieku">wiek nieznany</span>}
               {card.has_illustration && <span style={chip("#ecfeff")} title="Ma własną ilustrację">🖼</span>}
               {card.has_source_pdf && <span style={chip("#f5f3ff")} title="Wgrano oryginał PDF">PDF</span>}
               <span style={chip(card.review_status === "reviewed" ? "#dcfce7" : "#f3f4f6")}>
