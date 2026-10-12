@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import type { CountryTag } from "../CountryMap/countryMap";
 import InfoTip from "../InfoTip";
+import RejectedPlaces from "./rejectedPlaces";
 import OrganizationMergePreview, { type MergePreviewData } from "./organizationMergePreview";
 
 // NER entities detected in the document (backend: GET/POST /website_entities,
@@ -1012,12 +1013,15 @@ const EntitiesPanel = ({
   // mentions (is_country) are dropped the same way as for orgName above —
   // the "Państwa" block covers them with LLM-vetted kraj-* tags instead of
   // an ungeocoded, permanently-unverified NER chip.
-  const places = [
+  const allPlaces = [
     ...(entities?.geogName ?? []).map((item) => ({ ...item, entity_type: "geogName" as const })),
     ...(entities?.placeName ?? []).map((item) => ({ ...item, entity_type: "placeName" as const })),
-  ].filter((item) => !item.is_country);
+  ];
+  const rejectedPlaces = allPlaces.filter(item => item.place_verification_status === "rejected");
+  const places = allPlaces.filter(item => !item.is_country && item.place_verification_status !== "rejected");
   const facilities = entities?.facility ?? [];
-  const isEmpty = !persons.length && !organizations.length && !places.length && !facilities.length && !countries.length;
+  const isEmpty = !persons.length && !organizations.length && !places.length && !rejectedPlaces.length
+    && !facilities.length && !countries.length;
   const reviewFormValid = Boolean(reviewReason)
     && (reviewReason !== "other" || Boolean(reviewComment.trim()));
 
@@ -1329,6 +1333,7 @@ const EntitiesPanel = ({
           )}
           {editMode && editActions("placeName")(item)}
         </>} />
+      <RejectedPlaces key={docId} docId={docId} items={rejectedPlaces} />
       {placeTags.length > 0 && (
         <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}>
           Tagi miejsc: {placeTags.join(", ")}

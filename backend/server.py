@@ -2992,6 +2992,18 @@ def ner_corrections_list():
             "corrections": [_correction_dict(r) for r in rows]}, 200
 
 
+@app.route('/ner_context_decisions', methods=['GET'])
+def ner_context_decisions():
+    """Browse automatic NER verdicts without modifying their history."""
+    from library.ner_decisions import list_decisions, parse_decision_filters
+
+    try:
+        filters = parse_decision_filters(request.args)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+    return {"status": "success", **list_decisions(get_scoped_session(), **filters)}, 200
+
+
 @app.route('/ner_corrections/stats', methods=['GET'])
 def ner_corrections_stats():
     """Usage statistics of the NER correction dictionary: per rule how many times it fired and in how

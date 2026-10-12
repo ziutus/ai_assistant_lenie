@@ -1788,7 +1788,8 @@ const Read: React.FC = () => {
     () => buildEntityDescriptions(shownPersons, shownOrganizations, shownFacilities),
     [shownPersons, shownOrganizations, shownFacilities],
   );
-  const shownPlaceItems = scoped ? scoped.placeItems : placeItems;
+  const shownPlaceItems = (scoped ? scoped.placeItems : placeItems)
+    .filter(item => item.place_verification_status !== "rejected");
   const shownMarkers = scoped ? scoped.markers : places;
   const shownCountries = scoped ? scoped.countries : countries;
   // pipeline routes (Overpass/OSM) among the in-scope place entities
