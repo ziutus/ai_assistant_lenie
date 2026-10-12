@@ -29,6 +29,8 @@ import ContactDuplicates from "./modules/shared/pages/contactDuplicates";
 import ContactMerge from "./modules/shared/pages/contactMerge";
 import Contact from "./modules/shared/pages/contact";
 import ContactCategories from "./modules/shared/pages/contactCategories";
+import ProjectCards from "./modules/shared/pages/projectCards";
+import ProjectCard from "./modules/shared/pages/projectCard";
 import ContactGroups from "./modules/shared/pages/contactGroups";
 import ContactGroupDetail from "./modules/shared/pages/contactGroupDetail";
 import ContactEventDetail from "./modules/shared/pages/contactEventDetail";
@@ -105,6 +107,8 @@ function App() {
                   <Route path="/contact-birthdays" element={<ContactBirthdays />} />
                   <Route path="/contacts/:id" element={<Contact />} />
                   <Route path="/contact-categories" element={<ContactCategories />} />
+                  <Route path="/project-cards" element={<ProjectCards />} />
+                  <Route path="/project-cards/:id" element={<ProjectCard />} />
                   <Route path="/contact-groups" element={<ContactGroups />} />
                   <Route path="/contact_groups/:id" element={<ContactGroupDetail />} />
                   <Route path="/information-sources" element={<InformationSources />} />

@@ -203,3 +203,9 @@ input[type="file"]:disabled {
 .multi-select-native { cursor: pointer; list-style: none; }
 .multi-select-native::-webkit-details-marker { display: none; }
 .multi-select-native::after { content: "▾"; margin-left: 6px; }
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
