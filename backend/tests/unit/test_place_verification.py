@@ -111,6 +111,46 @@ def test_context_not_place_rejects_entity(resolved, verdict, context_not_place_r
     session.delete.assert_not_called()
 
 
+@pytest.mark.parametrize("etype", ["placeName", "geogName"])
+@pytest.mark.parametrize("document_id,sentence,verdict", [
+    (10756, "Ciągle myślę o tym, kiedy obudzę się z wiadomością o ataku Huti gdzieś na Zachodzie.",
+     "organization"),
+    (9367, "Ze względu na fakt, że stanowiła ona część Polskich Sił Zbrojnych na Zachodzie",
+     "not_place"),
+])
+def test_unresolved_west_routes_bloc_but_rejects_formation_fragment(etype, document_id, sentence, verdict):
+    ent = _entity("Zachodzie", etype=etype, geocode_id=7, geocode=MagicMock(resolved=False))
+    ent.source, ent.place_verification_status, ent.place_review_reason = "ner", None, None
+    ent.variants = []
+    session = _session_with_entities([ent])
+    doc = MagicMock(id=document_id, title="", tags="")
+    result = {
+        "key": "Zachodzie", "entity_text": "Zachodzie", "context": sentence,
+        "predicted_class": verdict, "confidence": "high", "rationale": "", "model": "Bielik",
+        "dropped": True, "organization": verdict == "organization",
+    }
+    with patch("library.place_context_classifier.classify_place_context_candidates",
+               return_value=[result]) as classify, patch(
+        "library.place_verification._reclassify_as_organization"
+    ) as reclassify, patch("library.article_tagging.confirm_places_with_llm") as relevance:
+        summary = verify_document_places(session, doc, sentence)
+    classify.assert_called_once_with(
+        sentence, "", {"Zachodzie": {"surface": "Zachodzie", "variants": []}}, document_id,
+    )
+    if verdict == "organization":
+        reclassify.assert_called_once_with(session, doc, ent)
+        assert ent.place_verification_status is None
+        assert ent.place_review_reason is None
+    else:
+        reclassify.assert_not_called()
+        assert ent.place_verification_status == "rejected"
+        assert ent.place_review_reason == "context_not_place"
+    assert summary["resolved"] == []
+    assert summary["tagged"] == []
+    assert doc.tags == ""
+    relevance.assert_not_called()
+
+
 @pytest.mark.parametrize("status,source", [("confirmed", "ner"), (None, "manual")])
 @pytest.mark.parametrize("resolved", [False, True])
 def test_context_not_place_preserves_human_decision(status, source, resolved, context_not_place_result):
