@@ -6,6 +6,7 @@ import { Pagination } from "../components/Pagination/pagination";
 import type { CountryTag, PlaceMarker } from "../components/CountryMap/countryMap";
 import { COUNTRY_SLUG_TO_ISO3 } from "../data/countryIso";
 import { ISO3_TO_NAME_PL } from "../data/countryNames";
+import { renderMarkdown } from "./read";
 
 const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
@@ -33,6 +34,14 @@ interface OrganizationDetail {
   longitude: number | null;
   website: string | null;
   obsidian_note_path: string | null;
+  // Imported Obsidian note the path points at (organization_location.organization_note).
+  note?: OrganizationNote | null;
+}
+
+interface OrganizationNote {
+  document_id: number;
+  title: string | null;
+  text_md: string;
 }
 
 // Persons / geocoded places co-occurring with the organization in documents
@@ -161,6 +170,7 @@ const Organizations = () => {
   const [page, setPage] = React.useState(Number(searchParams.get("page")) || 1);
   const pageSize = 50;
   const [organization, setOrganization] = React.useState<OrganizationDetail | null>(null);
+  const [noteExpanded, setNoteExpanded] = React.useState(false);
   const [relatedPersons, setRelatedPersons] = React.useState<RelatedPerson[]>([]);
   const [relatedPlaces, setRelatedPlaces] = React.useState<RelatedPlace[]>([]);
   const [countryTies, setCountryTies] = React.useState<OrganizationCountryTie[]>([]);
@@ -397,6 +407,7 @@ const Organizations = () => {
         longitude: response.data.longitude,
         website: response.data.website,
         obsidian_note_path: response.data.obsidian_note_path,
+        note: response.data.note,
       } : prev);
       setIsEditing(false);
       setMessage(
@@ -611,6 +622,26 @@ const Organizations = () => {
                 </div>
               )}
               {organization.obsidian_note_path && <div>📝 Notatka Obsidian: {organization.obsidian_note_path}</div>}
+            </div>
+          )}
+
+          {organization.note && (
+            <div style={{ marginTop: 12 }}>
+              <h3 style={{ margin: "0 0 6px" }}>
+                Notatka{organization.note.title ? `: ${organization.note.title}` : ""}
+              </h3>
+              <div
+                style={noteExpanded ? undefined : { maxHeight: 260, overflow: "hidden" }}
+                data-testid="organization-note"
+              >
+                {renderMarkdown(organization.note.text_md, [])}
+              </div>
+              <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: "0.9em" }}>
+                <button className={"button"} type="button" onClick={() => setNoteExpanded((v) => !v)}>
+                  {noteExpanded ? "Zwiń" : "Rozwiń"}
+                </button>
+                <NavLink to={`/webpage/${organization.note.document_id}`}>Otwórz dokument #{organization.note.document_id}</NavLink>
+              </div>
             </div>
           )}
 

@@ -12,6 +12,7 @@ from library.organization_location import (
     add_country,
     country_suggestions,
     geocode_headquarters,
+    organization_note,
     related_persons,
     related_places,
     remove_country,
@@ -195,3 +196,27 @@ def test_absorb_organization_keeps_target_headquarters():
     session.execute.return_value.scalars.side_effect = [iter([]), MagicMock(all=lambda: [])]
     absorb_organization(session, source, target)
     assert target.headquarters_address == "Warszawa" and target.latitude is None
+
+
+def test_organization_note_blank_path_skips_query():
+    session = MagicMock()
+    assert organization_note(session, None) is None
+    assert organization_note(session, "  ") is None
+    session.execute.assert_not_called()
+
+
+def test_organization_note_missing_document():
+    session = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = None
+    assert organization_note(session, "Kraje/Iran.md") is None
+
+
+def test_organization_note_prefers_text_md_and_tries_both_url_spellings():
+    session = MagicMock()
+    doc = MagicMock(id=10159, title="Iran", text_md="# Iran", text="raw")
+    session.execute.return_value.scalar_one_or_none.return_value = doc
+    assert organization_note(session, "/Kraje/Iran.md") == {
+        "document_id": 10159, "title": "Iran", "text_md": "# Iran"}
+    statement = str(session.execute.call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
+    assert "obsidian://Kraje/Iran.md" in statement
+    assert "obsidian://02-wiedza/Kraje/Iran.md" in statement
