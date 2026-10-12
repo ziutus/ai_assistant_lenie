@@ -9,9 +9,25 @@ about the "Wisła-Narew-Pilica" air-defense system, not the town/river.
 from unittest.mock import MagicMock, patch
 
 from library.place_context_classifier import (
+    _SYSTEM_PROMPT,
     _candidate_payloads,
     classify_place_context_candidates,
 )
+
+
+def test_prompt_distinguishes_western_bloc_from_direction_and_formation_name():
+    organization = " ".join(_SYSTEM_PROMPT.split("- organization:")[1].split("- not_place:")[0].split())
+    not_place = " ".join(_SYSTEM_PROMPT.split("- not_place:")[1].split("- uncertain:")[0].split())
+    for phrase in (
+        "Zachód", "Państwa Zachodu", "kraje Zachodu", "blok polityczno-kulturowy",
+        "USA", "Kanada", "państwa europejskie", "Australia", "Nowa Zelandia",
+        "na Zachodzie", "w krajach Zachodu", "Zachód reaguje", "przywódcy Zachodu",
+    ):
+        assert phrase in organization
+    for phrase in ("na zachodzie kraju", "Polskie Siły Zbrojne na Zachodzie", "Front Zachodni"):
+        assert phrase in not_place
+    assert "high" in _SYSTEM_PROMPT
+    assert "jednoznacznie" in _SYSTEM_PROMPT
 
 
 def test_snippets_match_whole_words_and_use_actual_variants():

@@ -177,8 +177,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T12 | Kolizja kanonikalizacji w transakcji | Poprawiony wariant encji zbiega się z już istniejącym wierszem, a ORM próbuje zmienić klucz unikalny przed etapem scalenia | "Al-Faszirze Emiraty" + "Al-Faszir" | E015 |
 | T14 | Werdykt klasyfikatora kontekstu bez skutku na encji | `not_place/high` blokuje tag, ale nie odrzuca wiersza encji | "Izraelczyków" | E019 |
 | T15 | Etnonim jako miejsce | Odmieniona nazwa mieszkańców nie trafia do normalizacji kraju i jest odrzucana jako `not_place` | „Izraelczyków”, „Amerykanów” | E021 |
+| T16 | Znaczenie polityczne vs. kierunek geograficzny | „Zachód” jako blok polityczno-kulturowy mylony z kierunkiem lub fragmentem innej nazwy własnej | „Zachodzie” → „Państwa Zachodu”; wyjątek: „Polskie Siły Zbrojne na Zachodzie” | E022 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T15,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T17,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -437,3 +438,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — `demonym_patterns` w `backend/data/ner_normalization.json` obejmuje 13 rodzin (Izrael, Stany Zjednoczone, Iran, Rosja, Ukraina, Chiny, Jemen, Arabia Saudyjska, Syria, Liban, Polska, Francja, Wielka Brytania). `ner_normalization.py` kompiluje wzorce raz, pomija błędny regex z ostrzeżeniem i dopasowuje całą formę po `unidecode().casefold()`, po dokładnym `demonyms`, przed istniejącym fallbackiem kraju. Wyłącznie zamknięte końcówki; brak otwartych prefiksów i dopasowania „Polkowice”. Agregacja zachowuje warianty i sumuje liczniki pod krajem; filtry etykiet, POS i małej litery pozostają bez zmian. Istniejący fallback dla „Niemcy”/„Niemiec” i „Izraelski” pozostaje; nowe wzorce ich nie obejmują. Dane #10756 naprawione osobno, poza tą zmianą kodu.
 - **Test regresyjny:** `backend/tests/unit/test_ner_normalization.py` — odmiana wszystkich rodzin, negatywne dopasowania samych wzorców, niezmieniony fallback, cache i błędny regex; `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_10756_demonyms_merge_with_country_mentions` — rzeczywiste zdanie, scalenie z osobnymi wzmiankami krajów, liczniki i warianty; dodatkowo ochrona filtrów i wariantu „Turcy”.
 - **Status:** żywy bug naprawiony w kodzie; dane #10756 naprawione osobno
+
+### E022 — „Zachodzie” jako blok polityczno-kulturowy (dok. #10756, PR n/d, 2026-10-12)
+
+- **Typ encji:** geogName / placeName → orgName.
+- **Kategoria:** T16 — znaczenie polityczne vs. kierunek geograficzny.
+- **Zdanie źródłowe:** „Ciągle myślę o tym, kiedy obudzę się z wiadomością o ataku Huti gdzieś na Zachodzie.”
+- **Objaw:** „Zachodzie” otrzymało werdykt `not_place` z uzasadnieniem „kierunek geograficzny lub region”, choć oznaczało kraje bloku polityczno-kulturowego.
+- **Przyczyna źródłowa:** `_SYSTEM_PROMPT` w `library/place_context_classifier.py` opisywał `organization` jako metonimię siedziby instytucji, bez wskazania politycznego znaczenia „Zachodu”.
+- **Poprawka:** kod + dane — prompt rozróżnia blok (`organization/high` przy jednoznacznym kontekście), kierunek i fragment innej nazwy własnej (`not_place`, np. „Polskie Siły Zbrojne na Zachodzie”, „Front Zachodni”); istniejąca ścieżka `_reclassify_as_organization` korzysta z aliasów organizacji „Państwa Zachodu” (org 106). Aliasy i kraje bloku pozostają danymi rejestru organizacji, nie listą w kodzie. Polityczne znaczenie występuje też w dok. #8990, #9170 i #9353; dok. #9367 dotyczy formacji z II wojny światowej.
+- **Test regresyjny:** `backend/tests/unit/test_place_context_classifier.py::test_prompt_distinguishes_western_bloc_from_direction_and_formation_name` oraz `backend/tests/unit/test_place_verification.py::test_unresolved_west_routes_bloc_but_rejects_formation_fragment` — oba typy nierozwiązanej encji, zamockowane werdykty `organization/high` dla dok. #10756 i `not_place/high` dla dok. #9367; bez sieci i wywołań LLM.
+- **Status:** żywy bug naprawiony w kodzie + dane rejestru (org 106) i 5 dokumentów przekonwertowanych ręcznie przez to_organization; dok. 9367 świadomie pominięty (Polskie Siły Zbrojne na Zachodzie)
