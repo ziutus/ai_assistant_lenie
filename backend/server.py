@@ -1959,6 +1959,7 @@ def organization_get(organization_id: int):
     unrelated organization (e.g. WWII's "Afrika Korps"), resolved per-mention
     by entity_service's context-LLM step rather than always landing here."""
     from sqlalchemy import func, select
+    from library import organization_location
     from library.db.models import DocumentOrganization, Organization, OrganizationAmbiguousAlias
 
     session = get_scoped_session()
@@ -2014,6 +2015,7 @@ def organization_get(organization_id: int):
         ],
         "document_count": document_count or 0,
         "ambiguous_with": ambiguous_with,
+        "note": organization_location.organization_note(session, organization.obsidian_note_path),
     }, 200
 
 
@@ -2239,11 +2241,13 @@ def organization_update(organization_id: int):
         logging.exception("organization update failed for %s", organization_id)
         return {"status": "error", "message": "DB error"}, 500
 
+    from library import organization_location
     return jsonify({"status": "success", "id": organization.id,
                     "canonical_name": organization.canonical_name,
                     "description": organization.description,
                     "organization_type": organization.organization_type,
                     **_organization_location_fields(organization),
+                    "note": organization_location.organization_note(session, organization.obsidian_note_path),
                     "geocoded": geocoded,
                     "rename": rename_result}), 200
 

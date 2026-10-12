@@ -67,6 +67,32 @@ def geocode_headquarters(session, organization: Organization) -> bool:
     return bool(row.resolved)
 
 
+def organization_note(session, note_path: str | None) -> dict | None:
+    """The imported Obsidian note (``documents.url == obsidian://<path>``) that
+    ``Organization.obsidian_note_path`` points at, or None.
+
+    The stored path is vault-relative and, in older data, may lack the
+    ``02-wiedza/`` prefix the reimport URL carries, so both spellings are tried.
+    """
+    path = (note_path or "").strip().lstrip("/")
+    if not path:
+        return None
+    urls = [f"obsidian://{path}"]
+    if not path.startswith("02-wiedza/"):
+        urls.append(f"obsidian://02-wiedza/{path}")
+    document = session.execute(
+        select(Document).where(Document.url.in_(urls), Document.document_type == "obsidian_note")
+        .order_by(Document.id).limit(1)
+    ).scalar_one_or_none()
+    if document is None:
+        return None
+    return {
+        "document_id": document.id,
+        "title": document.title,
+        "text_md": document.text_md or document.text or "",
+    }
+
+
 def _organization_document_ids(organization_id: int):
     return select(DocumentOrganization.document_id).where(DocumentOrganization.organization_id == organization_id)
 
