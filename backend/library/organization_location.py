@@ -20,6 +20,10 @@ from library.db.models import (
 
 PLACE_ENTITY_TYPES = ("geogName", "placeName")
 
+# organization_type of the registry entity that stands for a state itself
+# (one per country, linked to its Obsidian note; never merged into a non-country).
+COUNTRY_ORGANIZATION_TYPE = "country"
+
 COUNTRY_RELATIONS = {
     "based_in": "siedziba w",
     "operates_in": "działa w",
@@ -165,13 +169,34 @@ def _country_dict(row: OrganizationCountry) -> dict:
     }
 
 
+def country_organization_ids(session, slugs) -> dict[str, int]:
+    """slug -> id of the organization that *is* that country (type ``country``
+    with a ``based_in`` tie to the slug; the lowest id wins on a duplicate)."""
+    slugs = {slug for slug in slugs if slug}
+    if not slugs:
+        return {}
+    rows = session.execute(
+        select(OrganizationCountry.country_slug, func.min(OrganizationCountry.organization_id))
+        .join(Organization, Organization.id == OrganizationCountry.organization_id)
+        .where(
+            OrganizationCountry.country_slug.in_(slugs),
+            OrganizationCountry.relation == "based_in",
+            Organization.organization_type == COUNTRY_ORGANIZATION_TYPE,
+        )
+        .group_by(OrganizationCountry.country_slug)
+    ).all()
+    return {slug: organization_id for slug, organization_id in rows}
+
+
 def list_countries(session, organization_id: int) -> list[dict]:
     rows = session.execute(
         select(OrganizationCountry)
         .where(OrganizationCountry.organization_id == organization_id)
         .order_by(OrganizationCountry.id)
     ).scalars().all()
-    return [_country_dict(r) for r in rows]
+    country_organizations = country_organization_ids(session, (r.country_slug for r in rows))
+    return [_country_dict(r) | {"country_organization_id": country_organizations.get(r.country_slug)}
+            for r in rows]
 
 
 def add_country(session, organization_id: int, country_slug: str, relation: str,

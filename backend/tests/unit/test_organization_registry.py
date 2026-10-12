@@ -200,6 +200,15 @@ class TestMerge:
         with pytest.raises(ValueError):
             merge(session, 1, 1)
 
+    def test_country_cannot_be_merged_into_non_country(self):
+        source = MagicMock(id=1, canonical_name="Iran", organization_type="country", aliases=[])
+        target = MagicMock(id=2, canonical_name="Irańczycy", organization_type=None)
+        session = MagicMock()
+        session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
+        with pytest.raises(ValueError, match="country"):
+            merge(session, 1, 2)
+        session.delete.assert_not_called()
+
     def test_missing_organization_raises_lookup_error(self):
         session = MagicMock()
         session.get.side_effect = [None, MagicMock()]

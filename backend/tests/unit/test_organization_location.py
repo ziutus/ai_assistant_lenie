@@ -10,6 +10,7 @@ from library.db.models import GeocodeCache, Organization, OrganizationCountry
 from library.organization_location import (
     absorb_organization,
     add_country,
+    country_organization_ids,
     country_suggestions,
     geocode_headquarters,
     organization_note,
@@ -220,3 +221,17 @@ def test_organization_note_prefers_text_md_and_tries_both_url_spellings():
     statement = str(session.execute.call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
     assert "obsidian://Kraje/Iran.md" in statement
     assert "obsidian://02-wiedza/Kraje/Iran.md" in statement
+
+
+def test_country_organization_ids_empty_input_skips_query():
+    session = MagicMock()
+    assert country_organization_ids(session, [None, ""]) == {}
+    session.execute.assert_not_called()
+
+
+def test_country_organization_ids_maps_slug_to_country_organization():
+    session = MagicMock()
+    session.execute.return_value.all.return_value = [("iran", 39)]
+    assert country_organization_ids(session, ["iran", "irak"]) == {"iran": 39}
+    statement = str(session.execute.call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
+    assert "based_in" in statement and "'country'" in statement

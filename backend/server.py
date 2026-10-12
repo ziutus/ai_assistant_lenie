@@ -2136,6 +2136,7 @@ def organization_documents(organization_id: int):
         "id": link.document.id,
         "title": link.document.title,
         "document_type": link.document.document_type,
+        "byline": link.document.byline,
         "raw_mention": entity.entity_text if entity is not None else None,
         "mention_count": entity.mention_count if entity is not None else 0,
         "confidence": link.confidence,
