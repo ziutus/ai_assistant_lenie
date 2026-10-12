@@ -18,7 +18,7 @@ import datetime
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from unidecode import unidecode
 
 from library.db.models import ProjectCard
@@ -310,9 +310,10 @@ def update_card(session, card: ProjectCard, data: dict) -> ProjectCard:
 
 
 def age_fit(card: ProjectCard, age: int, stretch: int = 0) -> str | None:
-    """``"ok"`` inside the printed range, ``"stretch"`` a little above it, else None."""
+    """``"ok"`` inside the printed range, ``"stretch"`` a little above it, ``"unknown"`` without a
+    printed age, else None."""
     if card.age_min is None:
-        return None
+        return "unknown"
     if card.age_min <= age and (card.age_max is None or card.age_max >= age):
         return "ok"
     if stretch and age < card.age_min <= age + stretch:
@@ -343,11 +344,14 @@ def list_cards(
     if series:
         stmt = stmt.where(ProjectCard.series == series)
     if age is not None:
-        stmt = stmt.where(
-            ProjectCard.age_min.is_not(None),
-            ProjectCard.age_min <= age + max(stretch, 0),
-            or_(ProjectCard.age_max.is_(None), ProjectCard.age_max >= age),
-        )
+        # Cards printed without an age (some card books give none) stay visible, flagged "unknown".
+        stmt = stmt.where(or_(
+            ProjectCard.age_min.is_(None),
+            and_(
+                ProjectCard.age_min <= age + max(stretch, 0),
+                or_(ProjectCard.age_max.is_(None), ProjectCard.age_max >= age),
+            ),
+        ))
     if max_difficulty is not None:
         stmt = stmt.where(ProjectCard.difficulty <= max_difficulty)
     if max_time is not None:

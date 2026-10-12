@@ -27,7 +27,7 @@ export interface ProjectCardSummary {
   review_status: "imported" | "needs_review" | "reviewed";
   kind: string;
   source_page?: number | null;
-  age_fit?: "ok" | "stretch" | null;
+  age_fit?: "ok" | "stretch" | "unknown" | null;
   has_source_pdf?: boolean;
   has_illustration?: boolean;
 }
@@ -235,6 +235,7 @@ const ProjectCards = () => {
               {card.kind !== "project" && <span style={chip("#fdf2f8")}>{kindLabel[card.kind] ?? card.kind}</span>}
               {card.needs_adult && <span style={chip("#fff7ed")}>z dorosłym</span>}
               {card.age_fit === "stretch" && <span style={chip("#fef3c7")}>do spróbowania z dorosłym</span>}
+              {card.age_fit === "unknown" && <span style={chip("#f3f4f6")} title="Książka nie podaje wieku">wiek nieznany</span>}
               {card.has_illustration && <span style={chip("#ecfeff")} title="Ma własną ilustrację">🖼</span>}
               {card.has_source_pdf && <span style={chip("#f5f3ff")} title="Wgrano oryginał PDF">PDF</span>}
               <span style={chip(card.review_status === "reviewed" ? "#dcfce7" : "#f3f4f6")}>

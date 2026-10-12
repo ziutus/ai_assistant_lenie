@@ -105,7 +105,7 @@ def test_age_fit_ok_stretch_and_none():
     assert age_fit(card, 5) is None
     assert age_fit(card, 5, stretch=1) == "stretch"
     assert age_fit(card, 4, stretch=1) is None
-    assert age_fit(_card(age_min=None, age_max=None), 5) is None
+    assert age_fit(_card(age_min=None, age_max=None), 5) == "unknown"
 
 
 def test_group_label_known_and_unknown():

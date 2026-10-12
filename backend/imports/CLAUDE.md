@@ -11,6 +11,7 @@ imports/
 ├── backfill_obsidian_content_groups.py  # One-off: enqueue Bielik content-group (Tematy) classification for already-imported obsidian_note documents
 ├── check_pdf_text_layer.py   # Check if a PDF has a usable text layer or needs OCR (no DB)
 ├── project_cards_parse.py    # Parse a directory of project-card PDFs ("Robotyka – 100 projektów") into cards.json + review.csv (no DB)
+├── project_cards_family_parse.py  # Parse one card-book PDF (science experiments / toddler crafts / logic puzzles) into cards.json + review.csv (no DB)
 ├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
 ├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
 ├── select_control_questions.py # Cheap-LLM (Bielik) router: which control questions a document actually answers
@@ -117,6 +118,16 @@ Send the result to Lenie with `POST /project_cards/import` (`{"cards": [...]}`, 
 cd backend
 PYTHONPATH=. python -X utf8 imports/project_cards_parse.py "H:/path/to/cards"                       # writes tmp/project_cards/out/
 PYTHONPATH=. python -X utf8 imports/project_cards_parse.py "H:/path/to/cards" --out-dir tmp/project_cards/out
+```
+
+### `project_cards_family_parse.py`
+
+Parses ONE card-book PDF (a single file holding every card, one per page) into `cards.json` + `review.csv`; thin wrapper over `library/project_card_family_parser.py`. `--series` and `--kind experiment|craft|puzzle` are required; `--age-min/--age-max` apply the book's cover age to every card (the cards themselves carry none; the import then flags `age_from_cover`). Prints `cards=N flagged=M` plus an inventory `header;role;count` of every distinct section header so the role mapping can be reviewed, and exits 1 when the numbering has gaps/duplicates. No DB, no network. Parsing a 200-page book takes a few seconds. Send the result with `POST /project_cards/import` and store the book PDF once with `POST /project_cards/series_pdf`.
+
+```bash
+cd backend
+PYTHONPATH=. python -X utf8 imports/project_cards_family_parse.py "H:/path/pl_150-Logic-Brain-Teaser-Challenges.pdf" --series "Laboratorium Logiki" --kind puzzle --age-min 6 --age-max 12
+PYTHONPATH=. python -X utf8 imports/project_cards_family_parse.py "H:/path/pl_200-Home-Science-Experiments.pdf" --series "Domowe Eksperymenty Naukowe" --kind experiment
 ```
 
 ### `book_import_pdf_<slug>.py` (one script per book)
