@@ -20,6 +20,7 @@ from library.db.models import (
     OrganizationAmbiguousAlias,
 )
 from library.ner_normalization import normalize_ner_text
+from library.organization_location import COUNTRY_ORGANIZATION_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -319,6 +320,11 @@ def merge(session, source_organization_id: int, target_organization_id: int, *,
     target = session.get(Organization, target_organization_id)
     if source is None or target is None:
         raise LookupError("organization not found")
+    if (source.organization_type == COUNTRY_ORGANIZATION_TYPE
+            and target.organization_type != COUNTRY_ORGANIZATION_TYPE):
+        # A country entity carries its Obsidian note and kraj-* identity; folding it
+        # into an ordinary organization would delete that. Merge the other way round.
+        raise ValueError("a country organization cannot be merged into a non-country organization")
 
     if make_global_alias:
         add_alias(session, target, source.canonical_name, alias_kind="manual", created_by="manual")

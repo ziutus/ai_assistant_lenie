@@ -2350,6 +2350,11 @@ class Organization(Base):
     website: Mapped[str | None] = mapped_column(Text)
     # Vault-relative path of the Obsidian note describing the organization.
     obsidian_note_path: Mapped[str | None] = mapped_column(Text)
+    # The imported obsidian_note Document holding the full note; wins over the path,
+    # which only names the vault file and means nothing once notes live in Lenie alone.
+    primary_note_document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True,
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )

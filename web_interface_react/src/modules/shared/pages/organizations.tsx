@@ -34,6 +34,7 @@ interface OrganizationDetail {
   longitude: number | null;
   website: string | null;
   obsidian_note_path: string | null;
+  primary_note_document_id?: number | null;
   // Imported Obsidian note the path points at (organization_location.organization_note).
   note?: OrganizationNote | null;
 }
@@ -61,6 +62,8 @@ interface OrganizationCountryTie {
   relation: string;
   relation_label: string;
   note: string | null;
+  // The registry organization that stands for this country (type "country"), if any.
+  country_organization_id?: number | null;
 }
 
 // kraj-* tags of the organization's documents — candidates, never auto-assigned.
@@ -116,6 +119,7 @@ interface OrganizationDocument {
   id: number;
   title: string;
   document_type: string;
+  byline?: string | null;
   raw_mention: string | null;
   mention_count: number;
   confidence: string;
@@ -407,6 +411,7 @@ const Organizations = () => {
         longitude: response.data.longitude,
         website: response.data.website,
         obsidian_note_path: response.data.obsidian_note_path,
+        primary_note_document_id: response.data.primary_note_document_id,
         note: response.data.note,
       } : prev);
       setIsEditing(false);
@@ -666,7 +671,16 @@ const Organizations = () => {
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {countryTies.map((tie) => (
                 <li key={tie.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
-                  <strong>{tie.name_pl}</strong>
+                  {tie.country_organization_id && tie.country_organization_id !== organization.id ? (
+                    <NavLink
+                      to={`/organizations/${tie.country_organization_id}`}
+                      style={{ background: "#e0f2fe", borderRadius: 12, padding: "1px 10px", fontWeight: 600, textDecoration: "none" }}
+                    >
+                      {tie.name_pl}
+                    </NavLink>
+                  ) : (
+                    <strong>{tie.name_pl}</strong>
+                  )}
                   <span style={{ color: "#0369a1", fontSize: "0.85em" }}>{tie.relation_label}</span>
                   {tie.note && <span style={{ color: "#667", fontSize: "0.85em" }}>— {tie.note}</span>}
                   <button
@@ -866,6 +880,9 @@ const Organizations = () => {
                 <NavLink to={`/read/${doc.id}${doc.raw_mention ? `?highlight=${encodeURIComponent(doc.raw_mention)}` : ""}`}>
                   {doc.title || `Dokument ${doc.id}`}
                 </NavLink>
+                {doc.document_type === "youtube" && doc.byline && (
+                  <span style={{ marginLeft: 8, color: "#475569", fontSize: "0.9em" }}>📺 {doc.byline}</span>
+                )}
                 {doc.mention_count > 0 && <strong style={{ marginLeft: 8, color: "#334155" }}>×{doc.mention_count}</strong>}
                 {EDITOR_TYPES.includes(doc.document_type) && (
                   <NavLink to={`/${doc.document_type}/${doc.id}`} style={{ marginLeft: 10, fontSize: "0.85em", color: "#0369a1" }}>
