@@ -10,6 +10,7 @@ imports/
 ├── book_extract_images.py    # Backfill: extract images for a book PDF already imported (no text_md rewrite)
 ├── backfill_obsidian_content_groups.py  # One-off: enqueue Bielik content-group (Tematy) classification for already-imported obsidian_note documents
 ├── check_pdf_text_layer.py   # Check if a PDF has a usable text layer or needs OCR (no DB)
+├── project_cards_parse.py    # Parse a directory of project-card PDFs ("Robotyka – 100 projektów") into cards.json + review.csv (no DB)
 ├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
 ├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
 ├── select_control_questions.py # Cheap-LLM (Bielik) router: which control questions a document actually answers
@@ -104,6 +105,19 @@ python imports/check_pdf_text_layer.py path/to/book.pdf --show-sample 5  # also 
 ```
 
 Exit code `0` when the text layer looks usable (`TEXT_LAYER_OK`), `1` otherwise (`OCR_NEEDED` or `UNCERTAIN`) — usable in scripts/CI-style checks.
+
+### `project_cards_parse.py`
+
+Turns a directory of one-card-per-file PDFs (`NNN - Title.pdf`, the three-digit prefix is the card number) into `cards.json` (one record per card: age/time/difficulty as numbers, materials/tools/steps/troubleshooting/variants, `needs_adult`, `flags`) and `review.csv` (a `;`-separated summary for Excel, one row per card with the flags). Thin wrapper over `library/project_card_parser.py`, which recognises the fixed card layout from the text layer plus font sizes — no OCR. A PDF that fails to parse becomes a `PARSE_ERROR` record instead of aborting the run. The `flags` are heuristics for a human (an item used in a step but not listed, a hazardous tool with no adult mentioned, ...); they never change the content. **Does not touch the Lenie database or the network.** Parsing 100 PDFs takes a few minutes (a 2000 pt-tall page per card is slow in PyMuPDF's `dict` mode).
+
+Send the result to Lenie with `POST /project_cards/import` (`{"cards": [...]}`, see `backend/CLAUDE.md` "Project cards"); a card already marked `reviewed` is not overwritten by an unreviewed import. A card layout that differs from the Robotyka series needs its own tuned constants (title/tagline font sizes, section headers) — copy the module rather than loosening these.
+
+**Running:**
+```bash
+cd backend
+PYTHONPATH=. python -X utf8 imports/project_cards_parse.py "H:/path/to/cards"                       # writes tmp/project_cards/out/
+PYTHONPATH=. python -X utf8 imports/project_cards_parse.py "H:/path/to/cards" --out-dir tmp/project_cards/out
+```
 
 ### `book_import_pdf_<slug>.py` (one script per book)
 
