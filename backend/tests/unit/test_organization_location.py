@@ -14,6 +14,7 @@ from library.organization_location import (
     country_suggestions,
     geocode_headquarters,
     organization_note,
+    organization_note_for,
     related_persons,
     related_places,
     remove_country,
@@ -235,3 +236,24 @@ def test_country_organization_ids_maps_slug_to_country_organization():
     assert country_organization_ids(session, ["iran", "irak"]) == {"iran": 39}
     statement = str(session.execute.call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
     assert "based_in" in statement and "'country'" in statement
+
+
+def test_organization_note_for_prefers_linked_document():
+    session = MagicMock()
+    session.get.return_value = MagicMock(id=10159, title="Iran", text_md="# Iran", text="raw")
+    organization = Organization(canonical_name="Iran", primary_note_document_id=10159,
+                                obsidian_note_path="Kraje/Inna.md")
+    assert organization_note_for(session, organization) == {
+        "document_id": 10159, "title": "Iran", "text_md": "# Iran"}
+    session.execute.assert_not_called()
+
+
+def test_organization_note_for_falls_back_to_path_when_link_is_unset_or_dangling():
+    session = MagicMock()
+    session.get.return_value = None
+    doc = MagicMock(id=7, title="Iran", text_md="", text="plain")
+    session.execute.return_value.scalar_one_or_none.return_value = doc
+    organization = Organization(canonical_name="Iran", primary_note_document_id=99,
+                                obsidian_note_path="Kraje/Iran.md")
+    assert organization_note_for(session, organization)["document_id"] == 7
+    assert organization_note_for(MagicMock(), Organization(canonical_name="X")) is None

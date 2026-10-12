@@ -71,12 +71,20 @@ def geocode_headquarters(session, organization: Organization) -> bool:
     return bool(row.resolved)
 
 
-def organization_note(session, note_path: str | None) -> dict | None:
-    """The imported Obsidian note (``documents.url == obsidian://<path>``) that
-    ``Organization.obsidian_note_path`` points at, or None.
+def _note_dict(document: Document) -> dict:
+    return {
+        "document_id": document.id,
+        "title": document.title,
+        "text_md": document.text_md or document.text or "",
+    }
 
-    The stored path is vault-relative and, in older data, may lack the
-    ``02-wiedza/`` prefix the reimport URL carries, so both spellings are tried.
+
+def organization_note(session, note_path: str | None) -> dict | None:
+    """The imported Obsidian note (``documents.url == obsidian://<path>``) that a
+    vault-relative path points at, or None.
+
+    The stored path may lack the ``02-wiedza/`` prefix the reimport URL carries
+    in older data, so both spellings are tried.
     """
     path = (note_path or "").strip().lstrip("/")
     if not path:
@@ -88,13 +96,17 @@ def organization_note(session, note_path: str | None) -> dict | None:
         select(Document).where(Document.url.in_(urls), Document.document_type == "obsidian_note")
         .order_by(Document.id).limit(1)
     ).scalar_one_or_none()
-    if document is None:
-        return None
-    return {
-        "document_id": document.id,
-        "title": document.title,
-        "text_md": document.text_md or document.text or "",
-    }
+    return _note_dict(document) if document is not None else None
+
+
+def organization_note_for(session, organization: Organization) -> dict | None:
+    """The organization's note: the linked document when ``primary_note_document_id``
+    is set, otherwise the one its ``obsidian_note_path`` resolves to."""
+    if organization.primary_note_document_id is not None:
+        document = session.get(Document, organization.primary_note_document_id)
+        if document is not None:
+            return _note_dict(document)
+    return organization_note(session, organization.obsidian_note_path)
 
 
 def _organization_document_ids(organization_id: int):
@@ -292,6 +304,6 @@ def absorb_organization(session, source: Organization, target: Organization) -> 
         target.headquarters_address = source.headquarters_address
         target.latitude = source.latitude
         target.longitude = source.longitude
-    for field in ("website", "obsidian_note_path"):
+    for field in ("website", "obsidian_note_path", "primary_note_document_id"):
         if getattr(target, field) is None:
             setattr(target, field, getattr(source, field))

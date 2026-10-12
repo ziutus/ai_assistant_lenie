@@ -2015,7 +2015,7 @@ def organization_get(organization_id: int):
         ],
         "document_count": document_count or 0,
         "ambiguous_with": ambiguous_with,
-        "note": organization_location.organization_note(session, organization.obsidian_note_path),
+        "note": organization_location.organization_note_for(session, organization),
     }, 200
 
 
@@ -2027,6 +2027,7 @@ def _organization_location_fields(organization) -> dict:
         "longitude": float(organization.longitude) if organization.longitude is not None else None,
         "website": organization.website,
         "obsidian_note_path": organization.obsidian_note_path,
+        "primary_note_document_id": organization.primary_note_document_id,
     }
 
 
@@ -2213,6 +2214,29 @@ def organization_update(organization_id: int):
     for field in ('website', 'obsidian_note_path'):
         if field in data:
             setattr(organization, field, (data.get(field) or "").strip() or None)
+    if 'primary_note_document_id' in data:
+        from library.db.models import Document
+        raw_note_id = data.get('primary_note_document_id')
+        if raw_note_id in (None, ""):
+            organization.primary_note_document_id = None
+        else:
+            try:
+                note_id = int(raw_note_id)
+            except (TypeError, ValueError):
+                session.rollback()
+                return {"status": "error", "message": "primary_note_document_id must be an integer"}, 400
+            note_document = session.get(Document, note_id)
+            if note_document is None or note_document.document_type != "obsidian_note":
+                session.rollback()
+                return {"status": "error",
+                        "message": "primary_note_document_id must point at an obsidian_note document"}, 400
+            organization.primary_note_document_id = note_id
+    elif 'obsidian_note_path' in data and organization.primary_note_document_id is None:
+        # A new vault path that resolves to an imported note links it right away.
+        from library import organization_location
+        resolved_note = organization_location.organization_note(session, organization.obsidian_note_path)
+        if resolved_note is not None:
+            organization.primary_note_document_id = resolved_note["document_id"]
 
     geocoded = None
     if 'headquarters_address' in data:
@@ -2248,7 +2272,7 @@ def organization_update(organization_id: int):
                     "description": organization.description,
                     "organization_type": organization.organization_type,
                     **_organization_location_fields(organization),
-                    "note": organization_location.organization_note(session, organization.obsidian_note_path),
+                    "note": organization_location.organization_note_for(session, organization),
                     "geocoded": geocoded,
                     "rename": rename_result}), 200
 

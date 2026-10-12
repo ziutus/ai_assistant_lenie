@@ -34,6 +34,7 @@ interface OrganizationDetail {
   longitude: number | null;
   website: string | null;
   obsidian_note_path: string | null;
+  primary_note_document_id?: number | null;
   // Imported Obsidian note the path points at (organization_location.organization_note).
   note?: OrganizationNote | null;
 }
@@ -410,6 +411,7 @@ const Organizations = () => {
         longitude: response.data.longitude,
         website: response.data.website,
         obsidian_note_path: response.data.obsidian_note_path,
+        primary_note_document_id: response.data.primary_note_document_id,
         note: response.data.note,
       } : prev);
       setIsEditing(false);
