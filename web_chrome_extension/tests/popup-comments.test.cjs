@@ -81,7 +81,7 @@ test('opt-in preview is editable and explicit replacement sends comments to NAS'
     assert.equal(p.requests[0].body.html, '');
     assert.match(p.requests[0].body.text, /^Original post\n\n## Komentarze/);
     assert.match(p.requests[0].body.text, /Selected comment$/);
-    assert.match(p.alerts[0], /zaktualizowana/);
+    assert.match(p.el('sendStatus').textContent, /zaktualizowana/);
   } finally { p.dom.window.close(); }
 });
 
@@ -104,7 +104,7 @@ test('replacement cannot fall back to AWS', async () => {
     p.el('replaceSocialPost').checked = true;
     await p.send();
     assert.equal(p.requests.length, 0);
-    assert.match(p.alerts[0], /wymaga dostępnego NAS/);
+    assert.match(p.el('sendStatus').textContent, /wymaga dostępnego NAS/);
   } finally { p.dom.window.close(); }
 });
 
@@ -131,6 +131,6 @@ test('empty post or empty selected comments block submission', async () => {
     p.el('linkedinCommentsText').value = '';
     await p.send();
     assert.equal(p.requests.length, 0);
-    assert.match(p.alerts[1], /Brak komentarzy/);
+    assert.match(p.el('sendStatus').textContent, /Brak komentarzy/);
   } finally { p.dom.window.close(); }
 });
