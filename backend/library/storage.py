@@ -16,6 +16,7 @@ class ObjectStorage(Protocol):
     def put_bytes(self, key: str, data: bytes, content_type: str | None = None) -> None: ...
     def get_bytes(self, key: str) -> bytes: ...
     def exists(self, key: str) -> bool: ...
+    def delete(self, key: str) -> None: ...
     def iter_objects(self, prefix: str = ""): ...
     def presigned_get_url(self, key: str, expires_in: int = 3600) -> str | None: ...
 
@@ -53,6 +54,9 @@ class LocalStorage:
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
+
+    def delete(self, key: str) -> None:
+        self._path(key).unlink(missing_ok=True)
 
     def iter_objects(self, prefix: str = ""):
         base = self.root / prefix if prefix else self.root
@@ -106,6 +110,9 @@ class S3Storage:
             if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
                 return False
             raise
+
+    def delete(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=_safe_key(key))
 
     def iter_objects(self, prefix: str = ""):
         paginator = self.client.get_paginator("list_objects_v2")

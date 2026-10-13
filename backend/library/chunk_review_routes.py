@@ -1720,8 +1720,10 @@ def document_images(doc_id: int):
         "doc_id": doc_id,
         "images": [
             {
+                "id": img.id,
                 "position": img.position,
                 "url": storage.presigned_get_url(img.storage_key) if img.storage_key else img.url,
+                "source_url": img.url,
                 "caption_text": img.caption_text,
                 "alt_text": img.alt_text,
                 "page_number": img.page_number,
@@ -1730,6 +1732,40 @@ def document_images(doc_id: int):
             }
             for img in images
         ],
+    })
+
+
+@bp.route("/document/<int:doc_id>/images/download", methods=["POST"])
+def document_images_download(doc_id: int):
+    """Copy a webpage's external images into object storage (MinIO).
+
+    Body (optional JSON): {"image_ids": [..]} — one or several images; without
+    it every image of the document that has no stored copy yet is downloaded.
+    Response: {"results": [{id, status: stored|already_stored|error, message?}]}.
+    """
+    from library.config_loader import load_config
+    from library.document_image_download import download_document_images
+    from library.storage import storage_from_config
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    payload = request.get_json(silent=True) or {}
+    image_ids = payload.get("image_ids")
+    if image_ids is not None:
+        if not isinstance(image_ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in image_ids):
+            return jsonify({"status": "error", "message": "image_ids must be a list of integers"}), 400
+
+    storage = storage_from_config(load_config())
+    results = download_document_images(session, storage, doc_id, image_ids)
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "stored": sum(1 for r in results if r["status"] == "stored"),
+        "failed": sum(1 for r in results if r["status"] == "error"),
+        "results": results,
     })
 
 
