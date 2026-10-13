@@ -4,6 +4,10 @@ Chrome/Kiwi browser extension for capturing webpages and sending them to the Len
 
 **Version**: 1.0.60 | **Manifest**: v3
 
+Operational rules (phone distribution folder on Google Drive — always upload the latest version there) live in [AGENTS.md](AGENTS.md); they are imported here:
+
+@AGENTS.md
+
 ## Directory Structure
 
 ```
