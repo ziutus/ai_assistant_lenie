@@ -134,11 +134,11 @@ def test_document_images_marks_local_vs_url_source(client):
     client.session.get.return_value = SimpleNamespace(id=42)
 
     storage_img = SimpleNamespace(
-        position=0, url=None, caption_text="Rysunek 1", alt_text=None,
+        id=1, position=0, url=None, caption_text="Rysunek 1", alt_text=None,
         page_number=3, chapter_position=1, storage_key="documents/uuid/images/0.png",
     )
     url_img = SimpleNamespace(
-        position=1, url="https://example.test/photo.jpg", caption_text=None,
+        id=2, position=1, url="https://example.test/photo.jpg", caption_text=None,
         alt_text="Zdjęcie", page_number=None, chapter_position=None, storage_key=None,
     )
     query = MagicMock()
@@ -158,6 +158,47 @@ def test_document_images_marks_local_vs_url_source(client):
     assert items[0]["url"] == "https://minio.example/presigned"
     assert items[1]["is_local"] is False
     assert items[1]["url"] == "https://example.test/photo.jpg"
+    assert [items[0]["id"], items[1]["id"]] == [1, 2]
+    assert items[0]["source_url"] is None
+    assert items[1]["source_url"] == "https://example.test/photo.jpg"
+
+
+def test_document_images_download_passes_ids_and_summarises(client):
+    client.session.get.return_value = SimpleNamespace(id=42)
+    results = [{"id": 2, "status": "stored"}, {"id": 3, "status": "error", "message": "404"}]
+
+    with (
+        patch("library.config_loader.load_config", return_value={}),
+        patch("library.storage.storage_from_config"),
+        patch("library.document_image_download.download_document_images", return_value=results) as download,
+    ):
+        resp = client.post("/document/42/images/download", json={"image_ids": [2, 3]})
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert (body["stored"], body["failed"]) == (1, 1)
+    assert download.call_args.args[2:] == (42, [2, 3])
+
+
+def test_document_images_download_without_body_means_all(client):
+    client.session.get.return_value = SimpleNamespace(id=42)
+
+    with (
+        patch("library.config_loader.load_config", return_value={}),
+        patch("library.storage.storage_from_config"),
+        patch("library.document_image_download.download_document_images", return_value=[]) as download,
+    ):
+        resp = client.post("/document/42/images/download")
+
+    assert resp.status_code == 200
+    assert download.call_args.args[2:] == (42, None)
+
+
+@pytest.mark.parametrize("bad", ["x", [1, "2"], [True]])
+def test_document_images_download_rejects_bad_image_ids(client, bad):
+    client.session.get.return_value = SimpleNamespace(id=42)
+    resp = client.post("/document/42/images/download", json={"image_ids": bad})
+    assert resp.status_code == 400
 
 
 @pytest.mark.parametrize("marker", ["[img0]", "[img0: Photo]"])

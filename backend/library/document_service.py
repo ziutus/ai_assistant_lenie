@@ -454,6 +454,15 @@ class DocumentService:
                 doc.text = md_remove_markdown(canonical_md)
                 doc.document_length = len(canonical_md)
                 doc.quality = None
+                if doc.id is not None:
+                    # An image whose [imgN] marker the user deleted from the text
+                    # leaves the "Ilustracje" catalogue too (and its stored copy).
+                    from library.document_images import prune_images_removed_from_text
+
+                    prune_images_removed_from_text(
+                        self.session, doc.id, previous_canonical_text, canonical_md,
+                        get_storage=self._get_storage,
+                    )
         elif submitted_text is not None:
             # Transcripts and other non-webpage documents keep plain text as
             # their native canonical representation.

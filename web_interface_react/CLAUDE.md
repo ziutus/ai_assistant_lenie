@@ -122,7 +122,7 @@ boolean toggles, and form fields do not require this pattern.
 | `/list` | `list.tsx` | Browse documents with multi-value type/status/topic filters and text search. Each row shows a `🔗 N` badge (from `/website_list`'s `link_count`/`proposed_link_count`) when the document has `document_links` — amber `· N?` for links still awaiting review; the badge links to the document's editor (or `/read` for `obsidian_note`) where `DocumentLinksPanel` lives. |
 | `/search` | `search.tsx` | Stage 9 complete: natural `POST /search`, visible interpretation, editable/removable topic/filter chips, corrected explicit re-search without LLM, feedback, and shareable `mode=explicit&criteria=<JSON>` URLs that replay explicit criteria without Bielik. |
 | `/link/:id?` | `link.tsx` | Edit link documents (metadata only) |
-| `/webpage/:id?` | `webpage.tsx` | Edit webpages with AI tools (split, clean) |
+| `/webpage/:id?` | `webpage.tsx` | Edit webpages with AI tools (split, clean). The collapsed "🖼️ Ilustracje (N)" panel (`DocumentImagesPanel`, `GET /document/:id/images`) reloads after every save — deleting an `[imgN]` marker from the text drops that image — and offers "📦 Pobierz do MinIO" per image plus "Pobierz wszystkie do MinIO" (`POST /document/:id/images/download`); a stored copy is served via presigned link and badged "📦 storage" |
 | `/youtube/:id?` | `youtube.tsx` | Edit YouTube transcripts |
 | `/movie/:id?` | `movie.tsx` | Edit movie transcripts |
 | `/chunks/:id` | `chunks.tsx` | Review a document's chunk analysis runs (see below) |

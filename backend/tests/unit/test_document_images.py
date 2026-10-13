@@ -15,7 +15,12 @@ pytest.importorskip("sqlalchemy")
 from sqlalchemy import inspect  # noqa: E402
 
 from library.db.models import DocumentImage  # noqa: E402
-from library.document_images import replace_document_images, replace_storage_images  # noqa: E402
+from library.document_images import (  # noqa: E402
+    image_marker_present,
+    prune_images_removed_from_text,
+    replace_document_images,
+    replace_storage_images,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +147,8 @@ class TestReplaceDocumentImages:
         """Replace semantics: even an empty new set must clear old rows."""
         session = MagicMock(spec=["execute", "add_all"])
         replace_document_images(session, document_id=1, images=[])
-        session.execute.assert_called_once()
+        delete_stmt = session.execute.call_args[0][0]
+        assert delete_stmt.is_delete
 
     def test_does_not_commit(self):
         """Caller owns the transaction — helper must only queue changes."""
@@ -169,11 +175,26 @@ class TestReplaceDocumentImages:
         assert rows[0].position == 7
 
     def test_only_deletes_url_sourced_rows(self):
-        """A web-article reclean must never touch a book's storage_key rows."""
+        """A web-article reclean must never touch a book's storage_key-only rows."""
         session = MagicMock(spec=["execute", "add_all"])
         replace_document_images(session, document_id=9332, images=[])
         delete_stmt = session.execute.call_args[0][0]
-        assert "storage_key" in str(delete_stmt.whereclause).lower()
+        assert "url is not null" in str(delete_stmt.whereclause).lower()
+
+    def test_downloaded_copy_is_carried_over_to_row_with_same_url(self):
+        session = MagicMock(spec=["execute", "add_all"])
+        session.execute.return_value.all.return_value = [
+            ("https://example.com/1.jpg", "documents/5/web_images/11.jpg"),
+        ]
+        rows = replace_document_images(
+            session, document_id=5,
+            images=[
+                {"alt": "a", "url": "https://example.com/1.jpg"},
+                {"alt": "b", "url": "https://example.com/2.jpg"},
+            ],
+        )
+        assert rows[0].storage_key == "documents/5/web_images/11.jpg"
+        assert rows[1].storage_key is None
 
 
 # ---------------------------------------------------------------------------
@@ -236,4 +257,91 @@ class TestReplaceStorageImages:
         session = MagicMock(spec=["execute", "add_all"])
         replace_storage_images(session, document_id=9332, images=[])
         delete_stmt = session.execute.call_args[0][0]
-        assert "storage_key" in str(delete_stmt.whereclause).lower()
+        where = str(delete_stmt.whereclause).lower()
+        assert "storage_key is not null" in where
+        assert "url is null" in where
+
+
+# ---------------------------------------------------------------------------
+# image_marker_present / prune_images_removed_from_text
+# ---------------------------------------------------------------------------
+
+
+class TestImageMarkerPresent:
+    @pytest.mark.parametrize("text,position,expected", [
+        ("tekst [img3] dalej", 3, True),
+        ("tekst [img3: podpis zdjęcia] dalej", 3, True),
+        ("tekst [img30] dalej", 3, False),
+        ("[img3]", 30, False),
+        ("brak markera", 0, False),
+        ("", 0, False),
+        (None, 0, False),
+    ])
+    def test_marker_detection(self, text, position, expected):
+        assert image_marker_present(text, position) is expected
+
+
+class TestPruneImagesRemovedFromText:
+    @staticmethod
+    def _session(rows):
+        session = MagicMock(spec=["execute", "delete"])
+        session.execute.return_value.scalars.return_value.all.return_value = rows
+        return session
+
+    @staticmethod
+    def _row(position, storage_key=None):
+        return DocumentImage(
+            document_id=1, position=position, url=f"https://example.com/{position}.jpg",
+            storage_key=storage_key,
+        )
+
+    def test_deletes_only_images_whose_marker_was_removed(self):
+        rows = [self._row(0), self._row(1)]
+        session = self._session(rows)
+
+        removed = prune_images_removed_from_text(
+            session, 1, "a [img0: x]\n[img1]\nb", "a [img0: x]\nb",
+        )
+
+        assert removed == 1
+        session.delete.assert_called_once_with(rows[1])
+
+    def test_image_without_marker_in_old_text_is_kept(self):
+        """An image that never had a marker in the text is not the user's deletion."""
+        rows = [self._row(2)]
+        session = self._session(rows)
+
+        removed = prune_images_removed_from_text(session, 1, "tekst bez markerów", "inny tekst")
+
+        assert removed == 0
+        session.delete.assert_not_called()
+
+    def test_deletes_stored_copy_of_removed_image(self):
+        rows = [self._row(0, storage_key="documents/1/web_images/5.jpg")]
+        session = self._session(rows)
+        storage = MagicMock()
+
+        prune_images_removed_from_text(session, 1, "[img0]", "", get_storage=lambda: storage)
+
+        storage.delete.assert_called_once_with("documents/1/web_images/5.jpg")
+        session.delete.assert_called_once_with(rows[0])
+
+    def test_storage_failure_does_not_block_row_deletion(self):
+        rows = [self._row(0, storage_key="documents/1/web_images/5.jpg")]
+        session = self._session(rows)
+        storage = MagicMock()
+        storage.delete.side_effect = RuntimeError("minio down")
+
+        removed = prune_images_removed_from_text(session, 1, "[img0]", "", get_storage=lambda: storage)
+
+        assert removed == 1
+        session.delete.assert_called_once_with(rows[0])
+
+    def test_storage_not_built_when_nothing_stored(self):
+        rows = [self._row(0)]
+        session = self._session(rows)
+        get_storage = MagicMock()
+
+        prune_images_removed_from_text(session, 1, "[img0]", "", get_storage=get_storage)
+
+        get_storage.assert_not_called()
