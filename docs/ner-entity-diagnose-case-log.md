@@ -163,7 +163,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 
 | Kod | Kategoria | Mechanizm | Przykład | Referencja |
 |---|---|---|---|---|
-| T1 | Sklejony span NER | Brak przecinka/kropki w źródle → spaCy łączy dwie sąsiednie encje w jeden span | "Al-Faszirze Emiraty" | E006, E007 |
+| T1 | Sklejony/ucięty span NER | spaCy łączy sąsiednie encje lub ucina nazwę przed kolejnym słowem | "Al-Faszirze Emiraty", „Arabię” przed „Saudyjską” | E006, E007, E026 |
 | T2 | Zgubiona odmiana w lemacie (`Span.lemma_`) | spaCy konkatenuje lematy per-token, gubi zgodność przymiotnik-rzeczownik w nazwach wieloczłonowych | "Morze Czerwone" → lemat "Morze czerwony" | E001, E009, E013 |
 | T3 | Brak nominatiwu w tekście / rzadka nazwa obcojęzyczna | Nazwa występuje tylko w przypadku zależnym, gazetteer/geokoder nie rozpoznaje odmiany | "Omdurmanie" | E002, E009 |
 | T4 | Homonim geograficzny | Nazwa pokrywa się z inną, niepowiązaną, lepiej zindeksowaną lokalizacją | "Kosti" → zamek "Kost" (Czechy) | E011 |
@@ -482,3 +482,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — globalny wpis `ner_exclusions` (`placeName`, „Huti”, id 19) oraz usunięcie placeName „Huti” z dok. #9348, #9353, #9355, #9356, #9358, #9380, #10770 i „Huty” z #10753. Organizacje „Huti” zostały.
 - **Test regresyjny:** brak — czysto danowa poprawka, sam wpis w `ner_exclusions` dokumentuje przypadek
 - **Status:** tylko dane bez zmiany kodu
+
+### E026 — „Arabię” ucięte przed „Saudyjską” (8 dokumentów, 2026-10-14)
+
+- **Typ encji:** placeName
+- **Kategoria:** T1 — sklejony/ucięty span NER.
+- **Zdanie źródłowe:** „Agencja AFP podkreśliła, że było to "najkrwawsze uderzenie" na Arabię Saudyjską od ponad dekady.”
+- **Objaw:** osobna „Arabia” z geokodem „Półwysep Arabski” (niezweryfikowany, szary chip) obok poprawnej „Arabii Saudyjskiej”; dotyczy dok. #10770, #9204, #9348, #9353, #9354, #9355, #9356 i #10756.
+- **Przyczyna źródłowa:** spaCy ucina span po „Arabię” lub „Arabii”, zwracając lemat „Arabia”, choć kolejnym słowem w źródle jest forma „Saudyjsk*”.
+- **Poprawka:** kod — zamknięta reguła w `ner_client.py` rozszerza span o następne słowo „Saudyjsk*” na podstawie offsetów względem okna, ustawia lemat „Arabia Saudyjska” i pozostawia scalenie istniejącej kanonikalizacji; sama „Arabia”, brak offsetów i koniec okna pozostają bez zmian.
+- **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestTruncatedCountrySpan`
+- **Status:** żywy bug naprawiony w kodzie

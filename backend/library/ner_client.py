@@ -13,6 +13,7 @@ import re
 from collections import Counter
 
 import requests
+from unidecode import unidecode
 
 from library.city_gazetteer import canonical_city_name
 from library.geo_feature_gazetteer import canonical_geo_feature_name
@@ -52,6 +53,30 @@ MAX_TEXT_TOTAL = 2_000_000
 # When cutting a window, back up to the nearest whitespace within this many
 # chars so a name straddling the boundary isn't split in half.
 WINDOW_BOUNDARY_BACKTRACK = 200
+
+
+# Closed list of truncated country spans recoverable from the next source word.
+_COUNTRY_SPAN_EXTENSIONS = (
+    (re.compile(r"arabi[aeio]"), re.compile(r"saudyjsk[a-z]*"), "Arabia Saudyjska"),
+)
+
+
+def _extend_country_span(entity: dict, window: str) -> dict:
+    """Repair known cuts using offsets relative to the exact text sent to NER."""
+    if entity.get("label") not in COUNTRY_CHECK_TYPES:
+        return entity
+    start, end = entity.get("start"), entity.get("end")
+    if not isinstance(start, int) or not isinstance(end, int) or not 0 <= start < end <= len(window):
+        return entity
+    surface = entity.get("text") or ""
+    for bare_pattern, next_pattern, lemma in _COUNTRY_SPAN_EXTENSIONS:
+        if not bare_pattern.fullmatch(unidecode(surface).lower()):
+            continue
+        following = re.match(r"\s+([^\W\d_]+)", window[end:])
+        if following and next_pattern.fullmatch(unidecode(following.group(1)).lower()):
+            return {**entity, "text": surface + following.group(0),
+                    "lemma": lemma, "end": end + following.end()}
+    return entity
 
 
 def _service_url() -> str:
@@ -132,7 +157,7 @@ def _extract_entities(text: str, *, strict: bool) -> list[dict]:
             entities = resp.json().get("entities", [])
             if not isinstance(entities, list):
                 raise ValueError("NER service returned unexpected payload shape")
-            collected.extend(entities)
+            collected.extend(_extend_country_span(entity, window) for entity in entities)
         except (requests.RequestException, ValueError) as exc:
             message = f"NER extraction failed in window {window_index}: {exc}"
             if strict:
