@@ -417,7 +417,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 it("preserves reader highlight behavior when menuActions is absent", () => {
   const highlight = vi.fn();
   render(<EntityChips label="Miejsca" items={[place]} highlightMode onHighlight={highlight} />);
-  fireEvent.click(screen.getByRole("button"));
+  fireEvent.click(screen.getByTitle("Podświetl w tekście rozdziału"));
   expect(highlight).toHaveBeenCalledWith(place);
   expect(screen.queryByRole("menu")).toBeNull();
 });
@@ -446,4 +446,90 @@ it("omits merge when there is no other place and keeps edit delete working", asy
   expect(screen.getByRole("combobox")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Zakończ edycję" }));
   expect(screen.queryByRole("combobox")).toBeNull();
+});
+
+
+// Copy controls are shared by every entity type and must not activate the chip.
+const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+const execCommandDescriptor = Object.getOwnPropertyDescriptor(document, "execCommand");
+afterEach(() => {
+  if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+  else Reflect.deleteProperty(navigator, "clipboard");
+  if (execCommandDescriptor) Object.defineProperty(document, "execCommand", execCommandDescriptor);
+  else Reflect.deleteProperty(document, "execCommand");
+  vi.useRealTimers();
+});
+const mockClipboard = (writeText = vi.fn().mockResolvedValue(undefined)) => {
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  return writeText;
+};
+
+it.each(["click", "Enter", " "])("copies the exact place name on %s without highlighting", async (key) => {
+  const writeText = mockClipboard();
+  const highlight = vi.fn();
+  render(<EntityChips label="Miejsca" items={[{ id: 7, text: "Rijadzie", count: 2, entity_type: "placeName" }]}
+    highlightMode onHighlight={highlight} />);
+  const copy = screen.getByRole("button", { name: "Kopiuj nazwę: Rijadzie" });
+  expect(copy.tagName).toBe("SPAN");
+  expect(copy.tabIndex).toBe(0);
+  await act(async () => {
+    const allowed = key === "click" ? fireEvent.click(copy) : fireEvent.keyDown(copy, { key });
+    expect(allowed).toBe(false);
+  });
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("Rijadzie");
+  expect(highlight).not.toHaveBeenCalled();
+  expect(copy.textContent).toBe("✓");
+});
+
+it("renders the person copy control without navigating its link", async () => {
+  const writeText = mockClipboard();
+  renderInRouter(<EntityChips label="Osoby" linkPersons
+    items={[{ id: 1, text: "Paweł Kowalski", count: 1, person_id: 42, entity_type: "persName" }]} />);
+  const copy = screen.getByRole("button", { name: "Kopiuj nazwę: Paweł Kowalski" });
+  expect(copy.closest("a")?.getAttribute("href")).toBe("/persons/42");
+  await act(async () => { expect(fireEvent.click(copy)).toBe(false); });
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("Paweł Kowalski");
+});
+
+it("copies an organization without opening its menu", async () => {
+  const writeText = mockClipboard();
+  render(<EntityChips label="Organizacje" items={[{ text: "ONZ", count: 1, entity_type: "orgName" }]}
+    menuActions={() => [{ label: "Edytuj", action: vi.fn() }]} />);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Kopiuj nazwę: ONZ" })); });
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("ONZ");
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+it("keeps feedback per chip, resets it after 1.5 seconds and clears timers on unmount", async () => {
+  vi.useFakeTimers();
+  mockClipboard();
+  const view = render(<EntityChips label="Miejsca" items={[place, { text: "Rijadzie", count: 1 }]} />);
+  const copy = screen.getByRole("button", { name: "Kopiuj nazwę: Rijadzie" });
+  await act(async () => { fireEvent.click(copy); });
+  expect(copy.textContent).toBe("✓");
+  expect(screen.getByRole("button", { name: "Kopiuj nazwę: " + place.text }).textContent).toBe("⧉");
+  act(() => { vi.advanceTimersByTime(1500); });
+  expect(copy.textContent).toBe("⧉");
+  await act(async () => { fireEvent.click(copy); });
+  view.unmount();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["missing", "rejected", "failed fallback"])("handles %s clipboard access safely", async (mode) => {
+  if (mode === "missing") Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+  else mockClipboard(vi.fn().mockRejectedValue(new Error("Clipboard unavailable")));
+  const execCommand = vi.fn(() => {
+    expect(document.querySelector("textarea")?.value).toBe("Rijadzie");
+    if (mode === "failed fallback") throw new Error("Copy unavailable");
+    return true;
+  });
+  Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+  render(<EntityChips label="Miejsca" items={[{ text: "Rijadzie", count: 1 }]} />);
+  const copy = screen.getByRole("button", { name: "Kopiuj nazwę: Rijadzie" });
+  copy.focus();
+  await act(async () => { fireEvent.click(copy); });
+  expect(execCommand).toHaveBeenCalledWith("copy");
+  expect(document.querySelector("textarea")).toBeNull();
+  expect(document.activeElement).toBe(copy);
+  expect(copy.textContent).toBe(mode === "failed fallback" ? "⧉" : "✓");
 });

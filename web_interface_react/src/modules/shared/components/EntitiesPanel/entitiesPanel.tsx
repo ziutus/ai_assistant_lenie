@@ -160,6 +160,32 @@ const sourceTitleOf = (item: EntityItem): string | undefined => {
   return title || undefined;
 };
 
+async function copyEntityName(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* Clipboard access can fail on HTTP; try the textarea fallback. */ }
+
+  const textarea = document.createElement("textarea");
+  const previousFocus = document.activeElement;
+  try {
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+    if (previousFocus instanceof HTMLElement) previousFocus.focus();
+  }
+}
+
 export const EntityChips = ({
   label,
   items,
@@ -192,6 +218,33 @@ export const EntityChips = ({
   highlightMode?: boolean;
   onHighlight?: (item: EntityItem) => void;
 }) => {
+  const [copiedKeys, setCopiedKeys] = React.useState<Set<string>>(() => new Set());
+  const copyTimers = React.useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const mounted = React.useRef(false);
+  React.useEffect(() => {
+    mounted.current = true;
+    const timers = copyTimers.current;
+    return () => {
+      mounted.current = false;
+      timers.forEach(clearTimeout);
+      timers.clear();
+    };
+  }, []);
+  const copyName = async (event: React.MouseEvent | React.KeyboardEvent, item: EntityItem, key: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!await copyEntityName(item.text) || !mounted.current) return;
+    clearTimeout(copyTimers.current.get(key));
+    setCopiedKeys((keys) => new Set(keys).add(key));
+    copyTimers.current.set(key, setTimeout(() => {
+      setCopiedKeys((keys) => {
+        const next = new Set(keys);
+        next.delete(key);
+        return next;
+      });
+      copyTimers.current.delete(key);
+    }, 1500));
+  };
   const [openMenu, setOpenMenu] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLSpanElement>(null);
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
@@ -285,6 +338,14 @@ export const EntityChips = ({
               </span>
             )}
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
+            <span role="button" tabIndex={0} aria-label={`Kopiuj nazwę: ${item.text}`} title="Kopiuj nazwę"
+              style={{ ...chipActionStyle, color: "#667" }}
+              onClick={(event) => { void copyName(event, item, key); }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") void copyName(event, item, key);
+              }}>
+              {copiedKeys.has(key) ? "✓" : "⧉"}
+            </span>
             {actions && actions(item)}
             {menuOpen && entries.length > 0 && (
               <span role="menu" aria-label={`Działania: ${item.text}`}
