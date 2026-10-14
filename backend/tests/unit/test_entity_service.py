@@ -243,6 +243,37 @@ class TestRefreshDocumentEntities:
 class TestOrganizationMerging:
     """docs/organization-ner-alias-plan.md reference case: doc 9267, Interia/Interii."""
 
+    @pytest.mark.parametrize("excluded", [False, True])
+    def test_compound_org_merge_precedes_exclusions_and_corrections(self, excluded):
+        head = "Agencja Unii Europejskiej"
+        tail = "Bezpieczeństwa Lotniczego"
+        canonical = f"{head} ds. {tail} (EASA)"
+        raw = [{"text": name, "label": "orgName", "lemma": name} for name in (head, tail, "EASA")]
+        exclusions = [NerExclusion(entity_text=tail, entity_type="orgName", scope="global")] if excluded else []
+        session = _session_with_exclusions(exclusions)
+        fake_org = MagicMock(id=7, canonical_name=canonical)
+
+        def check_corrections(_session, _document_id, groups, _author):
+            assert set(groups) == (set() if excluded else {("orgName", canonical)})
+            return []
+
+        with patch("library.entity_service.extract_entities", return_value=raw), \
+             patch("library.entity_service.resolve_or_create",
+                   return_value=(fake_org, "canonical_matched")) as resolve, \
+             patch("library.ner_corrections.apply_ner_corrections", side_effect=check_corrections):
+            rows = refresh_document_entities(
+                session, 10770, f"**{head}** [link8] ds. **{tail}** (EASA)",
+            )
+
+        if excluded:
+            assert rows == []
+            resolve.assert_not_called()
+        else:
+            assert [(row.entity_text, row.mention_count) for row in rows] == [(canonical, 1)]
+            resolve.assert_called_once()
+            assert resolve.call_args.args[1] == canonical
+            assert "EASA" in resolve.call_args.args[2]
+
     def test_merges_orgname_lemma_split_and_creates_document_organization(self):
         session = _session_with_exclusions([])
         raw = [

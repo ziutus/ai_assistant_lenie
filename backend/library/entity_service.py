@@ -22,7 +22,8 @@ from library.db.models import (
     NerTemporalCandidate,
 )
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
-from library.ner_normalization import normalize_ner_text
+from library.ner_normalization import normalize_ner_text, strip_content_markers, strip_markdown_emphasis
+from library.org_compound_names import merge_compound_org_names
 from library.organization_registry import (
     CONFIDENCE_CONTEXT_LLM_MATCHED,
     ambiguous_alias_candidates,
@@ -196,6 +197,12 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             existing["count"] += 1
             if source["raw_mention"] not in existing["variants"]:
                 existing["variants"].append(source["raw_mention"])
+
+    merged_orgs = merge_compound_org_names(
+        strip_content_markers(strip_markdown_emphasis(text)), groups,
+    )
+    if merged_orgs:
+        logger.info("NER compound organization names merged %d groups for doc %s", len(merged_orgs), document_id)
 
     # Date/time mentions are not ordinary sidebar entities. Keep them as
     # grounded hints for the later timeline LLM stage.
