@@ -26,6 +26,18 @@ class TestCanonicalCityName:
 
     @pytest.mark.parametrize(
         "mention",
+        ["Rijad", "Rijadzie", "Rijadu", "Rijadem", "Rijadowi"],
+    )
+    def test_matches_every_inflected_form_of_rijad(self, mention):
+        # doc #10770: "Władze Arabii Saudyjskiej do soboty przedłużyły zamknięcie
+        # międzynarodowego lotniska im. króla Chalida w Rijadzie - poinformował Reuters."
+        assert city_gazetteer.canonical_city_name(mention) == "Rijad"
+
+    def test_rijad_stem_does_not_match_riga(self):
+        assert city_gazetteer.canonical_city_name("Riga") is None
+
+    @pytest.mark.parametrize(
+        "mention",
         ["Al-Faszir", "Al-Fasziru", "Al-Faszirze", "Al-Faszirem", "Al Faszirze"],
     )
     def test_matches_hyphenated_and_spaced_al_faszir(self, mention):
