@@ -152,6 +152,84 @@ class TestExtractEntities:
                     extract_entities_strict("x" * (MAX_TEXT_CHARS + 500))
 
 
+class TestTruncatedCountrySpan:
+    def test_afp_sentence_merges_saudi_arabia_mentions(self):
+        text = (
+            'Agencja AFP podkreśliła, że było to "najkrwawsze uderzenie" '
+            'na Arabię Saudyjską od ponad dekady. Arabia Saudyjska.'
+        )
+        start = text.index("Arabię")
+        full_start = text.index("Arabia Saudyjska")
+        entities = [
+            {"text": "Arabię", "lemma": "Arabia", "label": "placeName",
+             "start": start, "end": start + len("Arabię"), "pos": "PROPN"},
+            {"text": "Arabia Saudyjska", "lemma": "Arabia Saudyjska", "label": "placeName",
+             "start": full_start, "end": full_start + len("Arabia Saudyjska"), "pos": "PROPN"},
+        ]
+        with patch("library.ner_client.requests.post", return_value=_response(entities)):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                result = extract_entities(text)
+        assert result[0]["end"] == start + len("Arabię Saudyjską")
+        groups = aggregate_entities_detailed(result)
+        assert ("placeName", "Arabia") not in groups
+        assert groups[("placeName", "Arabia Saudyjska")]["count"] == 2
+        assert "Arabię Saudyjską" in groups[("placeName", "Arabia Saudyjska")]["variants"]
+
+    @pytest.mark.parametrize("label", ["placeName", "geogName", "orgName"])
+    @pytest.mark.parametrize("surface,next_word", [
+        ("Arabia", "Saudyjska"), ("Arabię", "Saudyjską"), ("Arabii", "Saudyjskiej"),
+        ("Arabią", "SAUDYJSKĄ"), ("Arabio", "Saudyjskie"), ("ARABIE", "saudyjska"),
+    ])
+    def test_extends_in_later_window(self, label, surface, next_word):
+        window = " " + surface + "\n" + next_word + "."
+        entity = {"text": surface, "lemma": "Arabia", "label": label,
+                  "start": 1, "end": 1 + len(surface)}
+        with patch("library.ner_client.requests.post", side_effect=[_response([]), _response([entity])]) as post:
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                result = extract_entities("x" * MAX_TEXT_CHARS + window)
+        assert post.call_args.kwargs["json"]["text"] == window
+        assert result == [{**entity, "text": surface + "\n" + next_word,
+                           "lemma": "Arabia Saudyjska", "end": len(window) - 1}]
+
+    @pytest.mark.parametrize("text,surface,label", [
+        ("Arabia jest półwyspem.", "Arabia", "placeName"),
+        ("na Półwyspie Arabskim", "Półwyspie Arabskim", "geogName"),
+        ("Arabia, Saudyjska", "Arabia", "placeName"),
+        ("Arabian Saudyjska", "Arabian", "placeName"),
+        ("Arabia Saudyjska", "Arabia", "persName"),
+        ("Arabia", "Arabia", "placeName"),
+        ("Arabia   ", "Arabia", "placeName"),
+    ])
+    def test_leaves_unmatched_mentions_untouched(self, text, surface, label):
+        start = text.index(surface)
+        entity = {"text": surface, "lemma": surface, "label": label,
+                  "start": start, "end": start + len(surface)}
+        expected = dict(entity)
+        with patch("library.ner_client.requests.post", return_value=_response([entity])):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert extract_entities(text) == [expected]
+
+    @pytest.mark.parametrize("offsets", [{}, {"start": 0}, {"end": 6}])
+    def test_leaves_legacy_payload_untouched(self, offsets):
+        entity = {"text": "Arabię", "lemma": "Arabia", "label": "placeName", **offsets}
+        expected = dict(entity)
+        with patch("library.ner_client.requests.post", return_value=_response([entity])):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert extract_entities("Arabię Saudyjską") == [expected]
+
+    def test_does_not_extend_across_window_boundary(self):
+        prefix = "x" * (MAX_TEXT_CHARS - len(" Arabię") - 1)
+        entity = {"text": "Arabię", "lemma": "Arabia", "label": "placeName",
+                  "start": len(prefix) + 1, "end": MAX_TEXT_CHARS - 1}
+        expected = dict(entity)
+        # Backtracking cuts at the space after Arabię, leaving the adjective in the next window.
+        text = prefix + " Arabię Saudyjską"
+        with patch("library.ner_client.requests.post", side_effect=[_response([entity]), _response([])]) as post:
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert extract_entities(text) == [expected]
+        assert post.call_args_list[0].kwargs["json"]["text"].endswith("Arabię")
+
+
 class TestWarmupAsync:
     def test_fires_probe_in_background(self):
         import threading
