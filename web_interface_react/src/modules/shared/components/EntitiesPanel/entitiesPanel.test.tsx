@@ -62,7 +62,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<EntitiesPanel docId={10753} />);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(5);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(6);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -226,7 +226,7 @@ it("offers the organization menu on a cited source, including a link to the sour
   await openOrgMenu();
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
+    "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
     "Połącz z inną organizacją", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
@@ -407,7 +407,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
   await openOrgMenu("ONZ");
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
+    "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
     "Połącz z inną organizacją", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
@@ -417,7 +417,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 it("preserves reader highlight behavior when menuActions is absent", () => {
   const highlight = vi.fn();
   render(<EntityChips label="Miejsca" items={[place]} highlightMode onHighlight={highlight} />);
-  fireEvent.click(screen.getByTitle("Podświetl w tekście rozdziału"));
+  fireEvent.click(screen.getByRole("button"));
   expect(highlight).toHaveBeenCalledWith(place);
   expect(screen.queryByRole("menu")).toBeNull();
 });
@@ -448,8 +448,7 @@ it("omits merge when there is no other place and keeps edit delete working", asy
   expect(screen.queryByRole("combobox")).toBeNull();
 });
 
-
-// Copy controls are shared by every entity type and must not activate the chip.
+// Copying is available only through existing chip action menus.
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 const execCommandDescriptor = Object.getOwnPropertyDescriptor(document, "execCommand");
 afterEach(() => {
@@ -457,65 +456,38 @@ afterEach(() => {
   else Reflect.deleteProperty(navigator, "clipboard");
   if (execCommandDescriptor) Object.defineProperty(document, "execCommand", execCommandDescriptor);
   else Reflect.deleteProperty(document, "execCommand");
-  vi.useRealTimers();
 });
 const mockClipboard = (writeText = vi.fn().mockResolvedValue(undefined)) => {
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   return writeText;
 };
 
-it.each(["click", "Enter", " "])("copies the exact place name on %s without highlighting", async (key) => {
+it("copies the exact place name from the first menu entry and closes the menu", async () => {
   const writeText = mockClipboard();
-  const highlight = vi.fn();
-  render(<EntityChips label="Miejsca" items={[{ id: 7, text: "Rijadzie", count: 2, entity_type: "placeName" }]}
-    highlightMode onHighlight={highlight} />);
-  const copy = screen.getByRole("button", { name: "Kopiuj nazwę: Rijadzie" });
-  expect(copy.tagName).toBe("SPAN");
-  expect(copy.tabIndex).toBe(0);
+  const { container } = render(<EntityChips label="Miejsca"
+    items={[{ text: "Rijadzie", count: 2, entity_type: "placeName" }]}
+    menuActions={() => [{ label: "Edytuj", action: vi.fn() }]} />);
+  expect(container.querySelector('[aria-label^="Kopiuj nazwę:"]')).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Rijadzie" }));
+  expect(screen.getAllByRole("menuitem")[0].textContent).toBe("Kopiuj nazwę");
   await act(async () => {
-    const allowed = key === "click" ? fireEvent.click(copy) : fireEvent.keyDown(copy, { key });
-    expect(allowed).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Kopiuj nazwę" }));
   });
   expect(writeText).toHaveBeenCalledExactlyOnceWith("Rijadzie");
-  expect(highlight).not.toHaveBeenCalled();
-  expect(copy.textContent).toBe("✓");
-});
-
-it("renders the person copy control without navigating its link", async () => {
-  const writeText = mockClipboard();
-  renderInRouter(<EntityChips label="Osoby" linkPersons
-    items={[{ id: 1, text: "Paweł Kowalski", count: 1, person_id: 42, entity_type: "persName" }]} />);
-  const copy = screen.getByRole("button", { name: "Kopiuj nazwę: Paweł Kowalski" });
-  expect(copy.closest("a")?.getAttribute("href")).toBe("/persons/42");
-  await act(async () => { expect(fireEvent.click(copy)).toBe(false); });
-  expect(writeText).toHaveBeenCalledExactlyOnceWith("Paweł Kowalski");
-});
-
-it("copies an organization without opening its menu", async () => {
-  const writeText = mockClipboard();
-  render(<EntityChips label="Organizacje" items={[{ text: "ONZ", count: 1, entity_type: "orgName" }]}
-    menuActions={() => [{ label: "Edytuj", action: vi.fn() }]} />);
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Kopiuj nazwę: ONZ" })); });
-  expect(writeText).toHaveBeenCalledExactlyOnceWith("ONZ");
   expect(screen.queryByRole("menu")).toBeNull();
+  expect(container.querySelector('[aria-label^="Kopiuj nazwę:"]')).toBeNull();
 });
 
-it("keeps feedback per chip, resets it after 1.5 seconds and clears timers on unmount", async () => {
-  vi.useFakeTimers();
-  mockClipboard();
-  const view = render(<EntityChips label="Miejsca" items={[place, { text: "Rijadzie", count: 1 }]} />);
-  const copy = screen.getByRole("button", { name: "Kopiuj nazwę: Rijadzie" });
-  await act(async () => { fireEvent.click(copy); });
-  expect(copy.textContent).toBe("✓");
-  expect(screen.getByRole("button", { name: "Kopiuj nazwę: " + place.text }).textContent).toBe("⧉");
-  act(() => { vi.advanceTimersByTime(1500); });
-  expect(copy.textContent).toBe("⧉");
-  await act(async () => { fireEvent.click(copy); });
-  view.unmount();
-  expect(vi.getTimerCount()).toBe(0);
+it.each([undefined, () => []])("does not add copying to a chip without menu entries (%s)", (menuActions) => {
+  const { container } = renderInRouter(<EntityChips label="Osoby" linkPersons menuActions={menuActions}
+    items={[{ text: "Paweł Kowalski", count: 1, person_id: 42, entity_type: "persName" }]} />);
+  expect(screen.getByRole("link", { name: "Paweł Kowalski ✓" }).getAttribute("href")).toBe("/persons/42");
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.queryByText("Kopiuj nazwę")).toBeNull();
+  expect(container.querySelector('[aria-label^="Kopiuj nazwę:"]')).toBeNull();
 });
 
-it.each(["missing", "rejected", "failed fallback"])("handles %s clipboard access safely", async (mode) => {
+it.each(["missing", "rejected", "failed fallback"])("handles %s clipboard access safely from the menu", async (mode) => {
   if (mode === "missing") Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
   else mockClipboard(vi.fn().mockRejectedValue(new Error("Clipboard unavailable")));
   const execCommand = vi.fn(() => {
@@ -524,12 +496,16 @@ it.each(["missing", "rejected", "failed fallback"])("handles %s clipboard access
     return true;
   });
   Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
-  render(<EntityChips label="Miejsca" items={[{ text: "Rijadzie", count: 1 }]} />);
-  const copy = screen.getByRole("button", { name: "Kopiuj nazwę: Rijadzie" });
-  copy.focus();
-  await act(async () => { fireEvent.click(copy); });
+  render(<EntityChips label="Miejsca" items={[{ text: "Rijadzie", count: 1 }]}
+    menuActions={() => [{ label: "Edytuj", action: vi.fn() }]} />);
+  const trigger = screen.getByRole("button", { name: "Rijadzie" });
+  trigger.focus();
+  fireEvent.click(trigger);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Kopiuj nazwę" }));
+  });
   expect(execCommand).toHaveBeenCalledWith("copy");
   expect(document.querySelector("textarea")).toBeNull();
-  expect(document.activeElement).toBe(copy);
-  expect(copy.textContent).toBe(mode === "failed fallback" ? "⧉" : "✓");
+  expect(document.activeElement).toBe(trigger);
+  expect(screen.queryByRole("menu")).toBeNull();
 });
