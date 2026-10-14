@@ -521,3 +521,71 @@ it.each(["missing", "rejected", "failed fallback"])("handles %s clipboard access
   expect(document.activeElement).toBe(trigger);
   expect(screen.queryByRole("menu")).toBeNull();
 });
+
+
+it("shows document countries from GET in the editor", async () => {
+  vi.mocked(axios.get).mockResolvedValue({ data: {
+    job: null, entities: {}, countries: [{ slug: "polska", name_pl: "Polska" }],
+  } });
+  render(<EntitiesPanel docId={10753} />);
+  expect(await screen.findByText("Polska")).toBeTruthy();
+  expect(screen.getByText("Państwa:")).toBeTruthy();
+});
+
+it.each([
+  { countries: [] as { slug: string; name_pl: string }[] },
+  { countries: [{ slug: "niemcy", name_pl: "Niemcy" }] },
+])("reader countries override GET, including an empty list: $countries", async ({ countries }) => {
+  vi.mocked(axios.get).mockResolvedValue({ data: {
+    job: null, entities: {}, countries: [{ slug: "polska", name_pl: "Polska" }],
+  } });
+  render(<EntitiesPanel docId={10753} countries={countries} />);
+  await act(async () => {});
+  expect(screen.queryByText("Polska")).toBeNull();
+  if (countries.length) expect(screen.getByText("Niemcy")).toBeTruthy();
+  else expect(screen.queryByText("Państwa:")).toBeNull();
+});
+
+it("detects countries, updates chips and reports busy state", async () => {
+  let finish!: (value: any) => void;
+  vi.mocked(axios.post).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const onBusyChange = vi.fn();
+  const onEntitiesChanged = vi.fn();
+  render(<EntitiesPanel docId={10753} onBusyChange={onBusyChange} onEntitiesChanged={onEntitiesChanged} />);
+  await screen.findByRole("button", { name: place.text });
+  onEntitiesChanged.mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Wykryj państwa" }));
+  expect(axios.post).toHaveBeenCalledWith("/document/10753/countries/detect", {},
+    { headers: expect.objectContaining({ "Content-Type": "application/json", "x-api-key": expect.any(String) }) });
+  expect((screen.getByRole("button", { name: "Wykrywam państwa..." }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Wykryj osoby, miejsca i obiekty" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(onBusyChange).toHaveBeenLastCalledWith(true);
+  await act(async () => finish({ data: {
+    countries: [{ slug: "polska", name_pl: "Polska" }], added: ["polska"],
+  } }));
+  expect(screen.getByText("Polska")).toBeTruthy();
+  expect(screen.getByText("Dodano państw: 1.")).toBeTruthy();
+  expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  expect(onEntitiesChanged).toHaveBeenCalledOnce();
+  expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it.each([false, true])("reports no new countries or a detection error: %s", async (fails) => {
+  if (fails) vi.mocked(axios.post).mockRejectedValue({ response: { data: { message: "Database unavailable" } } });
+  else vi.mocked(axios.post).mockResolvedValue({ data: { countries: [], added: [] } });
+  render(<EntitiesPanel docId={10753} />);
+  await screen.findByRole("button", { name: place.text });
+  fireEvent.click(screen.getByRole("button", { name: "Wykryj państwa" }));
+  expect(await screen.findByText(fails
+    ? "Nie udało się wykryć państw: Database unavailable" : "Nie wykryto nowych państw.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it.each(["external", "enrichment"])("disables detection while %s work is active", async (busy) => {
+  if (busy === "enrichment") vi.mocked(axios.get).mockResolvedValue({ data: {
+    job: { status: "running" }, entities: {},
+  } });
+  render(<EntitiesPanel docId={10753} externalDisabled={busy === "external"} />);
+  await act(async () => {});
+  expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(true);
+});
