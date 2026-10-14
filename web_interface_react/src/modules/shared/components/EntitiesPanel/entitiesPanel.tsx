@@ -267,25 +267,9 @@ export const EntityChips = ({
         const historicalTitle = item.historical
           ? `Państwo historyczne (${item.historical.year_from}–${item.historical.year_to}). Następcy: ${item.historical.successors}`
           : undefined;
-        const chip = (
-          <span
-            key={key}
-            ref={menuOpen ? menuRef : undefined}
-            style={{
-              ...chipStyle,
-              position: "relative",
-              ...(item.verified === true ? { background: "#e6f4ea", border: "1px solid #7cb98a" } : {}),
-              ...(item.historical ? { background: "#fdf3e1", border: "1px solid #d9a441" } : {}),
-              ...(item.verified === false && item.place_verification_status !== "needs_review" ? { opacity: 0.55 } : {}),
-              ...(isResolvedPerson ? { background: "#e3edf9", border: "1px solid #7ba3d0" } : {}),
-            }}
-            title={historicalTitle ?? personTitle
-              ?? sourceTitleOf(item)
-              ?? item.organization_description
-              ?? facilityTitle
-              ?? (item.place_verification_status === "needs_review" ? "Wymaga potwierdzenia" : undefined)
-              ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
-          >
+        const isDimmed = item.verified === false && item.place_verification_status !== "needs_review";
+        const chipContent = (
+          <>
             {entries.length ? (
               <button type="button" aria-label={item.text} aria-haspopup="menu" aria-expanded={menuOpen}
                 style={{ border: 0, background: "transparent", padding: 0, color: "inherit", font: "inherit", cursor: "pointer" }}
@@ -314,6 +298,30 @@ export const EntityChips = ({
             )}
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
             {actions && actions(item)}
+          </>
+        );
+        const chip = (
+          <span
+            key={key}
+            ref={menuOpen ? menuRef : undefined}
+            style={{
+              ...chipStyle,
+              position: "relative",
+              ...(isDimmed ? { background: "#e8eef78c", border: "1px solid #b9c8de8c" } : {}),
+              ...(item.verified === true ? { background: "#e6f4ea", border: "1px solid #7cb98a" } : {}),
+              ...(item.historical ? { background: isDimmed ? "#fdf3e18c" : "#fdf3e1",
+                border: isDimmed ? "1px solid #d9a4418c" : "1px solid #d9a441" } : {}),
+              ...(isResolvedPerson ? { background: isDimmed ? "#e3edf98c" : "#e3edf9",
+                border: isDimmed ? "1px solid #7ba3d08c" : "1px solid #7ba3d0" } : {}),
+            }}
+            title={historicalTitle ?? personTitle
+              ?? sourceTitleOf(item)
+              ?? item.organization_description
+              ?? facilityTitle
+              ?? (item.place_verification_status === "needs_review" ? "Wymaga potwierdzenia" : undefined)
+              ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
+          >
+            {isDimmed ? <span style={{ opacity: 0.55 }}>{chipContent}</span> : chipContent}
             {menuOpen && entries.length > 0 && (
               <span role="menu" aria-label={`Działania: ${item.text}`}
                 style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, padding: 4,
