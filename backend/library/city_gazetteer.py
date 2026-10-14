@@ -18,7 +18,8 @@ while "Port Sudanu"/"Port Sudanem" leaked the genitive/instrumental case into
 entity_text the same way).
 
 This is a small, closed list of cities that recur in the geopolitics-focused
-reporting Lenie ingests (currently: Sudan civil war coverage) — not an
+reporting Lenie ingests (currently: Sudan civil war and Riyadh/Saudi airport
+coverage) — not an
 exhaustive gazetteer (compare country_gazetteer.py's ~190-country list).
 Matching mirrors geo_feature_gazetteer.py: word-stem regex against a
 diacritic-stripped, lowercased mention, requiring the ENTIRE surface to
@@ -47,6 +48,8 @@ _CITY_DATA: list[tuple[str, tuple[str, ...]]] = [
     # variants since the DSL only supports one trailing "*" per token.
     ("Al-Ubajjid", ("al ubajjid*", "al ubajid*")),
     ("Port Sudan", ("port sudan*",)),
+    # doc #10770: spaCy keeps the locative in "w Rijadzie" as its lemma.
+    ("Rijad", ("rijad*",)),
 ]
 
 

@@ -137,7 +137,7 @@ zawsze idzie przez PR, nie przez REST/SQL na NAS:
 | Moduł | Zawartość |
 |---|---|
 | `library/country_gazetteer.py` | ~190 państw ONZ/obserwatorów + Tajwan/Kosowo, dopasowanie po rdzeniu słowa |
-| `library/city_gazetteer.py` | zamknięta lista miast (dziś głównie konflikt sudański) — kanonikalizacja jednowyrazowych nazw obcojęzycznych |
+| `library/city_gazetteer.py` | zamknięta lista miast (głównie konflikt sudański oraz Rijad — saudyjskie lotnisko, doc #10770) — kanonikalizacja jednowyrazowych nazw obcojęzycznych |
 | `library/geo_feature_gazetteer.py` | morza/cieśniny/zatoki/kanały (~24 wpisy) |
 | `library/region_gazetteer.py` | zagraniczne regiony administracyjne/stany (np. Kordofan) |
 | `library/geocode_aliases.py` | `geocode_alias()` (transliteracja/inna pisownia w OSM) + `geocode_country_hint()` (bias przez `countrycodes`) + syntetyczne centroidy makroregionów geopolitycznych |
@@ -449,3 +449,25 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod + dane — prompt rozróżnia blok (`organization/high` przy jednoznacznym kontekście), kierunek i fragment innej nazwy własnej (`not_place`, np. „Polskie Siły Zbrojne na Zachodzie”, „Front Zachodni”); istniejąca ścieżka `_reclassify_as_organization` korzysta z aliasów organizacji „Państwa Zachodu” (org 106). Aliasy i kraje bloku pozostają danymi rejestru organizacji, nie listą w kodzie. Polityczne znaczenie występuje też w dok. #8990, #9170 i #9353; dok. #9367 dotyczy formacji z II wojny światowej.
 - **Test regresyjny:** `backend/tests/unit/test_place_context_classifier.py::test_prompt_distinguishes_western_bloc_from_direction_and_formation_name` oraz `backend/tests/unit/test_place_verification.py::test_unresolved_west_routes_bloc_but_rejects_formation_fragment` — oba typy nierozwiązanej encji, zamockowane werdykty `organization/high` dla dok. #10756 i `not_place/high` dla dok. #9367; bez sieci i wywołań LLM.
 - **Status:** żywy bug naprawiony w kodzie + dane rejestru (org 106) i 5 dokumentów przekonwertowanych ręcznie przez to_organization; dok. 9367 świadomie pominięty (Polskie Siły Zbrojne na Zachodzie)
+
+### E023 — „Rijadzie” bez kanonikalizacji do „Rijad”, geokoder trafia w ambasadę (dok. #10770, 2026-10-14)
+
+- **Typ encji:** placeName
+- **Kategoria:** T3 — brak nominatiwu w tekście / rzadka nazwa obcojęzyczna.
+- **Zdanie źródłowe:** "Władze Arabii Saudyjskiej do soboty przedłużyły zamknięcie międzynarodowego lotniska im. króla Chalida w Rijadzie - poinformował Reuters."
+- **Objaw:** w panelu encji dokumentu pojawiło się miejsce „Rijadzie” (miejscownik) zamiast „Rijad”, z przypiętym geokodem „Ambasada RP w Rijadzie” (`geocode_cache.resolved=false`).
+- **Przyczyna źródłowa:** spaCy zostawił miejscownik jako lemat, a `library/city_gazetteer.py` (zamknięta lista) nie miał wpisu dla Rijadu, więc do geokodera trafiło zapytanie „Rijadzie”. Samo zapytanie „Rijad” geokoduje się poprawnie (`type=city`).
+- **Poprawka:** kod + dane — wpis `("Rijad", ("rijad*",))` w `city_gazetteer.py`; rekord `document_entities` 15194 naprawiony osobno w danych.
+- **Test regresyjny:** `backend/tests/unit/test_city_gazetteer.py::TestCanonicalCityName::test_matches_every_inflected_form_of_rijad`
+- **Status:** żywy bug naprawiony w kodzie + dane dok. #10770 naprawione osobno
+
+### E024 — „Airmen” i „Chalida” jako miejsca (dok. #10770, 2026-10-14)
+
+- **Typ encji:** placeName
+- **Kategoria:** T9 — fałszywy pozytyw spaCy / artefakt segmentacji.
+- **Zdanie źródłowe:** "Agencja Reutera, powołując się na wydany przez władze lotnicze dokument **NOTAM** (Notice to Airmen), poinformowała, że do soboty 17 października przedłużono zamknięcie międzynarodowego lotniska im. króla Chalida w Rijadzie".
+- **Objaw:** „Airmen” zgeokodowało się do Tuskegee Airmen National Historic Site (USA), a „Chalida” (część nazwy lotniska) do wsi w Tajlandii.
+- **Przyczyna źródłowa:** rozwinięcie angielskiego skrótu oraz imię króla w nazwie lotniska oznaczone jako `placeName`; klasyfikator kontekstu zaakceptował je jako lokalizację lotniska, a geokoder dopasował niepowiązane homonimy.
+- **Poprawka:** dane — wpisy `ner_exclusions` (global, `placeName`) dla „Airmen” i „Chalida” oraz usunięcie encji 15189 i 15191. Osobna encja `persName` „Chalida” (król) zostaje.
+- **Test regresyjny:** brak — czysto danowa poprawka, sam wpis w `ner_exclusions` dokumentuje przypadek
+- **Status:** tylko dane bez zmiany kodu
