@@ -471,3 +471,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — wpisy `ner_exclusions` (global, `placeName`) dla „Airmen” i „Chalida” oraz usunięcie encji 15189 i 15191. Osobna encja `persName` „Chalida” (król) zostaje.
 - **Test regresyjny:** brak — czysto danowa poprawka, sam wpis w `ner_exclusions` dokumentuje przypadek
 - **Status:** tylko dane bez zmiany kodu
+
+### E025 — „Huti” jako miejsce geokodowane do wsi „Huty” (dok. #10770 i 6 innych, 2026-10-14)
+
+- **Typ encji:** placeName (obok poprawnej orgName „Huti”, org 57)
+- **Kategoria:** T4 — homonim geograficzny.
+- **Zdanie źródłowe:** "Przypomnijmy, że w wyniku ataków jemeńskich **Huti** na lotnisko w Rijadzie **zginęło w ostatnich dniach co najmniej 18 osób**."
+- **Objaw:** w panelu encji obok organizacji „Huti” pojawiało się miejsce „Huti” (w dok. #10753 ręcznie wpisane „Huty”) z geokodem wsi „Huty” w obwodzie charkowskim (`geocode_cache` id 643, `resolved=true`).
+- **Przyczyna źródłowa:** spaCy oznacza tę samą wzmiankę jako orgName i placeName; geokoder dopasowuje placeName „Huti” do niepowiązanej ukraińskiej wsi. Grupa jest już poprawnie w rejestrze organizacji (org 57).
+- **Poprawka:** dane — globalny wpis `ner_exclusions` (`placeName`, „Huti”, id 19) oraz usunięcie placeName „Huti” z dok. #9348, #9353, #9355, #9356, #9358, #9380, #10770 i „Huty” z #10753. Organizacje „Huti” zostały.
+- **Test regresyjny:** brak — czysto danowa poprawka, sam wpis w `ner_exclusions` dokumentuje przypadek
+- **Status:** tylko dane bez zmiany kodu
