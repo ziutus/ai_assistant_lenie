@@ -249,10 +249,9 @@ export const EntityChips = ({
       <strong>{label}:</strong>{" "}
       {alphabeticalItems.map((item) => {
         const key = `${item.entity_type ?? ""}:${item.id ?? item.text}`;
-        const entries = [...(menuActions?.(item) ?? [])];
-        if (entries.length > 0) {
-          entries.unshift({ label: "Kopiuj nazwę", action: () => void copyEntityName(item.text) });
-        }
+        const entries = menuActions
+          ? [{ label: "Kopiuj nazwę", action: () => void copyEntityName(item.text) }, ...menuActions(item)]
+          : [];
         const menuOpen = openMenu === key;
         const isResolvedPerson = item.person_id != null;
         const personTitle = isResolvedPerson
@@ -1334,7 +1333,8 @@ const EntitiesPanel = ({
           ))}
         </div>
       )}
-      <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions("persName") : undefined} />
+      <EntityChips label={"Osoby"} items={persons} menuActions={() => []}
+        actions={editMode ? editActions("persName") : undefined} />
       <EntityChips
         label={"Źródła cytowane"}
         items={citedSources}

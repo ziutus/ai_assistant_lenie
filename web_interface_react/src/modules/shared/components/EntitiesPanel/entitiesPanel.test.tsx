@@ -478,13 +478,25 @@ it("copies the exact place name from the first menu entry and closes the menu", 
   expect(container.querySelector('[aria-label^="Kopiuj nazwę:"]')).toBeNull();
 });
 
-it.each([undefined, () => []])("does not add copying to a chip without menu entries (%s)", (menuActions) => {
-  const { container } = renderInRouter(<EntityChips label="Osoby" linkPersons menuActions={menuActions}
+it("does not add a menu (or copying) to a chip when menuActions is absent", () => {
+  const { container } = renderInRouter(<EntityChips label="Osoby" linkPersons
     items={[{ text: "Paweł Kowalski", count: 1, person_id: 42, entity_type: "persName" }]} />);
   expect(screen.getByRole("link", { name: "Paweł Kowalski ✓" }).getAttribute("href")).toBe("/persons/42");
   expect(screen.queryByRole("button")).toBeNull();
   expect(screen.queryByText("Kopiuj nazwę")).toBeNull();
   expect(container.querySelector('[aria-label^="Kopiuj nazwę:"]')).toBeNull();
+});
+
+it("offers copying on a person chip whose menu has no other entries", async () => {
+  const writeText = mockClipboard();
+  render(<EntityChips label="Osoby" menuActions={() => []}
+    items={[{ text: "Paweł Kowalski", count: 1, person_id: 42, entity_type: "persName" }]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Paweł Kowalski" }));
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Kopiuj nazwę"]);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Kopiuj nazwę" }));
+  });
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("Paweł Kowalski");
 });
 
 it.each(["missing", "rejected", "failed fallback"])("handles %s clipboard access safely from the menu", async (mode) => {
