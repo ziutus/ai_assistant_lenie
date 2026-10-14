@@ -160,6 +160,32 @@ const sourceTitleOf = (item: EntityItem): string | undefined => {
   return title || undefined;
 };
 
+async function copyEntityName(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* Clipboard access can fail on HTTP; try the textarea fallback. */ }
+
+  const textarea = document.createElement("textarea");
+  const previousFocus = document.activeElement;
+  try {
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+    if (previousFocus instanceof HTMLElement) previousFocus.focus();
+  }
+}
+
 export const EntityChips = ({
   label,
   items,
@@ -223,7 +249,9 @@ export const EntityChips = ({
       <strong>{label}:</strong>{" "}
       {alphabeticalItems.map((item) => {
         const key = `${item.entity_type ?? ""}:${item.id ?? item.text}`;
-        const entries = menuActions?.(item) ?? [];
+        const entries = menuActions
+          ? [{ label: "Kopiuj nazwę", action: () => void copyEntityName(item.text) }, ...menuActions(item)]
+          : [];
         const menuOpen = openMenu === key;
         const isResolvedPerson = item.person_id != null;
         const personTitle = isResolvedPerson
@@ -1305,7 +1333,8 @@ const EntitiesPanel = ({
           ))}
         </div>
       )}
-      <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions("persName") : undefined} />
+      <EntityChips label={"Osoby"} items={persons} menuActions={() => []}
+        actions={editMode ? editActions("persName") : undefined} />
       <EntityChips
         label={"Źródła cytowane"}
         items={citedSources}
