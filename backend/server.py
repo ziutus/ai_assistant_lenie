@@ -683,6 +683,27 @@ def reopen_document_editing(doc_id: int):
     return {"status": "success", **result}, 200
 
 
+@app.route('/document/<int:doc_id>/countries/detect', methods=['POST'])
+def detect_countries_for_document(doc_id: int):
+    """Detect country tags independently of chunk analysis."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from library.document_countries import detect_document_countries
+
+    session = get_scoped_session()
+    try:
+        result = detect_document_countries(session, doc_id)
+    except LookupError as exc:
+        return {"status": "error", "message": str(exc)}, 404
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+    except SQLAlchemyError:
+        session.rollback()
+        logging.exception("country detection database error for document %s", doc_id)
+        return {"status": "error", "message": "Failed to save document countries"}, 500
+    return {"status": "success", **result}, 200
+
+
 def _entities_doc_id(raw_id):
     """Validate the 'id' request value; returns (doc_id, None) or (None, error_response)."""
     if not raw_id:
@@ -700,6 +721,7 @@ def _entities_doc_id(raw_id):
 def website_entities_get():
     """NER entities (persons/places) stored for a document — see docs/ner-integration-plan.md."""
     from library.entity_service import get_document_entities
+    from library.document_countries import countries_from_tags
 
     doc_id, error = _entities_doc_id(request.args.get('id'))
     if error:
@@ -714,6 +736,7 @@ def website_entities_get():
         "status": "success",
         "id": doc_id,
         "entities": get_document_entities(session, doc_id),
+        "countries": countries_from_tags(doc.tags),
         # miejsce-* tags are the verified-places summary stored in Document.tags;
         # read-only here (the panel shows them next to the place chips).
         "place_tags": sorted(

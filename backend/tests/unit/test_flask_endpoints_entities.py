@@ -851,3 +851,89 @@ class TestOrganizationMergeKeepsSourcesInStep:
         assert resp.status_code == 200 and resp.get_json()["source"] == {"action": "merged"}
         assert merge.call_args.args[1:] == (842, 281)
         session.commit.assert_called_once()
+
+
+class TestDocumentCountries:
+    @pytest.mark.parametrize("text_md,text,expected_text", [
+        ("Markdown", "Plain", "Markdown"), (None, "Plain", "Plain"),
+    ])
+    def test_detect_merges_tags(self, client, text_md, text, expected_text):
+        from library.db.models import Document
+
+        doc = Document(id=42, title=None, text_md=text_md, text=text,
+                       tags="topic, kraj-polska, miejsce-aden,topic")
+        session = MagicMock()
+        with patch("server.get_scoped_session", return_value=session), patch.object(
+            Document, "get_by_id", return_value=doc
+        ), patch("library.article_tagging.extract_countries_hybrid",
+                 return_value=["kraj-polska", "kraj-niemcy", "kraj-niemcy"]) as extract:
+            response = client.post("/document/42/countries/detect", headers=API_HEADERS)
+        assert response.status_code == 200
+        assert response.get_json() == {
+            "status": "success",
+            "countries": [{"slug": "polska", "name_pl": "Polska"},
+                          {"slug": "niemcy", "name_pl": "Niemcy"}],
+            "added": ["niemcy"],
+        }
+        assert doc.tags == "topic,kraj-polska,miejsce-aden,kraj-niemcy"
+        extract.assert_called_once_with(expected_text, "")
+        session.commit.assert_called_once()
+
+    @pytest.mark.parametrize("case,status", [("missing", 404), ("empty", 400), ("whitespace", 400)])
+    def test_invalid_document(self, client, case, status):
+        from library.db.models import Document
+
+        doc = None if case == "missing" else Document(
+            id=42, text_md="  " if case == "whitespace" else None, text=None)
+        session = MagicMock()
+        with patch("server.get_scoped_session", return_value=session), patch.object(
+            Document, "get_by_id", return_value=doc
+        ), patch("library.article_tagging.extract_countries_hybrid") as extract:
+            response = client.post("/document/42/countries/detect", headers=API_HEADERS)
+        assert response.status_code == status
+        extract.assert_not_called()
+        session.commit.assert_not_called()
+
+    def test_empty_detection_preserves_tags(self, client):
+        from library.db.models import Document
+
+        doc = Document(id=42, title="Title", text="Text", tags="topic,kraj-polska")
+        session = MagicMock()
+        with patch("server.get_scoped_session", return_value=session), patch.object(
+            Document, "get_by_id", return_value=doc
+        ), patch("library.article_tagging.extract_countries_hybrid", return_value=[]):
+            response = client.post("/document/42/countries/detect", headers=API_HEADERS)
+        assert response.status_code == 200
+        assert response.get_json()["added"] == []
+        assert response.get_json()["countries"] == [{"slug": "polska", "name_pl": "Polska"}]
+        assert doc.tags == "topic,kraj-polska"
+
+    def test_database_failure_rolls_back(self, client):
+        from sqlalchemy.exc import SQLAlchemyError
+        from library.db.models import Document
+
+        session = MagicMock()
+        session.commit.side_effect = SQLAlchemyError("database failure")
+        with patch("server.get_scoped_session", return_value=session), patch.object(
+            Document, "get_by_id", return_value=Document(id=42, text="Text", tags=None)
+        ), patch("library.article_tagging.extract_countries_hybrid", return_value=["kraj-polska"]):
+            response = client.post("/document/42/countries/detect", headers=API_HEADERS)
+        assert response.status_code == 500
+        session.rollback.assert_called_once()
+
+    @pytest.mark.parametrize("tags,expected", [
+        (None, []), ("topic,miejsce-aden", []),
+        ("kraj-polska, topic, kraj-niemcy,kraj-polska",
+         [{"slug": "polska", "name_pl": "Polska"}, {"slug": "niemcy", "name_pl": "Niemcy"}]),
+    ])
+    def test_get_countries(self, client, tags, expected):
+        from library.db.models import Document
+
+        doc = Document(id=42, tags=tags)
+        with patch("server.get_scoped_session", return_value=MagicMock()), patch.object(
+            Document, "get_by_id", return_value=doc
+        ), patch("library.entity_service.get_document_entities", return_value=GROUPED):
+            response = client.get("/website_entities?id=42", headers=API_HEADERS)
+        assert response.status_code == 200
+        assert response.get_json()["countries"] == expected
+        assert response.get_json()["entities"] == GROUPED

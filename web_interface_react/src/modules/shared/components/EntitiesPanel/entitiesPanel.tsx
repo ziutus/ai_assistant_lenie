@@ -427,7 +427,7 @@ const EntitiesPanel = ({
   externalDisabled = false,
   onBusyChange,
   onEntitiesChanged,
-  countries = [],
+  countries: providedCountries,
   refreshKey = 0,
 }: {
   docId?: string | number;
@@ -442,14 +442,16 @@ const EntitiesPanel = ({
   onEntitiesChanged?: () => void;
   // kraj-* tags (country_gazetteer + extract_countries_hybrid, LLM-vetted),
   // scoped by the caller (read.tsx passes the chapter- or document-level
-  // list) — rendered as the first block, ahead of Osoby. Not fetched by this
-  // component itself since it lives outside document_entities (Document.tags),
-  // unlike everything else here.
+  // list) — rendered as the first block, ahead of Osoby. When omitted, use
+  // the document-level countries returned by GET /website_entities.
   countries?: CountryTag[];
 }) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [isDetectingCountries, setIsDetectingCountries] = React.useState(false);
+  const [fetchedCountries, setFetchedCountries] = React.useState<CountryTag[]>([]);
+  const countries = providedCountries ?? fetchedCountries;
   const [enrichmentJob, setEnrichmentJob] = React.useState<EntityEnrichmentJob | null>(null);
   const [message, setMessage] = React.useState("");
   // Set when the last NER refresh found ner_service unreachable (backend:
@@ -520,6 +522,7 @@ const EntitiesPanel = ({
       .get(`${apiUrl}/website_entities`, { params: { id: docId }, headers })
       .then((response) => {
         setEntities(response.data.entities);
+        setFetchedCountries(response.data.countries ?? []);
         setNerUnavailableAt(response.data.ner_unavailable_at ?? null);
         setPlaceTags(Array.isArray(response.data.place_tags) ? response.data.place_tags : []);
         onEntitiesChanged?.();
@@ -555,6 +558,7 @@ const EntitiesPanel = ({
     sawActiveJobRef.current = false;
     setEntities(null);
     setPlaceTags([]);
+    setFetchedCountries([]);
     setSourceDetailsFor(null);
     setMergePreview(null);
     setMessage("");
@@ -591,6 +595,28 @@ const EntitiesPanel = ({
     }, 3000);
     return () => window.clearInterval(timer);
   }, [enrichmentActive, fetchEnrichmentJob, fetchEntities]);
+
+  const handleDetectCountries = async () => {
+    if (!docId) return;
+    setIsDetectingCountries(true);
+    onBusyChange?.(true);
+    setMessage("");
+    try {
+      const response = await axios.post(
+        `${apiUrl}/document/${docId}/countries/detect`, {}, { headers: jsonHeaders },
+      );
+      setFetchedCountries(response.data.countries);
+      setMessage(response.data.added.length > 0
+        ? `Dodano państw: ${response.data.added.length}.` : "Nie wykryto nowych państw.");
+      onEntitiesChanged?.();
+    } catch (error: any) {
+      console.error("Error detecting countries", error);
+      setMessage(`Nie udało się wykryć państw: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsDetectingCountries(false);
+      onBusyChange?.(false);
+    }
+  };
 
   const handleRefresh = async () => {
     if (!docId) {
@@ -1298,8 +1324,13 @@ const EntitiesPanel = ({
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <strong>Osoby, miejsca i obiekty (NER)</strong>
-        <button className={"button"} type="button" disabled={isRefreshing || enrichmentActive || externalDisabled} onClick={handleRefresh}>
+        <button className={"button"} type="button" disabled={isRefreshing || isDetectingCountries || enrichmentActive || externalDisabled} onClick={handleRefresh}>
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby, miejsca i obiekty"}
+        </button>
+        <button className={"button"} type="button"
+          disabled={isRefreshing || isDetectingCountries || enrichmentActive || externalDisabled}
+          onClick={handleDetectCountries}>
+          {isDetectingCountries ? "Wykrywam państwa..." : "Wykryj państwa"}
         </button>
         {!isEmpty && (
           <button className={"button"} type="button" onClick={() => { setRenameFor(null); setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setPlaceMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
