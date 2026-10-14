@@ -521,3 +521,20 @@ it.each(["missing", "rejected", "failed fallback"])("handles %s clipboard access
   expect(document.activeElement).toBe(trigger);
   expect(screen.queryByRole("menu")).toBeNull();
 });
+
+it.each([false, true])("keeps the place action menu fully opaque (verified: %s)", (verified) => {
+  const { container } = render(<EntityChips label="Miejsca"
+    items={[{ text: "Arabia", count: 1, entity_type: "placeName", verified }]}
+    menuActions={() => [{ label: "Edytuj", action: vi.fn() }]} />);
+  const chip = container.querySelector<HTMLElement>('span[style*="position: relative"]');
+  expect(chip).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Arabia" }));
+  let element: HTMLElement | null = screen.getByRole("menu");
+  expect(chip?.contains(element)).toBe(true);
+  while (element) {
+    expect(["", "1"]).toContain(element.style.opacity);
+    if (element === chip) break;
+    element = element.parentElement;
+  }
+  expect(element).toBe(chip);
+});
