@@ -90,6 +90,8 @@ def _detect_portal(url: str) -> str | None:
         return "gazeta"
     if "bankier.pl" in url_lower:
         return "bankier"
+    if "disinfodigest.pl" in url_lower:
+        return "disinfodigest"
     return None
 
 
@@ -151,6 +153,13 @@ PORTAL_FOOTER_MARKERS = {
     # rekomendacje ("Powiązane"/"Najpopularniejsze"/"Polecane") i stopka-sitemapa.
     "bankier": [
         "Komentarze (",
+    ],
+    # Artykuł kończy się podpisem ("Autor: ...", "Wspólpracja: ..."), po którym
+    # następuje separator, blok udostępniania i stopka "Portal informacyjno-
+    # edukacyjny DISINFO DIGEST". Podpis należy do treści; "Udostępnij!" występuje
+    # na stronie tylko raz, tuż za nim.
+    "disinfodigest": [
+        "Udostępnij!",
     ],
 }
 
@@ -509,6 +518,12 @@ def find_text_in_markdown(markdown_text: str, search_text: str) -> int | None:
     return None
 
 
+def _is_blank_or_separator(line: str) -> bool:
+    """Pusta linia albo sam separator poziomy markdown (``* * *``, ``---``, ``___``)."""
+    stripped = line.strip().replace(" ", "")
+    return not stripped or (len(stripped) >= 3 and set(stripped) <= set("*-_"))
+
+
 def extract_article_by_markers(markdown_text: str, markers: dict, url: str = "") -> str | None:
     """Wyodrębnij treść artykułu na podstawie markerów z LLM.
 
@@ -548,9 +563,9 @@ def extract_article_by_markers(markdown_text: str, markers: dict, url: str = "")
         logger.warning("Cannot find article end: no footer marker, no LLM marker — using end of document")
         end_line = len(markdown_text.splitlines()) - 1
 
-    # Cofnij się przez puste linie na końcu
+    # Cofnij się przez puste linie i poziome separatory (np. "* * *", "---") na końcu
     lines_list = markdown_text.splitlines()
-    while end_line > start_line and not lines_list[end_line].strip():
+    while end_line > start_line and _is_blank_or_separator(lines_list[end_line]):
         end_line -= 1
 
     if end_line <= start_line:
