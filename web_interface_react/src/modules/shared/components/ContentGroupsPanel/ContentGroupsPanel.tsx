@@ -2,7 +2,10 @@ import React from "react";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import type { ContentGroup, ContentGroupSuggestion } from "../../../../types";
 
-type Props = { documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; onSaved?: (groups: ContentGroup[]) => void };
+// Priority group backing the ★ button; created once by the owner (kind=priority, rank 10).
+const FAVORITE_GROUP_NAME = "Ulubione";
+
+type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; onSaved?: (groups: ContentGroup[]) => void };
 
 export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, onSaved }: Props) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
@@ -49,6 +52,24 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     setGroups(next); setEditing(false); onSaved?.(next);
   };
 
+  const favoriteGroup = catalog.find(group => group.kind === "priority" && group.name === FAVORITE_GROUP_NAME);
+  const currentPriority = groups.find(group => group.kind === "priority");
+  const isFavorite = !!favoriteGroup && currentPriority?.id === favoriteGroup.id;
+
+  const toggleFavorite = async () => {
+    if (!favoriteGroup) return;
+    if (!isFavorite && currentPriority && !window.confirm(`Zastąpić priorytet „${currentPriority.name}” priorytetem „${favoriteGroup.name}”?`)) return;
+    setError("");
+    const topicGroupIds = groups.filter(group => group.kind === "topic").map(group => group.id);
+    const response = await fetch(`${apiUrl}/${target}/groups`, { method: "PATCH", headers, body: JSON.stringify({ group_ids: [...topicGroupIds, ...(isFavorite ? [] : [favoriteGroup.id])] }) });
+    const data = await response.json();
+    if (!response.ok) { setError(data.message || data.error || "Nie udało się zapisać ulubionych"); return; }
+    const next: ContentGroup[] = data.groups || data.feed_item?.groups || [];
+    setGroups(next);
+    setPriorityId(next.find(group => group.kind === "priority")?.id || "");
+    onSaved?.(next);
+  };
+
   const decide = async (id: number, action: "accept" | "dismiss" | "revert") => {
     const response = await fetch(`${apiUrl}/content_group_suggestions/${id}/${action}`, { method: "POST", headers });
     if (response.ok) void load(); else setError("Nie udało się wykonać decyzji sugestii");
@@ -58,6 +79,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const priorities = catalog.filter(group => group.kind === "priority");
   return <section aria-label="Grupy materiału" style={{ border: "1px solid #dbe4ee", borderRadius: 8, padding: 12, marginBottom: 16 }}>
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      {favoriteGroup && <button type="button" onClick={() => void toggleFavorite()} aria-pressed={isFavorite} title={isFavorite ? "Usuń z ulubionych" : "Dodaj do ulubionych"} style={{ fontSize: "1.3em", lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: isFavorite ? "#f59e0b" : "#94a3b8" }}>{isFavorite ? "★" : "☆"}</button>}
       <strong>Grupy</strong>
       {groups.filter(group => group.kind === "priority").map(group => <span key={group.id} style={{ background: "#dbeafe", borderRadius: 12, padding: "2px 8px" }}>{group.name}</span>)}
       {groups.filter(group => group.kind === "topic").map(group => <span key={group.id} style={{ background: "#f1f5f9", borderRadius: 12, padding: "2px 8px" }}>{group.name}</span>)}
