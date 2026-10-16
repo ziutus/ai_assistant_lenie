@@ -15,6 +15,7 @@ syntetycznych ani płatnych probe'ach.
 | OpenAI | Opcjonalny dostawca LLM i embeddingów | `library/api/openai/`; `OPENAI_API_KEY` | Tak, `llm_usage_logs` (LLM) |
 | AWS Bedrock / Vertex AI | Opcjonalni dostawcy modeli | adaptery `library/api/aws/`, `library/api/google/` | Tak, `llm_usage_logs` (LLM) |
 | AssemblyAI | Transkrypcja mowy (STT) dla filmów bez napisów | `library/transcript.py` → `library/api/asemblyai/asemblyai_transcript.py`; `ASSEMBLYAI` | Tak, `transcription_usage` (`GET /transcription_usage`) |
+| YouTube napisy (przez proxy Webshare lub bezpośrednio) | Pobieranie napisów w `feed_daily` i `/website_youtube_retry_captions` | `library/youtube_processing.py`; `WEBSHARE_API_KEY` | Tak, `external_service_events` (`youtube_captions`, operacje `via_webshare_proxy` / `direct`; blokada Google = `GoogleSorryBlock`) — karty na `/service-status`, okno do 30 dni |
 | YouTube (pytubefix) | Metadane i pobieranie filmów | `library/stalker_youtube_file.py`, `library/youtube_processing.py` | Nie — brak dedykowanego rejestru wywołań |
 | Google OAuth | Autoryzacja dostępów do Google (np. Gmail) | `library/google_auth.py` | Nie — brak dedykowanego rejestru wywołań |
 | AWS Comprehend | Wykrywanie języka tekstu | `library/api/aws/text_detect_language_aws.py` | Nie — brak dedykowanego rejestru wywołań |

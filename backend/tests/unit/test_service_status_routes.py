@@ -31,8 +31,8 @@ def _response(*, successes: int, failures: int, error: str | None = None,
         MagicMock(one_or_none=lambda: SimpleNamespace(operation="subscription_plan", error_code="HTTP_503") if webshare_failures else None),
     ]
     # CloudFerro, ARK Labs, OpenAI, Bedrock, Vertex, Webshare, LocationIQ,
-    # Wikidata, Overpass — two queries per card.
-    session.execute.side_effect = cloudferro + empty * 4 + webshare + empty * 3
+    # Wikidata, Overpass, YouTube captions via proxy / direct — two queries per card.
+    session.execute.side_effect = cloudferro + empty * 4 + webshare + empty * 5
     app = Flask(__name__)
     app.register_blueprint(bp)
     with patch("library.service_status_routes.get_scoped_session", return_value=session):
@@ -57,6 +57,12 @@ def test_cloudferro_is_warning_when_successes_and_failures_mix():
 def test_cloudferro_is_unknown_without_recent_calls():
     data = _response(successes=0, failures=0)
     assert data["services"][0]["status"] == "unknown"
+
+
+def test_youtube_caption_cards_are_listed_separately_for_proxy_and_direct():
+    data = _response(successes=0, failures=0)
+    ids = [service["id"] for service in data["services"]]
+    assert ids[-2:] == ["youtube_captions_proxy", "youtube_captions_direct"]
 
 
 def test_webshare_status_includes_last_real_operation():
