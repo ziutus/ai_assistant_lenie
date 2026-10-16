@@ -7,7 +7,7 @@ import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 import assemblyai as aai
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 
 from library.config_loader import load_config
 
@@ -245,8 +245,12 @@ def process_youtube_url(
                 web_document.text_raw = transcript_text
                 session.commit()
 
-        except TranscriptsDisabled:
-            logger.info(f"The video at {web_document.url} has its transcripts disabled.")
+        except (TranscriptsDisabled, NoTranscriptFound) as e:
+            # Permanent: no captions, or none in the document language or English (e.g. only
+            # Korean). Not a TEMPORARY_ERROR, which the caption loop would retry forever; the
+            # NEED_TRANSCRIPTION branch below ends in NO_CAPTIONS_AVAILABLE unless paid
+            # transcription was authorized.
+            logger.info(f"The video at {web_document.url} has no usable captions ({type(e).__name__}).")
             web_document.youtube_captions = False
             session.commit()
 

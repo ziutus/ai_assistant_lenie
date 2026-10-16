@@ -333,3 +333,65 @@ class TestDocumentStateErrorClearedOnSuccess:
 
         assert doc.processing_error_code == StalkerDocumentStatusError.NONE.name
         assert doc.processing_status == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+
+
+# ---------------------------------------------------------------------------
+# Test: a video without usable captions is a permanent state, a network block is not
+# ---------------------------------------------------------------------------
+
+class TestCaptionsUnavailableVersusBlocked:
+    """A video whose only captions are in another language (e.g. Korean) used to end as
+    TEMPORARY_ERROR and was retried by every feed_daily run forever."""
+
+    def _run(self, MockWebDocument, MockYoutubeFile, mock_session, fetch_error):
+        from library.youtube_processing import process_youtube_url
+        from library.models.stalker_document_status import StalkerDocumentStatus
+
+        doc = MagicMock()
+        doc.id = 1
+        doc.url = "https://www.youtube.com/watch?v=abc"
+        doc.processing_status = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
+        doc.language = "pl"
+        doc.chapter_list = None
+        doc.transcript_job_id = None
+        doc.transcript_needed = False
+        MockWebDocument.get_by_url.return_value = doc
+
+        yt_file = MagicMock()
+        yt_file.valid = True
+        yt_file.metadata_available = False
+        yt_file.video_id = "abc123"
+        MockYoutubeFile.return_value = yt_file
+
+        with patch("library.youtube_processing.YouTubeTranscriptApi") as MockYTT:
+            korean = MagicMock()
+            korean.language_code = "ko"
+            MockYTT.return_value.list.return_value = [korean]
+            MockYTT.return_value.fetch.side_effect = fetch_error
+            process_youtube_url(session=mock_session, youtube_url=doc.url)
+        return doc
+
+    @patch("library.youtube_processing.StalkerYoutubeFile")
+    @patch("library.youtube_processing.Document")
+    def test_no_transcript_in_requested_languages_is_permanent(self, MockWebDocument, MockYoutubeFile, mock_session):
+        from youtube_transcript_api import NoTranscriptFound
+        from library.models.stalker_document_status import StalkerDocumentStatus
+        from library.models.stalker_document_status_error import StalkerDocumentStatusError
+
+        doc = self._run(MockWebDocument, MockYoutubeFile, mock_session,
+                        NoTranscriptFound("abc123", ["en"], MagicMock()))
+
+        assert doc.processing_status == StalkerDocumentStatus.ERROR.name
+        assert doc.processing_error_code == StalkerDocumentStatusError.NO_CAPTIONS_AVAILABLE.name
+        assert doc.youtube_captions is False
+
+    @patch("library.youtube_processing.StalkerYoutubeFile")
+    @patch("library.youtube_processing.Document")
+    def test_network_block_stays_temporary(self, MockWebDocument, MockYoutubeFile, mock_session):
+        from library.models.stalker_document_status import StalkerDocumentStatus
+        from library.models.stalker_document_status_error import StalkerDocumentStatusError
+
+        doc = self._run(MockWebDocument, MockYoutubeFile, mock_session, ConnectionError("google.com/sorry"))
+
+        assert doc.processing_status == StalkerDocumentStatus.TEMPORARY_ERROR.name
+        assert doc.processing_error_code == StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
