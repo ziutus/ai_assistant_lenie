@@ -1,5 +1,17 @@
 # AGENTS.md — reguły operacyjne Lenie NAS
 
+## Dostęp do NAS i wdrożenia
+
+- SSH do NAS: zawsze użytkownik `admin` (`ssh admin@192.168.200.7`). Gołe
+  `ssh 192.168.200.7` bez wpisu w `~/.ssh/config` łączy się jako lokalny
+  użytkownik Windows i jest odrzucane. Zalecany wpis:
+  `Host nas 192.168.200.7` / `HostName 192.168.200.7` / `User admin`
+  (plik musi nazywać się `config`, nie `config.txt`).
+- Wdrożenie: `bash ./infra/docker/nas-deploy.sh <usługa>` przez narzędzie Bash
+  (nie `.ps1` przez PowerShell — `docker build` pisze na stderr). Użytkownik,
+  host i ścieżka Dockera są na górze skryptu; szczegóły w
+  [NAS_Deployment.md](docs/CICD/NAS_Deployment.md).
+
 ## Masowe operacje na Obsidianie
 
 Nie uruchamiaj pełnego `obsidian_reimport` jako jednorazowej migracji na NAS-ie.
