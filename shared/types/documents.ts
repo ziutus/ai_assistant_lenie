@@ -16,6 +16,7 @@ export interface Document {
   processing_error_code: string;
   chapter_list: string;
   outline_md: string | null;
+  video_description?: string | null;
   email_sender: string;
   note: string;
   next_id: number | null;
