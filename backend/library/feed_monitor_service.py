@@ -92,7 +92,7 @@ def _upsert(session, feed: FeedSource, entry: dict, status: str = "new") -> Feed
 def run_check(feed_source_id: int | None = None, session=None) -> dict:
     own = session is None
     session = session or get_session()
-    result = {"checked": 0, "items": 0, "errors": []}
+    result = {"checked": 0, "items": 0, "new_items": 0, "feeds": [], "errors": []}
     try:
         query = select(FeedSource).where(FeedSource.disabled.is_(False))
         if feed_source_id is not None:
@@ -101,13 +101,19 @@ def run_check(feed_source_id: int | None = None, session=None) -> dict:
             try:
                 entries = fetch_entries(_feed_config(feed))
                 kept, ignored = apply_skip_filters(entries, _feed_config(feed))
+                # An unflushed (pending) FeedItem is one _upsert just created.
+                new_items = 0
                 for entry in kept:
-                    _upsert(session, feed, entry)
+                    new_items += _upsert(session, feed, entry) in session.new
                 for entry in ignored:
-                    _upsert(session, feed, entry, "ignored")
+                    new_items += _upsert(session, feed, entry, "ignored") in session.new
                 feed.last_checked_at, feed.last_error = dt.datetime.now(dt.timezone.utc), None
                 result["items"] += len(entries)
+                result["new_items"] += new_items
                 result["checked"] += 1
+                result["feeds"].append(
+                    {"feed_source_id": feed.id, "feed_name": feed.name, "items": len(entries), "new_items": new_items}
+                )
             except Exception as exc:
                 feed.last_checked_at, feed.last_error_at, feed.last_error = (
                     dt.datetime.now(dt.timezone.utc),

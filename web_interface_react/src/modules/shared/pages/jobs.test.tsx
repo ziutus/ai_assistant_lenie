@@ -39,6 +39,17 @@ describe("Jobs", () => {
     expect(screen.getAllByRole("button", { name: "Następna" })).toHaveLength(2);
   });
 
+  it("names the checked feed and shows new items in a feed_check result", async () => {
+    const feedJob = {
+      ...bridgeJob, id: "feed-job", type: "feed_check", status: "done", attempt: 1,
+      result: { checked: 1, items: 15, new_items: 4, errors: [], feeds: [{ feed_source_id: 7, feed_name: "Zaufana Trzecia Strona", items: 15, new_items: 4 }] },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ jobs: [feedJob], capabilities: {}, total: 1 }), { status: 200 })));
+    render(<AuthorizationContext.Provider value={auth}><Jobs /></AuthorizationContext.Provider>);
+
+    expect(await screen.findByText("źródło: Zaufana Trzecia Strona · new_items: 4 · items: 15 · errors: 0")).toBeTruthy();
+  });
+
   it("lets a user start the bridge without exposing management actions", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ jobs: [bridgeJob], capabilities: { manage_jobs: false, run_legacy_aws_pull: true }, total: 1 }), { status: 200 })));
     render(<AuthorizationContext.Provider value={auth}><Jobs /></AuthorizationContext.Provider>);

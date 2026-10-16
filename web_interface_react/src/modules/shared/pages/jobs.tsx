@@ -18,9 +18,13 @@ const statusStyle: Record<string, React.CSSProperties> = {
 };
 const formatResult = (result: unknown) => {
   if (!result || typeof result !== "object" || Array.isArray(result)) return "—";
-  const counters = ["found", "added", "skipped", "refreshed", "errors"].filter((key) => key in result)
-    .map((key) => `${key}: ${String((result as Record<string, unknown>)[key])}`);
-  return counters.length ? counters.join(" · ") : "zobacz szczegóły";
+  const values = result as Record<string, unknown>;
+  const feeds = Array.isArray(values.feeds) ? values.feeds as { feed_name?: string }[] : [];
+  const source = feeds.length === 1 ? [`źródło: ${feeds[0].feed_name || "?"}`] : feeds.length > 1 ? [`źródeł: ${feeds.length}`] : [];
+  const counters = ["found", "added", "new_items", "items", "skipped", "refreshed", "errors"].filter((key) => key in values)
+    .map((key) => `${key}: ${Array.isArray(values[key]) ? (values[key] as unknown[]).length : String(values[key])}`);
+  const parts = [...source, ...counters];
+  return parts.length ? parts.join(" · ") : "zobacz szczegóły";
 };
 
 export default function Jobs() {
