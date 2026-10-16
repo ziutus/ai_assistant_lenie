@@ -918,10 +918,13 @@ def create_job():
             abort(400, "dry_run must be boolean")
         if "limit" in parameters and (not isinstance(parameters["limit"], int) or isinstance(parameters["limit"], bool) or not 0 <= parameters["limit"] <= 1000):
             abort(400, "limit must be an integer from 0 to 1000")
+    # A manual run may repeat on the same day (the scheduler's daily key stays in worker.py);
+    # only a feed_daily that is still queued or running is reused.
     if typ == "feed_daily":
-        key = f"feed_daily:{dt.datetime.now(dt.timezone.utc).astimezone(ZoneInfo('Europe/Warsaw')).date().isoformat()}"
-    else:
-        key = None
+        active = session.scalars(select(Job).where(Job.type == "feed_daily", Job.status.in_(["queued", "running"]))).first()
+        if active is not None:
+            return jsonify({"id": active.id, "status": active.status}), 202
+    key = None
     try:
         job = enqueue(
             session,
