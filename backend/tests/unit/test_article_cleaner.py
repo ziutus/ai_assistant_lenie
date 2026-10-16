@@ -1142,6 +1142,46 @@ class TestBankierExtraction:
         assert "WIG30" not in result
 
 
+class TestDisinfoDigestExtraction:
+    URL = "https://disinfodigest.pl/2026/10/13/rosyjski-aparat-wplywu/"
+    LAST = "Badanie nie obejmowało porównywalnego okresu poprzedzającego ataki."
+    RAW_PAGE = "\n".join([
+        "Portal informacyjno-edukacyjny fundacji Info OPS Polska",
+        "",
+        "# Tytuł raportu",
+        "",
+        LONG_PARAGRAPH,
+        "",
+        LAST,
+        "",
+        "* * *",
+        "",
+        "Autor: Wojciech Pokora – Redaktor naczelny Disinfo Digest, Katarzyna Wojda",
+        "",
+        "Wspólpracja: ZBPI INFO OPS Polska",
+        "",
+        "* * *",
+        "",
+        "Udostępnij!",
+        "",
+        "Otwórz PDF i wydrukuj",
+        "",
+        "**Portal informacyjno-edukacyjny** **DISINFO DIGEST**",
+    ])
+
+    def test_detects_portal(self):
+        assert _detect_portal(self.URL) == "disinfodigest"
+
+    def test_signature_stays_and_portal_footer_is_cut(self):
+        markers = {"article_first_sentence": LONG_PARAGRAPH, "article_last_sentence": self.LAST}
+        result = extract_article_by_markers(self.RAW_PAGE, markers, url=self.URL)
+
+        assert result.rstrip().endswith("Wspólpracja: ZBPI INFO OPS Polska")
+        assert "Autor: Wojciech Pokora" in result
+        assert "Udostępnij!" not in result
+        assert "DISINFO DIGEST" not in result
+
+
 def test_money_img_credit_helper_matches_former_regex_semantics():
     from library.article_cleaner import _is_money_img_credit
 
