@@ -16,7 +16,15 @@ Pierwsze zdanie kolejnego rozdziału opisuje inne zdarzenie. Drugie zdanie dodaj
 
 
 class Response:
+    response_text = json.dumps({"break_after": [3], "topics": ["Pierwsza myśl", "Inny temat."]})
+
+
+class LegacyResponse:
     response_text = json.dumps({"break_after": [3]})
+
+
+class MismatchedTopicsResponse:
+    response_text = json.dumps({"break_after": [3], "topics": ["Tylko jeden"]})
 
 
 def test_paragraphize_keeps_headings_and_only_replaces_boundary_whitespace(monkeypatch):
@@ -38,6 +46,7 @@ def test_paragraphize_keeps_headings_and_only_replaces_boundary_whitespace(monke
     assert "## Rozdział drugi\n\n" in result.text
     assert calls[0][1]["document_id"] == 9348
     assert calls[0][1]["operation"] == "transcript_paragraphization"
+    assert len(result.topics) == 4
 
 
 def test_paragraphize_rejects_text_without_chapters():
@@ -73,3 +82,13 @@ def test_paragraphize_chunk_text_works_without_chapter_headings(monkeypatch):
     assert calls[0]["document_id"] == 9353
     assert calls[0]["analysis_run_id"] == 163
     assert calls[0]["operation"] == "transcript_paragraphization"
+    assert result.topics == ("Pierwsza myśl", "Inny temat")
+
+
+def test_paragraphize_chunk_text_drops_topics_that_do_not_match_paragraphs(monkeypatch):
+    for response in (LegacyResponse, MismatchedTopicsResponse):
+        monkeypatch.setattr("library.ai.ai_ask", lambda prompt, _r=response, **kwargs: _r())
+        result = paragraphize_chunk_text(CHUNK_TEXT, document_id=9353)
+        assert result.paragraph_count == 2
+        assert "pierwszą myśl.\n\nCzwarte zdanie" in result.text
+        assert result.topics == ()
