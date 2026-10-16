@@ -6,6 +6,7 @@ cache files.  Network callers receive one raw payload per normalized item.
 
 import html
 import re
+import time
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from datetime import datetime
@@ -13,6 +14,7 @@ from typing import Any
 
 import defusedxml.ElementTree as DET
 import regex as safe_regex
+import requests
 from library.safe_http import safe_get
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
@@ -114,8 +116,28 @@ def apply_skip_filters(entries: list[dict], feed: dict) -> tuple[list[dict], lis
     return kept, ignored
 
 
+YOUTUBE_RETRY_DELAYS = (2, 5)  # seconds between the 3 attempts
+YOUTUBE_RETRY_STATUSES = {404, 429, 500, 502, 503, 504}
+
+
+def _get_with_retry(feed: dict, timeout: tuple[float, float]):
+    """YouTube's RSS endpoint intermittently answers 404/5xx for existing channels, so retry it."""
+    url = build_feed_url(feed)
+    if feed["type"] != "youtube_channel":
+        return safe_get(url, timeout=timeout)
+    for delay in (*YOUTUBE_RETRY_DELAYS, None):
+        try:
+            response = safe_get(url, timeout=timeout)
+            if response.status_code not in YOUTUBE_RETRY_STATUSES or delay is None:
+                return response
+        except requests.ConnectionError:
+            if delay is None:
+                raise
+        time.sleep(delay)
+
+
 def fetch_entries(feed: dict, *, connect_timeout: float = 10, read_timeout: float = 60) -> list[dict]:
-    response = safe_get(build_feed_url(feed), timeout=(connect_timeout, read_timeout))
+    response = _get_with_retry(feed, (connect_timeout, read_timeout))
     response.raise_for_status()
     if feed["type"] == "json_api":
         payload: Any = response.json()
