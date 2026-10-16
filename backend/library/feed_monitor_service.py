@@ -137,7 +137,7 @@ def run_check(feed_source_id: int | None = None, session=None) -> dict:
             session.close()
 
 
-CAPTIONS_PER_RUN = 25
+CAPTIONS_PER_RUN = 100
 CAPTIONS_DELAY_SECONDS = 5
 CAPTIONS_MAX_CONSECUTIVE_FAILURES = 3
 
@@ -186,6 +186,10 @@ def run_caption_fetch(
                 break
             if position and delay_seconds:
                 time.sleep(delay_seconds)
+            # One fetch takes ~45 s and the worker treats 120 s without a heartbeat as a dead job.
+            if on_progress:
+                on_progress({"phase": "captions", "fetched": result["fetched"], "failed": result["failed"],
+                             "position": position + 1, "total": min(limit, len(doc_ids))})
             doc = session.get(Document, doc_id)
             try:
                 updated = process_youtube_url(

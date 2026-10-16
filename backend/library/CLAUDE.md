@@ -81,7 +81,8 @@ and `POST /feed_items/<id>/restore`; deferred items can later use the existing
 
 `feed_daily` runs check → `run_auto_import()` → `run_caption_fetch()`. The last step
 fetches YouTube captions sequentially (`CAPTIONS_PER_RUN` documents per run, a
-`CAPTIONS_DELAY_SECONDS` pause between them, newest first) for `youtube` documents
+`CAPTIONS_DELAY_SECONDS` pause between them, newest first; one fetch takes ~45 s, so a
+full run of 100 occupies the worker for over an hour) for `youtube` documents
 in `URL_ADDED`/`TEMPORARY_ERROR` that came from an `auto_import` feed; it stops
 after `CAPTIONS_MAX_CONSECUTIVE_FAILURES` failures in a row (typically an IP block)
 and the rest waits for the next run. `run_check()` reports `new_items` and a `feeds`
