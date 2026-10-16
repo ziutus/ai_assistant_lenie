@@ -38,9 +38,12 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
     if job.type == "feed_daily":
         check = run_check()
         heartbeat(session, job.id, {"phase": "check", **check})
-        from library.feed_monitor_service import run_auto_import
+        from library.feed_monitor_service import run_auto_import, run_caption_fetch
 
-        return {"check": check, "import": run_auto_import()}
+        imported = run_auto_import()
+        heartbeat(session, job.id, {"phase": "import", **imported})
+        captions = run_caption_fetch(on_progress=lambda progress: heartbeat(session, job.id, progress))
+        return {"check": check, "import": imported, "captions": captions}
     if job.type == "content_group_suggest":
         from library.content_group_suggestion_service import execute_suggestion_job
 

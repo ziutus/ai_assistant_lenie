@@ -3,6 +3,7 @@
 import datetime as dt
 import logging
 import re
+import time
 import uuid
 import regex as safe_regex
 from sqlalchemy import select, update, text
@@ -130,6 +131,77 @@ def run_check(feed_source_id: int | None = None, session=None) -> dict:
                     }
                 )
             session.commit()
+        return result
+    finally:
+        if own:
+            session.close()
+
+
+CAPTIONS_PER_RUN = 25
+CAPTIONS_DELAY_SECONDS = 5
+CAPTIONS_MAX_CONSECUTIVE_FAILURES = 3
+
+
+def run_caption_fetch(
+    session=None, limit: int = CAPTIONS_PER_RUN, delay_seconds: float = CAPTIONS_DELAY_SECONDS,
+    on_progress=None,
+) -> dict:
+    """Fetch YouTube captions, one document at a time, for auto-imported feed videos.
+
+    Takes documents still waiting for captions (URL_ADDED, or TEMPORARY_ERROR from an earlier
+    attempt) that came from an ``auto_import`` feed, newest first. Sequential with a pause so
+    YouTube/Webshare are not hammered; a run stops after a few failures in a row (typically an
+    IP block) and leaves the rest for the next run.
+    """
+    from library.config_loader import load_config
+    from library.models.stalker_document_status import StalkerDocumentStatus
+    from library.youtube_processing import process_youtube_url
+
+    own = session is None
+    session = session or get_session()
+    result = {"fetched": 0, "failed": 0, "remaining": 0, "stopped_early": False, "errors": []}
+    waiting = [StalkerDocumentStatus.URL_ADDED.name, StalkerDocumentStatus.TEMPORARY_ERROR.name]
+    # Statuses a document can still have after a fetch that did not produce captions.
+    not_fetched = {*waiting, StalkerDocumentStatus.NEED_TRANSCRIPTION.name, StalkerDocumentStatus.ERROR.name}
+    try:
+        webshare_api_key = load_config().get("WEBSHARE_API_KEY")
+        query = (
+            select(Document)
+            .join(FeedItem, FeedItem.document_id == Document.id)
+            .join(FeedSource, FeedSource.id == FeedItem.feed_source_id)
+            .where(
+                Document.document_type == "youtube",
+                Document.processing_status.in_(waiting),
+                FeedSource.auto_import.is_(True),
+            )
+            .order_by(FeedItem.published_at.desc().nulls_last(), Document.id.desc())
+        )
+        doc_ids = [doc.id for doc in session.scalars(query).unique().all()]
+        result["remaining"] = max(0, len(doc_ids) - limit)
+        consecutive_failures = 0
+        for position, doc_id in enumerate(doc_ids[:limit]):
+            if consecutive_failures >= CAPTIONS_MAX_CONSECUTIVE_FAILURES:
+                result["stopped_early"] = True
+                result["remaining"] += len(doc_ids[:limit]) - position
+                break
+            if position and delay_seconds:
+                time.sleep(delay_seconds)
+            doc = session.get(Document, doc_id)
+            try:
+                updated = process_youtube_url(
+                    session=session, youtube_url=doc.url, language=doc.language,
+                    chapter_list=doc.chapter_list, note=doc.note, source=doc.discovery_source_name,
+                    webshare_api_key=webshare_api_key,
+                )
+                failed = updated.processing_status in not_fetched
+            except Exception as exc:
+                session.rollback()
+                failed = True
+                result["errors"].append({"document_id": doc_id, "error": str(exc)[:300]})
+            consecutive_failures = consecutive_failures + 1 if failed else 0
+            result["failed" if failed else "fetched"] += 1
+            if on_progress:
+                on_progress({"phase": "captions", **{k: result[k] for k in ("fetched", "failed")}})
         return result
     finally:
         if own:
