@@ -1,5 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import axios from "axios";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthorizationState } from "../../../types";
 import { AuthorizationContext } from "../context/authorizationContext";
@@ -41,5 +42,17 @@ describe("ServiceStatus", () => {
     expect(await screen.findByText("CloudFerro Sherlock (LLM i embeddingi)")).toBeTruthy();
     expect(screen.getByText("Działa")).toBeTruthy();
     expect(screen.getByText(/4 udanych \/ 0 nieudanych/)).toBeTruthy();
+  });
+
+  it("requests the chosen time window, so days of proxy history can be inspected", async () => {
+    render(<AuthorizationContext.Provider value={auth}><ServiceStatus /></AuthorizationContext.Provider>);
+    await screen.findByText("CloudFerro Sherlock (LLM i embeddingi)");
+
+    fireEvent.change(screen.getByLabelText("Okno"), { target: { value: String(7 * 24 * 60) } });
+
+    await waitFor(() => expect(axios.get).toHaveBeenLastCalledWith(
+      "http://api.test/service_status",
+      expect.objectContaining({ params: { window_minutes: 7 * 24 * 60 } }),
+    ));
   });
 });

@@ -85,7 +85,11 @@ fetches YouTube captions sequentially (`CAPTIONS_PER_RUN` documents per run, a
 full run of 100 occupies the worker for over an hour) for `youtube` documents
 in `URL_ADDED`/`TEMPORARY_ERROR` that came from an `auto_import` feed; it stops
 after `CAPTIONS_MAX_CONSECUTIVE_FAILURES` failures in a row (typically an IP block)
-and the rest waits for the next run. `run_check()` reports `new_items` and a `feeds`
+and the rest waits for the next run. A fetch ending as `TEMPORARY_ERROR` (usually the rotating proxy's exit IP flagged
+by Google) is retried once after `CAPTIONS_RETRY_DELAY_SECONDS` (60 s); the result reports `retried`/`recovered`.
+Every attempt is logged in `external_service_events` (`youtube_captions`, operation `via_webshare_proxy` or `direct`,
+`error_code` `GoogleSorryBlock` for the Google block) and shown on `/service-status` — the data for judging whether the
+paid Webshare proxy is worth keeping. `run_check()` reports `new_items` and a `feeds`
 list (id, name, items, new_items) shown on the Jobs page.
 
 ### Domain Model & Database

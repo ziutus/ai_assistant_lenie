@@ -139,19 +139,22 @@ def run_check(feed_source_id: int | None = None, session=None) -> dict:
 
 CAPTIONS_PER_RUN = 100
 CAPTIONS_DELAY_SECONDS = 5
+CAPTIONS_RETRY_DELAY_SECONDS = 60
 CAPTIONS_MAX_CONSECUTIVE_FAILURES = 3
 
 
 def run_caption_fetch(
     session=None, limit: int = CAPTIONS_PER_RUN, delay_seconds: float = CAPTIONS_DELAY_SECONDS,
-    on_progress=None,
+    on_progress=None, retry_delay_seconds: float = CAPTIONS_RETRY_DELAY_SECONDS,
 ) -> dict:
     """Fetch YouTube captions, one document at a time, for auto-imported feed videos.
 
     Takes documents still waiting for captions (URL_ADDED, or TEMPORARY_ERROR from an earlier
     attempt) that came from an ``auto_import`` feed, newest first. Sequential with a pause so
     YouTube/Webshare are not hammered; a run stops after a few failures in a row (typically an
-    IP block) and leaves the rest for the next run.
+    IP block) and leaves the rest for the next run. A fetch that ends as TEMPORARY_ERROR (the
+    rotating proxy's exit IP flagged by Google) is retried once after ``retry_delay_seconds``,
+    which usually lands on another IP; only the outcome of the retry counts as a failure.
     """
     from library.config_loader import load_config
     from library.models.stalker_document_status import StalkerDocumentStatus
@@ -159,7 +162,8 @@ def run_caption_fetch(
 
     own = session is None
     session = session or get_session()
-    result = {"fetched": 0, "failed": 0, "remaining": 0, "stopped_early": False, "errors": []}
+    result = {"fetched": 0, "failed": 0, "retried": 0, "recovered": 0, "remaining": 0, "stopped_early": False,
+              "errors": []}
     waiting = [StalkerDocumentStatus.URL_ADDED.name, StalkerDocumentStatus.TEMPORARY_ERROR.name]
     # Statuses a document can still have after a fetch that did not produce captions.
     not_fetched = {*waiting, StalkerDocumentStatus.NEED_TRANSCRIPTION.name, StalkerDocumentStatus.ERROR.name}
@@ -191,12 +195,24 @@ def run_caption_fetch(
                 on_progress({"phase": "captions", "fetched": result["fetched"], "failed": result["failed"],
                              "position": position + 1, "total": min(limit, len(doc_ids))})
             doc = session.get(Document, doc_id)
-            try:
-                updated = process_youtube_url(
+
+            def fetch_once():
+                return process_youtube_url(
                     session=session, youtube_url=doc.url, language=doc.language,
                     chapter_list=doc.chapter_list, note=doc.note, source=doc.discovery_source_name,
                     webshare_api_key=webshare_api_key,
                 )
+
+            try:
+                updated = fetch_once()
+                if updated.processing_status == StalkerDocumentStatus.TEMPORARY_ERROR.name:
+                    result["retried"] += 1
+                    if on_progress:  # keep the heartbeat inside the worker's 120 s stale limit during the pause
+                        on_progress({"phase": "captions", "retrying": doc_id})
+                    if retry_delay_seconds:
+                        time.sleep(retry_delay_seconds)
+                    updated = fetch_once()
+                    result["recovered"] += updated.processing_status not in not_fetched
                 failed = updated.processing_status in not_fetched
             except Exception as exc:
                 session.rollback()
@@ -205,7 +221,7 @@ def run_caption_fetch(
             consecutive_failures = consecutive_failures + 1 if failed else 0
             result["failed" if failed else "fetched"] += 1
             if on_progress:
-                on_progress({"phase": "captions", **{k: result[k] for k in ("fetched", "failed")}})
+                on_progress({"phase": "captions", **{k: result[k] for k in ("fetched", "failed", "retried", "recovered")}})
         return result
     finally:
         if own:
