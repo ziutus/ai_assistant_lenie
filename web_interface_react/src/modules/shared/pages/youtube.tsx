@@ -67,6 +67,12 @@ const Youtube = () => {
   // Paragraphization is deliberately constrained to imported Markdown
   // chapters, so the model can only add whitespace within a known section.
   const hasMarkdownChapters = /^#{1,2} .+/m.test(String(formik.values.text || ""));
+  // A chapter that still has its imported single-block body yields one heading
+  // block and one body block; paragraphization adds more blocks per chapter.
+  const textBlocks = String(formik.values.text || "").split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const headingBlocks = textBlocks.filter((block) => /^#{1,2} /.test(block)).length;
+  const paragraphBlocks = textBlocks.length - headingBlocks;
+  const alreadyParagraphized = hasMarkdownChapters && paragraphBlocks > headingBlocks;
   const canFetchCaptions = Boolean(id) && transcriptMissing
     && ["URL_ADDED", "NEED_TRANSCRIPTION", "TEMPORARY_ERROR"].includes(formik.values.processing_status);
   const [captionMessage, setCaptionMessage] = React.useState("");
@@ -218,15 +224,20 @@ const Youtube = () => {
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
             <strong>Formatowanie transkrypcji</strong>
             <div style={{ marginTop: 6, color: "#475569" }}>
-              Bielik wskaże granice akapitów w obrębie istniejących rozdziałów. Zmieni wyłącznie odstępy między zdaniami.
+              Bielik wskaże granice akapitów w obrębie istniejących rozdziałów. Zmieni wyłącznie odstępy między zdaniami{alreadyParagraphized ? ". Ponowne uruchomienie jest zwykle zbędne i zużywa wywołania modelu" : ""}.
             </div>
+            {alreadyParagraphized && (
+              <div style={{ marginTop: 6, color: "#166534" }}>
+                ✓ Transkrypcja jest już podzielona na akapity ({paragraphBlocks} akapitów w {headingBlocks} rozdziałach)
+              </div>
+            )}
             {!hasMarkdownChapters && (
               <div role="status" style={{ marginTop: 8, color: "#92400e" }}>
                 Nie można jeszcze podzielić transkrypcji na akapity: nie ma w niej rozdziałów. Rozdziały są importowane z ręcznie podanej listy czasowej albo z co najmniej dwóch znaczników czasu w opisie filmu YouTube. Ten film nie dostarcza żadnego z tych źródeł.
               </div>
             )}
             <button type="button" className="button" style={{ marginTop: 10 }} onClick={paragraphizeTranscript} disabled={!hasMarkdownChapters || paragraphizing || isLoading}>
-              {paragraphizing ? "Dzielę na akapity…" : "Podziel transkrypcję na akapity (Bielik)"}
+              {paragraphizing ? "Dzielę na akapity…" : alreadyParagraphized ? "Podziel na akapity ponownie (Bielik)" : "Podziel transkrypcję na akapity (Bielik)"}
             </button>
             {paragraphMessage && <div style={{ marginTop: 8 }}>{paragraphMessage}</div>}
           </section>
