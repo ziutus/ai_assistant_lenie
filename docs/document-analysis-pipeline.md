@@ -578,12 +578,8 @@ embeddingów. Bez rozdziałów `corrected_text` zostaje jedną ścianą tekstu (
 interpunkcję zdań, nie akapity) — to psuje czytelność w `/read`. Dla każdego chunka `TEMAT` bez
 podwójnego `\n\n` w `corrected_text`: LLM dostaje ponumerowane zdania i wskazuje WYŁĄCZNIE
 numery, po których zaczyna się nowy akapit (schemat JSON `break_after`) — nigdy nie przepisuje
-treści. W tej samej odpowiedzi model podaje krótki temat każdego akapitu (pole `topics`, o jeden
-więcej niż `break_after`); `ParagraphizeResult.topics` zawiera je tylko wtedy, gdy liczba tematów
-zgadza się z liczbą akapitów, w przeciwnym razie jest puste. Tematy nie są jeszcze nigdzie
-zapisywane (`DocumentChunk.topic` pochodzi z analizy chunka). No-op (zero wywołań LLM) dla: trybu
-`article`, filmów, wideo z rozdziałami i chunków, które już mają podział na akapity — bezpieczne do
-wielokrotnego wywołania.
+treści. No-op (zero wywołań LLM) dla: trybu `article`, filmów, wideo z rozdziałami i chunków,
+które już mają podział na akapity — bezpieczne do wielokrotnego wywołania.
 
 ### 5.5 Sekwencja end-to-end (aktorzy)
 
