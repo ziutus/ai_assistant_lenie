@@ -60,6 +60,9 @@ const Youtube = () => {
     formik, selectedDocumentType, selectedDocumentState
   });
 
+  const descriptionLength = String(formik.values.video_description || "").trim().length;
+  const hasDescription = descriptionLength > 0;
+  const chapterCount = String(formik.values.chapter_list || "").split(/\r?\n/).filter((line) => line.trim()).length;
   const transcriptMissing = !String(formik.values.text || "").trim();
   // Paragraphization is deliberately constrained to imported Markdown
   // chapters, so the model can only add whitespace within a known section.
@@ -171,10 +174,15 @@ const Youtube = () => {
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
             <strong>Opis filmu</strong>
             <div style={{ marginTop: 6, color: "#475569" }}>
-              Pobiera aktualny opis z YouTube i wyciąga z niego spis rozdziałów (linie w formacie „0:00 Tytuł”). Nadpisuje pole „Chapter list” poniżej, jeśli znajdzie co najmniej dwa znaczniki czasu.
+              Pobiera aktualny opis z YouTube i wyciąga z niego spis rozdziałów (linie w formacie „0:00 Tytuł”). Nadpisuje pole „Chapter list” poniżej, jeśli znajdzie co najmniej dwa znaczniki czasu{hasDescription ? " — ponowne pobranie zastąpi obecną listę rozdziałów" : ""}.
             </div>
+            {hasDescription && (
+              <div style={{ marginTop: 6, color: "#166534" }}>
+                ✓ Opis zapisany ({descriptionLength} znaków), {chapterCount > 0 ? `rozdziałów: ${chapterCount}` : "brak spisu rozdziałów"}
+              </div>
+            )}
             <button type="button" className="button" style={{ marginTop: 10 }} onClick={refetchDescription} disabled={refetchingDescription || isLoading}>
-              {refetchingDescription ? "Pobieram opis…" : "Pobierz opis (spis rozdziałów) z YouTube"}
+              {refetchingDescription ? "Pobieram opis…" : hasDescription ? "Pobierz opis ponownie (odśwież z YouTube)" : "Pobierz opis z YouTube"}
             </button>
             {descriptionMessage && <div style={{ marginTop: 8 }}>{descriptionMessage}</div>}
           </section>
