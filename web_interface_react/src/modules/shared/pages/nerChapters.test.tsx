@@ -205,3 +205,26 @@ it("keeps working when the entity request fails", async () => {
   expect(await screen.findByText("Nie udało się pobrać encji rozdziałów.")).toBeTruthy();
   expect(screen.getByRole("region", { name: "#1 Wstęp" })).toBeTruthy();
 });
+
+it("marks a chapter as noise and deletes only the entities found nowhere else", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  vi.mocked(axios.delete).mockResolvedValue({ data: { status: "success" } });
+  const shared = { ...entities, sections: entities.sections.map(section => section.position !== 3 ? section : {
+    ...section, entities: { ...emptyGroups, geogName: [{ id: 2, text: "Kijów", count: 1, variants: ["Kijów"], chapter_variants: ["Kijów"] }] },
+  }) };
+  mockApi({ "/document/42/chapter_entities": shared });
+  await open();
+  await waitFor(() => expect(within(screen.getByRole("region", { name: "#1 Wstęp" })).getByText("2 zdań · 2 encji")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Oznacz rozdział 1 jako szum" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/chapter_type", { position: 1, type: "SZUM" },
+    { headers: { "x-api-key": "test-key" } }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalledTimes(1));
+  expect(axios.delete).toHaveBeenCalledWith("/website_entities/1",
+    { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } });
+});
+
+it("does not offer the noise button on chapters that are already skipped", async () => {
+  await open();
+  expect(within(screen.getByRole("region", { name: "#2 Sponsor" })).queryByRole("button", { name: /jako szum/ })).toBeNull();
+});

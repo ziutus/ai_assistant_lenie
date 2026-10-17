@@ -78,6 +78,20 @@ const entityCount = (entities: ChapterEntities) =>
   (entities.persName?.length ?? 0) + (entities.orgName?.length ?? 0)
   + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0);
 
+const allItems = (entities: ChapterEntities | undefined): EntityItem[] =>
+  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName].flatMap((items) => items ?? []);
+
+// Entities that appear in the given chapter and in no other content (TEMAT) chapter: once the
+// chapter is marked as noise these have no mention left in the text NER is run on.
+function entitiesOnlyIn(data: EntityResponse | null, position: number): EntityItem[] {
+  if (!data) return [];
+  const elsewhere = new Set(data.sections
+    .filter((section) => section.position !== position && section.type === "TEMAT")
+    .flatMap((section) => allItems(section.entities).map((item) => item.id)));
+  const own = data.sections.find((section) => section.position === position);
+  return allItems(own?.entities).filter((item) => item.id !== undefined && !elsewhere.has(item.id));
+}
+
 const chapterTitle = (section: Section) => (section.is_preamble || section.position === 0
   ? "Wstęp (przed pierwszym rozdziałem)"
   : `#${section.position} ${section.title}`);
@@ -145,6 +159,40 @@ const NerChapters = () => {
     }
   };
 
+  // Marks a content chapter as noise (same endpoint as the editor's type select) and then drops the
+  // entities that were mentioned only there; entities shared with other chapters stay.
+  const markAsNoise = async (position: number, label: string) => {
+    if (merging) return;
+    const doomed = entitiesOnlyIn(entityData, position);
+    if (!window.confirm(`Oznaczyć ${label} jako szum i usunąć ${doomed.length} encji występujących tylko w nim?`)) return;
+    setMerging(true);
+    setMergeError("");
+    try {
+      await axios.post(`${base}/chapter_type`, { position, type: "SZUM" }, { headers });
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      setMergeError(status === 409
+        ? "Nie można zmienić typu: dokument ma embeddingi (otwórz go ponownie do edycji) albo trwa jego analiza."
+        : "Nie udało się oznaczyć rozdziału jako szum.");
+      setMerging(false);
+      return;
+    }
+    let failed = 0;
+    for (const item of doomed) {
+      try {
+        await axios.delete(`${apiUrl}/website_entities/${item.id}`, {
+          headers, data: { decision: "deleted", reason_code: "irrelevant" },
+        });
+      } catch {
+        failed += 1;
+      }
+    }
+    if (failed > 0) setMergeError(`Rozdział oznaczono jako szum, ale nie udało się usunąć ${failed} z ${doomed.length} encji.`);
+    setSectionsVersion((current) => current + 1);
+    setVersion((current) => current + 1);
+    setMerging(false);
+  };
+
   // Entities are refetched whenever the panel reports a change (detect, rename, delete,
   // merge, exclude) — it also reports its own first load, so this covers the initial fetch.
   React.useEffect(() => {
@@ -197,7 +245,7 @@ const NerChapters = () => {
       </div>
       <div style={{ fontSize: "0.85em", color: "#64748b", marginBottom: 10 }}>
         Encje są zapisane dla całego dokumentu: poprawka (nazwa, usunięcie, wykluczenie, scalenie) dotyczy wszystkich
-        rozdziałów. Rozdziały typu reklama, szum i źródła są pomijane przez NER (typ ustawisz w edytorze).
+        rozdziałów. Rozdziały typu reklama, szum i źródła są pomijane przez NER (typ ustawisz w edytorze albo przyciskiem „Oznacz jako szum”, który usuwa też encje występujące tylko w tym rozdziale).
       </div>
       {loadError && <p role="alert" style={{ color: "#a33" }}>{loadError}</p>}
       {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
@@ -260,6 +308,10 @@ const NerChapters = () => {
                           {section.position < lastPosition && (
                             <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z następnym`}
                               onClick={() => void mergeChapter(section.position + 1, "ten rozdział z następnym")}>⇣ Scal z następnym</button>
+                          )}
+                          {type === "TEMAT" && (
+                            <button type="button" disabled={merging || loadingEntities} aria-label={`Oznacz rozdział ${section.position} jako szum`}
+                              onClick={() => void markAsNoise(section.position, "ten rozdział")}>🗑 Oznacz jako szum</button>
                           )}
                         </span>
                       )}
