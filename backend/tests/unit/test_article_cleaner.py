@@ -1181,6 +1181,56 @@ class TestDisinfoDigestExtraction:
         assert "Udostępnij!" not in result
         assert "DISINFO DIGEST" not in result
 
+    LEAD = "**Analiza narracji i mechanizmów oddziaływania modelu VIEDM w październiku 2026 roku.**"
+    HEADER_PAGE = "\n".join([
+        "# [Disinfo Digest](https://disinfodigest.pl/)",
+        "",
+        "2026-10-06",
+        "",
+        "Zajawka innego wpisu, której nie wolno wciągnąć do artykułu.",
+        "",
+        "# Tytuł raportu",
+        "",
+        "* 2026-10-13",
+        "",
+        "![](https://disinfodigest.pl/wp-content/uploads/2026/10/hero.png)",
+        "",
+        LEAD,
+        "",
+        LONG_PARAGRAPH,
+        "",
+        LAST,
+        "",
+        "* * *",
+        "",
+        "Udostępnij!",
+    ])
+
+    def test_portal_start_keeps_lead_the_llm_marker_skipped(self):
+        # LLM wskazał drugi akapit jako pierwsze zdanie — pogrubiony lead nie może zniknąć.
+        markers = {"article_first_sentence": LONG_PARAGRAPH, "article_last_sentence": self.LAST}
+        result = extract_article_by_markers(self.HEADER_PAGE, markers, url=self.URL)
+
+        assert result.splitlines()[0].startswith("![](")
+        assert self.LEAD in result
+        assert LONG_PARAGRAPH in result
+        assert "Zajawka innego wpisu" not in result
+        assert "Udostępnij!" not in result
+
+    def test_portal_start_rescues_unfindable_llm_marker(self):
+        markers = {"article_first_sentence": "Zdanie, którego nie ma w tekście.", "article_last_sentence": ""}
+        result = extract_article_by_markers(self.HEADER_PAGE, markers, url=self.URL)
+
+        assert result is not None
+        assert self.LEAD in result
+
+    def test_other_portals_keep_llm_start(self):
+        text = "\n".join(["* 2026-10-13", "", "Nawigacja", "", LONG_PARAGRAPH, "", self.LAST])
+        markers = {"article_first_sentence": LONG_PARAGRAPH, "article_last_sentence": self.LAST}
+        result = extract_article_by_markers(text, markers, url="https://example.com/a")
+
+        assert result.startswith(LONG_PARAGRAPH)
+
 
 def test_money_img_credit_helper_matches_former_regex_semantics():
     from library.article_cleaner import _is_money_img_credit
