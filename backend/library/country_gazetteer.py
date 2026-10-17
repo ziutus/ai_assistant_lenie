@@ -309,6 +309,12 @@ def slug_to_name(slug: str) -> str | None:
     return _slug_to_name_map().get(slug)
 
 
+def country_tag_for(mention: str) -> str | None:
+    """The ``kraj-<slug>`` document tag for a mention that is a country in full, else None."""
+    name = canonical_country_name(mention)
+    return f"kraj-{_slug(name)}" if name else None
+
+
 def canonical_country_name(mention: str) -> str | None:
     """Return the canonical Polish country name when one mention matches in full.
 

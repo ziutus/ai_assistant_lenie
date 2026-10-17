@@ -23,9 +23,9 @@ interface EntityResponse {
 }
 
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
-const KIND_LABELS: Record<HighlightKind, string> = { persName: "Osoby", place: "Miejsca", orgName: "Organizacje" };
-const KIND_COLORS: Record<HighlightKind, string> = { persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0" };
-const KINDS: HighlightKind[] = ["persName", "place", "orgName"];
+const KIND_LABELS: Record<HighlightKind, string> = { persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa" };
+const KIND_COLORS: Record<HighlightKind, string> = { persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a" };
+const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country"];
 
 const isShown = (item: EntityItem) => !item.is_country && item.place_verification_status !== "rejected";
 const itemName = (item: EntityItem) => item.canonical_name ?? item.text;
@@ -56,6 +56,24 @@ function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
   ];
 }
 
+// Country mentions stay out of the chip lists (they belong to the kraj-* pipeline) but the
+// reviewer still needs to see which state a chapter is about, so they are shown separately.
+function countryItems(entities: ChapterEntities | undefined): EntityItem[] {
+  return [...(entities?.geogName ?? []), ...(entities?.placeName ?? []), ...(entities?.orgName ?? [])]
+    .filter((item) => item.is_country && item.place_verification_status !== "rejected");
+}
+
+const chapterCountries = (entities: ChapterEntities | undefined): string[] => [...new Set(countryItems(entities).map(itemName))];
+
+// Countries matching the search text, highlighted in the sentences like the other kinds.
+function highlightCountries(entities: ChapterEntities | undefined, kinds: Set<HighlightKind>, query: string): HighlightEntry[] {
+  if (!kinds.has("country")) return [];
+  const needle = query.trim().toLowerCase();
+  return countryItems(entities)
+    .filter((item) => !needle || [item.text, itemName(item), ...(item.variants ?? [])].some((value) => value.toLowerCase().includes(needle)))
+    .map((item) => ({ kind: "country" as const, label: itemName(item), variants: item.chapter_variants?.length ? item.chapter_variants : [item.text] }));
+}
+
 const entityCount = (entities: ChapterEntities) =>
   (entities.persName?.length ?? 0) + (entities.orgName?.length ?? 0)
   + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0);
@@ -76,6 +94,9 @@ const NerChapters = () => {
   const [kinds, setKinds] = React.useState<Set<HighlightKind>>(new Set(KINDS));
   const [onlyWithEntities, setOnlyWithEntities] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [sectionsVersion, setSectionsVersion] = React.useState(0);
+  const [merging, setMerging] = React.useState(false);
+  const [mergeError, setMergeError] = React.useState("");
   const headers = React.useMemo(() => ({ "x-api-key": apiKey ?? "" }), [apiKey]);
   const base = `${apiUrl}/document/${id}`;
 
@@ -92,11 +113,37 @@ const NerChapters = () => {
           ? "Dokument nie ma tekstu transkrypcji."
           : "Nie udało się pobrać rozdziałów dokumentu.");
       });
+    return () => { cancelled = true; };
+  }, [id, base, headers, sectionsVersion]);
+
+  React.useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
     axios.get(`${apiUrl}/website_get`, { headers, params: { id } })
       .then((response) => { if (!cancelled) setDoc(response.data); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [id, apiUrl, base, headers]);
+  }, [id, apiUrl, headers]);
+
+  // Same endpoint and guards as the editor's chapter panel: the text is rewritten, so the
+  // chapter list and the per-chapter entities are refetched afterwards.
+  const mergeChapter = async (position: number, label: string) => {
+    if (merging || !window.confirm(`Scalić ${label}? Numery kolejnych rozdziałów zmienią się.`)) return;
+    setMerging(true);
+    setMergeError("");
+    try {
+      await axios.post(`${base}/merge_chapter`, { position }, { headers });
+      setSectionsVersion((current) => current + 1);
+      setVersion((current) => current + 1);
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      setMergeError(status === 409
+        ? "Nie można scalić: dokument ma embeddingi (otwórz go ponownie do edycji) albo trwa jego analiza."
+        : "Nie udało się scalić rozdziałów.");
+    } finally {
+      setMerging(false);
+    }
+  };
 
   // Entities are refetched whenever the panel reports a change (detect, rename, delete,
   // merge, exclude) — it also reports its own first load, so this covers the initial fetch.
@@ -119,13 +166,18 @@ const NerChapters = () => {
     const raw = entityData?.sections.find((item) => item.position === section.position);
     const type = raw?.type ?? section.type ?? "TEMAT";
     const entities = filterEntities(raw?.entities, kinds, query);
-    return { section, type, entities, count: entityCount(entities) };
+    const countryHighlights = type === "TEMAT" ? highlightCountries(raw?.entities, kinds, query) : [];
+    return {
+      section, type, entities, count: entityCount(entities), countryHighlights,
+      countries: type === "TEMAT" ? chapterCountries(raw?.entities) : [],
+    };
   });
+  const lastPosition = Math.max(0, ...sections.map((section) => section.position));
   // With a filter active only content chapters that still have matching entities stay listed;
   // without one every chapter is shown, skipped (ad/noise/source) chapters included.
   const loadingEntities = entityData === null && !entityError;
   const filtering = onlyWithEntities || query.trim() !== "";
-  const visible = chapters.filter((chapter) => !filtering || (chapter.type === "TEMAT" && chapter.count > 0));
+  const visible = chapters.filter((chapter) => !filtering || (chapter.type === "TEMAT" && chapter.count + chapter.countryHighlights.length > 0));
   const editorPath = `/${doc?.document_type || "youtube"}/${id}`;
   const scrollTo = (position: number) => (event: React.MouseEvent) => {
     event.preventDefault();
@@ -185,7 +237,8 @@ const NerChapters = () => {
                 {entityData?.has_entities === false && (
                   <p style={{ color: "#667" }}>Brak zapisanych encji — użyj przycisku „Wykryj osoby, miejsca i obiekty”.</p>
                 )}
-                {visible.map(({ section, type, entities, count }) => (
+                {mergeError && <p role="alert" style={{ color: "#a33" }}>{mergeError}</p>}
+                {visible.map(({ section, type, entities, count, countries, countryHighlights }) => (
                   <section key={section.position} id={`ner-chapter-${section.position}`} aria-label={chapterTitle(section)}
                     style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -198,6 +251,18 @@ const NerChapters = () => {
                       <span style={{ color: "#64748b", fontSize: "0.85em" }}>
                         {section.sentence_count} zdań · {loadingEntities ? "wczytuję encje…" : `${count} encji`}
                       </span>
+                      {section.position >= 1 && (
+                        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                          {section.position >= 2 && (
+                            <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z poprzednim`}
+                              onClick={() => void mergeChapter(section.position, "ten rozdział z poprzednim")}>⇡ Scal z poprzednim</button>
+                          )}
+                          {section.position < lastPosition && (
+                            <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z następnym`}
+                              onClick={() => void mergeChapter(section.position + 1, "ten rozdział z następnym")}>⇣ Scal z następnym</button>
+                          )}
+                        </span>
+                      )}
                     </div>
                     {type !== "TEMAT" ? (
                       <p style={{ color: "#667" }}>Rozdział pominięty w NER (typ: {TYPE_LABELS[type]}).</p>
@@ -206,7 +271,7 @@ const NerChapters = () => {
                         <div style={{ lineHeight: 1.65, fontSize: "0.9em" }}>
                           {section.sentences?.map((sentence) => (
                             <span key={sentence.index}>
-                              {splitByEntities(sentence.text, highlightEntries(entities)).map((segment, index) => (
+                              {splitByEntities(sentence.text, [...highlightEntries(entities), ...countryHighlights]).map((segment, index) => (
                                 segment.kind
                                   ? <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})`}
                                     style={{ background: KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3 }}>{segment.text}</mark>
@@ -217,6 +282,17 @@ const NerChapters = () => {
                         </div>
                         <div>
                           {renderGroups(entities)}
+                          {countries.length > 0 && (
+                            <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
+                              <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>
+                              {countries.map((country) => (
+                                <span key={country} title="Państwo wspomniane w rozdziale"
+                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: "#fde68a" }}>
+                                  🌍 {country}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {loadingEntities && <small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
                           {!loadingEntities && count === 0 && entityData?.has_entities !== false && (
                             <small style={{ color: "#64748b" }}>Brak encji w tym rozdziale.</small>

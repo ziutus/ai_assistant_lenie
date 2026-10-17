@@ -516,6 +516,9 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         DocumentFacility.document_id == document_id,
     )).all()
 
+    from library.place_registry import name_key, profile_index
+
+    place_profiles = profile_index(session)
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
     pipelines_by_query: dict[str, InfraGeometry] = {}
@@ -538,7 +541,14 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         status = row.place_verification_status
         if row.entity_type in place_types:
             item["place_verification_status"] = status
+            place_profile = next((place_profiles[k] for k in (name_key(row.entity_text),
+                                                              *(name_key(v) for v in (row.variants or [])))
+                                  if k in place_profiles), None)
+            if place_profile is not None and place_profile.wikipedia_url:
+                item["wikipedia_url"] = place_profile.wikipedia_url
             item["place_review_reason"] = row.place_review_reason
+            if not item["is_country"] and (split := suggest_place_split(row.entity_text, row.variants)):
+                item["split_suggestion"] = split
             if status in ("needs_review", "rejected"):
                 item["verified"] = False
         if row.geocode is not None:
@@ -675,6 +685,46 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
 
 
 PLACE_TYPES = ("geogName", "placeName")
+_SPLIT_CONJUNCTIONS = {"i", "oraz", "a", "z", "and"}
+_SPLIT_TOKEN = re.compile(r"[^\s,;/]+")
+
+
+def split_place_tokens(text: str) -> list[str]:
+    """Words of a place mention without list separators ("Pakistanem i Afganistanem" -> 2 tokens)."""
+    return [t for t in _SPLIT_TOKEN.findall(text or "") if t.casefold() not in _SPLIT_CONJUNCTIONS and t != "-"]
+
+
+def suggest_place_split(text: str, variants: list[str] | None = None) -> list[str] | None:
+    """Canonical country names when a place mention is only a list of countries.
+
+    "Pakistanem Afganistanem" -> ["Pakistan", "Afganistan"]. Greedy longest match so a
+    two-word country ("Korea Południowa") is never cut in half; every token must belong
+    to a country and at least two distinct countries must come out, otherwise None.
+    Only a suggestion: the reviewer confirms (and may edit) the parts.
+    """
+    from library.country_gazetteer import canonical_country_name
+
+    for form in [text, *(variants or [])]:
+        tokens = split_place_tokens(form)
+        if len(tokens) < 2:
+            continue
+        parts: list[str] = []
+        index = 0
+        while index < len(tokens):
+            for end in range(len(tokens), index, -1):
+                name = canonical_country_name(" ".join(tokens[index:end]))
+                if name is not None:
+                    parts.append(name)
+                    index = end
+                    break
+            else:
+                parts = []
+                break
+        if len(set(parts)) >= 2:
+            return list(dict.fromkeys(parts))
+    return None
+
+
 # orgName is accepted as a merge *source* (not target) to cover NER
 # misclassifications where the same real-world place was tagged orgName in
 # one mention and geogName/placeName in another within the same document

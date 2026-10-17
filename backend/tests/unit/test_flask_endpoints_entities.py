@@ -119,6 +119,81 @@ def test_place_to_organization(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_place", 400),
+                                           ("one_part", 400), ("duplicate", 400), ("rollback", 500)])
+def test_split_place(client, case, expected):
+    from library.db.models import Document, DocumentEntity, EntityReviewDecision
+    entity = DocumentEntity(id=1, document_id=10753, entity_type="placeName", entity_text="Pakistan Afganistan",
+                            mention_count=2, variants=["Pakistanem Afganistanem"], source="ner")
+    if case == "not_place":
+        entity.entity_type = "orgName"
+    document = Document(id=10753, tags="topic")
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        (None if case == "missing" else entity) if model is DocumentEntity else document)
+    session.scalars.return_value.all.return_value = []
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    parts = {"one_part": ["Pakistan"], "duplicate": ["Iran", "iran"]}.get(case, ["Pakistan", "Afganistan"])
+    with patch("server.get_scoped_session", return_value=session):
+        response = client.post("/website_entities/1/split_place", headers=API_HEADERS, json={"parts": parts})
+    assert response.status_code == expected
+    if expected == 200:
+        added = [call.args[0] for call in session.add.call_args_list]
+        created = [row for row in added if isinstance(row, DocumentEntity)]
+        assert [(r.entity_text, r.mention_count, r.source) for r in created] == [
+            ("Pakistan", 2, "manual"), ("Afganistan", 2, "manual")]
+        assert document.tags == "topic,kraj-pakistan,kraj-afganistan"
+        assert next(r for r in added if isinstance(r, EntityReviewDecision)).decision == "place_split"
+        assert response.get_json()["countries"] == ["Pakistan", "Afganistan"]
+        session.delete.assert_called_once_with(entity)
+        session.commit.assert_called_once()
+    elif case == "rollback":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_person", 400),
+                                           ("blank_text", 400), ("rollback", 500)])
+def test_person_to_place(client, case, expected):
+    from library.db.models import Document, DocumentEntity, DocumentPerson, EntityReviewDecision
+    entity = DocumentEntity(id=1, document_id=10753, entity_type="persName", entity_text="Kandaharem",
+                            mention_count=2, variants=["Kandaharem"], source="ner")
+    if case == "not_person":
+        entity.entity_type = "placeName"
+    link = DocumentPerson(id=4, document_id=10753, person_id=9, raw_mention="Kandaharem")
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        (None if case == "missing" else entity) if model is DocumentEntity else Document(id=10753, tags=""))
+    session.execute.return_value.scalars.return_value.first.return_value = link
+    session.scalars.return_value.all.return_value = []
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.person_registry.reject_review_link", return_value={"person_deleted": True}
+    ) as reject, patch("library.place_verification.geocode_single_place"):
+        response = client.post("/website_entities/1/to_place", headers=API_HEADERS,
+                               json={"text": " "} if case == "blank_text" else {"text": "Kandahar"})
+    assert response.status_code == expected
+    if expected == 200:
+        added = [call.args[0] for call in session.add.call_args_list]
+        place = next(row for row in added if isinstance(row, DocumentEntity))
+        assert (place.entity_type, place.entity_text, place.mention_count, place.source) == (
+            "placeName", "Kandahar", 2, "manual")
+        assert place.variants == ["Kandaharem"]
+        audit = next(row for row in added if isinstance(row, EntityReviewDecision))
+        assert (audit.decision, audit.entity_type, audit.details["new_text"]) == ("person_to_place", "persName", "Kandahar")
+        reject.assert_called_once()
+        session.delete.assert_called_once_with(entity)
+        assert response.get_json()["person_deleted"] is True
+        session.commit.assert_called_once()
+    elif case == "rollback":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
 GROUPED = {
     "persName": [{"text": "Tusk", "count": 2}],
     "geogName": [{"text": "cieśnina Ormuz", "count": 1}],

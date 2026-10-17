@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from library.db.models import DocumentEntity, EntityReviewDecision, GeocodeCache
 from library.entity_service import MERGEABLE_PLACE_SOURCE_TYPES, PLACE_TYPES, merge_document_entities
@@ -26,7 +26,8 @@ from library.entity_service import MERGEABLE_PLACE_SOURCE_TYPES, PLACE_TYPES, me
 logger = logging.getLogger(__name__)
 
 REPLAYED_DECISIONS = (
-    "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "deleted", "rejected",
+    "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
+    "person_to_place", "deleted", "rejected",
 )
 
 
@@ -98,6 +99,95 @@ def convert_place_to_organization(session, entity: DocumentEntity):
     return target, organization
 
 
+def convert_person_to_place(
+    session, entity: DocumentEntity, new_text: str | None = None, entities: list[DocumentEntity] | None = None,
+) -> DocumentEntity:
+    """Retype a person entity as a place of the same document ("Kandaharem" tagged persName).
+
+    The person row is replaced by a ``source='manual'`` ``placeName`` row named ``new_text`` (default: the
+    mention as it stands) that keeps the mention count and surface forms, or folded into a same-named place
+    the document already has. Dropping the person's ``document_persons`` link is the caller's job (it needs
+    the registry); this only queues entity changes, without committing. ``entities`` is the replay list.
+    """
+    name = (new_text or entity.entity_text).strip()
+    document_id, count = entity.document_id, entity.mention_count or 0
+    forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
+    variants = [form for form in forms if form.casefold() != name.casefold()]
+    if entities is None:
+        entities = list(session.scalars(select(DocumentEntity).where(
+            DocumentEntity.document_id == document_id, DocumentEntity.entity_type.in_(PLACE_TYPES),
+        )).all())
+    session.delete(entity)
+    if entity in entities:
+        entities.remove(entity)
+    session.flush()
+    row = _exact(entities, name, PLACE_TYPES)
+    if row is not None:
+        row.mention_count = (row.mention_count or 0) + count
+        row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
+        row.source = "manual"
+    else:
+        row = DocumentEntity(
+            document_id=document_id, entity_type="placeName", entity_text=name,
+            mention_count=count, variants=variants, source="manual",
+        )
+        session.add(row)
+        entities.append(row)
+    session.flush()
+    return row
+
+
+def split_place_entity(
+    session, entity: DocumentEntity, parts: list[str], entities: list[DocumentEntity] | None = None,
+) -> list[DocumentEntity]:
+    """Replace one place entity that lists several places ("Pakistanem Afganistanem") with one per part.
+
+    Every part keeps the compound's mention count and becomes a ``source='manual'`` row of the
+    same type (so entity refreshes leave it alone), or is folded into a same-named place the
+    document already has. Surface forms are handed to the parts word by word when the
+    compound's form has exactly as many words as there are parts, so the per-chapter
+    highlighting still finds "Pakistanem" for Pakistan. Queues changes without committing.
+    ``entities`` is the caller's in-memory list (replay); it is kept in step with the session.
+    """
+    from library.entity_service import split_place_tokens
+
+    document_id, entity_type, count = entity.document_id, entity.entity_type, entity.mention_count or 0
+    forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
+    forms_by_part: dict[str, list[str]] = {part: [] for part in parts}
+    for form in forms:
+        tokens = split_place_tokens(form)
+        if len(tokens) == len(parts):
+            for part, token in zip(parts, tokens, strict=True):
+                forms_by_part[part].append(token)
+    if entities is None:
+        entities = list(session.scalars(select(DocumentEntity).where(
+            DocumentEntity.document_id == document_id, DocumentEntity.entity_type.in_(PLACE_TYPES),
+        )).all())
+    session.delete(entity)
+    if entity in entities:
+        entities.remove(entity)
+    session.flush()
+
+    rows = []
+    for part in parts:
+        variants = [v for v in dict.fromkeys(forms_by_part[part]) if v.casefold() != part.casefold()]
+        row = _exact(entities, part, PLACE_TYPES)
+        if row is not None:
+            row.mention_count = (row.mention_count or 0) + count
+            row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
+            row.source = "manual"
+        else:
+            row = DocumentEntity(
+                document_id=document_id, entity_type=entity_type, entity_text=part,
+                mention_count=count, variants=variants, source="manual",
+            )
+            session.add(row)
+            entities.append(row)
+        rows.append(row)
+    session.flush()
+    return rows
+
+
 def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple[dict[int, DocumentEntity], dict]:
     """Replay ``decisions`` (oldest first) against ``entities``, mutating both.
 
@@ -154,6 +244,23 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             entities.remove(row)
             touched.pop(id(row), None)
             stats["to_organization"] = stats.get("to_organization", 0) + 1
+        elif decision.decision == "person_to_place":
+            row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
+            if row is None:
+                continue
+            touched.pop(id(row), None)
+            place = convert_person_to_place(session, row, details.get("new_text"), entities)
+            touched[id(place)] = place
+            stats["person_to_place"] = stats.get("person_to_place", 0) + 1
+        elif decision.decision == "place_split":
+            parts = [p for p in details.get("parts", []) if p]
+            row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
+            if row is None or len(parts) < 2:
+                continue
+            touched.pop(id(row), None)
+            for part_row in split_place_entity(session, row, parts, entities):
+                touched[id(part_row)] = part_row
+            stats["split"] = stats.get("split", 0) + 1
         elif decision.decision == "renamed":
             new_name = (details.get("new_text") or "").strip()
             row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
@@ -215,7 +322,11 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
         .where(
             EntityReviewDecision.document_id == document_id,
             EntityReviewDecision.decision.in_(REPLAYED_DECISIONS),
-            EntityReviewDecision.entity_type.in_(PLACE_TYPES),
+            or_(
+                EntityReviewDecision.entity_type.in_(PLACE_TYPES),
+                (EntityReviewDecision.entity_type == "persName")
+                & (EntityReviewDecision.decision == "person_to_place"),
+            ),
         )
         .order_by(EntityReviewDecision.id)
     ).all()
@@ -224,19 +335,21 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
     entities = list(session.scalars(
         select(DocumentEntity).where(
             DocumentEntity.document_id == document_id,
-            DocumentEntity.entity_type.in_(MERGEABLE_PLACE_SOURCE_TYPES),
+            DocumentEntity.entity_type.in_((*MERGEABLE_PLACE_SOURCE_TYPES, "persName")),
         )
     ).all())
     touched, stats = apply_decisions(session, decisions, entities)
 
     if touched:
+        from library.country_gazetteer import canonical_country_name
         from library.place_verification import add_place_tag, geocode_single_place
 
         for row in touched.values():
             if row.place_verification_status == "confirmed":
                 add_place_tag(doc, row)
                 continue
-            if row.geocode_id is None:
+            # Countries are never geocoded (own kraj-* pipeline), same as place verification.
+            if row.geocode_id is None and canonical_country_name(row.entity_text) is None:
                 try:
                     geocode_single_place(session, doc, row)
                 except Exception:
