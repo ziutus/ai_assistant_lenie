@@ -16,6 +16,7 @@ def test_missing_rules_file_falls_back_to_empty_rules(monkeypatch, tmp_path, cap
     monkeypatch.setattr(ner_normalization, "RULES_PATH", missing_path)
     ner_normalization.load_ner_normalization_rules.cache_clear()
     ner_normalization.load_demonym_patterns.cache_clear()
+    ner_normalization.load_non_place_demonym_patterns.cache_clear()
 
     try:
         with caplog.at_level(logging.WARNING, logger=ner_normalization.__name__):
@@ -24,9 +25,11 @@ def test_missing_rules_file_falls_back_to_empty_rules(monkeypatch, tmp_path, cap
         assert "NER normalization rules file does not exist" in caplog.text
         assert ner_normalization.canonical_country_for_surface("Iranem") == "Iran"
         assert not ner_normalization.is_rejected_surface_lemma_pair("Dana", "Dan", "PROPN")
+        assert not ner_normalization.is_non_place_demonym("Europejczyk")
     finally:
         ner_normalization.load_ner_normalization_rules.cache_clear()
         ner_normalization.load_demonym_patterns.cache_clear()
+        ner_normalization.load_non_place_demonym_patterns.cache_clear()
 
 
 # Explicit paradigms keep the expectations independent of the regex endings.
@@ -117,6 +120,47 @@ def test_invalid_demonym_regex_is_skipped_and_patterns_are_cached(monkeypatch, c
         assert len(caplog.records) == 1
     finally:
         ner_normalization.load_demonym_patterns.cache_clear()
+
+
+@pytest.mark.parametrize("surface", (
+    "Europejczyk Europejczyka Europejczykowi Europejczykiem Europejczyku "
+    "Europejczycy Europejczyków Europejczykom Europejczykami Europejczykach "
+    "Europejka Europejki Europejce Europejkę Europejką Europejko "
+    "Europejek Europejkom Europejkami Europejkach"
+).split())
+def test_non_place_demonym_case_forms(surface):
+    assert ner_normalization.is_non_place_demonym(surface)
+    assert ner_normalization.is_non_place_demonym(unidecode(surface).upper())
+    assert ner_normalization.canonical_country_for_demonym_pattern(surface) is None
+
+
+@pytest.mark.parametrize("surface", [
+    "Europejczykowka", "Europejczykówka", "przedEuropejczyk", "Europa", "Europe", "Europejski",
+    "Europejka extra", "Europejczyk\n", "Marokańczyk", "Estończyk", "Izraelczyk", "Irańczyk",
+    "", " ", None,
+])
+def test_non_place_demonym_patterns_do_not_match_unlisted_words(surface):
+    assert not ner_normalization.is_non_place_demonym(surface)
+
+
+def test_invalid_non_place_demonym_regex_is_skipped_and_patterns_are_cached(monkeypatch, caplog):
+    calls = []
+
+    def rules():
+        calls.append(True)
+        return {"non_place_demonym_patterns": ["[", "europejczyk"]}
+
+    monkeypatch.setattr(ner_normalization, "load_ner_normalization_rules", rules)
+    ner_normalization.load_non_place_demonym_patterns.cache_clear()
+    try:
+        with caplog.at_level(logging.WARNING, logger=ner_normalization.__name__):
+            assert ner_normalization.is_non_place_demonym("Europejczyk")
+            assert ner_normalization.is_non_place_demonym("Europejczyk")
+        assert calls == [True]
+        assert "Invalid non-place demonym pattern" in caplog.text
+        assert len(caplog.records) == 1
+    finally:
+        ner_normalization.load_non_place_demonym_patterns.cache_clear()
 
 
 class TestStripMarkdownEmphasis:

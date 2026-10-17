@@ -67,6 +67,10 @@
       "brytyj(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
     ]
   },
+  "non_place_demonym_patterns": [
+    "europej(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+    "europej(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+  ],
   "reject_surface_lemma_pairs": [
     {
       "surface": "Dana",

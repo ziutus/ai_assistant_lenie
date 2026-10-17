@@ -191,6 +191,24 @@ def canonical_country_for_demonym_pattern(surface: str | None) -> str | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def load_non_place_demonym_patterns() -> tuple[re.Pattern[str], ...]:
+    """Compile closed non-place demonym patterns once; skip malformed regexes."""
+    compiled = []
+    for pattern in load_ner_normalization_rules().get("non_place_demonym_patterns", []):
+        try:
+            compiled.append(re.compile(pattern))
+        except re.error as exc:
+            logger.warning("Invalid non-place demonym pattern: %r (%s)", pattern, exc)
+    return tuple(compiled)
+
+
+def is_non_place_demonym(surface: str | None) -> bool:
+    """Match curated non-place demonyms on the same folded surface as country demonyms."""
+    folded = unidecode(surface or "").casefold()
+    return any(pattern.fullmatch(folded) for pattern in load_non_place_demonym_patterns())
+
+
 def canonical_country_for_surface(surface: str) -> str | None:
     """Map one surface form to a canonical country, including curated aliases."""
     normalized = normalize_ner_text(surface)

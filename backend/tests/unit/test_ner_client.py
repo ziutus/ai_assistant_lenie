@@ -340,6 +340,33 @@ class TestAggregateEntitiesDetailed:
 
 
 class TestAggregateNormalization:
+    def test_doc_10872_continental_demonym_is_not_a_place(self):
+        # Real sentence from doc #10872, chapter 2; raw spaCy entity below.
+        sentence = (
+            "Zwyczajni Europejczycy są zastraszani apokaliptycznymi scenariuszami, to prawda, "
+            "i hybrydowym zagrożeniem rzekomo pochodzącym z naszego kraju."
+        )
+        entities = [
+            {"text": "Europejczycy", "label": "geogName", "lemma": "Europejczyk", "pos": "NOUN"},
+        ]
+        assert all(entity["text"] in sentence for entity in entities)
+        entities += [
+            {"text": "Rosji", "label": "placeName", "lemma": "Rosja", "pos": "PROPN"},
+            {"text": "Europa", "label": "geogName", "lemma": "Europa", "pos": "PROPN"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Rosja"): {"count": 1, "variants": ["Rosji"], "raw_lemmas": ["Rosja"]},
+            ("geogName", "Europa"): {"count": 1, "variants": ["Europa"], "raw_lemmas": ["Europa"]},
+        }
+        assert aggregate_entities(entities) == {("placeName", "Rosja"): 1, ("geogName", "Europa"): 1}
+
+    @pytest.mark.parametrize("label", ["geogName", "placeName", "orgName", "persName"])
+    @pytest.mark.parametrize("pos", ["NOUN", "PROPN", None])
+    def test_non_place_demonym_rejection_only_applies_to_place_labels(self, label, pos):
+        entities = [{"text": "Europejki", "label": label, "lemma": "Europejka", "pos": pos}]
+        expected = {} if label in {"geogName", "placeName"} else {(label, "Europejka"): 1}
+        assert aggregate_entities(entities) == expected
+
     def test_doc_10756_demonyms_merge_with_country_mentions(self):
         # Real sentence from doc #10756; raw NER retained the inflected lemmas.
         sentence = (
