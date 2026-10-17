@@ -184,6 +184,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
     <details ref={panel} open={isOpen} style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}
       onToggle={event => { if (event.target === event.currentTarget) setIsOpen(event.currentTarget.open); }}>
       <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Granice rozdziałów</summary>
+      <p><NavLink to={"/ner/" + docId}>Przejrzyj NER per rozdział →</NavLink></p>
       <p>Zapisuje od razu w bazie. Po zmianie formularz zostanie odświeżony — wcześniej zapisz inne zmiany.</p>
       {hasEmbeddings && <p role="status">Dokument ma embeddingi — otwórz go ponownie do edycji przed zmianą granic rozdziałów.</p>}
       {stale && <p role="status" style={{ color: "#92400e" }}>
