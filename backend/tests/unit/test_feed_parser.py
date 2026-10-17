@@ -76,6 +76,18 @@ def _response(body=b"<rss><channel/></rss>", status=200, headers=None):
     return response
 
 
+def test_json_feed_larger_than_default_page_limit_is_accepted(network):
+    _, _, pool, _ = network
+    item = b'{"title": "T", "url": "https://example.com/a", "date": "2026-01-01", "summary": "' + b"x" * 1024 + b'"}'
+    chunk = item + b","
+    count = (safe_http.MAX_RESPONSE_BYTES // len(chunk)) + 10
+    body = b"[" + chunk * count + item + b"]"
+    assert len(body) > safe_http.MAX_RESPONSE_BYTES
+    pool.urlopen.return_value = _response(body)
+    entries = fetch_entries({"type": "json_api", "url": "https://example.com/archiwum.json"})
+    assert len(entries) == count + 1
+
+
 @pytest.mark.parametrize("ip", ["127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254",
                                    "100.64.0.1", "0.0.0.0", "240.0.0.1", "::1", "fc00::1", "fe80::1",
                                    "::ffff:8.8.8.8", "ff02::1"])
