@@ -95,6 +95,32 @@ describe("List — obsidian_note row actions", () => {
     expect(screen.getByRole("link", { name: "Chunki" })).toBeTruthy();
   });
 
+  it("shows Czytaj for a youtube document without text_md but with chunks (has_readable_content)", async () => {
+    const youtubeItem = {
+      ...textItemWithMarkdown, id: 10874, document_type: "youtube", processing_status: "EMBEDDING_EXIST",
+      has_text_md: false, has_readable_content: true,
+    };
+    mockedGet.mockImplementation((url: string) => {
+      if (url.endsWith("/document_states")) {
+        return Promise.resolve({ data: { states: ["ALL"], types: ["youtube"], errors: [] } });
+      }
+      if (url.endsWith("/website_list")) {
+        return Promise.resolve({ data: { websites: [youtubeItem], all_results_count: 1 } });
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+
+    render(
+      <AuthorizationContext.Provider value={{ ...auth, selectedDocumentType: "youtube" }}>
+        <MemoryRouter initialEntries={["/list?type=youtube"]}>
+          <List />
+        </MemoryRouter>
+      </AuthorizationContext.Provider>,
+    );
+
+    expect((await screen.findByRole("link", { name: "Czytaj" })).getAttribute("href")).toBe("/read/10874?list=type%3Dyoutube");
+  });
+
   it.each([null, undefined, "NONE", "EMBEDDING_ERROR"])("renders status with error code %s", async (errorCode) => {
     mockedGet.mockImplementation((url: string) => {
       if (url.endsWith("/document_states")) {

@@ -56,6 +56,14 @@ class DocumentRepository:
                 Document.note, Document.collection_id, Document.uuid, Document.byline,
                 Document.obsidian_note_paths, Document.is_private,
                 (func.length(func.trim(func.coalesce(Document.text_md, ""))) > 0).label("has_text_md"),
+                # The reader falls back to TEMAT chunk topics when there is no text_md (YouTube/movie transcripts).
+                or_(
+                    func.length(func.trim(func.coalesce(Document.text_md, ""))) > 0,
+                    select(DocumentChunk.id).where(
+                        DocumentChunk.document_id == Document.id,
+                        DocumentChunk.type == "TEMAT",
+                    ).exists(),
+                ).label("has_readable_content"),
             )
 
         # Dynamic filters — column stores enum name strings directly
@@ -191,6 +199,7 @@ class DocumentRepository:
                 "byline": row.byline,
                 "obsidian_note_paths": row.obsidian_note_paths or [],
                 "has_text_md": row.has_text_md,
+                "has_readable_content": row.has_readable_content,
                 "chunks_missing_obsidian_notes": missing,
                 "chunks_with_obsidian_notes": with_notes,
                 "is_private": row.is_private,
