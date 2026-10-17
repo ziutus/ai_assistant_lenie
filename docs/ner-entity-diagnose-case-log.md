@@ -527,3 +527,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod + dane — nowa lista `non_place_demonym_patterns` w `backend/data/ner_normalization.json` obejmuje wyłącznie rodzinę „Europejczyk”/„Europejka”, wszystkie przypadki liczby pojedynczej i mnogiej. W odróżnieniu od `demonym_patterns` nie mapuje na kraj: `is_non_place_demonym` dopasowuje pełną formę po `unidecode().casefold()`, a agregacja odrzuca ją wyłącznie dla `PLACE_TYPES`, przed obliczeniem kraju. Loader ma cache i pomija błędne regexy z ostrzeżeniem. Dane do wykonania po wdrożeniu (to do after deploy): usunąć encję 15915 w dok. #10872 oraz analogiczne encje w dok. #9204 i #9216.
 - **Test regresyjny:** `backend/tests/unit/test_ner_normalization.py` — pełna odmiana obu płci, negatywne dopasowania, cache i błędny regex; `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_10872_continental_demonym_is_not_a_place` — cytat i surowa encja, odrzucenie „Europejczyka” przy zachowaniu „Rosji” i „Europy”; test nie przechodzi bez zmiany agregacji. Dodatkowy test ogranicza odrzucanie do etykiet miejsc.
 - **Status:** kod w PR (przed wdrożeniem / pre-deploy); operacje na danych do wykonania po wdrożeniu (to do after deploy).
+
+### E031 — „Luisianie” (pisownia „Luisiana”) bez kanonikalizacji do „Luizjana” (dok. #10872, PR n/d, 2026-10-17)
+
+- **Typ encji:** placeName
+- **Kategoria:** T3 — brak nominatiwu w tekście / rzadka nazwa obcojęzyczna (wariant pisowni nieobjęty gazetteerem, jak w E028).
+- **Zdanie źródłowe:** "Obejmie nowe rozszerzone szkolenia na w Luisianie, Mississippi, Task i Hillsdale."
+- **Objaw:** encja „Luisianie” (`document_entities` 16130) trafia do geokodera w miejscowniku; `geocode_cache` 1279 ma `resolved=false`.
+- **Przyczyna źródłowa:** transkrypcja zapisuje stan „Luisiana”, spaCy nie lematyzuje nieznanej nazwy i pozostawia „Luisianie”, a gazetteer nie zawiera wpisu dla tej pisowni ani poprawnej polskiej nazwy „Luizjana”.
+- **Poprawka:** kod + dane — zamknięty wpis `("Luizjana", ("luizjan*", "luisian*"))` w `backend/library/city_gazetteer.py`; nazwa kanoniczna „Luizjana” zgodnie z decyzją użytkownika. Po wdrożeniu przemianować/odświeżyć encję 16130 w dok. #10872 i ponowić weryfikację miejsca.
+- **Test regresyjny:** `backend/tests/unit/test_city_gazetteer.py::TestCanonicalCityName::test_luisiana_transcription_variant_doc_10872` — dziesięć form obu pisowni; osobny test pełnego dopasowania i limitu końcówki. `backend/tests/unit/test_ner_client.py::TestCityGazetteerOverride::test_luisiana_transcription_variant_doc_10872` — surowa encja „Luisianie” agreguje się do „Luizjana” z zachowaniem wariantu; test nie przechodzi bez wpisu w gazetteerze.
+- **Status:** kod w PR; dane do wykonania po wdrożeniu.

@@ -42,6 +42,20 @@ class TestCanonicalCityName:
         # An unrelated token exceeds the four-character stem suffix limit.
         assert city_gazetteer.canonical_city_name("Riadabcdefghijkl") is None
 
+    @pytest.mark.parametrize(
+        "mention",
+        ["Luizjana", "Luizjany", "Luizjanie", "Luizjanę", "Luizjaną", "Luizjano",
+         "Luisiana", "Luisianie", "Luisiany", "Luisianę"],
+    )
+    def test_luisiana_transcription_variant_doc_10872(self, mention):
+        # doc #10872: "Obejmie nowe rozszerzone szkolenia na w Luisianie, Mississippi, Task i Hillsdale."
+        assert city_gazetteer.canonical_city_name(mention) == "Luizjana"
+
+    @pytest.mark.parametrize("mention", ["Luizjanabcde", "Luisianabcde", "w Luisianie"])
+    def test_luizjana_requires_full_match_with_limited_suffix(self, mention):
+        # Five-character suffixes exceed the limit; a phrase is not a complete name.
+        assert city_gazetteer.canonical_city_name(mention) is None
+
     def test_rijad_stem_does_not_match_riga(self):
         assert city_gazetteer.canonical_city_name("Riga") is None
 
