@@ -23,9 +23,9 @@ interface EntityResponse {
 }
 
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
-const KIND_LABELS: Record<HighlightKind, string> = { persName: "Osoby", place: "Miejsca", orgName: "Organizacje" };
-const KIND_COLORS: Record<HighlightKind, string> = { persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0" };
-const KINDS: HighlightKind[] = ["persName", "place", "orgName"];
+const KIND_LABELS: Record<HighlightKind, string> = { persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa" };
+const KIND_COLORS: Record<HighlightKind, string> = { persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a" };
+const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country"];
 
 const isShown = (item: EntityItem) => !item.is_country && item.place_verification_status !== "rejected";
 const itemName = (item: EntityItem) => item.canonical_name ?? item.text;
@@ -58,11 +58,20 @@ function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
 
 // Country mentions stay out of the chip lists (they belong to the kraj-* pipeline) but the
 // reviewer still needs to see which state a chapter is about, so they are shown separately.
-function chapterCountries(entities: ChapterEntities | undefined): string[] {
-  const names = [...(entities?.geogName ?? []), ...(entities?.placeName ?? []), ...(entities?.orgName ?? [])]
-    .filter((item) => item.is_country && item.place_verification_status !== "rejected")
-    .map(itemName);
-  return [...new Set(names)];
+function countryItems(entities: ChapterEntities | undefined): EntityItem[] {
+  return [...(entities?.geogName ?? []), ...(entities?.placeName ?? []), ...(entities?.orgName ?? [])]
+    .filter((item) => item.is_country && item.place_verification_status !== "rejected");
+}
+
+const chapterCountries = (entities: ChapterEntities | undefined): string[] => [...new Set(countryItems(entities).map(itemName))];
+
+// Countries matching the search text, highlighted in the sentences like the other kinds.
+function highlightCountries(entities: ChapterEntities | undefined, kinds: Set<HighlightKind>, query: string): HighlightEntry[] {
+  if (!kinds.has("country")) return [];
+  const needle = query.trim().toLowerCase();
+  return countryItems(entities)
+    .filter((item) => !needle || [item.text, itemName(item), ...(item.variants ?? [])].some((value) => value.toLowerCase().includes(needle)))
+    .map((item) => ({ kind: "country" as const, label: itemName(item), variants: item.chapter_variants?.length ? item.chapter_variants : [item.text] }));
 }
 
 const entityCount = (entities: ChapterEntities) =>
@@ -157,14 +166,18 @@ const NerChapters = () => {
     const raw = entityData?.sections.find((item) => item.position === section.position);
     const type = raw?.type ?? section.type ?? "TEMAT";
     const entities = filterEntities(raw?.entities, kinds, query);
-    return { section, type, entities, count: entityCount(entities), countries: type === "TEMAT" ? chapterCountries(raw?.entities) : [] };
+    const countryHighlights = type === "TEMAT" ? highlightCountries(raw?.entities, kinds, query) : [];
+    return {
+      section, type, entities, count: entityCount(entities), countryHighlights,
+      countries: type === "TEMAT" ? chapterCountries(raw?.entities) : [],
+    };
   });
   const lastPosition = Math.max(0, ...sections.map((section) => section.position));
   // With a filter active only content chapters that still have matching entities stay listed;
   // without one every chapter is shown, skipped (ad/noise/source) chapters included.
   const loadingEntities = entityData === null && !entityError;
   const filtering = onlyWithEntities || query.trim() !== "";
-  const visible = chapters.filter((chapter) => !filtering || (chapter.type === "TEMAT" && chapter.count > 0));
+  const visible = chapters.filter((chapter) => !filtering || (chapter.type === "TEMAT" && chapter.count + chapter.countryHighlights.length > 0));
   const editorPath = `/${doc?.document_type || "youtube"}/${id}`;
   const scrollTo = (position: number) => (event: React.MouseEvent) => {
     event.preventDefault();
@@ -225,7 +238,7 @@ const NerChapters = () => {
                   <p style={{ color: "#667" }}>Brak zapisanych encji — użyj przycisku „Wykryj osoby, miejsca i obiekty”.</p>
                 )}
                 {mergeError && <p role="alert" style={{ color: "#a33" }}>{mergeError}</p>}
-                {visible.map(({ section, type, entities, count, countries }) => (
+                {visible.map(({ section, type, entities, count, countries, countryHighlights }) => (
                   <section key={section.position} id={`ner-chapter-${section.position}`} aria-label={chapterTitle(section)}
                     style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -258,7 +271,7 @@ const NerChapters = () => {
                         <div style={{ lineHeight: 1.65, fontSize: "0.9em" }}>
                           {section.sentences?.map((sentence) => (
                             <span key={sentence.index}>
-                              {splitByEntities(sentence.text, highlightEntries(entities)).map((segment, index) => (
+                              {splitByEntities(sentence.text, [...highlightEntries(entities), ...countryHighlights]).map((segment, index) => (
                                 segment.kind
                                   ? <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})`}
                                     style={{ background: KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3 }}>{segment.text}</mark>

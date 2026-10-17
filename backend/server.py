@@ -1797,6 +1797,122 @@ def website_entities_to_organization(entity_id: int):
                    organization_name=organization.canonical_name, removed_tag=removed_tag), 200
 
 
+@app.route('/website_entities/<int:entity_id>/to_place', methods=['POST'])
+def website_entities_to_place(entity_id: int):
+    """Retype a person entity as a place (NER mislabelled it, e.g. "Kandaharem").
+
+    Optional body {"text": "Kandahar"} names the place (default: the mention as stored). The person's
+    document link is dropped like on a deletion, the place is geocoded once through the cache (a
+    country gets its ``kraj-*`` tag instead) and the decision is audited as ``person_to_place`` and
+    replayed after entity refreshes (library/entity_overrides.py).
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.country_gazetteer import country_tag_for
+    from library.db.models import DocumentEntity, DocumentPerson
+    from library.entity_overrides import convert_person_to_place
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import geocode_single_place
+
+    data = request.get_json(silent=True) or {}
+    new_text = data.get('text')
+    if new_text is not None and (not isinstance(new_text, str) or not new_text.strip() or len(new_text) > 500):
+        return jsonify(status="error", message="Nieprawidłowa nazwa miejsca."), 400
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type != "persName":
+        return jsonify(status="error", message="Encja nie jest osobą."), 400
+    try:
+        document = session.get(Document, entity.document_id)
+        old_text, old_variants = entity.entity_text, list(entity.variants or [])
+        link = session.execute(sa_select(DocumentPerson).where(
+            DocumentPerson.document_id == entity.document_id,
+            sa_func.lower(DocumentPerson.raw_mention) == old_text.lower(),
+        )).scalars().first()
+        link_result = person_registry.reject_review_link(session, link) if link is not None else None
+        place = convert_person_to_place(session, entity, new_text)
+        tag = country_tag_for(place.entity_text)
+        if tag is not None and document is not None:
+            existing = [t.strip() for t in (document.tags or "").split(",") if t.strip()]
+            if tag not in existing:
+                document.tags = ",".join([*existing, tag])
+        elif place.geocode_id is None and document is not None:
+            geocode_single_place(session, document, place)
+        record_entity_decision(
+            session, document_id=place.document_id, document_entity_id=place.id,
+            document_person_id=getattr(link, "id", None), person_id=getattr(link, "person_id", None),
+            entity_type="persName", entity_text=old_text, decision="person_to_place",
+            details={"new_text": place.entity_text, "variants": old_variants},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Person to place conversion failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zmienić osoby na miejsce."), 500
+    return jsonify(status="success", entity_id=place.id, place_name=place.entity_text,
+                   person_deleted=bool(link_result and link_result.get("person_deleted"))), 200
+
+
+@app.route('/website_entities/<int:entity_id>/split_place', methods=['POST'])
+def website_entities_split_place(entity_id: int):
+    """Split a place entity that lists several places (NER: "Pakistanem Afganistanem") into one per part.
+
+    Body: {"parts": ["Pakistan", "Afganistan"]} — 2-6 distinct non-empty names. Country parts add
+    their ``kraj-*`` tag; other new parts are geocoded once through the cache. The decision is
+    audited as ``place_split`` and replayed after entity refreshes (library/entity_overrides.py).
+    """
+    from library.country_gazetteer import canonical_country_name, country_tag_for
+    from library.db.models import DocumentEntity
+    from library.entity_overrides import split_place_entity
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import PLACE_ENTITY_TYPES, geocode_single_place, remove_orphaned_tag
+
+    data = request.get_json(silent=True) or {}
+    raw_parts = data.get('parts')
+    if not isinstance(raw_parts, list) or not all(isinstance(p, str) for p in raw_parts):
+        return jsonify(status="error", message="Pole parts musi być listą nazw."), 400
+    parts = [p.strip() for p in raw_parts]
+    if not 2 <= len(parts) <= 6 or any(not p or len(p) > 200 for p in parts) \
+            or len({p.casefold() for p in parts}) != len(parts):
+        return jsonify(status="error", message="Podaj od 2 do 6 różnych, niepustych nazw."), 400
+
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type not in PLACE_ENTITY_TYPES:
+        return jsonify(status="error", message="Encja nie jest miejscem."), 400
+    try:
+        document = session.get(Document, entity.document_id)
+        old_text, old_type, old_variants = entity.entity_text, entity.entity_type, list(entity.variants or [])
+        removed_tag = remove_orphaned_tag(session, document, entity) if document is not None else None
+        rows = split_place_entity(session, entity, parts)
+        countries = []
+        for row in rows:
+            tag = country_tag_for(row.entity_text)
+            if tag is not None:
+                countries.append(canonical_country_name(row.entity_text))
+                existing = [t.strip() for t in ((document.tags if document else "") or "").split(",") if t.strip()]
+                if document is not None and tag not in existing:
+                    document.tags = ",".join([*existing, tag])
+            elif row.geocode_id is None and document is not None:
+                geocode_single_place(session, document, row)
+        record_entity_decision(
+            session, document_id=document.id if document else rows[0].document_id, document_entity_id=rows[0].id,
+            entity_type=old_type, entity_text=old_text, decision="place_split",
+            details={"parts": parts, "variants": old_variants, "removed_tag": removed_tag},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Place split failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się podzielić miejsca."), 500
+    return jsonify(status="success", entity_ids=[row.id for row in rows], parts=parts,
+                   countries=countries, removed_tag=removed_tag), 200
+
+
 @app.route('/website_entities/<int:entity_id>', methods=['DELETE', 'OPTIONS'])
 def website_entities_delete(entity_id: int):
     """Delete a stored NER entity row (editor UI).

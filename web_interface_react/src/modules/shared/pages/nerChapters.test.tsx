@@ -147,12 +147,19 @@ it("names the country a chapter is about without listing it among the chips", as
   const withCountry = { ...entities, sections: entities.sections.map(section => section.position !== 1 ? section : {
     ...section, entities: { ...section.entities, geogName: [
       ...section.entities.geogName,
-      { id: 9, text: "Wenezueli", canonical_name: "Wenezuela", count: 3, variants: ["Wenezueli"], is_country: true },
+      { id: 9, text: "Wenezueli", canonical_name: "Wenezuela", count: 3, variants: ["Wenezueli"], chapter_variants: ["Wenezueli"], is_country: true },
     ] },
   }) };
-  mockApi({ "/document/42/chapter_entities": withCountry });
+  const sentenceWithCountry = [{ ...sections[0], sentences: [...sections[0].sentences, { index: 3, text: "Rząd Wenezueli upadł." }] },
+    ...sections.slice(1)];
+  mockApi({ "/document/42/chapter_entities": withCountry, "/document/42/chapter_sections": { sections: sentenceWithCountry } });
   await open();
   const chapter = screen.getByRole("region", { name: "#1 Wstęp" });
+  expect([...chapter.querySelectorAll("mark")].map(mark => [mark.textContent, mark.getAttribute("title")])).toContainEqual(
+    ["Wenezueli", "Wenezuela (Państwa)"]);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Państwa" }));
+  expect([...chapter.querySelectorAll("mark")].map(mark => mark.textContent)).not.toContain("Wenezueli");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Państwa" }));
   expect(within(within(chapter).getByLabelText("Państwa rozdziału")).getByText("🌍 Wenezuela")).toBeTruthy();
   expect(within(chapter).getByText("2 zdań · 2 encji")).toBeTruthy();
   expect(within(within(chapter).getByLabelText("Encje rozdziału")).getAllByRole("listitem").map(item => item.textContent))

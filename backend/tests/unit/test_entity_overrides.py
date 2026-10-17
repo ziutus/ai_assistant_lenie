@@ -232,3 +232,57 @@ def test_replay_does_nothing_without_recorded_decisions():
 
     assert replay_manual_place_decisions(session, 1) == {}
     assert session.scalars.call_count == 1
+
+
+def test_place_split_is_replayed_into_one_manual_row_per_part():
+    row = entity("Pakistan Afganistan", count=2, variants=["Pakistanem Afganistanem"])
+    rows = [row]
+    session = MagicMock()
+    touched, stats = apply_decisions(
+        session, [decision("place_split", "Pakistan Afganistan", parts=["Pakistan", "Afganistan"])], rows,
+    )
+    assert row not in rows
+    session.delete.assert_called_once_with(row)
+    assert [(r.entity_text, r.mention_count, r.variants, r.source) for r in rows] == [
+        ("Pakistan", 2, ["Pakistanem"], "manual"), ("Afganistan", 2, ["Afganistanem"], "manual"),
+    ]
+    assert list(touched.values()) == rows
+    assert stats["split"] == 1
+
+
+def test_place_split_folds_a_part_into_an_existing_place_and_ignores_a_missing_mention():
+    compound = entity("Pakistan Afganistan", count=2)
+    existing = entity("Pakistan", count=5)
+    rows = [compound, existing]
+    apply_decisions(MagicMock(), [decision("place_split", "Pakistan Afganistan", parts=["Pakistan", "Afganistan"])], rows)
+    assert existing.mention_count == 7
+    assert sorted(r.entity_text for r in rows) == ["Afganistan", "Pakistan"]
+    gone = [entity("Iran")]
+    _, _, stats = run([decision("place_split", "Pakistan Afganistan", parts=["Pakistan", "Afganistan"])], gone)
+    assert "split" not in stats
+
+
+def test_suggest_place_split_only_for_lists_of_countries():
+    pytest.importorskip("unidecode")
+    from library.entity_service import suggest_place_split
+    assert suggest_place_split("Pakistanem Afganistanem") == ["Pakistan", "Afganistan"]
+    assert suggest_place_split("Iran, Irak i Syria") == ["Iran", "Irak", "Syria"]
+    assert suggest_place_split("Korea Południowa Japonia") == ["Korea Południowa", "Japonia"]
+    assert suggest_place_split("Kijów Lwów") is None
+    assert suggest_place_split("Polska") is None
+
+
+def test_person_to_place_is_replayed_and_keeps_surface_forms():
+    person = entity("Kandaharem", entity_type="persName", count=2, variants=["Kandahar"])
+    rows = [person]
+    session = MagicMock()
+    touched, stats = apply_decisions(
+        session, [decision("person_to_place", "Kandaharem", entity_type="persName", new_text="Kandahar")], rows,
+    )
+    assert person not in rows
+    session.delete.assert_called_once_with(person)
+    place = rows[0]
+    assert (place.entity_type, place.entity_text, place.mention_count, place.source) == ("placeName", "Kandahar", 2, "manual")
+    assert place.variants == ["Kandaharem"]
+    assert list(touched.values()) == [place]
+    assert stats["person_to_place"] == 1

@@ -62,7 +62,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<EntitiesPanel docId={10753} />);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(6);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(7);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -619,4 +619,38 @@ it.each([false, true])("keeps the place action menu fully opaque (verified: %s)"
     element = element.parentElement;
   }
   expect(element).toBe(chip);
+});
+
+it("offers to split a list of countries and posts the confirmed parts", async () => {
+  const compound = { id: 9, text: "Pakistanem Afganistanem", count: 1, split_suggestion: ["Pakistan", "Afganistan"] };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [], geogName: [], placeName: [compound] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", parts: ["Pakistan", "Afganistan"] } });
+  render(<EntitiesPanel docId={10753} />);
+  await screen.findByRole("button", { name: compound.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: compound.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Podziel na: Pakistan, Afganistan" }));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("Pakistan, Afganistan");
+  fireEvent.click(screen.getByRole("button", { name: "Podziel" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/9/split_place",
+    { parts: ["Pakistan", "Afganistan"] }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/podzielone na: Pakistan, Afganistan/)).toBeTruthy();
+});
+
+it("changes a person into a place with an editable name", async () => {
+  const person = { id: 11, text: "Kandaharem", count: 1 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", place_name: "Kandahar" } });
+  render(<EntitiesPanel docId={10753} />);
+  await screen.findByRole("button", { name: person.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: person.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na miejsce" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Kandahar" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zmień na miejsce" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/11/to_place",
+    { text: "Kandahar" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na miejsce: Kandahar/)).toBeTruthy();
 });
