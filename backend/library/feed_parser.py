@@ -17,6 +17,8 @@ import regex as safe_regex
 import requests
 from library.safe_http import safe_get
 
+MAX_FEED_BYTES = 32 * 1024 * 1024  # full-archive JSON feeds (e.g. unknow.news archiwum.json) exceed the 5 MB page default
+
 ATOM_NS = "http://www.w3.org/2005/Atom"
 MEDIA_NS = "http://search.yahoo.com/mrss/"
 ALLOWED_TYPES = {"rss", "wordpress", "youtube_channel", "json_api"}
@@ -124,10 +126,10 @@ def _get_with_retry(feed: dict, timeout: tuple[float, float]):
     """YouTube's RSS endpoint intermittently answers 404/5xx for existing channels, so retry it."""
     url = build_feed_url(feed)
     if feed["type"] != "youtube_channel":
-        return safe_get(url, timeout=timeout)
+        return safe_get(url, timeout=timeout, max_bytes=MAX_FEED_BYTES)
     for delay in (*YOUTUBE_RETRY_DELAYS, None):
         try:
-            response = safe_get(url, timeout=timeout)
+            response = safe_get(url, timeout=timeout, max_bytes=MAX_FEED_BYTES)
             if response.status_code not in YOUTUBE_RETRY_STATUSES or delay is None:
                 return response
         except requests.ConnectionError:

@@ -81,6 +81,7 @@ class TestGetList:
         mock_row.byline = None
         mock_row.obsidian_note_paths = None
         mock_row.has_text_md = True
+        mock_row.has_readable_content = True
 
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
         missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
@@ -101,6 +102,7 @@ class TestGetList:
         assert result[0]["collection_id"] == 3
         assert result[0]["uuid"] == "uuid-1"
         assert result[0]["has_text_md"] is True
+        assert result[0]["has_readable_content"] is True
         assert result[0]["chunks_missing_obsidian_notes"] == 0
         assert result[0]["chunks_with_obsidian_notes"] == 0
 
