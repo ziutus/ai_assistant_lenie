@@ -183,7 +183,7 @@ Supported models:
 - **`text_functions.py`** — `split_text_for_embedding()`, regex-based text removal (`remove_last_occurrence_and_after`, `remove_before_regex`, `remove_after_regex`), SHA256 hashing.
 - **`lenie_markdown.py`** — `md_split_for_emb()` (recursive hierarchical splitting: H1→H2→H3→bold→paragraphs→sentences), link/image extraction, markdown cleanup.
 - **`document_markdown.py`** — `DocumentMarkDown` class: converts inline images and links to numbered references.
-- **`transcript_chapter_boundaries.py`** — Pure lossless H2 parsing/rendering, lazy sentence lists (optional preamble at position 0), boundary moves, sentence-based splits and merges with transcript/order invariants. Routes in `chunk_review_routes.py` write only `Document.text` and report stale analysis runs.
+- **`transcript_chapter_boundaries.py`** — Pure lossless H2 parsing/rendering, sentence lists, optionally bundled by `describe_sections(with_sentences=True)` (preamble at position 0), boundary moves, sentence-based splits and merges with transcript/order invariants. Routes in `chunk_review_routes.py` write only `Document.text` and report stale analysis runs.
 - **`text_transcript.py`** — Chapter/timestamp parsing, transcript splitting by chapters (for YouTube).
 
 ### Website Processing (`website/`)

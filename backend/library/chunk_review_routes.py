@@ -650,7 +650,7 @@ def document_chapter_sections(doc_id: int):
         return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
     return jsonify({
         "status": "success", "doc_id": doc_id,
-        "sections": describe_sections(doc.text),
+        "sections": describe_sections(doc.text, with_sentences=request.args.get("with_sentences") == "1"),
         "has_embeddings": document_has_embeddings(session, doc_id),
         "has_analysis_runs": bool(_chapter_boundary_run_count(session, doc_id)),
     })

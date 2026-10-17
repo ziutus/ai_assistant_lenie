@@ -50,7 +50,7 @@ def _sentence_spans(body: str) -> list[tuple[int, int]]:
     return spans
 
 
-def describe_sections(text: str) -> list[dict]:
+def describe_sections(text: str, *, with_sentences: bool = False) -> list[dict]:
     """Describe H2 chapters, with position 0 reserved for an optional preamble."""
     result = []
     position = 0
@@ -68,6 +68,8 @@ def describe_sections(text: str) -> list[dict]:
             "char_length": len(section.body),
             "first_sentences": sentences[:2],
             "last_sentences": sentences[-2:],
+            **({"sentences": [{"index": index, "text": sentence} for index, sentence in enumerate(sentences, 1)]}
+               if with_sentences else {}),
         })
     return result
 

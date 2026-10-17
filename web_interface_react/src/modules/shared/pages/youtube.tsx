@@ -76,6 +76,8 @@ const Youtube = () => {
   const alreadyParagraphized = hasMarkdownChapters && paragraphBlocks > headingBlocks;
   const canFetchCaptions = Boolean(id) && transcriptMissing
     && ["URL_ADDED", "NEED_TRANSCRIPTION", "TEMPORARY_ERROR"].includes(formik.values.processing_status);
+  const showChapterEditor = Boolean(id) && hasMarkdownChapters && /^## /m.test(String(formik.values.text || ""));
+  const [chapterEditorBusy, setChapterEditorBusy] = React.useState(false);
   const [captionMessage, setCaptionMessage] = React.useState("");
   const [paragraphizing, setParagraphizing] = React.useState(false);
   const [paragraphMessage, setParagraphMessage] = React.useState("");
@@ -243,8 +245,9 @@ const Youtube = () => {
             {paragraphMessage && <div style={{ marginTop: 8 }}>{paragraphMessage}</div>}
           </section>
         )}
-        {id && hasMarkdownChapters && /^## /m.test(String(formik.values.text || "")) && (
-          <ChapterBoundariesPanel key={id} docId={id} disabled={isLoading || paragraphizing}
+        {id && showChapterEditor && (
+          <ChapterBoundariesPanel key={id} docId={id} defaultOpen disabled={isLoading || paragraphizing}
+            onBusyChange={setChapterEditorBusy}
             onSaved={() => handleGetLinkByID(id)} />
         )}
         <SharedInputs
@@ -255,6 +258,7 @@ const Youtube = () => {
           handleGetPageByUrl={handleGetPageByUrl}
         />
         <InputsForAllExceptLink
+          hideText={showChapterEditor}
           formik={formik}
           isLoading={isLoading}
           handleRemoveNotNeededText={handleRemoveNotNeededText}
@@ -263,7 +267,7 @@ const Youtube = () => {
           message={message}
           formik={formik}
           isError={isError}
-          isLoading={isLoading}
+          isLoading={isLoading || chapterEditorBusy}
           handleSaveWebsiteNext={handleSaveWebsiteNext}
           handleSaveWebsiteToCorrect={handleSaveWebsiteToCorrect}
         />

@@ -7,11 +7,14 @@ interface Section {
   position: number;
   title: string;
   sentence_count: number;
+  sentences: Sentence[];
 }
 interface Sentence { index: number; text: string }
 interface Props {
   docId: string;
   disabled?: boolean;
+  defaultOpen?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   onSaved: () => Promise<unknown>;
 }
 const lineButtonStyle: React.CSSProperties = {
@@ -47,11 +50,11 @@ function errorMessage(error: unknown): string {
   return "Nie udało się zmienić lub pobrać granic rozdziałów. Spróbuj ponownie.";
 }
 
-export default function ChapterBoundariesPanel({ docId, disabled = false, onSaved }: Props) {
+export default function ChapterBoundariesPanel({ docId, disabled = false, defaultOpen = false, onBusyChange, onSaved }: Props) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [sections, setSections] = React.useState<Section[]>([]);
   const [expanded, setExpanded] = React.useState<Set<number>>(new Set());
-  const [sentences, setSentences] = React.useState<Record<number, Sentence[]>>({});
+  const [isOpen, setIsOpen] = React.useState(defaultOpen);
   const [split, setSplit] = React.useState<{ position: number; index: number; title: string } | null>(null);
   const splitTrigger = React.useRef<HTMLButtonElement | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -67,27 +70,26 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, onSave
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
+    onBusyChange?.(true);
     setError("");
     try { await action(); }
     catch (error) { setError(errorMessage(error)); }
-    finally { pending.current = false; setBusy(false); }
+    finally { pending.current = false; setBusy(false); onBusyChange?.(false); }
   };
-  const getSentences = async (position: number): Promise<Sentence[]> => {
-    const { data } = await axios.get(base + "/chapter_sections/" + position + "/sentences", { headers });
-    return data.sentences;
-  };
-  const reloadExpanded = async (positions: number[]) => {
-    const entries = await Promise.all(positions.map(async position => [position, await getSentences(position)] as const));
-    setSentences(Object.fromEntries(entries));
-  };
-  const load = () => withLock(async () => {
-    const { data } = await axios.get(base + "/chapter_sections", { headers });
+  const loadSections = async (expandAll: boolean) => {
+    const { data } = await axios.get<{ sections: Section[]; has_embeddings: boolean }>(base + "/chapter_sections", {
+      headers, params: { with_sentences: 1 },
+    });
     setSections(data.sections);
     setHasEmbeddings(data.has_embeddings);
-    setSentences({});
     setSplit(null);
-    await reloadExpanded([...expanded].filter(position => data.sections.some((section: Section) => section.position === position)));
-  });
+    const positions = data.sections.filter(section => section.position > 0).map(section => section.position);
+    setExpanded(current => new Set(expandAll ? positions : positions.filter(position => current.has(position))));
+  };
+  const load = () => withLock(() => loadSections(true));
+  React.useEffect(() => {
+    if (isOpen) void load();
+  }, [isOpen, docId, apiUrl, apiKey]);
   const toggleChapter = (position: number) => {
     if (pending.current) return;
     if (expanded.has(position)) {
@@ -96,23 +98,17 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, onSave
       return;
     }
     setExpanded(current => new Set([...current, position]));
-    if (!sentences[position]) void withLock(async () => {
-      const rows = await getSentences(position);
-      setSentences(current => ({ ...current, [position]: rows }));
-    });
+
   };
   const edit = (operation: string, payload: Record<string, string | number>) => {
     if (disabled || hasEmbeddings) return;
     return withLock(async () => {
       const { data } = await axios.post(base + "/" + operation, payload, { headers });
-      setSections(data.sections);
-      setHasEmbeddings(data.has_embeddings);
+      setSections([]);
       if (data.stale_analysis_runs > 0) setStale(true);
       setSplit(null);
-      setSentences({});
-      if (operation !== "move_chapter_boundary") setExpanded(new Set());
       await onSaved();
-      if (operation === "move_chapter_boundary") await reloadExpanded([...expanded]);
+      await loadSections(operation !== "move_chapter_boundary");
     });
   };
   const cancelSplit = () => { setSplit(null); splitTrigger.current?.focus(); };
@@ -124,8 +120,8 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, onSave
   const chapters = sections.filter(section => section.position > 0);
 
   return (
-    <details style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}
-      onToggle={event => { if (event.currentTarget.open) void load(); }}>
+    <details open={isOpen} style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}
+      onToggle={event => setIsOpen(event.currentTarget.open)}>
       <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Granice rozdziałów</summary>
       <p>Zapisuje od razu w bazie. Po zmianie formularz zostanie odświeżony — wcześniej zapisz inne zmiany.</p>
       {hasEmbeddings && <p role="status">Dokument ma embeddingi — otwórz go ponownie do edycji przed zmianą granic rozdziałów.</p>}
@@ -154,7 +150,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, onSave
               }}>⇡ Scal z poprzednim</button>}
           </div>
           {isOpen && <div id={"chapter-sentences-" + docId + "-" + section.position} style={{ marginTop: 10 }}>
-            {sentences[section.position]?.map(sentence => {
+            {section.sentences?.map(sentence => {
               const marked = split?.position === section.position && split.index === sentence.index;
               const label = " — rozdział " + section.position + ", zdanie " + sentence.index;
               return <div key={sentence.index} aria-label={"Zdanie " + sentence.index}
@@ -194,7 +190,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, onSave
                 </div>}
               </div>;
             })}
-            {sentences[section.position]?.length === 0 && <em style={{ color: "#94a3b8" }}>Brak zdań.</em>}
+            {section.sentences?.length === 0 && <em style={{ color: "#94a3b8" }}>Brak zdań.</em>}
           </div>}
         </section>;
       })}

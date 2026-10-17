@@ -186,3 +186,21 @@ def test_lazy_sentences_unknown_position(setup, position):
     client, session, _, _ = setup
     assert client.get(f"/document/42/chapter_sections/{position}/sentences").status_code == 400
     session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("query,include", [("", False), ("?with_sentences=0", False), ("?with_sentences=1", True)])
+def test_sections_optional_sentences(setup, query, include):
+    from library.transcript_chapter_boundaries import chapter_sentences
+
+    client, session, doc, _ = setup
+    doc.text = "Przedmowa.\n\n" + TEXT
+    session.scalar.side_effect = [2]
+    response = client.get("/document/42/chapter_sections" + query)
+    assert response.status_code == 200
+    for section in response.json["sections"]:
+        assert ("sentences" in section) is include
+        if include:
+            assert section["sentences"] == chapter_sentences(doc.text, section["position"])["sentences"]
+            assert len(section["sentences"]) == section["sentence_count"]
+    assert response.json["has_analysis_runs"] is True
+    session.commit.assert_not_called()
