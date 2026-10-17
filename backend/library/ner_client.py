@@ -262,6 +262,36 @@ NOMINATIVE_PREFERENCE_TYPES = {"geogName", "placeName", "orgName"}
 COUNTRY_CHECK_TYPES = {"geogName", "placeName", "orgName"}
 
 
+def _split_rename_org_spans(entities: list[dict]) -> tuple[list[dict], set[str]]:
+    """Split closed-form organization renames and return their exact surfaces."""
+    mentions: list[dict] = []
+    split_surfaces: set[str] = set()
+    for ent in entities:
+        surface = normalize_ner_text(strip_wrapping_quotes(ent.get("text") or ""))
+        if ent.get("label") != "orgName" or surface.count(" na ") != 1:
+            mentions.append(ent)
+            continue
+        parts = [part.strip() for part in surface.split(" na ")]
+        if not all(part and part[0].isupper() for part in parts):
+            mentions.append(ent)
+            continue
+        first, second = (unidecode(part.split()[0]).casefold() for part in parts)
+        shorter, longer = sorted((first, second), key=len)
+        # The entire shorter first word must be a prefix of the longer one,
+        # with at least six characters: Departamentu/Departament qualifies.
+        if len(shorter) < 6 or not longer.startswith(shorter):
+            mentions.append(ent)
+            continue
+        for part in parts:
+            mention = {"text": part, "lemma": part, "label": "orgName"}
+            if "pos" in ent:
+                mention["pos"] = ent["pos"]
+            # Neither root morphology nor original offsets describe a part.
+            mentions.append(mention)
+            split_surfaces.add(part)
+    return mentions, split_surfaces
+
+
 def aggregate_entities_detailed(
     entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES,
 ) -> dict[tuple[str, str], dict]:
@@ -290,6 +320,7 @@ def aggregate_entities_detailed(
     raw_lemmas is internal metadata used to preserve ner_exclusions behavior
     after canonicalization; it is not persisted or returned by the API.
     """
+    entities, split_org_surfaces = _split_rename_org_spans(entities)
     preliminary: dict[tuple[str, str], dict] = {}
     for ent in entities:
         label = ent.get("label")
@@ -363,6 +394,10 @@ def aggregate_entities_detailed(
             else None
         )
         base = country or geo_feature or city or region or geo_region or historical or lemma
+        # Only exact surfaces recovered from a rename in this batch override
+        # standalone lemmas, so both mentions share an identity regardless of order.
+        if label == "orgName" and surface in split_org_surfaces:
+            base = surface
         key = (label, base.casefold())
         group = preliminary.setdefault(
             key,
