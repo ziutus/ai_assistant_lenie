@@ -123,6 +123,7 @@ const NerChapters = () => {
   });
   // With a filter active only content chapters that still have matching entities stay listed;
   // without one every chapter is shown, skipped (ad/noise/source) chapters included.
+  const loadingEntities = entityData === null && !entityError;
   const filtering = onlyWithEntities || query.trim() !== "";
   const visible = chapters.filter((chapter) => !filtering || (chapter.type === "TEMAT" && chapter.count > 0));
   const editorPath = `/${doc?.document_type || "youtube"}/${id}`;
@@ -155,7 +156,9 @@ const NerChapters = () => {
               <a href={`#ner-chapter-${section.position}`} onClick={scrollTo(section.position)} style={{ textDecoration: "none" }}>
                 {chapterTitle(section)}
               </a>
-              <span style={{ color: "#64748b" }}>{type === "TEMAT" ? ` (${count})` : ` · ${TYPE_LABELS[type]}`}</span>
+              <span style={{ color: "#64748b" }}>
+                {type !== "TEMAT" ? ` · ${TYPE_LABELS[type]}` : loadingEntities ? "" : ` (${count})`}
+              </span>
             </div>
           ))}
         </nav>
@@ -192,7 +195,9 @@ const NerChapters = () => {
                           {TYPE_LABELS[type]}
                         </span>
                       )}
-                      <span style={{ color: "#64748b", fontSize: "0.85em" }}>{section.sentence_count} zdań · {count} encji</span>
+                      <span style={{ color: "#64748b", fontSize: "0.85em" }}>
+                        {section.sentence_count} zdań · {loadingEntities ? "wczytuję encje…" : `${count} encji`}
+                      </span>
                     </div>
                     {type !== "TEMAT" ? (
                       <p style={{ color: "#667" }}>Rozdział pominięty w NER (typ: {TYPE_LABELS[type]}).</p>
@@ -212,7 +217,8 @@ const NerChapters = () => {
                         </div>
                         <div>
                           {renderGroups(entities)}
-                          {count === 0 && entityData?.has_entities !== false && (
+                          {loadingEntities && <small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
+                          {!loadingEntities && count === 0 && entityData?.has_entities !== false && (
                             <small style={{ color: "#64748b" }}>Brak encji w tym rozdziale.</small>
                           )}
                         </div>

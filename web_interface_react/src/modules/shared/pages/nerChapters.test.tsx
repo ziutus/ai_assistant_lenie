@@ -88,6 +88,23 @@ it("shows chapters with highlighted mentions, entity chips and skipped chapters"
   expect(within(screen.getByRole("region", { name: "#3 Pusty" })).getByText("Brak encji w tym rozdziale.")).toBeTruthy();
 });
 
+it("shows a loading note instead of zero entities until the entity request answers", async () => {
+  let finish!: (value: unknown) => void;
+  const pendingEntities = new Promise(resolve => { finish = resolve; });
+  vi.mocked(axios.get).mockImplementation(async (url: string) => {
+    if (url.endsWith("/chapter_entities")) return pendingEntities as never;
+    if (url.endsWith("/chapter_sections")) return { data: { sections } };
+    return { data: { title: "Film testowy", document_type: "youtube" } };
+  });
+  await open();
+  const chapter = screen.getByRole("region", { name: "#1 Wstęp" });
+  expect(within(chapter).getByText("2 zdań · wczytuję encje…")).toBeTruthy();
+  expect(within(chapter).getByText("Wczytuję encje…")).toBeTruthy();
+  expect(within(chapter).queryByText("Brak encji w tym rozdziale.")).toBeNull();
+  finish({ data: entities });
+  expect(await within(chapter).findByText("2 zdań · 2 encji")).toBeTruthy();
+});
+
 it("links to the editor, chunks and reader and names the document", async () => {
   await open();
   await screen.findByText("Film testowy");
