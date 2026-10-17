@@ -407,7 +407,8 @@ const List = () => {
           data.map((item: any) => {
             const obsidian = obsidianSummary(item);
             const isExpanded = expandedObsidian.has(item.id);
-            const hasReadableText = item.has_text_md === true;
+            // has_readable_content also covers YouTube/movie documents with chunks but no text_md (reader falls back to TEMAT topics)
+            const hasReadableText = (item.has_readable_content ?? item.has_text_md) === true;
             return (
             <li
               key={item.id}
