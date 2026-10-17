@@ -15,6 +15,7 @@ import UploadFile from "./modules/shared/pages/file";
 import Connect from "./modules/shared/pages/connect";
 import Chunks from "./modules/shared/pages/chunks";
 import NerChapters from "./modules/shared/pages/nerChapters";
+import Places from "./modules/shared/pages/places";
 import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
@@ -98,6 +99,7 @@ function App() {
                   <Route path="/ner-corrections" element={<NerCorrections />} />
                   <Route path="/ner-decisions" element={<NerDecisions />} />
                   <Route path="/organizations/:id?" element={<Organizations />} />
+                  <Route path="/places" element={<Places />} />
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/contacts" element={<Contacts />} />
                   <Route path="/topics" element={<Topics />} />

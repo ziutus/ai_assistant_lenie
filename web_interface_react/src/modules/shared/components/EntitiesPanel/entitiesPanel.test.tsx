@@ -27,7 +27,7 @@ it("shows the full proposal and confirms it without edit mode", async () => {
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null } : { entities: { persName: [], orgName: [], geogName: [proposed], placeName: [] } } }));
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect(await screen.findByText(/Wymaga potwierdzenia/)).toBeTruthy();
   expect(screen.getByText("Propozycja lokalizacji: Huti, obwód lwowski, Ukraina")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Zatwierdź tę lokalizację" }));
@@ -42,7 +42,7 @@ it("rejects a location proposal without editing the name", async () => {
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null } : { entities: { persName: [], orgName: [], geogName: [proposed], placeName: [] } } }));
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   fireEvent.click(await screen.findByRole("button", { name: "Odrzuć propozycję" }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/7/reject_place",
     {}, { headers: expect.any(Object) }));
@@ -51,7 +51,7 @@ it("rejects a location proposal without editing the name", async () => {
 
 it("changes a place into an organization from the menu", async () => {
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", organization_name: "Huti" } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na organizację" }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/7/to_organization",
@@ -60,9 +60,9 @@ it("changes a place into an organization from the menu", async () => {
 });
 
 it("renames a place without edit mode and refetches entities", async () => {
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(7);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(9);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -75,9 +75,9 @@ it("renames a place without edit mode and refetches entities", async () => {
 });
 
 it("draws chapter-scoped groups through the panel's own menus in chapter mode", async () => {
-  render(<EntitiesPanel docId={10753} chapterRenderer={(renderGroups) => (
+  render(<MemoryRouter><EntitiesPanel docId={10753} chapterRenderer={(renderGroups) => (
     <div data-testid="chapter">{renderGroups({ placeName: [{ id: 8, text: "Aden", count: 1 }] })}</div>
-  )} />);
+  )} /></MemoryRouter>);
   const chapter = await screen.findByTestId("chapter");
   await act(async () => {});
   expect(within(chapter).getByRole("button", { name: "Aden" })).toBeTruthy();
@@ -96,7 +96,7 @@ it.each([false, true])("offers merge after rename (conflict: %s)", async (confli
     vi.mocked(axios.patch).mockResolvedValue({ data: { geocoded: true, same_place_entity: target } });
   }
   vi.mocked(axios.post).mockResolvedValue({ data: {} });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }), { target: { value: "Aden" } });
@@ -114,7 +114,7 @@ it.each([false, true])("offers merge after rename (conflict: %s)", async (confli
 
 it("shows a backend conflict and keeps the form open", async () => {
   vi.mocked(axios.patch).mockRejectedValue({ response: { status: 409, data: { message: "Wybierz „Połącz z innym miejscem”." } } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
@@ -124,7 +124,7 @@ it("shows a backend conflict and keeps the form open", async () => {
 
 it("reloads the list and closes the form when the renamed entity no longer exists", async () => {
   vi.mocked(axios.patch).mockRejectedValue({ response: { status: 404, data: { message: "Nie znaleziono encji." } } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
@@ -135,7 +135,7 @@ it("reloads the list and closes the form when the renamed entity no longer exist
 
 it.each(["× Usuń encję", "🚫 Usuń i nie wykrywaj więcej", "Połącz z innym miejscem"])(
   "opens the existing %s flow without edit mode", async (action) => {
-    render(<EntitiesPanel docId={10753} />);
+    render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
     await openMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: action }));
     expect(screen.queryByRole("menu")).toBeNull();
@@ -146,7 +146,7 @@ it.each(["× Usuń encję", "🚫 Usuń i nie wykrywaj więcej", "Połącz z inn
 );
 
 it("closes on outside pointerdown and Escape, and clears rename on document change", async () => {
-  const view = render(<EntitiesPanel docId={10753} />);
+  const view = render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.pointerDown(document.body);
   expect(screen.queryByRole("menu")).toBeNull();
@@ -155,12 +155,12 @@ it("closes on outside pointerdown and Escape, and clears rename on document chan
   expect(screen.queryByRole("menu")).toBeNull();
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
-  view.rerender(<EntitiesPanel docId={10754} />);
+  view.rerender(<MemoryRouter><EntitiesPanel docId={10754} /></MemoryRouter>);
   expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
 });
 
 it("refetches and clears open forms when refreshKey changes for the same document", async () => {
-  const view = render(<EntitiesPanel docId={10753} refreshKey={0} />);
+  const view = render(<MemoryRouter><EntitiesPanel docId={10753} refreshKey={0} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   expect(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeTruthy();
@@ -168,7 +168,7 @@ it("refetches and clears open forms when refreshKey changes for the same documen
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null }
     : { entities: { persName: [], orgName: [], geogName: [], placeName: [] } } }));
-  view.rerender(<EntitiesPanel docId={10753} refreshKey={1} />);
+  view.rerender(<MemoryRouter><EntitiesPanel docId={10753} refreshKey={1} /></MemoryRouter>);
   await waitFor(() => expect(vi.mocked(axios.get).mock.calls.length).toBe(callsBefore + 2));
   expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
   expect(screen.queryByRole("button", { name: place.text })).toBeNull();
@@ -180,7 +180,7 @@ it("does not announce completion for a stale finished job it never saw running",
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: { id: "old", status: "done", progress: null } }
     : { entities: emptyEntities } }));
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
   await act(async () => {});
   expect(screen.queryByText(/Pełna weryfikacja encji zakończona/)).toBeNull();
@@ -193,7 +193,7 @@ it("announces completion after watching a job go from running to done", async ()
     jobCalls += 1;
     return { data: { job: { id: "j", status: jobCalls === 1 ? "running" : "done", progress: null } } };
   });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect(await screen.findByText("Pełna weryfikacja encji zakończona.", {}, { timeout: 6000 })).toBeTruthy();
 }, 10000);
 
@@ -202,7 +202,7 @@ it("shows read-only place tags under Miejsca only when the document has them", a
     ? { job: null }
     : { entities: { persName: [], orgName: [], geogName: [place], placeName: [] },
       place_tags: ["miejsce-aden", "miejsce-rijad"] } }));
-  const view = render(<EntitiesPanel docId={10753} />);
+  const view = render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect(await screen.findByText("Tagi miejsc: miejsce-aden, miejsce-rijad")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Czym są tagi miejsc" }));
   expect(screen.getByRole("note").textContent).toContain("nie ma osobnego filtra po tagach");
@@ -211,7 +211,7 @@ it("shows read-only place tags under Miejsca only when the document has them", a
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null }
     : { entities: { persName: [], orgName: [], geogName: [place], placeName: [] } } }));
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await screen.findByRole("button", { name: place.text });
   expect(screen.queryByText(/Tagi miejsc:/)).toBeNull();
 });
@@ -438,7 +438,7 @@ it("preserves reader highlight behavior when menuActions is absent", () => {
 
 it("submits rename with Enter without submitting the document form", async () => {
   const submitDocument = vi.fn((event) => event.preventDefault());
-  render(<form onSubmit={submitDocument}><EntitiesPanel docId={10753} /></form>);
+  render(<form onSubmit={submitDocument}><MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter></form>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }), { key: "Enter" });
@@ -450,7 +450,7 @@ it("omits merge when there is no other place and keeps edit delete working", asy
   vi.mocked(axios.get).mockResolvedValue({ data: {
     job: null, entities: { persName: [], orgName: [], geogName: [place], placeName: [] },
   } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   expect(screen.queryByRole("menuitem", { name: "Połącz z innym miejscem" })).toBeNull();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
@@ -541,7 +541,7 @@ it("shows document countries from GET in the editor", async () => {
   vi.mocked(axios.get).mockResolvedValue({ data: {
     job: null, entities: {}, countries: [{ slug: "polska", name_pl: "Polska" }],
   } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect(await screen.findByText("Polska")).toBeTruthy();
   expect(screen.getByText("Państwa:")).toBeTruthy();
 });
@@ -587,7 +587,7 @@ it("detects countries, updates chips and reports busy state", async () => {
 it.each([false, true])("reports no new countries or a detection error: %s", async (fails) => {
   if (fails) vi.mocked(axios.post).mockRejectedValue({ response: { data: { message: "Database unavailable" } } });
   else vi.mocked(axios.post).mockResolvedValue({ data: { countries: [], added: [] } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await screen.findByRole("button", { name: place.text });
   fireEvent.click(screen.getByRole("button", { name: "Wykryj państwa" }));
   expect(await screen.findByText(fails
@@ -626,7 +626,7 @@ it("offers to split a list of countries and posts the confirmed parts", async ()
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null } : { entities: { persName: [], orgName: [], geogName: [], placeName: [compound] } } }));
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", parts: ["Pakistan", "Afganistan"] } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await screen.findByRole("button", { name: compound.text });
   await act(async () => {});
   fireEvent.click(screen.getByRole("button", { name: compound.text }));
@@ -643,7 +643,7 @@ it("changes a person into a place with an editable name", async () => {
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [], placeName: [] } } }));
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", place_name: "Kandahar" } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await screen.findByRole("button", { name: person.text });
   await act(async () => {});
   fireEvent.click(screen.getByRole("button", { name: person.text }));
@@ -653,4 +653,25 @@ it("changes a person into a place with an editable name", async () => {
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/11/to_place",
     { text: "Kandahar" }, { headers: expect.any(Object) }));
   expect(await screen.findByText(/zmienione na miejsce: Kandahar/)).toBeTruthy();
+});
+
+it("saves a Wikipedia article for a place and shows the 📖 link", async () => {
+  const withWiki = { ...place, wikipedia_url: "https://en.wikipedia.org/wiki/Aden" };
+  vi.mocked(axios.put).mockResolvedValue({ data: { status: "success" } });
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  await openMenu();
+  expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze miejsc" }).getAttribute("href"))
+    .toBe("/places?name=Jemenu%20P%C3%B3%C5%82nocnego");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj stronę Wikipedii" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: " https://en.wikipedia.org/wiki/Aden " } });
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+  await waitFor(() => expect(axios.put).toHaveBeenCalledWith("/places/profile",
+    { name: place.text, wikipedia_url: "https://en.wikipedia.org/wiki/Aden" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/Zapisano artykuł Wikipedii/)).toBeTruthy();
+  cleanup();
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [], geogName: [withWiki], placeName: [] } } }));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  expect((await screen.findByRole("link", { name: `Wikipedia: ${place.text}` })).getAttribute("href"))
+    .toBe("https://en.wikipedia.org/wiki/Aden");
 });

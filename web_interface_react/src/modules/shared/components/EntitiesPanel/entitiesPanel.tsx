@@ -41,6 +41,8 @@ export interface EntityItem {
   place_review_reason?: string | null;
   // Countries the place mention lists ("Pakistanem Afganistanem"); offered by the "Podziel" menu entry.
   split_suggestion?: string[];
+  // Wikipedia article of the place from the cross-document place registry (/places).
+  wikipedia_url?: string;
   proposed_geocode_id?: number;
   proposed_display_name?: string | null;
   proposed_lat?: number | null;
@@ -279,6 +281,10 @@ export const EntityChips = ({
                 {item.text}
               </button>
             ) : item.text}
+            {item.wikipedia_url && (
+              <a href={item.wikipedia_url} target="_blank" rel="noopener noreferrer" title="Artykuł w Wikipedii"
+                aria-label={`Wikipedia: ${item.text}`} style={{ textDecoration: "none" }}> 📖</a>
+            )}
             {item.pipeline && <span title={`Rurociąg (${item.pipeline.substance ?? "?"}) — dane © OpenStreetMap`}> 🛢️</span>}
             {(item.organization_description || item.information_source_description) && (
               <span title={item.information_source_description ?? item.organization_description ?? undefined}
@@ -500,6 +506,8 @@ const EntitiesPanel = ({
   const [splitFor, setSplitFor] = React.useState<EntityItem | null>(null);
   const [splitText, setSplitText] = React.useState("");
   const [isRetyping, setIsRetyping] = React.useState(false);
+  const [wikiFor, setWikiFor] = React.useState<EntityItem | null>(null);
+  const [wikiText, setWikiText] = React.useState("");
   // Confirmation step of every organization merge: side-by-side comparison + what will change.
   const [mergePreview, setMergePreview] = React.useState<{
     source: EntityItem;
@@ -1090,6 +1098,23 @@ const EntitiesPanel = ({
     }
   };
 
+  const savePlaceWikipedia = async () => {
+    if (!wikiFor) return;
+    setIsRetyping(true);
+    setMessage("");
+    try {
+      await axios.put(`${apiUrl}/places/profile`,
+        { name: wikiFor.text, wikipedia_url: wikiText.trim() || null }, { headers: jsonHeaders });
+      setMessage(wikiText.trim() ? `Zapisano artykuł Wikipedii dla „${wikiFor.text}”.` : `Usunięto link Wikipedii dla „${wikiFor.text}”.`);
+      setWikiFor(null);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się zapisać linku Wikipedii: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsRetyping(false);
+    }
+  };
+
   const splitParts = splitText.split(/[,;]+/).map((part) => part.trim()).filter(Boolean);
   const splitPlace = async () => {
     if (splitFor?.id == null || splitParts.length < 2) return;
@@ -1141,6 +1166,7 @@ const EntitiesPanel = ({
     setRenameFor(null);
     setToPlaceFor(null);
     setSplitFor(null);
+    setWikiFor(null);
     setDeleteFor(null);
     setExcludeFor(null);
     setMergeFor(null);
@@ -1202,6 +1228,9 @@ const EntitiesPanel = ({
       ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeFor(item); } }] : []),
     { label: item.split_suggestion ? `Podziel na: ${item.split_suggestion.join(", ")}` : "Podziel na kilka miejsc…",
       action: () => { resetFlows(); setSplitFor(item); setSplitText(item.split_suggestion?.join(", ") ?? item.text); } },
+    { label: item.wikipedia_url ? "Zmień stronę Wikipedii" : "Dodaj stronę Wikipedii",
+      action: () => { resetFlows(); setWikiFor(item); setWikiText(item.wikipedia_url ?? ""); } },
+    { label: "Otwórz w rejestrze miejsc", to: `/places?name=${encodeURIComponent(item.text)}` },
     { label: "Zmień na organizację", action: () => { resetFlows(); void changePlaceToOrganization(item); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
@@ -1569,6 +1598,26 @@ const EntitiesPanel = ({
           <button type="button" className="button" disabled={isRetyping || !toPlaceText.trim()}
             onClick={() => void changePersonToPlace()}>Zmień na miejsce</button>
           <button type="button" disabled={isRetyping} onClick={() => setToPlaceFor(null)}>Anuluj</button>
+        </div>
+      )}
+
+      {wikiFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void savePlaceWikipedia();
+          }
+        }}
+          style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>Artykuł Wikipedii dla „{wikiFor.text}”
+            <input autoFocus value={wikiText} maxLength={500} disabled={isRetyping} placeholder="https://pl.wikipedia.org/wiki/…"
+              onChange={(event) => setWikiText(event.target.value)} />
+          </label>
+          <div style={{ color: "#667", fontSize: "0.85em" }}>
+            Link zapisuje się globalnie dla miejsca (dotyczy też innych dokumentów). Pusty adres usuwa link.
+          </div>
+          <button type="button" className="button" disabled={isRetyping || (!wikiText.trim() && !wikiFor.wikipedia_url)}
+            onClick={() => void savePlaceWikipedia()}>Zapisz</button>
+          <button type="button" disabled={isRetyping} onClick={() => setWikiFor(null)}>Anuluj</button>
         </div>
       )}
 

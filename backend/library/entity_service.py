@@ -516,6 +516,9 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         DocumentFacility.document_id == document_id,
     )).all()
 
+    from library.place_registry import name_key, profile_index
+
+    place_profiles = profile_index(session)
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
     pipelines_by_query: dict[str, InfraGeometry] = {}
@@ -538,6 +541,11 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         status = row.place_verification_status
         if row.entity_type in place_types:
             item["place_verification_status"] = status
+            place_profile = next((place_profiles[k] for k in (name_key(row.entity_text),
+                                                              *(name_key(v) for v in (row.variants or [])))
+                                  if k in place_profiles), None)
+            if place_profile is not None and place_profile.wikipedia_url:
+                item["wikipedia_url"] = place_profile.wikipedia_url
             item["place_review_reason"] = row.place_review_reason
             if not item["is_country"] and (split := suggest_place_split(row.entity_text, row.variants)):
                 item["split_suggestion"] = split

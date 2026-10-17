@@ -1912,6 +1912,26 @@ class Facility(Base):
     geocode: Mapped["GeocodeCache | None"] = relationship(foreign_keys=[geocode_id])
 
 
+class PlaceProfile(Base):
+    """Curated, cross-document profile of a place: its Wikipedia article and alternative names.
+
+    Places themselves stay per-document ``document_entities`` rows; a profile is looked up by the
+    case-folded ``name_key`` of the entity text (or one of ``aliases``), so one entry covers every
+    document that mentions the place under that name. See library/place_registry.py.
+    """
+
+    __tablename__ = "place_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    name_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    wikipedia_url: Mapped[str | None] = mapped_column(Text)
+    aliases: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class DocumentFacility(Base):
     """A rule-detected facility mention in one document.
 
