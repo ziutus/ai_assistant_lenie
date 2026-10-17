@@ -143,6 +143,47 @@ it("refetches the chapter entities after the panel reports a change", async () =
   await waitFor(() => expect(entityCalls().length).toBe(2));
 });
 
+it("names the country a chapter is about without listing it among the chips", async () => {
+  const withCountry = { ...entities, sections: entities.sections.map(section => section.position !== 1 ? section : {
+    ...section, entities: { ...section.entities, geogName: [
+      ...section.entities.geogName,
+      { id: 9, text: "Wenezueli", canonical_name: "Wenezuela", count: 3, variants: ["Wenezueli"], is_country: true },
+    ] },
+  }) };
+  mockApi({ "/document/42/chapter_entities": withCountry });
+  await open();
+  const chapter = screen.getByRole("region", { name: "#1 Wstęp" });
+  expect(within(within(chapter).getByLabelText("Państwa rozdziału")).getByText("🌍 Wenezuela")).toBeTruthy();
+  expect(within(chapter).getByText("2 zdań · 2 encji")).toBeTruthy();
+  expect(within(within(chapter).getByLabelText("Encje rozdziału")).getAllByRole("listitem").map(item => item.textContent))
+    .toEqual(["Donald Tusk", "Kijów"]);
+  expect(within(screen.getByRole("region", { name: "#3 Pusty" })).queryByLabelText("Państwa rozdziału")).toBeNull();
+});
+
+it("merges a chapter with its neighbour and reloads the chapters", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  const sectionCalls = () => vi.mocked(axios.get).mock.calls.filter(([url]) => String(url).endsWith("/chapter_sections")).length;
+  const before = sectionCalls();
+  const first = screen.getByRole("region", { name: "#1 Wstęp" });
+  expect(within(first).queryByRole("button", { name: "Scal rozdział 1 z poprzednim" })).toBeNull();
+  fireEvent.click(within(first).getByRole("button", { name: "Scal rozdział 1 z następnym" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/merge_chapter", { position: 2 },
+    { headers: { "x-api-key": "test-key" } }));
+  await waitFor(() => expect(sectionCalls()).toBe(before + 1));
+  expect(within(screen.getByRole("region", { name: "#3 Pusty" })).queryByRole("button", { name: /z następnym/ })).toBeNull();
+});
+
+it("reports a refused merge and does not reload", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.isAxiosError).mockReturnValue(true);
+  vi.mocked(axios.post).mockRejectedValue({ isAxiosError: true, response: { status: 409 } });
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Scal rozdział 3 z poprzednim" }));
+  expect(await screen.findByText(/dokument ma embeddingi/)).toBeTruthy();
+});
+
 it("explains a document without transcript text", async () => {
   const error = Object.assign(new Error("bad"), { isAxiosError: true, response: { data: { message: "Document has no transcript text" } } });
   vi.mocked(axios.isAxiosError).mockReturnValue(true);
