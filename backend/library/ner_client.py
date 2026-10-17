@@ -22,6 +22,7 @@ from library.historical_state_gazetteer import canonical_historical_state_name
 from library.region_gazetteer import canonical_region_name
 from library.ner_normalization import (
     canonical_country_for_surface,
+    is_non_place_demonym,
     is_rejected_surface_lemma_pair,
     normalize_ner_text,
     strip_content_markers,
@@ -314,6 +315,8 @@ def aggregate_entities_detailed(
             # corrupted lemma and still goes through person resolution.
             lemma = surface
         if is_rejected_surface_lemma_pair(surface, lemma, pos):
+            continue
+        if label in PLACE_TYPES and is_non_place_demonym(surface):
             continue
 
         country = canonical_country_for_surface(surface) if label in COUNTRY_CHECK_TYPES else None

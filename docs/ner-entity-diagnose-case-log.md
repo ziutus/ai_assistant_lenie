@@ -177,9 +177,10 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T12 | Kolizja kanonikalizacji w transakcji | Poprawiony wariant encji zbiega się z już istniejącym wierszem, a ORM próbuje zmienić klucz unikalny przed etapem scalenia | "Al-Faszirze Emiraty" + "Al-Faszir" | E015 |
 | T14 | Werdykt klasyfikatora kontekstu bez skutku na encji | `not_place/high` blokuje tag, ale nie odrzuca wiersza encji | "Izraelczyków" | E019 |
 | T15 | Etnonim jako miejsce | Odmieniona nazwa mieszkańców nie trafia do normalizacji kraju i jest odrzucana jako `not_place` | „Izraelczyków”, „Amerykanów” | E021 |
-| T16 | Znaczenie polityczne vs. kierunek geograficzny | „Zachód” jako blok polityczno-kulturowy mylony z kierunkiem lub fragmentem innej nazwy własnej | „Zachodzie” → „Państwa Zachodu”; wyjątek: „Polskie Siły Zbrojne na Zachodzie” | E022 |
+| T16 | Etnonim kontynentalny lub ponadnarodowy jako miejsce | Nazwa mieszkańców nie oznacza kraju ani miejsca; odrzucana przez zamkniętą listę | „Europejczycy”, „Europejka” | E029 |
+| T17 | Znaczenie polityczne vs. kierunek geograficzny | „Zachód” jako blok polityczno-kulturowy mylony z kierunkiem lub fragmentem innej nazwy własnej | „Zachodzie” → „Państwa Zachodu”; wyjątek: „Polskie Siły Zbrojne na Zachodzie” | E022 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T17,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T18,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -442,7 +443,7 @@ Numeruj kolejno (`E015`, `E016`, ...).
 ### E022 — „Zachodzie” jako blok polityczno-kulturowy (dok. #10756, PR n/d, 2026-10-12)
 
 - **Typ encji:** geogName / placeName → orgName.
-- **Kategoria:** T16 — znaczenie polityczne vs. kierunek geograficzny.
+- **Kategoria:** T17 — znaczenie polityczne vs. kierunek geograficzny.
 - **Zdanie źródłowe:** „Ciągle myślę o tym, kiedy obudzę się z wiadomością o ataku Huti gdzieś na Zachodzie.”
 - **Objaw:** „Zachodzie” otrzymało werdykt `not_place` z uzasadnieniem „kierunek geograficzny lub region”, choć oznaczało kraje bloku polityczno-kulturowego.
 - **Przyczyna źródłowa:** `_SYSTEM_PROMPT` w `library/place_context_classifier.py` opisywał `organization` jako metonimię siedziby instytucji, bez wskazania politycznego znaczenia „Zachodu”.
@@ -515,3 +516,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod + dane — dodany wariant `riad*` do wpisu „Rijad”; encja 16149 przemianowana w danych na „Rijad”.
 - **Test regresyjny:** `backend/tests/unit/test_city_gazetteer.py::TestCanonicalCityName::test_riad_transcription_variant_doc_10872`
 - **Status:** żywy bug naprawiony w kodzie + dane dok. #10872 naprawione osobno
+
+### E029 — „Europejczycy” jako miejsce geokodowane do rzeźby (dok. #10872, PR n/d, 2026-10-17)
+
+- **Typ encji:** geogName
+- **Kategoria:** T16 — etnonim kontynentalny lub ponadnarodowy jako miejsce.
+- **Zdanie źródłowe:** „Zwyczajni Europejczycy są zastraszani apokaliptycznymi scenariuszami, to prawda, i hybrydowym zagrożeniem rzekomo pochodzącym z naszego kraju.” (dok. #10872, rozdział 2).
+- **Objaw:** „Europejczycy” z lematem „Europejczyk” trafiają do miejsc jako encja 15915, a geokoder wskazuje rzeźbę we Wrocławiu.
+- **Przyczyna źródłowa:** spaCy zwraca `geogName`/`NOUN`; `aggregate_entities_detailed` zachowuje lemat jako nazwę miejsca. Normalizacja etnonimów do krajów z PR #807 nie obejmuje tego przypadku: etnonim kontynentalny nie oznacza kraju.
+- **Poprawka:** kod + dane — nowa lista `non_place_demonym_patterns` w `backend/data/ner_normalization.json` obejmuje wyłącznie rodzinę „Europejczyk”/„Europejka”, wszystkie przypadki liczby pojedynczej i mnogiej. W odróżnieniu od `demonym_patterns` nie mapuje na kraj: `is_non_place_demonym` dopasowuje pełną formę po `unidecode().casefold()`, a agregacja odrzuca ją wyłącznie dla `PLACE_TYPES`, przed obliczeniem kraju. Loader ma cache i pomija błędne regexy z ostrzeżeniem. Dane do wykonania po wdrożeniu (to do after deploy): usunąć encję 15915 w dok. #10872 oraz analogiczne encje w dok. #9204 i #9216.
+- **Test regresyjny:** `backend/tests/unit/test_ner_normalization.py` — pełna odmiana obu płci, negatywne dopasowania, cache i błędny regex; `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_10872_continental_demonym_is_not_a_place` — cytat i surowa encja, odrzucenie „Europejczyka” przy zachowaniu „Rosji” i „Europy”; test nie przechodzi bez zmiany agregacji. Dodatkowy test ogranicza odrzucanie do etykiet miejsc.
+- **Status:** kod w PR (przed wdrożeniem / pre-deploy); operacje na danych do wykonania po wdrożeniu (to do after deploy).
