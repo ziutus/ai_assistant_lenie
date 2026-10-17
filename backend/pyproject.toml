@@ -167,6 +167,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# No .pytest_cache: a sandboxed run (Codex) leaves it ACL-locked and a worktree
+# with it can no longer be deleted without an elevated shell.
+addopts = ["-p", "no:cacheprovider"]
 
 [tool.bandit]
 # Usage: uvx --from "bandit[toml]" bandit -c backend/pyproject.toml -r backend/
