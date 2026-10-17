@@ -4,7 +4,9 @@ import re
 
 import pytest
 
-from library.transcript_chapter_boundaries import describe_sections, move_boundary, parse_sections, render_sections
+from library.transcript_chapter_boundaries import (
+    chapter_sentences, describe_sections, merge_chapter, move_boundary, parse_sections, render_sections, split_chapter,
+)
 
 TEXT = "Wstęp.\n\n## Pierwszy\n\nAla czyta. Żółw śpi!\n\nKot je?\n\n## Drugi\n\nPies biega. Pada…\n\nŚwieci słońce.\n"
 
@@ -91,3 +93,92 @@ def test_paragraphs_inside_moved_run_stay_intact():
 
 def test_h1_h3_are_content_not_chapters():
     assert [s["title"] for s in describe_sections("# H1\n### H3\n## A\nOne. Two.\n## B\nThree.")] == ["", "A", "B"]
+
+
+def content(text):
+    return re.sub(r"\s", "", "".join(section.body for section in parse_sections(text)))
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.parametrize("position,sentence_index", [(1, 2), (1, 3), (2, 2), (2, 3)])
+def test_split_merge_round_trip(newline, position, sentence_index):
+    text = TEXT.replace("\n", newline)
+    result = split_chapter(text, position, sentence_index, "  Żółć i źródła  ")
+    assert content(result) == content(text)
+    titles = [s["title"] for s in describe_sections(result) if s["position"]]
+    assert titles == ["Pierwszy", "Drugi"][:position] + ["Żółć i źródła"] + ["Pierwszy", "Drugi"][position:]
+    assert parse_sections(result)[0] == parse_sections(text)[0]
+    assert newline * 2 + "## Żółć i źródła" + newline * 2 in result
+    if newline == "\r\n":
+        assert "\n" not in result.replace("\r\n", "")
+    sections = describe_sections(result)
+    assert sections[position]["sentence_count"] == sentence_index - 1
+    assert sections[position + 1]["sentence_count"] == 4 - sentence_index
+    merged = merge_chapter(result, position + 1)
+    invariant(text, merged)
+    assert parse_sections(merged)[0] == parse_sections(text)[0]
+    # Normalized paragraph spacing is stable over repeated split/merge cycles.
+    assert merge_chapter(split_chapter(merged, position, sentence_index, "Jeszcze raz"), position + 1) == merged
+
+
+@pytest.mark.parametrize("position", [2, 3])
+def test_merge_preserves_paragraphs_and_other_headings(position):
+    text = TEXT + "\n## Trzeci\n\nNowy akapit.\n\nOstatni akapit."
+    result = merge_chapter(text, position)
+    assert content(text) == content(result)
+    assert "Nowy akapit.\n\nOstatni akapit." in result
+    titles = ["Pierwszy", "Drugi", "Trzeci"]
+    assert [s["title"] for s in describe_sections(result)[1:]] == titles[:position - 1] + titles[position:]
+    assert parse_sections(text)[0] == parse_sections(result)[0]
+
+
+def test_merge_then_split_at_original_paragraph_is_identical():
+    text = "Przedmowa.\r\n\r\n## A\r\n\r\nDr. Nowak czyta m.in. książkę.\r\n\r\n## B\r\n\r\nPada… Tak!"
+    assert split_chapter(merge_chapter(text, 2), 1, 2, "B") == text
+
+
+@pytest.mark.parametrize("position", [0, -1, 3, True, 1.0, "1"])
+def test_split_invalid_position(position):
+    with pytest.raises(ValueError):
+        split_chapter(TEXT, position, 2, "Nowy")
+
+
+@pytest.mark.parametrize("index", [0, 1, 4, -1, True, 2.0, "2"])
+def test_split_invalid_sentence_index(index):
+    with pytest.raises(ValueError):
+        split_chapter(TEXT, 1, index, "Nowy")
+
+
+@pytest.mark.parametrize("title", ["", "  ", "# Tytuł", "  ## Tytuł", "A\nB", "A\rB", "Tytuł\n", "A\u2028B",
+                                  "a" * 201, None, True, 12])
+def test_split_invalid_title(title):
+    with pytest.raises(ValueError):
+        split_chapter(TEXT, 1, 2, title)
+
+
+def test_split_title_length_limit_and_single_sentence():
+    assert describe_sections(split_chapter(TEXT, 1, 2, "ż" * 200))[2]["title"] == "ż" * 200
+    with pytest.raises(ValueError):
+        split_chapter("## A\nJedno zdanie.", 1, 2, "Nowy")
+    with pytest.raises(ValueError):
+        split_chapter("## A\n", 1, 2, "Nowy")
+
+
+@pytest.mark.parametrize("position", [0, 1, -1, 3, True, 2.0, "2"])
+def test_merge_invalid_position(position):
+    with pytest.raises(ValueError):
+        merge_chapter(TEXT, position)
+
+
+def test_lazy_sentence_description_and_preamble():
+    assert chapter_sentences(TEXT, 0) == {"position": 0, "title": "", "sentences": [{"index": 1, "text": "Wstęp."}]}
+    assert chapter_sentences(TEXT, 2) == {"position": 2, "title": "Drugi", "sentences": [
+        {"index": 1, "text": "Pies biega."}, {"index": 2, "text": "Pada…"}, {"index": 3, "text": "Świeci słońce."},
+    ]}
+    assert chapter_sentences("## Pusty", 1)["sentences"] == []
+
+
+@pytest.mark.parametrize("text,position", [(TEXT, 3), (TEXT, True), (TEXT, -1), ("## A\nZdanie.", 0), ("", 0)])
+def test_lazy_sentences_invalid_position(text, position):
+    with pytest.raises(ValueError):
+        chapter_sentences(text, position)

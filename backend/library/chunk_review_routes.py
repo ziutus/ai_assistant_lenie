@@ -663,11 +663,10 @@ def _chapter_boundary_run_count(session, doc_id: int) -> int:
     )) or 0
 
 
-@bp.route("/document/<int:doc_id>/move_chapter_boundary", methods=["POST"])
-def move_document_chapter_boundary(doc_id: int):
-    """Persist only Document.text; existing analysis runs must be regenerated."""
+def _edit_transcript_chapters(doc_id: int, operation, fields: dict[str, type]):
+    """Shared guards, strict JSON validation and persistence for chapter edits."""
     from library.document_editing import document_has_embeddings
-    from library.transcript_chapter_boundaries import describe_sections, move_boundary
+    from library.transcript_chapter_boundaries import describe_sections
 
     session = get_scoped_session()
     doc = session.get(Document, doc_id)
@@ -689,10 +688,12 @@ def move_document_chapter_boundary(doc_id: int):
     if active is not None:
         return jsonify({"status": "error", "message": "Document analysis is currently running"}), 409
     payload = request.get_json(silent=True)
-    if not isinstance(payload, dict) or any(type(payload.get(key)) is not int for key in ("position", "sentences")):
-        return jsonify({"status": "error", "message": "Pola position i sentences muszą być liczbami całkowitymi."}), 400
+    if not isinstance(payload, dict) or any(type(payload.get(key)) is not kind for key, kind in fields.items()):
+        message = ("Pola position i sentences muszą być liczbami całkowitymi." if "sentences" in fields
+                   else "Nieprawidłowe pola żądania lub typy danych.")
+        return jsonify({"status": "error", "message": message}), 400
     try:
-        updated = move_boundary(doc.text, payload["position"], payload["sentences"])
+        updated = operation(doc.text, **{key: payload[key] for key in fields})
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
     stale_runs = _chapter_boundary_run_count(session, doc_id)
@@ -702,6 +703,44 @@ def move_document_chapter_boundary(doc_id: int):
         "status": "success", "doc_id": doc_id, "sections": describe_sections(updated),
         "has_embeddings": False, "has_analysis_runs": bool(stale_runs), "stale_analysis_runs": stale_runs,
     })
+
+
+@bp.route("/document/<int:doc_id>/move_chapter_boundary", methods=["POST"])
+def move_document_chapter_boundary(doc_id: int):
+    from library.transcript_chapter_boundaries import move_boundary
+
+    return _edit_transcript_chapters(doc_id, move_boundary, {"position": int, "sentences": int})
+
+
+@bp.route("/document/<int:doc_id>/split_chapter", methods=["POST"])
+def split_document_chapter(doc_id: int):
+    from library.transcript_chapter_boundaries import split_chapter
+
+    return _edit_transcript_chapters(doc_id, split_chapter, {"position": int, "sentence_index": int, "title": str})
+
+
+@bp.route("/document/<int:doc_id>/merge_chapter", methods=["POST"])
+def merge_document_chapter(doc_id: int):
+    from library.transcript_chapter_boundaries import merge_chapter
+
+    return _edit_transcript_chapters(doc_id, merge_chapter, {"position": int})
+
+
+@bp.route("/document/<int:doc_id>/chapter_sections/<int:position>/sentences", methods=["GET"])
+def document_chapter_sentences(doc_id: int, position: int):
+    from library.transcript_chapter_boundaries import chapter_sentences
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    try:
+        result = chapter_sentences(doc.text, position)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    return jsonify({"status": "success", **result})
 
 
 @bp.route("/document/<int:doc_id>/split_preview", methods=["GET", "POST"])
