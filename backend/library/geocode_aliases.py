@@ -25,6 +25,8 @@ Small, closed list — extend only for a specific place confirmed broken
 against LocationIQ, not as a general transliteration table.
 """
 
+from library import ner_gazetteer_store
+
 GEOCODE_ALIASES: dict[str, str] = {
     # Live-verified against LocationIQ 2026-08-22: a country-qualified alias
     # ("El Fasher, Sudan") drags is_plausible_match()'s ratio below its 0.75
@@ -40,8 +42,19 @@ GEOCODE_ALIASES: dict[str, str] = {
 
 
 def geocode_alias(canonical_name: str) -> str | None:
-    """The English/OSM query to retry when `canonical_name` failed to geocode."""
-    return GEOCODE_ALIASES.get(canonical_name)
+    """The English/OSM query to retry when `canonical_name` failed to geocode.
+
+    The seed list in code wins; rows of kind ``geocode_alias`` in ner_gazetteer_entries
+    (ADR-029) extend it without a deploy.
+    """
+    alias = GEOCODE_ALIASES.get(canonical_name)
+    if alias is not None:
+        return alias
+    folded = canonical_name.casefold()
+    for entry in ner_gazetteer_store.get_entries(ner_gazetteer_store.KIND_GEOCODE_ALIAS):
+        if entry.name_pl.casefold() == folded:
+            return entry.geocode_alias
+    return None
 
 
 # ISO 3166-1 alpha-2 country-bias hints for names whose *spelling* is already

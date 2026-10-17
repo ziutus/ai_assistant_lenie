@@ -2,6 +2,8 @@
 
 ## Cel dokumentu
 
+> **Od ADR-029:** nowe wpisy miast i aliasów geokodera dodaje się przez `POST /ner_gazetteer` (bez deployu), ale wpis w tym dzienniku jest nadal wymagany dla każdego zdiagnozowanego przypadku.
+
 To osobny, **chronologiczny zapis zdiagnozowanych przypadków** —
 uzupełnienie, nie duplikat, tabel z Etapu 2 workflow
 [`docs/agent/entity-diagnose-workflow.md`](agent/entity-diagnose-workflow.md).

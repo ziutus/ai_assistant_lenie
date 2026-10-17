@@ -2112,6 +2112,32 @@ class NerExclusion(Base):
         )
 
 
+class NerGazetteerEntry(Base):
+    """Database-backed addition to a curated NER gazetteer list (ADR-029).
+
+    The lists in code (city_gazetteer._CITY_DATA, geocode_aliases.GEOCODE_ALIASES) stay the
+    seed; rows here only extend them, so adding "Luizjana" needs no code change or deploy.
+    kind='city' carries ``patterns`` (stem DSL of city_gazetteer); kind='geocode_alias'
+    carries ``geocode_alias`` (the English/OSM query retried for ``name_pl``). Read through
+    library/ner_gazetteer_store.py (short TTL cache, DB failures never break NER).
+    """
+
+    __tablename__ = "ner_gazetteer_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    name_pl: Mapped[str] = mapped_column(Text, nullable=False)
+    patterns: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    geocode_alias: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    source_document_id: Mapped[int | None] = mapped_column()
+    created_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"NerGazetteerEntry(id={self.id!r}, kind={self.kind!r}, name_pl={self.name_pl!r})"
+
+
 class NerCorrection(Base):
     """Human-curated NER correction dictionary (Faza 6, tmp/plan-ner-multiword-place-display-names.md).
 
