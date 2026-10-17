@@ -50,8 +50,9 @@ def _sentence_spans(body: str) -> list[tuple[int, int]]:
     return spans
 
 
-def describe_sections(text: str, *, with_sentences: bool = False) -> list[dict]:
+def describe_sections(text: str, *, with_sentences: bool = False, stored_types=None) -> list[dict]:
     """Describe H2 chapters, with position 0 reserved for an optional preamble."""
+    types = resolve_chapter_types(text, stored_types)
     result = []
     position = 0
     for section in parse_sections(text):
@@ -62,6 +63,7 @@ def describe_sections(text: str, *, with_sentences: bool = False) -> list[dict]:
         sentences = [section.body[start:end].strip() for start, end in _sentence_spans(section.body)]
         result.append({
             "position": position,
+            "type": types[position - 1] if section.heading else "TEMAT",
             "title": section.heading[3:].strip() if section.heading else "",
             "is_preamble": not bool(section.heading),
             "sentence_count": len(sentences),
@@ -186,3 +188,38 @@ def merge_chapter(text: str, position: int) -> str:
     headings = [s.heading for s in sections if s.heading]
     assert [s.heading for s in updated if s.heading] == headings[:position - 1] + headings[position:]
     return _render_edit(sections, updated)
+
+
+CHAPTER_TYPES = frozenset({"TEMAT", "REKLAMA", "SZUM", "ZRODLA"})
+
+
+def resolve_chapter_types(text: str, stored) -> list[str]:
+    """Never infer alignment when the stored list does not match the H2 count."""
+    count = sum(bool(section.heading) for section in parse_sections(text))
+    if not isinstance(stored, list) or len(stored) != count:
+        return ["TEMAT"] * count
+    return [value if isinstance(value, str) and value in CHAPTER_TYPES else "TEMAT" for value in stored]
+
+
+def edit_chapter_types(text: str, stored, operation: str, position: int, chapter_type=None) -> tuple[list[str], dict]:
+    """Maintain positional types alongside a validated text edit, without mutating stored JSON."""
+    types = resolve_chapter_types(text, stored)
+    if type(position) is not int or not 1 <= position <= len(types):
+        raise ValueError("Nie ma rozdziału o podanym numerze.")
+    conflict = {}
+    if operation == "split_chapter":
+        types.insert(position, types[position - 1])
+    elif operation == "merge_chapter":
+        if position < 2:
+            raise ValueError("Pierwszego rozdziału nie można scalić z poprzednim.")
+        kept, dropped = types[position - 2:position]
+        if kept != dropped:
+            conflict = {"kept": kept, "dropped": dropped}
+        del types[position - 1]
+    elif operation == "chapter_type":
+        if not isinstance(chapter_type, str) or chapter_type not in CHAPTER_TYPES:
+            raise ValueError("Typ rozdziału musi być jednym z: TEMAT, REKLAMA, SZUM, ZRODLA.")
+        types[position - 1] = chapter_type
+    elif operation != "move_boundary":
+        raise ValueError("Nieznana operacja na rozdziałach.")
+    return types, conflict

@@ -99,6 +99,15 @@ def article_env(monkeypatch, session):
     monkeypatch.setattr("library.article_tagging.tag_article_with_llm", fake_tag_article)
     monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
     monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: [])
+    # Keep pipeline routing tests independent of local Vault/NER/LLM configuration.
+    monkeypatch.setattr("library.entity_service.extract_entities", lambda _text: [])
+    monkeypatch.setattr("library.entity_service.is_available", lambda: False)
+    monkeypatch.setattr(llm, "extract_author_info", lambda *_args: [])
+    monkeypatch.setattr("library.article_quality.compute_quality", lambda *_args, **_kwargs: {"score": 100, "penalties": []})
+    monkeypatch.setattr("library.place_verification.verify_document_places",
+                        lambda *_args: {"resolved": [], "tagged": []})
+    monkeypatch.setattr("library.person_registry.resolve_document_persons",
+                        lambda *_args: {"linked": [], "skipped": []})
     return calls
 
 
@@ -324,7 +333,7 @@ class TestArticleMode:
 
         assert doc.tags == "kraj-niemcy,wojsko,kraj-polska"
 
-    def test_single_chunk_run_skips_merge_topics_and_still_tags(self, session, monkeypatch):
+    def test_single_chunk_run_skips_merge_topics_and_still_tags(self, session, article_env, monkeypatch):
         """Regression: a single-chunk run used to end up with empty topic_sections
         AND empty synthesis, starving 11b's tagging_text and silently leaving
         doc.tags unset (found via a live /lenie-obsidian-note run on a real one-topic

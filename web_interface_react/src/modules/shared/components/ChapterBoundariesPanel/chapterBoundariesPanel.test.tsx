@@ -298,3 +298,75 @@ it("does not restore an obsolete anchor after a failed edit", async () => {
   await idle();
   expect(window.scrollBy).not.toHaveBeenCalled();
 });
+
+
+it.each([
+  ["REKLAMA", "Reklama", "rgb(254, 243, 199)"],
+  ["SZUM", "Szum", "rgb(229, 231, 235)"],
+  ["ZRODLA", "Źródła", "rgb(219, 234, 254)"],
+])("changes chapter type to %s and displays its badge", async (type, label, color) => {
+  const { onSaved } = await open();
+  const select = screen.getByRole("combobox", { name: "Typ rozdziału 2" }) as HTMLSelectElement;
+  expect(select.value).toBe("TEMAT");
+  expect(within(select).getAllByRole("option").map(option => option.textContent)).toEqual(["Treść", "Reklama", "Szum", "Źródła"]);
+  vi.mocked(axios.get).mockResolvedValue({ data: { ...data, sections: sections.map(section => ({
+    ...section, type: section.position === 2 ? type : "TEMAT",
+  })) } });
+  fireEvent.change(select, { target: { value: type } });
+  await idle();
+  expect(axios.post).toHaveBeenCalledWith("/document/42/chapter_type", { position: 2, type },
+    { headers: { "x-api-key": "test-key" } });
+  expect(onSaved).toHaveBeenCalledTimes(1);
+  expect(axios.get).toHaveBeenCalledTimes(2);
+  expect(select.value).toBe(type);
+  expect(screen.getByLabelText("Typ: " + label).style.background).toBe(color);
+  expect(screen.getByRole("link", { name: "/chunks/42" })).toBeTruthy();
+});
+
+it("keeps collapsed chapters and restores the card scroll anchor after a type change", async () => {
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 2" }));
+  let refreshed = false;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({ top: refreshed ? 180 : 300 } as DOMRect));
+  vi.mocked(axios.get).mockImplementation(async () => { refreshed = true; return { data }; });
+  fireEvent.change(screen.getByLabelText("Typ rozdziału 2"), { target: { value: "REKLAMA" } });
+  await idle();
+  expect(screen.getByRole("button", { name: "Rozwiń rozdział 2" })).toBeTruthy();
+  expect(window.scrollBy).toHaveBeenCalledExactlyOnceWith(0, -120);
+});
+
+it("locks type changes and ignores repeated change events during a save", async () => {
+  await open();
+  let finish!: (value: unknown) => void;
+  vi.mocked(axios.post).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const select = screen.getByLabelText("Typ rozdziału 1") as HTMLSelectElement;
+  fireEvent.change(select, { target: { value: "SZUM" } });
+  fireEvent.change(select, { target: { value: "REKLAMA" } });
+  expect(select.disabled).toBe(true);
+  expect(axios.post).toHaveBeenCalledTimes(1);
+  expect((screen.getByLabelText("Typ rozdziału 2") as HTMLSelectElement).disabled).toBe(true);
+  finish({ data: { ...data, stale_analysis_runs: 0 } });
+  await idle();
+});
+
+it.each(["disabled", "embeddings"])("blocks chapter type edits for %s", async reason => {
+  if (reason === "embeddings") vi.mocked(axios.get).mockResolvedValue({ data: { ...data, has_embeddings: true } });
+  await open(reason === "disabled");
+  const select = screen.getByLabelText("Typ rozdziału 1") as HTMLSelectElement;
+  expect(select.disabled).toBe(true);
+  fireEvent.change(select, { target: { value: "SZUM" } });
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+it("keeps the merge type conflict warning after subsequent edits", async () => {
+  await open();
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValueOnce({ data: { ...data, type_conflict: { kept: "REKLAMA", dropped: "TEMAT" } } });
+  fireEvent.click(screen.getByRole("button", { name: "Scal rozdział 2 z poprzednim" }));
+  await idle();
+  const message = "Scalono rozdziały o różnych typach — zachowano typ: Reklama, pominięto: Treść";
+  expect(screen.getByRole("alert").textContent).toContain(message);
+  fireEvent.change(screen.getByLabelText("Typ rozdziału 1"), { target: { value: "SZUM" } });
+  await idle();
+  expect(screen.getByRole("alert").textContent).toContain(message);
+});

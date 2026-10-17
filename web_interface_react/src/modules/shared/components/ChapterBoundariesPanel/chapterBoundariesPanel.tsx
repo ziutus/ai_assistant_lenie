@@ -3,14 +3,19 @@ import axios from "axios";
 import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 
+type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
+const typeLabels: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
+const typeColors = { REKLAMA: "#fef3c7", SZUM: "#e5e7eb", ZRODLA: "#dbeafe" };
+
 interface Section {
+  type: ChapterType;
   position: number;
   title: string;
   sentence_count: number;
   sentences: Sentence[];
 }
 interface Sentence { index: number; text: string }
-interface ScrollAnchor { ordinal: number; top: number }
+interface ScrollAnchor { ordinal: number; top: number; chapterPosition?: number }
 interface Props {
   docId: string;
   disabled?: boolean;
@@ -65,6 +70,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
   const [error, setError] = React.useState("");
   const [hasEmbeddings, setHasEmbeddings] = React.useState(false);
   const [stale, setStale] = React.useState(false);
+  const [typeConflict, setTypeConflict] = React.useState<{ kept: ChapterType; dropped: ChapterType } | null>(null);
   const headers = { "x-api-key": apiKey };
   const base = apiUrl + "/document/" + docId;
   const blocked = busy || disabled || hasEmbeddings;
@@ -79,7 +85,9 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
 
   React.useLayoutEffect(() => {
     if (!pendingScrollRestore) return;
-    const row = panel.current?.querySelector<HTMLElement>('[data-gsi="' + pendingScrollRestore.ordinal + '"]');
+    const row = pendingScrollRestore.chapterPosition
+      ? panel.current?.querySelector<HTMLElement>('[data-chapter-position="' + pendingScrollRestore.chapterPosition + '"]')
+      : panel.current?.querySelector<HTMLElement>('[data-gsi="' + pendingScrollRestore.ordinal + '"]');
     if (row) {
       // Layout's content is in normal document flow; only the sidebar scrolls independently.
       window.scrollBy(0, row.getBoundingClientRect().top - pendingScrollRestore.top);
@@ -128,6 +136,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
     return withLock(async () => {
       const position = Number(payload.position);
       const moving = operation === "move_chapter_boundary";
+      const changingType = operation === "chapter_type";
       const count = Number(payload.sentences);
       const anchorPosition = moving && count < 0 ? position - 1 : position;
       const anchorChapter = chapters.find(chapter => chapter.position === anchorPosition);
@@ -136,14 +145,18 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
         : operation === "split_chapter" ? Number(payload.sentence_index) : 1;
       const ordinal = (chapterOffsets.get(anchorPosition) ?? 0) + anchorIndex;
       // A collapsed chapter has no sentence rows; merge from its header keeps that location instead.
-      const anchorElement = panel.current?.querySelector<HTMLElement>('[data-gsi="' + ordinal + '"]')
+      const anchorElement = (changingType
+        ? panel.current?.querySelector<HTMLElement>('[data-chapter-position="' + position + '"]')
+        : panel.current?.querySelector<HTMLElement>('[data-gsi="' + ordinal + '"]'))
         ?? panel.current?.querySelector<HTMLElement>('[data-chapter-position="' + anchorPosition + '"]');
-      const scrollAnchor = anchorElement ? { ordinal, top: anchorElement.getBoundingClientRect().top } : null;
+      const scrollAnchor = anchorElement ? { ordinal, top: anchorElement.getBoundingClientRect().top,
+        ...(changingType ? { chapterPosition: position } : {}) } : null;
       const { data } = await axios.post(base + "/" + operation, payload, { headers });
       if (data.stale_analysis_runs > 0) setStale(true);
+      if (data.type_conflict) setTypeConflict(data.type_conflict);
       setSplit(null);
       await onSaved();
-      await loadSections(!moving, moving ? [position - 1, position] : [], scrollAnchor);
+      await loadSections(!moving && !changingType, moving ? [position - 1, position] : [], scrollAnchor);
     });
   };
   const cancelSplit = () => { setSplit(null); splitTrigger.current?.focus(); };
@@ -161,6 +174,9 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
       {stale && <p role="status" style={{ color: "#92400e" }}>
         Rozdziały w czytniku zostały zaktualizowane. Istniejące chunki (<NavLink to={"/chunks/" + docId}>{"/chunks/" + docId}</NavLink>) powstały ze starego podziału — uruchom analizę ponownie.
       </p>}
+      {typeConflict && <p role="alert" style={{ color: "#92400e" }}>
+        Scalono rozdziały o różnych typach — zachowano typ: {typeLabels[typeConflict.kept]}, pominięto: {typeLabels[typeConflict.dropped]}
+      </p>}
       {error && <p role="alert">{error} <button type="button" onClick={load} disabled={busy}>Odśwież</button></p>}
       <p role="status" style={{ minHeight: "1.5em" }}>{busy ? "Przetwarzam…" : ""}</p>
       {chapters.map(section => {
@@ -169,6 +185,14 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
           style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <strong>#{section.position} {section.title} · {section.sentence_count} zdań</strong>
+            <select aria-label={"Typ rozdziału " + section.position} value={section.type || "TEMAT"} disabled={blocked}
+              onChange={event => void edit("chapter_type", { position: section.position, type: event.target.value })}>
+              {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            {section.type && section.type !== "TEMAT" && <span aria-label={"Typ: " + typeLabels[section.type]}
+              style={{ background: typeColors[section.type], color: "#334155", borderRadius: 4, padding: "2px 6px" }}>
+              {typeLabels[section.type]}
+            </span>}
             <button type="button" aria-expanded={isOpen} aria-controls={"chapter-sentences-" + docId + "-" + section.position}
               aria-label={(isOpen ? "Zwiń" : "Rozwiń") + " rozdział " + section.position}
               style={cardButtonStyle} disabled={busy} onClick={() => toggleChapter(section.position)}>

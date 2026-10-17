@@ -40,7 +40,7 @@ def test_moves_both_directions(steps, counts):
 
 def test_description_and_preamble():
     sections = describe_sections(TEXT)
-    assert sections[0] == {"position": 0, "title": "", "is_preamble": True, "sentence_count": 1,
+    assert sections[0] == {"position": 0, "type": "TEMAT", "title": "", "is_preamble": True, "sentence_count": 1,
                            "char_length": 8, "first_sentences": ["Wstęp."], "last_sentences": ["Wstęp."]}
     assert sections[1]["position"] == 1
     assert sections[1]["title"] == "Pierwszy"
@@ -182,3 +182,38 @@ def test_lazy_sentence_description_and_preamble():
 def test_lazy_sentences_invalid_position(text, position):
     with pytest.raises(ValueError):
         chapter_sentences(text, position)
+
+
+@pytest.mark.parametrize("stored", [None, [], ["REKLAMA"], ["REKLAMA", "SZUM", "ZRODLA"]])
+def test_type_alignment_mismatch_defaults_to_topic(stored):
+    from library.transcript_chapter_boundaries import edit_chapter_types, resolve_chapter_types
+
+    assert resolve_chapter_types(TEXT, stored) == ["TEMAT", "TEMAT"]
+    assert edit_chapter_types(TEXT, stored, "split_chapter", 1) == (["TEMAT"] * 3, {})
+    assert edit_chapter_types(TEXT, stored, "merge_chapter", 2) == (["TEMAT"], {})
+
+
+def test_types_follow_split_merge_and_move_without_mutating_storage():
+    from library.transcript_chapter_boundaries import edit_chapter_types, resolve_chapter_types
+
+    stored = ["REKLAMA", "ZRODLA"]
+    assert resolve_chapter_types(TEXT, stored) == stored
+    types, conflict = edit_chapter_types(TEXT, stored, "split_chapter", 1)
+    assert types == ["REKLAMA", "REKLAMA", "ZRODLA"]
+    assert conflict == {}
+    split_text = split_chapter(TEXT, 1, 2, "Ciąg dalszy")
+    assert edit_chapter_types(split_text, types, "merge_chapter", 2) == (stored, {})
+    assert edit_chapter_types(TEXT, stored, "merge_chapter", 2) == (
+        ["REKLAMA"], {"kept": "REKLAMA", "dropped": "ZRODLA"},
+    )
+    assert edit_chapter_types(TEXT, stored, "move_boundary", 2) == (stored, {})
+    assert stored == ["REKLAMA", "ZRODLA"]
+
+
+def test_preamble_has_no_stored_type():
+    from library.transcript_chapter_boundaries import resolve_chapter_types
+
+    assert resolve_chapter_types("No headings", ["REKLAMA"]) == []
+    assert [s["type"] for s in describe_sections(TEXT, stored_types=["SZUM", "ZRODLA"])] == [
+        "TEMAT", "SZUM", "ZRODLA",
+    ]

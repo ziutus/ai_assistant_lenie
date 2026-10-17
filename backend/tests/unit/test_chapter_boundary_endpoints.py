@@ -17,6 +17,7 @@ TEXT = "## Pierwszy\n\nPierwsze. Drugie.\n\n## Drugi\n\nTrzecie. Czwarte."
 def setup(monkeypatch):
     doc = MagicMock(spec=Document)
     doc.text, doc.text_md, doc.text_raw, doc.chapter_list = TEXT, "markdown", "raw", "timestamps"
+    doc.chapter_types = None
     session = MagicMock()
     session.get.return_value = doc
     session.scalar.side_effect = [None, 2]
@@ -55,7 +56,7 @@ def test_post_changes_only_text(setup, steps):
 
 
 @pytest.mark.parametrize("method,path", [("get", "chapter_sections"), ("post", "move_chapter_boundary"),
-                                        ("post", "split_chapter"), ("post", "merge_chapter"),
+                                        ("post", "split_chapter"), ("post", "merge_chapter"), ("post", "chapter_type"),
                                         ("get", "chapter_sections/1/sentences")])
 def test_not_found(setup, method, path):
     client, session, _, _ = setup
@@ -65,7 +66,7 @@ def test_not_found(setup, method, path):
 
 
 @pytest.mark.parametrize("method,path", [("get", "chapter_sections"), ("post", "move_chapter_boundary"),
-                                        ("post", "split_chapter"), ("post", "merge_chapter"),
+                                        ("post", "split_chapter"), ("post", "merge_chapter"), ("post", "chapter_type"),
                                         ("get", "chapter_sections/1/sentences")])
 @pytest.mark.parametrize("text", [None, "", "  \n"])
 def test_no_text(setup, method, path, text):
@@ -75,7 +76,7 @@ def test_no_text(setup, method, path, text):
     session.commit.assert_not_called()
 
 
-@pytest.mark.parametrize("operation", ["move_chapter_boundary", "split_chapter", "merge_chapter"])
+@pytest.mark.parametrize("operation", ["move_chapter_boundary", "split_chapter", "merge_chapter", "chapter_type"])
 def test_embeddings_conflict(setup, operation):
     client, session, doc, embeddings = setup
     embeddings.return_value = True
@@ -86,7 +87,7 @@ def test_embeddings_conflict(setup, operation):
     session.commit.assert_not_called()
 
 
-@pytest.mark.parametrize("operation", ["move_chapter_boundary", "split_chapter", "merge_chapter"])
+@pytest.mark.parametrize("operation", ["move_chapter_boundary", "split_chapter", "merge_chapter", "chapter_type"])
 def test_active_job_conflict(setup, operation):
     client, session, doc, _ = setup
     session.scalar.side_effect = ["active-job"]
@@ -158,7 +159,7 @@ def test_new_edit_invalid_input(setup, operation, payload):
     session.commit.assert_not_called()
 
 
-@pytest.mark.parametrize("operation", ["split_chapter", "merge_chapter"])
+@pytest.mark.parametrize("operation", ["split_chapter", "merge_chapter", "chapter_type"])
 @pytest.mark.parametrize("payload", [None, [], {}, "invalid", True])
 def test_new_edit_invalid_body(setup, operation, payload):
     client, session, doc, _ = setup
@@ -204,3 +205,73 @@ def test_sections_optional_sentences(setup, query, include):
             assert len(section["sentences"]) == section["sentence_count"]
     assert response.json["has_analysis_runs"] is True
     session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", ["TEMAT", "REKLAMA", "SZUM", "ZRODLA"])
+def test_set_chapter_type_only(setup, kind):
+    client, session, doc, _ = setup
+    response = client.post("/document/42/chapter_type", json={"position": 2, "type": kind})
+    assert response.status_code == 200
+    assert doc.chapter_types == ["TEMAT", kind]
+    assert doc.text == TEXT
+    assert (doc.text_md, doc.text_raw, doc.chapter_list) == ("markdown", "raw", "timestamps")
+    assert response.json["sections"][1]["type"] == kind
+    assert response.json["stale_analysis_runs"] == 2
+    session.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("payload", [
+    {"position": 0, "type": "TEMAT"}, {"position": 3, "type": "TEMAT"},
+    {"position": True, "type": "TEMAT"}, {"position": "1", "type": "TEMAT"},
+    {"position": 1.0, "type": "TEMAT"}, {"position": 1, "type": "reklama"},
+    {"position": 1, "type": "ŹRÓDŁA"}, {"position": 1, "type": []},
+    {"position": 1}, {"type": "TEMAT"},
+])
+def test_invalid_chapter_type(setup, payload):
+    client, session, doc, _ = setup
+    assert client.post("/document/42/chapter_type", json=payload).status_code == 400
+    assert doc.chapter_types is None
+    assert doc.text == TEXT
+    session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("query", ["", "?with_sentences=1"])
+def test_get_chapter_types(setup, query):
+    client, session, doc, _ = setup
+    doc.chapter_types = ["REKLAMA", "SZUM"]
+    session.scalar.side_effect = [2]
+    response = client.get("/document/42/chapter_sections" + query)
+    assert [s["type"] for s in response.json["sections"]] == doc.chapter_types
+
+
+def test_split_inherits_type_in_same_commit(setup):
+    client, session, doc, _ = setup
+    doc.chapter_types = ["REKLAMA", "TEMAT"]
+    def check_commit():
+        assert doc.text == split_chapter(TEXT, 1, 2, "Nowy")
+        assert doc.chapter_types == ["REKLAMA", "REKLAMA", "TEMAT"]
+    session.commit.side_effect = check_commit
+    response = client.post("/document/42/split_chapter", json={"position": 1, "sentence_index": 2, "title": "Nowy"})
+    assert response.status_code == 200
+    session.commit.assert_called_once()
+
+
+def test_merge_reports_type_conflict_in_same_commit(setup):
+    client, session, doc, _ = setup
+    doc.chapter_types = ["SZUM", "REKLAMA"]
+    def check_commit():
+        assert doc.text == merge_chapter(TEXT, 2)
+        assert doc.chapter_types == ["SZUM"]
+    session.commit.side_effect = check_commit
+    response = client.post("/document/42/merge_chapter", json={"position": 2})
+    assert response.status_code == 200
+    assert response.json["type_conflict"] == {"kept": "SZUM", "dropped": "REKLAMA"}
+    session.commit.assert_called_once()
+
+
+def test_chunk_chapter_titles_prefer_explicit_h2_and_keep_legacy_timestamps():
+    video = [{"title": "Oryginalny", "start_seconds": 0}]
+    segments = [{"start": 0}, {"start": 10}]
+    assert cr._chunk_chapters(0, 1, segments, video, [0], "## Własny\nTekst.") == ["Własny"]
+    assert cr._chunk_chapters(None, None, [], [], [], "## Reklama\nTekst.") == ["Reklama"]
+    assert cr._chunk_chapters(0, 1, segments, video, [0], "Tekst bez H2.") == ["Oryginalny"]

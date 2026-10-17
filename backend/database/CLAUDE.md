@@ -86,6 +86,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `ingested_at` | `timestamp` | When the document entered Lenie (stage 11g rename from created_at; other tables keep their own created_at) |
 | `document_length` | `integer` | Text length in characters |
 | `chapter_list` | `text` | Chapter/section list (for videos/transcripts) |
+| `chapter_types` | `jsonb` (nullable) | Ordered H2 types (TEMAT, REKLAMA, SZUM, ZRODLA); NULL or count mismatch resolves to all TEMAT. |
 | `outline_md` | `text NULL` | Approved topical Markdown outline, separate from timestamped chapters |
 | `outline_anchors` | `jsonb NULL` | Version 1 payload: `outline_sha256` (UTF-8 SHA-256 of the exact outline) and `anchors` (`title`, verbatim `sentence`), at most 40 |
 | `original_id` | `text` | External identifier (e.g. YouTube video ID) |

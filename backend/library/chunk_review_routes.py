@@ -445,7 +445,7 @@ def _video_chapters_seconds(doc: Document | None) -> list[dict]:
 
 def _chunk_chapters(
     seg_start_idx: int | None, seg_end_idx: int | None,
-    segments: list[dict], video_chapters: list[dict], starts: list[int],
+    segments: list[dict], video_chapters: list[dict], starts: list[int], original_text: str = "",
 ) -> list[str]:
     """video_chapters/starts are seconds-based (see _video_chapters_seconds);
     seg_start_idx/seg_end_idx are a chunk's indices into `segments` (transcript
@@ -460,6 +460,10 @@ def _chunk_chapters(
     the chapter would silently disappear from the chunk list instead of showing
     up (fully-covered) inside the merged chunk.
     """
+    # Explicit H2 headings also cover user-created chapters without timestamps.
+    headings = re.findall(r"^## ([^\r\n]+)", original_text, re.MULTILINE)
+    if headings:
+        return list(dict.fromkeys(title.strip() for title in headings))
     if seg_start_idx is None or not video_chapters or not segments:
         return []
     if not (0 <= seg_start_idx < len(segments)):
@@ -650,7 +654,8 @@ def document_chapter_sections(doc_id: int):
         return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
     return jsonify({
         "status": "success", "doc_id": doc_id,
-        "sections": describe_sections(doc.text, with_sentences=request.args.get("with_sentences") == "1"),
+        "sections": describe_sections(doc.text, with_sentences=request.args.get("with_sentences") == "1",
+                                      stored_types=doc.chapter_types),
         "has_embeddings": document_has_embeddings(session, doc_id),
         "has_analysis_runs": bool(_chapter_boundary_run_count(session, doc_id)),
     })
@@ -666,7 +671,7 @@ def _chapter_boundary_run_count(session, doc_id: int) -> int:
 def _edit_transcript_chapters(doc_id: int, operation, fields: dict[str, type]):
     """Shared guards, strict JSON validation and persistence for chapter edits."""
     from library.document_editing import document_has_embeddings
-    from library.transcript_chapter_boundaries import describe_sections
+    from library.transcript_chapter_boundaries import describe_sections, edit_chapter_types
 
     session = get_scoped_session()
     doc = session.get(Document, doc_id)
@@ -693,16 +698,28 @@ def _edit_transcript_chapters(doc_id: int, operation, fields: dict[str, type]):
                    else "Nieprawidłowe pola żądania lub typy danych.")
         return jsonify({"status": "error", "message": message}), 400
     try:
-        updated = operation(doc.text, **{key: payload[key] for key in fields})
+        updated = operation(doc.text, **{key: payload[key] for key in fields}) if operation else doc.text
+        types, conflict = edit_chapter_types(
+            doc.text, doc.chapter_types, operation.__name__ if operation else "chapter_type",
+            payload["position"], payload.get("type"),
+        )
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
     stale_runs = _chapter_boundary_run_count(session, doc_id)
-    doc.text = updated
+    if operation:
+        doc.text = updated
+    doc.chapter_types = types
     session.commit()
     return jsonify({
-        "status": "success", "doc_id": doc_id, "sections": describe_sections(updated),
+        "status": "success", "doc_id": doc_id, "sections": describe_sections(updated, stored_types=types),
+        **({"type_conflict": conflict} if conflict else {}),
         "has_embeddings": False, "has_analysis_runs": bool(stale_runs), "stale_analysis_runs": stale_runs,
     })
+
+
+@bp.route("/document/<int:doc_id>/chapter_type", methods=["POST"])
+def set_document_chapter_type(doc_id: int):
+    return _edit_transcript_chapters(doc_id, None, {"position": int, "type": str})
 
 
 @bp.route("/document/<int:doc_id>/move_chapter_boundary", methods=["POST"])
@@ -2726,7 +2743,7 @@ def get_run_chunks(run_id: int):
                              doc_url=doc.url if doc else None),
             "cited_publications": citations_by_chunk.get(c.id, []),
             "chapter_titles": _chunk_chapters(
-                c.seg_start, c.seg_end, chapter_segments, video_chapters, video_chapter_starts,
+                c.seg_start, c.seg_end, chapter_segments, video_chapters, video_chapter_starts, c.original_text or "",
             ),
         } for c in chunks],
         "topic_sections": [
