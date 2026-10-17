@@ -180,6 +180,17 @@ PORTAL_START_AFTER_MARKERS: dict[str, list[str]] = {
     ],
 }
 
+# Deterministyczny POCZĄTEK artykułu per portal (regex dopasowany do całej linii).
+# Artykuł zaczyna się od pierwszej niepustej linii PO dopasowanej linii i ten
+# początek wygrywa z markerem z LLM — model potrafi wskazać drugi akapit i
+# zgubić pogrubiony lead. Wzór musi występować w markdown dokładnie raz, w
+# nagłówku właściwego artykułu (nie w zajawkach innych tekstów).
+PORTAL_ARTICLE_START_PATTERNS: dict[str, re.Pattern] = {
+    # Nagłówek wpisu: "# Tytuł", potem punkt z datą "* 2026-10-13", obraz, lead.
+    # Zajawki innych wpisów mają datę bez punktora.
+    "disinfodigest": re.compile(r"^\*\s+\d{4}-\d{2}-\d{2}$"),
+}
+
 # Wzorce wewnątrz artykułu do pominięcia per portal (sekcje reklamowe/premium)
 PORTAL_SKIP_SECTIONS = {
     "onet": [
@@ -272,6 +283,26 @@ def _find_start_line(text: str, portal: str | None) -> int | None:
         for marker in PORTAL_START_AFTER_MARKERS[portal]:
             if marker in stripped:
                 return i
+
+    return None
+
+
+def _find_article_start_line(text: str, portal: str | None) -> int | None:
+    """Numer pierwszej niepustej linii artykułu wg deterministycznego wzorca portalu.
+
+    Zwraca None, gdy portal nie ma takiego wzorca albo wzór nie występuje w tekście.
+    """
+    pattern = PORTAL_ARTICLE_START_PATTERNS.get(portal) if portal else None
+    if pattern is None:
+        return None
+
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if pattern.match(line.strip().replace('\xa0', ' ')):
+            start = i + 1
+            while start < len(lines) and not lines[start].strip():
+                start += 1
+            return start if start < len(lines) else None
 
     return None
 
@@ -539,12 +570,21 @@ def extract_article_by_markers(markdown_text: str, markers: dict, url: str = "")
     start_line = find_text_in_markdown(markdown_text, first_sentence)
     end_line = find_text_in_markdown(markdown_text, last_sentence)
 
+    portal = _detect_portal(url)
+
+    # Początek wskazany deterministycznie przez portal wygrywa z markerem LLM
+    # (a gdy LLM nie trafił w tekst, ratuje ekstrakcję).
+    portal_start = _find_article_start_line(markdown_text, portal)
+    if portal_start is not None:
+        if start_line != portal_start:
+            logger.info(f"Article start: portal line {portal_start} (LLM line {start_line})")
+        start_line = portal_start
+
     if start_line is None:
         logger.warning(f"Cannot find article_first_sentence in markdown: {first_sentence[:80]}...")
         return None
 
     # Znajdź koniec na podstawie footer markera portalu
-    portal = _detect_portal(url)
     footer_line = _find_footer_line(markdown_text, portal)
 
     if footer_line is not None:
