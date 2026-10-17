@@ -11,6 +11,7 @@ case: "Al-Faszir" (Polish "sz" for the Arabic sound) returned a random alley
 in Cairo, because OSM knows the city as "El Fasher"/"Al Fashir" ("sh"/"f") —
 see geocode_cache row for doc 9394 in
 tmp/ner-place-org-display-names-summary.md.
+Doc #10872: "Kaliningrad" needs the Polish exonym "Królewiec" indexed by OSM.
 
 place_verification._get_or_create_geocode() tries the alias only after the
 primary (Polish) query's hit has failed is_plausible_match() — this is a
@@ -32,6 +33,9 @@ GEOCODE_ALIASES: dict[str, str] = {
     # score from 0.89 to 0.64). The bare city name alone scores 0.89 and
     # still resolves the correct node (OSM place_id 43364335, Sudan).
     "Al-Faszir": "El Fasher",
+    # Doc #10872: correct LocationIQ/OSM node is named Królewiec;
+    # Kaliningrad scores only 0.30 against it (threshold 0.75).
+    "Kaliningrad": "Królewiec",
 }
 
 
