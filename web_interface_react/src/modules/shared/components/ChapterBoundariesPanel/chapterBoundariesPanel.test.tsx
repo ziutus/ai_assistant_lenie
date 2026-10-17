@@ -140,12 +140,32 @@ it("requires merge confirmation, then saves and re-expands all chapters", async 
   expect(screen.getAllByRole("button", { name: /Zwiń rozdział/ })).toHaveLength(2);
 });
 
+it("merges a chapter with the next one via merge_chapter of the following position", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const { onSaved } = await open();
+  const merge = screen.getByRole("button", { name: "Scal rozdział 1 z następnym" });
+  fireEvent.click(merge);
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("z następnym"));
+  expect(axios.post).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  fireEvent.click(merge);
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  expect(axios.post).toHaveBeenCalledWith("/document/42/merge_chapter", { position: 2 }, expect.any(Object));
+});
+
+it("has no merge-with-next on the last chapter", async () => {
+  await open();
+  expect(screen.queryByRole("button", { name: "Scal rozdział 3 z następnym" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Scal rozdział 2 z następnym" })).toBeTruthy();
+});
+
 it("hides illegal actions at chapter and sentence edges", async () => {
   await open();
   const first = await expand(1);
   const middle = await expand(2);
   const last = await expand(3);
-  expect(within(first).queryByRole("button", { name: /Scal rozdział/ })).toBeNull();
+  expect(within(first).queryByRole("button", { name: /Scal rozdział 1 z poprzednim/ })).toBeNull();
+  expect(within(last).queryByRole("button", { name: /Scal rozdział 3 z następnym/ })).toBeNull();
   expect(within(first).queryByRole("button", { name: /Przenieś do poprzedniego/ })).toBeNull();
   expect(within(last).queryByRole("button", { name: /Przenieś do następnego/ })).toBeNull();
   expect(within(row(middle, 1)).queryByRole("button", { name: /Podziel tutaj/ })).toBeNull();

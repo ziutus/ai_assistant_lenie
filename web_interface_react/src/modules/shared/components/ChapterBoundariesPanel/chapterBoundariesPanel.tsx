@@ -181,6 +181,13 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
                   void edit("merge_chapter", { position: section.position });
                 }
               }}>⇡ Scal z poprzednim</button>}
+            {section.position < chapters.length && <button type="button" style={cardButtonStyle} disabled={blocked}
+              aria-label={"Scal rozdział " + section.position + " z następnym"}
+              onClick={() => {
+                if (window.confirm("Scalić ten rozdział z następnym? Numery kolejnych rozdziałów w czytniku zmienią się.")) {
+                  void edit("merge_chapter", { position: section.position + 1 });
+                }
+              }}>⇣ Scal z następnym</button>}
           </div>
           {isOpen && <div id={"chapter-sentences-" + docId + "-" + section.position} style={{ marginTop: 10 }}>
             {section.sentences?.map(sentence => {
