@@ -57,7 +57,7 @@ def test_post_changes_only_text(setup, steps):
 
 @pytest.mark.parametrize("method,path", [("get", "chapter_sections"), ("post", "move_chapter_boundary"),
                                         ("post", "split_chapter"), ("post", "merge_chapter"), ("post", "chapter_type"),
-                                        ("get", "chapter_sections/1/sentences")])
+                                        ("get", "chapter_sections/1/sentences"), ("get", "chapter_entities")])
 def test_not_found(setup, method, path):
     client, session, _, _ = setup
     session.get.return_value = None
@@ -67,7 +67,7 @@ def test_not_found(setup, method, path):
 
 @pytest.mark.parametrize("method,path", [("get", "chapter_sections"), ("post", "move_chapter_boundary"),
                                         ("post", "split_chapter"), ("post", "merge_chapter"), ("post", "chapter_type"),
-                                        ("get", "chapter_sections/1/sentences")])
+                                        ("get", "chapter_sections/1/sentences"), ("get", "chapter_entities")])
 @pytest.mark.parametrize("text", [None, "", "  \n"])
 def test_no_text(setup, method, path, text):
     client, session, doc, _ = setup
@@ -275,3 +275,32 @@ def test_chunk_chapter_titles_prefer_explicit_h2_and_keep_legacy_timestamps():
     assert cr._chunk_chapters(0, 1, segments, video, [0], "## Własny\nTekst.") == ["Własny"]
     assert cr._chunk_chapters(None, None, [], [], [], "## Reklama\nTekst.") == ["Reklama"]
     assert cr._chunk_chapters(0, 1, segments, video, [0], "Tekst bez H2.") == ["Oryginalny"]
+
+
+@pytest.mark.parametrize("preamble", ["", "Jan.\n\n"])
+def test_chapter_entities_local_counts_and_positions(setup, monkeypatch, preamble):
+    client, session, doc, embeddings = setup
+    doc.text = preamble + "## Jan\n\nJan i Jan.\n\n## Reklama\n\nJan."
+    doc.chapter_types = ["TEMAT", "REKLAMA"]
+    grouped = {"persName": [{"text": "Jan", "count": 20, "variants": ["Jan"]}], "orgName": []}
+    get_entities = MagicMock(return_value=grouped)
+    monkeypatch.setattr("library.entity_service.get_document_entities", get_entities)
+    response = client.get("/document/42/chapter_entities")
+    assert response.status_code == 200
+    assert response.json["has_entities"] is True
+    sections = response.json["sections"]
+    assert [s["position"] for s in sections] == ([0, 1, 2] if preamble else [1, 2])
+    assert sections[-2]["entities"]["persName"][0]["count"] == 2
+    assert sections[-1] == {"position": 2, "type": "REKLAMA", "entities": {"persName": [], "orgName": []}}
+    if preamble:
+        assert sections[0]["entities"]["persName"][0]["count"] == 1
+    assert grouped["persName"][0]["count"] == 20
+    get_entities.assert_called_once_with(session, 42)
+    embeddings.assert_not_called()
+    session.commit.assert_not_called()
+
+
+def test_chapter_entities_without_stored_entities(setup, monkeypatch):
+    client, _, _, _ = setup
+    monkeypatch.setattr("library.entity_service.get_document_entities", lambda *_: {"persName": []})
+    assert client.get("/document/42/chapter_entities").json["has_entities"] is False

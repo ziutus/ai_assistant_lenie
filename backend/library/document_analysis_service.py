@@ -985,11 +985,17 @@ class DocumentAnalysisService:
             if reuse_existing_entities:
                 log("entities: reusing earlier document-level NER result")
             else:
+                entity_text = ""
                 try:
                     from library.entity_service import refresh_document_entities
+                    from library.entity_text import document_ner_text
                     from library.ner_client import NERServiceUnavailable
 
-                    entity_rows = refresh_document_entities(session, doc_id, text)
+                    # Keep the run's own working text (cleaned markdown, labelled speakers, text_raw
+                    # fallback) unless excluded chapters were actually removed from Document.text.
+                    filtered_text = document_ner_text(doc)
+                    entity_text = text if filtered_text == (doc.text_md or doc.text or "") else filtered_text
+                    entity_rows = refresh_document_entities(session, doc_id, entity_text) if entity_text.strip() else []
                     log(f"entities={len(entity_rows)}")
                 except NERServiceUnavailable:
                     log("WARNING: NER service unavailable — entities not refreshed for this run")
@@ -998,11 +1004,11 @@ class DocumentAnalysisService:
 
                 # 11d. Place verification (stage 3): geocoder confirms the places
                 #      exist (cached), LLM confirms relevance -> miejsce-* tags.
-                if not proposal_only:
+                if not proposal_only and entity_text.strip():
                     try:
                         from library.place_verification import verify_document_places
 
-                        summary = verify_document_places(session, doc, text)
+                        summary = verify_document_places(session, doc, entity_text)
                         log(f"places: {len(summary['resolved'])} resolved, tags: {summary['tagged'] or '-'}")
                     except Exception:
                         logger.exception("place verification failed, continuing without place tags")
@@ -1012,7 +1018,7 @@ class DocumentAnalysisService:
                     try:
                         from library.person_registry import resolve_document_persons
 
-                        p_summary = resolve_document_persons(session, doc, text)
+                        p_summary = resolve_document_persons(session, doc, entity_text)
                         log(f"persons: linked={len(p_summary['linked'])} skipped={len(p_summary['skipped'])}")
                     except Exception:
                         logger.exception("person resolution failed, continuing without person links")

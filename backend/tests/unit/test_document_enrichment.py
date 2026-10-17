@@ -8,6 +8,8 @@ step in document_analysis_service.create_run().
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from library.document_enrichment import refresh_document_enrichment
 
 ARTICLE_BODY = ("Treść artykułu. " * 80) + "\n\n## Rozdział\n\nDalsza treść."
@@ -146,3 +148,15 @@ def test_reuse_existing_entities_skips_bio_extraction(monkeypatch):
     assert bio_calls == []
     assert doc.text_md == full_text
     assert results["entities"] == {"reused": True}
+
+
+@pytest.mark.parametrize("types,expected", [(["TEMAT", "REKLAMA"], "## Temat\n\nJan."), (["SZUM", "ZRODLA"], None)])
+def test_entity_stages_skip_excluded_chapters(monkeypatch, types, expected):
+    doc = SimpleNamespace(id=42, byline=None, text_md=None, text_raw=None,
+                          text="## Temat\n\nJan.\n\n## Reklama\n\n" + "Sponsor. " * 30, chapter_types=types)
+    calls = {}
+    _patch_stages(monkeypatch, calls)
+    result = refresh_document_enrichment(_session(), doc, "test-model")
+    assert not result["errors"]
+    for stage in ("entities", "places", "persons"):
+        assert calls.get(stage) == ([expected] if expected else None)

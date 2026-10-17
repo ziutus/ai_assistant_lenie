@@ -3,6 +3,11 @@ import axios from "axios";
 import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 
+import { EntityChips, type EntityItem } from "../EntitiesPanel/entitiesPanel";
+
+type ChapterEntities = Record<string, EntityItem[]>;
+interface EntityResponse { sections: { position: number; type: ChapterType; entities: ChapterEntities }[]; has_entities: boolean }
+
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
 const typeLabels: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
 const typeColors = { REKLAMA: "#fef3c7", SZUM: "#e5e7eb", ZRODLA: "#dbeafe" };
@@ -61,6 +66,9 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
   const panel = React.useRef<HTMLDetailsElement>(null);
   const [pendingScrollRestore, setPendingScrollRestore] = React.useState<ScrollAnchor | null>(null);
   const [sections, setSections] = React.useState<Section[]>([]);
+  const [entityData, setEntityData] = React.useState<EntityResponse | null>(null);
+  const [entityError, setEntityError] = React.useState(false);
+  const [typeChanged, setTypeChanged] = React.useState(false);
   const [expanded, setExpanded] = React.useState<Set<number>>(new Set());
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
   const [split, setSplit] = React.useState<{ position: number; index: number; title: string } | null>(null);
@@ -106,9 +114,15 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
     finally { pending.current = false; setBusy(false); onBusyChange?.(false); }
   };
   const loadSections = async (expandAll: boolean, reveal: number[] = [], scrollAnchor: ScrollAnchor | null = null) => {
-    const { data } = await axios.get<{ sections: Section[]; has_embeddings: boolean }>(base + "/chapter_sections", {
-      headers, params: { with_sentences: 1 },
-    });
+    const [sectionResponse, entities] = await Promise.all([
+      axios.get<{ sections: Section[]; has_embeddings: boolean }>(base + "/chapter_sections", {
+        headers, params: { with_sentences: 1 },
+      }),
+      axios.get<EntityResponse>(base + "/chapter_entities", { headers }).then(response => response.data).catch(() => null),
+    ]);
+    const { data } = sectionResponse;
+    setEntityData(entities);
+    setEntityError(entities === null);
     setSections(data.sections);
     setHasEmbeddings(data.has_embeddings);
     setSplit(null);
@@ -152,6 +166,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
       const scrollAnchor = anchorElement ? { ordinal, top: anchorElement.getBoundingClientRect().top,
         ...(changingType ? { chapterPosition: position } : {}) } : null;
       const { data } = await axios.post(base + "/" + operation, payload, { headers });
+      if (changingType) setTypeChanged(true);
       if (data.stale_analysis_runs > 0) setStale(true);
       if (data.type_conflict) setTypeConflict(data.type_conflict);
       setSplit(null);
@@ -167,7 +182,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
   };
   return (
     <details ref={panel} open={isOpen} style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}
-      onToggle={event => setIsOpen(event.currentTarget.open)}>
+      onToggle={event => { if (event.target === event.currentTarget) setIsOpen(event.currentTarget.open); }}>
       <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Granice rozdziałów</summary>
       <p>Zapisuje od razu w bazie. Po zmianie formularz zostanie odświeżony — wcześniej zapisz inne zmiany.</p>
       {hasEmbeddings && <p role="status">Dokument ma embeddingi — otwórz go ponownie do edycji przed zmianą granic rozdziałów.</p>}
@@ -177,10 +192,15 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
       {typeConflict && <p role="alert" style={{ color: "#92400e" }}>
         Scalono rozdziały o różnych typach — zachowano typ: {typeLabels[typeConflict.kept]}, pominięto: {typeLabels[typeConflict.dropped]}
       </p>}
+      {typeChanged && <p role="status" style={{ color: "#92400e" }}>Zmieniono typ rozdziału — odśwież encje przyciskiem „Wykryj osoby, miejsca i obiekty”.</p>}
+      {entityError && <small>Nie udało się pobrać encji</small>}
       {error && <p role="alert">{error} <button type="button" onClick={load} disabled={busy}>Odśwież</button></p>}
       <p role="status" style={{ minHeight: "1.5em" }}>{busy ? "Przetwarzam…" : ""}</p>
       {chapters.map(section => {
         const isOpen = expanded.has(section.position);
+        const entities = entityData?.sections.find(item => item.position === section.position)?.entities;
+        const skipped = section.type && section.type !== "TEMAT";
+        const entityCount = skipped ? 0 : Object.values(entities ?? {}).reduce((count, items) => count + items.length, 0);
         return <section key={section.position} data-chapter-position={section.position} aria-label={"Rozdział " + section.position + ": " + section.title}
           style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -213,6 +233,16 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
                 }
               }}>⇣ Scal z następnym</button>}
           </div>
+          <details>
+            <summary style={{ cursor: "pointer", fontSize: "0.85em" }}>Encje ({entityCount})</summary>
+            {skipped ? <p>Rozdział pominięty w NER (typ: {typeLabels[section.type]})</p>
+              : entityData?.has_entities === false ? <p>Brak zapisanych encji — użyj „Wykryj osoby, miejsca i obiekty” poniżej.</p>
+              : entities && <>
+                <EntityChips label="Osoby" items={entities.persName ?? []} />
+                <EntityChips label="Miejsca" items={[...(entities.geogName ?? []), ...(entities.placeName ?? [])]} />
+                <EntityChips label="Organizacje" items={entities.orgName ?? []} />
+              </>}
+          </details>
           {isOpen && <div id={"chapter-sentences-" + docId + "-" + section.position} style={{ marginTop: 10 }}>
             {section.sentences?.map(sentence => {
               const marked = split?.position === section.position && split.index === sentence.index;

@@ -46,9 +46,9 @@ async function expand(position: number) {
 }
 const row = (chapter: HTMLElement, index: number) => within(chapter).getByLabelText("Zdanie " + index);
 
-it("loads all chapters expanded on mount in one request and keeps collapse toggles local", async () => {
+it("loads all chapters expanded on mount with parallel entity loading and keeps collapse toggles local", async () => {
   await open();
-  expect(axios.get).toHaveBeenCalledTimes(1);
+  expect(axios.get).toHaveBeenCalledTimes(2);
   expect(sentenceCalls()).toHaveLength(0);
   expect(axios.get).toHaveBeenCalledWith("/document/42/chapter_sections", {
     headers: { "x-api-key": "test-key" }, params: { with_sentences: 1 },
@@ -58,12 +58,12 @@ it("loads all chapters expanded on mount in one request and keeps collapse toggl
   expect(screen.queryByText("Rozdział 2, zdanie 1.")).toBeNull();
   expect(screen.getByText("Rozdział 1, zdanie 1.")).toBeTruthy();
   await expand(2);
-  expect(axios.get).toHaveBeenCalledTimes(1);
+  expect(axios.get).toHaveBeenCalledTimes(2);
 });
 
 it("also loads all chapters when a collapsed panel is opened", async () => {
   await open(false, false);
-  expect(axios.get).toHaveBeenCalledTimes(1);
+  expect(axios.get).toHaveBeenCalledTimes(2);
   expect(screen.getAllByRole("button", { name: /Zwiń rozdział/ })).toHaveLength(3);
 });
 
@@ -80,7 +80,7 @@ it.each([
   await idle();
   expect(axios.post).toHaveBeenCalledWith("/document/42/move_chapter_boundary", { position, sentences: count },
     { headers: { "x-api-key": "test-key" } });
-  expect(axios.get).toHaveBeenCalledTimes(2);
+  expect(axios.get).toHaveBeenCalledTimes(4);
   expect(sentenceCalls()).toHaveLength(0);
   expect(screen.getByRole("button", { name: (direction === "następnego" ? "Zwiń" : "Rozwiń") + " rozdział 3" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Zwiń rozdział 1" })).toBeTruthy();
@@ -136,7 +136,7 @@ it("requires merge confirmation, then saves and re-expands all chapters", async 
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   expect(axios.post).toHaveBeenCalledWith("/document/42/merge_chapter", { position: 2 }, expect.any(Object));
   await idle();
-  expect(axios.get).toHaveBeenCalledTimes(2);
+  expect(axios.get).toHaveBeenCalledTimes(4);
   expect(screen.getAllByRole("button", { name: /Zwiń rozdział/ })).toHaveLength(2);
 });
 
@@ -317,7 +317,7 @@ it.each([
   expect(axios.post).toHaveBeenCalledWith("/document/42/chapter_type", { position: 2, type },
     { headers: { "x-api-key": "test-key" } });
   expect(onSaved).toHaveBeenCalledTimes(1);
-  expect(axios.get).toHaveBeenCalledTimes(2);
+  expect(axios.get).toHaveBeenCalledTimes(4);
   expect(select.value).toBe(type);
   expect(screen.getByLabelText("Typ: " + label).style.background).toBe(color);
   expect(screen.getByRole("link", { name: "/chunks/42" })).toBeTruthy();
@@ -369,4 +369,76 @@ it("keeps the merge type conflict warning after subsequent edits", async () => {
   fireEvent.change(screen.getByLabelText("Typ rozdziału 1"), { target: { value: "SZUM" } });
   await idle();
   expect(screen.getByRole("alert").textContent).toContain(message);
+});
+
+
+const entityResponse = (has_entities = true) => ({ has_entities, sections: sections.map(section => ({
+  position: section.position, type: "TEMAT", entities: {
+    persName: [{ text: "Jan", count: 3 }], geogName: [{ text: "Warszawa", count: 2 }],
+    placeName: [], orgName: [{ text: "Firma", count: 1 }],
+  },
+})) });
+
+it("renders reusable read-only entity chips with local counts", async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: url.endsWith("/chapter_entities") ? entityResponse() : data }));
+  await open();
+  const chapter = screen.getByRole("region", { name: "Rozdział 1: Temat 1" });
+  fireEvent.click(within(chapter).getByText("Encje (3)"));
+  expect(within(chapter).getByText("Jan")).toBeTruthy();
+  expect(within(chapter).getByText("×3")).toBeTruthy();
+  for (const label of ["Osoby:", "Miejsca:", "Organizacje:"]) expect(within(chapter).getByText(label)).toBeTruthy();
+  expect(axios.get).toHaveBeenCalledWith("/document/42/chapter_entities", { headers: { "x-api-key": "test-key" } });
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+it("shows the missing stored entities hint", async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: url.endsWith("/chapter_entities") ? entityResponse(false) : data }));
+  await open();
+  expect(screen.getAllByText("Brak zapisanych encji — użyj „Wykryj osoby, miejsca i obiekty” poniżej.")).toHaveLength(3);
+});
+
+it("shows the excluded chapter type instead of chips", async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: url.endsWith("/chapter_entities") ? entityResponse() : {
+    ...data, sections: sections.map(section => ({ ...section, type: "REKLAMA" })),
+  } }));
+  await open();
+  expect(screen.getAllByText("Rozdział pominięty w NER (typ: Reklama)")).toHaveLength(3);
+  expect(screen.queryByText("Jan")).toBeNull();
+});
+
+it("keeps editing functional when entities fail to load", async () => {
+  vi.mocked(axios.get).mockImplementation(async url => {
+    if (url.endsWith("/chapter_entities")) throw new Error("offline");
+    return { data };
+  });
+  const { onSaved } = await open();
+  expect(screen.getByText("Nie udało się pobrać encji")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Typ rozdziału 1"), { target: { value: "REKLAMA" } });
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  await idle();
+  expect(axios.post).toHaveBeenCalledWith("/document/42/chapter_type", { position: 1, type: "REKLAMA" },
+    { headers: { "x-api-key": "test-key" } });
+  expect(screen.getByText("Zmieniono typ rozdziału — odśwież encje przyciskiem „Wykryj osoby, miejsca i obiekty”.")).toBeTruthy();
+  expect(vi.mocked(axios.get).mock.calls.filter(([url]) => url.endsWith("/chapter_entities"))).toHaveLength(2);
+});
+
+
+it("preserves entity details and card nodes across edits without toggling the panel", async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: url.endsWith("/chapter_entities") ? entityResponse() : data }));
+  await open();
+  const panel = screen.getByText("Granice rozdziałów").closest("details")!;
+  const card = screen.getByRole("region", { name: "Rozdział 1: Temat 1" });
+  const details = within(card).getByText("Encje (3)").closest("details")!;
+  details.open = true;
+  fireEvent(details, new Event("toggle", { bubbles: true }));
+  fireEvent.change(screen.getByLabelText("Typ rozdziału 1"), { target: { value: "REKLAMA" } });
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  await idle();
+  expect(screen.getByRole("region", { name: "Rozdział 1: Temat 1" })).toBe(card);
+  expect(within(card).getByText("Encje (3)").closest("details")).toBe(details);
+  expect(details.open).toBe(true);
+  details.open = false;
+  fireEvent(details, new Event("toggle", { bubbles: true }));
+  expect(panel.open).toBe(true);
+  expect(axios.get).toHaveBeenCalledTimes(4);
 });

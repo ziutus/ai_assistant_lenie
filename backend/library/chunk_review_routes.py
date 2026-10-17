@@ -661,6 +661,34 @@ def document_chapter_sections(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/chapter_entities", methods=["GET"])
+def document_editor_chapter_entities(doc_id: int):
+    """Stored entities with local counts and editor chapter numbering."""
+    from library.entity_service import filter_entities_to_text, get_document_entities
+    from library.transcript_chapter_boundaries import describe_sections, parse_sections
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    grouped = get_document_entities(session, doc_id)
+    sections = []
+    for description, section in zip(
+        describe_sections(doc.text, stored_types=doc.chapter_types), parse_sections(doc.text), strict=True,
+    ):
+        sections.append({
+            "position": description["position"], "type": description["type"],
+            "entities": (filter_entities_to_text(grouped, section.body) if description["type"] == "TEMAT"
+                         else {key: [] for key in grouped}),
+        })
+    return jsonify({
+        "status": "success", "doc_id": doc_id, "sections": sections,
+        "has_entities": any(grouped.values()),
+    })
+
+
 def _chapter_boundary_run_count(session, doc_id: int) -> int:
     return session.scalar(select(func.count()).select_from(DocumentAnalysisRun).where(
         DocumentAnalysisRun.document_id == doc_id,

@@ -345,3 +345,18 @@ def test_typed_h2_chunks_put_the_heading_only_on_the_first_piece_of_a_long_chapt
     assert all(not piece[0].startswith("##") for piece in long_pieces[1:])
     assert all(len(piece[0]) <= 400 for piece in long_pieces)
     assert [chunk[1] for chunk in chunks if chunk[2] == "Sponsor"] == ["REKLAMA"]
+
+
+@pytest.mark.parametrize("types,expected", [(["TEMAT", "REKLAMA"], "## Temat\n\nJan."), (["SZUM", "ZRODLA"], None)])
+def test_create_run_filters_ner_chapters(transcript_env, monkeypatch, types, expected):
+    doc = FakeYoutubeDoc()
+    doc.text = "## Temat\n\nJan.\n\n## Reklama\n\nSponsor."
+    doc.chapter_types = types
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda *_: doc))
+    refresh = MagicMock(return_value=[])
+    monkeypatch.setattr("library.entity_service.refresh_document_entities", refresh)
+    DocumentAnalysisService(transcript_env).create_run(doc_id=doc.id, model="test-model", mode="transcript", split_only=True)
+    if expected:
+        refresh.assert_called_once_with(transcript_env, doc.id, expected)
+    else:
+        refresh.assert_not_called()
