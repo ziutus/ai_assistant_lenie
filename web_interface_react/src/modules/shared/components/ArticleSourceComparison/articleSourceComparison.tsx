@@ -40,8 +40,13 @@ const findBoundary = (source: string[], candidates: string[], fromEnd = false) =
 };
 
 const ContextBlock = ({
-  title, lines, muted = false,
-}: { title: string; lines: string[]; muted?: boolean }) => (
+  title, lines, muted = false, onAttach, attachLabel,
+}: {
+  title: string; lines: string[]; muted?: boolean;
+  // Receives the index of the clicked line; the caller attaches the span from
+  // that line to the article edge, so lines are never attached out of order.
+  onAttach?: (index: number) => void; attachLabel?: (index: number) => string;
+}) => (
   <section style={{
     padding: 9,
     background: muted ? "#f8fafc" : "#fff",
@@ -50,7 +55,15 @@ const ContextBlock = ({
   }}>
     <strong style={{ display: "block", marginBottom: 5, fontSize: "0.82em" }}>{title}</strong>
     {lines.length
-      ? <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{lines.join("\n\n")}</div>
+      ? lines.map((line, index) => (
+        <div key={index} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 6 }}>
+          {onAttach && (
+            <button type="button" className="button" style={{ flex: "none", padding: "0 6px" }}
+              title={attachLabel?.(index)} onClick={() => onAttach(index)}>＋</button>
+          )}
+          <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{line}</div>
+        </div>
+      ))
       : <em style={{ color: "#94a3b8" }}>Brak wykrytego kontekstu.</em>}
   </section>
 );
@@ -72,6 +85,14 @@ const ArticleSourceComparison = ({ formik }: { formik: any }) => {
   const after = boundariesFound
     ? sourceLines.slice(end + 1, end + 13)
     : sourceLines.slice(-12);
+
+  const currentText: string = formik.values.text_md || formik.values.text || "";
+  // Source lines are plain text paragraphs; markdown paragraphs are blank-line separated.
+  const attachBefore = (index: number) => formik.setFieldValue(
+    "text_md", [...before.slice(index), currentText].join("\n\n"));
+  const attachAfter = (index: number) => formik.setFieldValue(
+    "text_md", [currentText, ...after.slice(0, index + 1)].join("\n\n"));
+  const canAttach = raw !== "";
 
   return (
     <aside style={{ position: "sticky", top: 8, alignSelf: "start", minWidth: 0 }}>
@@ -98,9 +119,13 @@ const ArticleSourceComparison = ({ formik }: { formik: any }) => {
             Pokazano początek i koniec źródła oraz aktualny artykuł.
           </div>
         )}
-        <ContextBlock title="Przed artykułem — materiał pominięty" lines={before} muted />
+        <ContextBlock title="Przed artykułem — materiał pominięty" lines={before} muted
+          onAttach={canAttach ? attachBefore : undefined}
+          attachLabel={index => `Dołącz na początku artykułu ${before.length - index} akapit(y) od tej linii (zapisz, aby zachować)`} />
         <ContextBlock title="Artykuł w materiale źródłowym" lines={sourceArticle} />
-        <ContextBlock title="Po artykule — materiał pominięty" lines={after} muted />
+        <ContextBlock title="Po artykule — materiał pominięty" lines={after} muted
+          onAttach={canAttach ? attachAfter : undefined}
+          attachLabel={index => `Dołącz na końcu artykułu ${index + 1} akapit(y) do tej linii (zapisz, aby zachować)`} />
       </div>
     </aside>
   );
