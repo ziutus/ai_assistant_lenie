@@ -89,19 +89,13 @@ class TestYesProbability:
         with patch("library.fabryka_client.decide", return_value=body):
             return yes_probability("tekst", "stwierdzenie")
 
-    def test_answer_keyed_by_question_name(self):
-        assert self._call({"answers": {"match": {"probability": 0.87}}}) == 0.87
+    def test_live_response_shape(self):
+        body = {"model": "basal-1.5-mini", "answers": {"match": {"type": "noul", "noul": 0.976,
+                "probabilities": {"true": 0.976, "false": 0.024}, "confidence": 0.976}}}
+        assert self._call(body) == 0.976
 
-    def test_flat_keyed_by_question_name(self):
-        assert self._call({"match": {"noul": 0.2}}) == 0.2
-
-    def test_nested_fallback(self):
-        assert self._call({"result": [{"p_yes": 1}]}) == 1.0
-
-    def test_unrecognised_shape_raises(self):
+    @pytest.mark.parametrize("body", [{}, {"answers": {}}, {"answers": {"match": {"noul": 7}}},
+                                      {"answers": {"match": {"noul": True}}}])
+    def test_unrecognised_shape_raises(self, body):
         with pytest.raises(FabrykaUnexpectedResponse):
-            self._call({"match": {"label": "yes"}})
-
-    def test_out_of_range_numbers_ignored(self):
-        with pytest.raises(FabrykaUnexpectedResponse):
-            self._call({"match": {"probability": 7}})
+            self._call(body)

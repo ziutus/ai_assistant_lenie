@@ -10,10 +10,10 @@ questions per call, each of type:
   army dominance over the Ukrainian one?"),
 - ``score``  — a rating on ``levels``.
 
-Spec: https://fabryka.ai/openapi.json (tag "Decisions"). The spec documents the
-request but leaves the 200 response schema empty, so ``decide()`` returns the
-raw JSON and ``yes_probability()`` raises ``FabrykaUnexpectedResponse`` (with the
-payload logged) rather than guess a shape — verify it once against a real key.
+Spec: https://fabryka.ai/openapi.json (tag "Decisions"). The spec leaves the 200 response
+schema empty; observed live (2026-10-17): ``{"model", "answers": {<name>:
+{"type": "noul", "noul": 0.976, "probabilities": {"true", "false"},
+"confidence"}}, "usage": {...}}``. ``decide()`` returns it raw.
 
 Auth: ``Authorization: Bearer <key>``, config key ``FABRYKA_API_KEY`` (Vault).
 Free-tier keys may retain content up to 30 days — do not send private
@@ -91,25 +91,6 @@ def decide(state, questions: dict[str, dict], model: str = DEFAULT_MODEL) -> dic
         raise FabrykaError(f"Fabryka returned invalid JSON: {e}") from e
 
 
-def _find_probability(node) -> float | None:
-    """First numeric 0..1 value under a probability-like key, searched depth-first."""
-    if isinstance(node, dict):
-        for k in ("probability", "p_yes", "yes", "noul", "value", "score"):
-            v = node.get(k)
-            if isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 <= v <= 1.0:
-                return float(v)
-        for v in node.values():
-            found = _find_probability(v)
-            if found is not None:
-                return found
-    elif isinstance(node, list):
-        for v in node:
-            found = _find_probability(v)
-            if found is not None:
-                return found
-    return None
-
-
 def yes_probability(text: str, statement: str, model: str = DEFAULT_MODEL) -> float:
     """Probability (0..1) that ``text`` matches ``statement``, via a single ``noul`` question.
 
@@ -119,15 +100,11 @@ def yes_probability(text: str, statement: str, model: str = DEFAULT_MODEL) -> fl
     """
     name = "match"
     result = decide(text, {name: {"type": "noul", "instructions": statement}}, model=model)
-    # Prefer the entry for our question when the response is keyed by question name.
-    scoped = None
-    if isinstance(result, dict):
-        for container in (result, result.get("answers"), result.get("results"), result.get("decisions")):
-            if isinstance(container, dict) and name in container:
-                scoped = container[name]
-                break
-    probability = _find_probability(scoped if scoped is not None else result)
-    if probability is None:
+    try:
+        probability = result["answers"][name]["noul"]
+    except (KeyError, TypeError):
+        probability = None
+    if not isinstance(probability, (int, float)) or isinstance(probability, bool) or not 0.0 <= probability <= 1.0:
         logger.warning("Unrecognised Fabryka response shape: %r", result)
         raise FabrykaUnexpectedResponse("no probability found in Fabryka response")
-    return probability
+    return float(probability)
