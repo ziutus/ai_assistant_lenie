@@ -11,6 +11,7 @@ import requests  # noqa: E402
 from library.ner_client import (  # noqa: E402
     ENTITY_TYPES,
     MAX_TEXT_CHARS,
+    _split_rename_org_spans,
     aggregate_entities,
     aggregate_entities_detailed,
     extract_entities,
@@ -340,6 +341,72 @@ class TestAggregateEntitiesDetailed:
 
 
 class TestAggregateNormalization:
+    @pytest.mark.parametrize("surface,parts", [
+        ("  „Departamentu  Obrony na Departament Wojny”  ", ["Departamentu Obrony", "Departament Wojny"]),
+        ("Żandarmerii Obrony na Zandarmerii Wojny", ["Żandarmerii Obrony", "Zandarmerii Wojny"]),
+        ("Departament Wojny na Departamentu Obrony", ["Departament Wojny", "Departamentu Obrony"]),
+    ])
+    def test_org_rename_split_normalizes_surface_and_drops_morph(self, surface, parts):
+        entity = {"text": surface, "label": "orgName", "lemma": "unused", "pos": "PROPN",
+                  "morph": "Case=Gen", "start": 10, "end": 80}
+        original = entity.copy()
+        mentions, surfaces = _split_rename_org_spans([entity])
+        assert mentions == [{"text": part, "lemma": part, "label": "orgName", "pos": "PROPN"} for part in parts]
+        assert surfaces == set(parts)
+        assert entity == original
+
+    def test_org_rename_split_keeps_unmatched_entity_unchanged(self):
+        entity = {"text": "Departament Obrony", "label": "orgName", "lemma": "Departament Obrona",
+                  "pos": "NOUN", "morph": "Case=Nom"}
+        mentions, surfaces = _split_rename_org_spans([entity])
+        assert mentions == [entity]
+        assert mentions[0] is entity
+        assert surfaces == set()
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_doc_10872_org_rename_span_is_split(self, reverse):
+        # Real source excerpt from doc #10872; raw spaCy entities below.
+        sentence = (
+            "...koszulki z napisem To jest wojna, które mają właśnie podkreślać zmianę "
+            "Departamentu Obrony na Departament Wojny. No tak, Kongres nie zatwierdził "
+            "jeszcze zmiany nazwy..."
+        )
+        entities = [
+            {"text": "Departamentu Obrony na Departament Wojny", "label": "orgName",
+             "lemma": "Departament Obrona na Departament Wojna", "pos": "NOUN"},
+            {"text": "Departament Wojny", "label": "orgName", "lemma": "Departament Wojna", "pos": "NOUN"},
+        ]
+        assert all(entity["text"] in sentence for entity in entities)
+        if reverse:
+            entities.reverse()
+        result = aggregate_entities_detailed(entities)
+        assert set(result) == {("orgName", "Departamentu Obrony"), ("orgName", "Departament Wojny")}
+        assert result[("orgName", "Departamentu Obrony")]["count"] == 1
+        assert result[("orgName", "Departament Wojny")]["count"] == 2
+        assert result[("orgName", "Departament Wojny")]["variants"] == ["Departament Wojny"]
+
+    @pytest.mark.parametrize("surface", [
+        "Polskie Siły Zbrojne na Zachodzie",
+        "Delegatury rząd na Kraj",
+        "Uniwersytet Medyczny na Pradze",
+        "Departament Obrony",
+        "Departamentu Obrony Na Departament Wojny",
+        "Departamentu Obrony na departament Wojny",
+        "Departament Obrony na Departament Wojny na Departament Pokoju",
+        "Departament na",
+        "Rada Obrony na Rada Wojny",
+        "Departament Obrony na Departura Wojny",
+    ])
+    def test_org_rename_span_leaves_other_names_unchanged(self, surface):
+        entity = {"text": surface, "label": "orgName", "lemma": surface, "pos": "NOUN"}
+        assert aggregate_entities([entity]) == {("orgName", surface): 1}
+
+    @pytest.mark.parametrize("label", ["persName", "placeName", "geogName", "date"])
+    def test_org_rename_span_leaves_other_labels_unchanged(self, label):
+        surface = "Departamentu Obrony na Departament Wojny"
+        entity = {"text": surface, "label": label, "lemma": surface, "pos": "NOUN"}
+        assert aggregate_entities([entity], types=(label,)) == {(label, surface): 1}
+
     def test_doc_10872_continental_demonym_is_not_a_place(self):
         # Real sentence from doc #10872, chapter 2; raw spaCy entity below.
         sentence = (

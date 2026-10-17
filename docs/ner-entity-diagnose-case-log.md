@@ -42,7 +42,7 @@ przepływ, a nie tylko treść tabeli).
 flowchart TD
     TXT["Tekst dokumentu<br/>(text / text_md)"] --> NER["ner_client.extract_entities()<br/>ner_service: spaCy pl_core_news_lg"]
     NER --> CANON["ner_client: kanonikalizacja span-ow<br/>country_gazetteer / city_gazetteer /<br/>geo_feature_gazetteer / region_gazetteer<br/>+ preferencja mianownika, guard truncated-lemma"]
-    CANON --> AGG["aggregate_entities_detailed()<br/>grupowanie po (entity_type, lemma)"]
+    CANON --> AGG["aggregate_entities_detailed()<br/>podział organizacji A na B (T18)<br/>grupowanie po (entity_type, lemma)"]
     AGG --> REFRESH["entity_service.refresh_document_entities()"]
     REFRESH --> EXCL["ner_exclusions<br/>falszywe pozytywy usuwane"]
     EXCL --> CORR["ner_corrections<br/>reczne poprawki lemat -> tekst/typ"]
@@ -179,8 +179,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T15 | Etnonim jako miejsce | Odmieniona nazwa mieszkańców nie trafia do normalizacji kraju i jest odrzucana jako `not_place` | „Izraelczyków”, „Amerykanów” | E021 |
 | T16 | Etnonim kontynentalny lub ponadnarodowy jako miejsce | Nazwa mieszkańców nie oznacza kraju ani miejsca; odrzucana przez zamkniętą listę | „Europejczycy”, „Europejka” | E029 |
 | T17 | Znaczenie polityczne vs. kierunek geograficzny | „Zachód” jako blok polityczno-kulturowy mylony z kierunkiem lub fragmentem innej nazwy własnej | „Zachodzie” → „Państwa Zachodu”; wyjątek: „Polskie Siły Zbrojne na Zachodzie” | E022 |
+| T18 | Dwie nazwy zlepione w jeden span organizacji (opis zmiany nazwy „A na B”) | spaCy łączy dwie nazwy przez małe „na” | „Departamentu Obrony na Departament Wojny” | E030 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T18,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T19,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -524,6 +525,17 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Zdanie źródłowe:** „Zwyczajni Europejczycy są zastraszani apokaliptycznymi scenariuszami, to prawda, i hybrydowym zagrożeniem rzekomo pochodzącym z naszego kraju.” (dok. #10872, rozdział 2).
 - **Objaw:** „Europejczycy” z lematem „Europejczyk” trafiają do miejsc jako encja 15915, a geokoder wskazuje rzeźbę we Wrocławiu.
 - **Przyczyna źródłowa:** spaCy zwraca `geogName`/`NOUN`; `aggregate_entities_detailed` zachowuje lemat jako nazwę miejsca. Normalizacja etnonimów do krajów z PR #807 nie obejmuje tego przypadku: etnonim kontynentalny nie oznacza kraju.
-- **Poprawka:** kod + dane — nowa lista `non_place_demonym_patterns` w `backend/data/ner_normalization.json` obejmuje wyłącznie rodzinę „Europejczyk”/„Europejka”, wszystkie przypadki liczby pojedynczej i mnogiej. W odróżnieniu od `demonym_patterns` nie mapuje na kraj: `is_non_place_demonym` dopasowuje pełną formę po `unidecode().casefold()`, a agregacja odrzuca ją wyłącznie dla `PLACE_TYPES`, przed obliczeniem kraju. Loader ma cache i pomija błędne regexy z ostrzeżeniem. Dane do wykonania po wdrożeniu (to do after deploy): usunąć encję 15915 w dok. #10872 oraz analogiczne encje w dok. #9204 i #9216.
+- **Poprawka:** kod + dane — nowa lista `non_place_demonym_patterns` w `backend/data/ner_normalization.json` obejmuje wyłącznie rodzinę „Europejczyk”/„Europejka”, wszystkie przypadki liczby pojedynczej i mnogiej. W odróżnieniu od `demonym_patterns` nie mapuje na kraj: `is_non_place_demonym` dopasowuje pełną formę po `unidecode().casefold()`, a agregacja odrzuca ją wyłącznie dla `PLACE_TYPES`, przed obliczeniem kraju. Loader ma cache i pomija błędne regexy z ostrzeżeniem. Dane naprawiono 2026-10-17: usunięto encje 15915 (dok. #10872), 4989 (dok. #9216) i 4238 (dok. #9204).
 - **Test regresyjny:** `backend/tests/unit/test_ner_normalization.py` — pełna odmiana obu płci, negatywne dopasowania, cache i błędny regex; `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_10872_continental_demonym_is_not_a_place` — cytat i surowa encja, odrzucenie „Europejczyka” przy zachowaniu „Rosji” i „Europy”; test nie przechodzi bez zmiany agregacji. Dodatkowy test ogranicza odrzucanie do etykiet miejsc.
-- **Status:** kod w PR (przed wdrożeniem / pre-deploy); operacje na danych do wykonania po wdrożeniu (to do after deploy).
+- **Status:** kod wdrożony na NAS (PR #838), dane naprawione 2026-10-17 - usunięte encje 15915 (dok. 10872), 4989 (dok. 9216), 4238 (dok. 9204).
+
+### E030 — Dwie nazwy organizacji w opisie zmiany nazwy (dok. #10872, PR n/d, 2026-10-17)
+
+- **Typ encji:** orgName
+- **Kategoria:** T18 — Dwie nazwy zlepione w jeden span organizacji (opis zmiany nazwy „A na B”).
+- **Zdanie źródłowe:** „...koszulki z napisem To jest wojna, które mają właśnie podkreślać zmianę Departamentu Obrony na Departament Wojny. No tak, Kongres nie zatwierdził jeszcze zmiany nazwy...”.
+- **Objaw:** „Departamentu Obrony na Departament Wojny” trafia do rejestru jako jedna organizacja (encja 15933).
+- **Przyczyna źródłowa:** spaCy łączy nazwy przez „na” w jeden span `orgName`; `aggregate_entities_detailed` nie rozcinało spanów przed grupowaniem.
+- **Poprawka:** kod + dane — `_split_rename_org_spans` w `backend/library/ner_client.py` rozcina wyłącznie `orgName` z dokładnie jednym małym „ na ” po normalizacji i zdjęciu cudzysłowów, gdy obie niepuste części zaczynają się wielką literą, a po `unidecode().casefold()` całe krótsze pierwsze słowo (minimum 6 znaków) jest prefiksem dłuższego. Części dostają `text = lemma` z powierzchni i zachowują POS, bez morfologii całego spanu; dokładnie takie same powierzchnie samodzielnych wzmianek w tej agregacji dzielą z nimi klucz, więc „Departament Wojny” ma licznik 2. Usunięto encję 15933 oraz powiązaną encję „Pentagonu Pentagonu” 15969 (osobny artefakt zdublowanej nazwy, bez poprawki kodu). Organizacje 1152 i 1188 pozostają w rejestrze jako osierocone, bez dokumentów — brak endpointu DELETE dla organizacji. Dane naprawiono wcześniej; ta zmiana kodu dotyczy przyszłych ekstrakcji.
+- **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_10872_org_rename_span_is_split` — cytat, surowy span i samodzielna wzmianka, brak zlepionej nazwy oraz licznik 2 niezależnie od kolejności; test nie przechodzi bez poprawki kodu. Testy negatywne chronią „Polskie Siły Zbrojne na Zachodzie”, „Delegatury rząd na Kraj”, „Uniwersytet Medyczny na Pradze”, „Departament Obrony” i etykiety inne niż `orgName`.
+- **Status:** kod w PR, dane naprawione.
