@@ -118,6 +118,9 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         >
           NER Corrections
         </NavLink>
+        <NavLink to="/ner-gazetteer" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          NER Gazetteer
+        </NavLink>
         <NavLink to="/ner-decisions" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           NER Decisions
         </NavLink>
