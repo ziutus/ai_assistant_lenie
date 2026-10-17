@@ -937,3 +937,26 @@ class TestDocumentCountries:
         assert response.status_code == 200
         assert response.get_json()["countries"] == expected
         assert response.get_json()["entities"] == GROUPED
+
+
+@pytest.mark.parametrize("types,expected", [(["TEMAT", "REKLAMA"], "## Temat\n\nJan."),
+                                           (["SZUM", "ZRODLA"], "")])
+def test_refresh_filters_chapter_types(client, types, expected):
+    doc = MagicMock(text_md=None, text="## Temat\n\nJan.\n\n## Reklama\n\nSponsor.", chapter_types=types)
+    session = MagicMock()
+    with patch("server.get_scoped_session", return_value=session), patch("server.Document") as model, patch(
+        "library.entity_service.refresh_document_entities", return_value=[]
+    ) as refresh, patch("library.entity_service.get_document_entities", return_value=GROUPED), patch(
+        "library.document_editing.document_has_embeddings", return_value=False
+    ), patch("library.entity_enrichment_service.ensure_entity_enrichment_job") as enqueue:
+        model.get_by_id.return_value = doc
+        response = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+    if expected:
+        assert response.status_code == 202
+        refresh.assert_called_once_with(session, 42, expected)
+    else:
+        assert response.status_code == 400
+        assert "Wszystkie rozdziały są wykluczone z NER" in response.json["message"]
+        refresh.assert_not_called()
+        session.commit.assert_not_called()
+    enqueue.assert_not_called()

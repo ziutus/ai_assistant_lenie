@@ -243,6 +243,31 @@ def _slice_chapter(text: str, scope_chapter: int) -> tuple[str, str]:
     return text[match["char_start"]:match["char_end"]].strip(), match["title"]
 
 
+def _typed_h2_chunks(text: str, stored_types, chunk_size: int) -> list[tuple[str, str, str]]:
+    """Preserve edited H2 boundaries and types; cap each chapter independently."""
+    from library.chunk_llm_analysis import remove_speech_fillers
+    from library.text_functions import split_text_into_sentence_chunks
+    from library.transcript_chapter_boundaries import parse_sections, resolve_chapter_types
+
+    types = iter(resolve_chapter_types(text, stored_types))
+    chunks = []
+    for section in parse_sections(text):
+        kind = next(types) if section.heading else "TEMAT"
+        title = section.heading[3:].strip() if section.heading else ""
+        prefix = section.heading + "\n\n" if section.heading else ""
+        capacity = chunk_size - len(prefix)
+        if capacity < 1:
+            raise ValueError("chunk_size must exceed the chapter heading length")
+        body = remove_speech_fillers(section.body).strip() if kind == "TEMAT" else section.body.strip()
+        pieces = [body] if len(body) <= capacity else split_text_into_sentence_chunks(body, capacity)
+        for number, piece in enumerate(pieces):
+            # Only a chapter's first piece carries its heading, as in _chapter_chunks_from_text().
+            lead = prefix if number == 0 else ""
+            if lead or piece:
+                chunks.append(((lead + piece).strip(), kind, title))
+    return chunks
+
+
 def _chapter_chunks_from_text(text: str, chapter_titles: list[str], chunk_size: int) -> list[str] | None:
     """Split a YouTube transcript at its chapter boundaries, when they're still present.
 
@@ -566,6 +591,8 @@ class DocumentAnalysisService:
 
         # 2. Extract text (article mode prefers text_md — headers drive the split)
         text, text_field = _extract_text(doc, prefer_md=not is_transcript)
+        if is_transcript and re.search(r"^## ", doc.text or "", re.MULTILINE):
+            text, text_field = doc.text, "text"
         if not text:
             raise ValueError(f"Document {doc_id} has no usable text (checked: text, text_md, text_raw)")
 
@@ -609,6 +636,8 @@ class DocumentAnalysisService:
         scope: str | None = None
         author_bio = None
         author_bio_position = None
+        typed_chunks = []
+        has_h2 = is_transcript and bool(re.search(r"^## ", text, re.MULTILINE))
         if is_transcript:
             # 3. Detect format (multi-speaker = has >> speaker markers)
             speaker_changes = len(re.findall(r'>>', text))
@@ -619,7 +648,7 @@ class DocumentAnalysisService:
             #    unless the caller already provided them
             if speakers is None:
                 speakers = []
-                if is_multi_speaker and not split_only:
+                if is_multi_speaker and not split_only and not has_h2:
                     intro_text = text[800:2400].strip()
                     try:
                         speakers = extract_speaker_info(intro_text, model)
@@ -635,13 +664,14 @@ class DocumentAnalysisService:
             # 5. Label speaker turns from >> markers (must happen before splitting,
             #    so the rewrite prompt sees the [Name]: labels it is asked to preserve)
             speaker_labels_applied = False
-            if is_multi_speaker and len(speakers) >= 2:
+            if is_multi_speaker and len(speakers) >= 2 and not has_h2:
                 text = assign_speakers(text, speakers[0]["name"], speakers[1]["name"])
                 speaker_labels_applied = True
                 log(f"labeled speaker turns: [{speakers[0]['name']}] / [{speakers[1]['name']}]")
 
             # 6. Remove speech fillers before splitting (cheaper than asking LLM)
-            text = remove_speech_fillers(text)
+            if not has_h2:
+                text = remove_speech_fillers(text)
 
             # 7. Split into chunks — chapter-aware when the video has a YouTube
             #    chapter_list and speaker labeling didn't restructure the text
@@ -653,7 +683,11 @@ class DocumentAnalysisService:
             #    text, so the block structure _chapter_chunks_from_text needs is
             #    still intact and there's no reason to fall back to a blind split.
             chunk_texts = None
-            if not speaker_labels_applied and getattr(doc, "chapter_list", None):
+            if has_h2:
+                # User-edited boundaries win over speaker rebuilding and sentence rebalancing.
+                typed_chunks = _typed_h2_chunks(text, getattr(doc, "chapter_types", None), chunk_size)
+                chunk_texts = [chunk[0] for chunk in typed_chunks]
+            elif not speaker_labels_applied and getattr(doc, "chapter_list", None):
                 from library.text_transcript import chapters_text_to_list
 
                 chapter_titles = [c["title"] for c in chapters_text_to_list(doc.chapter_list)]
@@ -726,8 +760,9 @@ class DocumentAnalysisService:
             log(f"proposal: {total} chunks without semantic LLM analysis")
             sections = [
                 {
-                    "type": "SZUM" if i == author_bio_position else "TEMAT",
-                    "topic": "Notka biograficzna autora" if i == author_bio_position else None,
+                    "type": typed_chunks[i][1] if typed_chunks else "SZUM" if i == author_bio_position else "TEMAT",
+                    "topic": (typed_chunks[i][2] if typed_chunks and typed_chunks[i][1] != "TEMAT"
+                              else "Notka biograficzna autora" if i == author_bio_position else None),
                     "original": chunk_text,
                     "text": None,
                     "ratio": None,
@@ -740,6 +775,11 @@ class DocumentAnalysisService:
             chunk_texts_iter = chunk_texts
 
         def _analyze_one(i: int, chunk_text: str) -> dict:
+            if typed_chunks and typed_chunks[i][1] != "TEMAT":
+                return {
+                    "type": typed_chunks[i][1], "topic": typed_chunks[i][2],
+                    "corrected_text": None, "summary": None, "rewrite_ratio": None,
+                }
             if i == author_bio_position:
                 return {
                     "type": "SZUM",
@@ -753,8 +793,12 @@ class DocumentAnalysisService:
                     chunk_text, model,
                     position=i + 1, total=total,
                     speakers=speakers or None,
-                    prev_context=_sentence_tail(chunk_texts[i - 1]) if i > 0 else "",
-                    next_context=_sentence_head(chunk_texts[i + 1]) if i < total - 1 else "",
+                    prev_context=(_sentence_tail(chunk_texts[i - 1]) if i > 0 and (
+                        not typed_chunks or typed_chunks[i - 1][1] == "TEMAT"
+                    ) else ""),
+                    next_context=(_sentence_head(chunk_texts[i + 1]) if i < total - 1 and (
+                        not typed_chunks or typed_chunks[i + 1][1] == "TEMAT"
+                    ) else ""),
                 )
             return analyze_article_chunk(chunk_text, model, position=i + 1, total=total)
 
@@ -802,7 +846,7 @@ class DocumentAnalysisService:
         for i, chunk_text in enumerate(chunk_texts_iter):
             result = results[i]
             sections.append({
-                "type": result["type"],
+                "type": typed_chunks[i][1] if typed_chunks else result["type"],
                 "topic": result["topic"],
                 "original": chunk_text,
                 "text": result["corrected_text"],
@@ -814,7 +858,9 @@ class DocumentAnalysisService:
         #     split_only, and for a single chunk — nothing to group, and asking
         #     the LLM to merge one fragment into "usually 5-10 sections" tends to
         #     come back with no valid group, silently starving 11b's tagging input)
-        topic_groups = [] if proposal_only or len(sections) <= 1 else _merge_topics(sections, model, mode=mode)
+        topic_groups = ([] if proposal_only or len(sections) <= 1 or (typed_chunks and not any(
+            s["type"] == "TEMAT" for s in sections
+        )) else _merge_topics(sections, model, mode=mode))
         if topic_groups:
             topic_sections_data = []
             for group in topic_groups:
@@ -939,11 +985,17 @@ class DocumentAnalysisService:
             if reuse_existing_entities:
                 log("entities: reusing earlier document-level NER result")
             else:
+                entity_text = ""
                 try:
                     from library.entity_service import refresh_document_entities
+                    from library.entity_text import document_ner_text
                     from library.ner_client import NERServiceUnavailable
 
-                    entity_rows = refresh_document_entities(session, doc_id, text)
+                    # Keep the run's own working text (cleaned markdown, labelled speakers, text_raw
+                    # fallback) unless excluded chapters were actually removed from Document.text.
+                    filtered_text = document_ner_text(doc)
+                    entity_text = text if filtered_text == (doc.text_md or doc.text or "") else filtered_text
+                    entity_rows = refresh_document_entities(session, doc_id, entity_text) if entity_text.strip() else []
                     log(f"entities={len(entity_rows)}")
                 except NERServiceUnavailable:
                     log("WARNING: NER service unavailable — entities not refreshed for this run")
@@ -952,11 +1004,11 @@ class DocumentAnalysisService:
 
                 # 11d. Place verification (stage 3): geocoder confirms the places
                 #      exist (cached), LLM confirms relevance -> miejsce-* tags.
-                if not proposal_only:
+                if not proposal_only and entity_text.strip():
                     try:
                         from library.place_verification import verify_document_places
 
-                        summary = verify_document_places(session, doc, text)
+                        summary = verify_document_places(session, doc, entity_text)
                         log(f"places: {len(summary['resolved'])} resolved, tags: {summary['tagged'] or '-'}")
                     except Exception:
                         logger.exception("place verification failed, continuing without place tags")
@@ -966,7 +1018,7 @@ class DocumentAnalysisService:
                     try:
                         from library.person_registry import resolve_document_persons
 
-                        p_summary = resolve_document_persons(session, doc, text)
+                        p_summary = resolve_document_persons(session, doc, entity_text)
                         log(f"persons: linked={len(p_summary['linked'])} skipped={len(p_summary['skipped'])}")
                     except Exception:
                         logger.exception("person resolution failed, continuing without person links")
@@ -1020,7 +1072,7 @@ class DocumentAnalysisService:
                 seg_start=seg_start,
                 seg_end=seg_end,
                 rewrite_ratio=s["ratio"],
-                status="pending",
+                status="approved" if typed_chunks and typed_chunks[i][1] != "TEMAT" else "pending",
             )
             session.add(created_chunk)
             created_chunks.append(created_chunk)

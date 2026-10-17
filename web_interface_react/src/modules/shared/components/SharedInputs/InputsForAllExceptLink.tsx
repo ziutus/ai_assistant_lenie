@@ -54,6 +54,7 @@ interface InputsForAllExceptLinkProps {
   // "Clean Text" applies portal cleanup rules (site_rules.json) — only makes
   // sense for webpage documents, so only the webpage editor passes true.
   showCleanText?: boolean;
+  hideText?: boolean;
   onProcessingChange?: (busy: boolean) => void;
   entitiesRefreshKey?: number;
 }
@@ -63,6 +64,7 @@ const InputsForAllExceptLink = ({
   handleRemoveNotNeededText,
   isLoading,
   showCleanText,
+  hideText = false,
   onProcessingChange,
   entitiesRefreshKey,
 }: InputsForAllExceptLinkProps) => {
@@ -94,7 +96,7 @@ const InputsForAllExceptLink = ({
           />
         </details>
       )}
-      {!showCleanText && (
+      {!showCleanText && !hideText && (
         <Input disabled={isLoading} value={formik.values.text} label={"Website content"}
           onChange={formik.handleChange} id={"text"} name={"text"} type={"text"} multiline />
       )}{" "}

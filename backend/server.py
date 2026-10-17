@@ -781,6 +781,7 @@ def website_entities_refresh():
     from sqlalchemy.exc import OperationalError
 
     from library.entity_service import get_document_entities, refresh_document_entities
+    from library.entity_text import document_ner_text
     from library.ner_client import NERServiceUnavailable
 
     doc_id, error = _entities_doc_id(request.form.get('id') or (request.get_json(silent=True) or {}).get('id'))
@@ -792,9 +793,11 @@ def website_entities_refresh():
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
 
-    text = doc.text_md or doc.text or ""
+    text = document_ner_text(doc)
     if not text.strip():
-        return {"status": "error", "message": "Document has no text content"}, 400
+        message = ("Wszystkie rozdziały są wykluczone z NER (reklama/szum/źródła)"
+                   if (doc.text_md or doc.text or "").strip() else "Document has no text content")
+        return {"status": "error", "message": message}, 400
     from library.document_editing import document_has_embeddings
     if document_has_embeddings(session, doc_id):
         return {

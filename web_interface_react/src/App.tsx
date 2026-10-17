@@ -14,6 +14,7 @@ import List from "./modules/shared/pages/list";
 import UploadFile from "./modules/shared/pages/file";
 import Connect from "./modules/shared/pages/connect";
 import Chunks from "./modules/shared/pages/chunks";
+import NerChapters from "./modules/shared/pages/nerChapters";
 import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
@@ -87,6 +88,7 @@ function App() {
                   <Route path="/youtube/:id?" element={<DocumentEditorWithGroups><Youtube /></DocumentEditorWithGroups>} />
                   <Route path="/email/:id?" element={<DocumentEditorWithGroups><Email /></DocumentEditorWithGroups>} />
                   <Route path="/social_media_post/:id?" element={<DocumentEditorWithGroups><SocialMediaPost /></DocumentEditorWithGroups>} />
+                  <Route path="/ner/:id" element={<NerChapters />} />
                   <Route path="/chunks/:id" element={<Chunks />} />
                   <Route path="/read/:id" element={<Read />} />
                   <Route path="/entities/:id" element={<Entities />} />

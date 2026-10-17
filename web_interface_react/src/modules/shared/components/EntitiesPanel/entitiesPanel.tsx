@@ -81,7 +81,7 @@ export interface EntityItem {
   source_url?: string | null;
 }
 
-interface EntitiesByType {
+export interface EntitiesByType {
   persName: EntityItem[];
   orgName: EntityItem[];
   geogName: EntityItem[];
@@ -429,8 +429,14 @@ const EntitiesPanel = ({
   onEntitiesChanged,
   countries: providedCountries,
   refreshKey = 0,
+  chapterRenderer,
 }: {
   docId?: string | number;
+  // Chapter mode (the /ner/:id page): the host draws the entity groups itself, once per
+  // chapter, through renderGroups(), so every chip keeps this panel's action menus and
+  // dialogs. Dialogs then dock to the bottom of the window because the chips can be far
+  // above the panel's end. Without it the panel renders its usual document-level groups.
+  chapterRenderer?: (renderGroups: (source: Partial<EntitiesByType> | null | undefined) => React.ReactNode) => React.ReactNode;
   // Bump to force a full reset + refetch for the same document (e.g. after the
   // editor reopened it, which deletes all derived entities server-side).
   refreshKey?: number;
@@ -1320,6 +1326,42 @@ const EntitiesPanel = ({
     </>
   );
 
+  // Same grouping, filters and actions as the document-level chips below, applied to any
+  // subset of entities (chapter mode). Items keep their ids, so every action still acts on
+  // the document's entity rows.
+  const renderGroups = (source: Partial<EntitiesByType> | null | undefined) => {
+    const scopedOrganizations = (source?.orgName ?? []).filter((item) => !item.is_country);
+    const scopedPlaces = [
+      ...(source?.geogName ?? []).map((item) => ({ ...item, entity_type: "geogName" as const })),
+      ...(source?.placeName ?? []).map((item) => ({ ...item, entity_type: "placeName" as const })),
+    ].filter((item) => !item.is_country && item.place_verification_status !== "rejected");
+    return (
+      <>
+        <EntityChips label={"Osoby"} items={source?.persName ?? []} menuActions={() => []}
+          actions={editMode ? editActions("persName") : undefined} />
+        <EntityChips label={"Źródła cytowane"} items={scopedOrganizations.filter((item) => item.information_source_id != null)}
+          linkInformationSources menuActions={organizationMenuActions}
+          actions={editMode ? editActions("orgName") : undefined} />
+        <EntityChips label={"Organizacje"} items={scopedOrganizations.filter((item) => item.information_source_id == null)}
+          linkOrganizations menuActions={organizationMenuActions}
+          actions={editMode ? editActions("orgName") : undefined} />
+        <EntityChips label={"Miejsca"} items={scopedPlaces} menuActions={placeMenuActions}
+          actions={(item) => <>
+            {item.place_verification_status === "needs_review" && item.proposed_geocode_id != null
+              && item.proposed_lat != null && item.proposed_lon != null && (
+              <button type="button" className="button" disabled={confirmingPlace !== null}
+                onClick={() => void confirmPlace(item)}>Zatwierdź tę lokalizację</button>
+            )}
+            {item.place_verification_status === "needs_review" && (
+              <button type="button" className="button" disabled={confirmingPlace !== null}
+                onClick={() => void rejectPlace(item)}>Odrzuć propozycję</button>
+            )}
+            {editMode && editActions("placeName")(item)}
+          </>} />
+      </>
+    );
+  };
+
   return (
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1372,6 +1414,7 @@ const EntitiesPanel = ({
           ))}
         </div>
       )}
+      {chapterRenderer ? chapterRenderer(renderGroups) : <>
       <EntityChips label={"Osoby"} items={persons} menuActions={() => []}
         actions={editMode ? editActions("persName") : undefined} />
       <EntityChips
@@ -1426,7 +1469,9 @@ const EntitiesPanel = ({
         </div>
       )}
       <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
+      </>}
 
+      <div style={chapterRenderer ? { position: "sticky", bottom: 0, zIndex: 5, maxHeight: "50vh", overflowY: "auto" } : undefined}>
       {mergeHint && (
         <div style={{ marginTop: 8 }}>
           <span>{mergeHint.conflict
@@ -1673,6 +1718,7 @@ const EntitiesPanel = ({
           </button>
         </div>
       )}
+      </div>
 
       {isEmpty && !message && (
         <div style={{ marginTop: "6px", color: "#667" }}>

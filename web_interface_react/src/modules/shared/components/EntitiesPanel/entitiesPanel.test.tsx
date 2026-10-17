@@ -1,5 +1,5 @@
 import axios from "axios";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type React from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -72,6 +72,20 @@ it("renames a place without edit mode and refetches entities", async () => {
     { text: "Jemen Północny" }, { headers: expect.objectContaining({ "Content-Type": "application/json" }) }));
   expect(await screen.findByText("Nazwa miejsca została poprawiona — geokoder nie potwierdził.")).toBeTruthy();
   expect(axios.get).toHaveBeenCalledTimes(3);
+});
+
+it("draws chapter-scoped groups through the panel's own menus in chapter mode", async () => {
+  render(<EntitiesPanel docId={10753} chapterRenderer={(renderGroups) => (
+    <div data-testid="chapter">{renderGroups({ placeName: [{ id: 8, text: "Aden", count: 1 }] })}</div>
+  )} />);
+  const chapter = await screen.findByTestId("chapter");
+  await act(async () => {});
+  expect(within(chapter).getByRole("button", { name: "Aden" })).toBeTruthy();
+  // The document-level groups are replaced, so the other place of the document is not drawn.
+  expect(screen.queryByRole("button", { name: place.text })).toBeNull();
+  fireEvent.click(within(chapter).getByRole("button", { name: "Aden" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  expect((screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }) as HTMLInputElement).value).toBe("Aden");
 });
 
 it.each([false, true])("offers merge after rename (conflict: %s)", async (conflict) => {

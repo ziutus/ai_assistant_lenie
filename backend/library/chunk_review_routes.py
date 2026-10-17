@@ -445,7 +445,7 @@ def _video_chapters_seconds(doc: Document | None) -> list[dict]:
 
 def _chunk_chapters(
     seg_start_idx: int | None, seg_end_idx: int | None,
-    segments: list[dict], video_chapters: list[dict], starts: list[int],
+    segments: list[dict], video_chapters: list[dict], starts: list[int], original_text: str = "",
 ) -> list[str]:
     """video_chapters/starts are seconds-based (see _video_chapters_seconds);
     seg_start_idx/seg_end_idx are a chunk's indices into `segments` (transcript
@@ -460,6 +460,10 @@ def _chunk_chapters(
     the chapter would silently disappear from the chunk list instead of showing
     up (fully-covered) inside the merged chunk.
     """
+    # Explicit H2 headings also cover user-created chapters without timestamps.
+    headings = re.findall(r"^## ([^\r\n]+)", original_text, re.MULTILINE)
+    if headings:
+        return list(dict.fromkeys(title.strip() for title in headings))
     if seg_start_idx is None or not video_chapters or not segments:
         return []
     if not (0 <= seg_start_idx < len(segments)):
@@ -633,6 +637,155 @@ def paragraphize_document_transcript(doc_id: int):
         "model_calls": result.model_calls,
         "text_length": len(result.text),
     })
+
+
+
+@bp.route("/document/<int:doc_id>/chapter_sections", methods=["GET"])
+def document_chapter_sections(doc_id: int):
+    """Describe editable H2 chapter boundaries from the authoritative transcript."""
+    from library.document_editing import document_has_embeddings
+    from library.transcript_chapter_boundaries import describe_sections
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    return jsonify({
+        "status": "success", "doc_id": doc_id,
+        "sections": describe_sections(doc.text, with_sentences=request.args.get("with_sentences") == "1",
+                                      stored_types=doc.chapter_types),
+        "has_embeddings": document_has_embeddings(session, doc_id),
+        "has_analysis_runs": bool(_chapter_boundary_run_count(session, doc_id)),
+    })
+
+
+@bp.route("/document/<int:doc_id>/chapter_entities", methods=["GET"])
+def document_editor_chapter_entities(doc_id: int):
+    """Stored entities with local counts and editor chapter numbering."""
+    from library.entity_service import filter_entities_to_text, get_document_entities
+    from library.transcript_chapter_boundaries import describe_sections, parse_sections
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    grouped = get_document_entities(session, doc_id)
+    sections = []
+    for description, section in zip(
+        describe_sections(doc.text, stored_types=doc.chapter_types), parse_sections(doc.text), strict=True,
+    ):
+        sections.append({
+            "position": description["position"], "type": description["type"],
+            "entities": (filter_entities_to_text(grouped, section.body) if description["type"] == "TEMAT"
+                         else {key: [] for key in grouped}),
+        })
+    return jsonify({
+        "status": "success", "doc_id": doc_id, "sections": sections,
+        "has_entities": any(grouped.values()),
+    })
+
+
+def _chapter_boundary_run_count(session, doc_id: int) -> int:
+    return session.scalar(select(func.count()).select_from(DocumentAnalysisRun).where(
+        DocumentAnalysisRun.document_id == doc_id,
+        DocumentAnalysisRun.status != "superseded",
+    )) or 0
+
+
+def _edit_transcript_chapters(doc_id: int, operation, fields: dict[str, type]):
+    """Shared guards, strict JSON validation and persistence for chapter edits."""
+    from library.document_editing import document_has_embeddings
+    from library.transcript_chapter_boundaries import describe_sections, edit_chapter_types
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    if document_has_embeddings(session, doc_id):
+        return jsonify({
+            "status": "error",
+            "message": "Document has embeddings. Reopen it for editing before moving chapter boundaries.",
+        }), 409
+    active = session.scalar(
+        select(DocumentAnalysisJob.id).where(
+            DocumentAnalysisJob.document_id == doc_id,
+            DocumentAnalysisJob.status.in_(("queued", "running")),
+        ).limit(1)
+    )
+    if active is not None:
+        return jsonify({"status": "error", "message": "Document analysis is currently running"}), 409
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or any(type(payload.get(key)) is not kind for key, kind in fields.items()):
+        message = ("Pola position i sentences muszą być liczbami całkowitymi." if "sentences" in fields
+                   else "Nieprawidłowe pola żądania lub typy danych.")
+        return jsonify({"status": "error", "message": message}), 400
+    try:
+        updated = operation(doc.text, **{key: payload[key] for key in fields}) if operation else doc.text
+        types, conflict = edit_chapter_types(
+            doc.text, doc.chapter_types, operation.__name__ if operation else "chapter_type",
+            payload["position"], payload.get("type"),
+        )
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    stale_runs = _chapter_boundary_run_count(session, doc_id)
+    if operation:
+        doc.text = updated
+    doc.chapter_types = types
+    session.commit()
+    return jsonify({
+        "status": "success", "doc_id": doc_id, "sections": describe_sections(updated, stored_types=types),
+        **({"type_conflict": conflict} if conflict else {}),
+        "has_embeddings": False, "has_analysis_runs": bool(stale_runs), "stale_analysis_runs": stale_runs,
+    })
+
+
+@bp.route("/document/<int:doc_id>/chapter_type", methods=["POST"])
+def set_document_chapter_type(doc_id: int):
+    return _edit_transcript_chapters(doc_id, None, {"position": int, "type": str})
+
+
+@bp.route("/document/<int:doc_id>/move_chapter_boundary", methods=["POST"])
+def move_document_chapter_boundary(doc_id: int):
+    from library.transcript_chapter_boundaries import move_boundary
+
+    return _edit_transcript_chapters(doc_id, move_boundary, {"position": int, "sentences": int})
+
+
+@bp.route("/document/<int:doc_id>/split_chapter", methods=["POST"])
+def split_document_chapter(doc_id: int):
+    from library.transcript_chapter_boundaries import split_chapter
+
+    return _edit_transcript_chapters(doc_id, split_chapter, {"position": int, "sentence_index": int, "title": str})
+
+
+@bp.route("/document/<int:doc_id>/merge_chapter", methods=["POST"])
+def merge_document_chapter(doc_id: int):
+    from library.transcript_chapter_boundaries import merge_chapter
+
+    return _edit_transcript_chapters(doc_id, merge_chapter, {"position": int})
+
+
+@bp.route("/document/<int:doc_id>/chapter_sections/<int:position>/sentences", methods=["GET"])
+def document_chapter_sentences(doc_id: int, position: int):
+    from library.transcript_chapter_boundaries import chapter_sentences
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    try:
+        result = chapter_sentences(doc.text, position)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    return jsonify({"status": "success", **result})
 
 
 @bp.route("/document/<int:doc_id>/split_preview", methods=["GET", "POST"])
@@ -2618,7 +2771,7 @@ def get_run_chunks(run_id: int):
                              doc_url=doc.url if doc else None),
             "cited_publications": citations_by_chunk.get(c.id, []),
             "chapter_titles": _chunk_chapters(
-                c.seg_start, c.seg_end, chapter_segments, video_chapters, video_chapter_starts,
+                c.seg_start, c.seg_end, chapter_segments, video_chapters, video_chapter_starts, c.original_text or "",
             ),
         } for c in chunks],
         "topic_sections": [

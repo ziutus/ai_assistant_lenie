@@ -158,6 +158,7 @@ def transcript_env(monkeypatch, session):
     monkeypatch.setattr(llm, "analyze_chunk", fake_transcript)
     monkeypatch.setattr(das, "_merge_topics", lambda sections, model, mode="transcript": [])
     monkeypatch.setattr(das, "_synthesize", lambda sections, title, model, mode="transcript": "")
+    monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: [])
     monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: [])
     monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
     monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda session, doc_id, text: [])
@@ -223,3 +224,139 @@ class TestCreateRunUsesChapterSplit:
             doc_id=9216, model="test-model", mode="transcript",
             reuse_existing_entities=True,
         )
+
+
+@pytest.mark.parametrize("kind", ["REKLAMA", "SZUM", "ZRODLA"])
+@pytest.mark.parametrize("split_only", [False, True])
+def test_typed_h2_skips_semantic_analysis(transcript_env, monkeypatch, kind, split_only):
+    doc = FakeYoutubeDoc()
+    doc.text = "## Własny temat\n" + "Treść merytoryczna. " * 12 + "\n## Wydzielony fragment\n" + "Kup produkt. " * 30
+    doc.chapter_types = ["TEMAT", kind]
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+    analyze = MagicMock(return_value={
+        "type": "TEMAT", "topic": "Temat z LLM", "corrected_text": "Poprawiona treść.",
+        "summary": "Streszczenie.", "rewrite_ratio": 1.0,
+    })
+    monkeypatch.setattr(llm, "analyze_chunk", analyze)
+    service = DocumentAnalysisService(transcript_env)
+    service.create_run(9216, "test-model", chunk_size=180, split_only=split_only, no_synthesis=True)
+    chunks = [o for o in transcript_env.added if isinstance(o, DocumentChunk)]
+    topics = [c for c in chunks if c.type == "TEMAT"]
+    excluded = [c for c in chunks if c.type == kind]
+    assert topics and len(excluded) > 1
+    assert analyze.call_count == (0 if split_only else len(topics))
+    assert all("Kup produkt" not in call.args[0] for call in analyze.call_args_list)
+    assert all(len(c.original_text) <= 180 for c in chunks)
+    assert all(c.status == "approved" and c.topic == "Wydzielony fragment" for c in excluded)
+    assert all(c.summary is None and c.corrected_text is None for c in excluded)
+    assert all(c.status == "pending" for c in topics)
+    assert all(c.summary == (None if split_only else "Streszczenie.") for c in topics)
+    # Only the first piece of a chapter carries its heading, as in _chapter_chunks_from_text().
+    assert excluded[0].original_text.startswith("## Wydzielony fragment\n")
+    assert all(not c.original_text.startswith("##") for c in excluded[1:])
+
+
+def test_h2_keeps_edited_boundaries_despite_speaker_markers(transcript_env, monkeypatch):
+    doc = FakeYoutubeDoc()
+    doc.text = "## Treść\n>> Niedokończona wypowiedź " + "słowo " * 20 + "\n## Reklama\n>> Kup teraz. " * 1
+    doc.chapter_types = ["TEMAT", "REKLAMA"]
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+    assign = MagicMock(side_effect=AssertionError("Must preserve H2 structure"))
+    extract = MagicMock(side_effect=AssertionError("Must not extract speakers from ads"))
+    monkeypatch.setattr(llm, "assign_speakers", assign)
+    monkeypatch.setattr(llm, "extract_speaker_info", extract)
+    DocumentAnalysisService(transcript_env).create_run(
+        9216, "test-model", speakers=[{"name": "A"}, {"name": "B"}], no_synthesis=True,
+    )
+    chunks = [o for o in transcript_env.added if isinstance(o, DocumentChunk)]
+    assert len(chunks) == 2
+    assert "Kup teraz" not in chunks[0].original_text
+    assert chunks[1].type == "REKLAMA"
+    assign.assert_not_called()
+    extract.assert_not_called()
+
+
+def test_h2_all_excluded_needs_no_chunk_or_speaker_llm(transcript_env, monkeypatch):
+    doc = FakeYoutubeDoc()
+    doc.text = "## Reklama\n>> " + "Kup teraz. " * 20
+    doc.chapter_types = ["REKLAMA"]
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+    analyze = MagicMock()
+    extract = MagicMock()
+    grouping = MagicMock()
+    monkeypatch.setattr(llm, "analyze_chunk", analyze)
+    monkeypatch.setattr(llm, "extract_speaker_info", extract)
+    monkeypatch.setattr(das, "_merge_topics", grouping)
+    DocumentAnalysisService(transcript_env).create_run(9216, "test-model", chunk_size=100, document_enriched=True)
+    analyze.assert_not_called()
+    extract.assert_not_called()
+    grouping.assert_not_called()
+
+
+def test_h2_type_count_mismatch_defaults_to_temat(transcript_env, monkeypatch):
+    doc = FakeYoutubeDoc()
+    doc.text = "## Nowy\n" + "Pierwszy temat. " * 15 + "\n## Kolejny\n" + "Drugi temat. " * 15
+    doc.chapter_types = ["REKLAMA"]
+    doc.chapter_list = None
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+    DocumentAnalysisService(transcript_env).create_run(9216, "test-model", split_only=True)
+    chunks = [o for o in transcript_env.added if isinstance(o, DocumentChunk)]
+    assert len(chunks) == 2
+    assert all(c.type == "TEMAT" and c.status == "pending" for c in chunks)
+
+
+def test_no_h2_ignores_chapter_types(transcript_env, monkeypatch):
+    doc = FakeYoutubeDoc()
+    doc.chapter_types = ["REKLAMA", "SZUM", "ZRODLA"]
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+    DocumentAnalysisService(transcript_env).create_run(9216, "test-model", no_synthesis=True)
+    chunks = [o for o in transcript_env.added if isinstance(o, DocumentChunk)]
+    assert len(chunks) == 3
+    assert all(c.type == "TEMAT" and c.status == "pending" and c.summary for c in chunks)
+
+
+def test_short_h2_text_is_authoritative(transcript_env, monkeypatch):
+    doc = FakeYoutubeDoc()
+    doc.text = "## Reklama\nKup teraz."
+    doc.text_md = "Stary tekst. " * 20
+    doc.chapter_types = ["REKLAMA"]
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+    analyze = MagicMock()
+    monkeypatch.setattr(llm, "analyze_chunk", analyze)
+    DocumentAnalysisService(transcript_env).create_run(9216, "test-model", no_synthesis=True)
+    chunks = [o for o in transcript_env.added if isinstance(o, DocumentChunk)]
+    assert len(chunks) == 1
+    assert chunks[0].type == "REKLAMA"
+    assert "Kup teraz" in chunks[0].original_text
+    analyze.assert_not_called()
+
+
+def test_typed_h2_chunks_put_the_heading_only_on_the_first_piece_of_a_long_chapter():
+    from library.document_analysis_service import _typed_h2_chunks
+
+    body = " ".join(f"To jest zdanie numer {i} w długim rozdziale." for i in range(1, 40))
+    text = f"## Wstęp\n\nKrótki wstęp.\n\n## Długi rozdział\n\n{body}\n\n## Sponsor\n\nKup teraz produkt."
+
+    chunks = _typed_h2_chunks(text, ["TEMAT", "TEMAT", "REKLAMA"], 400)
+
+    long_pieces = [chunk for chunk in chunks if chunk[2] == "Długi rozdział"]
+    assert len(long_pieces) > 1
+    assert long_pieces[0][0].startswith("## Długi rozdział")
+    assert all(not piece[0].startswith("##") for piece in long_pieces[1:])
+    assert all(len(piece[0]) <= 400 for piece in long_pieces)
+    assert [chunk[1] for chunk in chunks if chunk[2] == "Sponsor"] == ["REKLAMA"]
+
+
+@pytest.mark.parametrize("types,expected", [(["TEMAT", "REKLAMA"], "## Temat\n\nJan."), (["SZUM", "ZRODLA"], None)])
+def test_create_run_filters_ner_chapters(transcript_env, monkeypatch, types, expected):
+    doc = FakeYoutubeDoc()
+    doc.text = "## Temat\n\nJan.\n\n## Reklama\n\nSponsor."
+    doc.chapter_types = types
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda *_: doc))
+    refresh = MagicMock(return_value=[])
+    monkeypatch.setattr("library.entity_service.refresh_document_entities", refresh)
+    DocumentAnalysisService(transcript_env).create_run(doc_id=doc.id, model="test-model", mode="transcript", split_only=True)
+    if expected:
+        refresh.assert_called_once_with(transcript_env, doc.id, expected)
+    else:
+        refresh.assert_not_called()
