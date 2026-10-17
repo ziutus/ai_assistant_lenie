@@ -773,6 +773,17 @@ class TestCityGazetteerOverride:
             },
         }
 
+    def test_luisiana_transcription_variant_doc_10872(self):
+        entities = [{"text": "Luisianie", "label": "placeName", "lemma": "Luisianie", "pos": "NOUN"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Luizjana"): {
+                "count": 1,
+                "variants": ["Luisianie"],
+                "raw_lemmas": ["Luisianie"],
+            },
+        }
+        assert aggregate_entities(entities) == {("placeName", "Luizjana"): 1}
+
     def test_gaza_accusative_resolves_to_canonical_name(self):
         """doc #9394: the only mention is accusative ``Gazę``."""
         entities = [{"text": "Gazę", "label": "placeName", "lemma": "Gazę",

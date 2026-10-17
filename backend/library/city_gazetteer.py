@@ -55,6 +55,10 @@ _CITY_DATA: list[tuple[str, tuple[str, ...]]] = [
     # w szpitalu w Tabuk". The geocoder received "Riadzie" and found nothing
     # (geocode_cache.resolved=false).
     ("Rijad", ("rijad*", "riad*")),
+    # doc #10872: the transcript spells the US state "Luisiana", and spaCy
+    # keeps the locative "Luisianie" as its lemma. The geocoder received
+    # "Luisianie" and found nothing (geocode_cache 1279, resolved=false).
+    ("Luizjana", ("luizjan*", "luisian*")),
 ]
 
 

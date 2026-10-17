@@ -539,3 +539,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod + dane — `_split_rename_org_spans` w `backend/library/ner_client.py` rozcina wyłącznie `orgName` z dokładnie jednym małym „ na ” po normalizacji i zdjęciu cudzysłowów, gdy obie niepuste części zaczynają się wielką literą, a po `unidecode().casefold()` całe krótsze pierwsze słowo (minimum 6 znaków) jest prefiksem dłuższego. Części dostają `text = lemma` z powierzchni i zachowują POS, bez morfologii całego spanu; dokładnie takie same powierzchnie samodzielnych wzmianek w tej agregacji dzielą z nimi klucz, więc „Departament Wojny” ma licznik 2. Usunięto encję 15933 oraz powiązaną encję „Pentagonu Pentagonu” 15969 (osobny artefakt zdublowanej nazwy, bez poprawki kodu). Organizacje 1152 i 1188 pozostają w rejestrze jako osierocone, bez dokumentów — brak endpointu DELETE dla organizacji. Dane naprawiono wcześniej; ta zmiana kodu dotyczy przyszłych ekstrakcji.
 - **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_10872_org_rename_span_is_split` — cytat, surowy span i samodzielna wzmianka, brak zlepionej nazwy oraz licznik 2 niezależnie od kolejności; test nie przechodzi bez poprawki kodu. Testy negatywne chronią „Polskie Siły Zbrojne na Zachodzie”, „Delegatury rząd na Kraj”, „Uniwersytet Medyczny na Pradze”, „Departament Obrony” i etykiety inne niż `orgName`.
 - **Status:** kod w PR, dane naprawione.
+
+### E031 — „Luisianie” (pisownia „Luisiana”) bez kanonikalizacji do „Luizjana” (dok. #10872, PR n/d, 2026-10-17)
+
+- **Typ encji:** placeName
+- **Kategoria:** T3 — brak nominatiwu w tekście / rzadka nazwa obcojęzyczna (wariant pisowni nieobjęty gazetteerem, jak w E028).
+- **Zdanie źródłowe:** "Obejmie nowe rozszerzone szkolenia na w Luisianie, Mississippi, Task i Hillsdale."
+- **Objaw:** encja „Luisianie” (`document_entities` 16130) trafia do geokodera w miejscowniku; `geocode_cache` 1279 ma `resolved=false`.
+- **Przyczyna źródłowa:** transkrypcja zapisuje stan „Luisiana”, spaCy nie lematyzuje nieznanej nazwy i pozostawia „Luisianie”, a gazetteer nie zawiera wpisu dla tej pisowni ani poprawnej polskiej nazwy „Luizjana”.
+- **Poprawka:** kod + dane — zamknięty wpis `("Luizjana", ("luizjan*", "luisian*"))` w `backend/library/city_gazetteer.py`; nazwa kanoniczna „Luizjana” zgodnie z decyzją użytkownika. Po wdrożeniu przemianować/odświeżyć encję 16130 w dok. #10872 i ponowić weryfikację miejsca.
+- **Test regresyjny:** `backend/tests/unit/test_city_gazetteer.py::TestCanonicalCityName::test_luisiana_transcription_variant_doc_10872` — dziesięć form obu pisowni; osobny test pełnego dopasowania i limitu końcówki. `backend/tests/unit/test_ner_client.py::TestCityGazetteerOverride::test_luisiana_transcription_variant_doc_10872` — surowa encja „Luisianie” agreguje się do „Luizjana” z zachowaniem wariantu; test nie przechodzi bez wpisu w gazetteerze.
+- **Status:** kod w PR; dane do wykonania po wdrożeniu.
