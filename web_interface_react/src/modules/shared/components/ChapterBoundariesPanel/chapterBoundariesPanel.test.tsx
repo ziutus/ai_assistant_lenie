@@ -16,6 +16,7 @@ const data = { sections, has_embeddings: false, has_analysis_runs: true };
 const sentenceCalls = () => vi.mocked(axios.get).mock.calls.filter(([url]) => url.endsWith("/sentences"));
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.spyOn(window, "scrollBy").mockImplementation(() => {});
   vi.mocked(axios.get).mockResolvedValue({ data });
   vi.mocked(axios.post).mockResolvedValue({ data: { ...data, stale_analysis_runs: 2 } });
 });
@@ -81,7 +82,7 @@ it.each([
     { headers: { "x-api-key": "test-key" } });
   expect(axios.get).toHaveBeenCalledTimes(2);
   expect(sentenceCalls()).toHaveLength(0);
-  expect(screen.getByRole("button", { name: "Rozwiń rozdział 3" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: (direction === "następnego" ? "Zwiń" : "Rozwiń") + " rozdział 3" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Zwiń rozdział 1" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Zwiń rozdział 2" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "/chunks/42" }).getAttribute("href")).toBe("/chunks/42");
@@ -185,4 +186,95 @@ it.each([
   fireEvent.click(within(row(chapter, 1)).getByRole("button", { name: /Przenieś do poprzedniego/ }));
   expect((await screen.findByRole("alert")).textContent).toContain(expected);
   expect(onSaved).not.toHaveBeenCalled();
+});
+
+
+const regroup = (sizes: number[]) => {
+  const allSentences = sections.flatMap(section => section.sentences);
+  let offset = 0;
+  return sizes.map((size, index) => {
+    const sentences = allSentences.slice(offset, offset + size).map((sentence, index) => ({ ...sentence, index: index + 1 }));
+    offset += size;
+    return { position: index + 1, title: "Temat " + (index + 1), sentence_count: size, sentences };
+  });
+};
+
+it.each([
+  { operation: "up", ordinal: 7, sizes: [6, 2, 4], anchorChapter: 2, endpoint: "move_chapter_boundary" },
+  { operation: "down", ordinal: 7, sizes: [4, 2, 6], anchorChapter: 3, endpoint: "move_chapter_boundary" },
+  { operation: "split", ordinal: 7, sizes: [4, 2, 2, 4], anchorChapter: 3, endpoint: "split_chapter" },
+  { operation: "merge", ordinal: 5, sizes: [8, 4], anchorChapter: 1, endpoint: "merge_chapter" },
+])("restores the correct global sentence anchor for $operation after the fresh rows render", async ({ operation, ordinal, sizes, anchorChapter, endpoint }) => {
+  await open();
+  const oldAnchor = document.querySelector<HTMLElement>('[data-gsi="' + ordinal + '"]')!;
+  const originalText = oldAnchor.querySelector('span[style*="white-space"]')!.textContent;
+  const chapter = screen.getByRole("region", { name: "Rozdział 2: Temat 2" });
+  let refreshed = false;
+  const measured: Array<{ ordinal: string | undefined; refreshed: boolean }> = [];
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    measured.push({ ordinal: this.dataset.gsi, refreshed });
+    return { top: refreshed ? 180 : 300 } as DOMRect;
+  });
+  vi.mocked(axios.get).mockImplementation(async () => {
+    refreshed = true;
+    return { data: { ...data, sections: regroup(sizes) } };
+  });
+  // Receiving chapters start collapsed; moves must reveal them without losing the anchor.
+  if (operation === "up" || operation === "merge") fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 1" }));
+  if (operation === "down") fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 3" }));
+  if (operation === "up") {
+    fireEvent.click(within(row(chapter, 2)).getByRole("button", { name: /Przenieś do poprzedniego/ }));
+  } else if (operation === "down") {
+    fireEvent.click(within(row(chapter, 3)).getByRole("button", { name: /Przenieś do następnego/ }));
+  } else if (operation === "split") {
+    fireEvent.click(within(row(chapter, 3)).getByRole("button", { name: /Podziel tutaj/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Podziel" }));
+  } else {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Scal rozdział 2 z poprzednim" }));
+  }
+  await idle();
+  expect(axios.post).toHaveBeenCalledWith("/document/42/" + endpoint, expect.any(Object), expect.any(Object));
+  expect(measured).toEqual([{ ordinal: String(ordinal), refreshed: false }, { ordinal: String(ordinal), refreshed: true }]);
+  expect(window.scrollBy).toHaveBeenCalledExactlyOnceWith(0, -120);
+  const newAnchor = document.querySelector<HTMLElement>('[data-gsi="' + ordinal + '"]')!;
+  expect(newAnchor.querySelector('span[style*="white-space"]')!.textContent).toBe(originalText);
+  expect(newAnchor.closest("section")!.dataset.chapterPosition).toBe(String(anchorChapter));
+  expect(screen.getByRole("button", { name: "Zwiń rozdział " + anchorChapter })).toBeTruthy();
+});
+
+it("keeps cards and reserved status space mounted throughout the POST and document reload", async () => {
+  const { onSaved } = await open();
+  const cards = screen.getAllByRole("region", { name: /^Rozdział/ });
+  const status = screen.getByRole("status");
+  expect(status.style.minHeight).toBe("1.5em");
+  let finishPost!: (value: unknown) => void;
+  let finishReload!: () => void;
+  vi.mocked(axios.post).mockImplementation(() => new Promise(resolve => { finishPost = resolve; }));
+  onSaved.mockImplementation(() => new Promise<void>(resolve => { finishReload = resolve; }));
+  fireEvent.click(within(row(cards[1], 2)).getByRole("button", { name: /Przenieś do poprzedniego/ }));
+  expect(screen.getAllByRole("region", { name: /^Rozdział/ })).toEqual(cards);
+  expect(screen.getByText("Przetwarzam…")).toBe(status);
+  finishPost({ data: { ...data, stale_analysis_runs: 0 } });
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  // This intermediate render used to setSections([]), unmounting every card.
+  expect(screen.getAllByRole("region", { name: /^Rozdział/ })).toEqual(cards);
+  expect(screen.getByText("Rozdział 2, zdanie 3.")).toBeTruthy();
+  expect(window.scrollBy).not.toHaveBeenCalled();
+  finishReload();
+  await idle();
+  expect(screen.getByRole("status")).toBe(status);
+  expect(status.style.minHeight).toBe("1.5em");
+});
+
+it("does not restore an obsolete anchor after a failed edit", async () => {
+  await open();
+  vi.mocked(axios.post).mockRejectedValue(new Error("offline"));
+  const chapter = screen.getByRole("region", { name: "Rozdział 2: Temat 2" });
+  fireEvent.click(within(row(chapter, 2)).getByRole("button", { name: /Przenieś do poprzedniego/ }));
+  await screen.findByRole("alert");
+  expect(window.scrollBy).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Odśwież" }));
+  await idle();
+  expect(window.scrollBy).not.toHaveBeenCalled();
 });

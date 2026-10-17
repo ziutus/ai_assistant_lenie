@@ -10,6 +10,7 @@ interface Section {
   sentences: Sentence[];
 }
 interface Sentence { index: number; text: string }
+interface ScrollAnchor { ordinal: number; top: number }
 interface Props {
   docId: string;
   disabled?: boolean;
@@ -52,6 +53,8 @@ function errorMessage(error: unknown): string {
 
 export default function ChapterBoundariesPanel({ docId, disabled = false, defaultOpen = false, onBusyChange, onSaved }: Props) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const panel = React.useRef<HTMLDetailsElement>(null);
+  const [pendingScrollRestore, setPendingScrollRestore] = React.useState<ScrollAnchor | null>(null);
   const [sections, setSections] = React.useState<Section[]>([]);
   const [expanded, setExpanded] = React.useState<Set<number>>(new Set());
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
@@ -66,6 +69,24 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
   const base = apiUrl + "/document/" + docId;
   const blocked = busy || disabled || hasEmbeddings;
 
+  const chapters = sections.filter(section => section.position > 0);
+  const chapterOffsets = new Map<number, number>();
+  let sentenceTotal = 0;
+  for (const chapter of chapters) {
+    chapterOffsets.set(chapter.position, sentenceTotal);
+    sentenceTotal += chapter.sentence_count;
+  }
+
+  React.useLayoutEffect(() => {
+    if (!pendingScrollRestore) return;
+    const row = panel.current?.querySelector<HTMLElement>('[data-gsi="' + pendingScrollRestore.ordinal + '"]');
+    if (row) {
+      // Layout's content is in normal document flow; only the sidebar scrolls independently.
+      window.scrollBy(0, row.getBoundingClientRect().top - pendingScrollRestore.top);
+    }
+    setPendingScrollRestore(null);
+  }, [pendingScrollRestore]);
+
   const withLock = async (action: () => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
@@ -76,7 +97,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
     catch (error) { setError(errorMessage(error)); }
     finally { pending.current = false; setBusy(false); onBusyChange?.(false); }
   };
-  const loadSections = async (expandAll: boolean) => {
+  const loadSections = async (expandAll: boolean, reveal: number[] = [], scrollAnchor: ScrollAnchor | null = null) => {
     const { data } = await axios.get<{ sections: Section[]; has_embeddings: boolean }>(base + "/chapter_sections", {
       headers, params: { with_sentences: 1 },
     });
@@ -84,7 +105,9 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
     setHasEmbeddings(data.has_embeddings);
     setSplit(null);
     const positions = data.sections.filter(section => section.position > 0).map(section => section.position);
-    setExpanded(current => new Set(expandAll ? positions : positions.filter(position => current.has(position))));
+    setExpanded(current => new Set(expandAll ? positions : positions.filter(position => current.has(position) || reveal.includes(position))));
+    // Schedule restoration only together with the fresh rows, never during intermediate busy renders.
+    setPendingScrollRestore(scrollAnchor);
   };
   const load = () => withLock(() => loadSections(true));
   React.useEffect(() => {
@@ -103,12 +126,24 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
   const edit = (operation: string, payload: Record<string, string | number>) => {
     if (disabled || hasEmbeddings) return;
     return withLock(async () => {
+      const position = Number(payload.position);
+      const moving = operation === "move_chapter_boundary";
+      const count = Number(payload.sentences);
+      const anchorPosition = moving && count < 0 ? position - 1 : position;
+      const anchorChapter = chapters.find(chapter => chapter.position === anchorPosition);
+      const anchorIndex = moving
+        ? count > 0 ? count + 1 : (anchorChapter?.sentence_count ?? 0) + count + 1
+        : operation === "split_chapter" ? Number(payload.sentence_index) : 1;
+      const ordinal = (chapterOffsets.get(anchorPosition) ?? 0) + anchorIndex;
+      // A collapsed chapter has no sentence rows; merge from its header keeps that location instead.
+      const anchorElement = panel.current?.querySelector<HTMLElement>('[data-gsi="' + ordinal + '"]')
+        ?? panel.current?.querySelector<HTMLElement>('[data-chapter-position="' + anchorPosition + '"]');
+      const scrollAnchor = anchorElement ? { ordinal, top: anchorElement.getBoundingClientRect().top } : null;
       const { data } = await axios.post(base + "/" + operation, payload, { headers });
-      setSections([]);
       if (data.stale_analysis_runs > 0) setStale(true);
       setSplit(null);
       await onSaved();
-      await loadSections(operation !== "move_chapter_boundary");
+      await loadSections(!moving, moving ? [position - 1, position] : [], scrollAnchor);
     });
   };
   const cancelSplit = () => { setSplit(null); splitTrigger.current?.focus(); };
@@ -117,10 +152,8 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
       position: split.position, sentence_index: split.index, title: split.title,
     });
   };
-  const chapters = sections.filter(section => section.position > 0);
-
   return (
-    <details open={isOpen} style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}
+    <details ref={panel} open={isOpen} style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}
       onToggle={event => setIsOpen(event.currentTarget.open)}>
       <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Granice rozdziałów</summary>
       <p>Zapisuje od razu w bazie. Po zmianie formularz zostanie odświeżony — wcześniej zapisz inne zmiany.</p>
@@ -129,10 +162,10 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
         Rozdziały w czytniku zostały zaktualizowane. Istniejące chunki (<NavLink to={"/chunks/" + docId}>{"/chunks/" + docId}</NavLink>) powstały ze starego podziału — uruchom analizę ponownie.
       </p>}
       {error && <p role="alert">{error} <button type="button" onClick={load} disabled={busy}>Odśwież</button></p>}
-      {busy && <p role="status">Przetwarzam…</p>}
+      <p role="status" style={{ minHeight: "1.5em" }}>{busy ? "Przetwarzam…" : ""}</p>
       {chapters.map(section => {
         const isOpen = expanded.has(section.position);
-        return <section key={section.position} aria-label={"Rozdział " + section.position + ": " + section.title}
+        return <section key={section.position} data-chapter-position={section.position} aria-label={"Rozdział " + section.position + ": " + section.title}
           style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <strong>#{section.position} {section.title} · {section.sentence_count} zdań</strong>
@@ -153,7 +186,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
             {section.sentences?.map(sentence => {
               const marked = split?.position === section.position && split.index === sentence.index;
               const label = " — rozdział " + section.position + ", zdanie " + sentence.index;
-              return <div key={sentence.index} aria-label={"Zdanie " + sentence.index}
+              return <div key={sentence.index} data-gsi={(chapterOffsets.get(section.position) ?? 0) + sentence.index} aria-label={"Zdanie " + sentence.index}
                 style={{ position: "relative", paddingLeft: 82, marginBottom: 8, borderRadius: 2, minHeight: "1.4em",
                   ...(marked ? { background: "#fff7ed", borderLeft: "3px solid #f97316" } : {}) }}>
                 <span style={{ position: "absolute", left: 0, top: 1, display: "flex", gap: 3 }}>
