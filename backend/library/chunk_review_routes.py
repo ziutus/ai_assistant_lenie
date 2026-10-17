@@ -635,6 +635,75 @@ def paragraphize_document_transcript(doc_id: int):
     })
 
 
+
+@bp.route("/document/<int:doc_id>/chapter_sections", methods=["GET"])
+def document_chapter_sections(doc_id: int):
+    """Describe editable H2 chapter boundaries from the authoritative transcript."""
+    from library.document_editing import document_has_embeddings
+    from library.transcript_chapter_boundaries import describe_sections
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    return jsonify({
+        "status": "success", "doc_id": doc_id,
+        "sections": describe_sections(doc.text),
+        "has_embeddings": document_has_embeddings(session, doc_id),
+        "has_analysis_runs": bool(_chapter_boundary_run_count(session, doc_id)),
+    })
+
+
+def _chapter_boundary_run_count(session, doc_id: int) -> int:
+    return session.scalar(select(func.count()).select_from(DocumentAnalysisRun).where(
+        DocumentAnalysisRun.document_id == doc_id,
+        DocumentAnalysisRun.status != "superseded",
+    )) or 0
+
+
+@bp.route("/document/<int:doc_id>/move_chapter_boundary", methods=["POST"])
+def move_document_chapter_boundary(doc_id: int):
+    """Persist only Document.text; existing analysis runs must be regenerated."""
+    from library.document_editing import document_has_embeddings
+    from library.transcript_chapter_boundaries import describe_sections, move_boundary
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    if document_has_embeddings(session, doc_id):
+        return jsonify({
+            "status": "error",
+            "message": "Document has embeddings. Reopen it for editing before moving chapter boundaries.",
+        }), 409
+    active = session.scalar(
+        select(DocumentAnalysisJob.id).where(
+            DocumentAnalysisJob.document_id == doc_id,
+            DocumentAnalysisJob.status.in_(("queued", "running")),
+        ).limit(1)
+    )
+    if active is not None:
+        return jsonify({"status": "error", "message": "Document analysis is currently running"}), 409
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or any(type(payload.get(key)) is not int for key in ("position", "sentences")):
+        return jsonify({"status": "error", "message": "Pola position i sentences muszą być liczbami całkowitymi."}), 400
+    try:
+        updated = move_boundary(doc.text, payload["position"], payload["sentences"])
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    stale_runs = _chapter_boundary_run_count(session, doc_id)
+    doc.text = updated
+    session.commit()
+    return jsonify({
+        "status": "success", "doc_id": doc_id, "sections": describe_sections(updated),
+        "has_embeddings": False, "has_analysis_runs": bool(stale_runs), "stale_analysis_runs": stale_runs,
+    })
+
+
 @bp.route("/document/<int:doc_id>/split_preview", methods=["GET", "POST"])
 def split_preview(doc_id: int):
     """Preview how a document would split into chunks — no LLM calls, no DB writes.

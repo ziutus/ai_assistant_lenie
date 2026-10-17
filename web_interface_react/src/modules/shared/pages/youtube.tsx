@@ -1,4 +1,5 @@
 import React from "react";
+import ChapterBoundariesPanel from "../components/ChapterBoundariesPanel/chapterBoundariesPanel";
 import { renderMarkdown } from "./read";
 import axios from "axios";
 import { useFormik } from "formik";
@@ -241,6 +242,10 @@ const Youtube = () => {
             </button>
             {paragraphMessage && <div style={{ marginTop: 8 }}>{paragraphMessage}</div>}
           </section>
+        )}
+        {id && hasMarkdownChapters && /^## /m.test(String(formik.values.text || "")) && (
+          <ChapterBoundariesPanel key={id} docId={id} disabled={isLoading || paragraphizing}
+            onSaved={() => handleGetLinkByID(id)} />
         )}
         <SharedInputs
           formik={formik}
