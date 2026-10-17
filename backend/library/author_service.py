@@ -38,6 +38,11 @@ logger = logging.getLogger(__name__)
 # part is stripped below, so whitespace consumption here is unnecessary.
 _AUTHOR_SEPARATORS = re.compile(r"[,;/\n]|\bi\b|\boraz\b", re.IGNORECASE)
 
+# A role/affiliation glued to a name with a spaced dash ("Wojciech Pokora –
+# Redaktor naczelny Disinfo Digest"). Requires spaces around the dash so
+# hyphenated surnames ("Anna Nowak-Kowalska") stay intact.
+_ROLE_SUFFIX = re.compile(r"\s[–—-]\s.*$")
+
 # Portal UI junk that survives a byline copy-paste ("Michał Rogalski\nObserwuj").
 _AUTHOR_STOPWORDS = {"obserwuj", "autor", "autorzy", "autorka", "red.", "redakcja", "opracowanie"}
 
@@ -51,7 +56,7 @@ def split_author_names(raw: str) -> list[str]:
     names: list[str] = []
     seen: set[str] = set()
     for part in _AUTHOR_SEPARATORS.split(raw or ""):
-        name = part.strip()
+        name = _ROLE_SUFFIX.sub("", part).strip()
         if not name or name.lower() in seen or name.lower() in _AUTHOR_STOPWORDS:
             continue
         seen.add(name.lower())
