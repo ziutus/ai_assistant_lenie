@@ -550,4 +550,3 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod + dane — zamknięty wpis `("Luizjana", ("luizjan*", "luisian*"))` w `backend/library/city_gazetteer.py`; nazwa kanoniczna „Luizjana” zgodnie z decyzją użytkownika. Po wdrożeniu przemianować/odświeżyć encję 16130 w dok. #10872 i ponowić weryfikację miejsca.
 - **Test regresyjny:** `backend/tests/unit/test_city_gazetteer.py::TestCanonicalCityName::test_luisiana_transcription_variant_doc_10872` — dziesięć form obu pisowni; osobny test pełnego dopasowania i limitu końcówki. `backend/tests/unit/test_ner_client.py::TestCityGazetteerOverride::test_luisiana_transcription_variant_doc_10872` — surowa encja „Luisianie” agreguje się do „Luizjana” z zachowaniem wariantu; test nie przechodzi bez wpisu w gazetteerze.
 - **Status:** kod w PR; dane do wykonania po wdrożeniu.
-
