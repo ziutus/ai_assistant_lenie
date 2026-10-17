@@ -556,6 +556,15 @@ python imports/create_country_organizations.py            # dry-run (default): c
 python imports/create_country_organizations.py --apply
 ```
 
+### `narrative_trial.py`
+
+Read-only trial of narrative detection (`library/narrative_service.py`): picks public `webpage` documents (explicit `--ids`, newest Russia/Ukraine-related pages, random unrelated controls), scores each against a narrative set seed (`--seed`, default `data/narratives/ru_viedm_2026_10.json`) through Fabryka Basal and writes a JSON report (`--out`). Never writes to the database and never selects private document types (the free Fabryka tier may retain content). ~4 Fabryka calls per 1800-char piece, `--max-pieces` (default 4) pieces per document.
+
+```bash
+cd backend
+PYTHONPATH=. python -X utf8 imports/narrative_trial.py --out tmp/narr_trial.json --related 20 --control 6 --ids 10774
+```
+
 ### `youtube_batch_analyze.py`
 
 Bielik LLM chunk analysis of an **existing** document (by `--doc_id`): chunk splitting, speaker extraction/labeling, two-pass rewrite + summarize, topic grouping, synthesis, DB persistence. Moved from `test_code/` — the pipeline lives in `library/document_analysis_service.py` + `library/chunk_llm_analysis.py` (shared with Flask `chunk_review_routes.py`); file exports in `library/analysis_exports.py`. For a brand-new video, use `youtube_add.py <URL> --analyze` instead.
