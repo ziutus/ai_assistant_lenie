@@ -5,7 +5,8 @@ interface FormButtonsProps {
   formik: any;
   isError: boolean;
   isLoading: boolean;
-  handleSaveWebsiteNext: (values: any) => void;
+  // `destination` is only used for YouTube documents: "ner" or "chunks".
+  handleSaveWebsiteNext: (values: any, destination?: "ner" | "chunks") => void;
   handleSaveWebsiteToCorrect: (values: any) => void;
   handleDeleteDocumentNext?: (values: any) => void;
 }
@@ -36,14 +37,26 @@ const FormButtons = ({
         disabled={isLoading || (formik.values.document_type === "youtube" && !String(formik.values.text || "").trim())}
         style={{ marginRight: "15px" }}
         className={"button"}
-        onClick={() => handleSaveWebsiteNext(formik.values)}
+        onClick={() => handleSaveWebsiteNext(formik.values, "ner")}
       >
         {formik.values.document_type === "webpage"
           ? "Zatwierdź Markdown i przejdź do chunków"
           : formik.values.document_type === "youtube"
-            ? "Zapisz tekst i przejdź do analizy chunków"
+            ? "Zapisz i przejdź do przeglądu NER"
             : "Zapisz jako gotowy i przejdź dalej"}
       </button>
+      {formik.values.document_type === "youtube" && (
+        <button
+          type="button"
+          disabled={isLoading || !String(formik.values.text || "").trim()}
+          style={{ marginRight: "15px" }}
+          className={"button"}
+          title="Zapisuje tak samo, ale pomija przegląd NER per rozdział"
+          onClick={() => handleSaveWebsiteNext(formik.values, "chunks")}
+        >
+          Przejdź prosto do chunków
+        </button>
+      )}
       <button
         type="button"
         disabled={isLoading}
