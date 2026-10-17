@@ -165,9 +165,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 |---|---|---|---|---|
 | T1 | Sklejony/ucięty span NER | spaCy łączy sąsiednie encje lub ucina nazwę przed kolejnym słowem | "Al-Faszirze Emiraty", „Arabię” przed „Saudyjską” | E006, E007, E026 |
 | T2 | Zgubiona odmiana w lemacie (`Span.lemma_`) | spaCy konkatenuje lematy per-token, gubi zgodność przymiotnik-rzeczownik w nazwach wieloczłonowych | "Morze Czerwone" → lemat "Morze czerwony" | E001, E009, E013 |
-| T3 | Brak nominatiwu w tekście / rzadka nazwa obcojęzyczna | Nazwa występuje tylko w przypadku zależnym, gazetteer/geokoder nie rozpoznaje odmiany | "Omdurmanie" | E002, E009 |
+| T3 | Brak nominatiwu w tekście / rzadka nazwa obcojęzyczna | Nazwa występuje tylko w przypadku zależnym, gazetteer/geokoder nie rozpoznaje odmiany | "Omdurmanie", „Riadzie” | E002, E009, E028 |
 | T4 | Homonim geograficzny | Nazwa pokrywa się z inną, niepowiązaną, lepiej zindeksowaną lokalizacją | "Kosti" → zamek "Kost" (Czechy) | E011 |
-| T5 | Inna transliteracja w OSM | LocationIQ/OSM indeksuje miejsce pod inną (np. angielską) pisownią | "Al-Faszir" → "El Fasher" | E004, E005 |
+| T5 | Inna transliteracja w OSM | LocationIQ/OSM indeksuje miejsce pod inną (np. angielską) pisownią | "Al-Faszir" → "El Fasher", "Kaliningrad" → "Królewiec" | E004, E005, E027 |
 | T6 | Metonimia instytucjonalna | Nazwa siedziby władzy oznacza w tekście instytucję, nie fizyczne miejsce | "Biały Dom", "Kreml" | E012 |
 | T7 | Region geopolityczny bez punktowej lokalizacji | Pojęcie geopolityczne, brak jednego wiarygodnego geokodowalnego punktu | "Sahel", "Bliski Wschód" | E010 |
 | T8 | Rzeczownik pospolity jako nazwa własna | spaCy błędnie oznacza rzeczownik pospolity (zwł. na początku zdania albo nagłówka) jako `geogName`/`placeName`, albo dokleja go do sąsiedniej nazwy własnej (`orgName`) | "Lotnisko w Chartumie...", nagłówek "Arsenał Huti" | E008, E018 |
@@ -493,3 +493,25 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — zamknięta reguła w `ner_client.py` rozszerza span o następne słowo „Saudyjsk*” na podstawie offsetów względem okna, ustawia lemat „Arabia Saudyjska” i pozostawia scalenie istniejącej kanonikalizacji; sama „Arabia”, brak offsetów i koniec okna pozostają bez zmian.
 - **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestTruncatedCountrySpan`
 - **Status:** żywy bug naprawiony w kodzie
+
+### E027 — „Kaliningrad” odrzucony przez filtr wiarygodności, bo OSM nazywa miasto „Królewiec” (dok. #10872, PR n/d, 2026-10-17)
+
+- **Typ encji:** placeName
+- **Kategoria:** T5 — inna transliteracja w OSM (tu: polski egzonim zamiast nazwy rosyjskiej).
+- **Zdanie źródłowe:** n/d — dokument #10872 (YouTube) nie ma wierszy w `document_chunks`; encja ma 3 wzmianki, wariant „Kaliningradu”.
+- **Objaw:** „Kaliningrad” (`document_entities` 15875) miał `geocode_cache` 1276 z `resolved=false`, choć trafienie wskazywało właściwe miasto (54.71/20.51); obok osobna, poprawnie zweryfikowana encja „Królewiec” (16128).
+- **Przyczyna źródłowa:** LocationIQ zwraca `display_name` „Królewiec, Obwód królewiecki, …, Rosja”; `locationiq_client.is_plausible_match()` liczy podobieństwo „kaliningrad” do „krolewiec” = 0,30 przy progu 0,75 i odrzuca trafienie. Brak wpisu w `geocode_aliases.py`.
+- **Poprawka:** kod + dane — `"Kaliningrad": "Królewiec"` w `GEOCODE_ALIASES` (`library/geocode_aliases.py`); zepsuty wiersz cache i encja dok. #10872 naprawione osobno w danych.
+- **Test regresyjny:** `backend/tests/unit/test_geocode_aliases.py::TestGeocodeAlias::test_kaliningrad_alias_fallback_doc_10872`
+- **Status:** żywy bug naprawiony w kodzie + dane dok. #10872 naprawione osobno
+
+### E028 — „Riadzie” (pisownia „Riad”) bez kanonikalizacji do „Rijad” (dok. #10872, PR n/d, 2026-10-17)
+
+- **Typ encji:** placeName
+- **Kategoria:** T3 — brak nominatiwu w tekście / rzadka nazwa obcojęzyczna (wariant pisowni nieobjęty gazetteerem).
+- **Zdanie źródłowe:** "Ambasada Indii w Riadzie potwierdziła tożsamość pilota i w oświadczeniu poinformowała, że znajduje się on w szpitalu w Tabuk w stanie stabilnym."
+- **Objaw:** encja „Riadzie” (`document_entities` 16149) z `geocode_cache` 1213 `resolved=false` i pustym `display_name`, mimo że „Rijad” geokoduje się poprawnie.
+- **Przyczyna źródłowa:** transkrypcja pisze stolicę „Riad”, spaCy zostawia miejscownik jako lemat, a wpis `("Rijad", ("rijad*",))` w `library/city_gazetteer.py` (E023) nie łapał pisowni przez samo „a”. Do geokodera trafiło „Riadzie”.
+- **Poprawka:** kod + dane — dodany wariant `riad*` do wpisu „Rijad”; encja 16149 przemianowana w danych na „Rijad”.
+- **Test regresyjny:** `backend/tests/unit/test_city_gazetteer.py::TestCanonicalCityName::test_riad_transcription_variant_doc_10872`
+- **Status:** żywy bug naprawiony w kodzie + dane dok. #10872 naprawione osobno

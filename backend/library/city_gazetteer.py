@@ -49,7 +49,12 @@ _CITY_DATA: list[tuple[str, tuple[str, ...]]] = [
     ("Al-Ubajjid", ("al ubajjid*", "al ubajid*")),
     ("Port Sudan", ("port sudan*",)),
     # doc #10770: spaCy keeps the locative in "w Rijadzie" as its lemma.
-    ("Rijad", ("rijad*",)),
+    # doc #10872: the transcript spells the capital "Riad", and spaCy keeps
+    # the locative "Riadzie" as its lemma: "Ambasada Indii w Riadzie potwierdziła
+    # tożsamość pilota i w oświadczeniu poinformowała, że znajduje się on
+    # w szpitalu w Tabuk". The geocoder received "Riadzie" and found nothing
+    # (geocode_cache.resolved=false).
+    ("Rijad", ("rijad*", "riad*")),
 ]
 
 

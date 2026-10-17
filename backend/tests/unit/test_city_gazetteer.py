@@ -33,6 +33,15 @@ class TestCanonicalCityName:
         # międzynarodowego lotniska im. króla Chalida w Rijadzie - poinformował Reuters."
         assert city_gazetteer.canonical_city_name(mention) == "Rijad"
 
+    def test_riad_transcription_variant_doc_10872(self):
+        # doc #10872: "Ambasada Indii w Riadzie potwierdziła tożsamość pilota i w"
+        # "oświadczeniu poinformowała, że znajduje się on w szpitalu w Tabuk".
+        assert city_gazetteer.canonical_city_name("Riadzie") == "Rijad"
+        assert city_gazetteer.canonical_city_name("Riad") == "Rijad"
+        assert city_gazetteer.canonical_city_name("Rijadzie") == "Rijad"
+        # An unrelated token exceeds the four-character stem suffix limit.
+        assert city_gazetteer.canonical_city_name("Riadabcdefghijkl") is None
+
     def test_rijad_stem_does_not_match_riga(self):
         assert city_gazetteer.canonical_city_name("Riga") is None
 
