@@ -197,6 +197,40 @@ def test_split_organization(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("in_use", 409),
+                                           ("rollback", 500)])
+def test_delete_organization(client, case, expected):
+    from library.db.models import Organization
+    organization = Organization(id=1152, canonical_name="Departamentu Obrony na Departament Wojny")
+    session = MagicMock()
+    session.get.return_value = None if case == "missing" else organization
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    removed = {"aliases": 1, "countries": 0, "ambiguous_aliases": 0}
+    from library import organization_registry
+    in_use = organization_registry.OrganizationInUseError("Organizacja jest powiązana z dokumentami (2).", documents=2)
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.organization_registry.delete_unused_organization",
+        side_effect=in_use if case == "in_use" else None, return_value=removed,
+    ):
+        response = client.delete("/organizations/1152", headers=API_HEADERS)
+    assert response.status_code == expected
+    body = response.get_json()
+    if expected == 200:
+        assert body["deleted_organization_id"] == 1152
+        assert body["removed"] == removed
+        session.commit.assert_called_once()
+    elif case == "in_use":
+        assert body["documents"] == 2
+        assert "powiązana z dokumentami" in body["message"]
+        session.commit.assert_not_called()
+        session.rollback.assert_called_once()
+    elif case == "rollback":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
 @pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_person", 400),
                                            ("blank_text", 400), ("rollback", 500)])
 def test_person_to_place(client, case, expected):

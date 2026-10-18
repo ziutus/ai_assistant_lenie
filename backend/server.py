@@ -2349,6 +2349,37 @@ def organization_documents(organization_id: int):
     }, 200
 
 
+@app.route('/organizations/<int:organization_id>', methods=['DELETE', 'OPTIONS'])
+def organization_delete(organization_id: int):
+    """Delete an organization nothing depends on (an orphan left by a split or a rename).
+
+    409 with the reason when documents still link to it, an information source is bound to it, or it is a
+    country organization. On success its aliases, country ties and ambiguous aliases go with it; the
+    response reports how many of each (``removed``)."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library import organization_registry
+    from library.db.models import Organization
+
+    session = get_scoped_session()
+    organization = session.get(Organization, organization_id)
+    if organization is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+    name = organization.canonical_name
+    try:
+        removed = organization_registry.delete_unused_organization(session, organization)
+        session.commit()
+    except organization_registry.OrganizationInUseError as exc:
+        session.rollback()
+        return jsonify(status="error", message=exc.reason, **exc.counts), 409
+    except Exception:
+        session.rollback()
+        logging.exception("Organization delete failed for %s", organization_id)
+        return {"status": "error", "message": "Nie udało się usunąć organizacji."}, 500
+    return jsonify(status="success", deleted_organization_id=organization_id, canonical_name=name, removed=removed), 200
+
+
 @app.route('/organizations/<int:organization_id>', methods=['PATCH', 'OPTIONS'])
 def organization_update(organization_id: int):
     """Edit an organization's canonical_name/description/type — shown as a
