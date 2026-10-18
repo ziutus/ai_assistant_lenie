@@ -67,6 +67,9 @@ _CITY_DATA: list[tuple[str, tuple[str, ...]]] = [
     # doc #10872: the Polish name of the city; a capitalized "Królewiec" that spaCy
     # finds folds into Kaliningrad (the lowercase "królewca" is place_mention_gazetteer's job).
     ("Kaliningrad", ("krolewiec", "krolewc*")),
+    # doc #10872: "do Tela Avivwu" (transcript spelling + genitive) was tagged orgName by spaCy;
+    # aggregate_entities_detailed() relabels an orgName that names a gazetteer city as a place.
+    ("Tel Awiw", ("tel aviv*", "tela aviv*", "tel awiw*", "tela awiw*")),
 ]
 
 

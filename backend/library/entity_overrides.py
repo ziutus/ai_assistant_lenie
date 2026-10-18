@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 REPLAYED_DECISIONS = (
     "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
-    "person_to_place", "deleted", "rejected",
+    "person_to_place", "organization_to_place", "organization_to_person", "deleted", "rejected",
 )
 
 
@@ -138,6 +138,43 @@ def convert_person_to_place(
     return row
 
 
+def convert_entity_to_person(
+    session, entity: DocumentEntity, entities: list[DocumentEntity] | None = None,
+) -> DocumentEntity:
+    """Retype an organization entity as a person of the same document.
+
+    The org row is replaced by a ``source='manual'`` ``persName`` row with the same text, mention count
+    and surface forms (or folded into a same-named person row). Dropping the organization link is the
+    caller's job (``drop_organization_links``); linking the person to the registry is too
+    (``person_registry.resolve_document_persons``). Queues changes without committing.
+    """
+    document_id, count, name = entity.document_id, entity.mention_count or 0, entity.entity_text
+    forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
+    variants = [form for form in forms if form.casefold() != name.casefold()]
+    if entities is None:
+        entities = list(session.scalars(select(DocumentEntity).where(
+            DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "persName",
+        )).all())
+    session.delete(entity)
+    if entity in entities:
+        entities.remove(entity)
+    session.flush()
+    row = _exact(entities, name, ("persName",))
+    if row is not None:
+        row.mention_count = (row.mention_count or 0) + count
+        row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
+        row.source = "manual"
+    else:
+        row = DocumentEntity(
+            document_id=document_id, entity_type="persName", entity_text=name,
+            mention_count=count, variants=variants, source="manual",
+        )
+        session.add(row)
+        entities.append(row)
+    session.flush()
+    return row
+
+
 def split_place_entity(
     session, entity: DocumentEntity, parts: list[str], entities: list[DocumentEntity] | None = None,
 ) -> list[DocumentEntity]:
@@ -189,7 +226,7 @@ def split_place_entity(
     return rows
 
 
-def _drop_organization_links(session, entity: DocumentEntity) -> None:
+def drop_organization_links(session, entity: DocumentEntity) -> None:
     """Delete the document's organization links that point at ``entity`` (the organization stays)."""
     from library.db.models import DocumentOrganization
 
@@ -197,6 +234,9 @@ def _drop_organization_links(session, entity: DocumentEntity) -> None:
         DocumentOrganization.document_entity_id == entity.id,
     )).all():
         session.delete(link)
+
+
+_drop_organization_links = drop_organization_links
 
 
 def split_organization_entity(
@@ -376,6 +416,18 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             place = convert_person_to_place(session, row, details.get("new_text"), entities)
             touched[id(place)] = place
             stats["person_to_place"] = stats.get("person_to_place", 0) + 1
+        elif decision.decision in ("organization_to_place", "organization_to_person"):
+            row = _by_name_or_variant(entities, decision.entity_text, ("orgName",))
+            if row is None:
+                continue
+            touched.pop(id(row), None)
+            drop_organization_links(session, row)
+            if decision.decision == "organization_to_place":
+                place = convert_person_to_place(session, row, details.get("new_text"), entities)
+                touched[id(place)] = place
+            else:
+                convert_entity_to_person(session, row, entities)
+            stats[decision.decision] = stats.get(decision.decision, 0) + 1
         elif decision.decision == "place_split":
             parts = [p for p in details.get("parts", []) if p]
             row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
@@ -450,6 +502,8 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
                 EntityReviewDecision.entity_type.in_(PLACE_TYPES),
                 (EntityReviewDecision.entity_type == "persName")
                 & (EntityReviewDecision.decision == "person_to_place"),
+                (EntityReviewDecision.entity_type == "orgName")
+                & EntityReviewDecision.decision.in_(("organization_to_place", "organization_to_person")),
             ),
         )
         .order_by(EntityReviewDecision.id)
@@ -459,7 +513,7 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
     entities = list(session.scalars(
         select(DocumentEntity).where(
             DocumentEntity.document_id == document_id,
-            DocumentEntity.entity_type.in_((*MERGEABLE_PLACE_SOURCE_TYPES, "persName")),
+            DocumentEntity.entity_type.in_((*MERGEABLE_PLACE_SOURCE_TYPES, "persName", "orgName")),
         )
     ).all())
     touched, stats = apply_decisions(session, decisions, entities)

@@ -222,6 +222,17 @@ const NerChapters = () => {
     return () => { cancelled = true; };
   }, [id, base, headers, version]);
 
+  // "Podświetl w tekście" from a chip menu: that entity's mentions are marked strongly in every
+  // chapter (whatever the kind filters say) and the view jumps to the first one.
+  const [focus, setFocus] = React.useState<{ kind: HighlightKind; label: string; variants: string[] } | null>(null);
+  const showInText = (item: EntityItem, kind: HighlightKind) => setFocus({
+    kind, label: itemName(item), variants: [...new Set([item.text, ...(item.variants ?? []), ...(item.chapter_variants ?? [])])],
+  });
+  React.useEffect(() => {
+    if (!focus) return;
+    document.querySelector("[data-focus-mark]")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [focus]);
+
   const toggleKind = (kind: HighlightKind) => setKinds((current) => {
     const next = new Set(current);
     if (next.has(kind)) next.delete(kind); else next.add(kind);
@@ -311,8 +322,15 @@ const NerChapters = () => {
             <input type="search" value={query} placeholder="Szukaj encji…" aria-label="Szukaj encji"
               onChange={(event) => setQuery(event.target.value)} style={{ padding: "3px 8px" }} />
           </div>
+          {focus && (
+            <div role="status" style={{ marginBottom: 8, padding: "4px 10px", background: "#fef9c3", border: "1px solid #facc15", borderRadius: 6, fontSize: "0.9em" }}>
+              🔎 Podświetlono w tekście: <strong>{focus.label}</strong>{" "}
+              <button type="button" onClick={() => setFocus(null)}>✕ wyczyść</button>
+            </div>
+          )}
           <EntitiesPanel
             docId={id}
+            onShowInText={showInText}
             onEntitiesChanged={() => setVersion((current) => current + 1)}
             chapterRenderer={(renderGroups) => (
               <div>
@@ -357,12 +375,19 @@ const NerChapters = () => {
                         <div style={{ lineHeight: 1.65, fontSize: "0.9em" }}>
                           {section.sentences?.map((sentence) => (
                             <span key={sentence.index}>
-                              {splitByEntities(sentence.text, [...highlightEntries(entities), ...countryHighlights]).map((segment, index) => (
-                                segment.kind
-                                  ? <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})`}
-                                    style={{ background: KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3 }}>{segment.text}</mark>
-                                  : <React.Fragment key={index}>{segment.text}</React.Fragment>
-                              ))}{" "}
+                              {splitByEntities(sentence.text, [
+                                ...(focus ? [{ kind: focus.kind, label: focus.label, variants: focus.variants }] : []),
+                                ...highlightEntries(entities), ...countryHighlights,
+                              ]).map((segment, index) => {
+                                if (!segment.kind) return <React.Fragment key={index}>{segment.text}</React.Fragment>;
+                                const focused = focus !== null && segment.kind === focus.kind && segment.label === focus.label;
+                                return <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})`}
+                                  {...(focused ? { "data-focus-mark": "" } : {})}
+                                  style={{
+                                    background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
+                                    ...(focused ? { outline: "2px solid #d97706" } : {}),
+                                  }}>{segment.text}</mark>;
+                              })}{" "}
                             </span>
                           ))}
                         </div>

@@ -315,6 +315,25 @@ class TestAggregateEntities:
         assert aggregate_entities(entities) == {("geogName", "kotlina Kłodzki"): 1}
 
 
+class TestCityTaggedAsOrganization:
+    """Doc #10872: spaCy tagged "do Tela Avivwu" (transcript spelling + genitive) as an organization."""
+
+    def test_org_name_that_is_a_gazetteer_city_becomes_a_place(self):
+        entities = [{"text": "Tela Avivwu", "label": "orgName", "lemma": "Tela Avivwu", "pos": "PROPN"}]
+        groups = aggregate_entities_detailed(entities)
+        assert ("orgName", "Tela Avivwu") not in groups
+        assert groups[("placeName", "Tel Awiw")]["variants"] == ["Tela Avivwu"]
+
+    @pytest.mark.parametrize("surface", ["Tel Aviv", "Tel Avivu", "Tela Avivwu", "Tel Awiwu"])
+    def test_every_form_of_tel_aviv_folds_into_one_place(self, surface):
+        groups = aggregate_entities_detailed([{"text": surface, "label": "placeName", "lemma": surface, "pos": "PROPN"}])
+        assert list(groups) == [("placeName", "Tel Awiw")]
+
+    def test_ordinary_organizations_keep_their_label(self):
+        entities = [{"text": "Fly Dubai", "label": "orgName", "lemma": "Fly Dubai", "pos": "PROPN"}]
+        assert ("orgName", "Fly Dubai") in aggregate_entities_detailed(entities)
+
+
 class TestAdjectivalSurnames:
     """spaCy tags Slavic surnames that decline like adjectives POS=ADJ (doc #10872: Zacharowa)."""
 

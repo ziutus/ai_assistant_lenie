@@ -241,7 +241,8 @@ it("offers the organization menu on a cited source, including a link to the sour
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "Zmień na miejsce", "Zmień na osobę",
+    "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
     .toBe("/information-sources?id=200");
@@ -422,10 +423,59 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "Zmień na miejsce", "Zmień na osobę",
+    "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
   expect(screen.getByText(/Krótki opis dla:/)).toBeTruthy();
+});
+
+it("changes a mis-tagged organization into a place with an editable name", async () => {
+  mockOrgEntities({ id: 16615, text: "Tela Avivwu", count: 1, organization_id: 1140 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", place_name: "Tel Awiw" } });
+  renderInRouter(<EntitiesPanel docId={10872} />);
+  await openOrgMenu("Tela Avivwu");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na miejsce" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Tel Awiw" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zmień na miejsce" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/16615/to_place",
+    { text: "Tel Awiw" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na miejsce: Tel Awiw/)).toBeTruthy();
+});
+
+it("changes an organization into a person and reports the registry match", async () => {
+  mockOrgEntities({ id: 31, text: "Rawit Ruja", count: 2, organization_id: 8 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", linked: ["Rawit Ruja"] } });
+  renderInRouter(<EntitiesPanel docId={10872} />);
+  await openOrgMenu("Rawit Ruja");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na osobę" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/31/to_person", {},
+    { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na osobę: Rawit Ruja/)).toBeTruthy();
+});
+
+it("offers 'Podświetl w tekście' in the person, organization and place menus when the host asks for it", async () => {
+  const person = { id: 11, text: "Hegseth", count: 3 };
+  const organization = { id: 12, text: "ONZ", count: 3, organization_id: 5 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [organization], geogName: [place], placeName: [] } } }));
+  const show = vi.fn();
+  render(<MemoryRouter><EntitiesPanel docId={10872} onShowInText={show} /></MemoryRouter>);
+  for (const [name, kind, item] of [["Hegseth", "persName", person], ["ONZ", "orgName", organization],
+    [place.text, "place", place]] as const) {
+    await screen.findByRole("button", { name });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "🔎 Podświetl w tekście" }));
+    expect(show).toHaveBeenLastCalledWith(expect.objectContaining({ id: item.id, text: item.text }), kind);
+  }
+});
+
+it("does not add 'Podświetl w tekście' without a host callback", async () => {
+  mockOrgEntities({ id: 12, text: "ONZ", count: 3, organization_id: 5 });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu("ONZ");
+  expect(screen.queryByRole("menuitem", { name: /Podświetl/ })).toBeNull();
 });
 
 it("preserves reader highlight behavior when menuActions is absent", () => {

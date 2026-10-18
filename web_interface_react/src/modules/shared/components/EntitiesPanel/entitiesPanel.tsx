@@ -438,8 +438,12 @@ const EntitiesPanel = ({
   countries: providedCountries,
   refreshKey = 0,
   chapterRenderer,
+  onShowInText,
 }: {
   docId?: string | number;
+  // When set, every chip menu offers "Podświetl w tekście" and calls this with the chip's entity
+  // and its kind (the /ner/:id page marks that entity's mentions in the transcript).
+  onShowInText?: (item: EntityItem, kind: "persName" | "orgName" | "place") => void;
   // Chapter mode (the /ner/:id page): the host draws the entity groups itself, once per
   // chapter, through renderGroups(), so every chip keeps this panel's action menus and
   // dialogs. Dialogs then dock to the bottom of the window because the chips can be far
@@ -1082,6 +1086,20 @@ const EntitiesPanel = ({
     }
   };
 
+  const changeOrganizationToPerson = async (item: EntityItem) => {
+    if (item.id == null) return;
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${item.id}/to_person`, {},
+        { headers: jsonHeaders });
+      const linked = response.data.linked?.[0];
+      setMessage(`„${item.text}” zmienione na osobę${linked ? `: ${linked}` : " (bez dopasowania w rejestrze osób)"}.`);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się zmienić na osobę: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   const changePersonToPlace = async () => {
     if (toPlaceFor?.id == null || !toPlaceText.trim()) return;
     setIsRetyping(true);
@@ -1183,9 +1201,12 @@ const EntitiesPanel = ({
     setReviewReason("");
     setReviewComment("");
   };
+  const showInTextEntry = (item: EntityItem, kind: "persName" | "orgName" | "place"): MenuEntry[] =>
+    onShowInText ? [{ label: "🔎 Podświetl w tekście", action: () => onShowInText(item, kind) }] : [];
+
   const organizationMenuActions = (item: EntityItem): MenuEntry[] => {
     if (item.id == null) return [];
-    const entries: MenuEntry[] = [];
+    const entries: MenuEntry[] = [...showInTextEntry(item, "orgName")];
     if (item.information_source_id != null) {
       entries.push({ label: "Otwórz w rejestrze źródeł", to: `/information-sources?id=${item.information_source_id}` });
     } else if (item.organization_id != null) {
@@ -1226,6 +1247,9 @@ const EntitiesPanel = ({
         resetFlows(); setSplitKind("organization"); setSplitFor(item); setSplitText(orgSuggestion?.join(", ") ?? item.text);
       },
     });
+    // NER mislabel: a place ("Tela Avivwu") or a person tagged as an organization.
+    entries.push({ label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } });
+    entries.push({ label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } });
     entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
     entries.push({ label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: "orgName" });
@@ -1233,6 +1257,7 @@ const EntitiesPanel = ({
     return entries;
   };
   const personMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
+    ...showInTextEntry(item, "persName"),
     { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
@@ -1241,6 +1266,7 @@ const EntitiesPanel = ({
     } },
   ];
   const placeMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
+    ...showInTextEntry(item, "place"),
     { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },
     ...(places.some((place) => place.id != null && place.id !== item.id)
       ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeFor(item); } }] : []),
@@ -1611,7 +1637,7 @@ const EntitiesPanel = ({
           }
         }}
           style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
-          <label>Nazwa miejsca (zamiast osoby „{toPlaceFor.text}”)
+          <label>Nazwa miejsca (zamiast „{toPlaceFor.text}”)
             <input autoFocus value={toPlaceText} maxLength={500} disabled={isRetyping}
               onChange={(event) => setToPlaceText(event.target.value)} />
           </label>

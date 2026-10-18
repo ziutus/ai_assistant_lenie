@@ -286,3 +286,43 @@ def test_person_to_place_is_replayed_and_keeps_surface_forms():
     assert place.variants == ["Kandaharem"]
     assert list(touched.values()) == [place]
     assert stats["person_to_place"] == 1
+
+
+def test_organization_to_place_is_replayed_and_drops_the_organization_link():
+    org = entity("Tela Avivwu", entity_type="orgName", count=1)
+    rows = [org]
+    session = MagicMock()
+    link = SimpleNamespace(id=3)
+    session.scalars.return_value.all.return_value = [link]
+    touched, stats = apply_decisions(
+        session, [decision("organization_to_place", "Tela Avivwu", entity_type="orgName", new_text="Tel Awiw")], rows,
+    )
+    session.delete.assert_any_call(link)
+    session.delete.assert_any_call(org)
+    place = rows[0]
+    assert (place.entity_type, place.entity_text, place.source, place.variants) == (
+        "placeName", "Tel Awiw", "manual", ["Tela Avivwu"])
+    assert list(touched.values()) == [place]
+    assert stats["organization_to_place"] == 1
+
+
+def test_organization_to_person_is_replayed_without_touching_places():
+    org = entity("Rawit Ruja", entity_type="orgName", count=2, variants=["Rawit Ruja"])
+    rows = [org]
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    touched, stats = apply_decisions(
+        session, [decision("organization_to_person", "Rawit Ruja", entity_type="orgName")], rows,
+    )
+    person = rows[0]
+    assert (person.entity_type, person.entity_text, person.mention_count, person.source) == (
+        "persName", "Rawit Ruja", 2, "manual")
+    assert touched == {}
+    assert stats["organization_to_person"] == 1
+
+
+def test_organization_conversion_without_a_matching_row_is_a_no_op():
+    rows = [entity("NATO", entity_type="orgName")]
+    _, _, stats = run([decision("organization_to_place", "Tela Avivwu", entity_type="orgName")], rows)
+    assert rows[0].entity_type == "orgName"
+    assert "organization_to_place" not in stats
