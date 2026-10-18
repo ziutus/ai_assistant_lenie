@@ -310,6 +310,19 @@ it("explains that a selected fragment is already an entity", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain("To już encja „Kijów”");
 });
 
+it("shows a group of states with its members in the countries row and the tooltip", async () => {
+  const withGroup = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, country_groups: [{ name: "Państwa bałtyckie", members: ["Litwa", "Łotwa", "Estonia"], variants: ["nazw własnych"], count: 1 }],
+  })) };
+  mockApi({ "/document/42/chapter_entities": withGroup });
+  await open();
+  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
+  const row = within(chapter).getByLabelText("Państwa rozdziału");
+  expect(row.textContent).toContain("Państwa bałtyckie (Litwa, Łotwa, Estonia)");
+  const mark = chapter.querySelector("mark") as HTMLElement;
+  expect(mark.getAttribute("title")).toBe("Państwa bałtyckie (Państwa) — Obejmuje: Litwa, Łotwa, Estonia");
+});
+
 it("keeps the browser menu when nothing is selected", async () => {
   await open();
   vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "" } as Selection);

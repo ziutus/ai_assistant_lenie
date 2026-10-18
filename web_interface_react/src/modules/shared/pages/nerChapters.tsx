@@ -19,8 +19,10 @@ interface Section {
   sentence_count: number;
   sentences?: Sentence[];
 }
+// A named group of states found in the chapter text ("państwa bałtyckie") with its member countries.
+interface CountryGroup { name: string; members: string[]; variants: string[]; count: number }
 interface EntityResponse {
-  sections: { position: number; type: ChapterType; entities: ChapterEntities }[];
+  sections: { position: number; type: ChapterType; entities: ChapterEntities; country_groups?: CountryGroup[] }[];
   has_entities: boolean;
 }
 
@@ -75,6 +77,18 @@ function highlightCountries(entities: ChapterEntities | undefined, kinds: Set<Hi
     .filter((item) => !needle || [item.text, itemName(item), ...(item.variants ?? [])].some((value) => value.toLowerCase().includes(needle)))
     .map((item) => ({ kind: "country" as const, label: itemName(item), variants: item.chapter_variants?.length ? item.chapter_variants : [item.text] }));
 }
+
+// Groups of states matching the search text (name, member or surface form), highlighted like countries.
+function visibleGroups(groups: CountryGroup[] | undefined, kinds: Set<HighlightKind>, query: string): CountryGroup[] {
+  if (!kinds.has("country")) return [];
+  const needle = query.trim().toLowerCase();
+  return (groups ?? []).filter((group) => !needle
+    || [group.name, ...group.members, ...group.variants].some((value) => value.toLowerCase().includes(needle)));
+}
+
+const groupHighlights = (groups: CountryGroup[]): HighlightEntry[] => groups.map((group) => ({
+  kind: "country" as const, label: group.name, variants: group.variants, hint: `Obejmuje: ${group.members.join(", ")}`,
+}));
 
 const entityCount = (entities: ChapterEntities) =>
   (entities.persName?.length ?? 0) + (entities.orgName?.length ?? 0)
@@ -258,9 +272,10 @@ const NerChapters = () => {
     const raw = entityData?.sections.find((item) => item.position === section.position);
     const type = raw?.type ?? section.type ?? "TEMAT";
     const entities = filterEntities(raw?.entities, kinds, query);
-    const countryHighlights = type === "TEMAT" ? highlightCountries(raw?.entities, kinds, query) : [];
+    const groups = type === "TEMAT" ? visibleGroups(raw?.country_groups, kinds, query) : [];
+    const countryHighlights = type === "TEMAT" ? [...highlightCountries(raw?.entities, kinds, query), ...groupHighlights(groups)] : [];
     return {
-      section, type, entities, count: entityCount(entities), countryHighlights,
+      section, type, entities, count: entityCount(entities), countryHighlights, groups,
       countries: type === "TEMAT" ? chapterCountries(raw?.entities) : [],
     };
   });
@@ -360,7 +375,7 @@ const NerChapters = () => {
                   <p style={{ color: "#667" }}>Brak zapisanych encji — użyj przycisku „Wykryj osoby, miejsca i obiekty”.</p>
                 )}
                 {mergeError && <p role="alert" style={{ color: "#a33" }}>{mergeError}</p>}
-                {visible.map(({ section, type, entities, count, countries, countryHighlights }) => (
+                {visible.map(({ section, type, entities, count, countries, countryHighlights, groups }) => (
                   <section key={section.position} id={`ner-chapter-${section.position}`} aria-label={chapterTitle(section)}
                     style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -403,7 +418,7 @@ const NerChapters = () => {
                               ]).map((segment, index) => {
                                 if (!segment.kind) return <React.Fragment key={index}>{segment.text}</React.Fragment>;
                                 const focused = focus !== null && segment.kind === focus.kind && segment.label === focus.label;
-                                return <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})`}
+                                return <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})${segment.hint ? ` — ${segment.hint}` : ""}`}
                                   {...(focused ? { "data-focus-mark": "" } : {})}
                                   style={{
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
@@ -415,13 +430,19 @@ const NerChapters = () => {
                         </div>
                         <div>
                           {renderGroups(entities)}
-                          {countries.length > 0 && (
+                          {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>
                               {countries.map((country) => (
                                 <span key={country} title="Państwo wspomniane w rozdziale"
                                   style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: "#fde68a" }}>
                                   🌍 {country}
+                                </span>
+                              ))}
+                              {groups.map((group) => (
+                                <span key={group.name} title={`Grupa państw: ${group.members.join(", ")}`}
+                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: "#fde68a", border: "1px dashed #d97706" }}>
+                                  🌍 {group.name} ({group.members.join(", ")})
                                 </span>
                               ))}
                             </div>
