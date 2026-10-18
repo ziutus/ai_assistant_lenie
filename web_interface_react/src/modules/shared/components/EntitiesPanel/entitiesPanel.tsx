@@ -504,6 +504,7 @@ const EntitiesPanel = ({
   const [toPlaceFor, setToPlaceFor] = React.useState<EntityItem | null>(null);
   const [toPlaceText, setToPlaceText] = React.useState("");
   const [splitFor, setSplitFor] = React.useState<EntityItem | null>(null);
+  const [splitKind, setSplitKind] = React.useState<"place" | "organization">("place");
   const [splitText, setSplitText] = React.useState("");
   const [isRetyping, setIsRetyping] = React.useState(false);
   const [wikiFor, setWikiFor] = React.useState<EntityItem | null>(null);
@@ -1116,18 +1117,20 @@ const EntitiesPanel = ({
   };
 
   const splitParts = splitText.split(/[,;]+/).map((part) => part.trim()).filter(Boolean);
-  const splitPlace = async () => {
+  const splitEntity = async () => {
     if (splitFor?.id == null || splitParts.length < 2) return;
+    const endpoint = splitKind === "organization" ? "split_organization" : "split_place";
     setIsRetyping(true);
     setMessage("");
     try {
-      const response = await axios.post(`${apiUrl}/website_entities/${splitFor.id}/split_place`,
+      const response = await axios.post(`${apiUrl}/website_entities/${splitFor.id}/${endpoint}`,
         { parts: splitParts }, { headers: jsonHeaders });
       setMessage(`„${splitFor.text}” podzielone na: ${response.data.parts.join(", ")}.`);
       setSplitFor(null);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się podzielić miejsca: ${error.response?.data?.message || error.message}`);
+      const what = splitKind === "organization" ? "organizacji" : "miejsca";
+      setMessage(`Nie udało się podzielić ${what}: ${error.response?.data?.message || error.message}`);
     } finally {
       setIsRetyping(false);
     }
@@ -1175,6 +1178,7 @@ const EntitiesPanel = ({
     setAliasFor(null);
     setOrgDescriptionFor(null);
     setSourceDetailsFor(null);
+    setSplitFor(null);
     setMergePreview(null);
     setReviewReason("");
     setReviewComment("");
@@ -1213,6 +1217,15 @@ const EntitiesPanel = ({
         setOrgSearchResults([]);
       } });
     }
+    // Two glued mentions ("NATO Moskwa"): a two-word name is only offered as a pre-filled split, never applied.
+    const words = item.text.trim().split(/\s+/);
+    const orgSuggestion = words.length === 2 ? words : null;
+    entries.push({
+      label: orgSuggestion ? `Podziel na: ${orgSuggestion.join(", ")}` : "Podziel na kilka organizacji…",
+      action: () => {
+        resetFlows(); setSplitKind("organization"); setSplitFor(item); setSplitText(orgSuggestion?.join(", ") ?? item.text);
+      },
+    });
     entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
     entries.push({ label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: "orgName" });
@@ -1227,7 +1240,9 @@ const EntitiesPanel = ({
     ...(places.some((place) => place.id != null && place.id !== item.id)
       ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeFor(item); } }] : []),
     { label: item.split_suggestion ? `Podziel na: ${item.split_suggestion.join(", ")}` : "Podziel na kilka miejsc…",
-      action: () => { resetFlows(); setSplitFor(item); setSplitText(item.split_suggestion?.join(", ") ?? item.text); } },
+      action: () => {
+        resetFlows(); setSplitKind("place"); setSplitFor(item); setSplitText(item.split_suggestion?.join(", ") ?? item.text);
+      } },
     { label: item.wikipedia_url ? "Zmień stronę Wikipedii" : "Dodaj stronę Wikipedii",
       action: () => { resetFlows(); setWikiFor(item); setWikiText(item.wikipedia_url ?? ""); } },
     { label: "Otwórz w rejestrze miejsc", to: `/places?name=${encodeURIComponent(item.text)}` },
@@ -1624,7 +1639,7 @@ const EntitiesPanel = ({
       {splitFor && (
         <div onKeyDown={(event) => {
           if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
-            event.preventDefault(); event.stopPropagation(); void splitPlace();
+            event.preventDefault(); event.stopPropagation(); void splitEntity();
           }
         }}
           style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
@@ -1633,10 +1648,12 @@ const EntitiesPanel = ({
               onChange={(event) => setSplitText(event.target.value)} />
           </label>
           <div style={{ color: "#667", fontSize: "0.85em" }}>
-            Każda część to osobne miejsce (państwo trafia do „Państw”); wystąpienia w tekście zostają przypisane.
+            {splitKind === "organization"
+              ? "Każda część to osobna organizacja z rejestru (nowa, jeśli jeszcze jej nie ma); wystąpienia w tekście zostają przypisane."
+              : "Każda część to osobne miejsce (państwo trafia do „Państw”); wystąpienia w tekście zostają przypisane."}
           </div>
           <button type="button" className="button" disabled={isRetyping || splitParts.length < 2}
-            onClick={() => void splitPlace()}>Podziel</button>
+            onClick={() => void splitEntity()}>Podziel</button>
           <button type="button" disabled={isRetyping} onClick={() => setSplitFor(null)}>Anuluj</button>
         </div>
       )}
