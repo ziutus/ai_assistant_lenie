@@ -3,6 +3,7 @@ import axios from "axios";
 import { Link, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
+import ChannelBadge from "../components/ChannelBadge";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
@@ -96,6 +97,12 @@ const chapterTitle = (section: Section) => (section.is_preamble || section.posit
   ? "Wstęp (przed pierwszym rozdziałem)"
   : `#${section.position} ${section.title}`);
 
+type GlossaryInfo = {
+  author: string | null;
+  entries: { id: number; canonical_name: string; aliases: string[]; fuzzy: boolean }[];
+  applications: { original_text: string; replacement_text: string; occurrences: number }[];
+};
+
 const NerChapters = () => {
   const { id } = useParams();
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
@@ -103,7 +110,7 @@ const NerChapters = () => {
   const [entityData, setEntityData] = React.useState<EntityResponse | null>(null);
   const [entityError, setEntityError] = React.useState(false);
   const [loadError, setLoadError] = React.useState("");
-  const [doc, setDoc] = React.useState<{ title?: string; document_type?: string } | null>(null);
+  const [doc, setDoc] = React.useState<{ title?: string; document_type?: string; byline?: string } | null>(null);
   const [version, setVersion] = React.useState(0);
   const [kinds, setKinds] = React.useState<Set<HighlightKind>>(new Set(KINDS));
   const [onlyWithEntities, setOnlyWithEntities] = React.useState(false);
@@ -138,6 +145,17 @@ const NerChapters = () => {
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [id, apiUrl, headers]);
+
+  // The channel's name glossary (speech-to-text repairs applied before NER) and what it changed here.
+  const [glossary, setGlossary] = React.useState<GlossaryInfo | null>(null);
+  React.useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    axios.get<GlossaryInfo>(`${apiUrl}/ner_channel_glossary/applications`, { headers, params: { document_id: id } })
+      .then((response) => { if (!cancelled) setGlossary(response.data); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [id, apiUrl, headers, version]);
 
   // Same endpoint and guards as the editor's chapter panel: the text is rewritten, so the
   // chapter list and the per-chapter entities are refetched afterwards.
@@ -239,6 +257,7 @@ const NerChapters = () => {
       <h2 style={{ marginBottom: 4 }}>NER per rozdział</h2>
       <div style={{ color: "#475569", marginBottom: 8 }}>
         {doc?.title ? <strong>{doc.title}</strong> : `Dokument ${id}`}
+        {doc?.byline?.trim() && <>{" "}<ChannelBadge channel={doc.byline} /></>}
         {" · "}<Link to={editorPath}>← Edytor</Link>
         {" · "}<Link to={`/chunks/${id}`}>Chunki →</Link>
         {" · "}<Link to={`/read/${id}`}>Czytnik</Link>
@@ -247,6 +266,21 @@ const NerChapters = () => {
         Encje są zapisane dla całego dokumentu: poprawka (nazwa, usunięcie, wykluczenie, scalenie) dotyczy wszystkich
         rozdziałów. Rozdziały typu reklama, szum i źródła są pomijane przez NER (typ ustawisz w edytorze albo przyciskiem „Oznacz jako szum”, który usuwa też encje występujące tylko w tym rozdziale).
       </div>
+      {glossary?.author && (
+        <div role="note" aria-label="Słownik kanału"
+          style={{ fontSize: "0.85em", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
+          {glossary.entries.length > 0 ? <>
+            📖 Obowiązuje słownik nazw kanału „{glossary.author}” ({glossary.entries.length}:{" "}
+            {glossary.entries.map((entry) => entry.canonical_name).join(", ")}). Przed rozpoznawaniem encji kopia
+            transkrypcji jest poprawiana (zapisany tekst się nie zmienia).
+            {glossary.applications.length > 0
+              ? <> Przy ostatnim odświeżeniu poprawiono:{" "}
+                  {glossary.applications.map((app) => `${app.original_text} → ${app.replacement_text} ×${app.occurrences}`).join(", ")}.</>
+              : " Przy ostatnim odświeżeniu nic nie wymagało poprawki (albo encje nie były jeszcze odświeżone po dodaniu wpisów)."}
+          </> : <>Słownik nazw kanału „{glossary.author}” jest pusty — poprawki transkrypcji nie obowiązują.</>}
+          {" "}<Link to={`/ner-glossary?author=${encodeURIComponent(glossary.author)}`}>Słownik kanału →</Link>
+        </div>
+      )}
       {loadError && <p role="alert" style={{ color: "#a33" }}>{loadError}</p>}
       {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>

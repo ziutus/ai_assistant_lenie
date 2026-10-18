@@ -9,6 +9,7 @@ import {
 import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
 import EntitiesPanel, { EntityItem } from "../components/EntitiesPanel/entitiesPanel";
+import ChannelBadge from "../components/ChannelBadge";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
@@ -1045,6 +1046,7 @@ const Read: React.FC = () => {
   const [readerCompact, setReaderCompact] = React.useState(false);
   const [documentType, setDocumentType] = React.useState<string | null>(null);
   const [docTitle, setDocTitle] = React.useState<string | null>(null);
+  const [docChannel, setDocChannel] = React.useState<string | null>(null);
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
   const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
   const [personItems, setPersonItems] = React.useState<EntityItem[]>([]);
@@ -1184,6 +1186,7 @@ const Read: React.FC = () => {
     setChapters([]);
     setDocumentType(null);
     setDocTitle(null);
+    setDocChannel(null);
     setCountries([]);
     setThematicTags([]);
     setSynthesis(null);
@@ -1210,6 +1213,7 @@ const Read: React.FC = () => {
         }
         setDocumentType(data.document_type ?? null);
         setDocTitle(data.title ?? null);
+        setDocChannel(data.byline ?? null);
         setCountries(data.countries ?? []);
         setThematicTags(data.thematic_tags ?? []);
         setSynthesis(data.synthesis ?? null);
@@ -1850,6 +1854,7 @@ const Read: React.FC = () => {
         <h2 style={{ margin: 0 }} title={docTitle ?? undefined}>
           {docTitle ? docTitle : `Czytelnik — dokument #${id}`}
         </h2>
+        <ChannelBadge channel={docChannel} />
         {docQuality && (
           <span
             title={qualityTooltip(docQuality)}

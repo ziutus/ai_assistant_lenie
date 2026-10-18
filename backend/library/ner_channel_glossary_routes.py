@@ -150,18 +150,27 @@ def delete_entry(entry_id: int):
 
 @bp.get("/ner_channel_glossary/applications")
 def list_applications():
-    """Replacements that fired for one document (`?document_id=`), newest refresh first."""
+    """The document channel's glossary and the replacements that fired for it (`?document_id=`)."""
     try:
         document_id = int(request.args.get("document_id", ""))
     except ValueError:
         abort(400, "document_id jest wymagane")
-    rows = get_scoped_session().execute(
+    session = get_scoped_session()
+    document = session.get(Document, document_id)
+    author = (getattr(document, "byline", None) or "").strip() or None
+    entries = session.scalars(
+        select(NerChannelGlossaryEntry).where(func.lower(NerChannelGlossaryEntry.author) == author.lower())
+        .order_by(NerChannelGlossaryEntry.id)
+    ).all() if author else []
+    rows = session.execute(
         select(NerGlossaryApplication, NerChannelGlossaryEntry.canonical_name)
         .outerjoin(NerChannelGlossaryEntry, NerChannelGlossaryEntry.id == NerGlossaryApplication.glossary_id)
         .where(NerGlossaryApplication.document_id == document_id)
         .order_by(NerGlossaryApplication.occurrences.desc(), NerGlossaryApplication.id)
     ).all()
-    return jsonify({"status": "success", "applications": [
+    return jsonify({"status": "success", "author": author, "entries": [
+        {"id": e.id, "canonical_name": e.canonical_name, "aliases": e.aliases, "fuzzy": e.fuzzy} for e in entries
+    ], "applications": [
         {"id": app.id, "glossary_id": app.glossary_id, "canonical_name": name,
          "original_text": app.original_text, "replacement_text": app.replacement_text,
          "occurrences": app.occurrences, "applied_at": app.applied_at.isoformat()}

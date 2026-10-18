@@ -7,6 +7,7 @@ import {
 } from "../components/ReaderNotes/readerNotes";
 import { buildObsidianNoteUrl } from "../utils/obsidian";
 import { toOpenableSourceUrl } from "../utils/sourceUrl";
+import ChannelBadge from "../components/ChannelBadge";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -2431,6 +2432,7 @@ const Chunks = () => {
           Przegląd chunków — {docTitle || `dokument #${id}`}
           {docType && <span style={{ fontWeight: 400, color: "#64748b", fontSize: "0.7em" }}> ({DOC_TYPE_LABELS[docType] ?? docType}, #{id})</span>}
         </h2>
+        {runMode !== "article" && <ChannelBadge channel={docAuthor} />}
         <span style={{
           fontSize: "0.8em", fontWeight: 700, padding: "3px 9px", borderRadius: 10,
           background: ["MD_SIMPLIFIED", "EMBEDDING_EXIST"].includes(docProcessingStatus) ? "#dcfce7" : "#f1f5f9",
