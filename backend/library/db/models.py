@@ -2138,6 +2138,45 @@ class NerGazetteerEntry(Base):
         return f"NerGazetteerEntry(id={self.id!r}, kind={self.kind!r}, name_pl={self.name_pl!r})"
 
 
+class NerChannelGlossaryEntry(Base):
+    """Names expected on one channel, used to repair speech-to-text slips before NER.
+
+    Applied at entity-refresh time (library/ner_channel_glossary.py) to a COPY of the text
+    handed to the NER service; the stored transcript is never changed. ``author`` is matched
+    against Document.byline. ``aliases`` are exact phrases replaced by ``canonical_name``
+    ("He H" -> "Pete Hegseth"); with ``fuzzy`` a capitalized word that sounds like the last word of
+    ``canonical_name`` ("Hekset", "Hexeta") is replaced by that word.
+    """
+
+    __tablename__ = "ner_channel_glossary"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author: Mapped[str] = mapped_column(Text, nullable=False)
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    fuzzy: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"NerChannelGlossaryEntry(id={self.id!r}, author={self.author!r}, canonical_name={self.canonical_name!r})"
+
+
+class NerGlossaryApplication(Base):
+    """Audit row: a glossary replacement that fired while refreshing one document's entities."""
+
+    __tablename__ = "ner_glossary_applications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    glossary_id: Mapped[int | None] = mapped_column(ForeignKey("ner_channel_glossary.id", ondelete="SET NULL"))
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    replacement_text: Mapped[str] = mapped_column(Text, nullable=False)
+    occurrences: Mapped[int] = mapped_column(nullable=False, server_default=sa_text("1"))
+    applied_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class NerCorrection(Base):
     """Human-curated NER correction dictionary (Faza 6, tmp/plan-ner-multiword-place-display-names.md).
 

@@ -10,6 +10,7 @@ source='manual' (set by merge_document_entities()), which survive a refresh.
 import datetime
 import logging
 import re
+from collections import Counter
 
 from sqlalchemy import delete, func, select, update
 
@@ -17,10 +18,13 @@ from library.db.models import (
     Document,
     DocumentEntity,
     DocumentOrganization,
+    NerChannelGlossaryEntry,
     NerContextClassification,
     NerExclusion,
+    NerGlossaryApplication,
     NerTemporalCandidate,
 )
+from library.ner_channel_glossary import GlossaryEntry, apply_glossary, restore_original_variants
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
 from library.ner_normalization import normalize_ner_text, strip_content_markers, strip_markdown_emphasis
 from library.org_compound_names import merge_compound_org_names
@@ -137,6 +141,45 @@ def is_excluded(exclusions: list[NerExclusion], entity_type: str, entity_text: s
     return False
 
 
+def _apply_channel_glossary(session, document_id: int, text: str) -> tuple[str, Counter | None]:
+    """The text with the document channel's glossary applied, plus the replacements made.
+
+    The replacements are None when the document has no channel (byline), i.e. no glossary applies."""
+    doc = session.get(Document, document_id)
+    author = getattr(doc, "byline", None)
+    if not isinstance(author, str) or not author.strip():
+        return text, None
+    rows = session.execute(
+        select(NerChannelGlossaryEntry).where(func.lower(NerChannelGlossaryEntry.author) == author.strip().lower())
+    ).scalars().all()
+    entries = [
+        GlossaryEntry(row.id, row.canonical_name, tuple(row.aliases or ()), bool(row.fuzzy))
+        for row in rows if isinstance(row, NerChannelGlossaryEntry)
+    ]
+    if not entries:
+        return text, Counter()
+    result = apply_glossary(text, entries)
+    if result.replacements:
+        logger.info("NER channel glossary: %d replacements for doc %s (%s)", sum(result.replacements.values()),
+                    document_id, ", ".join(f"{o}->{r}" for (_i, o, r) in list(result.replacements)[:10]))
+    return result.text, result.replacements
+
+
+def _record_glossary_replacements(session, document_id: int, groups: dict, replacements: Counter) -> None:
+    """Audit the glossary replacements (replace semantics per document) and restore original variants."""
+    if replacements is None:  # the document has no channel, so no glossary was ever consulted
+        return
+    session.execute(delete(NerGlossaryApplication).where(NerGlossaryApplication.document_id == document_id))
+    if not replacements:
+        return
+    restore_original_variants(groups, replacements)
+    session.add_all([
+        NerGlossaryApplication(document_id=document_id, glossary_id=entry_id, original_text=original,
+                               replacement_text=replacement, occurrences=count)
+        for (entry_id, original, replacement), count in replacements.items()
+    ])
+
+
 def _add_place_mentions(groups: dict[tuple[str, str], dict], text: str, raw: list[dict]) -> None:
     """Fold gazetteer-detected place mentions (place_mention_gazetteer) into `groups` in place."""
     from library.place_mention_gazetteer import detect_place_mentions
@@ -185,6 +228,10 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     # or rollback, matching this function's existing transaction contract.
     session.execute(select(func.pg_advisory_xact_lock(22_004, document_id)))
 
+    # Channel glossary: repair known speech-to-text slips in a COPY of the text (the stored
+    # transcript is untouched); every later step works on the repaired copy so offsets agree.
+    text, glossary_replacements = _apply_channel_glossary(session, document_id, text)
+
     raw = extract_entities(text)
     if not raw:
         if is_available():
@@ -203,6 +250,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         doc.entities_checked_at = datetime.datetime.now()
 
     groups = aggregate_entities_detailed(raw)
+    _record_glossary_replacements(session, document_id, groups, glossary_replacements)
 
     # spaCy can miss outlet names containing digits (for example "France24").
     # Promote only known reporting sources that occur in an explicit grounded

@@ -241,6 +241,54 @@ class TestRefreshDocumentEntities:
         assert classification_rows[0].dropped is True
 
 
+class TestChannelGlossaryInRefresh:
+    """Doc #10872: one channel's mis-heard names are repaired in the text sent to NER."""
+
+    @staticmethod
+    def _session(rows):
+        session = MagicMock()
+
+        def execute(statement, *_args, **_kwargs):
+            result = MagicMock()
+            result.scalars.return_value.all.return_value = rows if "ner_channel_glossary" in str(statement) else []
+            return result
+
+        session.execute.side_effect = execute
+        session.get.return_value = MagicMock(byline="Na Wschód od Bliskiego Wschodu")
+        return session
+
+    def test_ner_sees_the_repaired_text_and_variants_keep_the_original_spellings(self):
+        from library.db.models import NerChannelGlossaryEntry
+
+        entry = NerChannelGlossaryEntry(id=5, author="Na Wschód od Bliskiego Wschodu",
+                                        canonical_name="Pete Hegseth", aliases=["He H"], fuzzy=True)
+        session = self._session([entry])
+        sent = {}
+
+        def fake_extract(text):
+            sent["text"] = text
+            return [{"text": "Hegseth", "label": "persName", "lemma": "Hegseth"},
+                    {"text": "Hegseth", "label": "persName", "lemma": "Hegseth"}]
+
+        with patch("library.entity_service.extract_entities", side_effect=fake_extract):
+            rows = refresh_document_entities(session, 10872, "Hekset mówił. Potem Hexeta odpowiedział.")
+
+        assert sent["text"] == "Hegseth mówił. Potem Hegseth odpowiedział."
+        person = next(row for row in rows if row.entity_type == "persName")
+        assert person.entity_text == "Hegseth"
+        assert {"Hegseth", "Hekset", "Hexeta"} <= set(person.variants)
+        applications = [a for call in session.add_all.call_args_list for a in call.args[0]
+                        if type(a).__name__ == "NerGlossaryApplication"]
+        assert {(a.original_text, a.replacement_text, a.glossary_id) for a in applications} == {
+            ("Hekset", "Hegseth", 5), ("Hexeta", "Hegseth", 5)}
+
+    def test_document_without_channel_never_queries_the_glossary(self):
+        session = _session_with_exclusions([])
+        with patch("library.entity_service.extract_entities", return_value=RAW):
+            refresh_document_entities(session, 42, "Hekset")
+        assert not any("ner_channel_glossary" in str(call.args[0]) for call in session.execute.call_args_list)
+
+
 class TestPlaceMentionSupplement:
     """Gazetteer-detected places that spaCy never reports (doc #10872)."""
 
