@@ -39,6 +39,7 @@ GEOCODE_ALIASES: dict[str, str] = {
     # Kaliningrad scores only 0.30 against it (threshold 0.75).
     "Kaliningrad": "Królewiec",
     # Doc #10872: OSM names the region "Kaliningrad Oblast".
+    "Tel Awiw": "Tel Aviv",
     "Obwód Kaliningradzki": "Kaliningrad Oblast",
     # Doc #10872: the corridor is known as the "Suwałki Gap"; may stay unresolved in OSM.
     "Przesmyk Suwalski": "Suwałki Gap",

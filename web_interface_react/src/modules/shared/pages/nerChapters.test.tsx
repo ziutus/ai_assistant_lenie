@@ -14,9 +14,12 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
-      return <div data-testid="panel">{chapterRenderer((source: any) => (
+      return <div data-testid="panel">
+        <button type="button" onClick={() => onShowInText?.(
+          { id: 2, text: "Kijów", variants: ["Kijów", "Kijowie"], chapter_variants: ["Kijowie"] }, "place")}>pokaż Kijów</button>
+        {chapterRenderer((source: any) => (
         <ul aria-label="Encje rozdziału">
           {[...(source?.persName ?? []), ...(source?.geogName ?? []), ...(source?.orgName ?? [])]
             .map((item: any) => <li key={item.id}>{item.text}</li>)}
@@ -223,6 +226,20 @@ it("marks a chapter as noise and deletes only the entities found nowhere else", 
   await waitFor(() => expect(axios.delete).toHaveBeenCalledTimes(1));
   expect(axios.delete).toHaveBeenCalledWith("/website_entities/1",
     { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } });
+});
+
+it("marks one entity's mentions strongly after \"Podświetl w tekście\", even when its kind is filtered out", async () => {
+  Element.prototype.scrollIntoView = vi.fn();
+  await open();
+  fireEvent.click(screen.getByLabelText("Miejsca"));
+  expect(document.querySelector("mark")?.textContent).toBe("Tusk");
+  fireEvent.click(screen.getByRole("button", { name: "pokaż Kijów" }));
+  const marked = document.querySelector("[data-focus-mark]");
+  expect(marked?.textContent).toBe("Kijowie");
+  expect(screen.getByRole("status").textContent).toContain("Podświetlono w tekście: Kijów");
+  expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /wyczyść/ }));
+  expect(document.querySelector("[data-focus-mark]")).toBeNull();
 });
 
 it("shows the channel name next to the document title", async () => {

@@ -186,10 +186,10 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T20 | Nazwisko odmieniane przymiotnikowo odrzucone przez filtr POS | spaCy oznacza jednowyrazowe nazwisko typu -owa/-ewa/-ski jako `ADJ`, a agregacja odrzuca jednowyrazowe `persName` o POS innym niż `NOUN`/`PROPN` | „Zacharowa”, „Zacharowej”, „Kowalskiej” | E033 |
 | T21 | Miejsce, którego spaCy nie zgłasza w ogóle | nazwa małą literą („królewca”) albo tylko przymiotnik w roli nazwy („obwód kaliningradzki”, „przesmyk suwalski”); żaden gazetteer nie ma czego kanonizować | „królewca”, „obwód kaliningradzki”, „przesmyk suwalski” | E034 |
 | T22 | Błąd transkrypcji rozpoznany jako osoba | automatyczne tłumaczenie dźwięku zapisuje zwrot jako nazwę własną; nie ma tabeli poprawek transkrypcji | „Egekwo” (zamiast „ex aequo”) | E035 |
-
 | T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036 |
+| T24 | Miasto oznaczone przez spaCy jako organizacja | rzadka pisownia + odmiana („Tela Avivwu”) nie przypomina niczego znanego, więc model typuje ją jako `orgName` | „Tela Avivwu” → Tel Awiw | E037 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T24,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T25,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -611,3 +611,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — słownik nazw per kanał (`ner_channel_glossary`, `backend/library/ner_channel_glossary.py`): aliasy (dokładne frazy) i dopasowanie fonetyczne ostatniego członu nazwy, stosowane do KOPII tekstu przed NER (zapisany transkrypt bez zmian), z powrotem oryginalnych pisowni do `variants` i logiem zamian w `ner_glossary_applications`. UI `/ner-glossary`. Na rzeczywistym tekście dok. #10872: 20 zamian Hegseth (Hekset ×10, Hexet ×6, Hexeta ×3, Hekseta ×1) + „He H”, bez fałszywych trafień. Dane (wpisy dla kanału) dodaje użytkownik w UI.
 - **Test regresyjny:** `test_ner_channel_glossary.py` (warianty z dok. #10872, granice słów, wielkość liter, brak fałszywych trafień), `test_entity_service.py::TestChannelGlossaryInRefresh`, `test_ner_channel_glossary_routes.py`, `nerChannelGlossary.test.tsx`.
 - **Status:** kod w PR; wpisy i odświeżenie encji dok. #10872 po wdrożeniu.
+
+### E037 — „Tela Avivwu” jako organizacja zamiast miasta Tel Awiw (dok. #10872, PR n/d, 2026-10-18)
+
+- **Typ encji:** orgName
+- **Kategoria:** T24 — miasto oznaczone przez spaCy jako organizacja.
+- **Zdanie źródłowe:** „…który miał ich zabrać do Tela Avivwu.” (obok „samolotu lecącego do Tel Avivwu” — to samo miasto, zapisane jako ręczna encja „Tel Avivw”).
+- **Objaw:** „Tela Avivwu” trafiło do rejestru jako organizacja (encja 16615, organizacja 1140), a menu chipa organizacji nie pozwalało zmienić typu ani podświetlić wzmianek w tekście.
+- **Przyczyna źródłowa:** transkrypcja pisze miasto fonetycznie i w dopełniaczu, więc spaCy go nie rozpoznaje i typuje jako `orgName`; gazetteer miast nie znał Tel Awiwu.
+- **Poprawka:** kod — wpis `("Tel Awiw", …)` w `city_gazetteer.py` i alias geokodera „Tel Aviv”; `aggregate_entities_detailed` przekwalifikowuje `orgName`, którego powierzchnia jest miastem z gazetteera, na `placeName`. Menu organizacji dostało „Zmień na miejsce” (`/to_place`, rozszerzone o `orgName`, audyt `organization_to_place`) i „Zmień na osobę” (`/to_person`, audyt `organization_to_person`); obie decyzje są odtwarzane po odświeżeniu. Wszystkie menu chipów na `/ner/:id` mają „Podświetl w tekście”.
+- **Test regresyjny:** `test_ner_client.py::TestCityTaggedAsOrganization`, `test_flask_endpoints_entities.py::test_organization_to_place` / `test_organization_to_person`, `test_entity_overrides.py` (odtwarzanie), `entitiesPanel.test.tsx`, `nerChapters.test.tsx`.
+- **Status:** kod w PR; dane (scalenie ręcznej encji „Tel Avivw”, usunięcie osieroconej organizacji 1140) po wdrożeniu.

@@ -1805,12 +1805,14 @@ def website_entities_to_organization(entity_id: int):
 
 @app.route('/website_entities/<int:entity_id>/to_place', methods=['POST'])
 def website_entities_to_place(entity_id: int):
-    """Retype a person entity as a place (NER mislabelled it, e.g. "Kandaharem").
+    """Retype a person or organization entity as a place (NER mislabelled it, e.g. "Kandaharem",
+    "Tela Avivwu").
 
     Optional body {"text": "Kandahar"} names the place (default: the mention as stored). The person's
-    document link is dropped like on a deletion, the place is geocoded once through the cache (a
-    country gets its ``kraj-*`` tag instead) and the decision is audited as ``person_to_place`` and
-    replayed after entity refreshes (library/entity_overrides.py).
+    document link (or the organization's link, the organization itself stays in the registry) is dropped
+    like on a deletion, the place is geocoded once through the cache (a country gets its ``kraj-*`` tag
+    instead) and the decision is audited as ``person_to_place`` / ``organization_to_place`` and replayed
+    after entity refreshes (library/entity_overrides.py).
     """
     from sqlalchemy import func as sa_func, select as sa_select
     from library import person_registry
@@ -1828,16 +1830,22 @@ def website_entities_to_place(entity_id: int):
     entity = session.get(DocumentEntity, entity_id)
     if entity is None:
         return jsonify(status="error", message="Nie znaleziono encji."), 404
-    if entity.entity_type != "persName":
-        return jsonify(status="error", message="Encja nie jest osobą."), 400
+    if entity.entity_type not in ("persName", "orgName"):
+        return jsonify(status="error", message="Encja nie jest osobą ani organizacją."), 400
+    from_organization = entity.entity_type == "orgName"
     try:
         document = session.get(Document, entity.document_id)
         old_text, old_variants = entity.entity_text, list(entity.variants or [])
-        link = session.execute(sa_select(DocumentPerson).where(
-            DocumentPerson.document_id == entity.document_id,
-            sa_func.lower(DocumentPerson.raw_mention) == old_text.lower(),
-        )).scalars().first()
-        link_result = person_registry.reject_review_link(session, link) if link is not None else None
+        if from_organization:
+            from library.entity_overrides import drop_organization_links
+            link = link_result = None
+            drop_organization_links(session, entity)
+        else:
+            link = session.execute(sa_select(DocumentPerson).where(
+                DocumentPerson.document_id == entity.document_id,
+                sa_func.lower(DocumentPerson.raw_mention) == old_text.lower(),
+            )).scalars().first()
+            link_result = person_registry.reject_review_link(session, link) if link is not None else None
         place = convert_person_to_place(session, entity, new_text)
         tag = country_tag_for(place.entity_text)
         if tag is not None and document is not None:
@@ -1849,16 +1857,66 @@ def website_entities_to_place(entity_id: int):
         record_entity_decision(
             session, document_id=place.document_id, document_entity_id=place.id,
             document_person_id=getattr(link, "id", None), person_id=getattr(link, "person_id", None),
-            entity_type="persName", entity_text=old_text, decision="person_to_place",
+            entity_type="orgName" if from_organization else "persName", entity_text=old_text,
+            decision="organization_to_place" if from_organization else "person_to_place",
             details={"new_text": place.entity_text, "variants": old_variants},
         )
         session.commit()
     except Exception:
         session.rollback()
-        logging.exception("Person to place conversion failed for entity %s", entity_id)
-        return jsonify(status="error", message="Nie udało się zmienić osoby na miejsce."), 500
+        logging.exception("Entity to place conversion failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zmienić encji na miejsce."), 500
     return jsonify(status="success", entity_id=place.id, place_name=place.entity_text,
                    person_deleted=bool(link_result and link_result.get("person_deleted"))), 200
+
+
+@app.route('/website_entities/<int:entity_id>/to_person', methods=['POST'])
+def website_entities_to_person(entity_id: int):
+    """Retype an organization entity as a person (NER mislabelled it).
+
+    The organization's document link is dropped (the organization stays in the registry), a
+    ``source='manual'`` persName row replaces the entity and the mention is resolved through the person
+    registry (Wikidata + context LLM; a failure of that lookup keeps the conversion). Audited as
+    ``organization_to_person`` and replayed after entity refreshes (library/entity_overrides.py).
+    """
+    from library import person_registry
+    from library.db.models import DocumentEntity
+    from library.entity_overrides import convert_entity_to_person, drop_organization_links
+    from library.entity_review_audit import record_entity_decision
+
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type != "orgName":
+        return jsonify(status="error", message="Encja nie jest organizacją."), 400
+    old_text, old_variants = entity.entity_text, list(entity.variants or [])
+    try:
+        document = session.get(Document, entity.document_id)
+        drop_organization_links(session, entity)
+        person_entity = convert_entity_to_person(session, entity)
+        record_entity_decision(
+            session, document_id=person_entity.document_id, document_entity_id=person_entity.id,
+            entity_type="orgName", entity_text=old_text, decision="organization_to_person",
+            details={"variants": old_variants},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Organization to person conversion failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zmienić organizacji na osobę."), 500
+    resolved = None
+    try:
+        if document is not None:
+            resolved = person_registry.resolve_document_persons(
+                session, document, document.text_md or document.text or "", only_names=[person_entity.entity_text],
+            )
+            session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Person resolution after organization conversion failed for entity %s", entity_id)
+    return jsonify(status="success", entity_id=person_entity.id, person_name=person_entity.entity_text,
+                   linked=[canonical for _name, canonical, _conf in (resolved or {}).get("linked", [])]), 200
 
 
 @app.route('/website_entities/<int:entity_id>/split_place', methods=['POST'])

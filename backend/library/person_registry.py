@@ -124,9 +124,12 @@ def _link(session, document_id: int, person: Person, raw_mention: str, confidenc
     return True
 
 
-def resolve_document_persons(session, doc, text: str, progress_callback=None) -> dict:
+def resolve_document_persons(
+    session, doc, text: str, progress_callback=None, only_names: list[str] | None = None,
+) -> dict:
     """Resolve the document's persName entities into document_persons links.
 
+    ``only_names`` limits the pass to entities with exactly these texts (a single converted mention).
     Queues changes on the session without committing (caller owns the
     transaction). Returns {"linked": [(name, canonical, confidence)], "skipped": [names]}.
     """
@@ -140,6 +143,9 @@ def resolve_document_persons(session, doc, text: str, progress_callback=None) ->
         )
         .all()
     )
+    if only_names is not None:
+        wanted = {name.strip().casefold() for name in only_names}
+        entities = [ent for ent in entities if ent.entity_text.strip().casefold() in wanted]
 
     linked: list[tuple[str, str, str]] = []
     skipped: list[str] = []

@@ -368,6 +368,10 @@ def aggregate_entities_detailed(
                 lemma = surface
         if is_rejected_surface_lemma_pair(surface, lemma, pos):
             continue
+        # spaCy sometimes tags a city as an organization ("do Tela Avivwu"); a closed-list city
+        # name is a place whatever the label says (same idea as the country check below).
+        if label == "orgName" and canonical_city_name(surface) is not None:
+            label = "placeName"
         if label in PLACE_TYPES and is_non_place_demonym(surface):
             continue
 

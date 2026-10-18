@@ -271,6 +271,70 @@ def test_person_to_place(client, case, expected):
         session.commit.assert_not_called()
 
 
+def test_organization_to_place(client):
+    """Doc #10872: spaCy tagged "Tela Avivwu" as an organization."""
+    from library.db.models import Document, DocumentEntity, DocumentOrganization, EntityReviewDecision
+    entity = DocumentEntity(id=1, document_id=10872, entity_type="orgName", entity_text="Tela Avivwu",
+                            mention_count=1, variants=[], source="ner")
+    org_link = DocumentOrganization(id=3, document_id=10872, organization_id=1140, document_entity_id=1)
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: entity if model is DocumentEntity else Document(id=10872, tags="")
+    session.scalars.return_value.all.side_effect = [[org_link], []]  # org links, then place rows
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.person_registry.reject_review_link"
+    ) as reject, patch("library.place_verification.geocode_single_place"):
+        response = client.post("/website_entities/1/to_place", headers=API_HEADERS, json={"text": "Tel Awiw"})
+    assert response.status_code == 200
+    added = [call.args[0] for call in session.add.call_args_list]
+    place = next(row for row in added if isinstance(row, DocumentEntity))
+    assert (place.entity_type, place.entity_text, place.variants, place.source) == (
+        "placeName", "Tel Awiw", ["Tela Avivwu"], "manual")
+    audit = next(row for row in added if isinstance(row, EntityReviewDecision))
+    assert (audit.decision, audit.entity_type) == ("organization_to_place", "orgName")
+    session.delete.assert_any_call(org_link)
+    session.delete.assert_any_call(entity)
+    reject.assert_not_called()
+    session.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_org", 400),
+                                           ("resolve_fails", 200), ("rollback", 500)])
+def test_organization_to_person(client, case, expected):
+    from library.db.models import Document, DocumentEntity, EntityReviewDecision
+    entity = DocumentEntity(id=1, document_id=10872, entity_type="orgName", entity_text="Rawit Ruja",
+                            mention_count=2, variants=["Rawit Ruja"], source="ner")
+    if case == "not_org":
+        entity.entity_type = "placeName"
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        (None if case == "missing" else entity) if model is DocumentEntity else Document(id=10872, text_md="tekst"))
+    session.scalars.return_value.all.return_value = []
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    resolver = MagicMock(return_value={"linked": [("Rawit Ruja", "Rawit Ruja", "manual_review")], "skipped": []})
+    if case == "resolve_fails":
+        resolver.side_effect = RuntimeError("wikidata down")
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.person_registry.resolve_document_persons", resolver,
+    ):
+        response = client.post("/website_entities/1/to_person", headers=API_HEADERS, json={})
+    assert response.status_code == expected
+    if expected == 200:
+        added = [call.args[0] for call in session.add.call_args_list]
+        person = next(row for row in added if isinstance(row, DocumentEntity))
+        assert (person.entity_type, person.entity_text, person.mention_count, person.source) == (
+            "persName", "Rawit Ruja", 2, "manual")
+        audit = next(row for row in added if isinstance(row, EntityReviewDecision))
+        assert (audit.decision, audit.entity_type) == ("organization_to_person", "orgName")
+        assert resolver.call_args.kwargs["only_names"] == ["Rawit Ruja"]
+        assert response.get_json()["linked"] == ([] if case == "resolve_fails" else ["Rawit Ruja"])
+    elif case == "rollback":
+        session.rollback.assert_called()
+        resolver.assert_not_called()
+    else:
+        session.commit.assert_not_called()
+
+
 GROUPED = {
     "persName": [{"text": "Tusk", "count": 2}],
     "geogName": [{"text": "cieśnina Ormuz", "count": 1}],
