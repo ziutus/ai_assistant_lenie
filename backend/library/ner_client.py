@@ -198,6 +198,22 @@ def warmup_async() -> None:
     threading.Thread(target=_probe, name="ner-warmup", daemon=True).start()
 
 
+_ADJECTIVAL_SURNAME_RE = re.compile(
+    r"[^\W\d_]+(?:ow|ew|sk|ck|dzk)(?:a|ą|ej|iej|i|y|iego|iemu|im|ym)", re.IGNORECASE,
+)
+
+
+def _is_adjectival_surname(surface: str) -> bool:
+    """One capitalized word shaped like a Slavic surname that declines like an adjective.
+
+    spaCy tags these POS=ADJ (Zacharowa, Pawłowa, Kowalskiej, Nowackiego), so the
+    POS filter in aggregate_entities_detailed() would drop every mention of such a
+    person. Only the shape is checked; a common adjective that spaCy mislabels as
+    persName is caught later by person_context_classifier's single-word review.
+    """
+    return len(surface.split()) == 1 and _ADJECTIVAL_SURNAME_RE.fullmatch(surface) is not None
+
+
 def _is_initials_only(surface: str) -> bool:
     tokens = surface.split()
     return bool(tokens) and all(
@@ -338,13 +354,18 @@ def aggregate_entities_detailed(
         pos = normalize_ner_text(ent.get("pos") or "").upper() or None
         multiword_person = label == "persName" and len(surface.split()) >= 2
         if pos is not None and pos not in {"NOUN", "PROPN"}:
-            if not multiword_person:
+            adjectival_surname = label == "persName" and _is_adjectival_surname(surface)
+            if not multiword_person and not adjectival_surname:
                 continue
             # spaCy's root token can be a Polish homograph instead of the
             # foreign surname: "Kim Jong Sik" -> lemma "kto Jong Sik",
             # POS=ADJ. The complete multiword surface is safer than that
             # corrupted lemma and still goes through person resolution.
-            lemma = surface
+            # A lone adjectival surname ("Zacharowa", "Kowalskiej") is tagged
+            # ADJ the same way; its lemma is kept only when spaCy capitalized
+            # it ("Zacharowa"), otherwise ("kowalski") the surface is used.
+            if multiword_person or not lemma[0].isupper():
+                lemma = surface
         if is_rejected_surface_lemma_pair(surface, lemma, pos):
             continue
         if label in PLACE_TYPES and is_non_place_demonym(surface):

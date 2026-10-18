@@ -137,6 +137,26 @@ def is_excluded(exclusions: list[NerExclusion], entity_type: str, entity_text: s
     return False
 
 
+def _add_place_mentions(groups: dict[tuple[str, str], dict], text: str, raw: list[dict]) -> None:
+    """Fold gazetteer-detected place mentions (place_mention_gazetteer) into `groups` in place."""
+    from library.place_mention_gazetteer import detect_place_mentions
+
+    for name, surfaces in detect_place_mentions(text, raw).items():
+        count = sum(surfaces.values())
+        existing_key = next(
+            (key for key in groups if key[0] in {"placeName", "geogName"} and key[1].casefold() == name.casefold()),
+            None,
+        )
+        if existing_key is None:
+            groups[("placeName", name)] = {"count": count, "variants": list(surfaces), "raw_lemmas": [name]}
+            continue
+        group = groups[existing_key]
+        group["count"] += count
+        for surface in surfaces:
+            if surface not in group["variants"] and surface.casefold() != existing_key[1].casefold():
+                group["variants"].append(surface)
+
+
 def refresh_document_entities(session, document_id: int, text: str) -> list[DocumentEntity]:
     """Run NER on text and replace the document's rows in document_entities.
 
@@ -197,6 +217,10 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             existing["count"] += 1
             if source["raw_mention"] not in existing["variants"]:
                 existing["variants"].append(source["raw_mention"])
+
+    # Places spaCy never reports (lowercase "królewca", the adjective-only
+    # "obwód kaliningradzki", "przesmyk suwalski"): a closed, text-grounded list.
+    _add_place_mentions(groups, text, raw)
 
     merged_orgs = merge_compound_org_names(
         strip_content_markers(strip_markdown_emphasis(text)), groups,

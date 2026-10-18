@@ -71,7 +71,16 @@ class TestValidation:
         assert values["geocode_alias"] == "Louisiana"
         assert values["patterns"] == []
 
+    def test_place_mention_entry_is_normalized_like_a_city(self):
+        values = validate_entry(kind="place_mention", name_pl="Brama Smoleńska", patterns=["Brama* Smoleńsk*"])
+        assert values == {
+            "kind": "place_mention", "name_pl": "Brama Smoleńska",
+            "patterns": ["brama* smolensk*"], "geocode_alias": None,
+        }
+
     @pytest.mark.parametrize("kwargs", [
+        {"kind": "place_mention", "name_pl": "Brama", "patterns": []},
+        {"kind": "place_mention", "name_pl": "Brama", "patterns": ["a*"]},
         {"kind": "region", "name_pl": "X", "patterns": ["abc*"]},
         {"kind": "city", "name_pl": "", "patterns": ["abc*"]},
         {"kind": "city", "name_pl": "x" * 201, "patterns": ["abc*"]},

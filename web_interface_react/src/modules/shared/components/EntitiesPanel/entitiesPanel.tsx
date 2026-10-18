@@ -1234,6 +1234,11 @@ const EntitiesPanel = ({
   };
   const personMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
+    { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
+    // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
+    { label: "🚫 To nie jest osoba", action: () => {
+      resetFlows(); setExcludeFor({ item, entityType: "persName" }); setReviewReason("not_a_person");
+    } },
   ];
   const placeMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },

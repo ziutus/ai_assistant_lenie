@@ -691,6 +691,27 @@ it("changes a person into a place with an editable name", async () => {
   expect(await screen.findByText(/zmienione na miejsce: Kandahar/)).toBeTruthy();
 });
 
+it("excludes a mis-heard person (\"To nie jest osoba\") globally with the reason preselected", async () => {
+  const person = { id: 21, text: "Egekwo", count: 1 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  vi.mocked(axios.delete).mockResolvedValue({ data: { status: "success" } });
+  render(<MemoryRouter><EntitiesPanel docId={10872} /></MemoryRouter>);
+  await screen.findByRole("button", { name: person.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: person.text }));
+  expect(screen.getByRole("menuitem", { name: "× Usuń encję" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("menuitem", { name: "🚫 To nie jest osoba" }));
+  expect((screen.getByLabelText(/Powód/) as HTMLSelectElement).value).toBe("not_a_person");
+  fireEvent.click(screen.getByRole("button", { name: "Globalnie" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/ner_exclusions",
+    { entity_text: "Egekwo", entity_type: "persName", scope: "global", document_id: 10872 },
+    { headers: expect.any(Object) }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith("/website_entities/21",
+    expect.objectContaining({ data: expect.objectContaining({ reason_code: "not_a_person" }) })));
+});
+
 it("saves a Wikipedia article for a place and shows the 📖 link", async () => {
   const withWiki = { ...place, wikipedia_url: "https://en.wikipedia.org/wiki/Aden" };
   vi.mocked(axios.put).mockResolvedValue({ data: { status: "success" } });
