@@ -36,6 +36,7 @@ from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.contact_routes import bp as contact_bp
 from library.document_links_routes import bp as document_links_bp
 from library.project_card_routes import bp as project_cards_bp
+from library.recipe_routes import bp as recipes_bp
 from library.topic_routes import bp as topics_bp
 from library.cleanup_rules_routes import bp as cleanup_rules_bp
 from library.chat_routes import bp as chat_bp
@@ -129,6 +130,7 @@ app.register_blueprint(llm_analysis_bp)
 app.register_blueprint(contact_bp)
 app.register_blueprint(document_links_bp)
 app.register_blueprint(project_cards_bp)
+app.register_blueprint(recipes_bp)
 app.register_blueprint(topics_bp)
 app.register_blueprint(cleanup_rules_bp)
 app.register_blueprint(chat_bp)

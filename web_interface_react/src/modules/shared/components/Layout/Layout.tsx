@@ -157,6 +157,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         <NavLink to="/chats" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Rozmowy</NavLink>
         <NavLink to="/topics" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Tematy</NavLink>
         <NavLink to="/project-cards" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Karty projektów</NavLink>
+        <NavLink to="/recipes" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Przepisy</NavLink>
         <NavLink
           to="/contact-events"
           className={({ isActive }) => isActive ? classes.activeLink : classes.link}
