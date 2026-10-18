@@ -649,6 +649,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 "name": infra.name,
                 "geojson": infra.geojson,
             }
+        if row.entity_type == "eventName":
+            item["description"] = row.description
         if row.entity_type == "persName" and row.entity_text in persons_by_mention:
             link = persons_by_mention[row.entity_text]
             item["link_id"] = link["link_id"]

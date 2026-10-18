@@ -189,10 +189,15 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
     )).all())
     # An entity the reviewer added and later deleted stays deleted: the newest decision about a name wins.
     deleted_after: dict[tuple[str, str], int] = {}
+    descriptions: dict[str, str | None] = {}
     for removal in session.scalars(select(EntityReviewDecision).where(
         EntityReviewDecision.document_id == document_id,
-        EntityReviewDecision.decision.in_(("deleted", "rejected", "excluded_global", "excluded_author")),
+        EntityReviewDecision.decision.in_(
+            ("deleted", "rejected", "excluded_global", "excluded_author", "entity_described")),
     ).order_by(EntityReviewDecision.id)).all():
+        if removal.decision == "entity_described":
+            descriptions[removal.entity_text.casefold()] = (removal.details or {}).get("description")
+            continue
         kind = "placeName" if removal.entity_type in PLACE_TYPES else removal.entity_type
         deleted_after[(kind, removal.entity_text.casefold())] = removal.id or 0
     added = []
@@ -212,6 +217,8 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
             details.get("count") or 1, entities,
         )
         added.append(row)
+        if row.entity_type == "eventName" and row.description is None:
+            row.description = descriptions.get(row.entity_text.casefold())
     if doc is not None:
         from library.country_gazetteer import canonical_country_name
         from library.place_verification import geocode_single_place

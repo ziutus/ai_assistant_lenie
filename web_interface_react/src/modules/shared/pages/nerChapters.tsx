@@ -5,6 +5,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
+import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
@@ -57,6 +58,7 @@ function filterEntities(entities: ChapterEntities | undefined, kinds: Set<Highli
 function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
   const entry = (kind: HighlightKind) => (item: EntityItem): HighlightEntry => ({
     kind, label: itemName(item), variants: item.chapter_variants?.length ? item.chapter_variants : [item.text],
+    ...(item.description ? { hint: item.description } : {}),
   });
   return [
     ...(entities.persName ?? []).map(entry("persName")),
@@ -269,6 +271,17 @@ const NerChapters = () => {
     }
   };
 
+  // The description dialog of an event: left click on its chip or right click on its mention in the text.
+  const [describing, setDescribing] = React.useState<EntityItem | null>(null);
+  const closeDescription = React.useCallback(() => setDescribing(null), []);
+  const describeFromText = (item: EntityItem | undefined) => (event: React.MouseEvent) => {
+    // A selected fragment keeps the "add entity" menu of the surrounding text.
+    if (!item || item.id === undefined || selectedFragment(window.getSelection())) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDescribing(item);
+  };
+
   // Right click on a selected fragment of the text opens the "add entity" menu; without a selection
   // (or over the chips, buttons and fields) the browser's own menu stays.
   const [selectionMenu, setSelectionMenu] = React.useState<{ x: number; y: number; text: string } | null>(null);
@@ -380,6 +393,11 @@ const NerChapters = () => {
             </div>
           )}
           {addedMessage && <div role="status" style={{ marginBottom: 8, color: "#166534" }}>{addedMessage}</div>}
+          {describing && describing.id !== undefined && (
+            <EventDescriptionDialog key={describing.id} entityId={describing.id} name={itemName(describing)}
+              description={describing.description ?? null} apiUrl={apiUrl} headers={headers} onClose={closeDescription}
+              onSaved={() => { setDescribing(null); setVersion((current) => current + 1); }} />
+          )}
           {selectionMenu && (
             <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers}
               onClose={closeSelectionMenu}
@@ -441,6 +459,9 @@ const NerChapters = () => {
                                 const focused = focus !== null && segment.kind === focus.kind && segment.label === focus.label;
                                 return <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})${segment.hint ? ` — ${segment.hint}` : ""}`}
                                   {...(focused ? { "data-focus-mark": "" } : {})}
+                                  {...(segment.kind === "event"
+                                    ? { onContextMenu: describeFromText(entities.eventName?.find((item) => itemName(item) === segment.label)) }
+                                    : {})}
                                   style={{
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
                                     ...(focused ? { outline: "2px solid #d97706" } : {}),
@@ -455,9 +476,14 @@ const NerChapters = () => {
                             <div aria-label="Wydarzenia rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Wydarzenia:</strong>
                               {entities.eventName?.map((item) => (
-                                <span key={item.id ?? item.text} title="Wydarzenie dodane ręcznie z zaznaczonego tekstu"
+                                <span key={item.id ?? item.text}
+                                  title={item.description || "Wydarzenie dodane ręcznie — kliknij nazwę, by dodać opis"}
+                                  onContextMenu={describeFromText(item)}
                                   style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: KIND_COLORS.event }}>
-                                  📅 {itemName(item)} ×{item.count}{" "}
+                                  📅 <button type="button" aria-label={`Opis wydarzenia ${itemName(item)}`}
+                                    onClick={() => setDescribing(item)}
+                                    style={{ border: "none", background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>
+                                    {itemName(item)}</button> ×{item.count}{item.description ? " ℹ️" : ""}{" "}
                                   <button type="button" aria-label={`Usuń wydarzenie ${itemName(item)}`}
                                     onClick={() => void deleteEvent(item)}>×</button>
                                 </span>

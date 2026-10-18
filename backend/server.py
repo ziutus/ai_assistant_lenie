@@ -1919,6 +1919,103 @@ def website_entities_to_person(entity_id: int):
                    linked=[canonical for _name, canonical, _conf in (resolved or {}).get("linked", [])]), 200
 
 
+@app.route('/website_entities/<int:entity_id>/describe', methods=['POST'])
+def website_entities_describe(entity_id: int):
+    """Propose a description of an event entity from the sentences that mention it (not stored).
+
+    The sentences containing the event's name or surface forms go to the tagging model (Bielik), which may
+    use nothing else (library/event_description.py). Answers ``description`` (null when the text does not
+    say enough) and the ``sentences`` used; ``PUT /website_entities/<id>/description`` stores the text the
+    reviewer approves or edits.
+    """
+    from library.db.models import DocumentEntity
+    from library.event_description import context_sentences, describe_event
+
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type != "eventName":
+        return jsonify(status="error", message="Opis można wygenerować tylko dla wydarzenia."), 400
+    document = session.get(Document, entity.document_id)
+    text = (document.text_md or document.text or "") if document is not None else ""
+    sentences = context_sentences(text, [entity.entity_text, *(entity.variants or [])])
+    if not sentences:
+        return jsonify(status="error", message="Nie znaleziono w tekście zdań z tym wydarzeniem."), 404
+    description = describe_event(entity.entity_text, sentences, getattr(document, "title", "") or "")
+    return jsonify(status="success", description=description, sentences=sentences), 200
+
+
+@app.route('/website_entities/<int:entity_id>/description', methods=['PUT'])
+def website_entities_set_description(entity_id: int):
+    """Store (or clear, with an empty string) the reviewer-approved description of an event entity."""
+    from library.db.models import DocumentEntity
+
+    data = request.get_json(silent=True) or {}
+    description = data.get('description')
+    if not isinstance(description, str) or len(description) > 2000:
+        return jsonify(status="error", message="Nieprawidłowy opis."), 400
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type != "eventName":
+        return jsonify(status="error", message="Opis dotyczy tylko wydarzeń."), 400
+    from library.entity_review_audit import record_entity_decision
+
+    try:
+        entity.description = description.strip() or None
+        # Audited so the text survives a reopen for editing (replay_manual_added_entities).
+        record_entity_decision(
+            session, document_id=entity.document_id, document_entity_id=entity.id, entity_type="eventName",
+            entity_text=entity.entity_text, decision="entity_described", details={"description": entity.description},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Saving the description of entity %s failed", entity_id)
+        return jsonify(status="error", message="Nie udało się zapisać opisu."), 500
+    return jsonify(status="success", entity_id=entity.id, description=entity.description), 200
+
+
+@app.route('/entity_events', methods=['GET'])
+def entity_events_list():
+    """Index of the events added to documents, grouped by case-folded name (``/events`` page).
+
+    Query: ``q`` (name or description contains, case-insensitive), ``limit`` (default 50, max 200),
+    ``offset``. Each row: name, documents (count), mentions, a description when any document has one,
+    and the documents themselves (id, title, mentions) so the page can link to ``/ner/<id>``.
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library.db.models import DocumentEntity
+
+    try:
+        limit = min(max(int(request.args.get('limit', 50)), 1), 200)
+        offset = max(int(request.args.get('offset', 0)), 0)
+    except ValueError:
+        return jsonify(status="error", message="limit i offset muszą być liczbami."), 400
+    needle = (request.args.get('q') or "").strip().lower()
+    session = get_scoped_session()
+    query = sa_select(DocumentEntity, Document.title).join(Document, Document.id == DocumentEntity.document_id).where(
+        DocumentEntity.entity_type == "eventName")
+    if needle:
+        like = f"%{needle}%"
+        query = query.where(sa_func.lower(DocumentEntity.entity_text).like(like)
+                            | sa_func.lower(sa_func.coalesce(DocumentEntity.description, "")).like(like))
+    groups: dict[str, dict] = {}
+    for entity, title in session.execute(query.order_by(DocumentEntity.entity_text, DocumentEntity.document_id)).all():
+        group = groups.setdefault(entity.entity_text.casefold(), {
+            "name": entity.entity_text, "description": None, "mentions": 0, "documents": [],
+        })
+        group["mentions"] += entity.mention_count or 0
+        group["description"] = group["description"] or entity.description
+        group["documents"].append({"id": entity.document_id, "title": title, "mentions": entity.mention_count,
+                                   "entity_id": entity.id})
+    rows = sorted(groups.values(), key=lambda group: group["name"].casefold())
+    return jsonify(status="success", total=len(rows), limit=limit, offset=offset,
+                   events=[{**group, "document_count": len(group["documents"])} for group in rows[offset:offset + limit]]), 200
+
+
 @app.route('/document/<int:document_id>/entities/add_mention', methods=['POST'])
 def document_entities_add_mention(document_id: int):
     """Add an entity from a fragment of the text a reviewer selected (context menu on /ner/:id).

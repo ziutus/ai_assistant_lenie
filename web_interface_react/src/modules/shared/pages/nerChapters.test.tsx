@@ -340,6 +340,29 @@ it("lists a hand-added event, highlights it and deletes it on request", async ()
     "/website_entities/77", { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } }));
 });
 
+it("drafts an event description with the LLM and stores it only after the reviewer saves", async () => {
+  const withEvent = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups, eventName: [{ id: 77, text: "Bez nazw", count: 1, variants: ["nazw własnych"] }] },
+  })) };
+  mockApi({ "/document/42/chapter_entities": withEvent });
+  vi.mocked(axios.post).mockResolvedValue({ data: { description: "Wspólne ćwiczenia.", sentences: ["Bez nazw własnych."] } });
+  vi.mocked(axios.put).mockResolvedValue({ data: {} });
+  await open();
+  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
+  // Right click on the event mention in the text opens the dialog (no selection => no add-entity menu).
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "" } as Selection);
+  fireEvent.contextMenu(chapter.querySelector("mark") as HTMLElement);
+  const dialog = await screen.findByRole("dialog", { name: "Opis wydarzenia Bez nazw" });
+  await waitFor(() => expect((within(dialog).getByLabelText("Opis wydarzenia") as HTMLTextAreaElement).value).toBe("Wspólne ćwiczenia."));
+  expect(axios.post).toHaveBeenCalledWith("/website_entities/77/describe", {}, { headers: { "x-api-key": "test-key" } });
+  expect(axios.put).not.toHaveBeenCalled();
+  fireEvent.change(within(dialog).getByLabelText("Opis wydarzenia"), { target: { value: "Ćwiczenia Litwy, Polski i Francji." } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Zapisz" }));
+  await waitFor(() => expect(axios.put).toHaveBeenCalledWith(
+    "/website_entities/77/description", { description: "Ćwiczenia Litwy, Polski i Francji." }, { headers: { "x-api-key": "test-key" } }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
 it("keeps the browser menu when nothing is selected", async () => {
   await open();
   vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "" } as Selection);
