@@ -40,6 +40,7 @@ from library.topic_routes import bp as topics_bp
 from library.cleanup_rules_routes import bp as cleanup_rules_bp
 from library.chat_routes import bp as chat_bp
 from library.place_routes import bp as places_bp
+from library.ner_channel_glossary_routes import bp as ner_channel_glossary_bp
 from library.ner_gazetteer_routes import bp as ner_gazetteer_bp
 from library.youtube_processing import process_youtube_url, parse_chapters_from_description
 from library.stalker_youtube_file import StalkerYoutubeFile
@@ -133,6 +134,7 @@ app.register_blueprint(cleanup_rules_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(places_bp)
 app.register_blueprint(ner_gazetteer_bp)
+app.register_blueprint(ner_channel_glossary_bp)
 start_analysis_worker()
 
 

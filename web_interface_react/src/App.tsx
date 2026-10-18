@@ -21,6 +21,7 @@ import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
 import NerCorrections from "./modules/shared/pages/nerCorrections";
 import NerGazetteer from "./modules/shared/pages/nerGazetteer";
+import NerChannelGlossary from "./modules/shared/pages/nerChannelGlossary";
 import NerDecisions from "./modules/shared/pages/nerDecisions";
 import Organizations from "./modules/shared/pages/organizations";
 import ToolRecommendations from "./modules/shared/pages/toolRecommendations";
@@ -99,6 +100,7 @@ function App() {
                   <Route path="/persons-review" element={<PersonsReview />} />
                   <Route path="/ner-corrections" element={<NerCorrections />} />
                   <Route path="/ner-gazetteer" element={<NerGazetteer />} />
+                  <Route path="/ner-glossary" element={<NerChannelGlossary />} />
                   <Route path="/ner-decisions" element={<NerDecisions />} />
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/places" element={<Places />} />

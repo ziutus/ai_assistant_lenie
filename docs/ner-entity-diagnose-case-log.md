@@ -187,7 +187,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T21 | Miejsce, którego spaCy nie zgłasza w ogóle | nazwa małą literą („królewca”) albo tylko przymiotnik w roli nazwy („obwód kaliningradzki”, „przesmyk suwalski”); żaden gazetteer nie ma czego kanonizować | „królewca”, „obwód kaliningradzki”, „przesmyk suwalski” | E034 |
 | T22 | Błąd transkrypcji rozpoznany jako osoba | automatyczne tłumaczenie dźwięku zapisuje zwrot jako nazwę własną; nie ma tabeli poprawek transkrypcji | „Egekwo” (zamiast „ex aequo”) | E035 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T23,
+| T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036 |
+
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T24,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -599,3 +601,13 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — menu chipa osoby dostało „× Usuń encję” i „🚫 To nie jest osoba” (formularz wykluczenia z wstępnie wybranym powodem `not_a_person`, globalnie albo dla autora; to ten sam mechanizm co „🚫” w trybie edycji). Poprawianie samego tekstu transkrypcji zostaje pytaniem otwartym (tabela poprawek stosowana przed NER).
 - **Test regresyjny:** `web_interface_react/.../entitiesPanel.test.tsx` — „excludes a mis-heard person”.
 - **Status:** kod w PR; wykluczenie „Egekwo” użytkownik wykonuje ręcznie z menu.
+
+### E036 — „Hekset / Hexet / Hexeta / He H” — jedna osoba rozsypana na kilka encji przez transkrypcję kanału (dok. #10872, PR n/d, 2026-10-18)
+
+- **Typ encji:** persName
+- **Kategoria:** T23 — rozsypane warianty jednej nazwy przez błędy transkrypcji kanału.
+- **Objaw:** Pete Hegseth występuje jako Hekset, Hekseta, Hexet, Hexeta, „He H” i Hegseth, każdy jako osobna osoba.
+- **Przyczyna źródłowa:** automatyczne napisy YouTube zapisują nazwisko fonetycznie i niespójnie. Reguły `ner_corrections` działają po fakcie, per lemat, więc każdy nowy wariant wymaga nowej reguły; ogólna korekta dla wszystkich transkrypcji byłaby zbyt inwazyjna.
+- **Poprawka:** kod — słownik nazw per kanał (`ner_channel_glossary`, `backend/library/ner_channel_glossary.py`): aliasy (dokładne frazy) i dopasowanie fonetyczne ostatniego członu nazwy, stosowane do KOPII tekstu przed NER (zapisany transkrypt bez zmian), z powrotem oryginalnych pisowni do `variants` i logiem zamian w `ner_glossary_applications`. UI `/ner-glossary`. Na rzeczywistym tekście dok. #10872: 20 zamian Hegseth (Hekset ×10, Hexet ×6, Hexeta ×3, Hekseta ×1) + „He H”, bez fałszywych trafień. Dane (wpisy dla kanału) dodaje użytkownik w UI.
+- **Test regresyjny:** `test_ner_channel_glossary.py` (warianty z dok. #10872, granice słów, wielkość liter, brak fałszywych trafień), `test_entity_service.py::TestChannelGlossaryInRefresh`, `test_ner_channel_glossary_routes.py`, `nerChannelGlossary.test.tsx`.
+- **Status:** kod w PR; wpisy i odświeżenie encji dok. #10872 po wdrożeniu.

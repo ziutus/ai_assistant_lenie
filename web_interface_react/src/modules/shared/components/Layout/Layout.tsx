@@ -121,6 +121,9 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         <NavLink to="/ner-gazetteer" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           NER Gazetteer
         </NavLink>
+        <NavLink to="/ner-glossary" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          NER Słownik kanału
+        </NavLink>
         <NavLink to="/ner-decisions" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           NER Decisions
         </NavLink>
