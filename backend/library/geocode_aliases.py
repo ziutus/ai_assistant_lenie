@@ -38,6 +38,10 @@ GEOCODE_ALIASES: dict[str, str] = {
     # Doc #10872: correct LocationIQ/OSM node is named Królewiec;
     # Kaliningrad scores only 0.30 against it (threshold 0.75).
     "Kaliningrad": "Królewiec",
+    # Doc #10872: OSM names the region "Kaliningrad Oblast".
+    "Obwód Kaliningradzki": "Kaliningrad Oblast",
+    # Doc #10872: the corridor is known as the "Suwałki Gap"; may stay unresolved in OSM.
+    "Przesmyk Suwalski": "Suwałki Gap",
 }
 
 

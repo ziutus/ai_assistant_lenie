@@ -315,6 +315,39 @@ class TestAggregateEntities:
         assert aggregate_entities(entities) == {("geogName", "kotlina Kłodzki"): 1}
 
 
+class TestAdjectivalSurnames:
+    """spaCy tags Slavic surnames that decline like adjectives POS=ADJ (doc #10872: Zacharowa)."""
+
+    def test_single_word_adjectival_surname_is_kept(self):
+        entities = [
+            {"text": "Zacharowa", "label": "persName", "lemma": "Zacharowa", "pos": "ADJ"},
+            {"text": "Zacharowej", "label": "persName", "lemma": "Zacharowa", "pos": "ADJ"},
+        ]
+        groups = aggregate_entities_detailed(entities)
+        assert groups[("persName", "Zacharowa")]["count"] == 2
+        assert groups[("persName", "Zacharowa")]["variants"] == ["Zacharowa", "Zacharowej"]
+
+    def test_lowercase_lemma_falls_back_to_the_surface(self):
+        entities = [{"text": "Kowalskiej", "label": "persName", "lemma": "kowalski", "pos": "ADJ"}]
+        assert list(aggregate_entities_detailed(entities)) == [("persName", "Kowalskiej")]
+
+    @pytest.mark.parametrize("surface", ["Duży", "Szybka", "Zachodzie", "Zielony", "Wielka"])
+    def test_adjectives_without_a_surname_ending_stay_dropped(self, surface):
+        # A capitalized adjective that does end like a surname ("Polski") is left to
+        # person_context_classifier's single-word review; spaCy labels those placeName anyway.
+        assert aggregate_entities_detailed(
+            [{"text": surface, "label": "persName", "lemma": surface, "pos": "ADJ"}],
+        ) == {}
+
+    def test_place_labelled_adjective_is_still_dropped(self):
+        entities = [{"text": "Kaliningradzkiego", "label": "placeName", "lemma": "kaliningradzki", "pos": "ADJ"}]
+        assert aggregate_entities_detailed(entities) == {}
+
+    def test_noun_surname_without_pos_is_unchanged(self):
+        entities = [{"text": "Zacharowa", "label": "persName", "lemma": "Zacharowa"}]
+        assert ("persName", "Zacharowa") in aggregate_entities_detailed(entities)
+
+
 class TestAggregateEntitiesDetailed:
     def test_collects_distinct_surface_variants_in_seen_order(self):
         entities = [

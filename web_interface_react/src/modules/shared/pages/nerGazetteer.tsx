@@ -7,13 +7,16 @@ import { AuthorizationContext } from "../context/authorizationContext";
 // The lists in code stay the seed; rows added here take effect within the backend's 60 s cache.
 // Writes need a `service` API key, so a 403 is explained instead of shown raw.
 
-type Kind = "city" | "geocode_alias";
+type Kind = "city" | "geocode_alias" | "place_mention";
 type Entry = {
   id: number; kind: Kind; name_pl: string; patterns: string[]; geocode_alias: string | null;
   note: string | null; source_document_id: number | null; created_by: string | null; created_at: string | null;
 };
 
-const KIND_LABEL: Record<Kind, string> = { city: "Miasto / stan (wzorce)", geocode_alias: "Alias geokodera" };
+const KIND_LABEL: Record<Kind, string> = {
+  city: "Miasto / stan (wzorce)", geocode_alias: "Alias geokodera", place_mention: "Miejsce wykrywane w tekście (wzorce)",
+};
+const hasPatterns = (kind: Kind) => kind !== "geocode_alias";
 const day = (value: string | null) => (value ? value.replace("T", " ").slice(0, 16) : "—");
 const parsePatterns = (text: string) => text.split(/[\n,]+/).map(p => p.trim()).filter(Boolean);
 
@@ -50,7 +53,7 @@ const NerGazetteer = () => {
     setNotice(""); setError("");
     const source = form.source.trim();
     const body: Record<string, unknown> = { kind: form.kind, name_pl: form.name_pl, note: form.note.trim() || null };
-    if (form.kind === "city") body.patterns = parsePatterns(form.patterns);
+    if (hasPatterns(form.kind)) body.patterns = parsePatterns(form.patterns);
     else body.geocode_alias = form.geocode_alias;
     if (source) body.source_document_id = Number(source);
     axios.post(`${apiUrl}/ner_gazetteer`, body, { headers })
@@ -70,7 +73,7 @@ const NerGazetteer = () => {
   const saveEdit = (entry: Entry) => {
     setNotice(""); setError("");
     const body: Record<string, unknown> = { note: edit.note.trim() || null };
-    if (entry.kind === "city") body.patterns = parsePatterns(edit.patterns);
+    if (hasPatterns(entry.kind)) body.patterns = parsePatterns(edit.patterns);
     else body.geocode_alias = edit.geocode_alias;
     axios.patch(`${apiUrl}/ner_gazetteer/${entry.id}`, body, { headers })
       .then(() => { setEditId(null); setNotice(`Zapisano „${entry.name_pl}”.`); load(); })
@@ -93,7 +96,7 @@ const NerGazetteer = () => {
   return <div>
     <h2>Gazetteer NER — wpisy w bazie</h2>
     <p style={muted}>
-      Dodatki do zamkniętych list NER (<code>city_gazetteer</code>, <code>geocode_aliases</code>), bez zmiany kodu i deployu.
+      Dodatki do zamkniętych list NER (<code>city_gazetteer</code>, <code>geocode_aliases</code>, <code>place_mention_gazetteer</code>), bez zmiany kodu i deployu.
       Listy z kodu zostają bazą, wpisy stąd tylko je uzupełniają. Wzorzec: rdzeń z <code>*</code> na końcu członu
       (np. <code>luizjan*</code>), co najmniej 3 znaki przed <code>*</code>, bez polskich znaków i wielkich liter.
     </p>
@@ -106,12 +109,13 @@ const NerGazetteer = () => {
         <select aria-label="Rodzaj wpisu" value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value as Kind })}>
           <option value="city">{KIND_LABEL.city}</option>
           <option value="geocode_alias">{KIND_LABEL.geocode_alias}</option>
+          <option value="place_mention">{KIND_LABEL.place_mention}</option>
         </select>
       </label>
       <label style={field}>Nazwa polska{" "}
         <input aria-label="Nazwa polska" value={form.name_pl} onChange={e => setForm({ ...form, name_pl: e.target.value })} required maxLength={200} />
       </label>
-      {form.kind === "city"
+      {hasPatterns(form.kind)
         ? <label style={field}>Wzorce (jeden w linii lub po przecinku){" "}
             <textarea aria-label="Wzorce" rows={3} value={form.patterns} onChange={e => setForm({ ...form, patterns: e.target.value })} required />
           </label>
@@ -133,6 +137,7 @@ const NerGazetteer = () => {
         <option value="">wszystkie</option>
         <option value="city">{KIND_LABEL.city}</option>
         <option value="geocode_alias">{KIND_LABEL.geocode_alias}</option>
+        <option value="place_mention">{KIND_LABEL.place_mention}</option>
       </select>
     </label>
     {!entries && !error && <p>Ładuję…</p>}
@@ -150,10 +155,10 @@ const NerGazetteer = () => {
           </td>
           <td style={td}>
             {editId === entry.id
-              ? (entry.kind === "city"
+              ? (hasPatterns(entry.kind)
                   ? <textarea aria-label={`Wzorce ${entry.name_pl}`} rows={3} value={edit.patterns} onChange={e => setEdit({ ...edit, patterns: e.target.value })} />
                   : <input aria-label={`Alias ${entry.name_pl}`} value={edit.geocode_alias} onChange={e => setEdit({ ...edit, geocode_alias: e.target.value })} />)
-              : (entry.kind === "city" ? entry.patterns.map(p => <code key={p} style={{ marginRight: 8 }}>{p}</code>) : entry.geocode_alias)}
+              : (hasPatterns(entry.kind) ? entry.patterns.map(p => <code key={p} style={{ marginRight: 8 }}>{p}</code>) : entry.geocode_alias)}
           </td>
           <td style={td}>
             {editId === entry.id

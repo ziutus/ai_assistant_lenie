@@ -56,6 +56,15 @@ class TestCanonicalCityName:
         # Five-character suffixes exceed the limit; a phrase is not a complete name.
         assert city_gazetteer.canonical_city_name(mention) is None
 
+    @pytest.mark.parametrize("mention", ["Królewiec", "Królewca", "Królewcu", "Królewcem"])
+    def test_krolewiec_is_kaliningrad_doc_10872(self, mention):
+        # doc #10872: "Rosja grozi wojną o Królewiec", "naszego królewca".
+        assert city_gazetteer.canonical_city_name(mention) == "Kaliningrad"
+
+    @pytest.mark.parametrize("mention", ["Królewskie", "królewskimody.pl", "Królewska"])
+    def test_royal_adjectives_are_not_kaliningrad(self, mention):
+        assert city_gazetteer.canonical_city_name(mention) is None
+
     def test_rijad_stem_does_not_match_riga(self):
         assert city_gazetteer.canonical_city_name("Riga") is None
 

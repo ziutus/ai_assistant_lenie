@@ -183,8 +183,11 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T17 | Znaczenie polityczne vs. kierunek geograficzny | „Zachód” jako blok polityczno-kulturowy mylony z kierunkiem lub fragmentem innej nazwy własnej | „Zachodzie” → „Państwa Zachodu”; wyjątek: „Polskie Siły Zbrojne na Zachodzie” | E022 |
 | T18 | Dwie nazwy zlepione w jeden span organizacji (opis zmiany nazwy „A na B”) | spaCy łączy dwie nazwy przez małe „na” | „Departamentu Obrony na Departament Wojny” | E030 |
 | T19 | Dwie sąsiednie wzmianki zlepione w jeden span (bez łącznika) | spaCy łączy dwie kolejne nazwy własne bez przecinka w jeden `orgName`; reguła nie rozstrzygnie bezpiecznie, gdzie jest granica | „NATO Moskwa” | E032 |
+| T20 | Nazwisko odmieniane przymiotnikowo odrzucone przez filtr POS | spaCy oznacza jednowyrazowe nazwisko typu -owa/-ewa/-ski jako `ADJ`, a agregacja odrzuca jednowyrazowe `persName` o POS innym niż `NOUN`/`PROPN` | „Zacharowa”, „Zacharowej”, „Kowalskiej” | E033 |
+| T21 | Miejsce, którego spaCy nie zgłasza w ogóle | nazwa małą literą („królewca”) albo tylko przymiotnik w roli nazwy („obwód kaliningradzki”, „przesmyk suwalski”); żaden gazetteer nie ma czego kanonizować | „królewca”, „obwód kaliningradzki”, „przesmyk suwalski” | E034 |
+| T22 | Błąd transkrypcji rozpoznany jako osoba | automatyczne tłumaczenie dźwięku zapisuje zwrot jako nazwę własną; nie ma tabeli poprawek transkrypcji | „Egekwo” (zamiast „ex aequo”) | E035 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T20,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T23,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -564,3 +567,35 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod + dane — nowe narzędzie „Podziel na kilka organizacji…” w menu chipa organizacji (`POST /website_entities/<id>/split_organization`, `entity_overrides.split_organization_entity()`): każda część przechodzi przez rejestr organizacji, dostaje własny wiersz `source='manual'` i link `DocumentOrganization`, a zlepiony wiersz i jego link znikają (organizacja w rejestrze zostaje). Decyzja `organization_split` jest audytowana i odtwarzana po każdym odświeżeniu NER (`replay_manual_organization_decisions()`): gdy ręczne części przetrwały, usuwany jest tylko zlepiony wiersz (bez ponownego doliczania liczników), a po `reopen_editing` podział jest wykonywany od nowa. Dane (podział encji 15887) do wykonania po wdrożeniu (to do after deploy).
 - **Test regresyjny:** `backend/tests/unit/test_organization_split.py` (podział „NATO Moskwa”, dolanie do istniejącego wiersza, brak duplikatu linku, replay przy ocalałych częściach i po przebudowie, no-op bez wzmianki), `backend/tests/unit/test_flask_endpoints_entities.py::test_split_organization`, `web_interface_react/.../entitiesPanel.test.tsx` (menu i wywołanie API).
 - **Status:** kod w PR; dane do wykonania po wdrożeniu.
+### E033 — „Zacharowa” nie jest osobą: filtr POS odrzuca nazwisko odmieniane przymiotnikowo (dok. #10872, PR n/d, 2026-10-18)
+
+- **Typ encji:** persName
+- **Kategoria:** T20 — nazwisko odmieniane przymiotnikowo odrzucone przez filtr POS.
+- **Zdanie źródłowe:** „Nareszcie świat docenił, a w końcu Zacharowa doceniła, tak więc możemy uznać, że jest to wielki sukces nareszcie jakiś.”
+- **Objaw:** w dok. #10872 nie ma osoby „Zacharowa”, choć wzmianki są cztery (Zacharowa ×2, Zacharowej ×2).
+- **Przyczyna źródłowa:** spaCy poprawnie zwraca `persName`, ale z korzeniem `pos=ADJ` (nazwisko odmienia się jak przymiotnik). `aggregate_entities_detailed` odrzuca każdą encję o POS innym niż `NOUN`/`PROPN`, wyjątek miały tylko nazwy wielowyrazowe. Ten sam los spotyka część mianowników i dopełniaczy typu „Kowalskiej”, „Zełeńskiego”, „Morawieckiego” (spaCy daje `ADJ` w około jednej trzeciej kontekstów), więc wzmianki znikały po cichu.
+- **Poprawka:** kod — `_is_adjectival_surname()` w `backend/library/ner_client.py`: jednowyrazowa, wielką literą zapisana `persName` zakończona na `-ow/-ew/-sk/-ck/-dzk` + końcówka przymiotnikowa przechodzi filtr POS. Lemat zostaje, gdy spaCy napisał go wielką literą („Zacharowa”), w przeciwnym razie (np. „kowalski”) używana jest forma z tekstu. Nadal obowiązuje jednowyrazowa weryfikacja kontekstu przez Bielika (`person_context_classifier`). Przymiotniki z etykietą `placeName` („Polskiego”) są dalej odrzucane.
+- **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestAdjectivalSurnames` — Zacharowa/Zacharowej w jednej grupie, lemat z małej litery, zwykłe przymiotniki i przymiotniki-miejsca nadal odrzucane.
+- **Status:** kod w PR; po wdrożeniu odświeżyć encje dok. #10872 („Wykryj osoby i miejsca”).
+
+### E034 — Królewiec, obwód kaliningradzki i przesmyk suwalski: miejsca, których spaCy nie zgłasza (dok. #10872, PR n/d, 2026-10-18)
+
+- **Typ encji:** placeName
+- **Kategoria:** T21 — miejsce, którego spaCy nie zgłasza w ogóle.
+- **Zdania źródłowe:** „…próby izolacji Kaliningradu, czyli królewca jest oficjalnym stanowiskiem rosyjskiego MSZ”; „Wyraźnie przywołany obwód kaliningradzki.”; „…rozmieszczenie wojsk sojusznicczych przez przesmyk suwalski.”
+- **Objaw:** jest „Kaliningrad”, ale nie ma „Królewca”, obwodu kaliningradzkiego ani przesmyku suwalskiego.
+- **Przyczyna źródłowa:** „królewca” małą literą odpada na filtrze wielkości liter; „kaliningradzki” i „suwalski” spaCy oznacza jako `placeName` z `pos=ADJ`, więc odpadają na filtrze POS. Gazetteery miast, regionów i cech geograficznych tylko kanonizują wzmianki, które spaCy już znalazł, więc nie miały czego poprawić.
+- **Poprawka:** kod — nowy `backend/library/place_mention_gazetteer.py`: zamknięta lista wzorców (ten sam zapis co `city_gazetteer`) przeszukiwana wprost w tekście, po zwinięciu diakrytyków i wielkości liter, z zachowaniem oryginalnej formy w wariantach. Wzmianki, które spaCy już zgłosił, nie są liczone drugi raz. Seed: „Kaliningrad” (`krolewiec`, `krolewc*`), „Obwód Kaliningradzki”, „Przesmyk Suwalski”. Wpis „Królewiec”/„Królewca” z wielkiej litery trafia też do `city_gazetteer`, więc łączy się z „Kaliningrad”. Aliasy geokodera: „Kaliningrad Oblast”, „Suwałki Gap” (ten drugi może zostać niezweryfikowany w OSM). Nowe wpisy bez deployu: `POST /ner_gazetteer` z `kind=place_mention`.
+- **Test regresyjny:** `backend/tests/unit/test_place_mention_gazetteer.py` (odmiana, brak fałszywych trafień typu „królewskie miody”, brak podwójnego liczenia, wpisy z bazy), `backend/tests/unit/test_entity_service.py::TestPlaceMentionSupplement`, `backend/tests/unit/test_city_gazetteer.py`.
+- **Status:** kod w PR; po wdrożeniu odświeżyć encje dok. #10872. Istniejące ręczne łączenie „Królewiec” → „Kaliningrad” zostaje.
+
+### E035 — „Egekwo” (błąd transkrypcji „ex aequo”) jako osoba (dok. #10872, PR n/d, 2026-10-18)
+
+- **Typ encji:** persName
+- **Kategoria:** T22 — błąd transkrypcji rozpoznany jako osoba.
+- **Zdanie źródłowe:** „Co prawda Egekwo, bo tam zdaje mi się jest też wymieniona niestety Estonia”; w innym miejscu transkrypt ma „egzekwo”.
+- **Objaw:** „Egekwo” jest osobą, a menu chipa osoby miało tylko „Zmień na miejsce”.
+- **Przyczyna źródłowa:** automatyczna transkrypcja zapisała „ex aequo” jako „Egekwo”/„egzekwo”. Nie istnieje tabela poprawek transkrypcji: `ner_corrections` poprawia nazwę encji po lemacie, `ner_exclusions` ją wycina, ale żadna nie zmienia tekstu.
+- **Poprawka:** kod — menu chipa osoby dostało „× Usuń encję” i „🚫 To nie jest osoba” (formularz wykluczenia z wstępnie wybranym powodem `not_a_person`, globalnie albo dla autora; to ten sam mechanizm co „🚫” w trybie edycji). Poprawianie samego tekstu transkrypcji zostaje pytaniem otwartym (tabela poprawek stosowana przed NER).
+- **Test regresyjny:** `web_interface_react/.../entitiesPanel.test.tsx` — „excludes a mis-heard person”.
+- **Status:** kod w PR; wykluczenie „Egekwo” użytkownik wykonuje ręcznie z menu.

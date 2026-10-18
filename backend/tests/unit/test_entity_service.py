@@ -10,6 +10,7 @@ pytest.importorskip("requests")
 
 from library.db.models import DocumentEntity, NerExclusion  # noqa: E402
 from library.entity_service import (  # noqa: E402
+    _add_place_mentions,
     _temporal_candidate_rows,
     filter_entities_to_text,
     get_document_entities,
@@ -238,6 +239,34 @@ class TestRefreshDocumentEntities:
         assert len(classification_rows) == 1
         assert classification_rows[0].entity_text == "Pocisków"
         assert classification_rows[0].dropped is True
+
+
+class TestPlaceMentionSupplement:
+    """Gazetteer-detected places that spaCy never reports (doc #10872)."""
+
+    def test_merges_into_the_existing_place_group_and_creates_new_ones(self):
+        text = "Kaliningradu, czyli królewca. Obwód kaliningradzki i obwodu kaliningradzkiego. Przez przesmyk suwalski."
+        raw = [{"text": "Kaliningradu", "label": "placeName", "lemma": "Kaliningrad"}]
+        groups = {("placeName", "Kaliningrad"): {"count": 1, "variants": ["Kaliningradu"], "raw_lemmas": ["Kaliningrad"]}}
+        _add_place_mentions(groups, text, raw)
+        assert groups[("placeName", "Kaliningrad")] == {
+            "count": 2, "variants": ["Kaliningradu", "królewca"], "raw_lemmas": ["Kaliningrad"],
+        }
+        assert groups[("placeName", "Obwód Kaliningradzki")]["count"] == 2
+        assert groups[("placeName", "Przesmyk Suwalski")] == {
+            "count": 1, "variants": ["przesmyk suwalski"], "raw_lemmas": ["Przesmyk Suwalski"],
+        }
+
+    def test_existing_geog_name_group_is_reused_instead_of_duplicated(self):
+        groups = {("geogName", "Przesmyk Suwalski"): {"count": 1, "variants": ["Przesmyk Suwalski"]}}
+        _add_place_mentions(groups, "Przesmyku Suwalskiego broni NATO", [])
+        assert list(groups) == [("geogName", "Przesmyk Suwalski")]
+        assert groups[("geogName", "Przesmyk Suwalski")]["count"] == 2
+
+    def test_text_without_gazetteer_places_changes_nothing(self):
+        groups = {("placeName", "Warszawa"): {"count": 1, "variants": ["Warszawie"]}}
+        _add_place_mentions(groups, "Mieszkam w Warszawie.", [])
+        assert groups == {("placeName", "Warszawa"): {"count": 1, "variants": ["Warszawie"]}}
 
 
 class TestOrganizationMerging:
