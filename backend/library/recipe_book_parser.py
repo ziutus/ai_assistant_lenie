@@ -394,14 +394,65 @@ def parse_index(pages: list[str], first_page: int, last_page: int) -> dict[str, 
     return entries
 
 
+_MONTHS = {1: "I", 2: "II", 3: "III"}
+_MEAL_TAGS = {
+    "śniadanie": "śniadanie",
+    "II śniadanie": "drugie-śniadanie",
+    "obiad": "obiad",
+    "podwieczorek": "podwieczorek",
+    "kolacja": "kolacja",
+    "przekąska": "przekąska",
+}
+
+
+def recipe_meals(recipe: Recipe) -> list[str]:
+    """Meals the recipe is served as in the meal plan, in first-seen order."""
+    meals: list[str] = []
+    for occurrence in recipe.occurrences:
+        meal = occurrence.get("meal")
+        if meal and meal not in meals:
+            meals.append(meal)
+    return meals
+
+
+def occurrence_lines(recipe: Recipe) -> list[str]:
+    """Human-readable meal-plan slots: "miesiąc I, tydzień 2, poniedziałek – wtorek, obiad"."""
+    lines: list[str] = []
+    for occurrence in recipe.occurrences:
+        if not occurrence.get("month"):
+            continue
+        parts = [f"miesiąc {_MONTHS.get(occurrence['month'], occurrence['month'])}", f"tydzień {occurrence['week']}"]
+        for key in ("day", "meal"):
+            if occurrence.get(key):
+                parts.append(str(occurrence[key]))
+        line = ", ".join(parts)
+        if line not in lines:
+            lines.append(line)
+    return lines
+
+
+def recipe_tags(recipe: Recipe, base_tags: tuple[str, ...] = ("przepis",)) -> list[str]:
+    """Tags for the Document: caller's base tags, meals, and "wege" when a vegetarian variant exists."""
+    tags = list(base_tags)
+    for meal in recipe_meals(recipe):
+        tag = _MEAL_TAGS.get(meal)
+        if tag and tag not in tags:
+            tags.append(tag)
+    text = " ".join([recipe.title, *recipe.ingredients, recipe.method])
+    if re.search(r"\bWEGE\b|\bwegetariańsk", text) and "wege" not in tags:
+        tags.append("wege")
+    return tags
+
+
 def recipe_to_markdown(recipe: Recipe) -> str:
     """Render a recipe as the Document's text_md."""
     parts = [f"# {recipe.title}"]
     meta = []
     if recipe.servings:
         meta.append(f"Porcje: {recipe.servings}")
-    if recipe.meal:
-        meta.append(f"Posiłek: {recipe.meal}")
+    meals = recipe_meals(recipe)
+    if meals:
+        meta.append(f"Posiłek: {', '.join(meals)}")
     if recipe.section:
         meta.append(f"Dział: {recipe.section}")
     if meta:
@@ -416,4 +467,8 @@ def recipe_to_markdown(recipe: Recipe) -> str:
     if recipe.method:
         parts.append("## Przygotowanie")
         parts.append(recipe.method)
+    slots = occurrence_lines(recipe)
+    if slots:
+        parts.append("## W jadłospisie")
+        parts.extend(f"- {slot}" for slot in slots)
     return "\n\n".join(parts).replace("\n\n- ", "\n- ")

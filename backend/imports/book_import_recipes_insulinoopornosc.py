@@ -13,19 +13,30 @@ Running:
     python imports/book_import_recipes_insulinoopornosc.py book.pdf                  # dry-run summary
     python imports/book_import_recipes_insulinoopornosc.py book.pdf --show 5         # + 5 rendered recipes
     python imports/book_import_recipes_insulinoopornosc.py book.pdf --dump out.md    # all recipes to a file
+    python imports/book_import_recipes_insulinoopornosc.py book.pdf --apply          # one Document per recipe
+    python imports/book_import_recipes_insulinoopornosc.py book.pdf --apply --embed  # + embeddings (needs config)
+
+Data access: ORM (SQLAlchemy) via get_session(), only when --apply is passed.
+Re-running is safe: a recipe whose synthetic URL already exists is skipped.
 """
 
 import argparse
 import difflib
 import sys
 
-from library.book_pdf_import import extract_pages
+from library.book_pdf_import import extract_pages, slugify
 from library.recipe_book_parser import (
     merge_duplicates,
     parse_index,
     parse_recipes,
+    recipe_tags,
     recipe_to_markdown,
 )
+
+BOOK_TITLE = "Insulinooporność. Szybkie dania"
+BYLINE = "Magdalena Makarowska, Dominika Musiałowska"
+BOOK_SLUG = "insulinoopornosc-szybkie-dania"
+BASE_TAGS = ("przepis", "insulinooporność", "szybkie-dania")
 
 # Printed page == PDF page number (verified on the ebookpoint edition).
 BASIC_RECIPE_PAGES = (62, 80)  # rozdział 4: pasty, pieczywo, mięsa, sałatki
@@ -75,11 +86,74 @@ def _has_close(key: str, candidates: set[str], cutoff: float = 0.85) -> bool:
     return key in candidates or bool(difflib.get_close_matches(key, list(candidates), n=1, cutoff=cutoff))
 
 
+def recipe_url(recipe) -> str:
+    """Synthetic, stable identity (mirrors file:///ksiazki/<slug>.pdf for whole books)."""
+    return f"file:///ksiazki/{BOOK_SLUG}/{slugify(recipe.title)}"
+
+
+def apply_import(recipes, *, source: str, embed: bool) -> None:
+    """Create one `text` Document per recipe; skip those already imported."""
+    from library.db.engine import get_session
+    from library.document_service import DocumentService, ExistingDocumentError
+
+    session = get_session()
+    created = skipped = embedded = 0
+    try:
+        service = DocumentService(session)
+        repo = model = None
+        if embed:
+            import library.embedding as embedding
+            from library.config_loader import load_config
+            from library.document_repository import DocumentRepository
+            from library.obsidian_reimport_service import _embedding_parts
+
+            model = load_config().require("EMBEDDING_MODEL")
+            repo = DocumentRepository(session)
+        for recipe in recipes:
+            pages = ", ".join(str(page) for page in sorted(recipe.pages))
+            try:
+                doc = service.create_document(
+                    url=recipe_url(recipe),
+                    url_type="text",
+                    title=recipe.title,
+                    note=f"Książka „{BOOK_TITLE}”, s. {pages}",
+                    source=source,
+                    language="pl",
+                )
+            except ExistingDocumentError:
+                skipped += 1
+                continue
+            markdown = recipe_to_markdown(recipe)
+            doc.byline = BYLINE
+            doc.text_md = markdown
+            doc.text = markdown
+            doc.tags = ",".join(recipe_tags(recipe, BASE_TAGS))
+            session.commit()
+            created += 1
+            if embed:
+                for part in _embedding_parts(markdown):
+                    result = embedding.get_embedding(model=model, text=part)
+                    if result.status != "success" or not result.embedding:
+                        raise RuntimeError(f"Embedding failed for document {doc.id}: {result.status}")
+                    repo.embedding_add(doc.id, result.embedding, "pl", part, part, model)
+                session.commit()
+                embedded += 1
+            print(f"  + {doc.id}: {recipe.title}")
+    finally:
+        session.close()
+    print(f"\nUtworzono: {created}, pominieto (juz istnieja): {skipped}, z embeddingami: {embedded}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("file", help="sciezka do lokalnego pliku PDF")
     parser.add_argument("--show", type=int, default=0, metavar="N", help="pokaz N pierwszych przepisow jako markdown")
     parser.add_argument("--dump", metavar="PLIK", help="zapisz wszystkie przepisy jako markdown do pliku")
+    parser.add_argument("--apply", action="store_true", help="zapisz do bazy (domyslnie dry-run)")
+    parser.add_argument(
+        "--embed", action="store_true", help="z --apply: wygeneruj tez embeddingi (wymaga konfiguracji)"
+    )
+    parser.add_argument("--source", default="książka", help="zrodlo odkrycia (domyslnie 'książka')")
     args = parser.parse_args()
 
     with open(args.file, "rb") as fh:
@@ -120,9 +194,13 @@ def main() -> None:
                 out.write(recipe_to_markdown(recipe))
                 out.write(f"\n\n_Strony: {recipe.pages}; wystąpienia: {recipe.occurrences}_\n\n---\n\n")
         print(f"\nZapisano {len(unique)} przepisow do {args.dump}")
-    print("\nDry-run — nic nie zapisano do bazy.")
     if not unique:
         sys.exit(1)
+    if args.apply:
+        print()
+        apply_import(unique, source=args.source, embed=args.embed)
+    else:
+        print("\nDry-run — nic nie zapisano do bazy. Uzyj --apply.")
 
 
 if __name__ == "__main__":

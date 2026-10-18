@@ -4,6 +4,7 @@ from library.recipe_book_parser import (
     normalize_title,
     parse_index,
     parse_recipes,
+    recipe_tags,
     recipe_to_markdown,
 )
 
@@ -151,3 +152,16 @@ def test_parse_index_joins_wrapped_entries():
     assert index[normalize_title("Guacamole")] == 62
     assert index[normalize_title("Ciasto obłędnie czekoladowo-karmelowe")] == 261
     assert index[normalize_title("Burgery na kolorowo z warzywami i kaszą gryczaną")] == 173
+
+
+def test_tags_and_menu_section():
+    pages = [
+        _page(1, "poniedziałek – wtorek\nobiad: Gulasz – 2 porcje\n• 300 g mięsa lub W WERSJI WEGE soczewicy\nDuś.\n"),
+        _page(2, "kolacja: Gulasz – 2 porcje\n• 300 g mięsa\nDuś.\n"),
+    ]
+    recipes = parse_recipes(pages, 1, 2, context_for_page=lambda page: {"month": 1, "week": page})
+    (recipe,) = merge_duplicates(recipes)
+    assert recipe_tags(recipe, ("przepis",)) == ["przepis", "obiad", "kolacja", "wege"]
+    markdown = recipe_to_markdown(recipe)
+    assert "Posiłek: obiad, kolacja" in markdown
+    assert "## W jadłospisie\n- miesiąc I, tydzień 1, poniedziałek – wtorek, obiad\n- miesiąc I, tydzień 2" in markdown
