@@ -9,9 +9,10 @@ matching by name or surface variant, so a correction survives an edit of the
 text as long as the mention itself is still there. A decision whose mention is
 gone simply finds nothing to act on.
 
-Scope is deliberately places: person re-pointing and organization merges already
-persist through the global registry aliases, and exclusion rules live in
-``ner_exclusions``.
+Scope is places plus one organization decision: person re-pointing and organization merges already
+persist through the global registry aliases, and exclusion rules live in ``ner_exclusions``. The
+exception is ``organization_split`` ("NATO Moskwa" -> NATO + Moskwa): NER returns the glued span again
+on every refresh, so ``replay_manual_organization_decisions`` removes it again.
 """
 
 from __future__ import annotations
@@ -186,6 +187,129 @@ def split_place_entity(
         rows.append(row)
     session.flush()
     return rows
+
+
+def _drop_organization_links(session, entity: DocumentEntity) -> None:
+    """Delete the document's organization links that point at ``entity`` (the organization stays)."""
+    from library.db.models import DocumentOrganization
+
+    for link in session.scalars(select(DocumentOrganization).where(
+        DocumentOrganization.document_entity_id == entity.id,
+    )).all():
+        session.delete(link)
+
+
+def split_organization_entity(
+    session, entity: DocumentEntity, parts: list[str], entities: list[DocumentEntity] | None = None,
+    *, fold_counts: bool = True,
+) -> list[tuple[DocumentEntity, object]]:
+    """Replace one orgName entity made of several glued mentions ("NATO Moskwa") with one per part.
+
+    Every part is resolved through the organization registry (alias or canonical match, else a new
+    ``Organization``), becomes a ``source='manual'`` ``orgName`` row named by the organization's
+    canonical name with the compound's mention count (or is folded into a same-named row the document
+    already has) and gets its ``DocumentOrganization`` link. Surface forms go to the parts word by word
+    when the compound has exactly as many words as parts. The compound's own link is dropped; the
+    organization it pointed at stays in the registry. ``fold_counts=False`` leaves the counts of rows that
+    already exist alone (replay after a refresh). Queues changes without committing.
+    """
+    from library.db.models import DocumentOrganization
+    from library.entity_service import split_place_tokens
+    from library.organization_registry import resolve_or_create
+
+    document_id, count = entity.document_id, entity.mention_count or 0
+    forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
+    forms_by_part: dict[str, list[str]] = {part: [] for part in parts}
+    for form in forms:
+        tokens = split_place_tokens(form)
+        if len(tokens) == len(parts):
+            for part, token in zip(parts, tokens, strict=True):
+                forms_by_part[part].append(token)
+    if entities is None:
+        entities = list(session.scalars(select(DocumentEntity).where(
+            DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "orgName",
+        )).all())
+    _drop_organization_links(session, entity)
+    session.delete(entity)
+    if entity in entities:
+        entities.remove(entity)
+    session.flush()
+
+    results = []
+    for part in parts:
+        part_forms = list(dict.fromkeys([part, *forms_by_part[part]]))
+        organization, confidence = resolve_or_create(session, part, part_forms)
+        canonical = organization.canonical_name
+        variants = [form for form in part_forms if form.casefold() != canonical.casefold()]
+        row = _exact(entities, canonical, ("orgName",))
+        if row is not None:
+            if fold_counts:
+                row.mention_count = (row.mention_count or 0) + count
+            row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
+            row.source = "manual"
+        else:
+            row = DocumentEntity(
+                document_id=document_id, entity_type="orgName", entity_text=canonical,
+                mention_count=count, variants=variants, source="manual",
+            )
+            session.add(row)
+            entities.append(row)
+        session.flush()
+        link = session.scalar(select(DocumentOrganization).where(
+            DocumentOrganization.document_id == document_id,
+            DocumentOrganization.organization_id == organization.id,
+        ))
+        if link is None:
+            session.add(DocumentOrganization(
+                document_id=document_id, organization_id=organization.id,
+                document_entity_id=row.id, confidence=confidence,
+            ))
+        elif link.document_entity_id is None:
+            link.document_entity_id = row.id
+        results.append((row, organization))
+    session.flush()
+    return results
+
+
+def replay_manual_organization_decisions(session, document_id: int) -> dict:
+    """Re-apply the document's ``organization_split`` decisions after its entities were rebuilt.
+
+    NER returns the glued span again ("NATO Moskwa"). When the manual part rows survived the refresh
+    (they are ``source='manual'``), only the glued row and its link are removed — counts are not added a
+    second time; when everything was rebuilt (reopen for editing) the split is performed again. A decision
+    whose mention is gone finds nothing to act on. Queues changes without committing.
+    """
+    decisions = session.scalars(
+        select(EntityReviewDecision).where(
+            EntityReviewDecision.document_id == document_id,
+            EntityReviewDecision.decision == "organization_split",
+            EntityReviewDecision.entity_type == "orgName",
+        ).order_by(EntityReviewDecision.id)
+    ).all()
+    if not decisions:
+        return {}
+    entities = list(session.scalars(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "orgName",
+    )).all())
+    replayed = 0
+    for decision in decisions:
+        details = decision.details or {}
+        parts = [p for p in details.get("parts", []) if p]
+        row = _by_name_or_variant(entities, decision.entity_text, ("orgName",))
+        if row is None or len(parts) < 2:
+            continue
+        part_names = [n for n in details.get("part_names", []) if n]
+        if part_names and all(_exact(entities, name, ("orgName",)) is not None for name in part_names):
+            _drop_organization_links(session, row)
+            session.delete(row)
+            entities.remove(row)
+            session.flush()
+        else:
+            split_organization_entity(session, row, parts, entities)
+        replayed += 1
+    if replayed:
+        logger.info("Re-applied %d organization split(s) for doc %s", replayed, document_id)
+    return {"organization_split": replayed} if replayed else {}
 
 
 def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple[dict[int, DocumentEntity], dict]:

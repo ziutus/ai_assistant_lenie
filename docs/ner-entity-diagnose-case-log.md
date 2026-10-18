@@ -182,8 +182,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T16 | Etnonim kontynentalny lub ponadnarodowy jako miejsce | Nazwa mieszkańców nie oznacza kraju ani miejsca; odrzucana przez zamkniętą listę | „Europejczycy”, „Europejka” | E029 |
 | T17 | Znaczenie polityczne vs. kierunek geograficzny | „Zachód” jako blok polityczno-kulturowy mylony z kierunkiem lub fragmentem innej nazwy własnej | „Zachodzie” → „Państwa Zachodu”; wyjątek: „Polskie Siły Zbrojne na Zachodzie” | E022 |
 | T18 | Dwie nazwy zlepione w jeden span organizacji (opis zmiany nazwy „A na B”) | spaCy łączy dwie nazwy przez małe „na” | „Departamentu Obrony na Departament Wojny” | E030 |
+| T19 | Dwie sąsiednie wzmianki zlepione w jeden span (bez łącznika) | spaCy łączy dwie kolejne nazwy własne bez przecinka w jeden `orgName`; reguła nie rozstrzygnie bezpiecznie, gdzie jest granica | „NATO Moskwa” | E032 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T19,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T20,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -551,4 +552,15 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Przyczyna źródłowa:** transkrypcja zapisuje stan „Luisiana”, spaCy nie lematyzuje nieznanej nazwy i pozostawia „Luisianie”, a gazetteer nie zawiera wpisu dla tej pisowni ani poprawnej polskiej nazwy „Luizjana”.
 - **Poprawka:** kod + dane — zamknięty wpis `("Luizjana", ("luizjan*", "luisian*"))` w `backend/library/city_gazetteer.py`; nazwa kanoniczna „Luizjana” zgodnie z decyzją użytkownika. Po wdrożeniu przemianować/odświeżyć encję 16130 w dok. #10872 i ponowić weryfikację miejsca.
 - **Test regresyjny:** `backend/tests/unit/test_city_gazetteer.py::TestCanonicalCityName::test_luisiana_transcription_variant_doc_10872` — dziesięć form obu pisowni; osobny test pełnego dopasowania i limitu końcówki. `backend/tests/unit/test_ner_client.py::TestCityGazetteerOverride::test_luisiana_transcription_variant_doc_10872` — surowa encja „Luisianie” agreguje się do „Luizjana” z zachowaniem wariantu; test nie przechodzi bez wpisu w gazetteerze.
+- **Status:** kod w PR; dane do wykonania po wdrożeniu.
+
+### E032 — „NATO Moskwa” jako jedna organizacja (dok. #10872, PR n/d, 2026-10-18)
+
+- **Typ encji:** orgName
+- **Kategoria:** T19 — dwie sąsiednie wzmianki zlepione w jeden span (bez łącznika).
+- **Zdanie źródłowe:** „W liście do NATO Moskwa wyraźnie wspomina tylko znowu proszę państwa nie wiadomo czy to jest list wysłany czy to jest nota tej ambasady czy nota ambasady w Irlandii moim zdaniem prawdopodobnie chyba jest jeszcze jakieś trzecie pismo”.
+- **Objaw:** w dok. #10872 powstała organizacja „NATO Moskwa” (encja 15887, organizacja 1136 w rejestrze) obok istniejących „NATO” (9) i „Moskwa” (170).
+- **Przyczyna źródłowa:** w transkrypcie brak przecinka między „NATO” a „Moskwa”, więc spaCy zwrócił jeden span `orgName`. Granicy między dwiema nazwami nie da się wyznaczyć regułą bez ryzyka rozcinania prawdziwych nazw wieloczłonowych, dlatego wymagane jest ręczne rozstrzygnięcie.
+- **Poprawka:** kod + dane — nowe narzędzie „Podziel na kilka organizacji…” w menu chipa organizacji (`POST /website_entities/<id>/split_organization`, `entity_overrides.split_organization_entity()`): każda część przechodzi przez rejestr organizacji, dostaje własny wiersz `source='manual'` i link `DocumentOrganization`, a zlepiony wiersz i jego link znikają (organizacja w rejestrze zostaje). Decyzja `organization_split` jest audytowana i odtwarzana po każdym odświeżeniu NER (`replay_manual_organization_decisions()`): gdy ręczne części przetrwały, usuwany jest tylko zlepiony wiersz (bez ponownego doliczania liczników), a po `reopen_editing` podział jest wykonywany od nowa. Dane (podział encji 15887) do wykonania po wdrożeniu (to do after deploy).
+- **Test regresyjny:** `backend/tests/unit/test_organization_split.py` (podział „NATO Moskwa”, dolanie do istniejącego wiersza, brak duplikatu linku, replay przy ocalałych częściach i po przebudowie, no-op bez wzmianki), `backend/tests/unit/test_flask_endpoints_entities.py::test_split_organization`, `web_interface_react/.../entitiesPanel.test.tsx` (menu i wywołanie API).
 - **Status:** kod w PR; dane do wykonania po wdrożeniu.

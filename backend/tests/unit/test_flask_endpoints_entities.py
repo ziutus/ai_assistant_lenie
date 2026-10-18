@@ -154,6 +154,49 @@ def test_split_place(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_organization", 400),
+                                           ("one_part", 400), ("duplicate", 400), ("rollback", 500)])
+def test_split_organization(client, case, expected):
+    # doc #10872: "W liście do NATO Moskwa wyraźnie wspomina tylko..." was one orgName span.
+    from types import SimpleNamespace
+    from library.db.models import DocumentEntity, DocumentOrganization, EntityReviewDecision
+    entity = DocumentEntity(id=1, document_id=10872, entity_type="orgName", entity_text="NATO Moskwa",
+                            mention_count=2, variants=[], source="ner")
+    if case == "not_organization":
+        entity.entity_type = "placeName"
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: None if case == "missing" else entity
+    session.scalars.return_value.all.return_value = []
+    session.scalar.return_value = None
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    registry = {"NATO": 9, "Moskwa": 170}
+    parts = {"one_part": ["NATO"], "duplicate": ["NATO", "nato"]}.get(case, ["NATO", "Moskwa"])
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.organization_registry.resolve_or_create",
+        side_effect=lambda s, name, forms=None: (SimpleNamespace(id=registry[name], canonical_name=name),
+                                                 "canonical_matched"),
+    ):
+        response = client.post("/website_entities/1/split_organization", headers=API_HEADERS, json={"parts": parts})
+    assert response.status_code == expected
+    if expected == 200:
+        added = [call.args[0] for call in session.add.call_args_list]
+        created = [row for row in added if isinstance(row, DocumentEntity)]
+        assert [(r.entity_text, r.mention_count, r.source) for r in created] == [
+            ("NATO", 2, "manual"), ("Moskwa", 2, "manual")]
+        assert [r.organization_id for r in added if isinstance(r, DocumentOrganization)] == [9, 170]
+        decision = next(r for r in added if isinstance(r, EntityReviewDecision))
+        assert decision.decision == "organization_split"
+        assert decision.details["part_names"] == ["NATO", "Moskwa"]
+        assert response.get_json()["organization_ids"] == [9, 170]
+        session.delete.assert_called_once_with(entity)
+        session.commit.assert_called_once()
+    elif case == "rollback":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
 @pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_person", 400),
                                            ("blank_text", 400), ("rollback", 500)])
 def test_person_to_place(client, case, expected):

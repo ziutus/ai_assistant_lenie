@@ -241,7 +241,7 @@ it("offers the organization menu on a cited source, including a link to the sour
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
-    "Połącz z inną organizacją", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
     .toBe("/information-sources?id=200");
@@ -422,7 +422,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
-    "Połącz z inną organizacją", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
   expect(screen.getByText(/Krótki opis dla:/)).toBeTruthy();
@@ -636,6 +636,42 @@ it("offers to split a list of countries and posts the confirmed parts", async ()
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/9/split_place",
     { parts: ["Pakistan", "Afganistan"] }, { headers: expect.any(Object) }));
   expect(await screen.findByText(/podzielone na: Pakistan, Afganistan/)).toBeTruthy();
+});
+
+it("offers to split glued organization mentions and posts to split_organization", async () => {
+  // doc #10872: "W liście do NATO Moskwa wyraźnie wspomina..." became one orgName span.
+  const glued = { id: 15887, text: "NATO Moskwa", count: 2, organization_id: 1136 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [glued], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", parts: ["NATO", "Moskwa"] } });
+  render(<MemoryRouter><EntitiesPanel docId={10872} /></MemoryRouter>);
+  await screen.findByRole("button", { name: glued.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: glued.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Podziel na: NATO, Moskwa" }));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("NATO, Moskwa");
+  expect(screen.getByText(/osobna organizacja z rejestru/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Podziel" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/15887/split_organization",
+    { parts: ["NATO", "Moskwa"] }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/podzielone na: NATO, Moskwa/)).toBeTruthy();
+});
+
+it("offers a plain organization split for names without an obvious two-word shape", async () => {
+  const long = { id: 31, text: "Rada Bezpieczeństwa ONZ", count: 1, organization_id: 7 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [long], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockRejectedValue({ response: { data: { message: "Podaj od 2 do 6 różnych, niepustych nazw." } } });
+  render(<MemoryRouter><EntitiesPanel docId={10872} /></MemoryRouter>);
+  await screen.findByRole("button", { name: long.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: long.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Podziel na kilka organizacji…" }));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(long.text);
+  expect((screen.getByRole("button", { name: "Podziel" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Rada Bezpieczeństwa, ONZ" } });
+  fireEvent.click(screen.getByRole("button", { name: "Podziel" }));
+  expect(await screen.findByText(/Nie udało się podzielić organizacji: Podaj od 2 do 6/)).toBeTruthy();
 });
 
 it("changes a person into a place with an editable name", async () => {

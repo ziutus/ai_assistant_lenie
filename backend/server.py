@@ -1917,6 +1917,56 @@ def website_entities_split_place(entity_id: int):
                    countries=countries, removed_tag=removed_tag), 200
 
 
+@app.route('/website_entities/<int:entity_id>/split_organization', methods=['POST'])
+def website_entities_split_organization(entity_id: int):
+    """Split an orgName entity made of glued mentions (NER: "NATO Moskwa") into one per part.
+
+    Body: {"parts": ["NATO", "Moskwa"]} — 2-6 distinct non-empty names. Each part is resolved through
+    the organization registry and gets its own ``source='manual'`` row and document link; the glued row
+    and its link are dropped (the organization it pointed at stays in the registry). The decision is
+    audited as ``organization_split`` and replayed after entity refreshes (library/entity_overrides.py).
+    """
+    from library.db.models import DocumentEntity
+    from library.entity_overrides import split_organization_entity
+    from library.entity_review_audit import record_entity_decision
+
+    data = request.get_json(silent=True) or {}
+    raw_parts = data.get('parts')
+    if not isinstance(raw_parts, list) or not all(isinstance(p, str) for p in raw_parts):
+        return jsonify(status="error", message="Pole parts musi być listą nazw."), 400
+    parts = [p.strip() for p in raw_parts]
+    if not 2 <= len(parts) <= 6 or any(not p or len(p) > 200 for p in parts) \
+            or len({p.casefold() for p in parts}) != len(parts):
+        return jsonify(status="error", message="Podaj od 2 do 6 różnych, niepustych nazw."), 400
+
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type != "orgName":
+        return jsonify(status="error", message="Encja nie jest organizacją."), 400
+    try:
+        old_text, old_variants, document_id = entity.entity_text, list(entity.variants or []), entity.document_id
+        results = split_organization_entity(session, entity, parts)
+        rows = [row for row, _organization in results]
+        record_entity_decision(
+            session, document_id=document_id, document_entity_id=rows[0].id,
+            entity_type="orgName", entity_text=old_text, decision="organization_split",
+            details={
+                "parts": parts, "variants": old_variants,
+                "part_names": [row.entity_text for row in rows],
+                "organization_ids": [organization.id for _row, organization in results],
+            },
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Organization split failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się podzielić organizacji."), 500
+    return jsonify(status="success", entity_ids=[row.id for row in rows], parts=parts,
+                   organization_ids=[organization.id for _row, organization in results]), 200
+
+
 @app.route('/website_entities/<int:entity_id>', methods=['DELETE', 'OPTIONS'])
 def website_entities_delete(entity_id: int):
     """Delete a stored NER entity row (editor UI).
