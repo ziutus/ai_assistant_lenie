@@ -22,6 +22,11 @@ def test_context_sentences_picks_the_sentences_with_the_name_or_a_variant():
     assert context_sentences("", ["x"]) == [] and context_sentences(TEXT, []) == []
 
 
+def test_a_lowercase_continuation_after_a_speech_to_text_full_stop_is_kept():
+    text = "Ćwiczenia Galanbard 2026. wymierzone w rosyjską enklawę. Potem była przerwa."
+    assert context_sentences(text, ["Galanbard 2026"]) == ["Ćwiczenia Galanbard 2026. wymierzone w rosyjską enklawę."]
+
+
 def test_context_sentences_is_limited():
     assert len(context_sentences("Galanbard raz. " * 10, ["Galanbard"], limit=3)) == 1  # identical sentences collapse
     assert len(context_sentences(" ".join(f"Galanbard {i}." for i in range(10)), ["Galanbard"], limit=3)) == 3

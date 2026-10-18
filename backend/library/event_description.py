@@ -22,10 +22,17 @@ def context_sentences(text: str, forms: list[str], limit: int = MAX_SENTENCES) -
     if not text or not needles:
         return []
     found: list[str] = []
-    for sentence in _SENTENCE_END.split(text.replace("\n", " ")):
+    sentences = _SENTENCE_END.split(text.replace("\n", " "))
+    for index, sentence in enumerate(sentences):
         folded = sentence.casefold()
         if any(needle in folded for needle in needles):
-            cleaned = sentence.strip()[:MAX_SENTENCE_CHARS]
+            cleaned = sentence.strip()
+            # Speech-to-text often ends a sentence early: "...Galanbard 2026. wymierzone w ..." — the
+            # continuation starts in lower case and belongs to the same statement.
+            following = sentences[index + 1].strip() if index + 1 < len(sentences) else ""
+            if following and following[0].islower():
+                cleaned = f"{cleaned} {following}"
+            cleaned = cleaned[:MAX_SENTENCE_CHARS]
             if cleaned and cleaned not in found:
                 found.append(cleaned)
         if len(found) >= limit:
