@@ -288,6 +288,67 @@ def test_person_to_place_is_replayed_and_keeps_surface_forms():
     assert stats["person_to_place"] == 1
 
 
+def test_replay_onto_a_surviving_manual_row_does_not_count_the_mention_again():
+    """Doc #10872: "Kalinigrad" went 3 -> 4 -> 5 -> 6 because every refresh re-folded a fresh persName."""
+    survivor = entity("Kalinigrad", count=3, source="manual")
+    fresh = entity("Kalinigrad", entity_type="persName", count=1)
+    rows = [survivor, fresh]
+    _, _, stats = run([decision("person_to_place", "Kalinigrad", entity_type="persName", new_text="Kalinigrad")], rows)
+    assert survivor.mention_count == 3
+    assert rows == [survivor]
+    assert stats["person_to_place"] == 1
+
+
+def test_first_conversion_into_an_existing_ner_place_still_adds_the_count():
+    place = entity("Kandahar", count=3)
+    person = entity("Kandaharem", entity_type="persName", count=2)
+    run([decision("person_to_place", "Kandaharem", entity_type="persName", new_text="Kandahar")], [place, person])
+    assert place.mention_count == 5
+    assert place.source == "manual"
+
+
+def test_replayed_merge_and_rename_collision_do_not_inflate_a_surviving_target():
+    target = entity("Kaliningrad", count=4, source="manual")
+    fresh_source = entity("Królewiec", count=1)
+    run([decision("place_merged", "Kaliningrad", source_entity_text="Królewiec", source_variants=["Królewiec"],
+                  target_entity_text="Kaliningrad")], [target, fresh_source])
+    assert target.mention_count == 4
+
+    target2 = entity("Kijów", count=5, source="manual")
+    other = entity("Kijowa", count=2)
+    run([decision("renamed", "Kijowa", new_text="Kijów")], [target2, other])
+    assert target2.mention_count == 5
+
+
+def test_two_fresh_sources_merged_into_a_new_target_are_both_counted():
+    target = entity("Kaliningrad", count=2)
+    first = entity("Królewiec", count=1)
+    second = entity("Königsberg", count=3)
+    run([
+        decision("place_merged", "Kaliningrad", source_entity_text="Królewiec", source_variants=[],
+                 target_entity_text="Kaliningrad"),
+        decision("place_merged", "Kaliningrad", source_entity_text="Königsberg", source_variants=[],
+                 target_entity_text="Kaliningrad"),
+    ], [target, first, second])
+    assert target.mention_count == 6
+
+
+def test_replayed_split_and_organization_conversions_respect_surviving_rows():
+    survivor_place = entity("Pakistan", count=2, source="manual")
+    compound = entity("Pakistanem Afganistanem", count=1)
+    run([decision("place_split", "Pakistanem Afganistanem", parts=["Pakistan", "Afganistan"])],
+        [survivor_place, compound])
+    assert survivor_place.mention_count == 2
+
+    survivor_person = entity("Rawit Ruja", entity_type="persName", count=2, source="manual")
+    org = entity("Rawit Ruja", entity_type="orgName", count=1)
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    apply_decisions(session, [decision("organization_to_person", "Rawit Ruja", entity_type="orgName")],
+                    [survivor_person, org])
+    assert survivor_person.mention_count == 2
+
+
 def test_organization_to_place_is_replayed_and_drops_the_organization_link():
     org = entity("Tela Avivwu", entity_type="orgName", count=1)
     rows = [org]

@@ -805,7 +805,9 @@ def suggest_place_split(text: str, variants: list[str] | None = None) -> list[st
 MERGEABLE_PLACE_SOURCE_TYPES = (*PLACE_TYPES, "orgName")
 
 
-def merge_document_entities(source: DocumentEntity, target: DocumentEntity, *, target_source: str = "manual") -> None:
+def merge_document_entities(
+    source: DocumentEntity, target: DocumentEntity, *, target_source: str = "manual", add_count: bool = True,
+) -> None:
     """Fold source into target: sum mention_count, union variants, adopt a
     missing geocode_id from source. Caller deletes source from the session and
     owns the transaction/validation (document/type checks) — see
@@ -824,7 +826,8 @@ def merge_document_entities(source: DocumentEntity, target: DocumentEntity, *, t
         if value.casefold() != target.entity_text.casefold():
             combined_variants.setdefault(value)
     target.variants = list(combined_variants)
-    target.mention_count += source.mention_count
+    if add_count:  # False when replaying onto a manual row that already carries this count
+        target.mention_count += source.mention_count
     if target.geocode_id is None and source.geocode_id is not None:
         target.geocode_id = source.geocode_id
     target.source = target_source

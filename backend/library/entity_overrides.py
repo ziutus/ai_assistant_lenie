@@ -49,7 +49,7 @@ def _by_name_or_variant(entities: list[DocumentEntity], name: str, types: tuple[
     )
 
 
-def convert_place_to_organization(session, entity: DocumentEntity):
+def convert_place_to_organization(session, entity: DocumentEntity, survivors: frozenset[int] = frozenset()):
     """Retype a place entity as an organization of the same document.
 
     The mention is resolved against the global organization registry (alias or
@@ -57,7 +57,8 @@ def convert_place_to_organization(session, entity: DocumentEntity):
     with a ``source='manual'`` ``orgName`` row, so it survives entity refreshes
     like any manual merge. Queues changes without committing; the caller drops
     the place's ``miejsce-*`` tag first, while the row still has its geocode.
-    Returns ``(orgName entity, Organization)``.
+    Returns ``(orgName entity, Organization)``. ``survivors`` (replay only) are manual rows that already
+    carry this mention's count from before the refresh, so it is not added to them a second time.
     """
     from library.db.models import DocumentOrganization
     from library.organization_registry import resolve_or_create
@@ -76,7 +77,8 @@ def convert_place_to_organization(session, entity: DocumentEntity):
         DocumentEntity.entity_text == canonical,
     ))
     if target is not None:
-        target.mention_count = (target.mention_count or 0) + (count or 0)
+        if id(target) not in survivors:
+            target.mention_count = (target.mention_count or 0) + (count or 0)
         target.variants = list(dict.fromkeys([*(target.variants or []), *variants]))
         target.source = "manual"
     else:
@@ -102,13 +104,16 @@ def convert_place_to_organization(session, entity: DocumentEntity):
 
 def convert_person_to_place(
     session, entity: DocumentEntity, new_text: str | None = None, entities: list[DocumentEntity] | None = None,
+    survivors: frozenset[int] = frozenset(),
 ) -> DocumentEntity:
     """Retype a person entity as a place of the same document ("Kandaharem" tagged persName).
 
     The person row is replaced by a ``source='manual'`` ``placeName`` row named ``new_text`` (default: the
     mention as it stands) that keeps the mention count and surface forms, or folded into a same-named place
     the document already has. Dropping the person's ``document_persons`` link is the caller's job (it needs
-    the registry); this only queues entity changes, without committing. ``entities`` is the replay list.
+    the registry); this only queues entity changes, without committing. ``entities`` is the replay list;
+    ``survivors`` (replay only) are manual rows that already carry the mention count, so folding into one
+    of them does not count the mention again.
     """
     name = (new_text or entity.entity_text).strip()
     document_id, count = entity.document_id, entity.mention_count or 0
@@ -124,7 +129,8 @@ def convert_person_to_place(
     session.flush()
     row = _exact(entities, name, PLACE_TYPES)
     if row is not None:
-        row.mention_count = (row.mention_count or 0) + count
+        if id(row) not in survivors:
+            row.mention_count = (row.mention_count or 0) + count
         row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
         row.source = "manual"
     else:
@@ -140,6 +146,7 @@ def convert_person_to_place(
 
 def convert_entity_to_person(
     session, entity: DocumentEntity, entities: list[DocumentEntity] | None = None,
+    survivors: frozenset[int] = frozenset(),
 ) -> DocumentEntity:
     """Retype an organization entity as a person of the same document.
 
@@ -161,7 +168,8 @@ def convert_entity_to_person(
     session.flush()
     row = _exact(entities, name, ("persName",))
     if row is not None:
-        row.mention_count = (row.mention_count or 0) + count
+        if id(row) not in survivors:
+            row.mention_count = (row.mention_count or 0) + count
         row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
         row.source = "manual"
     else:
@@ -177,6 +185,7 @@ def convert_entity_to_person(
 
 def split_place_entity(
     session, entity: DocumentEntity, parts: list[str], entities: list[DocumentEntity] | None = None,
+    survivors: frozenset[int] = frozenset(),
 ) -> list[DocumentEntity]:
     """Replace one place entity that lists several places ("Pakistanem Afganistanem") with one per part.
 
@@ -211,7 +220,8 @@ def split_place_entity(
         variants = [v for v in dict.fromkeys(forms_by_part[part]) if v.casefold() != part.casefold()]
         row = _exact(entities, part, PLACE_TYPES)
         if row is not None:
-            row.mention_count = (row.mention_count or 0) + count
+            if id(row) not in survivors:
+                row.mention_count = (row.mention_count or 0) + count
             row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
             row.source = "manual"
         else:
@@ -361,6 +371,9 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
     """
     touched: dict[int, DocumentEntity] = {}
     stats = {"renamed": 0, "merged": 0, "deleted": 0}
+    # Manual rows that survived the refresh already carry the counts of earlier replays; a fresh NER row
+    # folded into one of them must not be counted again (the count grew by one on every refresh).
+    survivors = frozenset(id(row) for row in entities if row.source == "manual")
 
     def drop(row: DocumentEntity) -> None:
         session.delete(row)
@@ -404,7 +417,7 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
             if row is None:
                 continue
-            convert_place_to_organization(session, row)
+            convert_place_to_organization(session, row, survivors)
             entities.remove(row)
             touched.pop(id(row), None)
             stats["to_organization"] = stats.get("to_organization", 0) + 1
@@ -413,7 +426,7 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             if row is None:
                 continue
             touched.pop(id(row), None)
-            place = convert_person_to_place(session, row, details.get("new_text"), entities)
+            place = convert_person_to_place(session, row, details.get("new_text"), entities, survivors)
             touched[id(place)] = place
             stats["person_to_place"] = stats.get("person_to_place", 0) + 1
         elif decision.decision in ("organization_to_place", "organization_to_person"):
@@ -423,10 +436,10 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             touched.pop(id(row), None)
             drop_organization_links(session, row)
             if decision.decision == "organization_to_place":
-                place = convert_person_to_place(session, row, details.get("new_text"), entities)
+                place = convert_person_to_place(session, row, details.get("new_text"), entities, survivors)
                 touched[id(place)] = place
             else:
-                convert_entity_to_person(session, row, entities)
+                convert_entity_to_person(session, row, entities, survivors)
             stats[decision.decision] = stats.get(decision.decision, 0) + 1
         elif decision.decision == "place_split":
             parts = [p for p in details.get("parts", []) if p]
@@ -434,7 +447,7 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             if row is None or len(parts) < 2:
                 continue
             touched.pop(id(row), None)
-            for part_row in split_place_entity(session, row, parts, entities):
+            for part_row in split_place_entity(session, row, parts, entities, survivors):
                 touched[id(part_row)] = part_row
             stats["split"] = stats.get("split", 0) + 1
         elif decision.decision == "renamed":
@@ -444,7 +457,7 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
                 continue
             existing = _exact(entities, new_name, (row.entity_type,))
             if existing is not None and existing is not row:
-                merge_document_entities(row, existing)
+                merge_document_entities(row, existing, add_count=id(existing) not in survivors)
                 drop(row)
                 touched[id(existing)] = existing
             else:
@@ -469,7 +482,7 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
                         break
             if target is None or source is None or source is target:
                 continue
-            merge_document_entities(source, target)
+            merge_document_entities(source, target, add_count=id(target) not in survivors)
             drop(source)
             touched[id(target)] = target
             stats["merged"] += 1
