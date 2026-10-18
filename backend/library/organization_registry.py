@@ -288,6 +288,61 @@ def rename(session, organization: Organization, new_canonical_name: str) -> Orga
     return organization
 
 
+class OrganizationInUseError(Exception):
+    """The organization cannot be deleted: something still depends on it (``reason`` says what)."""
+
+    def __init__(self, reason: str, **counts: int):
+        super().__init__(reason)
+        self.reason = reason
+        self.counts = counts
+
+
+def delete_unused_organization(session, organization: Organization) -> dict[str, int]:
+    """Delete an organization that nothing depends on (typically an orphan left by a split or a rename).
+
+    Refuses with OrganizationInUseError when documents still link to it, when an information source is
+    bound to it, or when it stands for a country (``organization_type='country'``: its note and ``kraj-*``
+    identity must not disappear). Otherwise its aliases, country ties and ambiguous-alias rows go with it
+    (``ON DELETE CASCADE``); returns how many of each were removed. Queues the delete without committing.
+    """
+    from library.db.models import InformationSource, OrganizationCountry
+
+    if organization.organization_type == COUNTRY_ORGANIZATION_TYPE:
+        raise OrganizationInUseError("To organizacja-państwo (typ country) i nie można jej usunąć.")
+    documents = session.execute(
+        select(func.count()).select_from(DocumentOrganization)
+        .where(DocumentOrganization.organization_id == organization.id)
+    ).scalar() or 0
+    if documents:
+        raise OrganizationInUseError(
+            f"Organizacja jest powiązana z dokumentami ({documents}). Najpierw ją scal lub usuń powiązania.",
+            documents=documents,
+        )
+    source_id = session.execute(
+        select(InformationSource.id).where(InformationSource.organization_id == organization.id)
+    ).scalars().first()
+    if source_id is not None:
+        raise OrganizationInUseError(
+            "Do organizacji jest przypisane źródło informacji. Najpierw je odłącz lub scal.", information_source_id=source_id,
+        )
+    removed = {
+        "aliases": session.execute(
+            select(func.count()).select_from(OrganizationAlias).where(OrganizationAlias.organization_id == organization.id)
+        ).scalar() or 0,
+        "countries": session.execute(
+            select(func.count()).select_from(OrganizationCountry)
+            .where(OrganizationCountry.organization_id == organization.id)
+        ).scalar() or 0,
+        "ambiguous_aliases": session.execute(
+            select(func.count()).select_from(OrganizationAmbiguousAlias)
+            .where(OrganizationAmbiguousAlias.organization_id == organization.id)
+        ).scalar() or 0,
+    }
+    session.delete(organization)
+    session.flush()
+    return removed
+
+
 def _delete_organization_if_orphaned(session, organization_id: int) -> bool:
     """Delete the Organization row when no document_organizations links point at it."""
     remaining = session.execute(
