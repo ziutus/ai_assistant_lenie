@@ -14,6 +14,8 @@ export interface EntityItem {
   id?: number;
   text: string;
   count: number;
+  // Reviewer-approved description (eventName entities only).
+  description?: string | null;
   // Original NER category. Required when a combined "Miejsca" chip is
   // excluded, so a placeName rule does not turn into a wildcard rule.
   entity_type?: "persName" | "orgName" | "geogName" | "placeName";

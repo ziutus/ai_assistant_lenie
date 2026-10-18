@@ -4,10 +4,13 @@ import { Link, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
+import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
+import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
-type ChapterEntities = Partial<EntitiesByType>;
+// Events (eventName) are added by hand from selected text; the shared panel does not draw them.
+type ChapterEntities = Partial<EntitiesByType> & { eventName?: EntityItem[] };
 
 interface Sentence { index: number; text: string }
 interface Section {
@@ -18,15 +21,21 @@ interface Section {
   sentence_count: number;
   sentences?: Sentence[];
 }
+// A named group of states found in the chapter text ("państwa bałtyckie") with its member countries.
+interface CountryGroup { name: string; members: string[]; variants: string[]; count: number }
 interface EntityResponse {
-  sections: { position: number; type: ChapterType; entities: ChapterEntities }[];
+  sections: { position: number; type: ChapterType; entities: ChapterEntities; country_groups?: CountryGroup[] }[];
   has_entities: boolean;
 }
 
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
-const KIND_LABELS: Record<HighlightKind, string> = { persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa" };
-const KIND_COLORS: Record<HighlightKind, string> = { persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a" };
-const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country"];
+const KIND_LABELS: Record<HighlightKind, string> = {
+  persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Wydarzenia",
+};
+const KIND_COLORS: Record<HighlightKind, string> = {
+  persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a", event: "#fbcfe8",
+};
+const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event"];
 
 const isShown = (item: EntityItem) => !item.is_country && item.place_verification_status !== "rejected";
 const itemName = (item: EntityItem) => item.canonical_name ?? item.text;
@@ -42,18 +51,21 @@ function filterEntities(entities: ChapterEntities | undefined, kinds: Set<Highli
     orgName: kinds.has("orgName") ? (entities?.orgName ?? []).filter(keep) : [],
     geogName: kinds.has("place") ? (entities?.geogName ?? []).filter(keep) : [],
     placeName: kinds.has("place") ? (entities?.placeName ?? []).filter(keep) : [],
+    eventName: kinds.has("event") ? (entities?.eventName ?? []).filter(keep) : [],
   };
 }
 
 function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
   const entry = (kind: HighlightKind) => (item: EntityItem): HighlightEntry => ({
     kind, label: itemName(item), variants: item.chapter_variants?.length ? item.chapter_variants : [item.text],
+    ...(item.description ? { hint: item.description } : {}),
   });
   return [
     ...(entities.persName ?? []).map(entry("persName")),
     ...(entities.orgName ?? []).map(entry("orgName")),
     ...(entities.geogName ?? []).map(entry("place")),
     ...(entities.placeName ?? []).map(entry("place")),
+    ...(entities.eventName ?? []).map(entry("event")),
   ];
 }
 
@@ -75,12 +87,25 @@ function highlightCountries(entities: ChapterEntities | undefined, kinds: Set<Hi
     .map((item) => ({ kind: "country" as const, label: itemName(item), variants: item.chapter_variants?.length ? item.chapter_variants : [item.text] }));
 }
 
+// Groups of states matching the search text (name, member or surface form), highlighted like countries.
+function visibleGroups(groups: CountryGroup[] | undefined, kinds: Set<HighlightKind>, query: string): CountryGroup[] {
+  if (!kinds.has("country")) return [];
+  const needle = query.trim().toLowerCase();
+  return (groups ?? []).filter((group) => !needle
+    || [group.name, ...group.members, ...group.variants].some((value) => value.toLowerCase().includes(needle)));
+}
+
+const groupHighlights = (groups: CountryGroup[]): HighlightEntry[] => groups.map((group) => ({
+  kind: "country" as const, label: group.name, variants: group.variants, hint: `Obejmuje: ${group.members.join(", ")}`,
+}));
+
 const entityCount = (entities: ChapterEntities) =>
   (entities.persName?.length ?? 0) + (entities.orgName?.length ?? 0)
-  + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0);
+  + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0) + (entities.eventName?.length ?? 0);
 
 const allItems = (entities: ChapterEntities | undefined): EntityItem[] =>
-  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName].flatMap((items) => items ?? []);
+  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName, entities?.eventName]
+    .flatMap((items) => items ?? []);
 
 // Entities that appear in the given chapter and in no other content (TEMAT) chapter: once the
 // chapter is marked as noise these have no mention left in the text NER is run on.
@@ -233,6 +258,44 @@ const NerChapters = () => {
     document.querySelector("[data-focus-mark]")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   }, [focus]);
 
+  // Events live only on this page (the shared panel does not draw them), so they are removed here.
+  const deleteEvent = async (item: EntityItem) => {
+    if (item.id === undefined || !window.confirm(`Usunąć wydarzenie „${itemName(item)}” z dokumentu?`)) return;
+    try {
+      await axios.delete(`${apiUrl}/website_entities/${item.id}`, {
+        headers, data: { decision: "deleted", reason_code: "irrelevant" },
+      });
+      setVersion((current) => current + 1);
+    } catch {
+      setMergeError("Nie udało się usunąć wydarzenia.");
+    }
+  };
+
+  // The description dialog of an event: left click on its chip or right click on its mention in the text.
+  const [describing, setDescribing] = React.useState<EntityItem | null>(null);
+  const closeDescription = React.useCallback(() => setDescribing(null), []);
+  const describeFromText = (item: EntityItem | undefined) => (event: React.MouseEvent) => {
+    // A selected fragment keeps the "add entity" menu of the surrounding text.
+    if (!item || item.id === undefined || selectedFragment(window.getSelection())) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDescribing(item);
+  };
+
+  // Right click on a selected fragment of the text opens the "add entity" menu; without a selection
+  // (or over the chips, buttons and fields) the browser's own menu stays.
+  const [selectionMenu, setSelectionMenu] = React.useState<{ x: number; y: number; text: string } | null>(null);
+  const [panelKey, setPanelKey] = React.useState(0);
+  const [addedMessage, setAddedMessage] = React.useState("");
+  const closeSelectionMenu = React.useCallback(() => setSelectionMenu(null), []);
+  const openSelectionMenu = (event: React.MouseEvent) => {
+    const text = selectedFragment(window.getSelection());
+    if (!text) return;
+    event.preventDefault();
+    setAddedMessage("");
+    setSelectionMenu({ x: event.clientX, y: event.clientY, text });
+  };
+
   const toggleKind = (kind: HighlightKind) => setKinds((current) => {
     const next = new Set(current);
     if (next.has(kind)) next.delete(kind); else next.add(kind);
@@ -243,9 +306,10 @@ const NerChapters = () => {
     const raw = entityData?.sections.find((item) => item.position === section.position);
     const type = raw?.type ?? section.type ?? "TEMAT";
     const entities = filterEntities(raw?.entities, kinds, query);
-    const countryHighlights = type === "TEMAT" ? highlightCountries(raw?.entities, kinds, query) : [];
+    const groups = type === "TEMAT" ? visibleGroups(raw?.country_groups, kinds, query) : [];
+    const countryHighlights = type === "TEMAT" ? [...highlightCountries(raw?.entities, kinds, query), ...groupHighlights(groups)] : [];
     return {
-      section, type, entities, count: entityCount(entities), countryHighlights,
+      section, type, entities, count: entityCount(entities), countryHighlights, groups,
       countries: type === "TEMAT" ? chapterCountries(raw?.entities) : [],
     };
   });
@@ -328,8 +392,20 @@ const NerChapters = () => {
               <button type="button" onClick={() => setFocus(null)}>✕ wyczyść</button>
             </div>
           )}
+          {addedMessage && <div role="status" style={{ marginBottom: 8, color: "#166534" }}>{addedMessage}</div>}
+          {describing && describing.id !== undefined && (
+            <EventDescriptionDialog key={describing.id} entityId={describing.id} name={itemName(describing)}
+              description={describing.description ?? null} apiUrl={apiUrl} headers={headers} onClose={closeDescription}
+              onSaved={() => { setDescribing(null); setVersion((current) => current + 1); }} />
+          )}
+          {selectionMenu && (
+            <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers}
+              onClose={closeSelectionMenu}
+              onAdded={(message) => { setSelectionMenu(null); setAddedMessage(message); setPanelKey((current) => current + 1); }} />
+          )}
           <EntitiesPanel
             docId={id}
+            refreshKey={panelKey}
             onShowInText={showInText}
             onEntitiesChanged={() => setVersion((current) => current + 1)}
             chapterRenderer={(renderGroups) => (
@@ -338,7 +414,7 @@ const NerChapters = () => {
                   <p style={{ color: "#667" }}>Brak zapisanych encji — użyj przycisku „Wykryj osoby, miejsca i obiekty”.</p>
                 )}
                 {mergeError && <p role="alert" style={{ color: "#a33" }}>{mergeError}</p>}
-                {visible.map(({ section, type, entities, count, countries, countryHighlights }) => (
+                {visible.map(({ section, type, entities, count, countries, countryHighlights, groups }) => (
                   <section key={section.position} id={`ner-chapter-${section.position}`} aria-label={chapterTitle(section)}
                     style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -372,7 +448,7 @@ const NerChapters = () => {
                       <p style={{ color: "#667" }}>Rozdział pominięty w NER (typ: {TYPE_LABELS[type]}).</p>
                     ) : (
                       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)", gap: 14, marginTop: 8 }}>
-                        <div style={{ lineHeight: 1.65, fontSize: "0.9em" }}>
+                        <div style={{ lineHeight: 1.65, fontSize: "0.9em" }} onContextMenu={openSelectionMenu}>
                           {section.sentences?.map((sentence) => (
                             <span key={sentence.index}>
                               {splitByEntities(sentence.text, [
@@ -381,8 +457,11 @@ const NerChapters = () => {
                               ]).map((segment, index) => {
                                 if (!segment.kind) return <React.Fragment key={index}>{segment.text}</React.Fragment>;
                                 const focused = focus !== null && segment.kind === focus.kind && segment.label === focus.label;
-                                return <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})`}
+                                return <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})${segment.hint ? ` — ${segment.hint}` : ""}`}
                                   {...(focused ? { "data-focus-mark": "" } : {})}
+                                  {...(segment.kind === "event"
+                                    ? { onContextMenu: describeFromText(entities.eventName?.find((item) => itemName(item) === segment.label)) }
+                                    : {})}
                                   style={{
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
                                     ...(focused ? { outline: "2px solid #d97706" } : {}),
@@ -393,13 +472,37 @@ const NerChapters = () => {
                         </div>
                         <div>
                           {renderGroups(entities)}
-                          {countries.length > 0 && (
+                          {(entities.eventName?.length ?? 0) > 0 && (
+                            <div aria-label="Wydarzenia rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
+                              <strong style={{ fontSize: "0.85em" }}>Wydarzenia:</strong>
+                              {entities.eventName?.map((item) => (
+                                <span key={item.id ?? item.text}
+                                  title={item.description || "Wydarzenie dodane ręcznie — kliknij nazwę, by dodać opis"}
+                                  onContextMenu={describeFromText(item)}
+                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: KIND_COLORS.event }}>
+                                  📅 <button type="button" aria-label={`Opis wydarzenia ${itemName(item)}`}
+                                    onClick={() => setDescribing(item)}
+                                    style={{ border: "none", background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>
+                                    {itemName(item)}</button> ×{item.count}{item.description ? " ℹ️" : ""}{" "}
+                                  <button type="button" aria-label={`Usuń wydarzenie ${itemName(item)}`}
+                                    onClick={() => void deleteEvent(item)}>×</button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>
                               {countries.map((country) => (
                                 <span key={country} title="Państwo wspomniane w rozdziale"
                                   style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: "#fde68a" }}>
                                   🌍 {country}
+                                </span>
+                              ))}
+                              {groups.map((group) => (
+                                <span key={group.name} title={`Grupa państw: ${group.members.join(", ")}`}
+                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: "#fde68a", border: "1px dashed #d97706" }}>
+                                  🌍 {group.name} ({group.members.join(", ")})
                                 </span>
                               ))}
                             </div>

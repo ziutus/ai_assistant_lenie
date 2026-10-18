@@ -277,3 +277,95 @@ it("does not offer the noise button on chapters that are already skipped", async
   await open();
   expect(within(screen.getByRole("region", { name: "#2 Sponsor" })).queryByRole("button", { name: /jako szum/ })).toBeNull();
 });
+
+const sentenceBlock = () => screen.getByRole("region", { name: "#1 Wstęp" }).querySelector("div[style*='line-height']") as HTMLElement;
+
+it("adds an entity from a selected fragment through the context menu", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: { entity_text: "Obwód Kaliningradzki", mention_count: 1 } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "  Nic   więcej " } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  const menu = screen.getByRole("menu", { name: "Dodaj encję z zaznaczenia" });
+  fireEvent.change(within(menu).getByLabelText("Nazwa encji"), { target: { value: "Obwód Kaliningradzki" } });
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "📍 Miejsce" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    "/document/42/entities/add_mention",
+    { text: "Nic więcej", entity_type: "placeName", name: "Obwód Kaliningradzki" },
+    { headers: { "x-api-key": "test-key" } },
+  ));
+  expect(await screen.findByText("Dodano „Obwód Kaliningradzki” (1×).")).toBeTruthy();
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+it("explains that a selected fragment is already an entity", async () => {
+  vi.mocked(axios.post).mockRejectedValue(Object.assign(new Error("409"), {
+    isAxiosError: true,
+    response: { status: 409, data: { code: "entity_exists", entity: { entity_text: "Kijów" } } },
+  }));
+  vi.mocked(axios.isAxiosError).mockReturnValue(true);
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Kijowie" } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  fireEvent.click(screen.getByRole("menuitem", { name: "👤 Osoba" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("To już encja „Kijów”");
+});
+
+it("shows a group of states with its members in the countries row and the tooltip", async () => {
+  const withGroup = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, country_groups: [{ name: "Państwa bałtyckie", members: ["Litwa", "Łotwa", "Estonia"], variants: ["nazw własnych"], count: 1 }],
+  })) };
+  mockApi({ "/document/42/chapter_entities": withGroup });
+  await open();
+  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
+  const row = within(chapter).getByLabelText("Państwa rozdziału");
+  expect(row.textContent).toContain("Państwa bałtyckie (Litwa, Łotwa, Estonia)");
+  const mark = chapter.querySelector("mark") as HTMLElement;
+  expect(mark.getAttribute("title")).toBe("Państwa bałtyckie (Państwa) — Obejmuje: Litwa, Łotwa, Estonia");
+});
+
+it("lists a hand-added event, highlights it and deletes it on request", async () => {
+  const withEvent = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups, eventName: [{ id: 77, text: "Bez nazw", count: 1, variants: ["nazw własnych"] }] },
+  })) };
+  mockApi({ "/document/42/chapter_entities": withEvent });
+  vi.mocked(axios.delete).mockResolvedValue({ data: {} });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await open();
+  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
+  const row = within(chapter).getByLabelText("Wydarzenia rozdziału");
+  expect(row.textContent).toContain("📅 Bez nazw ×1");
+  expect(chapter.querySelector("mark")?.getAttribute("title")).toBe("Bez nazw (Wydarzenia)");
+  fireEvent.click(within(row).getByRole("button", { name: "Usuń wydarzenie Bez nazw" }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
+    "/website_entities/77", { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } }));
+});
+
+it("drafts an event description with the LLM and stores it only after the reviewer saves", async () => {
+  const withEvent = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups, eventName: [{ id: 77, text: "Bez nazw", count: 1, variants: ["nazw własnych"] }] },
+  })) };
+  mockApi({ "/document/42/chapter_entities": withEvent });
+  vi.mocked(axios.post).mockResolvedValue({ data: { description: "Wspólne ćwiczenia.", sentences: ["Bez nazw własnych."] } });
+  vi.mocked(axios.put).mockResolvedValue({ data: {} });
+  await open();
+  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
+  // Right click on the event mention in the text opens the dialog (no selection => no add-entity menu).
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "" } as Selection);
+  fireEvent.contextMenu(chapter.querySelector("mark") as HTMLElement);
+  const dialog = await screen.findByRole("dialog", { name: "Opis wydarzenia Bez nazw" });
+  await waitFor(() => expect((within(dialog).getByLabelText("Opis wydarzenia") as HTMLTextAreaElement).value).toBe("Wspólne ćwiczenia."));
+  expect(axios.post).toHaveBeenCalledWith("/website_entities/77/describe", {}, { headers: { "x-api-key": "test-key" } });
+  expect(axios.put).not.toHaveBeenCalled();
+  fireEvent.change(within(dialog).getByLabelText("Opis wydarzenia"), { target: { value: "Ćwiczenia Litwy, Polski i Francji." } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Zapisz" }));
+  await waitFor(() => expect(axios.put).toHaveBeenCalledWith(
+    "/website_entities/77/description", { description: "Ćwiczenia Litwy, Polski i Francji." }, { headers: { "x-api-key": "test-key" } }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+it("keeps the browser menu when nothing is selected", async () => {
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "" } as Selection);
+  expect(fireEvent.contextMenu(sentenceBlock())).toBe(true);
+  expect(screen.queryByRole("menu")).toBeNull();
+});

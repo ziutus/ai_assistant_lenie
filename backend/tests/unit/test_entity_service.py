@@ -555,6 +555,7 @@ class TestGetDocumentEntities:
                           "is_country": False, "place_verification_status": None, "place_review_reason": None}],
             "placeName": [],
             "facility": [],
+            "eventName": [],
         }
 
     def test_groups_organization_without_geocoding_fields(self):
@@ -641,5 +642,5 @@ class TestGetDocumentEntities:
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
         assert get_document_entities(session, 42) == {
-            "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [],
+            "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
         }
