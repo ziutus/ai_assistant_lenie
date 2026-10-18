@@ -517,10 +517,13 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     # human renames/merges/deletions recorded in entity_review_decisions so those
     # corrections of the automation are not lost with the derived data.
     session.flush()
-    from library.entity_overrides import replay_manual_organization_decisions, replay_manual_place_decisions
+    from library.entity_overrides import (
+        replay_manual_added_entities, replay_manual_organization_decisions, replay_manual_place_decisions,
+    )
 
     replay_manual_place_decisions(session, document_id, doc)
     replay_manual_organization_decisions(session, document_id)
+    replay_manual_added_entities(session, document_id, doc)
     # Named facilities are semantic entities assembled from a recognised object
     # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra
     # spaCy label.  Flush first so their links can safely refer to new place rows.
@@ -604,7 +607,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         pipelines_by_query = {r.query: r for r in infra_rows}
 
     grouped: dict[str, list[dict]] = {
-        "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [],
+        "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
@@ -646,6 +649,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 "name": infra.name,
                 "geojson": infra.geojson,
             }
+        if row.entity_type == "eventName":
+            item["description"] = row.description
         if row.entity_type == "persName" and row.entity_text in persons_by_mention:
             link = persons_by_mention[row.entity_text]
             item["link_id"] = link["link_id"]

@@ -291,7 +291,9 @@ def test_chapter_entities_local_counts_and_positions(setup, monkeypatch, preambl
     sections = response.json["sections"]
     assert [s["position"] for s in sections] == ([0, 1, 2] if preamble else [1, 2])
     assert sections[-2]["entities"]["persName"][0]["count"] == 2
-    assert sections[-1] == {"position": 2, "type": "REKLAMA", "entities": {"persName": [], "orgName": []}}
+    assert sections[-1] == {"position": 2, "type": "REKLAMA", "entities": {"persName": [], "orgName": []},
+                            "country_groups": []}
+    assert sections[-2]["country_groups"] == []
     if preamble:
         assert sections[0]["entities"]["persName"][0]["count"] == 1
     assert grouped["persName"][0]["count"] == 20

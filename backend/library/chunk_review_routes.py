@@ -664,6 +664,7 @@ def document_chapter_sections(doc_id: int):
 @bp.route("/document/<int:doc_id>/chapter_entities", methods=["GET"])
 def document_editor_chapter_entities(doc_id: int):
     """Stored entities with local counts and editor chapter numbering."""
+    from library.country_group_gazetteer import detect_country_groups
     from library.entity_service import filter_entities_to_text, get_document_entities
     from library.transcript_chapter_boundaries import describe_sections, parse_sections
 
@@ -678,10 +679,13 @@ def document_editor_chapter_entities(doc_id: int):
     for description, section in zip(
         describe_sections(doc.text, stored_types=doc.chapter_types), parse_sections(doc.text), strict=True,
     ):
+        is_content = description["type"] == "TEMAT"
         sections.append({
             "position": description["position"], "type": description["type"],
-            "entities": (filter_entities_to_text(grouped, section.body) if description["type"] == "TEMAT"
+            "entities": (filter_entities_to_text(grouped, section.body) if is_content
                          else {key: [] for key in grouped}),
+            # Named groups of states ("państwa bałtyckie"), found in the chapter text itself.
+            "country_groups": detect_country_groups(section.body) if is_content else [],
         })
     return jsonify({
         "status": "success", "doc_id": doc_id, "sections": sections,

@@ -3,18 +3,21 @@
 // tokens with Unicode boundaries, longest surface form first, and a capitalised surface form
 // only matches a capitalised mention ("Unia" does not match "unia").
 
-export type HighlightKind = "persName" | "place" | "orgName" | "country";
+export type HighlightKind = "persName" | "place" | "orgName" | "country" | "event";
 
 export interface HighlightEntry {
   variants: string[];
   kind: HighlightKind;
   label: string;
+  // Extra tooltip line, e.g. the member countries of a group of states.
+  hint?: string;
 }
 
 export interface HighlightSegment {
   text: string;
   kind?: HighlightKind;
   label?: string;
+  hint?: string;
 }
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -46,7 +49,7 @@ export function splitByEntities(text: string, entries: HighlightEntry[]): Highli
     if (needleIsCapitalised && !mentionIsCapitalised) continue;
     const start = match.index ?? 0;
     if (start > last) segments.push({ text: text.slice(last, start) });
-    segments.push({ text: match[0], kind: found.entry.kind, label: found.entry.label });
+    segments.push({ text: match[0], kind: found.entry.kind, label: found.entry.label, hint: found.entry.hint });
     last = start + match[0].length;
   }
   if (last < text.length) segments.push({ text: text.slice(last) });
