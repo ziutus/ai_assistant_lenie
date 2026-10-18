@@ -323,6 +323,23 @@ it("shows a group of states with its members in the countries row and the toolti
   expect(mark.getAttribute("title")).toBe("Państwa bałtyckie (Państwa) — Obejmuje: Litwa, Łotwa, Estonia");
 });
 
+it("lists a hand-added event, highlights it and deletes it on request", async () => {
+  const withEvent = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups, eventName: [{ id: 77, text: "Bez nazw", count: 1, variants: ["nazw własnych"] }] },
+  })) };
+  mockApi({ "/document/42/chapter_entities": withEvent });
+  vi.mocked(axios.delete).mockResolvedValue({ data: {} });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await open();
+  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
+  const row = within(chapter).getByLabelText("Wydarzenia rozdziału");
+  expect(row.textContent).toContain("📅 Bez nazw ×1");
+  expect(chapter.querySelector("mark")?.getAttribute("title")).toBe("Bez nazw (Wydarzenia)");
+  fireEvent.click(within(row).getByRole("button", { name: "Usuń wydarzenie Bez nazw" }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
+    "/website_entities/77", { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } }));
+});
+
 it("keeps the browser menu when nothing is selected", async () => {
   await open();
   vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "" } as Selection);

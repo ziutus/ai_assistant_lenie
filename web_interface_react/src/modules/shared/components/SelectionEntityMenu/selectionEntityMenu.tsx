@@ -1,12 +1,13 @@
 import React from "react";
 import axios from "axios";
 
-export type AddableEntityType = "persName" | "orgName" | "placeName";
+export type AddableEntityType = "persName" | "orgName" | "placeName" | "eventName";
 
 const CHOICES: { type: AddableEntityType; label: string }[] = [
   { type: "persName", label: "👤 Osoba" },
   { type: "orgName", label: "🏢 Organizacja" },
   { type: "placeName", label: "📍 Miejsce" },
+  { type: "eventName", label: "📅 Wydarzenie" },
 ];
 
 // The text a reviewer selected, normalized like the backend does (one line, single spaces) and

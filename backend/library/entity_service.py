@@ -607,7 +607,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         pipelines_by_query = {r.query: r for r in infra_rows}
 
     grouped: dict[str, list[dict]] = {
-        "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [],
+        "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,

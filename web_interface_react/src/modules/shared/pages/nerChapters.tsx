@@ -8,7 +8,8 @@ import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEn
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
-type ChapterEntities = Partial<EntitiesByType>;
+// Events (eventName) are added by hand from selected text; the shared panel does not draw them.
+type ChapterEntities = Partial<EntitiesByType> & { eventName?: EntityItem[] };
 
 interface Sentence { index: number; text: string }
 interface Section {
@@ -27,9 +28,13 @@ interface EntityResponse {
 }
 
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
-const KIND_LABELS: Record<HighlightKind, string> = { persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa" };
-const KIND_COLORS: Record<HighlightKind, string> = { persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a" };
-const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country"];
+const KIND_LABELS: Record<HighlightKind, string> = {
+  persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Wydarzenia",
+};
+const KIND_COLORS: Record<HighlightKind, string> = {
+  persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a", event: "#fbcfe8",
+};
+const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event"];
 
 const isShown = (item: EntityItem) => !item.is_country && item.place_verification_status !== "rejected";
 const itemName = (item: EntityItem) => item.canonical_name ?? item.text;
@@ -45,6 +50,7 @@ function filterEntities(entities: ChapterEntities | undefined, kinds: Set<Highli
     orgName: kinds.has("orgName") ? (entities?.orgName ?? []).filter(keep) : [],
     geogName: kinds.has("place") ? (entities?.geogName ?? []).filter(keep) : [],
     placeName: kinds.has("place") ? (entities?.placeName ?? []).filter(keep) : [],
+    eventName: kinds.has("event") ? (entities?.eventName ?? []).filter(keep) : [],
   };
 }
 
@@ -57,6 +63,7 @@ function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
     ...(entities.orgName ?? []).map(entry("orgName")),
     ...(entities.geogName ?? []).map(entry("place")),
     ...(entities.placeName ?? []).map(entry("place")),
+    ...(entities.eventName ?? []).map(entry("event")),
   ];
 }
 
@@ -92,10 +99,11 @@ const groupHighlights = (groups: CountryGroup[]): HighlightEntry[] => groups.map
 
 const entityCount = (entities: ChapterEntities) =>
   (entities.persName?.length ?? 0) + (entities.orgName?.length ?? 0)
-  + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0);
+  + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0) + (entities.eventName?.length ?? 0);
 
 const allItems = (entities: ChapterEntities | undefined): EntityItem[] =>
-  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName].flatMap((items) => items ?? []);
+  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName, entities?.eventName]
+    .flatMap((items) => items ?? []);
 
 // Entities that appear in the given chapter and in no other content (TEMAT) chapter: once the
 // chapter is marked as noise these have no mention left in the text NER is run on.
@@ -247,6 +255,19 @@ const NerChapters = () => {
     if (!focus) return;
     document.querySelector("[data-focus-mark]")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   }, [focus]);
+
+  // Events live only on this page (the shared panel does not draw them), so they are removed here.
+  const deleteEvent = async (item: EntityItem) => {
+    if (item.id === undefined || !window.confirm(`Usunąć wydarzenie „${itemName(item)}” z dokumentu?`)) return;
+    try {
+      await axios.delete(`${apiUrl}/website_entities/${item.id}`, {
+        headers, data: { decision: "deleted", reason_code: "irrelevant" },
+      });
+      setVersion((current) => current + 1);
+    } catch {
+      setMergeError("Nie udało się usunąć wydarzenia.");
+    }
+  };
 
   // Right click on a selected fragment of the text opens the "add entity" menu; without a selection
   // (or over the chips, buttons and fields) the browser's own menu stays.
@@ -430,6 +451,19 @@ const NerChapters = () => {
                         </div>
                         <div>
                           {renderGroups(entities)}
+                          {(entities.eventName?.length ?? 0) > 0 && (
+                            <div aria-label="Wydarzenia rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
+                              <strong style={{ fontSize: "0.85em" }}>Wydarzenia:</strong>
+                              {entities.eventName?.map((item) => (
+                                <span key={item.id ?? item.text} title="Wydarzenie dodane ręcznie z zaznaczonego tekstu"
+                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: KIND_COLORS.event }}>
+                                  📅 {itemName(item)} ×{item.count}{" "}
+                                  <button type="button" aria-label={`Usuń wydarzenie ${itemName(item)}`}
+                                    onClick={() => void deleteEvent(item)}>×</button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>

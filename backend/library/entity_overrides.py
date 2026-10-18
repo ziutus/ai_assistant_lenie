@@ -103,7 +103,7 @@ def convert_place_to_organization(session, entity: DocumentEntity, survivors: fr
     return target, organization
 
 
-ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName")
+ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName")
 
 
 def count_mentions(text: str | None, surface: str) -> int:
@@ -187,12 +187,22 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
     entities = list(session.scalars(select(DocumentEntity).where(
         DocumentEntity.document_id == document_id, DocumentEntity.entity_type.in_(ADDABLE_ENTITY_TYPES + PLACE_TYPES),
     )).all())
+    # An entity the reviewer added and later deleted stays deleted: the newest decision about a name wins.
+    deleted_after: dict[tuple[str, str], int] = {}
+    for removal in session.scalars(select(EntityReviewDecision).where(
+        EntityReviewDecision.document_id == document_id,
+        EntityReviewDecision.decision.in_(("deleted", "rejected", "excluded_global", "excluded_author")),
+    ).order_by(EntityReviewDecision.id)).all():
+        kind = "placeName" if removal.entity_type in PLACE_TYPES else removal.entity_type
+        deleted_after[(kind, removal.entity_text.casefold())] = removal.id or 0
     added = []
     for decision in decisions:
         details = decision.details or {}
         surface = (details.get("surface") or "").strip()
         entity_type = decision.entity_type
         if entity_type not in ADDABLE_ENTITY_TYPES or not surface:
+            continue
+        if deleted_after.get((entity_type, decision.entity_text.casefold()), 0) > (decision.id or 0):
             continue
         types = PLACE_TYPES if entity_type == "placeName" else (entity_type,)
         if _by_name_or_variant(entities, surface, types) is not None:

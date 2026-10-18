@@ -19,7 +19,7 @@ def entity(text, entity_type="placeName", count=1, variants=None, source="ner"):
 
 
 def decision(entity_text, entity_type="placeName", **details):
-    return SimpleNamespace(decision="entity_added", entity_text=entity_text, entity_type=entity_type, details=details)
+    return SimpleNamespace(id=1, decision="entity_added", entity_text=entity_text, entity_type=entity_type, details=details)
 
 
 def test_count_mentions_is_case_insensitive_and_literal():
@@ -65,8 +65,26 @@ def test_replay_readds_a_hand_added_entity_only_when_it_is_missing():
     added = decision("Obwód Kaliningradzki", surface="kaliningradzkiej enklawy", name="Obwód Kaliningradzki", count=2)
     present = decision("Litwa", surface="litewskiej", name="Litwa", count=1)
     session = MagicMock()
-    session.scalars.return_value.all.side_effect = [[added, present], [kept]]
+    session.scalars.return_value.all.side_effect = [[added, present], [kept], []]
     assert replay_manual_added_entities(session, 1) == {"entity_added": 1}
     (created,) = [call.args[0] for call in session.add.call_args_list]
     assert (created.entity_text, created.variants, created.mention_count) == (
         "Obwód Kaliningradzki", ["kaliningradzkiej enklawy"], 2)
+
+
+def test_replay_does_not_bring_back_an_entity_deleted_after_it_was_added():
+    added = SimpleNamespace(id=1, decision="entity_added", entity_text="Szczyt NATO", entity_type="eventName",
+                            details={"surface": "szczyt NATO", "name": "Szczyt NATO", "count": 1})
+    deleted = SimpleNamespace(id=2, decision="deleted", entity_text="szczyt nato", entity_type="eventName", details=None)
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[added], [], [deleted]]
+    assert replay_manual_added_entities(session, 1) == {}
+    session.add.assert_not_called()
+
+
+def test_an_event_is_a_plain_manual_entity():
+    session = MagicMock()
+    row, organization = add_manual_entity(session, 1, "eventName", "szczytu NATO w Hadze", "Szczyt NATO w Hadze", 1, entities=[])
+    assert organization is None
+    assert (row.entity_type, row.entity_text, row.source) == ("eventName", "Szczyt NATO w Hadze", "manual")
+    assert row.variants == ["szczytu NATO w Hadze"]
