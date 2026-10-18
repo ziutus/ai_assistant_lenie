@@ -68,6 +68,7 @@ logic) stay in code: they are logic, not lists.
   - *Purity of `aggregate_entities_detailed`*: the store is consulted only through the gazetteer
     modules, with a cache and a failure fallback; unit tests keep the store empty by default
     (`tests/unit/conftest.py`).
-- **Not in phase 1:** a UI page, and the other lists (`geo_feature_gazetteer`, `region_gazetteer`,
+- **UI:** page `/ner-gazetteer` in the React app (list, add, edit, delete; follow-up PR to phase 1).
+- **Not in phase 1:** the other lists (`geo_feature_gazetteer`, `region_gazetteer`,
   `geopolitical_region_gazetteer`, `historical_state_gazetteer`, `non_place_demonym_patterns`).
   The store is keyed by `kind`, so each can adopt it with a small change.
