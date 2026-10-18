@@ -1486,6 +1486,7 @@ def document_chapters(doc_id: int):
         "doc_id": doc_id,
         "document_type": doc.document_type,
         "title": doc.title,
+        "byline": getattr(doc, "byline", None),
         "url": doc.url,
         "source_field": field,
         "text_length": len(text),

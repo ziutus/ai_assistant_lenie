@@ -112,6 +112,26 @@ def test_list_returns_entries_and_authors(api):
     assert body["entries"][0]["created_at"] == "2026-10-18T00:00:00"
 
 
+def test_applications_report_the_document_channel_and_its_entries(api):
+    client, session = api
+    session.get.return_value = SimpleNamespace(byline=" Kanał ")
+    session.scalars.return_value.all.return_value = [stored()]
+    session.execute.return_value.all.return_value = []
+    body = client.get("/ner_channel_glossary/applications?document_id=10872").get_json()
+    assert body["author"] == "Kanał"
+    assert body["entries"] == [{"id": 3, "canonical_name": "Pete Hegseth", "aliases": ["He H"], "fuzzy": True}]
+    assert body["applications"] == []
+
+
+def test_applications_for_a_document_without_channel(api):
+    client, session = api
+    session.get.return_value = SimpleNamespace(byline=None)
+    session.execute.return_value.all.return_value = []
+    body = client.get("/ner_channel_glossary/applications?document_id=1").get_json()
+    assert body["author"] is None and body["entries"] == []
+    session.scalars.assert_not_called()
+
+
 def test_applications_need_a_document_id(api):
     client, _ = api
     assert client.get("/ner_channel_glossary/applications").status_code == 400

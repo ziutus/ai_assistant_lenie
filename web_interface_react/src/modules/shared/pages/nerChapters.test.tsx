@@ -59,6 +59,7 @@ function mockApi(overrides: Record<string, unknown> = {}) {
     if (url.endsWith("/chapter_sections")) return { data: { sections } };
     if (url.endsWith("/chapter_entities")) return { data: entities };
     if (url.endsWith("/website_get")) return { data: { title: "Film testowy", document_type: "youtube" } };
+    if (url.endsWith("/ner_channel_glossary/applications")) return { data: { author: null, entries: [], applications: [] } };
     throw new Error("unexpected " + url);
   });
 }
@@ -222,6 +223,37 @@ it("marks a chapter as noise and deletes only the entities found nowhere else", 
   await waitFor(() => expect(axios.delete).toHaveBeenCalledTimes(1));
   expect(axios.delete).toHaveBeenCalledWith("/website_entities/1",
     { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } });
+});
+
+it("shows the channel name next to the document title", async () => {
+  mockApi({ "/website_get": { title: "Film testowy", document_type: "youtube", byline: "Na Wschód od Bliskiego Wschodu" } });
+  await open();
+  expect(await screen.findByRole("link", { name: "Kanał: Na Wschód od Bliskiego Wschodu" })).toBeTruthy();
+});
+
+it("announces the channel glossary and what it repaired in this document", async () => {
+  mockApi({ "/ner_channel_glossary/applications": {
+    author: "Na Wschód od Bliskiego Wschodu",
+    entries: [{ id: 1, canonical_name: "Pete Hegseth", aliases: ["He H"], fuzzy: true }],
+    applications: [{ original_text: "Hekset", replacement_text: "Hegseth", occurrences: 10 }],
+  } });
+  await open();
+  const note = await screen.findByRole("note", { name: "Słownik kanału" });
+  expect(note.textContent).toContain("Obowiązuje słownik nazw kanału „Na Wschód od Bliskiego Wschodu”");
+  expect(note.textContent).toContain("Pete Hegseth");
+  expect(note.textContent).toContain("Hekset → Hegseth ×10");
+  expect(within(note).getByRole("link", { name: /Słownik kanału/ }).getAttribute("href"))
+    .toBe("/ner-glossary?author=Na%20Wsch%C3%B3d%20od%20Bliskiego%20Wschodu");
+});
+
+it("says the glossary is empty for a channel without entries and hides the note without a channel", async () => {
+  mockApi({ "/ner_channel_glossary/applications": { author: "Inny kanał", entries: [], applications: [] } });
+  await open();
+  expect((await screen.findByRole("note", { name: "Słownik kanału" })).textContent).toContain("jest pusty");
+  cleanup();
+  mockApi();
+  await open();
+  expect(screen.queryByRole("note", { name: "Słownik kanału" })).toBeNull();
 });
 
 it("does not offer the noise button on chapters that are already skipped", async () => {
