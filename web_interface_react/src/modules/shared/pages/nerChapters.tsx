@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
+import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
@@ -233,6 +234,20 @@ const NerChapters = () => {
     document.querySelector("[data-focus-mark]")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   }, [focus]);
 
+  // Right click on a selected fragment of the text opens the "add entity" menu; without a selection
+  // (or over the chips, buttons and fields) the browser's own menu stays.
+  const [selectionMenu, setSelectionMenu] = React.useState<{ x: number; y: number; text: string } | null>(null);
+  const [panelKey, setPanelKey] = React.useState(0);
+  const [addedMessage, setAddedMessage] = React.useState("");
+  const closeSelectionMenu = React.useCallback(() => setSelectionMenu(null), []);
+  const openSelectionMenu = (event: React.MouseEvent) => {
+    const text = selectedFragment(window.getSelection());
+    if (!text) return;
+    event.preventDefault();
+    setAddedMessage("");
+    setSelectionMenu({ x: event.clientX, y: event.clientY, text });
+  };
+
   const toggleKind = (kind: HighlightKind) => setKinds((current) => {
     const next = new Set(current);
     if (next.has(kind)) next.delete(kind); else next.add(kind);
@@ -328,8 +343,15 @@ const NerChapters = () => {
               <button type="button" onClick={() => setFocus(null)}>✕ wyczyść</button>
             </div>
           )}
+          {addedMessage && <div role="status" style={{ marginBottom: 8, color: "#166534" }}>{addedMessage}</div>}
+          {selectionMenu && (
+            <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers}
+              onClose={closeSelectionMenu}
+              onAdded={(message) => { setSelectionMenu(null); setAddedMessage(message); setPanelKey((current) => current + 1); }} />
+          )}
           <EntitiesPanel
             docId={id}
+            refreshKey={panelKey}
             onShowInText={showInText}
             onEntitiesChanged={() => setVersion((current) => current + 1)}
             chapterRenderer={(renderGroups) => (
@@ -372,7 +394,7 @@ const NerChapters = () => {
                       <p style={{ color: "#667" }}>Rozdział pominięty w NER (typ: {TYPE_LABELS[type]}).</p>
                     ) : (
                       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)", gap: 14, marginTop: 8 }}>
-                        <div style={{ lineHeight: 1.65, fontSize: "0.9em" }}>
+                        <div style={{ lineHeight: 1.65, fontSize: "0.9em" }} onContextMenu={openSelectionMenu}>
                           {section.sentences?.map((sentence) => (
                             <span key={sentence.index}>
                               {splitByEntities(sentence.text, [

@@ -18,6 +18,7 @@ on every refresh, so ``replay_manual_organization_decisions`` removes it again.
 from __future__ import annotations
 
 import logging
+import re
 
 from sqlalchemy import or_, select
 
@@ -100,6 +101,120 @@ def convert_place_to_organization(session, entity: DocumentEntity, survivors: fr
     elif link.document_entity_id is None:
         link.document_entity_id = target.id
     return target, organization
+
+
+ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName")
+
+
+def count_mentions(text: str | None, surface: str) -> int:
+    """Case-insensitive occurrences of ``surface`` in ``text`` (the count a hand-added entity starts with)."""
+    if not text or not surface:
+        return 0
+    return len(re.findall(re.escape(surface), text, flags=re.IGNORECASE))
+
+
+def add_manual_entity(
+    session, document_id: int, entity_type: str, surface: str, name: str | None = None, count: int = 1,
+    entities: list[DocumentEntity] | None = None, survivors: frozenset[int] = frozenset(),
+) -> tuple[DocumentEntity, object | None]:
+    """Create an entity from a fragment of text a reviewer selected ("kaliningradzkiej enklawy").
+
+    ``surface`` is the fragment as it stands in the text, ``name`` the canonical name the reviewer chose
+    (default: the surface). The result is a ``source='manual'`` row of ``entity_type`` (a place is always
+    ``placeName``), or the same-named row the document already has (mention count and surface forms
+    added to it). An organization is resolved through the registry and linked like in
+    ``convert_place_to_organization``; the canonical registry name wins. Queues changes without
+    committing; geocoding a place and resolving a person are the caller's job. Returns
+    ``(row, Organization | None)``. ``survivors`` (replay only) already carry this mention's count.
+    """
+    surface = surface.strip()
+    name = (name or surface).strip()
+    organization = None
+    if entity_type == "orgName":
+        from library.db.models import DocumentOrganization
+        from library.organization_registry import resolve_or_create
+
+        organization, confidence = resolve_or_create(session, name, list(dict.fromkeys([name, surface])))
+        name = organization.canonical_name
+    types = PLACE_TYPES if entity_type == "placeName" else (entity_type,)
+    if entities is None:
+        entities = list(session.scalars(select(DocumentEntity).where(
+            DocumentEntity.document_id == document_id, DocumentEntity.entity_type.in_(types),
+        )).all())
+    variants = [surface] if surface.casefold() != name.casefold() else []
+    row = _exact(entities, name, types)
+    if row is not None:
+        if id(row) not in survivors:
+            row.mention_count = (row.mention_count or 0) + count
+        row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
+        row.source = "manual"
+    else:
+        row = DocumentEntity(
+            document_id=document_id, entity_type=types[-1] if entity_type == "placeName" else entity_type,
+            entity_text=name, mention_count=count, variants=variants, source="manual",
+        )
+        session.add(row)
+        entities.append(row)
+    session.flush()
+    if organization is not None:
+        link = session.scalar(select(DocumentOrganization).where(
+            DocumentOrganization.document_id == document_id,
+            DocumentOrganization.organization_id == organization.id,
+        ))
+        if link is None:
+            session.add(DocumentOrganization(
+                document_id=document_id, organization_id=organization.id,
+                document_entity_id=row.id, confidence=confidence,
+            ))
+        elif link.document_entity_id is None:
+            link.document_entity_id = row.id
+    return row, organization
+
+
+def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
+    """Re-create the entities a reviewer added from selected text (``entity_added``) after a rebuild.
+
+    Manual rows survive a normal refresh; only reopening a document for editing deletes them, so this adds
+    back every one whose name (or surface form) is no longer an entity of that type. A place is geocoded
+    once, failures swallowed. Queues changes without committing.
+    """
+    decisions = session.scalars(select(EntityReviewDecision).where(
+        EntityReviewDecision.document_id == document_id,
+        EntityReviewDecision.decision == "entity_added",
+    ).order_by(EntityReviewDecision.id)).all()
+    if not decisions:
+        return {}
+    entities = list(session.scalars(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id, DocumentEntity.entity_type.in_(ADDABLE_ENTITY_TYPES + PLACE_TYPES),
+    )).all())
+    added = []
+    for decision in decisions:
+        details = decision.details or {}
+        surface = (details.get("surface") or "").strip()
+        entity_type = decision.entity_type
+        if entity_type not in ADDABLE_ENTITY_TYPES or not surface:
+            continue
+        types = PLACE_TYPES if entity_type == "placeName" else (entity_type,)
+        if _by_name_or_variant(entities, surface, types) is not None:
+            continue
+        row, _organization = add_manual_entity(
+            session, document_id, entity_type, surface, details.get("name") or decision.entity_text,
+            details.get("count") or 1, entities,
+        )
+        added.append(row)
+    if doc is not None:
+        from library.country_gazetteer import canonical_country_name
+        from library.place_verification import geocode_single_place
+
+        for row in added:
+            if row.entity_type == "placeName" and row.geocode_id is None and canonical_country_name(row.entity_text) is None:
+                try:
+                    geocode_single_place(session, doc, row)
+                except Exception:
+                    logger.exception("Geocoding re-added place %r failed for doc %s", row.entity_text, document_id)
+    if added:
+        logger.info("Re-added %d hand-added entit(ies) for doc %s", len(added), document_id)
+    return {"entity_added": len(added)} if added else {}
 
 
 def convert_person_to_place(

@@ -1919,6 +1919,85 @@ def website_entities_to_person(entity_id: int):
                    linked=[canonical for _name, canonical, _conf in (resolved or {}).get("linked", [])]), 200
 
 
+@app.route('/document/<int:document_id>/entities/add_mention', methods=['POST'])
+def document_entities_add_mention(document_id: int):
+    """Add an entity from a fragment of the text a reviewer selected (context menu on /ner/:id).
+
+    Body: {"text": "kaliningradzkiej enklawy", "entity_type": "persName"|"orgName"|"placeName",
+    "name": "Obwód Kaliningradzki"?}. ``text`` must occur in the document; ``name`` is the canonical
+    name (default: the text) — an existing same-named entity gets the mentions and the surface form added.
+    A fragment that already is an entity (or one of its surface forms) answers 409 with that entity: use
+    its own menu to retype it. A place is geocoded once (a country gets its ``kraj-*`` tag), an organization
+    is resolved through the registry, a person through the person registry. Audited as ``entity_added`` and
+    re-created after a reopen for editing (library/entity_overrides.py).
+    """
+    from sqlalchemy import select as sa_select
+    from library import person_registry
+    from library.country_gazetteer import country_tag_for
+    from library.db.models import DocumentEntity
+    from library.entity_overrides import ADDABLE_ENTITY_TYPES, add_manual_entity, count_mentions
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import geocode_single_place
+
+    data = request.get_json(silent=True) or {}
+    surface, name = data.get('text'), data.get('name')
+    entity_type = data.get('entity_type')
+    if not isinstance(surface, str) or not surface.strip() or len(surface) > 200:
+        return jsonify(status="error", message="Nieprawidłowy zaznaczony tekst."), 400
+    if name is not None and (not isinstance(name, str) or not name.strip() or len(name) > 200):
+        return jsonify(status="error", message="Nieprawidłowa nazwa."), 400
+    if entity_type not in ADDABLE_ENTITY_TYPES:
+        return jsonify(status="error", message="entity_type musi być persName, orgName lub placeName."), 400
+    surface = " ".join(surface.split())
+    name = " ".join(name.split()) if name else None
+    session = get_scoped_session()
+    document = session.get(Document, document_id)
+    if document is None:
+        return jsonify(status="error", message="Nie znaleziono dokumentu."), 404
+    text = document.text_md or document.text or ""
+    count = count_mentions(text, surface)
+    if count == 0:
+        return jsonify(status="error", message="Zaznaczonego fragmentu nie ma w tekście dokumentu."), 400
+    keys = {surface.casefold()}
+    for existing in session.scalars(sa_select(DocumentEntity).where(DocumentEntity.document_id == document_id)).all():
+        if keys & {existing.entity_text.casefold(), *(v.casefold() for v in (existing.variants or []))}:
+            return jsonify(status="error", code="entity_exists", message="Ten fragment jest już encją.",
+                           entity={"id": existing.id, "entity_type": existing.entity_type,
+                                   "entity_text": existing.entity_text}), 409
+    try:
+        row, organization = add_manual_entity(session, document_id, entity_type, surface, name, count)
+        if entity_type == "placeName":
+            tag = country_tag_for(row.entity_text)
+            if tag is not None:
+                existing_tags = [t.strip() for t in (document.tags or "").split(",") if t.strip()]
+                if tag not in existing_tags:
+                    document.tags = ",".join([*existing_tags, tag])
+            elif row.geocode_id is None:
+                geocode_single_place(session, document, row)
+        record_entity_decision(
+            session, document_id=document_id, document_entity_id=row.id, entity_type=entity_type,
+            entity_text=row.entity_text, decision="entity_added",
+            details={"surface": surface, "name": row.entity_text, "count": count},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Adding %s %r to document %s failed", entity_type, surface, document_id)
+        return jsonify(status="error", message="Nie udało się dodać encji."), 500
+    linked = []
+    if entity_type == "persName":
+        try:
+            resolved = person_registry.resolve_document_persons(session, document, text, only_names=[row.entity_text])
+            session.commit()
+            linked = [canonical for _name, canonical, _conf in (resolved or {}).get("linked", [])]
+        except Exception:
+            session.rollback()
+            logging.exception("Person resolution after adding %r to document %s failed", row.entity_text, document_id)
+    return jsonify(status="success", entity_id=row.id, entity_type=row.entity_type, entity_text=row.entity_text,
+                   mention_count=row.mention_count, organization_id=getattr(organization, "id", None),
+                   linked=linked), 201
+
+
 @app.route('/website_entities/<int:entity_id>/split_place', methods=['POST'])
 def website_entities_split_place(entity_id: int):
     """Split a place entity that lists several places (NER: "Pakistanem Afganistanem") into one per part.
