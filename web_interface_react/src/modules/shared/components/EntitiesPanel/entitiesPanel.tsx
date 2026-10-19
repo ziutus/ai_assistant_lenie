@@ -1,4 +1,5 @@
 import React from "react";
+import "./entitiesPanel.css";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
@@ -11,7 +12,10 @@ import OrganizationMergePreview, { type MergePreviewData } from "./organizationM
 // NER entities detected in the document (backend: GET/POST /website_entities,
 // table document_entities — see docs/ner-integration-plan.md).
 
+export type EntityRelevance = "central" | "related" | "figurative";
+
 export interface EntityItem {
+  relevance?: EntityRelevance;
   id?: number;
   text: string;
   count: number;
@@ -154,6 +158,8 @@ interface MenuEntry {
   action?: () => void;
   // Navigation entry (rendered as a router link) instead of an in-panel action.
   to?: string;
+  // Submenu: the entry expands in place (no flyout, so it works on touch screens).
+  children?: MenuEntry[];
 }
 
 // Tooltip for a chip that is a cited source: "gazeta · telegraph.co.uk · opis".
@@ -166,6 +172,12 @@ const sourceTitleOf = (item: EntityItem): string | undefined => {
   ].filter(Boolean).join(" · ");
   return title || undefined;
 };
+
+const RELEVANCE_OPTIONS = [
+  { value: "central", label: "Główny temat", title: "Bezpośrednio dotyczy głównego tematu dokumentu" },
+  { value: "related", label: "Pośrednio", title: "Pośredni związek z tematem dokumentu" },
+  { value: "figurative", label: "Przenośnie", title: "Wzmianka przenośna; miejsce nie jest pokazywane na mapie" },
+] as const;
 
 export const EntityChips = ({
   label,
@@ -201,6 +213,12 @@ export const EntityChips = ({
 }) => {
   const [openMenu, setOpenMenu] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLSpanElement>(null);
+  const panelRef = React.useRef<HTMLSpanElement>(null);
+  const [openSub, setOpenSub] = React.useState<string | null>(null);
+  // Keeps a long menu on screen: opens upwards when there is more room above,
+  // scrolls when it fits neither way, and right-aligns near the right edge.
+  const [placement, setPlacement] = React.useState<{ up: boolean; right: boolean; maxHeight?: number }>(
+    { up: false, right: false });
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
   React.useEffect(() => {
     if (openMenu === null) return;
@@ -221,6 +239,25 @@ export const EntityChips = ({
     };
   }, [openMenu]);
   React.useEffect(() => setOpenMenu(null), [items, menuActions]);
+  React.useEffect(() => setOpenSub(null), [openMenu]);
+  React.useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const chip = menuRef.current;
+    if (openMenu === null || !panel || !chip) return;
+    const chipRect = chip.getBoundingClientRect();
+    const below = window.innerHeight - chipRect.bottom - 8;
+    const above = chipRect.top - 8;
+    const height = panel.scrollHeight;
+    const up = height > below && above > below;
+    const room = up ? above : below;
+    const next = {
+      up,
+      right: chipRect.left + panel.offsetWidth > window.innerWidth - 8,
+      maxHeight: height > room ? Math.max(room, 120) : undefined,
+    };
+    setPlacement((prev) => (prev.up === next.up && prev.right === next.right && prev.maxHeight === next.maxHeight
+      ? prev : next));
+  }, [openMenu, openSub]);
   if (!items.length) {
     return null;
   }
@@ -289,6 +326,7 @@ export const EntityChips = ({
           <span
             key={key}
             ref={menuOpen ? menuRef : undefined}
+            className={`entity-chip entity-chip--${item.relevance ?? "central"}`}
             style={{
               ...chipStyle,
               position: "relative",
@@ -298,8 +336,11 @@ export const EntityChips = ({
                 border: isDimmed ? "1px solid #d9a4418c" : "1px solid #d9a441" } : {}),
               ...(isResolvedPerson ? { background: isDimmed ? "#e3edf98c" : "#e3edf9",
                 border: isDimmed ? "1px solid #7ba3d08c" : "1px solid #7ba3d0" } : {}),
+              ...(item.relevance && item.relevance !== "central" ? { background: undefined, border: undefined } : {}),
             }}
-            title={historicalTitle ?? personTitle
+            title={(item.relevance && item.relevance !== "central"
+              ? RELEVANCE_OPTIONS.find((option) => option.value === item.relevance)?.title : undefined)
+              ?? historicalTitle ?? personTitle
               ?? sourceTitleOf(item)
               ?? item.organization_description
               ?? facilityTitle
@@ -308,24 +349,51 @@ export const EntityChips = ({
           >
             {isDimmed ? <span style={{ opacity: 0.55 }}>{chipContent}</span> : chipContent}
             {menuOpen && entries.length > 0 && (
-              <span role="menu" aria-label={`Działania: ${item.text}`}
-                style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, padding: 4,
+              <span role="menu" ref={panelRef} aria-label={`Działania: ${item.text}`}
+                style={{ position: "absolute", ...(placement.up ? { bottom: "100%" } : { top: "100%" }),
+                  ...(placement.right ? { right: 0 } : { left: 0 }), zIndex: 10, padding: 4,
                   background: "white", border: "1px solid #b9c8de", borderRadius: 6, minWidth: 230,
+                  maxWidth: "calc(100vw - 16px)", maxHeight: placement.maxHeight, overflowY: "auto",
                   boxShadow: "0 2px 8px #0002" }}>
-                {entries.map((entry) => entry.to ? (
-                  <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => setOpenMenu(null)}
-                    style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px",
-                      color: "inherit", textDecoration: "none", boxSizing: "border-box" }}>
-                    {entry.label}
-                  </Link>
-                ) : (
-                  <button key={entry.label} type="button" role="menuitem"
-                    style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px",
-                      background: "transparent", border: 0, cursor: "pointer" }}
-                    onClick={() => { setOpenMenu(null); entry.action?.(); }}>
-                    {entry.label}
-                  </button>
-                ))}
+                {entries.map((entry) => {
+                  const itemStyle: React.CSSProperties = { display: "block", width: "100%", textAlign: "left",
+                    padding: "6px 8px", boxSizing: "border-box" };
+                  if (entry.to) {
+                    return (
+                      <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => setOpenMenu(null)}
+                        style={{ ...itemStyle, color: "inherit", textDecoration: "none" }}>
+                        {entry.label}
+                      </Link>
+                    );
+                  }
+                  if (entry.children) {
+                    const subOpen = openSub === entry.label;
+                    return (
+                      <React.Fragment key={entry.label}>
+                        <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={subOpen}
+                          style={{ ...itemStyle, background: "transparent", border: 0, cursor: "pointer" }}
+                          onClick={() => setOpenSub(subOpen ? null : entry.label)}>
+                          {entry.label} {subOpen ? "▾" : "▸"}
+                        </button>
+                        {subOpen && entry.children.map((child) => (
+                          <button key={child.label} type="button" role="menuitem"
+                            style={{ ...itemStyle, paddingLeft: 24, background: "transparent", border: 0,
+                              cursor: "pointer" }}
+                            onClick={() => { setOpenMenu(null); child.action?.(); }}>
+                            {child.label}
+                          </button>
+                        ))}
+                      </React.Fragment>
+                    );
+                  }
+                  return (
+                    <button key={entry.label} type="button" role="menuitem"
+                      style={{ ...itemStyle, background: "transparent", border: 0, cursor: "pointer" }}
+                      onClick={() => { setOpenMenu(null); entry.action?.(); }}>
+                      {entry.label}
+                    </button>
+                  );
+                })}
               </span>
             )}
           </span>
@@ -481,6 +549,7 @@ const EntitiesPanel = ({
   const [renameFor, setRenameFor] = React.useState<EntityItem | null>(null);
   const [renameText, setRenameText] = React.useState("");
   const [isRenaming, setIsRenaming] = React.useState(false);
+  const [isSettingRelevance, setIsSettingRelevance] = React.useState(false);
   // "Zmień na miejsce" (person -> place) and "Podziel" (one place entity listing several places) forms.
   const [toPlaceFor, setToPlaceFor] = React.useState<EntityItem | null>(null);
   const [toPlaceText, setToPlaceText] = React.useState("");
@@ -763,6 +832,22 @@ const EntitiesPanel = ({
       }
     } finally {
       setIsSavingSource(false);
+    }
+  };
+
+  const handleRelevanceChange = async (item: EntityItem, relevance: EntityRelevance) => {
+    if (item.id == null || isSettingRelevance || externalDisabled) return;
+    setIsSettingRelevance(true);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/website_entities/${item.id}/relevance`, { relevance }, { headers: jsonHeaders });
+      fetchEntities();
+      setMessage("Związek encji z tematem został zapisany.");
+    } catch (error: unknown) {
+      setMessage("Nie udało się zapisać związku encji z tematem.");
+      if (axios.isAxiosError(error) && error.response?.status === 404) fetchEntities();
+    } finally {
+      setIsSettingRelevance(false);
     }
   };
 
@@ -1233,8 +1318,16 @@ const EntitiesPanel = ({
     } });
     return entries;
   };
+  const relevanceEntries = (item: EntityItem): MenuEntry[] => [{
+    label: `Związek z tematem: ${RELEVANCE_OPTIONS.find((option) => option.value === (item.relevance ?? "central"))?.label}`,
+    children: RELEVANCE_OPTIONS.map((option) => ({
+      label: `${(item.relevance ?? "central") === option.value ? "✓" : "○"} ${option.label}`,
+      action: () => void handleRelevanceChange(item, option.value),
+    })),
+  }];
   const personMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "persName"),
+    ...relevanceEntries(item),
     { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
@@ -1244,6 +1337,7 @@ const EntitiesPanel = ({
   ];
   const placeMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "place"),
+    ...relevanceEntries(item),
     { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },
     ...(places.some((place) => place.id != null && place.id !== item.id)
       ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeFor(item); } }] : []),

@@ -1,0 +1,11 @@
+.entity-chip--related {
+  background: #fff3cd;
+  border: 1px solid #d6a640;
+}
+
+.entity-chip--figurative {
+  background: #eeeeee;
+  border: 1px dashed #888888;
+  opacity: 0.65;
+}
+

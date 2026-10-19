@@ -35,5 +35,14 @@ environments.
 - Then run `git worktree remove --force <path>` (nested worktrees first) and
   `git worktree prune`.
 - Remove a task's worktree right after its PR is merged. Close the session that
-  uses it first; a live process keeps the directory locked.
-- Delete only the worktree, never its branch, without asking the user.
+  uses it first; a live process keeps the directory locked (a leftover Codex
+  `app-server-broker.mjs` node process started with the worktree as `--cwd` is
+  the usual culprit — stop that one process, not other node processes).
+- After the worktree is removed, delete its branch once the PR is merged into
+  `main`: confirm with `gh pr view <number> --json state` (must be `MERGED`) or
+  `git branch --merged origin/main`, then `git branch -d <branch>` (the safe
+  form refuses an unmerged branch) and, if it still exists,
+  `git push origin --delete <branch>`.
+- Never use `git branch -D`, never delete a branch whose PR is still open or
+  unmerged, and never delete `before_claude_code`. In any of those cases ask
+  the user first.
