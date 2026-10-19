@@ -9,21 +9,3 @@
   opacity: 0.65;
 }
 
-.entity-relevance {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-left: 6px;
-  font-size: 0.8em;
-}
-
-.entity-relevance label {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  cursor: pointer;
-}
-
-.entity-relevance input {
-  margin: 0;
-}

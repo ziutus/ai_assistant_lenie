@@ -62,7 +62,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(9);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(12);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -783,28 +783,30 @@ it("saves a Wikipedia article for a place and shows the 📖 link", async () => 
     .toBe("https://en.wikipedia.org/wiki/Aden");
 });
 
-it.each(["related", "figurative"] as const)("sets person and place relevance to %s without edit mode", async (relevance) => {
+const relevanceLabel = { related: "Pośrednio", figurative: "Przenośnie" } as const;
+
+it.each(["related", "figurative"] as const)("sets person and place relevance to %s from the chip menu", async (relevance) => {
   const person = { id: 11, text: "Trump", count: 1 };
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [place], placeName: [] } } }));
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   for (const item of [person, place]) {
-    const control = await screen.findByRole("group", { name: `Związek z tematem: ${item.text}` });
-    expect((within(control).getByRole("radio", { name: "Główny temat" }) as HTMLInputElement).checked).toBe(true);
-    fireEvent.click(within(control).getByRole("radio", { name: relevance === "related" ? "Pośrednio" : "Przenośnie" }));
+    fireEvent.click(await screen.findByRole("button", { name: item.text }));
+    expect(screen.getByRole("menuitem", { name: "✓ Związek z tematem: Główny temat" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: `○ Związek z tematem: ${relevanceLabel[relevance]}` }));
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(`/website_entities/${item.id}/relevance`,
       { relevance }, { headers: expect.objectContaining({ "Content-Type": "application/json" }) }));
-    await waitFor(() => expect((within(control).getByRole("radio", { name: "Główny temat" }) as HTMLInputElement).disabled).toBe(false));
   }
 });
 
-it("retains the previous relevance when saving fails", async () => {
+it("reports an error and keeps the previous relevance when saving fails", async () => {
   vi.mocked(axios.patch).mockRejectedValue(new Error("offline"));
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
-  const control = await screen.findByRole("group", { name: `Związek z tematem: ${place.text}` });
-  fireEvent.click(within(control).getByRole("radio", { name: "Przenośnie" }));
+  fireEvent.click(await screen.findByRole("button", { name: place.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "○ Związek z tematem: Przenośnie" }));
   expect(await screen.findByText("Nie udało się zapisać związku encji z tematem.")).toBeTruthy();
-  expect((within(control).getByRole("radio", { name: "Główny temat" }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: place.text }));
+  expect(screen.getByRole("menuitem", { name: "✓ Związek z tematem: Główny temat" })).toBeTruthy();
 });
 
 it.each(["related", "figurative"] as const)("styles %s chips and explains their relevance", (relevance) => {
