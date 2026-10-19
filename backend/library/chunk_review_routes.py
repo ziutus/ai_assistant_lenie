@@ -1942,7 +1942,11 @@ def document_chapter_entities(doc_id: int, position: int):
     material.
     """
     from library.country_gazetteer import detect_countries
-    from library.entity_service import filter_entities_to_text, get_document_entities
+    from library.entity_service import (
+        apply_channel_glossary_text,
+        filter_entities_to_text,
+        get_document_entities,
+    )
 
     session = get_scoped_session()
     doc = session.get(Document, doc_id)
@@ -1962,7 +1966,7 @@ def document_chapter_entities(doc_id: int, position: int):
     doc_country_slugs = {t[len("kraj-"):] for t in doc_tags if t.startswith("kraj-")}
     countries = [
         {"slug": c.slug, "name_pl": c.name_pl}
-        for c in detect_countries(chapter_text)
+        for c in detect_countries(apply_channel_glossary_text(session, doc_id, chapter_text))
         if c.slug in doc_country_slugs
     ]
 

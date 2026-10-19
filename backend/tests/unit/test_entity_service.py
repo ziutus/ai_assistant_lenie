@@ -678,3 +678,39 @@ def test_refresh_replays_relevance_on_replacement_rows():
     person = next(row for row in rows if row.entity_type == "persName")
     assert person.relevance == "related"
     assert person.source != "manual"
+
+
+class TestApplyChannelGlossaryText:
+    """Channel euphemisms resolved for country detection ("państwo z gwiazdką" = Izrael)."""
+
+    def test_euphemism_becomes_the_country_name_on_a_copy(self):
+        from library.country_gazetteer import detect_countries
+        from library.db.models import NerChannelGlossaryEntry
+        from library.entity_service import apply_channel_glossary_text
+
+        entry = NerChannelGlossaryEntry(id=7, author="Na Wschód od Bliskiego Wschodu", canonical_name="Izrael",
+                                        aliases=["państwo z gwiazdką", "państwem z gwiazdką"], fuzzy=False)
+        session = MagicMock()
+        session.get.return_value = MagicMock(byline="Na Wschód od Bliskiego Wschodu")
+        session.execute.return_value.scalars.return_value.all.return_value = [entry]
+        text = "Rozmowy z państwem z gwiazdką trwają, a państwo z gwiazdką atakuje."
+
+        result = apply_channel_glossary_text(session, 10872, text)
+
+        assert result == "Rozmowy z Izrael trwają, a Izrael atakuje."
+        assert [c.name_pl for c in detect_countries(text)] == []
+        assert [c.name_pl for c in detect_countries(result)] == ["Izrael"]
+
+    def test_document_without_channel_returns_text_unchanged(self):
+        from library.entity_service import apply_channel_glossary_text
+
+        session = MagicMock()
+        session.get.return_value = MagicMock(byline=None)
+        assert apply_channel_glossary_text(session, 1, "tekst") == "tekst"
+
+    def test_database_failure_returns_text_unchanged(self):
+        from library.entity_service import apply_channel_glossary_text
+
+        session = MagicMock()
+        session.get.side_effect = RuntimeError("db down")
+        assert apply_channel_glossary_text(session, 1, "tekst") == "tekst"
