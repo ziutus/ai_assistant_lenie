@@ -388,10 +388,31 @@ def _reclassify_as_organization(session, doc, ent: DocumentEntity) -> None:
         session.delete(ent)
         return
 
+    organization, confidence = resolve_or_create(session, ent.entity_text, ent.variants or [])
+    # The registry may map this spelling onto an organization the document is
+    # already linked to under another spelling ("MSZU" place vs "mSZU" orgName,
+    # doc #11137); a second link would violate (document_id, organization_id).
+    existing_link = (
+        session.query(DocumentOrganization)
+        .filter(
+            DocumentOrganization.document_id == doc.id,
+            DocumentOrganization.organization_id == organization.id,
+        )
+        .one_or_none()
+    )
+    if existing_link is not None:
+        linked_row = (
+            session.get(DocumentEntity, existing_link.document_entity_id)
+            if existing_link.document_entity_id is not None else None
+        )
+        if linked_row is not None:
+            merge_document_entities(ent, linked_row, target_source=linked_row.source)
+        session.delete(ent)
+        return
+
     ent.entity_type = "orgName"
     ent.geocode = None
     ent.geocode_id = None
-    organization, confidence = resolve_or_create(session, ent.entity_text, ent.variants or [])
     session.add(DocumentOrganization(
         document_id=doc.id,
         organization_id=organization.id,

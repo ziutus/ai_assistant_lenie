@@ -1021,3 +1021,40 @@ class TestRemoveOrphanedTag:
 
         assert removed is None
         assert doc.tags == "miejsce-mon"
+
+
+class TestReclassifyAsOrganizationExistingLink:
+    """doc #11137: place "MSZU" got an `organization` verdict, the registry mapped it onto
+    organization 1211 ("mSZU"), already linked to the document through the orgName row "mSZU"."""
+
+    def test_existing_document_link_merges_instead_of_inserting_a_duplicate(self):
+        from library.db.models import DocumentOrganization
+        from library.place_verification import _reclassify_as_organization
+
+        place = _entity("MSZU", etype="placeName", mention_count=1)
+        place.variants = []
+        linked_row = _entity("mSZU", etype="orgName", mention_count=2)
+        linked_row.source = "ner"
+        linked_row.variants = []
+        existing_link = MagicMock(spec=DocumentOrganization)
+        existing_link.document_entity_id = 22124
+
+        session = MagicMock()
+        entity_query = MagicMock()
+        entity_query.filter.return_value.one_or_none.return_value = None  # no orgName row spelled "MSZU"
+        link_query = MagicMock()
+        link_query.filter.return_value.one_or_none.return_value = existing_link
+        session.query.side_effect = lambda model: link_query if model is DocumentOrganization else entity_query
+        session.get.return_value = linked_row
+        doc = MagicMock()
+        doc.id = 11137
+
+        with patch(
+            "library.organization_registry.resolve_or_create", return_value=(MagicMock(id=1211), "alias_matched")
+        ):
+            _reclassify_as_organization(session, doc, place)
+
+        session.add.assert_not_called()
+        session.delete.assert_called_once_with(place)
+        assert linked_row.mention_count == 3
+        assert linked_row.variants == []  # casing-only difference is not kept as a variant
