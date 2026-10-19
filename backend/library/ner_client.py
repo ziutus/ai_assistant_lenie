@@ -59,6 +59,8 @@ WINDOW_BOUNDARY_BACKTRACK = 200
 # Closed list of truncated country spans recoverable from the next source word.
 _COUNTRY_SPAN_EXTENSIONS = (
     (re.compile(r"arabi[aeio]"), re.compile(r"saudyjsk[a-z]*"), "Arabia Saudyjska"),
+    # doc #11137: "Stany" cut off "Stany Zjednoczone" and became a stray place/organization.
+    (re.compile(r"stany|stanow|stanom|stanami|stanach"), re.compile(r"zjednoczon[a-z]*"), "Stany Zjednoczone"),
 )
 
 
