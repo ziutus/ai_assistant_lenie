@@ -191,8 +191,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T25 | Błąd STT w tekście źródłowym (pisownia/odmiana frazy) | transkrypcja zapisuje frazę w złej formie gramatycznej, a tekst trafia bez zmian do czytnika i NER; dotyczy tekstu, nie encji | „pięto Achillesa” zamiast „pięta Achillesa” | E038 |
 | T26 | Reguły NER z obrazu przesłonięte starą kopią w wolumenie | plik reguł w `data/` jest ukryty pod wolumenem `lenie-ai-data` (`/app/data`) ze starą kopią, więc nowy kod czyta stare dane i wzorce z repo nie działają na produkcji | „Polacy”, „Algierczycy” jako osobne miejsca | E039 |
 | T27 | Produkt/usługa/system bez kategorii encji | spaCy nie ma typu „produkt”, więc nazwa własna usługi (Starshield) trafia do `persName`, a jej odmiany („Starshielda”, „Starshieldu”) do osobnych encji | „Starshielda” jako osoba | E040 |
+| T28 | Metonimia stolicy/osoby: ten sam byt w dwóch typach i odmianach | stolica w znaczeniu rządu („między Kijowem i Waszyngtonem”) i nazwisko jako organizacja: narzędnik nie jest sprowadzany do mianownika, więc powstaje osobny `placeName`, a wzmianki o osobie trafiają także do `orgName`; rejestr organizacji utrwala to globalnie | „Kijowem”, „Waszyngtonem” jako miejsca; „Trump” jako organizacja | E041 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T28,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T29,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -658,3 +659,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — `transcript_corrections` „Space Xa” i „Space Xem” → „SpaceX” (backfill dok. #11137, 3 trafienia), `ner_exclusions` persName: „Starshield”, „Starshielda”, „Pentagonem”, odświeżenie NER (powstał jeden `SpaceX`, Pentagon bez osoby). Kod — nowa ręczna kategoria `productName` („🛰️ Produkt / system”): `ADDABLE_ENTITY_TYPES`, `get_document_entities`, menu zaznaczenia i wiersz „Produkty i systemy” na `/ner/:id`; zwykły wiersz `source='manual'` jak `eventName`, bez rejestru i bez opisu.
 - **Test regresyjny:** `test_entity_added_from_selection.py::test_a_product_is_a_plain_manual_entity_and_folds_its_inflected_forms` / `test_replay_readds_a_product_after_the_document_was_reopened` (zdanie z #11137), `test_entity_service.py` (klucz `productName`), `nerChapters.test.tsx` (wiersz produktu).
 - **Status:** dane naprawione na NAS; kod w PR, po wdrożeniu Starshield dodaje się z menu zaznaczenia („🛰️ Produkt / system”, nazwa „Starshield”). Koszt kodu: Codex niedostępny (`helper_unknown_error`), kod napisał Claude Code.
+
+### E041 — „Kijowem” / „Waszyngtonem” jako miejsca i „Trump” jako organizacja (dok. #11137, PR n/d, 2026-10-19)
+
+- **Typ encji:** placeName / orgName
+- **Kategoria:** T28 — metonimia stolicy/osoby: ten sam byt w dwóch typach i odmianach.
+- **Zdanie źródłowe:** „…komentarze Zełeńskiego zwieńczyły tydzień narastających napięć między Kijowem i Waszyngtonem, który rozpoczął się 9 października ogłoszeniem Trumpa, że…”
+- **Objaw:** „Kijowem” i „Waszyngtonem” jako osobne `placeName` (geokoder bez trafienia, bez tagów `miejsce-*`) obok `orgName` „Kijów” (5) i „Waszyngton” (3); „Trump” jednocześnie jako `persName` (61) i `orgName` (18).
+- **Przyczyna źródłowa:** spaCy nie sprowadza narzędnika do mianownika, więc „Kijowem” i „Waszyngtonem” zostały osobnymi miejscami. Klasyfikator kontekstu uznał „Waszyngtonem” za `organization` (pewność wysoka), ale wiersz przetrwał. Mianownikowe „Kijów”/„Waszyngton” są organizacjami w rejestrze (4, 38) od lipca 2026 — spójna decyzja „stolica = rząd”, jak „Kreml” (E012). „Trump” jako organizacja 45 powstał w lipcu 2026 z automatu (16 dokumentów, aliasy Trumpa/Trumpowi/Trumpo/Trumep) i do niego rejestr sprowadzał odmienione formy już po wykluczeniu; do organizacji było przypięte też źródło informacji 27 „Trump”.
+- **Poprawka:** dane — aliasy „Kijowem” (org. 4) i „Waszyngtonem” (org. 38) + `POST /website_entities/<id>/to_organization`; `ner_exclusions` `orgName`: Trump, Trumpa, Trumpowi, Trumep; odświeżenie NER dokumentów bez embeddingów (9348, 9358, 9360, 9380, 10774, 11137); w dokumentach z embeddingami (9353, 9354, 9355, 9356, 9369, 10330, 10453, 10872, 10873, 10874) usunięty tylko wiersz `orgName` „Trump” (`DELETE /website_entities/<id>`, bez „reopen”, który kasuje chunki i embeddingi); źródło 27 odpięte od organizacji (`UPDATE information_sources SET organization_id = NULL`, 4 cytowania zostały) i `DELETE /organizations/45`. Kod bez zmian.
+- **Test regresyjny:** n/d — przypadek czysto danowy (wniosek z Etapu 2b: stare dane rejestru). Do rozważenia: sprowadzanie narzędnika nazw stolic do mianownika, żeby „Kijowem” nie tworzyło osobnej encji.
+- **Status:** dane naprawione i zweryfikowane w bazie NAS; zostały prawdziwe organizacje „Trump Organization” i „Trump Island” (dok. 9358). Wykluczenia `orgName` działają globalnie. Brak poprawki kodu na powtarzalne formy narzędnika.
