@@ -519,11 +519,13 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     session.flush()
     from library.entity_overrides import (
         replay_manual_added_entities, replay_manual_organization_decisions, replay_manual_place_decisions,
+        replay_entity_relevance_decisions,
     )
 
     replay_manual_place_decisions(session, document_id, doc)
     replay_manual_organization_decisions(session, document_id)
     replay_manual_added_entities(session, document_id, doc)
+    replay_entity_relevance_decisions(session, document_id, doc)
     # Named facilities are semantic entities assembled from a recognised object
     # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra
     # spaCy label.  Flush first so their links can safely refer to new place rows.
@@ -611,7 +613,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
-                      "variants": row.variants or []}
+                      "variants": row.variants or [], "relevance": row.relevance or "central"}
         if row.entity_type in {*place_types, "orgName"}:
             item["is_country"] = canonical_country_name(row.entity_text) is not None
         status = row.place_verification_status
@@ -683,6 +685,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         facility = link.facility
         grouped["facility"].append({
             "id": link.id,
+            "relevance": "central",
             "text": facility.canonical_name,
             "count": link.mention_count,
             # Preserve the surface form from this document.  It lets chapter

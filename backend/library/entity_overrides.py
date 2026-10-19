@@ -680,3 +680,47 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
     if any(stats.values()):
         logger.info("Re-applied manual place decisions for doc %s: %s", document_id, stats)
     return stats
+
+
+def replay_entity_relevance_decisions(session, document_id: int, doc=None) -> dict:
+    """Restore the latest manual relevance by type and casefolded name or surface form.
+
+    Run after structural replays so renamed, merged and re-added rows are present.
+    Never change source: derived rows must still be replaceable on the next refresh.
+    """
+    decisions = session.scalars(select(EntityReviewDecision).where(
+        EntityReviewDecision.document_id == document_id,
+        EntityReviewDecision.decision == "relevance_set",
+    ).order_by(EntityReviewDecision.id)).all()
+    if not decisions:
+        return {}
+    entities = session.scalars(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id,
+    )).all()
+    latest = {}
+    for decision in decisions:
+        details = decision.details or {}
+        if details.get("relevance") not in ("central", "related", "figurative"):
+            continue
+        for name in (decision.entity_text, *details.get("variants", [])):
+            latest[(decision.entity_type, name.casefold())] = decision
+    touched = []
+    for row in entities:
+        matches = [latest[(row.entity_type, name.casefold())]
+                   for name in (row.entity_text, *(row.variants or []))
+                   if (row.entity_type, name.casefold()) in latest]
+        if matches:
+            row.relevance = max(matches, key=lambda decision: decision.id).details["relevance"]
+            touched.append(row)
+    # Reconcile tags only after all rows have their final relevance, including
+    # duplicate mentions of the same place and tags added by structural replays.
+    if doc is not None:
+        from library.place_verification import add_place_tag, remove_orphaned_tag
+
+        for row in touched:
+            if row.entity_type in PLACE_TYPES:
+                if row.relevance == "figurative":
+                    remove_orphaned_tag(session, doc, row)
+                else:
+                    add_place_tag(doc, row)
+    return {"relevance_set": len(touched)} if touched else {}
