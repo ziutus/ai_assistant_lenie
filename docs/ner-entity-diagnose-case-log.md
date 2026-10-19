@@ -622,3 +622,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — wpis `("Tel Awiw", …)` w `city_gazetteer.py` i alias geokodera „Tel Aviv”; `aggregate_entities_detailed` przekwalifikowuje `orgName`, którego powierzchnia jest miastem z gazetteera, na `placeName`. Menu organizacji dostało „Zmień na miejsce” (`/to_place`, rozszerzone o `orgName`, audyt `organization_to_place`) i „Zmień na osobę” (`/to_person`, audyt `organization_to_person`); obie decyzje są odtwarzane po odświeżeniu. Wszystkie menu chipów na `/ner/:id` mają „Podświetl w tekście”.
 - **Test regresyjny:** `test_ner_client.py::TestCityTaggedAsOrganization`, `test_flask_endpoints_entities.py::test_organization_to_place` / `test_organization_to_person`, `test_entity_overrides.py` (odtwarzanie), `entitiesPanel.test.tsx`, `nerChapters.test.tsx`.
 - **Status:** kod w PR; dane (scalenie ręcznej encji „Tel Avivw”, usunięcie osieroconej organizacji 1140) po wdrożeniu.
+
+### E038 — „Porty w Petersburgu” jako organizacja (dok. #10872, PR n/d, 2026-10-19)
+
+- **Typ encji:** orgName (fałszywy pozytyw)
+- **Kategoria:** T9
+- **Zdanie źródłowe:** „No iż właśnie Kalinigrad, potem Porty w Petersburgu i flota rosyjska w Petersburgu i Murmańsk…” (transkrypcja YouTube).
+- **Objaw:** w panelu organizacji pojawiła się fraza pospolita „Porty w Petersburgu”; „Petersburg” był równolegle poprawnie rozpoznany jako `placeName` (geocode 600).
+- **Przyczyna źródłowa:** spaCy oznaczył całą frazę rzeczownikową jako ORG (wielka litera po przecinku z napisów STT + człon „w Petersburgu”). Rejestr organizacji dopasowuje tylko dokładnie i niczego nie waliduje, więc utworzył wpis `organizations.id=1137`. Żaden mechanizm kodu nie zawiódł — brakowało reguły wykluczenia.
+- **Poprawka:** tylko dane — globalna reguła `ner_exclusions` (id=21), `DELETE /website_entities/19564`, usunięta osierocona organizacja 1137 (SQL; brak linków i aliasów).
+- **Test regresyjny:** brak — bez zmiany kodu; reguła `ner_exclusions` jest regresją danych.
+- **Status:** tylko dane, bez zmiany kodu.
