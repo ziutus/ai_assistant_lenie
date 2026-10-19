@@ -628,6 +628,19 @@ class TestAggregateNormalization:
         entities = [{"text": "Dana", "label": "persName", "lemma": "Dan"}]
         assert aggregate_entities(entities) == {("persName", "Dan"): 1}
 
+    def test_doc_11137_sri_lanki_survives_unknown_root_pos(self):
+        # Doc #11137: "siły te składają się obecnie z ponad 2000 żołnierzy z Czadu,
+        # Salwadoru, Gwatemalii, Jamajki, Mongolii i Sri Lanki."
+        entities = [{"label": "placeName", "text": "Sri Lanki", "lemma": "Sri Lanka", "pos": "X"}]
+        groups = aggregate_entities_detailed(entities)
+        assert ("placeName", "Sri Lanka") in groups
+        assert groups[("placeName", "Sri Lanka")]["variants"] == ["Sri Lanki"]
+
+    @pytest.mark.parametrize("surface", ["Warszawa", "warszawa", "sri lanki"])
+    def test_unknown_root_pos_does_not_bypass_non_country_or_lowercase_filters(self, surface):
+        entities = [{"label": "placeName", "text": surface, "lemma": "Sri Lanka", "pos": "X"}]
+        assert aggregate_entities_detailed(entities) == {}
+
     def test_non_nominal_root_is_rejected(self):
         entities = [{"text": "Polski", "label": "placeName", "lemma": "polski", "pos": "ADJ"}]
         assert aggregate_entities(entities) == {}

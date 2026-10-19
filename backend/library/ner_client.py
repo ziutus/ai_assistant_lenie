@@ -353,7 +353,12 @@ def aggregate_entities_detailed(
 
         pos = normalize_ner_text(ent.get("pos") or "").upper() or None
         multiword_person = label == "persName" and len(surface.split()) >= 2
-        if pos is not None and pos not in {"NOUN", "PROPN"}:
+        # Doc #11137: the root of a country span such as "Sri Lanki" can be "Sri" (POS=X);
+        # only that POS is forgiven, and only for a closed-gazetteer country.
+        known_country_root_x = (
+            pos == "X" and label in COUNTRY_CHECK_TYPES and canonical_country_for_surface(surface) is not None
+        )
+        if pos is not None and pos not in {"NOUN", "PROPN"} and not known_country_root_x:
             adjectival_surname = label == "persName" and _is_adjectival_surname(surface)
             if not multiword_person and not adjectival_surname:
                 continue
