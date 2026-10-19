@@ -188,6 +188,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T22 | Błąd transkrypcji rozpoznany jako osoba | automatyczne tłumaczenie dźwięku zapisuje zwrot jako nazwę własną; nie ma tabeli poprawek transkrypcji | „Egekwo” (zamiast „ex aequo”) | E035 |
 | T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036 |
 | T24 | Miasto oznaczone przez spaCy jako organizacja | rzadka pisownia + odmiana („Tela Avivwu”) nie przypomina niczego znanego, więc model typuje ją jako `orgName` | „Tela Avivwu” → Tel Awiw | E037 |
+| T25 | Błąd STT w tekście źródłowym (pisownia/odmiana frazy) | transkrypcja zapisuje frazę w złej formie gramatycznej, a tekst trafia bez zmian do czytnika i NER; dotyczy tekstu, nie encji | „pięto Achillesa” zamiast „pięta Achillesa” | E038 |
 
 Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T25,
 ...) zamiast naciągać istniejącą.
@@ -622,3 +623,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — wpis `("Tel Awiw", …)` w `city_gazetteer.py` i alias geokodera „Tel Aviv”; `aggregate_entities_detailed` przekwalifikowuje `orgName`, którego powierzchnia jest miastem z gazetteera, na `placeName`. Menu organizacji dostało „Zmień na miejsce” (`/to_place`, rozszerzone o `orgName`, audyt `organization_to_place`) i „Zmień na osobę” (`/to_person`, audyt `organization_to_person`); obie decyzje są odtwarzane po odświeżeniu. Wszystkie menu chipów na `/ner/:id` mają „Podświetl w tekście”.
 - **Test regresyjny:** `test_ner_client.py::TestCityTaggedAsOrganization`, `test_flask_endpoints_entities.py::test_organization_to_place` / `test_organization_to_person`, `test_entity_overrides.py` (odtwarzanie), `entitiesPanel.test.tsx`, `nerChapters.test.tsx`.
 - **Status:** kod w PR; dane (scalenie ręcznej encji „Tel Avivw”, usunięcie osieroconej organizacji 1140) po wdrożeniu.
+
+### E038 — „pięto Achillesa” (błąd STT) i „Achilles” jako osoba (dok. #10872, PR #856, 2026-10-19)
+
+- **Typ encji:** persName
+- **Kategoria:** T25 — błąd STT w tekście źródłowym; do tego T9 (fałszywy pozytyw spaCy) dla samej encji.
+- **Zdanie źródłowe:** „…że on jest tą pięto Achillesa do Rosji, no bo nie ma go za bardzo ani jak zaopatrzyć…”
+- **Objaw:** w tekście forma „pięto” zamiast „pięta”, a „Achilles” (wariant „Achillesa”, encja 19893) rozpoznany jako osoba, choć to frazeologizm.
+- **Przyczyna źródłowa:** napisy zapisały frazę w złym przypadku. spaCy oznaczył „Achillesa” jako `persName`, bo nie rozpoznaje frazeologizmów. Nie było mechanizmu poprawiającego sam tekst transkrypcji (`ner_corrections` zmienia nazwę encji, `ner_exclusions` ją wycina, `ner_channel_glossary` działa tylko na kopii tekstu przed NER i tylko per kanał).
+- **Poprawka:** kod — `transcript_corrections` (`backend/library/transcript_corrections.py`): literalne, frazowe zamiany (nigdy pojedyncze słowa), zakres global lub per `byline`, stosowane przy zapisie napisów/transkrypcji YouTube (`youtube_processing._store_transcript_text`), więc czytnik i NER widzą poprawiony tekst. REST `/transcript_corrections`, podgląd i backfill jednego dokumentu: `POST /transcript_corrections/apply` (domyślnie `dry_run`). Seed: „pięto Achillesa” → „pięta Achillesa”. Dane — #10872 poprawiony przez backfill (1 trafienie).
+- **Test regresyjny:** `test_transcript_corrections.py` (cytat zdania z #10872, `piętro` / `piętę Achillesa` / `pięty Achillesa` bez zmian, granice słów, wielkość liter, zakres per autor, odrzucenie pojedynczego słowa), `test_transcript_corrections_routes.py`, `test_youtube_processing_orm.py` (hook zapisu).
+- **Status:** kod w PR #856 (draft), wdrożony na NAS. Encja „Achilles” (19893) czeka na decyzję o zakresie `ner_exclusions` (`author` lub `global`); backfill nie przebudowuje encji ani chunków.

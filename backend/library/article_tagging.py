@@ -186,6 +186,9 @@ def confirm_person_with_llm(text: str, title: str, mention: str, candidates: lis
         return None
 
 
+_COUNTRY_EXCERPT_CHARS = 3000
+
+
 def extract_countries_hybrid(text: str, title: str) -> list[str]:
     """Wykryj kraje: najpierw gazetteer (bez LLM), potem LLM potwierdza kandydatów.
 
@@ -197,20 +200,26 @@ def extract_countries_hybrid(text: str, title: str) -> list[str]:
     zamiast open-ended ekstrakcji LLM nie może "wymyślić" kraju spoza listy.
     """
     from library.ai import ai_ask
-    from library.country_gazetteer import detect_countries
+    from library.country_gazetteer import detect_countries, mention_snippets
 
     candidates = detect_countries(f"{title}\n{text}")
     if not candidates:
         return []
 
     candidate_names = ", ".join(c.name_pl for c in candidates)
+    # The LLM sees only the start of the text; show where countries first mentioned later are discussed.
+    later = mention_snippets(text, candidates, start=_COUNTRY_EXCERPT_CHARS)
+    later_block = "".join(
+        f"\n- {name}: " + " … ".join(snippets) for name, snippets in later.items()
+    )
+    later_section = f"\n\nFRAGMENTY Z DALSZEJ CZĘŚCI TEKSTU:{later_block}" if later_block else ""
     prompt = (
         f"Przeczytaj poniższy artykuł. Z listy krajów-kandydatów wybierz TYLKO te, które są w nim\n"
         f"WYRAŹNIE omawiane (nie tylko przelotnie wspomniane).\n\n"
         f"Kandydaci: {candidate_names}\n\n"
         f"Zwróć TYLKO wybrane nazwy dokładnie tak, jak podano na liście kandydatów, oddzielone przecinkami.\n"
         f"Jeśli żaden z kandydatów nie jest wyraźnie omawiany, zwróć pustą odpowiedź.\n\n"
-        f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:3000]}"
+        f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:_COUNTRY_EXCERPT_CHARS]}{later_section}"
     )
     try:
         response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150,

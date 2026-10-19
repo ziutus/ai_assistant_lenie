@@ -165,6 +165,18 @@ def _apply_channel_glossary(session, document_id: int, text: str) -> tuple[str, 
     return result.text, result.replacements
 
 
+def apply_channel_glossary_text(session, document_id: int, text: str) -> str:
+    """The text with the document channel's glossary applied, for non-NER consumers (country detection).
+
+    Same copy-only semantics as the NER refresh: the stored transcript never changes. Never raises —
+    a glossary problem must not break tagging, the unmodified text is returned instead."""
+    try:
+        return _apply_channel_glossary(session, document_id, text)[0]
+    except Exception:
+        logger.warning("Channel glossary could not be applied for doc %s", document_id, exc_info=True)
+        return text
+
+
 def _record_glossary_replacements(session, document_id: int, groups: dict, replacements: Counter) -> None:
     """Audit the glossary replacements (replace semantics per document) and restore original variants."""
     if replacements is None:  # the document has no channel, so no glossary was ever consulted
@@ -519,11 +531,13 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     session.flush()
     from library.entity_overrides import (
         replay_manual_added_entities, replay_manual_organization_decisions, replay_manual_place_decisions,
+        replay_entity_relevance_decisions,
     )
 
     replay_manual_place_decisions(session, document_id, doc)
     replay_manual_organization_decisions(session, document_id)
     replay_manual_added_entities(session, document_id, doc)
+    replay_entity_relevance_decisions(session, document_id, doc)
     # Named facilities are semantic entities assembled from a recognised object
     # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra
     # spaCy label.  Flush first so their links can safely refer to new place rows.
@@ -611,7 +625,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
-                      "variants": row.variants or []}
+                      "variants": row.variants or [], "relevance": row.relevance or "central"}
         if row.entity_type in {*place_types, "orgName"}:
             item["is_country"] = canonical_country_name(row.entity_text) is not None
         status = row.place_verification_status
@@ -683,6 +697,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         facility = link.facility
         grouped["facility"].append({
             "id": link.id,
+            "relevance": "central",
             "text": facility.canonical_name,
             "count": link.mention_count,
             # Preserve the surface form from this document.  It lets chapter

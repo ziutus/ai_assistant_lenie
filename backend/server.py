@@ -39,6 +39,7 @@ from library.project_card_routes import bp as project_cards_bp
 from library.recipe_routes import bp as recipes_bp
 from library.topic_routes import bp as topics_bp
 from library.cleanup_rules_routes import bp as cleanup_rules_bp
+from library.transcript_corrections_routes import bp as transcript_corrections_bp
 from library.chat_routes import bp as chat_bp
 from library.place_routes import bp as places_bp
 from library.ner_channel_glossary_routes import bp as ner_channel_glossary_bp
@@ -133,6 +134,7 @@ app.register_blueprint(project_cards_bp)
 app.register_blueprint(recipes_bp)
 app.register_blueprint(topics_bp)
 app.register_blueprint(cleanup_rules_bp)
+app.register_blueprint(transcript_corrections_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(places_bp)
 app.register_blueprint(ner_gazetteer_bp)
@@ -1615,6 +1617,48 @@ def person_alias_add(person_id: int):
     # jsonify enforces Content-Type: application/json (CodeQL py/reflective-xss)
     return jsonify({"status": "success", "person_id": person_id, "added": added,
                     "aliases": [a.alias for a in person.aliases]}), 200
+
+
+@app.route('/website_entities/<int:entity_id>/relevance', methods=['PATCH'])
+def website_entities_relevance(entity_id: int):
+    """Set manual relevance without preventing NER from replacing the entity."""
+    from library.db.models import DocumentEntity
+    from library.entity_service import get_document_entities
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import PLACE_ENTITY_TYPES, add_place_tag, remove_orphaned_tag
+
+    data = request.get_json(silent=True)
+    relevance = data.get("relevance") if isinstance(data, dict) else None
+    if relevance not in ("central", "related", "figurative"):
+        return jsonify(status="error", message="Invalid relevance: expected central, related or figurative."), 400
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Entity not found."), 404
+    try:
+        entity.relevance = relevance
+        if entity.entity_type in PLACE_ENTITY_TYPES:
+            document = session.get(Document, entity.document_id)
+            if document is not None:
+                if relevance == "figurative":
+                    remove_orphaned_tag(session, document, entity)
+                else:
+                    add_place_tag(document, entity)
+        record_entity_decision(
+            session, document_id=entity.document_id, document_entity_id=entity.id,
+            entity_type=entity.entity_type, entity_text=entity.entity_text, decision="relevance_set",
+            details={"relevance": relevance, "variants": list(entity.variants or [])},
+        )
+        session.flush()
+        item = next(item for item in get_document_entities(session, entity.document_id)[entity.entity_type]
+                    if item["id"] == entity.id)
+        item.update(entity_type=entity.entity_type, mention_count=entity.mention_count)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Entity relevance update failed for entity %s", entity_id)
+        return jsonify(status="error", message="Could not save entity relevance."), 500
+    return jsonify(status="success", entity=item), 200
 
 
 @app.route('/website_entities/<int:entity_id>', methods=['PATCH'])

@@ -297,6 +297,17 @@ it("adds an entity from a selected fragment through the context menu", async () 
   expect(screen.queryByRole("menu")).toBeNull();
 });
 
+it("copies the selected fragment from the context menu", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "  Nic   więcej " } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  fireEvent.click(screen.getByRole("menuitem", { name: "📋 Kopiuj" }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith("Nic więcej"));
+  await waitFor(() => expect(screen.queryByRole("menu", { name: "Dodaj encję z zaznaczenia" })).toBeNull());
+});
+
 it("explains that a selected fragment is already an entity", async () => {
   vi.mocked(axios.post).mockRejectedValue(Object.assign(new Error("409"), {
     isAxiosError: true,

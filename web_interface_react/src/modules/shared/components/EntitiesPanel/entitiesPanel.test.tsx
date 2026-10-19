@@ -62,7 +62,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(9);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(10);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -781,4 +781,39 @@ it("saves a Wikipedia article for a place and shows the 📖 link", async () => 
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect((await screen.findByRole("link", { name: `Wikipedia: ${place.text}` })).getAttribute("href"))
     .toBe("https://en.wikipedia.org/wiki/Aden");
+});
+
+const relevanceLabel = { related: "Pośrednio", figurative: "Przenośnie" } as const;
+
+it.each(["related", "figurative"] as const)("sets person and place relevance to %s from the chip menu", async (relevance) => {
+  const person = { id: 11, text: "Trump", count: 1 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [place], placeName: [] } } }));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  for (const item of [person, place]) {
+    fireEvent.click(await screen.findByRole("button", { name: item.text }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ }));
+    expect(screen.getByRole("menuitem", { name: "✓ Główny temat" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: `○ ${relevanceLabel[relevance]}` }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(`/website_entities/${item.id}/relevance`,
+      { relevance }, { headers: expect.objectContaining({ "Content-Type": "application/json" }) }));
+  }
+});
+
+it("reports an error and keeps the previous relevance when saving fails", async () => {
+  vi.mocked(axios.patch).mockRejectedValue(new Error("offline"));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: place.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "○ Przenośnie" }));
+  expect(await screen.findByText("Nie udało się zapisać związku encji z tematem.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: place.text }));
+  expect(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ })).toBeTruthy();
+});
+
+it.each(["related", "figurative"] as const)("styles %s chips and explains their relevance", (relevance) => {
+  render(<EntityChips label="Miejsca" items={[{ ...place, relevance }]} />);
+  const chip = screen.getByText(place.text).closest(".entity-chip");
+  expect(chip?.classList.contains(`entity-chip--${relevance}`)).toBe(true);
+  expect(chip?.getAttribute("title")).toContain(relevance === "related" ? "Pośredni związek" : "Wzmianka przenośna");
 });

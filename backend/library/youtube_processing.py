@@ -68,6 +68,15 @@ def clean_youtube_url(url: str) -> str:
     return url
 
 
+def _store_transcript_text(doc, text):
+    """Correct newly received captions/STT before any consumer reads the document."""
+    from library.transcript_corrections import apply_transcript_corrections
+
+    doc.text, _ = apply_transcript_corrections(text, author=doc.byline)
+    if doc.text_md:
+        doc.text_md, _ = apply_transcript_corrections(doc.text_md, author=doc.byline)
+
+
 def process_youtube_url(
     session: Session,
     youtube_url: str,
@@ -242,7 +251,7 @@ def process_youtube_url(
                         f"Language detected >{language_detected}< differs from expected >{web_document.language}<, "
                         f"captions language mismatch"
                     )
-                    web_document.text = youtube_titles_to_text(transcript_text)
+                    _store_transcript_text(web_document, youtube_titles_to_text(transcript_text))
                     web_document.text_raw = transcript_text
                     web_document.language = language_detected
                     web_document.processing_status = StalkerDocumentStatus.ERROR.name
@@ -254,11 +263,11 @@ def process_youtube_url(
                         string_all = youtube_titles_split_with_chapters(
                             transcript_text, web_document.chapter_list
                         )
-                        web_document.text = string_all
+                        _store_transcript_text(web_document, string_all)
                         web_document.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                         session.commit()
                     elif transcript_text:
-                        web_document.text = youtube_titles_to_text(transcript_text)
+                        _store_transcript_text(web_document, youtube_titles_to_text(transcript_text))
                         web_document.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                         session.commit()
 
@@ -358,7 +367,7 @@ def process_youtube_url(
 
             logger.debug(text_raw)
             web_document.text_raw = transcript.text
-            web_document.text = text_raw
+            _store_transcript_text(web_document, text_raw)
             web_document.processing_status = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
             # Transcription succeeded — clear any stale error from an earlier failed
             # captions/transcription attempt (see ADR-010 state-error convention).
