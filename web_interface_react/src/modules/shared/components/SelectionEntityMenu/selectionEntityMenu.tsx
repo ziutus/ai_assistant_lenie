@@ -1,5 +1,6 @@
 import React from "react";
 import axios from "axios";
+import { copyText } from "../../utils/copyText";
 
 export type AddableEntityType = "persName" | "orgName" | "placeName" | "eventName";
 
@@ -51,6 +52,11 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, onClose, onAd
     };
   }, [onClose]);
 
+  const copy = async () => {
+    if (await copyText(text)) onClose();
+    else setError("Nie udało się skopiować — zaznacz tekst i użyj Ctrl+C.");
+  };
+
   const add = async (entityType: AddableEntityType) => {
     if (busy) return;
     setBusy(true);
@@ -91,6 +97,7 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, onClose, onAd
           <button key={choice.type} type="button" role="menuitem" disabled={busy || !name.trim()}
             onClick={() => void add(choice.type)}>{choice.label}</button>
         ))}
+        <button type="button" role="menuitem" onClick={() => void copy()}>📋 Kopiuj</button>
         <button type="button" onClick={onClose}>Anuluj</button>
       </div>
       {error && <p role="alert" style={{ color: "#a33", margin: "6px 0 0" }}>{error}</p>}

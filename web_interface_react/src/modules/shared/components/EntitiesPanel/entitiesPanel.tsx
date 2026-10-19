@@ -2,6 +2,7 @@ import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
+import { copyText } from "../../utils/copyText";
 import type { CountryTag } from "../CountryMap/countryMap";
 import InfoTip from "../InfoTip";
 import RejectedPlaces from "./rejectedPlaces";
@@ -166,32 +167,6 @@ const sourceTitleOf = (item: EntityItem): string | undefined => {
   return title || undefined;
 };
 
-async function copyEntityName(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch { /* Clipboard access can fail on HTTP; try the textarea fallback. */ }
-
-  const textarea = document.createElement("textarea");
-  const previousFocus = document.activeElement;
-  try {
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    return document.execCommand("copy");
-  } catch {
-    return false;
-  } finally {
-    textarea.remove();
-    if (previousFocus instanceof HTMLElement) previousFocus.focus();
-  }
-}
-
 export const EntityChips = ({
   label,
   items,
@@ -256,7 +231,7 @@ export const EntityChips = ({
       {alphabeticalItems.map((item) => {
         const key = `${item.entity_type ?? ""}:${item.id ?? item.text}`;
         const entries = menuActions
-          ? [{ label: "Kopiuj nazwę", action: () => void copyEntityName(item.text) }, ...menuActions(item)]
+          ? [{ label: "Kopiuj nazwę", action: () => void copyText(item.text) }, ...menuActions(item)]
           : [];
         const menuOpen = openMenu === key;
         const isResolvedPerson = item.person_id != null;
