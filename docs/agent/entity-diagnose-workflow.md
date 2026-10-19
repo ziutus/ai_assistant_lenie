@@ -135,6 +135,7 @@ SELECT * FROM person_aliases WHERE alias ILIKE '%fragment%';
 | Ta sama osoba pod dwiema pisowniami/odmianami jako różne wpisy w `persons` | Brak aliasu łączącego formy | `POST /persons/<id>/aliases`, albo `merge_review_link()` jeśli to już przeszło przez `manual_review` |
 | Błąd STT w samej frazie źródłowej (np. doc #10872: "pięto Achillesa" zamiast "pięta Achillesa") | Błąd pisowni lub odmiany w transkrypcji; to poprawka tekstu, nie encji | `POST /transcript_corrections` — literalna zamiana całej frazy (opcjonalnie `scope=author`); podgląd i backfill jednego dokumentu: `POST /transcript_corrections/apply` (domyślnie `dry_run`). `ner_exclusions` służy do fałszywie pozytywnej encji, nie do naprawy tekstu źródłowego |
 | Coś ewidentnie nie-osobowego rozpoznane jako `persName` (artefakt STT, homograf) | Fałszywy pozytyw spaCy | `POST /ner_exclusions` (`entity_type='persName'`, ew. `scope='author'` dla artefaktów jednego kanału/podcastu) |
+| Nazwa produktu/usługi/systemu (np. „Starshielda” — wojskowa wersja Starlinka) rozpoznana jako `persName` | spaCy nie ma typu „produkt”, obca nazwa w odmianie wygląda jak osoba (E040) | `POST /ner_exclusions` dla wszystkich form (`Starshield`, `Starshielda`), a nazwę, jeśli jest ważna dla tekstu, dodaj ręcznie jako „🛰️ Produkt / system” z menu zaznaczenia na `/ner/:id` (`productName`, `POST /document/<id>/entities/add_mention`) |
 
 ### Organizacje (`orgName`)
 

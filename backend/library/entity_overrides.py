@@ -103,7 +103,8 @@ def convert_place_to_organization(session, entity: DocumentEntity, survivors: fr
     return target, organization
 
 
-ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName")
+# productName: a product, service or system ("Starshield", "Starlink") — a plain document-scoped manual row like eventName.
+ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName", "productName")
 
 
 def count_mentions(text: str | None, surface: str) -> int:

@@ -9,8 +9,9 @@ import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDe
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
-// Events (eventName) are added by hand from selected text; the shared panel does not draw them.
-type ChapterEntities = Partial<EntitiesByType> & { eventName?: EntityItem[] };
+// Events (eventName) and products/systems (productName) are added by hand from selected text; the shared panel
+// does not draw them.
+type ChapterEntities = Partial<EntitiesByType> & { eventName?: EntityItem[]; productName?: EntityItem[] };
 
 interface Sentence { index: number; text: string }
 interface Section {
@@ -31,11 +32,13 @@ interface EntityResponse {
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
 const KIND_LABELS: Record<HighlightKind, string> = {
   persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Wydarzenia",
+  product: "Produkty i systemy",
 };
 const KIND_COLORS: Record<HighlightKind, string> = {
   persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a", event: "#fbcfe8",
+  product: "#ddd6fe",
 };
-const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event"];
+const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event", "product"];
 
 const isShown = (item: EntityItem) => !item.is_country && item.place_verification_status !== "rejected";
 const itemName = (item: EntityItem) => item.canonical_name ?? item.text;
@@ -52,6 +55,7 @@ function filterEntities(entities: ChapterEntities | undefined, kinds: Set<Highli
     geogName: kinds.has("place") ? (entities?.geogName ?? []).filter(keep) : [],
     placeName: kinds.has("place") ? (entities?.placeName ?? []).filter(keep) : [],
     eventName: kinds.has("event") ? (entities?.eventName ?? []).filter(keep) : [],
+    productName: kinds.has("product") ? (entities?.productName ?? []).filter(keep) : [],
   };
 }
 
@@ -66,6 +70,7 @@ function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
     ...(entities.geogName ?? []).map(entry("place")),
     ...(entities.placeName ?? []).map(entry("place")),
     ...(entities.eventName ?? []).map(entry("event")),
+    ...(entities.productName ?? []).map(entry("product")),
   ];
 }
 
@@ -101,11 +106,12 @@ const groupHighlights = (groups: CountryGroup[]): HighlightEntry[] => groups.map
 
 const entityCount = (entities: ChapterEntities) =>
   (entities.persName?.length ?? 0) + (entities.orgName?.length ?? 0)
-  + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0) + (entities.eventName?.length ?? 0);
+  + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0) + (entities.eventName?.length ?? 0)
+  + (entities.productName?.length ?? 0);
 
 const allItems = (entities: ChapterEntities | undefined): EntityItem[] =>
-  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName, entities?.eventName]
-    .flatMap((items) => items ?? []);
+  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName, entities?.eventName,
+    entities?.productName].flatMap((items) => items ?? []);
 
 // Entities that appear in the given chapter and in no other content (TEMAT) chapter: once the
 // chapter is marked as noise these have no mention left in the text NER is run on.
@@ -258,18 +264,20 @@ const NerChapters = () => {
     document.querySelector("[data-focus-mark]")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   }, [focus]);
 
-  // Events live only on this page (the shared panel does not draw them), so they are removed here.
-  const deleteEvent = async (item: EntityItem) => {
-    if (item.id === undefined || !window.confirm(`Usunąć wydarzenie „${itemName(item)}” z dokumentu?`)) return;
+  // Events and products live only on this page (the shared panel does not draw them), so they are removed here.
+  const deleteManual = async (item: EntityItem, noun: string) => {
+    if (item.id === undefined || !window.confirm(`Usunąć ${noun} „${itemName(item)}” z dokumentu?`)) return;
     try {
       await axios.delete(`${apiUrl}/website_entities/${item.id}`, {
         headers, data: { decision: "deleted", reason_code: "irrelevant" },
       });
       setVersion((current) => current + 1);
     } catch {
-      setMergeError("Nie udało się usunąć wydarzenia.");
+      setMergeError(`Nie udało się usunąć: ${noun}.`);
     }
   };
+  const deleteEvent = (item: EntityItem) => deleteManual(item, "wydarzenie");
+  const deleteProduct = (item: EntityItem) => deleteManual(item, "produkt / system");
 
   // The description dialog of an event: left click on its chip or right click on its mention in the text.
   const [describing, setDescribing] = React.useState<EntityItem | null>(null);
@@ -486,6 +494,19 @@ const NerChapters = () => {
                                     {itemName(item)}</button> ×{item.count}{item.description ? " ℹ️" : ""}{" "}
                                   <button type="button" aria-label={`Usuń wydarzenie ${itemName(item)}`}
                                     onClick={() => void deleteEvent(item)}>×</button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(entities.productName?.length ?? 0) > 0 && (
+                            <div aria-label="Produkty i systemy rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
+                              <strong style={{ fontSize: "0.85em" }}>Produkty i systemy:</strong>
+                              {entities.productName?.map((item) => (
+                                <span key={item.id ?? item.text} title="Produkt lub system dodany ręcznie"
+                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: KIND_COLORS.product }}>
+                                  🛰️ {itemName(item)} ×{item.count}{" "}
+                                  <button type="button" aria-label={`Usuń produkt ${itemName(item)}`}
+                                    onClick={() => void deleteProduct(item)}>×</button>
                                 </span>
                               ))}
                             </div>
