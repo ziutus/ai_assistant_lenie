@@ -193,7 +193,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T27 | Produkt/usługa/system bez kategorii encji | spaCy nie ma typu „produkt”, więc nazwa własna usługi (Starshield) trafia do `persName`, a jej odmiany („Starshielda”, „Starshieldu”) do osobnych encji | „Starshielda” jako osoba | E040 |
 | T28 | Metonimia stolicy/osoby: ten sam byt w dwóch typach i odmianach | stolica w znaczeniu rządu („między Kijowem i Waszyngtonem”) i nazwisko jako organizacja: narzędnik nie jest sprowadzany do mianownika, więc powstaje osobny `placeName`, a wzmianki o osobie trafiają także do `orgName`; rejestr organizacji utrwala to globalnie | „Kijowem”, „Waszyngtonem” jako miejsca; „Trump” jako organizacja | E041 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T29,
+| T29 | Nazwa miejsca w związku frazeologicznym / eufemizmie, plus ucięta paczka klasyfikatora | nazwa miejsca jest tylko elementem zwrotu („odsyła do Jerozolimy” = zabija), a klasyfikator kontekstu nie ma takiej reguły; dodatkowo paczka 20 kandydatów przekraczała limit odpowiedzi, JSON się uciął i cała paczka zachowała encje bez werdyktów (fail-open) | „odsyła do Jerozolimy niewinnych cywilów” | E042 |
+
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T30,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -670,3 +672,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — aliasy „Kijowem” (org. 4) i „Waszyngtonem” (org. 38) + `POST /website_entities/<id>/to_organization`; `ner_exclusions` `orgName`: Trump, Trumpa, Trumpowi, Trumep; odświeżenie NER dokumentów bez embeddingów (9348, 9358, 9360, 9380, 10774, 11137); w dokumentach z embeddingami (9353, 9354, 9355, 9356, 9369, 10330, 10453, 10872, 10873, 10874) usunięty tylko wiersz `orgName` „Trump” (`DELETE /website_entities/<id>`, bez „reopen”, który kasuje chunki i embeddingi); źródło 27 odpięte od organizacji (`UPDATE information_sources SET organization_id = NULL`, 4 cytowania zostały) i `DELETE /organizations/45`. Kod bez zmian.
 - **Test regresyjny:** n/d — przypadek czysto danowy (wniosek z Etapu 2b: stare dane rejestru). Do rozważenia: sprowadzanie narzędnika nazw stolic do mianownika, żeby „Kijowem” nie tworzyło osobnej encji.
 - **Status:** dane naprawione i zweryfikowane w bazie NAS; zostały prawdziwe organizacje „Trump Organization” i „Trump Island” (dok. 9358). Wykluczenia `orgName` działają globalnie. Brak poprawki kodu na powtarzalne formy narzędnika.
+
+### E042 — „Jerozolima” jako miejsce we frazeologizmie „odsyła do Jerozolimy” (dok. #11137, PR n/d, 2026-10-19)
+
+- **Typ encji:** placeName
+- **Kategoria:** T29 — nazwa miejsca w związku frazeologicznym / eufemizmie, plus ucięta paczka klasyfikatora.
+- **Zdanie źródłowe:** „…rosyjskim dyktatorem, który nielegalnie najechał Ukrainę i każdego dnia odsyła do Jerozolimy niewinnych cywilów.” oraz „…kryzysie gangów, które od 2021 roku oficjalnie na drogę do Jerozolimy udało się 22 000 osób…” (kanał „Na Wschód od Bliskiego Wschodu”; eufemizm oznacza zabijanie).
+- **Objaw:** `placeName` „Jerozolima” (encja 20887, 2 wzmianki, geokodowana) w panelu `/ner/11137`, choć żadna wzmianka nie dotyczy miasta; brak tagu `miejsce-jerozolima`.
+- **Przyczyna źródłowa:** dwie warstwy. (1) `place_context_classifier`: paczki po 20 kandydatów przy limicie odpowiedzi 700 tokenów — dla ok. 27 kandydatów dok. #11137 pierwsza paczka dostała ucięty JSON, `json.loads` rzucił wyjątek, a fail-open zostawił całą paczkę bez werdyktów (w `ner_context_classifications` były tylko 7 ostatnich kandydatów; log `lenie-worker`: „Contextual place verification failed for document 11137; retaining batch”). (2) Prompt nie miał reguły dla nazwy miejsca użytej we frazeologizmie. Ten sam klasyfikator osób wprost napisał o „Jerozolim” „odnosi się do miejsca”.
+- **Poprawka:** kod — `library/place_context_classifier.py`: paczka 8 kandydatów, `MAX_RESPONSE_TOKENS=1500`, `_classify_with_split()` dzieli paczkę na połowy przy błędzie parsowania JSON (pojedynczy kandydat z błędem odpada, fail-open), nowa reguła `not_place` dla frazeologizmów i eufemizmów (z kontrprzykładem „pielgrzymka do Jerozolimy”). Dane — `DELETE /website_entities/20887` po wdrożeniu (audytowane, odtwarzane po odświeżeniu NER).
+- **Test regresyjny:** `backend/tests/unit/test_place_context_classifier.py::test_truncated_json_batch_is_split_and_every_candidate_gets_a_verdict`, `test_single_candidate_with_unparseable_json_is_dropped_without_raising`, `test_prompt_marks_place_names_inside_idioms_as_not_place` (zdanie z #11137).
+- **Status:** kod poprawiony w PR, wdrożenie i naprawa danych w toku. Codex niedostępny (`helper_unknown_error`), kod napisał Claude Code. Ten sam wzorzec ucięcia paczki widać w logach dla dok. 9380 oraz w klasyfikatorze osób (`person_context_classifier`, ten sam `json.loads` w `_classify_batch`) — nieruszony, poza zakresem.
