@@ -518,6 +518,21 @@ class TestAggregateNormalization:
             },
         }
 
+    def test_doc_11137_nationalities_are_not_separate_places(self):
+        # Real sentences from doc #11137 (youtube transcript): "Także kiedyś dominowali Algierczycy
+        # dawno temu, teraz już tam Algierczycy są marginesem." / "Zresztą nawet Polacy przecież,
+        # którzy tam mieszkają wiedzą o czymś..." — spaCy lemmatized them to "Algierczyk"/"Polak".
+        entities = [
+            {"text": "Algierczycy", "label": "geogName", "lemma": "Algierczyk", "pos": "NOUN"},
+            {"text": "Algierczycy", "label": "geogName", "lemma": "Algierczyk", "pos": "NOUN"},
+            {"text": "Polacy", "label": "placeName", "lemma": "Polak", "pos": "NOUN"},
+            {"text": "Polsce", "label": "placeName", "lemma": "Polska", "pos": "PROPN"},
+        ]
+        assert aggregate_entities(entities) == {
+            ("geogName", "Algieria"): 2,
+            ("placeName", "Polska"): 2,
+        }
+
     @pytest.mark.parametrize("label,expected_label", [
         ("placeName", "placeName"), ("geogName", "geogName"), ("orgName", "placeName"),
     ])

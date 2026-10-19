@@ -189,6 +189,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036 |
 | T24 | Miasto oznaczone przez spaCy jako organizacja | rzadka pisownia + odmiana („Tela Avivwu”) nie przypomina niczego znanego, więc model typuje ją jako `orgName` | „Tela Avivwu” → Tel Awiw | E037 |
 | T25 | Błąd STT w tekście źródłowym (pisownia/odmiana frazy) | transkrypcja zapisuje frazę w złej formie gramatycznej, a tekst trafia bez zmian do czytnika i NER; dotyczy tekstu, nie encji | „pięto Achillesa” zamiast „pięta Achillesa” | E038 |
+| T26 | Reguły NER z obrazu przesłonięte starą kopią w wolumenie | plik reguł w `data/` jest ukryty pod wolumenem `lenie-ai-data` (`/app/data`) ze starą kopią, więc nowy kod czyta stare dane i wzorce z repo nie działają na produkcji | „Polacy”, „Algierczycy” jako osobne miejsca | E039 |
 
 Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T25,
 ...) zamiast naciągać istniejącą.
@@ -634,3 +635,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — `transcript_corrections` (`backend/library/transcript_corrections.py`): literalne, frazowe zamiany (nigdy pojedyncze słowa), zakres global lub per `byline`, stosowane przy zapisie napisów/transkrypcji YouTube (`youtube_processing._store_transcript_text`), więc czytnik i NER widzą poprawiony tekst. REST `/transcript_corrections`, podgląd i backfill jednego dokumentu: `POST /transcript_corrections/apply` (domyślnie `dry_run`). Seed: „pięto Achillesa” → „pięta Achillesa”. Dane — #10872 poprawiony przez backfill (1 trafienie).
 - **Test regresyjny:** `test_transcript_corrections.py` (cytat zdania z #10872, `piętro` / `piętę Achillesa` / `pięty Achillesa` bez zmian, granice słów, wielkość liter, zakres per autor, odrzucenie pojedynczego słowa), `test_transcript_corrections_routes.py`, `test_youtube_processing_orm.py` (hook zapisu).
 - **Status:** kod w PR #856 (draft), wdrożony na NAS. Encja „Achilles” (19893) czeka na decyzję o zakresie `ner_exclusions` (`author` lub `global`); backfill nie przebudowuje encji ani chunków.
+
+### E039 — „Polak” i „Algierczyk” jako miejsca (dok. #11137, PR n/d, 2026-10-19)
+
+- **Typ encji:** placeName / geogName
+- **Kategoria:** T26 — reguły NER z obrazu przesłonięte starą kopią w wolumenie; do tego T1 (etnonim jako miejsce) dla Algierii, której brakowało we wzorcach.
+- **Zdanie źródłowe:** „Także kiedyś dominowali Algierczycy dawno temu, teraz już tam Algierczycy są marginesem.” oraz „Zresztą nawet Polacy przecież, którzy tam mieszkają wiedzą o czymś…”
+- **Objaw:** „Polak” (encja 20229, geokoder trafił w górę „Polak” w woj. lubelskim; klasyfikator kontekstu odrzucił ją jako `not_place`) i „Algierczyk” (encja 20063, bez geokodu) wisiały w panelu `/ner` jako osobne miejsca, choć to narodowości.
+- **Przyczyna źródłowa:** `demonym_patterns` (Polska itd.) były w repozytorium od PR dla dok. #10756, ale na NAS `/app/data` to wolumen `lenie-ai-data`, który przesłania `data/` z obrazu; leżała tam stara, 427-bajtowa kopia `ner_normalization.json` z 13 lipca bez wzorców demonimów. Kod był aktualny, dane nie — wzorce nigdy nie zadziałały na produkcji. Osobno brakowało wzorca dla Algierii.
+- **Poprawka:** kod — plik reguł przeniesiony do `backend/library/ner_normalization_rules.json` (obraz kopiuje `library/`, wolumen go nie przesłania), `RULES_PATH` zmieniony, dopisany wzorzec „Algieria”. Dane — odświeżenie NER dok. #11137 po wdrożeniu.
+- **Test regresyjny:** `test_ner_normalization.py` (`test_shipped_rules_file_is_not_under_a_data_directory`, pełny paradygmat „Algieria”, negatywne „Algier”/„Algierii”), `test_ner_client.py::test_doc_11137_nationalities_are_not_separate_places`.
+- **Status:** kod w PR; wdrożenie i odświeżenie dok. #11137 w toku. Inne dokumenty przetworzone od 13 lipca mogą mieć te same fałszywe encje-narodowości (audyt hurtowy nie wykonany).
