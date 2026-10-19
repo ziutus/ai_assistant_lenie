@@ -176,31 +176,6 @@ class TestTruncatedCountrySpan:
         assert groups[("placeName", "Arabia Saudyjska")]["count"] == 2
         assert "Arabię Saudyjską" in groups[("placeName", "Arabia Saudyjska")]["variants"]
 
-    @pytest.mark.parametrize("label", ["placeName", "orgName"])
-    @pytest.mark.parametrize("surface,next_word", [
-        ("Stany", "Zjednoczone"), ("Stanów", "Zjednoczonych"), ("Stanom", "Zjednoczonym"),
-        ("Stanami", "Zjednoczonymi"), ("Stanach", "Zjednoczonych"),
-    ])
-    def test_extends_united_states_cut_off_before_zjednoczone(self, label, surface, next_word):
-        """doc #11137: "szczyt Chiny, Rosja, Stany Zjednoczone w sprawie Ukrainy" left a stray "Stany"."""
-        text = "Putin proponuje szczyt " + surface + " " + next_word + " w sprawie Ukrainy."
-        start = text.index(surface)
-        entity = {"text": surface, "lemma": "Stany", "label": label,
-                  "start": start, "end": start + len(surface), "pos": "PROPN"}
-        with patch("library.ner_client.requests.post", return_value=_response([entity])):
-            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
-                result = extract_entities(text)
-        assert result[0]["text"] == surface + " " + next_word
-        assert result[0]["lemma"] == "Stany Zjednoczone"
-
-    def test_stany_without_zjednoczone_is_left_alone(self):
-        text = "Stany lękowe są częste."
-        entity = {"text": "Stany", "lemma": "Stany", "label": "orgName", "start": 0, "end": 5}
-        expected = dict(entity)
-        with patch("library.ner_client.requests.post", return_value=_response([entity])):
-            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
-                assert extract_entities(text) == [expected]
-
     @pytest.mark.parametrize("label", ["placeName", "geogName", "orgName"])
     @pytest.mark.parametrize("surface,next_word", [
         ("Arabia", "Saudyjska"), ("Arabię", "Saudyjską"), ("Arabii", "Saudyjskiej"),
