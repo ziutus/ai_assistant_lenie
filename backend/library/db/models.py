@@ -1392,6 +1392,37 @@ class DocumentRemovedLine(Base):
         return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
 
 
+class TranscriptCorrection(Base):
+    """Human-curated literal phrase corrections applied when STT text arrives."""
+
+    __tablename__ = "transcript_corrections"
+    __table_args__ = (
+        CheckConstraint("scope IN ('global', 'author')", name="ck_transcript_corrections_scope"),
+        CheckConstraint(
+            "(scope = 'global' AND author IS NULL) OR "
+            "(scope = 'author' AND author IS NOT NULL AND trim(author) <> '')",
+            name="ck_transcript_corrections_author",
+        ),
+        Index("uq_transcript_corrections_pattern_scope_author",
+              sa_text("lower(pattern)"), "scope", sa_text("coalesce(author, '')"), unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pattern: Mapped[str] = mapped_column(Text, nullable=False)
+    replacement: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'global'"))
+    author: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now(),
+    )
+    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    last_hit_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+
 class CleanupRule(Base):
     """Reguła usuwania linii z artykułu wraz z pochodzeniem i licznikiem trafień."""
 
