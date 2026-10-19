@@ -195,7 +195,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 
 | T29 | Nazwa miejsca w związku frazeologicznym / eufemizmie, plus ucięta paczka klasyfikatora | nazwa miejsca jest tylko elementem zwrotu („odsyła do Jerozolimy” = zabija), a klasyfikator kontekstu nie ma takiej reguły; dodatkowo paczka 20 kandydatów przekraczała limit odpowiedzi, JSON się uciął i cała paczka zachowała encje bez werdyktów (fail-open) | „odsyła do Jerozolimy niewinnych cywilów” | E042 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T30,
+| T30 | Nazwa kraju odrzucona przez filtr POS | Root poprawnego spanu kraju ma błędny POS, więc wzmianka znika przed kanonikalizacją z gazetteera | „Sri Lanki”, root „Sri” z `POS=X` | E043 |
+
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T31,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -683,3 +685,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — `library/place_context_classifier.py`: paczka 8 kandydatów, `MAX_RESPONSE_TOKENS=1500`, `_classify_with_split()` dzieli paczkę na połowy przy błędzie parsowania JSON (pojedynczy kandydat z błędem odpada, fail-open), nowa reguła `not_place` dla frazeologizmów i eufemizmów (z kontrprzykładem „pielgrzymka do Jerozolimy”). Dane — `DELETE /website_entities/20887` po wdrożeniu (audytowane, odtwarzane po odświeżeniu NER). Przy pierwszym przebiegu poprawionego klasyfikatora wyszedł ukryty błąd: werdykt `organization` dla miejsca „MSZU” kończył się `UniqueViolation` w `document_organizations`, bo rejestr zmapował je na organizację „mSZU” (1211) już podpiętą do dokumentu przez wiersz `orgName` „mSZU”; `place_verification._reclassify_as_organization()` scala teraz wiersz z istniejącym linkiem zamiast dopisywać drugi.
 - **Test regresyjny:** `backend/tests/unit/test_place_context_classifier.py::test_truncated_json_batch_is_split_and_every_candidate_gets_a_verdict`, `test_single_candidate_with_unparseable_json_is_dropped_without_raising`, `test_prompt_marks_place_names_inside_idioms_as_not_place` (zdanie z #11137); `test_place_verification.py::TestReclassifyAsOrganizationExistingLink`.
 - **Status:** żywy bug naprawiony w kodzie, wdrożony na NAS (PR #862); reguła „blok polityczny” zawężona do słowa „Zachód” (nazwy państw/kontynentów i nazwiska → `place`/`not_place`; „Cornin”, „Interfaksu” odrzucone); potoczne „w Stanach” (= USA) nadal bywa czytane jako organizacja — naprawione danymi (`to_place` → „Stany Zjednoczone”); po odświeżeniu NER dok. #11137 klasyfikator ocenił 41 kandydatów, „Jerozolimy” → `not_place`/high („użyta metaforycznie jako symbol śmierci”), encja 22275 ma `rejected`/`context_not_place`, bez tagu `miejsce-jerozolima`; `DELETE` nie był potrzebny. Skutek uboczny pełnego przebiegu: „Europa”, „Ameryka”, „Stany” zostały `orgName` (istniejąca reguła „blok polityczny”), a stare tagi `miejsce-europa/ameryka/uran/cornin` zostały w dokumencie. Codex niedostępny (`helper_unknown_error`), kod napisał Claude Code. Ten sam wzorzec ucięcia paczki widać w logach dla dok. 9380 oraz w klasyfikatorze osób (`person_context_classifier`, ten sam `json.loads` w `_classify_batch`) — nieruszony, poza zakresem.
+
+### E043 — „Sri Lanki” znika przez POS=X tokenu „Sri” (dok. #11137, 2026-10-19)
+
+- **Typ encji:** placeName
+- **Kategoria:** T30 — nazwa kraju odrzucona przez filtr POS.
+- **Zdanie źródłowe:** „siły te składają się obecnie z ponad 2000 żołnierzy z Czadu, Salwadoru, Gwatemalii, Jamajki, Mongolii i Sri Lanki.”
+- **Objaw:** brak Sri Lanki w zagregowanych miejscach mimo wzmianki w tekście.
+- **Przyczyna źródłowa:** spaCy zwraca span „Sri Lanki” z etykietą `placeName` i lematem „Sri Lanka”, ale jego root „Sri” ma `POS=X`. Filtr w `aggregate_entities_detailed()` odrzuca wzmiankę przed sprawdzeniem gazetteera, który już rozpoznaje tę odmianę.
+- **Poprawka:** kod — wyjątek od odrzucenia przez filtr POS w `backend/library/ner_client.py` wyłącznie dla `POS=X`, etykiet z `COUNTRY_CHECK_TYPES` i powierzchni rozpoznanej przez `canonical_country_for_surface(surface)`. Inne POS (ADJ „Polski”, „Izraelski”), filtr małej litery i logika nazwisk pozostają bez zmian. Kod napisał Codex, zawężenie do `POS=X` Claude Code (Codex nie mógł uruchomić testów w swoim sandboxie).
+- **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_11137_sri_lanki_survives_unknown_root_pos` — przed poprawką nie przechodzi; dodatkowy test odrzuca niekrajowe i małoliterowe powierzchnie z `POS=X`.
+- **Status:** poprawka lokalna w kodzie; bez wdrożenia i odświeżenia encji dok. #11137.
