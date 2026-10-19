@@ -66,6 +66,20 @@ Połącz się z bazą NAS przez psql (`docs/CICD/NAS_Deployment.md`,
    `library/entity_service.py`). Obie tabele mają REST API: `GET/POST
    /ner_exclusions`, `GET/POST /ner_corrections`.
 
+   Zanim uznasz, że dla błędu STT brakuje mechanizmu, sprawdź jeszcze
+   `ner_channel_glossary` (aliasy i warianty fonetyczne nazw per kanał,
+   stosowane tylko na kopii tekstu przed NER — nie zmieniają tekstu w czytniku)
+   i `transcript_corrections` (literalne zamiany całych fraz stosowane przy
+   zapisie transkrypcji, czyli poprawiają tekst widoczny w czytniku i w NER):
+
+   ```sql
+   SELECT * FROM transcript_corrections WHERE pattern ILIKE '%fragment%';
+   ```
+
+   Wybór: zła nazwa własna/wariant fonetyczny kanału → glosariusz; zła
+   forma gramatyczna lub pisownia frazy w tekście → `transcript_corrections`;
+   fałszywa encja → `ner_exclusions`.
+
 Na tym etapie powinieneś już wiedzieć: czy encja w ogóle istnieje, jak
 wygląda zdanie źródłowe, i czy to nowy przypadek, czy coś, co powinna była
 złapać istniejąca reguła (a nie złapała — to osobny bug do zdiagnozowania).
@@ -119,6 +133,7 @@ SELECT * FROM person_aliases WHERE alias ILIKE '%fragment%';
 | Encja w ogóle nie trafiła do `document_persons` | Filtr jednowyrazowych wzmianek bez trafienia w Wikidata (`person_registry.py`) potraktował ją jako szum | Sprawdź czy to faktycznie osoba; jeśli tak, ale mało znana/lokalna — to oczekiwane, wpis i tak trafi do rejestru bez QID przy kolejnym wystąpieniu z pełniejszym kontekstem |
 | `confidence='manual_review'`, ktoś inny niż powinien | LLM (`confirm_person_with_llm`) źle rozstrzygnął ujednoznacznienie (kilku kandydatów w Wikidata o tym samym nazwisku) | To do ręcznej decyzji w `GET/PATCH /persons_review`, nie automatyczna reguła |
 | Ta sama osoba pod dwiema pisowniami/odmianami jako różne wpisy w `persons` | Brak aliasu łączącego formy | `POST /persons/<id>/aliases`, albo `merge_review_link()` jeśli to już przeszło przez `manual_review` |
+| Błąd STT w samej frazie źródłowej (np. doc #10872: "pięto Achillesa" zamiast "pięta Achillesa") | Błąd pisowni lub odmiany w transkrypcji; to poprawka tekstu, nie encji | `POST /transcript_corrections` — literalna zamiana całej frazy (opcjonalnie `scope=author`); podgląd i backfill jednego dokumentu: `POST /transcript_corrections/apply` (domyślnie `dry_run`). `ner_exclusions` służy do fałszywie pozytywnej encji, nie do naprawy tekstu źródłowego |
 | Coś ewidentnie nie-osobowego rozpoznane jako `persName` (artefakt STT, homograf) | Fałszywy pozytyw spaCy | `POST /ner_exclusions` (`entity_type='persName'`, ew. `scope='author'` dla artefaktów jednego kanału/podcastu) |
 
 ### Organizacje (`orgName`)
@@ -331,6 +346,23 @@ rozpoznawanie miejsc/osób/organizacji" oraz jako pełny ślad audytowy.
 4. Commituj wpis w tym samym PR co kod/dokumentacja (jak Etap 6); dla
    przypadków czysto danowych bez własnego PR — jako osobny mały PR
    dokumentacyjny.
+
+## Pułapki środowiska (Windows, sesja w worktree)
+
+- `psql -c` z Basha psuje polskie znaki w argumencie (`invalid byte sequence`).
+  Używaj wzorców bez diakrytyków (`%chilles%`) albo narzędzia PowerShell z
+  `$env:PGCLIENTENCODING='UTF8'`. Odczyty REST z polskim JSON-em wysyłaj jako
+  bajty UTF-8.
+- Sesja izolowana w worktree odrzuca złożone polecenia Basha (`cd … &&`,
+  prefiksy zmiennych, przekierowania). Uruchamiaj proste, osobne polecenia.
+  Po zmianie katalogu sprawdź bieżący (`backend/` zmienia ścieżki do
+  `infra/docker/nas-deploy.sh` i do `git add`; używaj `git add -A ':/backend'`).
+- Wywołania REST na NAS wymagają klucza serwisowego (`LENIE_API_KEY` w profilu
+  użytkownika); `POST` bez niego zwraca 401.
+- Jeśli Codex padł w połowie (np. limit użycia), nie zakładaj ani sukcesu, ani
+  porażki: obejrzyj `git status`/`git diff` w worktree, uruchom testy i `ruff`
+  sam i dokończ lub zleć resztę po resecie limitu — powiedz to wprost
+  użytkownikowi.
 
 ## Kryterium ukończenia
 
