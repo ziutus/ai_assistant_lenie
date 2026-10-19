@@ -157,6 +157,8 @@ interface MenuEntry {
   action?: () => void;
   // Navigation entry (rendered as a router link) instead of an in-panel action.
   to?: string;
+  // Submenu: the entry expands in place (no flyout, so it works on touch screens).
+  children?: MenuEntry[];
 }
 
 // Tooltip for a chip that is a cited source: "gazeta · telegraph.co.uk · opis".
@@ -236,6 +238,12 @@ export const EntityChips = ({
 }) => {
   const [openMenu, setOpenMenu] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLSpanElement>(null);
+  const panelRef = React.useRef<HTMLSpanElement>(null);
+  const [openSub, setOpenSub] = React.useState<string | null>(null);
+  // Keeps a long menu on screen: opens upwards when there is more room above,
+  // scrolls when it fits neither way, and right-aligns near the right edge.
+  const [placement, setPlacement] = React.useState<{ up: boolean; right: boolean; maxHeight?: number }>(
+    { up: false, right: false });
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
   React.useEffect(() => {
     if (openMenu === null) return;
@@ -256,6 +264,25 @@ export const EntityChips = ({
     };
   }, [openMenu]);
   React.useEffect(() => setOpenMenu(null), [items, menuActions]);
+  React.useEffect(() => setOpenSub(null), [openMenu]);
+  React.useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const chip = menuRef.current;
+    if (openMenu === null || !panel || !chip) return;
+    const chipRect = chip.getBoundingClientRect();
+    const below = window.innerHeight - chipRect.bottom - 8;
+    const above = chipRect.top - 8;
+    const height = panel.scrollHeight;
+    const up = height > below && above > below;
+    const room = up ? above : below;
+    const next = {
+      up,
+      right: chipRect.left + panel.offsetWidth > window.innerWidth - 8,
+      maxHeight: height > room ? Math.max(room, 120) : undefined,
+    };
+    setPlacement((prev) => (prev.up === next.up && prev.right === next.right && prev.maxHeight === next.maxHeight
+      ? prev : next));
+  }, [openMenu, openSub]);
   if (!items.length) {
     return null;
   }
@@ -347,24 +374,51 @@ export const EntityChips = ({
           >
             {isDimmed ? <span style={{ opacity: 0.55 }}>{chipContent}</span> : chipContent}
             {menuOpen && entries.length > 0 && (
-              <span role="menu" aria-label={`Działania: ${item.text}`}
-                style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, padding: 4,
+              <span role="menu" ref={panelRef} aria-label={`Działania: ${item.text}`}
+                style={{ position: "absolute", ...(placement.up ? { bottom: "100%" } : { top: "100%" }),
+                  ...(placement.right ? { right: 0 } : { left: 0 }), zIndex: 10, padding: 4,
                   background: "white", border: "1px solid #b9c8de", borderRadius: 6, minWidth: 230,
+                  maxWidth: "calc(100vw - 16px)", maxHeight: placement.maxHeight, overflowY: "auto",
                   boxShadow: "0 2px 8px #0002" }}>
-                {entries.map((entry) => entry.to ? (
-                  <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => setOpenMenu(null)}
-                    style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px",
-                      color: "inherit", textDecoration: "none", boxSizing: "border-box" }}>
-                    {entry.label}
-                  </Link>
-                ) : (
-                  <button key={entry.label} type="button" role="menuitem"
-                    style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px",
-                      background: "transparent", border: 0, cursor: "pointer" }}
-                    onClick={() => { setOpenMenu(null); entry.action?.(); }}>
-                    {entry.label}
-                  </button>
-                ))}
+                {entries.map((entry) => {
+                  const itemStyle: React.CSSProperties = { display: "block", width: "100%", textAlign: "left",
+                    padding: "6px 8px", boxSizing: "border-box" };
+                  if (entry.to) {
+                    return (
+                      <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => setOpenMenu(null)}
+                        style={{ ...itemStyle, color: "inherit", textDecoration: "none" }}>
+                        {entry.label}
+                      </Link>
+                    );
+                  }
+                  if (entry.children) {
+                    const subOpen = openSub === entry.label;
+                    return (
+                      <React.Fragment key={entry.label}>
+                        <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={subOpen}
+                          style={{ ...itemStyle, background: "transparent", border: 0, cursor: "pointer" }}
+                          onClick={() => setOpenSub(subOpen ? null : entry.label)}>
+                          {entry.label} {subOpen ? "▾" : "▸"}
+                        </button>
+                        {subOpen && entry.children.map((child) => (
+                          <button key={child.label} type="button" role="menuitem"
+                            style={{ ...itemStyle, paddingLeft: 24, background: "transparent", border: 0,
+                              cursor: "pointer" }}
+                            onClick={() => { setOpenMenu(null); child.action?.(); }}>
+                            {child.label}
+                          </button>
+                        ))}
+                      </React.Fragment>
+                    );
+                  }
+                  return (
+                    <button key={entry.label} type="button" role="menuitem"
+                      style={{ ...itemStyle, background: "transparent", border: 0, cursor: "pointer" }}
+                      onClick={() => { setOpenMenu(null); entry.action?.(); }}>
+                      {entry.label}
+                    </button>
+                  );
+                })}
               </span>
             )}
           </span>
@@ -1289,10 +1343,13 @@ const EntitiesPanel = ({
     } });
     return entries;
   };
-  const relevanceEntries = (item: EntityItem): MenuEntry[] => RELEVANCE_OPTIONS.map((option) => ({
-    label: `${(item.relevance ?? "central") === option.value ? "✓" : "○"} Związek z tematem: ${option.label}`,
-    action: () => void handleRelevanceChange(item, option.value),
-  }));
+  const relevanceEntries = (item: EntityItem): MenuEntry[] => [{
+    label: `Związek z tematem: ${RELEVANCE_OPTIONS.find((option) => option.value === (item.relevance ?? "central"))?.label}`,
+    children: RELEVANCE_OPTIONS.map((option) => ({
+      label: `${(item.relevance ?? "central") === option.value ? "✓" : "○"} ${option.label}`,
+      action: () => void handleRelevanceChange(item, option.value),
+    })),
+  }];
   const personMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "persName"),
     ...relevanceEntries(item),
