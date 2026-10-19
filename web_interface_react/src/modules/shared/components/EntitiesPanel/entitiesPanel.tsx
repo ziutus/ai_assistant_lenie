@@ -1,4 +1,5 @@
 import React from "react";
+import "./entitiesPanel.css";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
@@ -10,7 +11,10 @@ import OrganizationMergePreview, { type MergePreviewData } from "./organizationM
 // NER entities detected in the document (backend: GET/POST /website_entities,
 // table document_entities — see docs/ner-integration-plan.md).
 
+export type EntityRelevance = "central" | "related" | "figurative";
+
 export interface EntityItem {
+  relevance?: EntityRelevance;
   id?: number;
   text: string;
   count: number;
@@ -192,6 +196,28 @@ async function copyEntityName(text: string): Promise<boolean> {
   }
 }
 
+const RELEVANCE_OPTIONS = [
+  { value: "central", label: "Główny temat", title: "Bezpośrednio dotyczy głównego tematu dokumentu" },
+  { value: "related", label: "Pośrednio", title: "Pośredni związek z tematem dokumentu" },
+  { value: "figurative", label: "Przenośnie", title: "Wzmianka przenośna; miejsce nie jest pokazywane na mapie" },
+] as const;
+
+const RelevanceControl = ({ item, disabled, onChange }: {
+  item: EntityItem;
+  disabled?: boolean;
+  onChange: (item: EntityItem, relevance: EntityRelevance) => void;
+}) => {
+  const name = React.useId();
+  return <span className="entity-relevance" role="group" aria-label={`Związek z tematem: ${item.text}`}>
+    {RELEVANCE_OPTIONS.map((option) => <label key={option.value} title={option.title}>
+      <input type="radio" name={name} value={option.value} disabled={disabled}
+        checked={(item.relevance ?? "central") === option.value}
+        onChange={() => onChange(item, option.value)} />
+      {option.label}
+    </label>)}
+  </span>;
+};
+
 export const EntityChips = ({
   label,
   items,
@@ -203,6 +229,8 @@ export const EntityChips = ({
   highlightMode,
   onHighlight,
   menuActions,
+  onRelevanceChange,
+  relevanceDisabled,
 }: {
   label: string;
   items: EntityItem[];
@@ -219,6 +247,8 @@ export const EntityChips = ({
   // Edit-mode buttons rendered inside each chip — used by the editor panel.
   actions?: (item: EntityItem) => React.ReactNode;
   menuActions?: (item: EntityItem) => MenuEntry[];
+  onRelevanceChange?: (item: EntityItem, relevance: EntityRelevance) => void;
+  relevanceDisabled?: boolean;
   // When true, every chip becomes a click-to-highlight button (calls
   // onHighlight instead of navigating) — used by the reader's mode toggle.
   highlightMode?: boolean;
@@ -307,6 +337,8 @@ export const EntityChips = ({
               </span>
             )}
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
+            {onRelevanceChange && item.id != null && <RelevanceControl item={item}
+              disabled={relevanceDisabled} onChange={onRelevanceChange} />}
             {actions && actions(item)}
           </>
         );
@@ -314,6 +346,7 @@ export const EntityChips = ({
           <span
             key={key}
             ref={menuOpen ? menuRef : undefined}
+            className={`entity-chip entity-chip--${item.relevance ?? "central"}`}
             style={{
               ...chipStyle,
               position: "relative",
@@ -323,8 +356,11 @@ export const EntityChips = ({
                 border: isDimmed ? "1px solid #d9a4418c" : "1px solid #d9a441" } : {}),
               ...(isResolvedPerson ? { background: isDimmed ? "#e3edf98c" : "#e3edf9",
                 border: isDimmed ? "1px solid #7ba3d08c" : "1px solid #7ba3d0" } : {}),
+              ...(item.relevance && item.relevance !== "central" ? { background: undefined, border: undefined } : {}),
             }}
-            title={historicalTitle ?? personTitle
+            title={(item.relevance && item.relevance !== "central"
+              ? RELEVANCE_OPTIONS.find((option) => option.value === item.relevance)?.title : undefined)
+              ?? historicalTitle ?? personTitle
               ?? sourceTitleOf(item)
               ?? item.organization_description
               ?? facilityTitle
@@ -506,6 +542,7 @@ const EntitiesPanel = ({
   const [renameFor, setRenameFor] = React.useState<EntityItem | null>(null);
   const [renameText, setRenameText] = React.useState("");
   const [isRenaming, setIsRenaming] = React.useState(false);
+  const [isSettingRelevance, setIsSettingRelevance] = React.useState(false);
   // "Zmień na miejsce" (person -> place) and "Podziel" (one place entity listing several places) forms.
   const [toPlaceFor, setToPlaceFor] = React.useState<EntityItem | null>(null);
   const [toPlaceText, setToPlaceText] = React.useState("");
@@ -788,6 +825,22 @@ const EntitiesPanel = ({
       }
     } finally {
       setIsSavingSource(false);
+    }
+  };
+
+  const handleRelevanceChange = async (item: EntityItem, relevance: EntityRelevance) => {
+    if (item.id == null || isSettingRelevance || externalDisabled) return;
+    setIsSettingRelevance(true);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/website_entities/${item.id}/relevance`, { relevance }, { headers: jsonHeaders });
+      fetchEntities();
+      setMessage("Związek encji z tematem został zapisany.");
+    } catch (error: unknown) {
+      setMessage("Nie udało się zapisać związku encji z tematem.");
+      if (axios.isAxiosError(error) && error.response?.status === 404) fetchEntities();
+    } finally {
+      setIsSettingRelevance(false);
     }
   };
 
@@ -1465,6 +1518,7 @@ const EntitiesPanel = ({
     return (
       <>
         <EntityChips label={"Osoby"} items={source?.persName ?? []} menuActions={personMenuActions}
+          onRelevanceChange={handleRelevanceChange} relevanceDisabled={isSettingRelevance || externalDisabled}
           actions={editMode ? editActions("persName") : undefined} />
         <EntityChips label={"Źródła cytowane"} items={scopedOrganizations.filter((item) => item.information_source_id != null)}
           linkInformationSources menuActions={organizationMenuActions}
@@ -1473,6 +1527,7 @@ const EntitiesPanel = ({
           linkOrganizations menuActions={organizationMenuActions}
           actions={editMode ? editActions("orgName") : undefined} />
         <EntityChips label={"Miejsca"} items={scopedPlaces} menuActions={placeMenuActions}
+          onRelevanceChange={handleRelevanceChange} relevanceDisabled={isSettingRelevance || externalDisabled}
           actions={(item) => <>
             {item.place_verification_status === "needs_review" && item.proposed_geocode_id != null
               && item.proposed_lat != null && item.proposed_lon != null && (
@@ -1543,6 +1598,7 @@ const EntitiesPanel = ({
       )}
       {chapterRenderer ? chapterRenderer(renderGroups) : <>
       <EntityChips label={"Osoby"} items={persons} menuActions={personMenuActions}
+          onRelevanceChange={handleRelevanceChange} relevanceDisabled={isSettingRelevance || externalDisabled}
         actions={editMode ? editActions("persName") : undefined} />
       <EntityChips
         label={"Źródła cytowane"}
@@ -1559,6 +1615,7 @@ const EntitiesPanel = ({
         actions={editMode ? editActions("orgName") : undefined}
       />
       <EntityChips label={"Miejsca"} items={places} menuActions={placeMenuActions}
+          onRelevanceChange={handleRelevanceChange} relevanceDisabled={isSettingRelevance || externalDisabled}
         actions={(item) => <>
           {item.place_verification_status === "needs_review" && item.proposed_geocode_id != null
             && item.proposed_lat != null && item.proposed_lon != null && (

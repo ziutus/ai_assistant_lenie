@@ -782,3 +782,34 @@ it("saves a Wikipedia article for a place and shows the 📖 link", async () => 
   expect((await screen.findByRole("link", { name: `Wikipedia: ${place.text}` })).getAttribute("href"))
     .toBe("https://en.wikipedia.org/wiki/Aden");
 });
+
+it.each(["related", "figurative"] as const)("sets person and place relevance to %s without edit mode", async (relevance) => {
+  const person = { id: 11, text: "Trump", count: 1 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [place], placeName: [] } } }));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  for (const item of [person, place]) {
+    const control = await screen.findByRole("group", { name: `Związek z tematem: ${item.text}` });
+    expect((within(control).getByRole("radio", { name: "Główny temat" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(within(control).getByRole("radio", { name: relevance === "related" ? "Pośrednio" : "Przenośnie" }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(`/website_entities/${item.id}/relevance`,
+      { relevance }, { headers: expect.objectContaining({ "Content-Type": "application/json" }) }));
+    await waitFor(() => expect((within(control).getByRole("radio", { name: "Główny temat" }) as HTMLInputElement).disabled).toBe(false));
+  }
+});
+
+it("retains the previous relevance when saving fails", async () => {
+  vi.mocked(axios.patch).mockRejectedValue(new Error("offline"));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  const control = await screen.findByRole("group", { name: `Związek z tematem: ${place.text}` });
+  fireEvent.click(within(control).getByRole("radio", { name: "Przenośnie" }));
+  expect(await screen.findByText("Nie udało się zapisać związku encji z tematem.")).toBeTruthy();
+  expect((within(control).getByRole("radio", { name: "Główny temat" }) as HTMLInputElement).checked).toBe(true);
+});
+
+it.each(["related", "figurative"] as const)("styles %s chips and explains their relevance", (relevance) => {
+  render(<EntityChips label="Miejsca" items={[{ ...place, relevance }]} />);
+  const chip = screen.getByText(place.text).closest(".entity-chip");
+  expect(chip?.classList.contains(`entity-chip--${relevance}`)).toBe(true);
+  expect(chip?.getAttribute("title")).toContain(relevance === "related" ? "Pośredni związek" : "Wzmianka przenośna");
+});

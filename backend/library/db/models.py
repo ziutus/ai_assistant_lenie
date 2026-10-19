@@ -1992,6 +1992,8 @@ class DocumentEntity(Base):
     # source: 'ner' (default, refresh_document_entities() may replace) | 'manual'
     # (survives refresh — set by merge_document_entities())
     source: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'ner'"))
+    # relevance: manual relation to the document topic (central | related | figurative)
+    relevance: Mapped[str] = mapped_column(String(12), nullable=False, server_default=sa_text("'central'"))
     # description: reviewer-approved text (only eventName entities use it so far)
     description: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(

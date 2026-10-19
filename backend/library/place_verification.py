@@ -256,6 +256,8 @@ def place_needs_review(entity: DocumentEntity) -> bool:
 
 def add_place_tag(doc, entity: DocumentEntity) -> str | None:
     """Shared last gate before writing a place tag; never changes the cache."""
+    if entity.relevance == "figurative":
+        return None
     if place_needs_review(entity) or entity.geocode is None or not entity.geocode.resolved:
         return None
     canonical = canonical_place_name(entity.entity_text, entity.geocode.display_name or "")
@@ -342,7 +344,8 @@ def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> st
         .all()
     )
     for ent in remaining:
-        if not place_needs_review(ent) and ent.geocode is not None and ent.geocode.resolved:
+        if (ent.relevance != "figurative" and not place_needs_review(ent)
+                and ent.geocode is not None and ent.geocode.resolved):
             other_canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
             if f"miejsce-{_slugify(other_canonical)}" == tag:
                 return None
@@ -476,9 +479,12 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
     # Human corrections/merges must survive enrichment as well as NER refresh:
     # canonicalization and context classification can otherwise rename/retype them.
     for ent in entities:
+        if ent.relevance == "figurative":
+            remove_orphaned_tag(session, doc, ent)
+            continue
         if ent.place_verification_status == "confirmed":
             add_place_tag(doc, ent)
-    candidates = [ent for ent in entities if ent.source != "manual"
+    candidates = [ent for ent in entities if ent.source != "manual" and ent.relevance != "figurative"
                   and ent.place_verification_status != "confirmed" and not _is_country(ent.entity_text)]
     for index, ent in enumerate(candidates, start=1):
         place_needs_review(ent)

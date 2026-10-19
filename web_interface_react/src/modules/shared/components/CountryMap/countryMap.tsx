@@ -22,6 +22,7 @@ const RELATION_STYLES: { relation: string; label: string; fill: string; stroke: 
 
 /** Verified NER place (stage 3, geocode_cache coords) rendered as a point marker. */
 export interface PlaceMarker {
+  relevance?: "central" | "related" | "figurative";
   name: string;
   lat: number;
   lon: number;
@@ -92,7 +93,8 @@ const FitToPlaces: React.FC<{ places: PlaceMarker[] }> = ({ places }) => {
  *  missing from the (lightweight, ~250KB) bundled GeoJSON won't appear on the map — they're
  *  still listed in the reader's "Encje" → "Państwa" block (EntitiesPanel), so nothing is
  *  silently dropped; this component itself no longer renders a text fallback list. */
-const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [], title }) => {
+const CountryMap: React.FC<Props> = ({ countries, places: allPlaces = [], pipelines = [], title }) => {
+  const places = React.useMemo(() => allPlaces.filter((place) => place.relevance !== "figurative"), [allPlaces]);
   const [geoData, setGeoData] = React.useState<GeoJSON.FeatureCollection | null>(null);
   const [error, setError] = React.useState(false);
 
