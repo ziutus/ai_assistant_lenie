@@ -184,7 +184,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T18 | Dwie nazwy zlepione w jeden span organizacji (opis zmiany nazwy „A na B”) | spaCy łączy dwie nazwy przez małe „na” | „Departamentu Obrony na Departament Wojny” | E030 |
 | T19 | Dwie sąsiednie wzmianki zlepione w jeden span (bez łącznika) | spaCy łączy dwie kolejne nazwy własne bez przecinka w jeden `orgName`; reguła nie rozstrzygnie bezpiecznie, gdzie jest granica | „NATO Moskwa” | E032 |
 | T20 | Nazwisko odmieniane przymiotnikowo odrzucone przez filtr POS | spaCy oznacza jednowyrazowe nazwisko typu -owa/-ewa/-ski jako `ADJ`, a agregacja odrzuca jednowyrazowe `persName` o POS innym niż `NOUN`/`PROPN` | „Zacharowa”, „Zacharowej”, „Kowalskiej” | E033 |
-| T21 | Miejsce, którego spaCy nie zgłasza w ogóle | nazwa małą literą („królewca”) albo tylko przymiotnik w roli nazwy („obwód kaliningradzki”, „przesmyk suwalski”); żaden gazetteer nie ma czego kanonizować | „królewca”, „obwód kaliningradzki”, „przesmyk suwalski” | E034 |
+| T21 | Miejsce, którego spaCy nie zgłasza w ogóle | nazwa małą literą („królewca”) albo tylko przymiotnik w roli nazwy („obwód kaliningradzki”, „przesmyk suwalski”); żaden gazetteer nie ma czego kanonizować | „królewca”, „obwód kaliningradzki”, „przesmyk suwalski”, „enklawę Kaliningradu” | E034, E038 |
 | T22 | Błąd transkrypcji rozpoznany jako osoba | automatyczne tłumaczenie dźwięku zapisuje zwrot jako nazwę własną; nie ma tabeli poprawek transkrypcji | „Egekwo” (zamiast „ex aequo”) | E035 |
 | T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036 |
 | T24 | Miasto oznaczone przez spaCy jako organizacja | rzadka pisownia + odmiana („Tela Avivwu”) nie przypomina niczego znanego, więc model typuje ją jako `orgName` | „Tela Avivwu” → Tel Awiw | E037 |
@@ -622,3 +622,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — wpis `("Tel Awiw", …)` w `city_gazetteer.py` i alias geokodera „Tel Aviv”; `aggregate_entities_detailed` przekwalifikowuje `orgName`, którego powierzchnia jest miastem z gazetteera, na `placeName`. Menu organizacji dostało „Zmień na miejsce” (`/to_place`, rozszerzone o `orgName`, audyt `organization_to_place`) i „Zmień na osobę” (`/to_person`, audyt `organization_to_person`); obie decyzje są odtwarzane po odświeżeniu. Wszystkie menu chipów na `/ner/:id` mają „Podświetl w tekście”.
 - **Test regresyjny:** `test_ner_client.py::TestCityTaggedAsOrganization`, `test_flask_endpoints_entities.py::test_organization_to_place` / `test_organization_to_person`, `test_entity_overrides.py` (odtwarzanie), `entitiesPanel.test.tsx`, `nerChapters.test.tsx`.
 - **Status:** kod w PR; dane (scalenie ręcznej encji „Tel Avivw”, usunięcie osieroconej organizacji 1140) po wdrożeniu.
+
+### E038 — „Enklawę Kaliningradu” podświetlona jako miasto zamiast obwodu (dok. #10872, PR n/d, 2026-10-19)
+
+- **Typ encji:** placeName
+- **Kategoria:** T21 — miejsce, którego spaCy nie zgłasza w ogóle (opisowa nazwa obwodu).
+- **Zdania źródłowe:** „…wymierzone konkretnie w rosyjską enklawę Kaliningradu nad Morzem Bałtyckim, czyli naszego królewca.”; „…w pobliżu kaliningradzkiej enklawy.”
+- **Objaw:** „enklawa Kaliningradu” nie była osobną encją; jedynie „Kaliningradu” wpadało do ręcznej encji „Kaliningrad” (miasto), choć w tym zdaniu chodzi o cały obwód — ten sam, który tekst nazywa gdzie indziej „obwodem kaliningradzkim”.
+- **Przyczyna źródłowa:** wpis `place_mention` nr 2 („Obwód Kaliningradzki”) znał tylko wzorce z przymiotnikiem (`enklaw* kaliningradzk*`, `kaliningradzk* enklaw*`), więc nie łapał formy z rzeczownikiem „Kaliningradu”. Mechanizm z E034 działał poprawnie — brakowało wariantu w danych, nie błędu w kodzie.
+- **Poprawka:** dane — `PATCH /ner_gazetteer/2`: wzorce `enklaw* kaliningrad*` i `kaliningradzk* enklaw*` (pierwszy obejmuje oba przypadki), bez deployu; potem `POST /website_entities` dla dok. #10872 (bez embeddingów, ręczne encje zachowane). „Obwód Kaliningradzki”: 7 → 10 wzmianek, warianty „enklawę Kaliningradu” i „kaliningradzkiej enklawy”. Miasto „Kaliningrad” zachowuje własne wzmianki („Kaliningradu” z tej frazy liczy się też tam).
+- **Test regresyjny:** brak — czysto danowa poprawka; wpis w `ner_gazetteer_entries` dokumentuje przypadek, a wzorzec sprawdzono na pełnym tekście dok. #10872 kodem z `place_mention_gazetteer.py`.
+- **Status:** tylko dane bez zmiany kodu. Skutek uboczny pełnego odświeżenia NER: kilka drobnych zmian etykiet w tym dokumencie (m.in. „Pentagon” podzielony na orgName i placeName, „Waszyngtonem” i „Saudowa” z orgName na placeName, zniknięcie fałszywego „Nato” jako miejsca).
