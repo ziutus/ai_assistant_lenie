@@ -32,6 +32,14 @@ def test_prompt_distinguishes_western_bloc_from_direction_and_formation_name():
     assert "jednoznacznie" in _SYSTEM_PROMPT
 
 
+def test_prompt_limits_political_bloc_to_the_west_and_keeps_countries_as_places():
+    """doc 11137: "Stany" (of "Stany Zjednoczone") and the surname "Cornin" became organizations."""
+    organization = " ".join(_SYSTEM_PROMPT.split("- organization:")[1].split("- not_place:")[0].split())
+    assert "blok dotyczy tylko słowa \"Zachód\"" in organization
+    for phrase in ("Europa", "Ameryka", "Stany", "Stany Zjednoczone", "Cornin", "Interfax"):
+        assert phrase in organization.split("blok dotyczy tylko")[1]
+
+
 def test_snippets_match_whole_words_and_use_actual_variants():
     groups = {"Huta": {"surface": "Huta", "variants": ["huty"]}}
     assert _candidate_payloads("Hutach i huty", groups)[0]["surfaces"] == ["huty"]
