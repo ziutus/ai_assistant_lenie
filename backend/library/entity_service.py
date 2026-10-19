@@ -622,6 +622,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
 
     grouped: dict[str, list[dict]] = {
         "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
+        "productName": [],
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,

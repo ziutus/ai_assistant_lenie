@@ -190,8 +190,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T24 | Miasto oznaczone przez spaCy jako organizacja | rzadka pisownia + odmiana („Tela Avivwu”) nie przypomina niczego znanego, więc model typuje ją jako `orgName` | „Tela Avivwu” → Tel Awiw | E037 |
 | T25 | Błąd STT w tekście źródłowym (pisownia/odmiana frazy) | transkrypcja zapisuje frazę w złej formie gramatycznej, a tekst trafia bez zmian do czytnika i NER; dotyczy tekstu, nie encji | „pięto Achillesa” zamiast „pięta Achillesa” | E038 |
 | T26 | Reguły NER z obrazu przesłonięte starą kopią w wolumenie | plik reguł w `data/` jest ukryty pod wolumenem `lenie-ai-data` (`/app/data`) ze starą kopią, więc nowy kod czyta stare dane i wzorce z repo nie działają na produkcji | „Polacy”, „Algierczycy” jako osobne miejsca | E039 |
+| T27 | Produkt/usługa/system bez kategorii encji | spaCy nie ma typu „produkt”, więc nazwa własna usługi (Starshield) trafia do `persName`, a jej odmiany („Starshielda”, „Starshieldu”) do osobnych encji | „Starshielda” jako osoba | E040 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T25,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T28,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -646,3 +647,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — plik reguł przeniesiony do `backend/library/ner_normalization_rules.json` (obraz kopiuje `library/`, wolumen go nie przesłania), `RULES_PATH` zmieniony, dopisany wzorzec „Algieria”. Dane — odświeżenie NER dok. #11137 po wdrożeniu.
 - **Test regresyjny:** `test_ner_normalization.py` (`test_shipped_rules_file_is_not_under_a_data_directory`, pełny paradygmat „Algieria”, negatywne „Algier”/„Algierii”), `test_ner_client.py::test_doc_11137_nationalities_are_not_separate_places`.
 - **Status:** kod w PR; wdrożenie i odświeżenie dok. #11137 w toku. Inne dokumenty przetworzone od 13 lipca mogą mieć te same fałszywe encje-narodowości (audyt hurtowy nie wykonany).
+
+### E040 — „Starshielda” jako osoba, „Space XA / Space Xem” jako osobne organizacje, „Pentagonem” jako osoba (dok. #11137, PR n/d, 2026-10-19)
+
+- **Typ encji:** persName / orgName
+- **Kategoria:** T27 — produkt/usługa/system bez kategorii encji; do tego T25 (błąd STT: SpaceX rozbite na dwa słowa i odmienione) i T9 (fałszywy pozytyw spaCy).
+- **Zdanie źródłowe:** „…Zełeński naciskał w niedzielę na więcej informacji na temat yyy yyy możliwych ograniczeń dla Starshieldu. To jest amerykańska usługa internetu satelitarnego…” oraz „…świadczona w ramach kontraktu Pentagonu za pośrednictwem Space XA. Kijów wykorzystuje Starshielda do zapewnienia łączności swoim dronom…”
+- **Objaw:** „Starshield” i „Starshielda” jako dwie osoby (encje 20058, 20059), „Space XA” i „Space Xem” jako dwie organizacje (20125, 20126), „Pentagonem” jako osoba (20169). Starshield to wojskowa wersja Starlinka (SpaceX), ważna dla tekstu, ale bez sensownej kategorii.
+- **Przyczyna źródłowa:** napisy zapisały SpaceX jako „Space XA / Xa / Xem”, a spaCy typuje obce nazwy własne w odmianie jako `persName`. Model nie ma typu dla produktów i systemów, więc nie było dla Starshielda poprawnego miejsca.
+- **Poprawka:** dane — `transcript_corrections` „Space Xa” i „Space Xem” → „SpaceX” (backfill dok. #11137, 3 trafienia), `ner_exclusions` persName: „Starshield”, „Starshielda”, „Pentagonem”, odświeżenie NER (powstał jeden `SpaceX`, Pentagon bez osoby). Kod — nowa ręczna kategoria `productName` („🛰️ Produkt / system”): `ADDABLE_ENTITY_TYPES`, `get_document_entities`, menu zaznaczenia i wiersz „Produkty i systemy” na `/ner/:id`; zwykły wiersz `source='manual'` jak `eventName`, bez rejestru i bez opisu.
+- **Test regresyjny:** `test_entity_added_from_selection.py::test_a_product_is_a_plain_manual_entity_and_folds_its_inflected_forms` / `test_replay_readds_a_product_after_the_document_was_reopened` (zdanie z #11137), `test_entity_service.py` (klucz `productName`), `nerChapters.test.tsx` (wiersz produktu).
+- **Status:** dane naprawione na NAS; kod w PR, po wdrożeniu Starshield dodaje się z menu zaznaczenia („🛰️ Produkt / system”, nazwa „Starshield”). Koszt kodu: Codex niedostępny (`helper_unknown_error`), kod napisał Claude Code.

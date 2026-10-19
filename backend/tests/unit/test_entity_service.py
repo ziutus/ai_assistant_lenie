@@ -557,6 +557,7 @@ class TestGetDocumentEntities:
             "placeName": [],
             "facility": [],
             "eventName": [],
+            "productName": [],
         }
 
     def test_groups_organization_without_geocoding_fields(self):
@@ -646,6 +647,7 @@ class TestGetDocumentEntities:
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
         assert get_document_entities(session, 42) == {
             "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
+            "productName": [],
         }
 
 

@@ -2064,8 +2064,8 @@ def entity_events_list():
 def document_entities_add_mention(document_id: int):
     """Add an entity from a fragment of the text a reviewer selected (context menu on /ner/:id).
 
-    Body: {"text": "kaliningradzkiej enklawy", "entity_type": "persName"|"orgName"|"placeName"|"eventName",
-    "name": "Obwód Kaliningradzki"?}. ``text`` must occur in the document; ``name`` is the canonical
+    Body: {"text": "kaliningradzkiej enklawy",
+    "entity_type": "persName"|"orgName"|"placeName"|"eventName"|"productName", "name": "Obwód Kaliningradzki"?}. ``text`` must occur in the document; ``name`` is the canonical
     name (default: the text) — an existing same-named entity gets the mentions and the surface form added.
     A fragment that already is an entity (or one of its surface forms) answers 409 with that entity: use
     its own menu to retype it. A place is geocoded once (a country gets its ``kraj-*`` tag), an organization
@@ -2088,7 +2088,8 @@ def document_entities_add_mention(document_id: int):
     if name is not None and (not isinstance(name, str) or not name.strip() or len(name) > 200):
         return jsonify(status="error", message="Nieprawidłowa nazwa."), 400
     if entity_type not in ADDABLE_ENTITY_TYPES:
-        return jsonify(status="error", message="entity_type musi być persName, orgName, placeName lub eventName."), 400
+        return jsonify(
+            status="error", message="entity_type musi być persName, orgName, placeName, eventName lub productName."), 400
     surface = " ".join(surface.split())
     name = " ".join(name.split()) if name else None
     session = get_scoped_session()

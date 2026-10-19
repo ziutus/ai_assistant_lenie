@@ -3,7 +3,7 @@
 // tokens with Unicode boundaries, longest surface form first, and a capitalised surface form
 // only matches a capitalised mention ("Unia" does not match "unia").
 
-export type HighlightKind = "persName" | "place" | "orgName" | "country" | "event";
+export type HighlightKind = "persName" | "place" | "orgName" | "country" | "event" | "product";
 
 export interface HighlightEntry {
   variants: string[];
