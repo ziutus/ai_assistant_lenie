@@ -165,6 +165,18 @@ def _apply_channel_glossary(session, document_id: int, text: str) -> tuple[str, 
     return result.text, result.replacements
 
 
+def apply_channel_glossary_text(session, document_id: int, text: str) -> str:
+    """The text with the document channel's glossary applied, for non-NER consumers (country detection).
+
+    Same copy-only semantics as the NER refresh: the stored transcript never changes. Never raises —
+    a glossary problem must not break tagging, the unmodified text is returned instead."""
+    try:
+        return _apply_channel_glossary(session, document_id, text)[0]
+    except Exception:
+        logger.warning("Channel glossary could not be applied for doc %s", document_id, exc_info=True)
+        return text
+
+
 def _record_glossary_replacements(session, document_id: int, groups: dict, replacements: Counter) -> None:
     """Audit the glossary replacements (replace semantics per document) and restore original variants."""
     if replacements is None:  # the document has no channel, so no glossary was ever consulted
