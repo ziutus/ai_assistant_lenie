@@ -17,6 +17,7 @@ export interface RecipeSummary {
   wege: boolean;
   ingredient_count: number;
   note: string | null;
+  thumb_url?: string | null;
 }
 
 interface MealCount {
@@ -141,15 +142,25 @@ const Recipes = () => {
 
       <ul style={{ listStyle: "none", padding: 0 }}>
         {recipes.map((recipe) => (
-          <li key={recipe.id} style={{ padding: "10px 8px", borderBottom: "1px solid #eee" }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <NavLink to={`/recipes/${recipe.id}`} style={{ fontWeight: 600 }}>{recipe.title}</NavLink>
-              {recipe.servings && <span style={tag("#eef2ff")}>porcje: {recipe.servings}</span>}
-              {recipe.meals.map((m) => <span key={m} style={tag("#f1f5f9")}>{m}</span>)}
-              {recipe.wege && <span style={tag("#dcfce7")}>wege</span>}
-            </div>
-            <div style={{ color: "#667", marginTop: 4 }}>
-              {recipe.ingredient_count} składników{recipe.note ? ` · ${recipe.note}` : ""}
+          <li key={recipe.id} style={{ padding: "10px 8px", borderBottom: "1px solid #eee", display: "flex", gap: 12, alignItems: "center" }}>
+            {recipe.thumb_url ? (
+              <img
+                src={recipe.thumb_url} alt="" loading="lazy" width={64} height={64}
+                style={{ objectFit: "cover", borderRadius: 6, flexShrink: 0 }}
+              />
+            ) : (
+              <div style={{ width: 64, height: 64, flexShrink: 0 }} aria-hidden="true" />
+            )}
+            <div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <NavLink to={`/recipes/${recipe.id}`} style={{ fontWeight: 600 }}>{recipe.title}</NavLink>
+                {recipe.servings && <span style={tag("#eef2ff")}>porcje: {recipe.servings}</span>}
+                {recipe.meals.map((m) => <span key={m} style={tag("#f1f5f9")}>{m}</span>)}
+                {recipe.wege && <span style={tag("#dcfce7")}>wege</span>}
+              </div>
+              <div style={{ color: "#667", marginTop: 4 }}>
+                {recipe.ingredient_count} składników{recipe.note ? ` · ${recipe.note}` : ""}
+              </div>
             </div>
           </li>
         ))}

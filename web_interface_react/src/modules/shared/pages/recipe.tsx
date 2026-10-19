@@ -21,6 +21,7 @@ interface RecipeDetail {
   ingredients: { text: string; label: boolean }[];
   method: string[];
   menu_slots: string[];
+  photos?: { url: string; thumb_url: string; caption: string | null }[];
 }
 
 const sectionTitle: React.CSSProperties = { marginTop: 18, marginBottom: 6 };
@@ -67,6 +68,12 @@ const Recipe = () => {
               .filter(Boolean)
               .join(" · ")}
           </div>
+          {(recipe.photos ?? []).map((photo) => (
+            <img
+              key={photo.url} src={photo.url} alt={photo.caption ?? recipe.title}
+              style={{ width: "100%", maxWidth: 420, borderRadius: 8, margin: "8px 0" }}
+            />
+          ))}
           {recipe.nutrition && <p style={{ fontStyle: "italic" }}>{recipe.nutrition}</p>}
           {recipe.notes.map((note, index) => (
             <blockquote key={index} style={{ margin: "8px 0", paddingLeft: 12, borderLeft: "3px solid #cbd5e1" }}>

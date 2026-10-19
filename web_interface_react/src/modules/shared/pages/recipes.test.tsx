@@ -14,7 +14,7 @@ vi.mock("../context/authorizationContext", async () => {
 const list = {
   total: 2,
   recipes: [
-    { id: 11, title: "Gulasz z soczewicą", tags: ["przepis", "obiad", "wege"], servings: "2", meals: ["obiad"], wege: true, ingredient_count: 7, note: null },
+    { id: 11, title: "Gulasz z soczewicą", tags: ["przepis", "obiad", "wege"], servings: "2", meals: ["obiad"], wege: true, ingredient_count: 7, note: null, thumb_url: "http://minio/t11.jpg" },
     { id: 12, title: "Guacamole", tags: ["przepis"], servings: null, meals: [], wege: false, ingredient_count: 4, note: "Książka, s. 62" },
   ],
   meals: [
@@ -28,6 +28,7 @@ const detail = {
   section: null, nutrition: null, notes: ["Gotowy w 20 minut."],
   ingredients: [{ text: "spód", label: true }, { text: "300 g soczewicy", label: false }],
   method: ["Podduś cebulę.", "Dodaj soczewicę."], menu_slots: ["miesiąc I, tydzień 1, obiad"],
+  photos: [{ url: "http://minio/11.jpg", thumb_url: "http://minio/t11.jpg", caption: "gulasz" }],
 };
 
 beforeEach(() => {
@@ -41,6 +42,7 @@ it("lists recipes with meal counts and sends the filters from the URL", async ()
   render(<MemoryRouter initialEntries={["/recipes?q=soczewica&meal=obiad&wege=1"]}><Routes><Route path="/recipes" element={<Recipes />} /></Routes></MemoryRouter>);
   expect(await screen.findByRole("link", { name: "Gulasz z soczewicą" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Obiad (40)" })).toBeTruthy();
+  expect(document.querySelector('img[src="http://minio/t11.jpg"]')).toBeTruthy();
   expect(screen.getByRole("button", { name: "Z wersją wege (25)" })).toBeTruthy();
   expect(vi.mocked(axios.get)).toHaveBeenCalledWith("/recipes", expect.objectContaining({
     params: { limit: "50", offset: "0", meal: "obiad", wege: "1", q: "soczewica" } }));
@@ -62,4 +64,5 @@ it("shows one recipe split into ingredients, method and meal-plan slots", async 
   expect(screen.getByText("Dodaj soczewicę.")).toBeTruthy();
   expect(screen.getByText("miesiąc I, tydzień 1, obiad")).toBeTruthy();
   expect(screen.getByText("Gotowy w 20 minut.")).toBeTruthy();
+  expect((screen.getByAltText("gulasz") as HTMLImageElement).src).toBe("http://minio/11.jpg");
 });

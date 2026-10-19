@@ -28,6 +28,8 @@ _WATERMARK_LINE_RE = re.compile(r"ebookpoint kopia dla:[^\n]*|[0-9a-f]{32}")
 
 @dataclass
 class Photo:
+    """A full-page dish photo (see find_photos())."""
+
     page: int  # 1-based
     rect: tuple[float, float, float, float]
     full_page: bool
@@ -168,3 +170,8 @@ def match_photo(
     if chosen is None or confidence < min_confidence:
         return PhotoMatch(photo, None, "vision", confidence, keys, dish)
     return PhotoMatch(photo, keys[chosen], "vision", confidence, keys, dish)
+
+
+def thumb_key(storage_key: str) -> str:
+    """documents/<id>/images/0.jpg -> documents/<id>/images/0_thumb.jpg (derived, not stored in the DB)."""
+    return storage_key.removesuffix(".jpg") + "_thumb.jpg"

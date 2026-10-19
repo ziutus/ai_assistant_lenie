@@ -15,8 +15,13 @@ import re
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, select
 
+import logging
+
 from library.db.engine import get_scoped_session
-from library.db.models import Document
+from library.db.models import Document, DocumentImage
+from library.recipe_book_photos import thumb_key
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("recipes", __name__)
 
@@ -100,6 +105,47 @@ def parse_recipe_markdown(text_md: str | None) -> dict:
     return recipe
 
 
+def recipe_photos(session, document_ids: list[int]) -> dict[int, list[dict]]:
+    """Dish photos per recipe Document: {id: [{url, thumb_url, caption}]}, presigned MinIO URLs.
+
+    Missing storage configuration or no photos degrade to "no photo", never to an error —
+    the recipe text must stay readable.
+    """
+    if not document_ids:
+        return {}
+    rows = (
+        session.execute(
+            select(DocumentImage)
+            .where(DocumentImage.document_id.in_(document_ids), DocumentImage.storage_key.is_not(None))
+            .order_by(DocumentImage.document_id, DocumentImage.id)
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return {}
+    try:
+        from library.config_loader import load_config
+        from library.storage import storage_from_config
+
+        storage = storage_from_config(load_config())
+        photos: dict[int, list[dict]] = {}
+        for row in rows:
+            url = storage.presigned_get_url(row.storage_key)
+            if url:
+                photos.setdefault(row.document_id, []).append(
+                    {
+                        "url": url,
+                        "thumb_url": storage.presigned_get_url(thumb_key(row.storage_key)) or url,
+                        "caption": row.caption_text,
+                    }
+                )
+        return photos
+    except (SystemExit, Exception):
+        logger.exception("Could not build recipe photo URLs")
+        return {}
+
+
 def _recipe_conditions(meal: str | None, wege: bool, query: str | None) -> list:
     conditions = [Document.tags.op("~")(_TAG_RE % re.escape(RECIPE_TAG))]
     if meal:
@@ -152,11 +198,14 @@ def get_recipes():
         wege_count += WEGE_TAG in tags
 
     recipes = []
+    photos = recipe_photos(session, [row.id for row in rows])
     for row in rows:
         parsed = parse_recipe_markdown(row.text_md)
+        first_photo = (photos.get(row.id) or [None])[0]
         recipes.append(
             {
                 "id": row.id,
+                "thumb_url": first_photo["thumb_url"] if first_photo else None,
                 "title": row.title,
                 "tags": split_tags(row.tags),
                 "servings": parsed["servings"],
@@ -195,6 +244,7 @@ def get_recipe(recipe_id: int):
                 "tags": split_tags(doc.tags),
                 "byline": doc.byline,
                 "note": doc.note,
+                "photos": recipe_photos(session, [doc.id]).get(doc.id, []),
                 **parsed,
             },
         }
