@@ -119,6 +119,7 @@ SELECT * FROM person_aliases WHERE alias ILIKE '%fragment%';
 | Encja w ogóle nie trafiła do `document_persons` | Filtr jednowyrazowych wzmianek bez trafienia w Wikidata (`person_registry.py`) potraktował ją jako szum | Sprawdź czy to faktycznie osoba; jeśli tak, ale mało znana/lokalna — to oczekiwane, wpis i tak trafi do rejestru bez QID przy kolejnym wystąpieniu z pełniejszym kontekstem |
 | `confidence='manual_review'`, ktoś inny niż powinien | LLM (`confirm_person_with_llm`) źle rozstrzygnął ujednoznacznienie (kilku kandydatów w Wikidata o tym samym nazwisku) | To do ręcznej decyzji w `GET/PATCH /persons_review`, nie automatyczna reguła |
 | Ta sama osoba pod dwiema pisowniami/odmianami jako różne wpisy w `persons` | Brak aliasu łączącego formy | `POST /persons/<id>/aliases`, albo `merge_review_link()` jeśli to już przeszło przez `manual_review` |
+| Błąd STT w samej frazie źródłowej (np. doc #10872: "pięto Achillesa" zamiast "pięta Achillesa") | Błąd pisowni lub odmiany w transkrypcji; to poprawka tekstu, nie encji | `POST /transcript_corrections` — literalna zamiana całej frazy (opcjonalnie `scope=author`); podgląd i backfill jednego dokumentu: `POST /transcript_corrections/apply` (domyślnie `dry_run`). `ner_exclusions` służy do fałszywie pozytywnej encji, nie do naprawy tekstu źródłowego |
 | Coś ewidentnie nie-osobowego rozpoznane jako `persName` (artefakt STT, homograf) | Fałszywy pozytyw spaCy | `POST /ner_exclusions` (`entity_type='persName'`, ew. `scope='author'` dla artefaktów jednego kanału/podcastu) |
 
 ### Organizacje (`orgName`)

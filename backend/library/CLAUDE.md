@@ -272,3 +272,27 @@ linked contact, including historical links; no links means no contact log.
 Legacy contact description/describe routes retain current-storage-key validation.
 `contact_photo_links` retains associations after replacement; history and safe
 restore accept linked photos as well as legacy uploads under the contact UUID.
+
+## Transcript phrase corrections
+
+`transcript_corrections.py` applies human-curated literal STT phrase replacements
+from `transcript_corrections`. Rules are global or scoped to a normalized document
+byline; bare single-word patterns are rejected. Matching ignores case, accepts
+runs of whitespace, respects word boundaries and applies longer phrases first.
+The first replacement letter follows the matched case when it is the same letter.
+Active rules have a 60-second cache; CRUD writes bust that cache. Hit counts and
+last-hit timestamps are recorded best-effort.
+
+`youtube_processing._store_transcript_text` is the ingestion hook for captions
+(with or without chapters, including language mismatch) and completed AssemblyAI
+jobs. It corrects text and any existing text_md before persistence; raw transcripts
+remain source evidence. Analysis and NER consume the corrected canonical fields.
+Webpage, email and Obsidian ingestion do not call this hook.
+
+`GET/POST /transcript_corrections` and `PATCH/DELETE /transcript_corrections/<id>`
+manage rules using the same authentication as cleanup rules (service keys for
+writes). `POST /transcript_corrections/apply` accepts one integer `document_id`
+and optional boolean `dry_run` (default true). Previews report counts per rule and
+field plus a short before/after snippet without changing text or statistics.
+Persisting updates text/text_md and statistics only; it does not rebuild existing
+chunks, embeddings or entities. There is no bulk backfill mode.

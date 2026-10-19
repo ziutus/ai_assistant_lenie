@@ -442,3 +442,63 @@ class TestCaptionsUnavailableVersusBlocked:
             process_youtube_url(session=mock_session, youtube_url=doc.url, webshare_api_key="key")
 
         assert captions_events.call_args.kwargs["operation"] == "via_webshare_proxy"
+
+
+@pytest.fixture(autouse=True)
+def correction_rules_without_database(monkeypatch, tmp_path):
+    from library import transcript_corrections
+    from library import youtube_processing
+
+    monkeypatch.setattr(youtube_processing, "load_config", lambda: {"CACHE_DIR": str(tmp_path)})
+    monkeypatch.setattr(transcript_corrections, "load_active_rules", lambda **kwargs: [])
+    monkeypatch.setattr(transcript_corrections, "_bump_hit_counts", MagicMock())
+
+
+@pytest.mark.parametrize("provider", ["captions", "chapters", "language_mismatch", "assemblyai"])
+def test_transcript_corrected_at_ingestion(monkeypatch, tmp_path, mock_session, provider):
+    from types import SimpleNamespace
+
+    from library import transcript_corrections as rules
+    from library import youtube_processing as yt
+    from library.db.models import Document
+    from library.entity_text import document_ner_text
+
+    pattern = "pi\u0119to Achillesa"
+    replacement = "pi\u0119ta Achillesa"
+    doc = Document(id=10872, url="https://www.youtube.com/watch?v=abc", document_type="youtube",
+                   processing_status="NEED_TRANSCRIPTION", language="pl", byline="channel",
+                   transcript_needed=True, transcript_job_id="job", text_md="## " + pattern)
+    if provider == "chapters":
+        doc.chapter_list = "0:00 Intro\n1:00 Topic"
+    monkeypatch.setattr(Document, "get_by_url", lambda session, url: doc)
+    monkeypatch.setattr(yt, "StalkerYoutubeFile", lambda **kwargs: SimpleNamespace(
+        valid=True, metadata_available=False, video_id="abc", length_seconds=120, length_minutes=2,
+        description="", path="unused",
+    ))
+    ytt = MagicMock()
+    ytt.list.return_value = [SimpleNamespace(language_code="pl")]
+    ytt.fetch.return_value.to_raw_data.return_value = [{"text": pattern, "start": 0, "duration": 1}]
+    if provider == "assemblyai":
+        ytt.list.side_effect = yt.TranscriptsDisabled("abc")
+        transcript = SimpleNamespace(status="completed", text=pattern, audio_duration=120,
+                                     speech_model_used=None, get_paragraphs=lambda: [SimpleNamespace(text=pattern)])
+        monkeypatch.setattr(yt.aai.Transcript, "get_by_id", lambda job_id: transcript)
+    monkeypatch.setattr(yt, "YouTubeTranscriptApi", lambda: ytt)
+    monkeypatch.setattr(yt, "text_language_detect", lambda text: "pl")
+    monkeypatch.setattr(yt, "compare_language", lambda *args: provider != "language_mismatch")
+    monkeypatch.setattr(yt, "youtube_titles_to_text", lambda text: pattern)
+    monkeypatch.setattr(yt, "youtube_titles_split_with_chapters", lambda *args: "## Intro\n" + pattern)
+    monkeypatch.setattr(rules, "load_active_rules", lambda **kwargs: [
+        rules.TranscriptCorrectionRow(42, "author", "CHANNEL", pattern, replacement),
+    ])
+    seen_at_commit = []
+    mock_session.commit.side_effect = lambda: seen_at_commit.append(doc.text)
+    result = yt.process_youtube_url(mock_session, doc.url, cache_dir=str(tmp_path))
+    assert replacement in result.text and pattern not in result.text
+    assert result.text_md == "## " + replacement
+    assert replacement in document_ner_text(result)
+    assert pattern not in document_ner_text(result)
+    assert replacement in seen_at_commit[-1]
+    assert pattern in result.text_raw or "Achillesa" in result.text_raw
+    # One correction pass per canonical field, never a second analysis-time pass.
+    assert rules._bump_hit_counts.call_count == 2
