@@ -562,6 +562,8 @@ const EntitiesPanel = ({
   // "Zmień na organizację" for a person: the organization may be named differently than the mention ("Xie" -> "X").
   const [toOrgFor, setToOrgFor] = React.useState<EntityItem | null>(null);
   const [toOrgText, setToOrgText] = React.useState("");
+  // "Połącz z inną osobą w dokumencie": two person rows of this document folded into one ("Stone" -> "Andy Stone").
+  const [personDocMergeFor, setPersonDocMergeFor] = React.useState<EntityItem | null>(null);
   // Floating action menu of a mention clicked in the host's text (see the mentionMenu prop).
   const [openMentionSub, setOpenMentionSub] = React.useState<string | null>(null);
   const mentionMenuRef = React.useRef<HTMLDivElement>(null);
@@ -1053,6 +1055,23 @@ const EntitiesPanel = ({
   };
   const handlePlaceMergePick = (target: EntityItem) => mergePlaces(placeMergeFor, target);
 
+  const mergeDocumentPersons = async (source: EntityItem, target: EntityItem) => {
+    if (source.id == null || target.id == null || isMergingPlace) return;
+    setMessage("");
+    setIsMergingPlace(true);
+    try {
+      await axios.post(`${apiUrl}/document/${docId}/persons/merge`,
+        { source_entity_id: source.id, target_entity_id: target.id }, { headers: jsonHeaders });
+      setPersonDocMergeFor(null);
+      await fetchEntities();
+      setMessage(`Osoby „${source.text}” i „${target.text}” zostały połączone.`);
+    } catch (error: any) {
+      setMessage(`Nie udało się połączyć osób: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsMergingPlace(false);
+    }
+  };
+
   const handleExclude = async (scope: "global" | "author") => {
     if (!excludeFor || !reviewReason || (reviewReason === "other" && !reviewComment.trim())) {
       return;
@@ -1292,6 +1311,7 @@ const EntitiesPanel = ({
     setRenameFor(null);
     setToPlaceFor(null);
     setToOrgFor(null);
+    setPersonDocMergeFor(null);
     setSplitFor(null);
     setWikiFor(null);
     setDeleteFor(null);
@@ -1373,6 +1393,8 @@ const EntitiesPanel = ({
     ...showInTextEntry(item, "persName"),
     ...relevanceEntries(item),
     { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
+    ...(persons.some((person) => person.id != null && person.id !== item.id)
+      ? [{ label: "Połącz z inną osobą w dokumencie…", action: () => { resetFlows(); setPersonDocMergeFor(item); } }] : []),
     { label: "Zmień na organizację", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
@@ -1994,6 +2016,28 @@ const EntitiesPanel = ({
           <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setMergePreview(null)}>✕ zamknij</button>
         </div>
       ))}
+
+      {personDocMergeFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            Połącz „{personDocMergeFor.text}” z inną osobą tego dokumentu (zostanie nazwą połączonej osoby):
+            <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setPersonDocMergeFor(null)}>✕ anuluj</button>
+          </div>
+          {(() => {
+            // People sharing a word with the source ("Andy Stone" for "Stone") come first.
+            const words = personDocMergeFor.text.toLowerCase().split(/\s+/);
+            const shares = (person: EntityItem) => person.text.toLowerCase().split(/\s+/).some((word) => words.includes(word));
+            return persons.filter((person) => person.id !== personDocMergeFor.id)
+              .sort((a, b) => Number(shares(b)) - Number(shares(a)) || a.text.localeCompare(b.text, "pl"));
+          })().map((person) => (
+            <div key={person.id} style={{ padding: "3px 0" }}>
+              <button className={"button"} type="button" disabled={isMergingPlace}
+                onClick={() => void mergeDocumentPersons(personDocMergeFor, person)}>wybierz</button>
+              {" "}<strong>{person.text}</strong>
+            </div>
+          ))}
+        </div>
+      )}
 
       {placeMergeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>

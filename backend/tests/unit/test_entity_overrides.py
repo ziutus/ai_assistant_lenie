@@ -125,6 +125,18 @@ def test_person_to_organization_is_replayed_under_the_chosen_name():
     assert stats["person_to_organization"] == 1
 
 
+def test_person_merge_is_replayed_into_the_target_person():
+    source = entity("Stone", entity_type="persName", count=2, variants=["Stone"])
+    target = entity("Andy Stone", entity_type="persName", count=3)
+    rows = [source, target]
+    _, touched, stats = run(
+        [decision("person_merged", "Stone", "persName", target_entity_text="Andy Stone")], rows)
+    assert rows == [target]
+    assert (target.mention_count, target.variants, target.source) == (5, ["Stone"], "manual")
+    assert stats["person_merged"] == 1
+    assert touched == {}
+
+
 def test_rename_is_reapplied_to_fresh_ner_row_and_keeps_old_forms_as_variants():
     row = entity("Jemenu Północnego", count=3, variants=["Jemenu Północnym"])
     entities = [row]

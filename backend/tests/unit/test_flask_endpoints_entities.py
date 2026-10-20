@@ -156,6 +156,47 @@ def test_person_to_organization(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("same", 400), ("not_person", 400), ("rollback", 500)])
+def test_merge_document_persons(client, case, expected):
+    # "Stone" and "Andy Stone" were two person chips of one document.
+    from library.db.models import Document, DocumentEntity, DocumentPerson, EntityReviewDecision, Person
+    source = DocumentEntity(id=1, document_id=11137, entity_type="persName", entity_text="Stone",
+                            mention_count=2, variants=["Stone"], source="ner")
+    target = DocumentEntity(id=2, document_id=11137, entity_type="persName", entity_text="Andy Stone",
+                            mention_count=3, variants=[], source="ner")
+    if case == "not_person":
+        source.entity_type = "orgName"
+    rows = {1: source, 2: target}
+    source_link = DocumentPerson(id=4, document_id=11137, person_id=9, raw_mention="Stone")
+    target_link = DocumentPerson(id=5, document_id=11137, person_id=8, raw_mention="Andy Stone")
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        Document(id=11137) if model is Document else Person(id=key, canonical_name="Andy Stone") if model is Person
+        else rows.get(key))
+    session.execute.return_value.scalars.return_value.first.side_effect = [source_link, target_link]
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "server.Document.get_by_id", return_value=Document(id=11137)
+    ), patch("library.person_registry.merge_review_link") as merge:
+        response = client.post("/document/11137/persons/merge", headers=API_HEADERS,
+                               json={"source_entity_id": 1, "target_entity_id": 1 if case == "same" else 2})
+    assert response.status_code == expected
+    if expected == 200:
+        assert (target.mention_count, target.variants, target.source) == (5, ["Stone"], "manual")
+        merge.assert_called_once()
+        assert merge.call_args.args[1] is source_link
+        session.delete.assert_called_with(source)
+        audit = next(c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], EntityReviewDecision))
+        assert (audit.decision, audit.entity_text, audit.details["target_entity_text"]) == (
+            "person_merged", "Stone", "Andy Stone")
+        session.commit.assert_called_once()
+    elif case == "rollback":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
 @pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_place", 400),
                                            ("one_part", 400), ("duplicate", 400), ("rollback", 500)])
 def test_split_place(client, case, expected):

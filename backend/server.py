@@ -3246,6 +3246,78 @@ def document_places_merge(doc_id: int):
     }), 200
 
 
+@app.route('/document/<int:doc_id>/persons/merge', methods=['POST', 'OPTIONS'])
+def document_persons_merge(doc_id: int):
+    """Fold a person entity of a document into another person entity of the same document.
+
+    Body: {"source_entity_id": int, "target_entity_id": int}. Both are persName rows of this document
+    ("Stone" into "Andy Stone"). Counts and surface forms move to the target, the source's registry link is
+    re-pointed at the target's person (the mention becomes an alias, so later documents resolve it
+    directly) and the decision is audited as ``person_merged`` and replayed after entity refreshes.
+    """
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson, Person
+    from library.entity_review_audit import record_entity_decision
+    from library.entity_service import merge_document_entities
+
+    data = request.get_json(silent=True) or {}
+    source_entity_id, error = _entities_doc_id(data.get('source_entity_id'))
+    if error:
+        return error
+    target_entity_id, error = _entities_doc_id(data.get('target_entity_id'))
+    if error:
+        return error
+    if source_entity_id == target_entity_id:
+        return {"status": "error", "message": "source_entity_id and target_entity_id must differ"}, 400
+
+    session = get_scoped_session()
+    doc = Document.get_by_id(session, doc_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    source = session.get(DocumentEntity, source_entity_id)
+    target = session.get(DocumentEntity, target_entity_id)
+    if any(row is None or row.document_id != doc_id or row.entity_type != "persName" for row in (source, target)):
+        return {"status": "error", "message": "Obie encje muszą być osobami tego dokumentu."}, 400
+
+    source_text, source_variants = source.entity_text, list(source.variants or [])
+
+    def link_of(entity):
+        return session.execute(sa_select(DocumentPerson).where(
+            DocumentPerson.document_id == doc_id,
+            sa_func.lower(DocumentPerson.raw_mention) == entity.entity_text.lower(),
+        )).scalars().first()
+
+    try:
+        source_link, target_link = link_of(source), link_of(target)
+        if source_link is not None:
+            if target_link is None:
+                person_registry.reject_review_link(session, source_link)
+            elif source_link.person_id == target_link.person_id:
+                session.delete(source_link)
+            else:
+                person_registry.merge_review_link(session, source_link, session.get(Person, target_link.person_id))
+        merge_document_entities(source, target)
+        session.delete(source)
+        session.flush()
+        record_entity_decision(
+            session, document_id=doc_id, document_entity_id=target.id, entity_type="persName",
+            entity_text=source_text, decision="person_merged",
+            details={"target_entity_text": target.entity_text, "source_variants": source_variants},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("person merge failed for document %s", doc_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "entity_id": target.id, "entity_text": target.entity_text,
+                    "mention_count": target.mention_count, "variants": target.variants}), 200
+
+
 @app.route('/tags', methods=['GET'])
 def tags_list():
     """Distinct tags across documents (CSV column), most used first — editor autocomplete."""

@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 REPLAYED_DECISIONS = (
     "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
     "person_to_place", "person_to_organization", "organization_to_place", "organization_to_person", "deleted",
-    "rejected",
+    "rejected", "person_merged",
 )
 
 
@@ -567,6 +567,14 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             entities.remove(row)
             touched.pop(id(row), None)
             stats["person_to_organization"] = stats.get("person_to_organization", 0) + 1
+        elif decision.decision == "person_merged":
+            row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
+            target = _by_name_or_variant(entities, details.get("target_entity_text") or "", ("persName",))
+            if row is None or target is None or row is target:
+                continue
+            merge_document_entities(row, target, add_count=id(target) not in survivors)
+            drop(row)
+            stats["person_merged"] = stats.get("person_merged", 0) + 1
         elif decision.decision == "person_to_place":
             row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
             if row is None:
@@ -660,7 +668,7 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
             or_(
                 EntityReviewDecision.entity_type.in_(PLACE_TYPES),
                 (EntityReviewDecision.entity_type == "persName")
-                & EntityReviewDecision.decision.in_(("person_to_place", "person_to_organization")),
+                & EntityReviewDecision.decision.in_(("person_to_place", "person_to_organization", "person_merged")),
                 (EntityReviewDecision.entity_type == "orgName")
                 & EntityReviewDecision.decision.in_(("organization_to_place", "organization_to_person")),
             ),
