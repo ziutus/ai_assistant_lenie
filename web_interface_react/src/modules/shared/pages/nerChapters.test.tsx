@@ -307,6 +307,26 @@ it("adds an entity from a selected fragment through the context menu", async () 
   expect(screen.queryByRole("menu")).toBeNull();
 });
 
+it("fixes a transcript slip from the selection: stores the rule and rewrites the document", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: { fields: { text: { changed: true } } } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => " Wina Burki na Faso " } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  const menu = screen.getByRole("menu", { name: "Dodaj encję z zaznaczenia" });
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "✏️ Popraw błąd w transkrypcji" }));
+  fireEvent.change(within(menu).getByLabelText("Poprawna wersja"), { target: { value: "Burkina Faso" } });
+  fireEvent.click(within(menu).getByRole("button", { name: "✏️ Popraw w transkrypcji" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    "/transcript_corrections",
+    { pattern: "Wina Burki na Faso", replacement: "Burkina Faso", scope: "global" },
+    { headers: { "x-api-key": "test-key" } },
+  ));
+  expect(axios.post).toHaveBeenCalledWith(
+    "/transcript_corrections/apply", { document_id: 42, dry_run: false }, { headers: { "x-api-key": "test-key" } },
+  );
+  expect(await screen.findByText(/Poprawiono „Wina Burki na Faso” → „Burkina Faso”/)).toBeTruthy();
+});
+
 it("copies the selected fragment from the context menu", async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });

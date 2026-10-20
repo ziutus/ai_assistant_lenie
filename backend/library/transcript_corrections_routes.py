@@ -23,6 +23,12 @@ def _require_service() -> None:
         abort(403, "Zapis reguł wymaga klucza service")
 
 
+def _require_writer() -> None:
+    # Reviewers fix a transcript slip from the web UI (/ner/:id) with their own household key.
+    if getattr(getattr(g, "auth", None), "kind", None) not in ("service", "user"):
+        abort(403, "Zapis reguł wymaga klucza service lub user")
+
+
 def _body() -> dict:
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -80,7 +86,7 @@ def list_rules():
 
 @bp.post("/transcript_corrections")
 def add_rule():
-    _require_service()
+    _require_writer()
     data = _body()
     try:
         values = _values(data)
@@ -141,7 +147,7 @@ def _snippet(before, after):
 
 @bp.post("/transcript_corrections/apply")
 def apply_rules():
-    _require_service()
+    _require_writer()
     data = _body()
     document_id = data.get("document_id")
     dry_run = data.get("dry_run", True)

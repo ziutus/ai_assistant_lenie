@@ -437,9 +437,9 @@ const NerChapters = () => {
               onSaved={() => { setDescribing(null); setVersion((current) => current + 1); }} />
           )}
           {selectionMenu && (
-            <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers}
+            <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers} byline={doc?.byline}
               onClose={closeSelectionMenu}
-              onAdded={(message) => { setSelectionMenu(null); setAddedMessage(message); setPanelKey((current) => current + 1); }} />
+              onAdded={(message) => { setSelectionMenu(null); setAddedMessage(message); setPanelKey((current) => current + 1); setVersion((current) => current + 1); }} />
           )}
           <EntitiesPanel
             docId={id}

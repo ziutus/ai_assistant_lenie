@@ -290,8 +290,9 @@ remain source evidence. Analysis and NER consume the corrected canonical fields.
 Webpage, email and Obsidian ingestion do not call this hook.
 
 `GET/POST /transcript_corrections` and `PATCH/DELETE /transcript_corrections/<id>`
-manage rules using the same authentication as cleanup rules (service keys for
-writes). `POST /transcript_corrections/apply` accepts one integer `document_id`
+manage rules; `POST /transcript_corrections` and `POST .../apply` accept `user`
+and `service` keys (the `/ner/:id` "Popraw błąd w transkrypcji" menu), PATCH and
+DELETE need a service key. `POST /transcript_corrections/apply` accepts one integer `document_id`
 and optional boolean `dry_run` (default true). Previews report counts per rule and
 field plus a short before/after snippet without changing text or statistics.
 Persisting updates text/text_md and statistics only; it does not rebuild existing

@@ -49,13 +49,28 @@ def payload(**overrides):
 
 
 @pytest.mark.parametrize("kind", ["user", "read_only", ""])
-@pytest.mark.parametrize("method,path", [("post", ""), ("patch", "/42"), ("delete", "/42"), ("post", "/apply")])
+@pytest.mark.parametrize("method,path", [("patch", "/42"), ("delete", "/42")])
 def test_service_only(api, kind, method, path):
     client, session, bust, _ = api
     assert getattr(client, method)("/transcript_corrections" + path, json=payload(),
                                    headers={"X-Kind": kind}).status_code == 403
     session.commit.assert_not_called()
     bust.assert_not_called()
+
+
+@pytest.mark.parametrize("path", ["", "/apply"])
+@pytest.mark.parametrize("kind", ["read_only", ""])
+def test_create_and_apply_reject_read_only(api, kind, path):
+    client, session, _, _ = api
+    assert client.post("/transcript_corrections" + path, json=payload(),
+                       headers={"X-Kind": kind}).status_code == 403
+    session.commit.assert_not_called()
+
+
+def test_user_key_may_create_rule(api):
+    client, _, bust, _ = api
+    assert client.post("/transcript_corrections", json=payload(), headers={"X-Kind": "user"}).status_code == 201
+    bust.assert_called_once()
 
 
 def test_create_defaults_and_audit(api):
