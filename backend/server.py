@@ -988,8 +988,9 @@ def person_update(person_id: int):
             other = session.execute(sa_select(Person).where(
                 Person.wikidata_qid == qid, Person.id != person_id)).scalars().first()
             if other is not None:
-                return {"status": "error", "message": f"Identyfikator {qid} ma już osoba „{other.canonical_name}”.",
-                        "conflict_person_id": other.id}, 409
+                # jsonify enforces Content-Type: application/json (CodeQL py/reflective-xss)
+                return jsonify(status="error", message=f"Identyfikator {qid} ma już osoba „{other.canonical_name}”.",
+                               conflict_person_id=other.id), 409
         if name is not None and name.strip() != person.canonical_name:
             old_name = person.canonical_name
             person.canonical_name = name.strip()
