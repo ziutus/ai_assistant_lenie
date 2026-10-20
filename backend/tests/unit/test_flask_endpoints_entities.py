@@ -119,6 +119,43 @@ def test_place_to_organization(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("blank_text", 400), ("not_person", 400)])
+def test_person_to_organization(client, case, expected):
+    # doc #11137: the speech-to-text form "Xie" of "X" (the former Twitter) was tagged persName.
+    from library.db.models import Document, DocumentEntity, DocumentPerson, EntityReviewDecision, Organization
+    entity = DocumentEntity(id=1, document_id=11137, entity_type="persName", entity_text="Xie",
+                            mention_count=2, variants=["Xie"], source="ner")
+    if case == "not_person":
+        entity.entity_type = "eventName"
+    link = DocumentPerson(id=4, document_id=11137, person_id=9, raw_mention="Xie")
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: entity if model is DocumentEntity else Document(id=11137, tags="")
+    session.execute.return_value.scalars.return_value.first.return_value = link
+    session.scalar.return_value = None
+    organization = Organization(id=7, canonical_name="X")
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.person_registry.reject_review_link", return_value={"person_deleted": True}
+    ) as reject, patch(
+        "library.organization_registry.resolve_or_create", return_value=(organization, "canonical_matched")
+    ) as resolve:
+        response = client.post("/website_entities/1/to_organization", headers=API_HEADERS,
+                               json={"text": " "} if case == "blank_text" else {"text": "X"})
+    assert response.status_code == expected
+    if expected == 200:
+        added = [call.args[0] for call in session.add.call_args_list]
+        org_entity = next(row for row in added if isinstance(row, DocumentEntity))
+        assert (org_entity.entity_type, org_entity.entity_text, org_entity.source) == ("orgName", "X", "manual")
+        assert org_entity.mention_count == 2
+        assert org_entity.variants == ["Xie"]
+        audit = next(row for row in added if isinstance(row, EntityReviewDecision))
+        assert (audit.decision, audit.entity_type, audit.details["new_text"]) == ("person_to_organization", "persName", "X")
+        assert resolve.call_args.args[1] == "X"
+        reject.assert_called_once()
+        session.commit.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
 @pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("not_place", 400),
                                            ("one_part", 400), ("duplicate", 400), ("rollback", 500)])
 def test_split_place(client, case, expected):

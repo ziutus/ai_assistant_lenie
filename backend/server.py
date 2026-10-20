@@ -1816,33 +1816,56 @@ def website_entities_reject_place(entity_id: int):
 
 @app.route('/website_entities/<int:entity_id>/to_organization', methods=['POST'])
 def website_entities_to_organization(entity_id: int):
-    """Retype a place entity as an organization (NER mislabelled it, e.g. "Huti")."""
-    from library.db.models import DocumentEntity
+    """Retype a place or person entity as an organization (NER mislabelled it, e.g. "Huti").
+
+    Optional body {"text": "X"} names the organization (a person entity "Xie" is the speech-to-text
+    form of "X"); the mention stays a surface form. A person's document link is dropped like on a
+    deletion and the decision is audited as ``person_to_organization`` and replayed after refreshes.
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson
     from library.entity_overrides import convert_place_to_organization
     from library.entity_review_audit import record_entity_decision
     from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
 
+    data = request.get_json(silent=True) or {}
+    new_text = data.get('text')
+    if new_text is not None and (not isinstance(new_text, str) or not new_text.strip() or len(new_text) > 500):
+        return jsonify(status="error", message="Nieprawidłowa nazwa organizacji."), 400
     session = get_scoped_session()
     entity = session.get(DocumentEntity, entity_id)
     if entity is None:
         return jsonify(status="error", message="Nie znaleziono encji."), 404
-    if entity.entity_type not in PLACE_ENTITY_TYPES:
-        return jsonify(status="error", message="Encja nie jest miejscem."), 400
+    from_person = entity.entity_type == "persName"
+    if not from_person and entity.entity_type not in PLACE_ENTITY_TYPES:
+        return jsonify(status="error", message="Encja nie jest miejscem ani osobą."), 400
     try:
         document = session.get(Document, entity.document_id)
         old_text, old_type, old_variants = entity.entity_text, entity.entity_type, list(entity.variants or [])
-        removed_tag = remove_orphaned_tag(session, document, entity) if document is not None else None
+        removed_tag = None
+        if from_person:
+            link = session.execute(sa_select(DocumentPerson).where(
+                DocumentPerson.document_id == entity.document_id,
+                sa_func.lower(DocumentPerson.raw_mention) == old_text.lower(),
+            )).scalars().first()
+            if link is not None:
+                person_registry.reject_review_link(session, link)
+        elif document is not None:
+            removed_tag = remove_orphaned_tag(session, document, entity)
         record_entity_decision(
             session, document_id=entity.document_id, document_entity_id=entity.id,
-            entity_type=old_type, entity_text=old_text, decision="place_to_organization",
-            details={"variants": old_variants, "removed_tag": removed_tag},
+            entity_type=old_type, entity_text=old_text,
+            decision="person_to_organization" if from_person else "place_to_organization",
+            details={"variants": old_variants, "removed_tag": removed_tag,
+                     **({"new_text": new_text.strip()} if new_text else {})},
         )
-        new_entity, organization = convert_place_to_organization(session, entity)
+        new_entity, organization = convert_place_to_organization(session, entity, new_text=new_text)
         session.commit()
     except Exception:
         session.rollback()
-        logging.exception("Place to organization conversion failed for entity %s", entity_id)
-        return jsonify(status="error", message="Nie udało się zmienić miejsca na organizację."), 500
+        logging.exception("Entity to organization conversion failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zmienić encji na organizację."), 500
     return jsonify(status="success", entity_id=new_entity.id, organization_id=organization.id,
                    organization_name=organization.canonical_name, removed_tag=removed_tag), 200
 

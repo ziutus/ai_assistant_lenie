@@ -484,8 +484,14 @@ const EntitiesPanel = ({
   refreshKey = 0,
   chapterRenderer,
   onShowInText,
+  mentionMenu,
+  onMentionMenuClose,
 }: {
   docId?: string | number;
+  // A click on a highlighted mention in the text (the /ner/:id page): opens the same action menu a
+  // chip has, at the click point. The host passes a fresh object per click and clears it on close.
+  mentionMenu?: { item: EntityItem; kind: "persName" | "orgName" | "place"; x: number; y: number } | null;
+  onMentionMenuClose?: () => void;
   // When set, every chip menu offers "Podświetl w tekście" and calls this with the chip's entity
   // and its kind (the /ner/:id page marks that entity's mentions in the transcript).
   onShowInText?: (item: EntityItem, kind: "persName" | "orgName" | "place") => void;
@@ -553,6 +559,26 @@ const EntitiesPanel = ({
   // "Zmień na miejsce" (person -> place) and "Podziel" (one place entity listing several places) forms.
   const [toPlaceFor, setToPlaceFor] = React.useState<EntityItem | null>(null);
   const [toPlaceText, setToPlaceText] = React.useState("");
+  // "Zmień na organizację" for a person: the organization may be named differently than the mention ("Xie" -> "X").
+  const [toOrgFor, setToOrgFor] = React.useState<EntityItem | null>(null);
+  const [toOrgText, setToOrgText] = React.useState("");
+  // Floating action menu of a mention clicked in the host's text (see the mentionMenu prop).
+  const [openMentionSub, setOpenMentionSub] = React.useState<string | null>(null);
+  const mentionMenuRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!mentionMenu) return;
+    setOpenMentionSub(null);
+    const outside = (event: PointerEvent) => {
+      if (!mentionMenuRef.current?.contains(event.target as Node)) onMentionMenuClose?.();
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") onMentionMenuClose?.(); };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [mentionMenu, onMentionMenuClose]);
   const [splitFor, setSplitFor] = React.useState<EntityItem | null>(null);
   const [splitKind, setSplitKind] = React.useState<"place" | "organization">("place");
   const [splitText, setSplitText] = React.useState("");
@@ -1179,6 +1205,23 @@ const EntitiesPanel = ({
     }
   };
 
+  const changePersonToOrganization = async () => {
+    if (toOrgFor?.id == null || !toOrgText.trim()) return;
+    setIsRetyping(true);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${toOrgFor.id}/to_organization`,
+        { text: toOrgText.trim() }, { headers: jsonHeaders });
+      setMessage(`„${toOrgFor.text}” zmienione na organizację: ${response.data.organization_name}.`);
+      setToOrgFor(null);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się zmienić na organizację: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsRetyping(false);
+    }
+  };
+
   const savePlaceWikipedia = async () => {
     if (!wikiFor) return;
     setIsRetyping(true);
@@ -1248,6 +1291,7 @@ const EntitiesPanel = ({
     setMergeHint(null);
     setRenameFor(null);
     setToPlaceFor(null);
+    setToOrgFor(null);
     setSplitFor(null);
     setWikiFor(null);
     setDeleteFor(null);
@@ -1329,6 +1373,7 @@ const EntitiesPanel = ({
     ...showInTextEntry(item, "persName"),
     ...relevanceEntries(item),
     { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
+    { label: "Zmień na organizację", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
     { label: "🚫 To nie jest osoba", action: () => {
@@ -1558,8 +1603,54 @@ const EntitiesPanel = ({
     );
   };
 
+  const mentionEntries: MenuEntry[] = !mentionMenu ? [] : [
+    { label: "Kopiuj nazwę", action: () => void copyText(mentionMenu.item.text) },
+    ...(mentionMenu.kind === "persName" ? personMenuActions(mentionMenu.item)
+      : mentionMenu.kind === "orgName" ? organizationMenuActions(mentionMenu.item)
+        : placeMenuActions(mentionMenu.item)),
+  ];
+  const mentionItemStyle: React.CSSProperties = { display: "block", width: "100%", textAlign: "left",
+    padding: "6px 8px", boxSizing: "border-box", background: "transparent", border: 0, cursor: "pointer" };
+
   return (
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
+      {mentionMenu && mentionEntries.length > 0 && (
+        <div role="menu" ref={mentionMenuRef} aria-label={`Działania: ${mentionMenu.item.text}`}
+          style={{ position: "fixed", zIndex: 30, minWidth: 230, maxWidth: "calc(100vw - 16px)", maxHeight: "70vh",
+            overflowY: "auto", padding: 4, background: "white", border: "1px solid #b9c8de", borderRadius: 6,
+            boxShadow: "0 2px 8px #0003",
+            left: Math.max(8, Math.min(mentionMenu.x, window.innerWidth - 250)),
+            top: Math.max(8, Math.min(mentionMenu.y, window.innerHeight - 320)) }}>
+          <div style={{ padding: "2px 8px", fontSize: "0.8em", color: "#667" }}>{mentionMenu.item.text}</div>
+          {mentionEntries.map((entry) => {
+            if (entry.to) {
+              return (
+                <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => onMentionMenuClose?.()}
+                  style={{ ...mentionItemStyle, color: "inherit", textDecoration: "none" }}>{entry.label}</Link>
+              );
+            }
+            if (entry.children) {
+              const subOpen = openMentionSub === entry.label;
+              return (
+                <React.Fragment key={entry.label}>
+                  <button type="button" role="menuitem" aria-expanded={subOpen} style={mentionItemStyle}
+                    onClick={() => setOpenMentionSub(subOpen ? null : entry.label)}>
+                    {entry.label} {subOpen ? "▾" : "▸"}
+                  </button>
+                  {subOpen && entry.children.map((child) => (
+                    <button key={child.label} type="button" role="menuitem" style={{ ...mentionItemStyle, paddingLeft: 24 }}
+                      onClick={() => { onMentionMenuClose?.(); child.action?.(); }}>{child.label}</button>
+                  ))}
+                </React.Fragment>
+              );
+            }
+            return (
+              <button key={entry.label} type="button" role="menuitem" style={mentionItemStyle}
+                onClick={() => { onMentionMenuClose?.(); entry.action?.(); }}>{entry.label}</button>
+            );
+          })}
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <strong>Osoby, miejsca i obiekty (NER)</strong>
         <button className={"button"} type="button" disabled={isRefreshing || isDetectingCountries || enrichmentActive || externalDisabled} onClick={handleRefresh}>
@@ -1698,6 +1789,23 @@ const EntitiesPanel = ({
           <button type="button" className="button" disabled={isRenaming || !renameText.trim()}
             onClick={() => void handleRename()}>Zatwierdź</button>
           <button type="button" disabled={isRenaming} onClick={() => setRenameFor(null)}>Anuluj</button>
+        </div>
+      )}
+
+      {toOrgFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void changePersonToOrganization();
+          }
+        }}
+          style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>Nazwa organizacji (zamiast „{toOrgFor.text}”)
+            <input autoFocus value={toOrgText} maxLength={500} disabled={isRetyping}
+              onChange={(event) => setToOrgText(event.target.value)} />
+          </label>
+          <button type="button" className="button" disabled={isRetyping || !toOrgText.trim()}
+            onClick={() => void changePersonToOrganization()}>Zmień na organizację</button>
+          <button type="button" disabled={isRetyping} onClick={() => setToOrgFor(null)}>Anuluj</button>
         </div>
       )}
 

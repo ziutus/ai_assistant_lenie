@@ -25,6 +25,14 @@ class TestFilterEntitiesToText:
         assert [i["text"] for i in out["placeName"]] == ["Iran"]
         assert out["placeName"][0]["chapter_variants"] == ["Iranie"]
 
+    def test_multiword_name_matches_inflected_phrase_not_just_its_first_word(self):
+        # doc #11137: a manual row listed only the first word of "Stany Zjednoczone" as variants.
+        grouped = _grouped(placeName=[{"text": "Stany Zjednoczone", "count": 2, "variants": ["Stany", "Stanach"]}])
+        out = filter_entities_to_text(grouped, "W Stanach Zjednoczonych i Stany Zjednoczone oraz Stany Ameryki.")
+        item = out["placeName"][0]
+        assert item["count"] == 3
+        assert {"Stanach Zjednoczonych", "Stany Zjednoczone", "Stany"} <= set(item["chapter_variants"])
+
     def test_no_match_inside_word(self):
         grouped = _grouped(placeName=[{"text": "Iran", "count": 1, "variants": ["Iran"]}])
         out = filter_entities_to_text(grouped, "Samolot Airanu wystartował.")

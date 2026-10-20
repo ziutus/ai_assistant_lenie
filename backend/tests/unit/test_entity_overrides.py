@@ -108,6 +108,23 @@ def test_place_to_organization_is_replayed_and_drops_the_place_row():
     assert stats["to_organization"] == 1
 
 
+def test_person_to_organization_is_replayed_under_the_chosen_name():
+    from library.db.models import DocumentEntity, Organization
+    row = entity("Xie", entity_type="persName", count=2, variants=["Xie"])
+    rows = [row]
+    session = MagicMock()
+    session.scalar.return_value = None
+    organization = Organization(id=7, canonical_name="X")
+    with patch("library.organization_registry.resolve_or_create",
+               return_value=(organization, "canonical_matched")) as resolve:
+        _, stats = apply_decisions(session, [decision("person_to_organization", "Xie", "persName", new_text="X")], rows)
+    assert rows == []
+    assert resolve.call_args.args[1] == "X"
+    created = next(c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], DocumentEntity))
+    assert (created.entity_type, created.entity_text, created.mention_count, created.variants) == ("orgName", "X", 2, ["Xie"])
+    assert stats["person_to_organization"] == 1
+
+
 def test_rename_is_reapplied_to_fresh_ner_row_and_keeps_old_forms_as_variants():
     row = entity("Jemenu Północnego", count=3, variants=["Jemenu Północnym"])
     entities = [row]
