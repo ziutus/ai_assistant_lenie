@@ -62,7 +62,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(10);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(11);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -241,7 +241,7 @@ it("offers the organization menu on a cited source, including a link to the sour
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "Zmień na miejsce", "Zmień na osobę",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
@@ -423,7 +423,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "Zmień na miejsce", "Zmień na osobę",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));

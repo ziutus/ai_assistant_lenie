@@ -77,8 +77,12 @@ const Persons = () => {
   const [page, setPage] = React.useState(Number(searchParams.get("page")) || 1);
   const pageSize = 50;
   const [person, setPerson] = React.useState<
-    { canonical_name: string; description: string | null; wikidata_qid: string | null } | null
+    { canonical_name: string; description: string | null; wikidata_qid: string | null; aliases?: string[] } | null
   >(null);
+  // Edit form of the registry person: name (the old one stays an alias), description, Wikidata id, aliases.
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState({ name: "", description: "", qid: "", aliases: "" });
+  const [saving, setSaving] = React.useState(false);
   const [documents, setDocuments] = React.useState<PersonDocument[]>([]);
   // per-document chapter drill-down ("wystąpienia w tej książce")
   const [occurrences, setOccurrences] = React.useState<Record<number, ChapterOccurrence[] | "loading">>({});
@@ -142,7 +146,34 @@ const Persons = () => {
     }
   };
 
+  const startEdit = () => {
+    if (!person) return;
+    setDraft({
+      name: person.canonical_name, description: person.description ?? "", qid: person.wikidata_qid ?? "",
+      aliases: (person.aliases ?? []).join("\n"),
+    });
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    if (!id || !draft.name.trim()) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await axios.patch(`${apiUrl}/persons/${id}`, {
+        canonical_name: draft.name.trim(), description: draft.description, wikidata_qid: draft.qid.trim(),
+        aliases: draft.aliases.split("\n").map((alias) => alias.trim()).filter(Boolean),
+      }, { headers: { ...headers, "Content-Type": "application/json" } });
+      setPerson(response.data.person);
+      setEditing(false);
+    } catch (error: any) {
+      setMessage(`Nie udało się zapisać osoby: ${error.response?.data?.message || error.message}`);
+    }
+    setSaving(false);
+  };
+
   React.useEffect(() => {
+    setEditing(false);
     setPerson(null);
     setDocuments([]);
     setOccurrences({});
@@ -196,6 +227,33 @@ const Persons = () => {
       {id && person ? (
         <div style={{ marginBottom: 20, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
           <PersonHeader person={person} />
+          {!editing && (
+            <button type="button" className={"button"} style={{ marginLeft: 12 }} onClick={startEdit}>✏️ Edytuj osobę</button>
+          )}
+          {editing && (
+            <div style={{ marginTop: 10, padding: 8, background: "#f0f6ff", borderRadius: 6, display: "grid", gap: 6, maxWidth: 520 }}>
+              <label>Nazwisko (poprzednie zostanie aliasem)
+                <input value={draft.name} maxLength={500} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              </label>
+              <label>Opis
+                <input value={draft.description} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+              </label>
+              <label>Identyfikator Wikidata (np. Q12345, puste = brak)
+                <input value={draft.qid} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, qid: e.target.value })} />
+              </label>
+              <label>Aliasy (jeden w wierszu)
+                <textarea rows={4} value={draft.aliases} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, aliases: e.target.value })} />
+              </label>
+              <div>
+                <button type="button" className={"button"} disabled={saving || !draft.name.trim()} onClick={() => void saveEdit()}>Zapisz</button>
+                <button type="button" disabled={saving} onClick={() => setEditing(false)} style={{ marginLeft: 8 }}>Anuluj</button>
+              </div>
+            </div>
+          )}
           <h3 style={{ margin: "12px 0 6px" }}>Artykuły autora ({authoredDocuments.length})</h3>
           {!authoredDocuments.length && <div style={{ color: "#667" }}>Brak dokumentów oznaczonych jako autorstwa tej osoby.</div>}
           <ul style={{ listStyle: "none", padding: 0 }}>

@@ -720,6 +720,26 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     return grouped
 
 
+_INFLECTION_TYPES = ("geogName", "placeName", "orgName")
+
+
+def inflected_phrases(name: str, text: str) -> list[str]:
+    """Inflected forms of a multi-word name found in ``text`` ("Stanach Zjednoczonych" for "Stany Zjednoczone").
+
+    Every word of the name is reduced to a stem (its length minus a 3-letter ending, at least 4 letters) and
+    the words must follow each other in the text. A form is returned as written, capitalised like the name.
+    """
+    words = name.split()
+    if not 2 <= len(words) <= 4 or any(len(re.sub(r"\W", "", word)) < 4 for word in words):
+        return []
+    stems = [re.escape(word[:max(4, len(word) - 3)]) for word in words]
+    pattern = re.compile(r"(?<!\w)" + r"\s+".join(f"{stem}\\w*" for stem in stems) + r"(?!\w)", re.IGNORECASE)
+    return list(dict.fromkeys(
+        match.group(0) for match in pattern.finditer(text)
+        if all(w[0].isupper() == m[0].isupper() for w, m in zip(words, match.group(0).split(), strict=False))
+    ))
+
+
 def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[str, list[dict]]:
     """Subset of get_document_entities() output actually mentioned in text.
 
@@ -743,7 +763,11 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
         kept = []
         for item in items:
             variants = item.get("variants") or []
-            raw_needles = variants or [item["text"]]
+            # The canonical name is a needle too: a manual row can list only some forms ("Stany") and
+            # would otherwise never match the full name; inflected multi-word forms are found by stem.
+            raw_needles = [*variants, item["text"]]
+            if entity_type in _INFLECTION_TYPES:
+                raw_needles.extend(inflected_phrases(item["text"], text))
             needles_by_key: dict[str, str] = {}
             for raw_needle in raw_needles:
                 needle = raw_needle.strip()

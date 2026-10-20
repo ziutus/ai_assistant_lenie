@@ -943,9 +943,80 @@ def person_documents():
     return {
         "status": "success",
         "person": {"id": person.id, "canonical_name": person.canonical_name,
-                   "description": person.description, "wikidata_qid": person.wikidata_qid},
+                   "description": person.description, "wikidata_qid": person.wikidata_qid,
+                   "aliases": [a.alias for a in person.aliases]},
         "documents": documents,
     }, 200
+
+
+@app.route('/persons/<int:person_id>', methods=['PATCH', 'OPTIONS'])
+def person_update(person_id: int):
+    """Edit a registry person: ``canonical_name``, ``description``, ``wikidata_qid`` (``Q123`` or empty to
+    clear) and ``aliases`` (the full list; absent key = unchanged). A renamed person keeps the old name as
+    an alias, so documents that mention it still resolve."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    import re
+    from sqlalchemy import select as sa_select
+    from library import person_registry
+    from library.db.models import Person
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    person = session.get(Person, person_id)
+    if person is None:
+        return {"status": "error", "message": "Person not found"}, 404
+
+    name = data.get('canonical_name')
+    if name is not None and (not isinstance(name, str) or not name.strip() or len(name) > 500):
+        return {"status": "error", "message": "Nieprawidłowe nazwisko."}, 400
+    description = data.get('description')
+    if description is not None and not isinstance(description, str):
+        return {"status": "error", "message": "Nieprawidłowy opis."}, 400
+    qid = data.get('wikidata_qid')
+    if qid is not None:
+        qid = qid.strip() if isinstance(qid, str) else qid
+        if qid and not (isinstance(qid, str) and re.fullmatch(r"Q\d{1,12}", qid)):
+            return {"status": "error", "message": "Identyfikator Wikidata ma postać Q123."}, 400
+    aliases = data.get('aliases')
+    if aliases is not None and not (isinstance(aliases, list) and all(isinstance(a, str) for a in aliases)):
+        return {"status": "error", "message": "Aliasy muszą być listą tekstów."}, 400
+
+    try:
+        if qid:
+            other = session.execute(sa_select(Person).where(
+                Person.wikidata_qid == qid, Person.id != person_id)).scalars().first()
+            if other is not None:
+                # jsonify enforces Content-Type: application/json (CodeQL py/reflective-xss)
+                return jsonify(status="error", message=f"Identyfikator {qid} ma już osoba „{other.canonical_name}”.",
+                               conflict_person_id=other.id), 409
+        if name is not None and name.strip() != person.canonical_name:
+            old_name = person.canonical_name
+            person.canonical_name = name.strip()
+            person_registry.add_person_alias(session, person, old_name)
+        if description is not None:
+            person.description = description.strip() or None
+        if 'wikidata_qid' in data:
+            person.wikidata_qid = qid or None
+        if aliases is not None:
+            keep = {a.strip().lower() for a in aliases if a.strip()}
+            for existing in list(person.aliases):
+                if existing.alias.lower() not in keep:
+                    session.delete(existing)
+            session.flush()
+            session.refresh(person)
+            for alias in aliases:
+                if alias.strip():
+                    person_registry.add_person_alias(session, person, alias.strip())
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("person update failed for person %s", person_id)
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "person": {
+        "id": person.id, "canonical_name": person.canonical_name, "description": person.description,
+        "wikidata_qid": person.wikidata_qid, "aliases": [a.alias for a in person.aliases]}}), 200
 
 
 @app.route('/persons_review', methods=['GET'])
@@ -1816,33 +1887,56 @@ def website_entities_reject_place(entity_id: int):
 
 @app.route('/website_entities/<int:entity_id>/to_organization', methods=['POST'])
 def website_entities_to_organization(entity_id: int):
-    """Retype a place entity as an organization (NER mislabelled it, e.g. "Huti")."""
-    from library.db.models import DocumentEntity
+    """Retype a place or person entity as an organization (NER mislabelled it, e.g. "Huti").
+
+    Optional body {"text": "X"} names the organization (a person entity "Xie" is the speech-to-text
+    form of "X"); the mention stays a surface form. A person's document link is dropped like on a
+    deletion and the decision is audited as ``person_to_organization`` and replayed after refreshes.
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson
     from library.entity_overrides import convert_place_to_organization
     from library.entity_review_audit import record_entity_decision
     from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
 
+    data = request.get_json(silent=True) or {}
+    new_text = data.get('text')
+    if new_text is not None and (not isinstance(new_text, str) or not new_text.strip() or len(new_text) > 500):
+        return jsonify(status="error", message="Nieprawidłowa nazwa organizacji."), 400
     session = get_scoped_session()
     entity = session.get(DocumentEntity, entity_id)
     if entity is None:
         return jsonify(status="error", message="Nie znaleziono encji."), 404
-    if entity.entity_type not in PLACE_ENTITY_TYPES:
-        return jsonify(status="error", message="Encja nie jest miejscem."), 400
+    from_person = entity.entity_type == "persName"
+    if not from_person and entity.entity_type not in PLACE_ENTITY_TYPES:
+        return jsonify(status="error", message="Encja nie jest miejscem ani osobą."), 400
     try:
         document = session.get(Document, entity.document_id)
         old_text, old_type, old_variants = entity.entity_text, entity.entity_type, list(entity.variants or [])
-        removed_tag = remove_orphaned_tag(session, document, entity) if document is not None else None
+        removed_tag = None
+        if from_person:
+            link = session.execute(sa_select(DocumentPerson).where(
+                DocumentPerson.document_id == entity.document_id,
+                sa_func.lower(DocumentPerson.raw_mention) == old_text.lower(),
+            )).scalars().first()
+            if link is not None:
+                person_registry.reject_review_link(session, link)
+        elif document is not None:
+            removed_tag = remove_orphaned_tag(session, document, entity)
         record_entity_decision(
             session, document_id=entity.document_id, document_entity_id=entity.id,
-            entity_type=old_type, entity_text=old_text, decision="place_to_organization",
-            details={"variants": old_variants, "removed_tag": removed_tag},
+            entity_type=old_type, entity_text=old_text,
+            decision="person_to_organization" if from_person else "place_to_organization",
+            details={"variants": old_variants, "removed_tag": removed_tag,
+                     **({"new_text": new_text.strip()} if new_text else {})},
         )
-        new_entity, organization = convert_place_to_organization(session, entity)
+        new_entity, organization = convert_place_to_organization(session, entity, new_text=new_text)
         session.commit()
     except Exception:
         session.rollback()
-        logging.exception("Place to organization conversion failed for entity %s", entity_id)
-        return jsonify(status="error", message="Nie udało się zmienić miejsca na organizację."), 500
+        logging.exception("Entity to organization conversion failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zmienić encji na organizację."), 500
     return jsonify(status="success", entity_id=new_entity.id, organization_id=organization.id,
                    organization_name=organization.canonical_name, removed_tag=removed_tag), 200
 
@@ -1961,6 +2055,141 @@ def website_entities_to_person(entity_id: int):
         logging.exception("Person resolution after organization conversion failed for entity %s", entity_id)
     return jsonify(status="success", entity_id=person_entity.id, person_name=person_entity.entity_text,
                    linked=[canonical for _name, canonical, _conf in (resolved or {}).get("linked", [])]), 200
+
+
+@app.route('/website_entities/<int:entity_id>/transcription_error', methods=['POST'])
+def website_entities_transcription_error(entity_id: int):
+    """Mark an entity as a speech-to-text slip of another entity of the same document ("Hutni" for "Huti").
+
+    Body {"correct_name": "Huti"} names an entity that already exists in the document (any type). The wrong
+    entity is removed WITHOUT touching the registry (a person link is dropped, no alias is created), its
+    mentions and spelling become surface forms of the correct entity (counts added, text keeps highlighting)
+    and, when the document has a channel (byline), the slip is added to the channel glossary so the next
+    entity refresh repairs the text before NER. Audited as ``transcription_error`` and replayed.
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson, NerChannelGlossaryEntry
+    from library.entity_overrides import drop_organization_links
+    from library.entity_review_audit import record_entity_decision
+    from library.entity_service import PLACE_TYPES, merge_document_entities
+    from library.place_verification import remove_orphaned_tag
+
+    data = request.get_json(silent=True) or {}
+    correct = data.get('correct_name')
+    if not isinstance(correct, str) or not correct.strip() or len(correct) > 500:
+        return jsonify(status="error", message="Nieprawidłowa poprawna nazwa."), 400
+    correct = correct.strip()
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type not in ("persName", "orgName", *PLACE_TYPES):
+        return jsonify(status="error", message="Ta encja nie może być błędem transkrypcji."), 400
+    target = session.execute(sa_select(DocumentEntity).where(
+        DocumentEntity.document_id == entity.document_id, DocumentEntity.id != entity.id,
+        DocumentEntity.entity_type.in_(("persName", "orgName", *PLACE_TYPES)),
+        sa_func.lower(DocumentEntity.entity_text) == correct.lower(),
+    )).scalars().first()
+    if target is None:
+        return jsonify(status="error", message=f"W dokumencie nie ma encji „{correct}”. Najpierw zmień typ tej "
+                       "encji na właściwy (Zmień na organizację / miejsce) i nadaj jej tę nazwę."), 404
+    wrong, wrong_variants, wrong_type = entity.entity_text, list(entity.variants or []), entity.entity_type
+    try:
+        document = session.get(Document, entity.document_id)
+        if wrong_type == "persName":
+            link = session.execute(sa_select(DocumentPerson).where(
+                DocumentPerson.document_id == entity.document_id,
+                sa_func.lower(DocumentPerson.raw_mention) == wrong.lower(),
+            )).scalars().first()
+            if link is not None:
+                person_registry.reject_review_link(session, link)
+        elif wrong_type == "orgName":
+            drop_organization_links(session, entity)
+        elif document is not None:
+            remove_orphaned_tag(session, document, entity)
+        merge_document_entities(entity, target)
+        session.delete(entity)
+        glossary = False
+        byline = ((document.byline if document is not None else None) or "").strip()
+        if byline and len(wrong) >= 3:
+            row = session.execute(sa_select(NerChannelGlossaryEntry).where(
+                sa_func.lower(NerChannelGlossaryEntry.author) == byline.lower(),
+                sa_func.lower(NerChannelGlossaryEntry.canonical_name) == target.entity_text.lower(),
+            )).scalars().first()
+            if row is None:
+                session.add(NerChannelGlossaryEntry(author=byline, canonical_name=target.entity_text,
+                                                    aliases=[wrong], fuzzy=False, created_by="ner-review"))
+            elif wrong not in (row.aliases or []):
+                row.aliases = [*(row.aliases or []), wrong]
+            glossary = True
+        session.flush()
+        record_entity_decision(
+            session, document_id=target.document_id, document_entity_id=target.id, entity_type=wrong_type,
+            entity_text=wrong, decision="transcription_error",
+            details={"target_entity_text": target.entity_text, "variants": wrong_variants},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Transcription error marking failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się oznaczyć błędu transkrypcji."), 500
+    return jsonify(status="success", entity_id=target.id, entity_text=target.entity_text,
+                   mention_count=target.mention_count, glossary=glossary), 200
+
+
+@app.route('/website_entities/<int:entity_id>/real_name', methods=['POST'])
+def website_entities_real_name(entity_id: int):
+    """Give a person mention its real name (a nickname such as "Łacha Piachu" for Icchak Herzog).
+
+    Body {"name": "Icchak Herzog"}. The name is looked up in the person registry (canonical name or alias);
+    a missing person is created. The mention (and its surface forms) become aliases of that person, so later
+    documents resolve it directly, and the document's link is pointed at the person (merging a previous
+    link). The entity row and its text stay as they are, so the mentions keep highlighting.
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson, Person
+
+    data = request.get_json(silent=True) or {}
+    name = data.get('name')
+    if not isinstance(name, str) or not name.strip() or len(name) > 500:
+        return jsonify(status="error", message="Nieprawidłowe nazwisko."), 400
+    name = name.strip()
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type != "persName":
+        return jsonify(status="error", message="Encja nie jest osobą."), 400
+    try:
+        person = person_registry.find_by_alias(session, name)
+        created = person is None
+        if created:
+            person = Person(canonical_name=name)
+            session.add(person)
+            session.flush()
+        for form in dict.fromkeys([entity.entity_text, *(entity.variants or [])]):
+            person_registry.add_person_alias(session, person, form)
+        link = session.execute(sa_select(DocumentPerson).where(
+            DocumentPerson.document_id == entity.document_id,
+            sa_func.lower(DocumentPerson.raw_mention) == entity.entity_text.lower(),
+        )).scalars().first()
+        if link is None:
+            session.add(DocumentPerson(
+                document_id=entity.document_id, person_id=person.id, raw_mention=entity.entity_text,
+                confidence=person_registry.CONFIDENCE_MANUAL_CONFIRMED,
+            ))
+        elif link.person_id != person.id:
+            person_registry.merge_review_link(session, link, person)
+        else:
+            link.confidence = person_registry.CONFIDENCE_MANUAL_CONFIRMED
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Real name assignment failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się nadać nazwiska."), 500
+    return jsonify(status="success", person_id=person.id, canonical_name=person.canonical_name, created=created), 200
 
 
 @app.route('/website_entities/<int:entity_id>/describe', methods=['POST'])
@@ -3221,6 +3450,78 @@ def document_places_merge(doc_id: int):
         "variants": target_entity.variants,
         "geocoded": geocoded,
     }), 200
+
+
+@app.route('/document/<int:doc_id>/persons/merge', methods=['POST', 'OPTIONS'])
+def document_persons_merge(doc_id: int):
+    """Fold a person entity of a document into another person entity of the same document.
+
+    Body: {"source_entity_id": int, "target_entity_id": int}. Both are persName rows of this document
+    ("Stone" into "Andy Stone"). Counts and surface forms move to the target, the source's registry link is
+    re-pointed at the target's person (the mention becomes an alias, so later documents resolve it
+    directly) and the decision is audited as ``person_merged`` and replayed after entity refreshes.
+    """
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson, Person
+    from library.entity_review_audit import record_entity_decision
+    from library.entity_service import merge_document_entities
+
+    data = request.get_json(silent=True) or {}
+    source_entity_id, error = _entities_doc_id(data.get('source_entity_id'))
+    if error:
+        return error
+    target_entity_id, error = _entities_doc_id(data.get('target_entity_id'))
+    if error:
+        return error
+    if source_entity_id == target_entity_id:
+        return {"status": "error", "message": "source_entity_id and target_entity_id must differ"}, 400
+
+    session = get_scoped_session()
+    doc = Document.get_by_id(session, doc_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    source = session.get(DocumentEntity, source_entity_id)
+    target = session.get(DocumentEntity, target_entity_id)
+    if any(row is None or row.document_id != doc_id or row.entity_type != "persName" for row in (source, target)):
+        return {"status": "error", "message": "Obie encje muszą być osobami tego dokumentu."}, 400
+
+    source_text, source_variants = source.entity_text, list(source.variants or [])
+
+    def link_of(entity):
+        return session.execute(sa_select(DocumentPerson).where(
+            DocumentPerson.document_id == doc_id,
+            sa_func.lower(DocumentPerson.raw_mention) == entity.entity_text.lower(),
+        )).scalars().first()
+
+    try:
+        source_link, target_link = link_of(source), link_of(target)
+        if source_link is not None:
+            if target_link is None:
+                person_registry.reject_review_link(session, source_link)
+            elif source_link.person_id == target_link.person_id:
+                session.delete(source_link)
+            else:
+                person_registry.merge_review_link(session, source_link, session.get(Person, target_link.person_id))
+        merge_document_entities(source, target)
+        session.delete(source)
+        session.flush()
+        record_entity_decision(
+            session, document_id=doc_id, document_entity_id=target.id, entity_type="persName",
+            entity_text=source_text, decision="person_merged",
+            details={"target_entity_text": target.entity_text, "source_variants": source_variants},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("person merge failed for document %s", doc_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "entity_id": target.id, "entity_text": target.entity_text,
+                    "mention_count": target.mention_count, "variants": target.variants}), 200
 
 
 @app.route('/tags', methods=['GET'])

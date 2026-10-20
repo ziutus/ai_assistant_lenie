@@ -14,9 +14,10 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, mentionMenu }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
       return <div data-testid="panel">
+        {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
         <button type="button" onClick={() => onShowInText?.(
           { id: 2, text: "Kijów", variants: ["Kijów", "Kijowie"], chapter_variants: ["Kijowie"] }, "place")}>pokaż Kijów</button>
         {chapterRenderer((source: any) => (
@@ -226,6 +227,15 @@ it("marks a chapter as noise and deletes only the entities found nowhere else", 
   await waitFor(() => expect(axios.delete).toHaveBeenCalledTimes(1));
   expect(axios.delete).toHaveBeenCalledWith("/website_entities/1",
     { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } });
+});
+
+it("opens the chip's action menu when a highlighted mention in the text is clicked", async () => {
+  await open();
+  const marks = [...document.querySelectorAll("mark")];
+  fireEvent.click(marks[0]);
+  expect(screen.getByTestId("mention-menu").textContent).toBe("persName:Donald Tusk:1");
+  fireEvent.click(marks[1]);
+  expect(screen.getByTestId("mention-menu").textContent).toBe("place:Kijów:2");
 });
 
 it("marks one entity's mentions strongly after \"Podświetl w tekście\", even when its kind is filtered out", async () => {
