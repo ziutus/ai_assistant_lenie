@@ -158,6 +158,8 @@ interface MenuEntry {
   action?: () => void;
   // Navigation entry (rendered as a router link) instead of an in-panel action.
   to?: string;
+  // With `to`: open the page in a new browser tab (a plain link) so the reviewed text stays where it is.
+  newTab?: boolean;
   // Submenu: the entry expands in place (no flyout, so it works on touch screens).
   children?: MenuEntry[];
 }
@@ -358,6 +360,14 @@ export const EntityChips = ({
                 {entries.map((entry) => {
                   const itemStyle: React.CSSProperties = { display: "block", width: "100%", textAlign: "left",
                     padding: "6px 8px", boxSizing: "border-box" };
+                  if (entry.to && entry.newTab) {
+                    return (
+                      <a key={entry.label} role="menuitem" href={entry.to} target="_blank" rel="noopener noreferrer"
+                        onClick={() => setOpenMenu(null)} style={{ ...itemStyle, color: "inherit", textDecoration: "none" }}>
+                        {entry.label}
+                      </a>
+                    );
+                  }
                   if (entry.to) {
                     return (
                       <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => setOpenMenu(null)}
@@ -568,6 +578,9 @@ const EntitiesPanel = ({
   // `chapter` = the persons of the chapter the menu was opened in (the list starts there; a book has hundreds).
   const [personDocMergeFor, setPersonDocMergeFor] =
     React.useState<{ item: EntityItem; chapter?: EntityItem[] } | null>(null);
+  // "Nadaj prawdziwe nazwisko": a nickname ("Łacha Piachu") is an alias of the person it names ("Icchak Herzog").
+  const [realNameFor, setRealNameFor] = React.useState<EntityItem | null>(null);
+  const [realNameText, setRealNameText] = React.useState("");
   const [personMergeAll, setPersonMergeAll] = React.useState(false);
   const [personMergeQuery, setPersonMergeQuery] = React.useState("");
   // Floating action menu of a mention clicked in the host's text (see the mentionMenu prop).
@@ -1247,6 +1260,23 @@ const EntitiesPanel = ({
     }
   };
 
+  const assignRealName = async () => {
+    if (realNameFor?.id == null || !realNameText.trim()) return;
+    setIsRetyping(true);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${realNameFor.id}/real_name`,
+        { name: realNameText.trim() }, { headers: jsonHeaders });
+      setMessage(`„${realNameFor.text}” to ${response.data.canonical_name}${response.data.created ? " (nowa osoba w rejestrze)" : ""}.`);
+      setRealNameFor(null);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się nadać nazwiska: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsRetyping(false);
+    }
+  };
+
   const savePlaceWikipedia = async () => {
     if (!wikiFor) return;
     setIsRetyping(true);
@@ -1318,6 +1348,8 @@ const EntitiesPanel = ({
     setToPlaceFor(null);
     setToOrgFor(null);
     setPersonDocMergeFor(null);
+    setRealNameFor(null);
+    setMergeFor(null);
     setSplitFor(null);
     setWikiFor(null);
     setDeleteFor(null);
@@ -1398,6 +1430,13 @@ const EntitiesPanel = ({
   const personMenuActions = (item: EntityItem, chapterPersons?: EntityItem[]): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "persName"),
     ...relevanceEntries(item),
+    // A nickname ("Łacha Piachu") or a mishearing: name the real person, or point the mention at a registry person.
+    { label: "Nadaj prawdziwe nazwisko…", action: () => { resetFlows(); setRealNameFor(item); setRealNameText(item.canonical_name ?? ""); } },
+    ...(item.link_id != null ? [{ label: "To inna osoba z rejestru…", action: () => {
+      resetFlows(); setMergeFor(item); setSearchQ(""); setSearchResults([]);
+    } }] : []),
+    { label: "Otwórz osobę w rejestrze (nowa karta, edycja)", to: item.person_id != null
+      ? `/persons/${item.person_id}` : `/persons?q=${encodeURIComponent(item.text)}`, newTab: true },
     { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
     ...(persons.some((person) => person.id != null && person.id !== item.id)
       ? [{ label: "Połącz z inną osobą w dokumencie…", action: () => {
@@ -1655,6 +1694,14 @@ const EntitiesPanel = ({
             top: Math.max(8, Math.min(mentionMenu.y, window.innerHeight - 320)) }}>
           <div style={{ padding: "2px 8px", fontSize: "0.8em", color: "#667" }}>{mentionMenu.item.text}</div>
           {mentionEntries.map((entry) => {
+            if (entry.to && entry.newTab) {
+              return (
+                <a key={entry.label} role="menuitem" href={entry.to} target="_blank" rel="noopener noreferrer"
+                  onClick={() => onMentionMenuClose?.()} style={{ ...mentionItemStyle, color: "inherit", textDecoration: "none" }}>
+                  {entry.label}
+                </a>
+              );
+            }
             if (entry.to) {
               return (
                 <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => onMentionMenuClose?.()}
@@ -1939,7 +1986,24 @@ const EntitiesPanel = ({
         </div>
       )}
 
-      {editMode && mergeFor && (
+      {realNameFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void assignRealName();
+          }
+        }}
+          style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>Prawdziwe nazwisko osoby „{realNameFor.text}” (z rejestru albo nowa osoba)
+            <input autoFocus value={realNameText} maxLength={500} disabled={isRetyping}
+              onChange={(event) => setRealNameText(event.target.value)} />
+          </label>
+          <button type="button" className="button" disabled={isRetyping || !realNameText.trim()}
+            onClick={() => void assignRealName()}>Zapisz</button>
+          <button type="button" disabled={isRetyping} onClick={() => setRealNameFor(null)}>Anuluj</button>
+        </div>
+      )}
+
+      {mergeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
           <div style={{ marginBottom: 4 }}>
             „{mergeFor.text}" to inna osoba — wyszukaj właściwą w rejestrze:

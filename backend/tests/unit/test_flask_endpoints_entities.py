@@ -156,6 +156,62 @@ def test_person_to_organization(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("bad_qid", 400), ("qid_taken", 409)])
+def test_person_update(client, case, expected):
+    from library.db.models import Person, PersonAlias
+    person = Person(id=8, canonical_name="Łacha Piachu", description=None, wikidata_qid=None)
+    person.aliases = [PersonAlias(alias="Piachu"), PersonAlias(alias="Stary")]
+    session = MagicMock()
+    session.get.return_value = None if case == "missing" else person
+    session.execute.return_value.scalars.return_value.first.return_value = (
+        Person(id=2, canonical_name="Inny") if case == "qid_taken" else None)
+    body = {"canonical_name": "Icchak Herzog", "description": "prezydent Izraela",
+            "wikidata_qid": "Q123" if case != "bad_qid" else "123", "aliases": ["Piachu"]}
+    with patch("server.get_scoped_session", return_value=session), patch("library.person_registry.add_person_alias") as alias:
+        response = client.patch("/persons/8", headers=API_HEADERS, json=body)
+    assert response.status_code == expected
+    if expected == 200:
+        assert (person.canonical_name, person.description, person.wikidata_qid) == (
+            "Icchak Herzog", "prezydent Izraela", "Q123")
+        assert [c.args[2] for c in alias.call_args_list][0] == "Łacha Piachu"
+        assert session.delete.call_args.args[0].alias == "Stary"
+        session.commit.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("case,expected", [("new_person", 200), ("known_person", 200), ("blank", 400),
+                                           ("not_person", 400), ("missing", 404)])
+def test_person_real_name(client, case, expected):
+    # doc #11137: "Łacha Piachu" is a nickname of Icchak Herzog.
+    from library.db.models import DocumentEntity, DocumentPerson, Person
+    entity = DocumentEntity(id=1, document_id=11137, entity_type="persName", entity_text="Łacha Piachu",
+                            mention_count=2, variants=["Łachy Piachu"], source="ner")
+    if case == "not_person":
+        entity.entity_type = "orgName"
+    known = Person(id=8, canonical_name="Icchak Herzog")
+    link = DocumentPerson(id=4, document_id=11137, person_id=9, raw_mention="Łacha Piachu")
+    session = MagicMock()
+    session.get.return_value = None if case == "missing" else entity
+    session.execute.return_value.scalars.return_value.first.return_value = link
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.person_registry.find_by_alias", return_value=known if case == "known_person" else None
+    ), patch("library.person_registry.add_person_alias") as alias, patch(
+        "library.person_registry.merge_review_link"
+    ) as merge:
+        response = client.post("/website_entities/1/real_name", headers=API_HEADERS,
+                               json={"name": " " if case == "blank" else "Icchak Herzog"})
+    assert response.status_code == expected
+    if expected == 200:
+        assert response.get_json()["created"] is (case == "new_person")
+        assert [c.args[2] for c in alias.call_args_list] == ["Łacha Piachu", "Łachy Piachu"]
+        merge.assert_called_once()
+        assert merge.call_args.args[1] is link
+        session.commit.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
 @pytest.mark.parametrize("case,expected", [("success", 200), ("same", 400), ("not_person", 400), ("rollback", 500)])
 def test_merge_document_persons(client, case, expected):
     # "Stone" and "Andy Stone" were two person chips of one document.

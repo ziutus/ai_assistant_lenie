@@ -943,9 +943,79 @@ def person_documents():
     return {
         "status": "success",
         "person": {"id": person.id, "canonical_name": person.canonical_name,
-                   "description": person.description, "wikidata_qid": person.wikidata_qid},
+                   "description": person.description, "wikidata_qid": person.wikidata_qid,
+                   "aliases": [a.alias for a in person.aliases]},
         "documents": documents,
     }, 200
+
+
+@app.route('/persons/<int:person_id>', methods=['PATCH', 'OPTIONS'])
+def person_update(person_id: int):
+    """Edit a registry person: ``canonical_name``, ``description``, ``wikidata_qid`` (``Q123`` or empty to
+    clear) and ``aliases`` (the full list; absent key = unchanged). A renamed person keeps the old name as
+    an alias, so documents that mention it still resolve."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    import re
+    from sqlalchemy import select as sa_select
+    from library import person_registry
+    from library.db.models import Person
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    person = session.get(Person, person_id)
+    if person is None:
+        return {"status": "error", "message": "Person not found"}, 404
+
+    name = data.get('canonical_name')
+    if name is not None and (not isinstance(name, str) or not name.strip() or len(name) > 500):
+        return {"status": "error", "message": "Nieprawidłowe nazwisko."}, 400
+    description = data.get('description')
+    if description is not None and not isinstance(description, str):
+        return {"status": "error", "message": "Nieprawidłowy opis."}, 400
+    qid = data.get('wikidata_qid')
+    if qid is not None:
+        qid = qid.strip() if isinstance(qid, str) else qid
+        if qid and not (isinstance(qid, str) and re.fullmatch(r"Q\d{1,12}", qid)):
+            return {"status": "error", "message": "Identyfikator Wikidata ma postać Q123."}, 400
+    aliases = data.get('aliases')
+    if aliases is not None and not (isinstance(aliases, list) and all(isinstance(a, str) for a in aliases)):
+        return {"status": "error", "message": "Aliasy muszą być listą tekstów."}, 400
+
+    try:
+        if qid:
+            other = session.execute(sa_select(Person).where(
+                Person.wikidata_qid == qid, Person.id != person_id)).scalars().first()
+            if other is not None:
+                return {"status": "error", "message": f"Identyfikator {qid} ma już osoba „{other.canonical_name}”.",
+                        "conflict_person_id": other.id}, 409
+        if name is not None and name.strip() != person.canonical_name:
+            old_name = person.canonical_name
+            person.canonical_name = name.strip()
+            person_registry.add_person_alias(session, person, old_name)
+        if description is not None:
+            person.description = description.strip() or None
+        if 'wikidata_qid' in data:
+            person.wikidata_qid = qid or None
+        if aliases is not None:
+            keep = {a.strip().lower() for a in aliases if a.strip()}
+            for existing in list(person.aliases):
+                if existing.alias.lower() not in keep:
+                    session.delete(existing)
+            session.flush()
+            session.refresh(person)
+            for alias in aliases:
+                if alias.strip():
+                    person_registry.add_person_alias(session, person, alias.strip())
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("person update failed for person %s", person_id)
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "person": {
+        "id": person.id, "canonical_name": person.canonical_name, "description": person.description,
+        "wikidata_qid": person.wikidata_qid, "aliases": [a.alias for a in person.aliases]}}), 200
 
 
 @app.route('/persons_review', methods=['GET'])
@@ -1984,6 +2054,60 @@ def website_entities_to_person(entity_id: int):
         logging.exception("Person resolution after organization conversion failed for entity %s", entity_id)
     return jsonify(status="success", entity_id=person_entity.id, person_name=person_entity.entity_text,
                    linked=[canonical for _name, canonical, _conf in (resolved or {}).get("linked", [])]), 200
+
+
+@app.route('/website_entities/<int:entity_id>/real_name', methods=['POST'])
+def website_entities_real_name(entity_id: int):
+    """Give a person mention its real name (a nickname such as "Łacha Piachu" for Icchak Herzog).
+
+    Body {"name": "Icchak Herzog"}. The name is looked up in the person registry (canonical name or alias);
+    a missing person is created. The mention (and its surface forms) become aliases of that person, so later
+    documents resolve it directly, and the document's link is pointed at the person (merging a previous
+    link). The entity row and its text stay as they are, so the mentions keep highlighting.
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson, Person
+
+    data = request.get_json(silent=True) or {}
+    name = data.get('name')
+    if not isinstance(name, str) or not name.strip() or len(name) > 500:
+        return jsonify(status="error", message="Nieprawidłowe nazwisko."), 400
+    name = name.strip()
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type != "persName":
+        return jsonify(status="error", message="Encja nie jest osobą."), 400
+    try:
+        person = person_registry.find_by_alias(session, name)
+        created = person is None
+        if created:
+            person = Person(canonical_name=name)
+            session.add(person)
+            session.flush()
+        for form in dict.fromkeys([entity.entity_text, *(entity.variants or [])]):
+            person_registry.add_person_alias(session, person, form)
+        link = session.execute(sa_select(DocumentPerson).where(
+            DocumentPerson.document_id == entity.document_id,
+            sa_func.lower(DocumentPerson.raw_mention) == entity.entity_text.lower(),
+        )).scalars().first()
+        if link is None:
+            session.add(DocumentPerson(
+                document_id=entity.document_id, person_id=person.id, raw_mention=entity.entity_text,
+                confidence=person_registry.CONFIDENCE_MANUAL_CONFIRMED,
+            ))
+        elif link.person_id != person.id:
+            person_registry.merge_review_link(session, link, person)
+        else:
+            link.confidence = person_registry.CONFIDENCE_MANUAL_CONFIRMED
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Real name assignment failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się nadać nazwiska."), 500
+    return jsonify(status="success", person_id=person.id, canonical_name=person.canonical_name, created=created), 200
 
 
 @app.route('/website_entities/<int:entity_id>/describe', methods=['POST'])
