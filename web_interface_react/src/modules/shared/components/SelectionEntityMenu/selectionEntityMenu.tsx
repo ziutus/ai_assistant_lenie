@@ -95,7 +95,7 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
     } catch (failure) {
       const data = axios.isAxiosError(failure) ? failure.response?.data : undefined;
       if (axios.isAxiosError(failure) && failure.response?.status === 403) {
-        setError("Ten klucz API nie może zapisywać poprawek transkrypcji (wymagany klucz service).");
+        setError("Ten klucz API nie może zapisywać poprawek transkrypcji.");
       } else {
         setError(data?.message ?? "Nie udało się poprawić transkrypcji.");
       }
