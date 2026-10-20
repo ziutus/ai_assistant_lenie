@@ -2056,6 +2056,87 @@ def website_entities_to_person(entity_id: int):
                    linked=[canonical for _name, canonical, _conf in (resolved or {}).get("linked", [])]), 200
 
 
+@app.route('/website_entities/<int:entity_id>/transcription_error', methods=['POST'])
+def website_entities_transcription_error(entity_id: int):
+    """Mark an entity as a speech-to-text slip of another entity of the same document ("Hutni" for "Huti").
+
+    Body {"correct_name": "Huti"} names an entity that already exists in the document (any type). The wrong
+    entity is removed WITHOUT touching the registry (a person link is dropped, no alias is created), its
+    mentions and spelling become surface forms of the correct entity (counts added, text keeps highlighting)
+    and, when the document has a channel (byline), the slip is added to the channel glossary so the next
+    entity refresh repairs the text before NER. Audited as ``transcription_error`` and replayed.
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson, NerChannelGlossaryEntry
+    from library.entity_overrides import drop_organization_links
+    from library.entity_review_audit import record_entity_decision
+    from library.entity_service import PLACE_TYPES, merge_document_entities
+    from library.place_verification import remove_orphaned_tag
+
+    data = request.get_json(silent=True) or {}
+    correct = data.get('correct_name')
+    if not isinstance(correct, str) or not correct.strip() or len(correct) > 500:
+        return jsonify(status="error", message="Nieprawidłowa poprawna nazwa."), 400
+    correct = correct.strip()
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type not in ("persName", "orgName", *PLACE_TYPES):
+        return jsonify(status="error", message="Ta encja nie może być błędem transkrypcji."), 400
+    target = session.execute(sa_select(DocumentEntity).where(
+        DocumentEntity.document_id == entity.document_id, DocumentEntity.id != entity.id,
+        DocumentEntity.entity_type.in_(("persName", "orgName", *PLACE_TYPES)),
+        sa_func.lower(DocumentEntity.entity_text) == correct.lower(),
+    )).scalars().first()
+    if target is None:
+        return jsonify(status="error", message=f"W dokumencie nie ma encji „{correct}”. Najpierw zmień typ tej "
+                       "encji na właściwy (Zmień na organizację / miejsce) i nadaj jej tę nazwę."), 404
+    wrong, wrong_variants, wrong_type = entity.entity_text, list(entity.variants or []), entity.entity_type
+    try:
+        document = session.get(Document, entity.document_id)
+        if wrong_type == "persName":
+            link = session.execute(sa_select(DocumentPerson).where(
+                DocumentPerson.document_id == entity.document_id,
+                sa_func.lower(DocumentPerson.raw_mention) == wrong.lower(),
+            )).scalars().first()
+            if link is not None:
+                person_registry.reject_review_link(session, link)
+        elif wrong_type == "orgName":
+            drop_organization_links(session, entity)
+        elif document is not None:
+            remove_orphaned_tag(session, document, entity)
+        merge_document_entities(entity, target)
+        session.delete(entity)
+        glossary = False
+        byline = ((document.byline if document is not None else None) or "").strip()
+        if byline and len(wrong) >= 3:
+            row = session.execute(sa_select(NerChannelGlossaryEntry).where(
+                sa_func.lower(NerChannelGlossaryEntry.author) == byline.lower(),
+                sa_func.lower(NerChannelGlossaryEntry.canonical_name) == target.entity_text.lower(),
+            )).scalars().first()
+            if row is None:
+                session.add(NerChannelGlossaryEntry(author=byline, canonical_name=target.entity_text,
+                                                    aliases=[wrong], fuzzy=False, created_by="ner-review"))
+            elif wrong not in (row.aliases or []):
+                row.aliases = [*(row.aliases or []), wrong]
+            glossary = True
+        session.flush()
+        record_entity_decision(
+            session, document_id=target.document_id, document_entity_id=target.id, entity_type=wrong_type,
+            entity_text=wrong, decision="transcription_error",
+            details={"target_entity_text": target.entity_text, "variants": wrong_variants},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Transcription error marking failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się oznaczyć błędu transkrypcji."), 500
+    return jsonify(status="success", entity_id=target.id, entity_text=target.entity_text,
+                   mention_count=target.mention_count, glossary=glossary), 200
+
+
 @app.route('/website_entities/<int:entity_id>/real_name', methods=['POST'])
 def website_entities_real_name(entity_id: int):
     """Give a person mention its real name (a nickname such as "Łacha Piachu" for Icchak Herzog).

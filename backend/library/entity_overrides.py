@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 REPLAYED_DECISIONS = (
     "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
     "person_to_place", "person_to_organization", "organization_to_place", "organization_to_person", "deleted",
-    "rejected", "person_merged",
+    "rejected", "person_merged", "transcription_error",
 )
 
 
@@ -575,6 +575,17 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             merge_document_entities(row, target, add_count=id(target) not in survivors)
             drop(row)
             stats["person_merged"] = stats.get("person_merged", 0) + 1
+        elif decision.decision == "transcription_error":
+            types = PLACE_TYPES if decision.entity_type in PLACE_TYPES else (decision.entity_type,)
+            row = _by_name_or_variant(entities, decision.entity_text, types)
+            target = _by_name_or_variant(entities, details.get("target_entity_text") or "", (*PLACE_TYPES, "persName", "orgName"))
+            if row is None or target is None or row is target:
+                continue
+            if row.entity_type == "orgName":
+                drop_organization_links(session, row)
+            merge_document_entities(row, target, add_count=id(target) not in survivors)
+            drop(row)
+            stats["transcription_error"] = stats.get("transcription_error", 0) + 1
         elif decision.decision == "person_to_place":
             row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
             if row is None:
@@ -668,9 +679,9 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
             or_(
                 EntityReviewDecision.entity_type.in_(PLACE_TYPES),
                 (EntityReviewDecision.entity_type == "persName")
-                & EntityReviewDecision.decision.in_(("person_to_place", "person_to_organization", "person_merged")),
+                & EntityReviewDecision.decision.in_(("person_to_place", "person_to_organization", "person_merged", "transcription_error")),
                 (EntityReviewDecision.entity_type == "orgName")
-                & EntityReviewDecision.decision.in_(("organization_to_place", "organization_to_person")),
+                & EntityReviewDecision.decision.in_(("organization_to_place", "organization_to_person", "transcription_error")),
             ),
         )
         .order_by(EntityReviewDecision.id)

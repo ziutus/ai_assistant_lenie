@@ -579,6 +579,9 @@ const EntitiesPanel = ({
   const [personDocMergeFor, setPersonDocMergeFor] =
     React.useState<{ item: EntityItem; chapter?: EntityItem[] } | null>(null);
   // "Nadaj prawdziwe nazwisko": a nickname ("Łacha Piachu") is an alias of the person it names ("Icchak Herzog").
+  // "To błąd transkrypcji": the mention is a speech-to-text slip of another entity of this document ("Hutni" -> "Huti").
+  const [slipFor, setSlipFor] = React.useState<EntityItem | null>(null);
+  const [slipText, setSlipText] = React.useState("");
   const [realNameFor, setRealNameFor] = React.useState<EntityItem | null>(null);
   const [realNameText, setRealNameText] = React.useState("");
   const [personMergeAll, setPersonMergeAll] = React.useState(false);
@@ -1260,6 +1263,24 @@ const EntitiesPanel = ({
     }
   };
 
+  const markTranscriptionError = async () => {
+    if (slipFor?.id == null || !slipText.trim()) return;
+    setIsRetyping(true);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${slipFor.id}/transcription_error`,
+        { correct_name: slipText.trim() }, { headers: jsonHeaders });
+      setMessage(`„${slipFor.text}” oznaczone jako błąd transkrypcji „${response.data.entity_text}”${
+        response.data.glossary ? " (dopisane do słownika kanału)" : ""}.`);
+      setSlipFor(null);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się oznaczyć błędu transkrypcji: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsRetyping(false);
+    }
+  };
+
   const assignRealName = async () => {
     if (realNameFor?.id == null || !realNameText.trim()) return;
     setIsRetyping(true);
@@ -1349,6 +1370,7 @@ const EntitiesPanel = ({
     setToOrgFor(null);
     setPersonDocMergeFor(null);
     setRealNameFor(null);
+    setSlipFor(null);
     setMergeFor(null);
     setSplitFor(null);
     setWikiFor(null);
@@ -1367,6 +1389,11 @@ const EntitiesPanel = ({
   };
   const showInTextEntry = (item: EntityItem, kind: "persName" | "orgName" | "place"): MenuEntry[] =>
     onShowInText ? [{ label: "🔎 Podświetl w tekście", action: () => onShowInText(item, kind) }] : [];
+
+  // A speech-to-text slip of another entity of this document: no registry change, no alias of a person name.
+  const slipEntry = (item: EntityItem): MenuEntry => ({
+    label: "To błąd transkrypcji…", action: () => { resetFlows(); setSlipFor(item); setSlipText(""); },
+  });
 
   const organizationMenuActions = (item: EntityItem): MenuEntry[] => {
     if (item.id == null) return [];
@@ -1412,6 +1439,7 @@ const EntitiesPanel = ({
       },
     });
     // NER mislabel: a place ("Tela Avivwu") or a person tagged as an organization.
+    entries.push(slipEntry(item));
     entries.push({ label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } });
     entries.push({ label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } });
     entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
@@ -1431,6 +1459,7 @@ const EntitiesPanel = ({
     ...showInTextEntry(item, "persName"),
     ...relevanceEntries(item),
     // A nickname ("Łacha Piachu") or a mishearing: name the real person, or point the mention at a registry person.
+    slipEntry(item),
     { label: "Nadaj prawdziwe nazwisko…", action: () => { resetFlows(); setRealNameFor(item); setRealNameText(item.canonical_name ?? ""); } },
     ...(item.link_id != null ? [{ label: "To inna osoba z rejestru…", action: () => {
       resetFlows(); setMergeFor(item); setSearchQ(""); setSearchResults([]);
@@ -1463,6 +1492,7 @@ const EntitiesPanel = ({
     { label: item.wikipedia_url ? "Zmień stronę Wikipedii" : "Dodaj stronę Wikipedii",
       action: () => { resetFlows(); setWikiFor(item); setWikiText(item.wikipedia_url ?? ""); } },
     { label: "Otwórz w rejestrze miejsc", to: `/places?name=${encodeURIComponent(item.text)}` },
+    slipEntry(item),
     { label: "Zmień na organizację", action: () => { resetFlows(); void changePlaceToOrganization(item); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
@@ -1983,6 +2013,28 @@ const EntitiesPanel = ({
             Tylko dla autora tego dokumentu
           </button>
           <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setExcludeFor(null)}>✕ anuluj</button>
+        </div>
+      )}
+
+      {slipFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void markTranscriptionError();
+          }
+        }}
+          style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>„{slipFor.text}” to błąd transkrypcji nazwy (encja już występująca w dokumencie, bez aliasu w rejestrze)
+            <input autoFocus value={slipText} maxLength={500} disabled={isRetyping} list="slip-targets"
+              placeholder="Poprawna nazwa, np. Huti" onChange={(event) => setSlipText(event.target.value)} />
+          </label>
+          <datalist id="slip-targets">
+            {[...persons, ...organizations, ...allPlaces, ...(entities?.orgName ?? []).filter((o) => o.is_country)]
+              .filter((candidate) => candidate.id !== slipFor.id)
+              .map((candidate) => <option key={`${candidate.entity_type ?? ""}${candidate.id}`} value={candidate.text} />)}
+          </datalist>
+          <button type="button" className="button" disabled={isRetyping || !slipText.trim()}
+            onClick={() => void markTranscriptionError()}>Oznacz</button>
+          <button type="button" disabled={isRetyping} onClick={() => setSlipFor(null)}>Anuluj</button>
         </div>
       )}
 

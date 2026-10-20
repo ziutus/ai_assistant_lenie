@@ -156,6 +156,46 @@ def test_person_to_organization(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("no_target", 404), ("blank", 400), ("not_entity", 400)])
+def test_transcription_error(client, case, expected):
+    # doc #11137: the person "Hutni" is a speech-to-text slip of "Huti".
+    from library.db.models import Document, DocumentEntity, DocumentPerson, EntityReviewDecision, NerChannelGlossaryEntry
+    entity = DocumentEntity(id=1, document_id=11137, entity_type="persName", entity_text="Hutni",
+                            mention_count=1, variants=[], source="ner")
+    if case == "not_entity":
+        entity.entity_type = "eventName"
+    target = DocumentEntity(id=2, document_id=11137, entity_type="orgName", entity_text="Huti",
+                            mention_count=3, variants=["Huty"], source="ner")
+    link = DocumentPerson(id=4, document_id=11137, person_id=9, raw_mention="Hutni")
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: entity if model is DocumentEntity else Document(
+        id=11137, byline="Kanał Testowy")
+    # lookups in order: target entity, person link, glossary row
+    session.execute.return_value.scalars.return_value.first.side_effect = [
+        None if case == "no_target" else target, link, None]
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.person_registry.reject_review_link") as reject, patch(
+        "library.person_registry.add_person_alias") as alias:
+        response = client.post("/website_entities/1/transcription_error", headers=API_HEADERS,
+                               json={"correct_name": " " if case == "blank" else "Huti"})
+    assert response.status_code == expected
+    if expected == 200:
+        reject.assert_called_once()
+        alias.assert_not_called()  # no alias of a person name
+        assert (target.mention_count, target.variants, target.source) == (4, ["Huty", "Hutni"], "manual")
+        added = [c.args[0] for c in session.add.call_args_list]
+        glossary = next(row for row in added if isinstance(row, NerChannelGlossaryEntry))
+        assert (glossary.author, glossary.canonical_name, glossary.aliases) == ("Kanał Testowy", "Huti", ["Hutni"])
+        audit = next(row for row in added if isinstance(row, EntityReviewDecision))
+        assert (audit.decision, audit.entity_type, audit.details["target_entity_text"]) == (
+            "transcription_error", "persName", "Huti")
+        session.delete.assert_called_with(entity)
+        assert response.get_json()["glossary"] is True
+        session.commit.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
 @pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("bad_qid", 400), ("qid_taken", 409)])
 def test_person_update(client, case, expected):
     from library.db.models import Person, PersonAlias
