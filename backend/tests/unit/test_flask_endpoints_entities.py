@@ -1019,6 +1019,59 @@ class TestPersonAliasAdd:
         session.commit.assert_called_once()
 
 
+class TestPersonUpdate:
+    def test_empty_body_returns_400(self, client):
+        resp = client.patch("/persons/1", json={}, headers=API_HEADERS)
+        assert resp.status_code == 400
+
+    def test_person_not_found_returns_404(self, client):
+        session = MagicMock()
+        session.get.return_value = None
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/persons/999", json={"description": "x"}, headers=API_HEADERS)
+        assert resp.status_code == 404
+
+    def test_rejects_non_http_link(self, client):
+        session = MagicMock()
+        session.get.return_value = MagicMock()
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/persons/5", json={"links": [{"url": "javascript:alert(1)"}]}, headers=API_HEADERS)
+        assert resp.status_code == 400
+        session.commit.assert_not_called()
+
+    def test_updates_descriptions_and_links(self, client):
+        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid="Q37181")
+        session = MagicMock()
+        session.get.return_value = person
+        body = {
+            "description": "  prezydent Brazylii ",
+            "long_description": "Długi opis",
+            "links": [
+                {"url": "https://pl.wikipedia.org/wiki/Luiz_In%C3%A1cio_Lula_da_Silva", "label": "Wikipedia"},
+                "https://pl.wikipedia.org/wiki/Luiz_In%C3%A1cio_Lula_da_Silva",
+            ],
+        }
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/persons/5", json=body, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        assert person.description == "prezydent Brazylii"
+        assert person.long_description == "Długi opis"
+        assert person.links == [
+            {"url": "https://pl.wikipedia.org/wiki/Luiz_In%C3%A1cio_Lula_da_Silva", "label": "Wikipedia"},
+        ]
+        session.commit.assert_called_once()
+
+    def test_empty_string_clears_description(self, client):
+        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid=None, description=None, links=[])
+        session = MagicMock()
+        session.get.return_value = person
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/persons/5", json={"long_description": "  "}, headers=API_HEADERS)
+        assert resp.status_code == 200
+        assert person.long_description is None
+
+
 class TestPlacesMergeGeocodesTarget:
     """POST /document/<id>/places/merge: a merged target is source='manual' (enrichment skips it)."""
 

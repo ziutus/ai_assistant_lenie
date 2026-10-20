@@ -14,6 +14,7 @@ NER lemma aggregation keeps that form).
 
 import logging
 import unicodedata
+from urllib.parse import urlparse
 
 from sqlalchemy import func, select
 
@@ -105,6 +106,37 @@ def add_person_alias(session, person: Person, alias: str) -> bool:
     _add_alias(session, person, alias)
     session.flush()
     return len(person.aliases) > before
+
+
+MAX_PERSON_LINKS = 20
+
+
+def normalize_person_links(raw) -> list[dict]:
+    """Validate the `links` payload: a list of {"url", "label"?} with http(s) URLs.
+
+    Raises ValueError with a Polish message. Duplicate URLs are dropped; an empty
+    label stays empty (the UI falls back to the host name).
+    """
+    if not isinstance(raw, list):
+        raise ValueError("links musi być listą")
+    if len(raw) > MAX_PERSON_LINKS:
+        raise ValueError(f"Maksymalnie {MAX_PERSON_LINKS} linków")
+    result: list[dict] = []
+    seen: set[str] = set()
+    for item in raw:
+        if isinstance(item, str):
+            item = {"url": item}
+        if not isinstance(item, dict):
+            raise ValueError("Każdy link musi być obiektem {url, label}")
+        url = str(item.get("url") or "").strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(f"Nieprawidłowy adres URL: {url or '(pusty)'}")
+        if url in seen:
+            continue
+        seen.add(url)
+        result.append({"url": url, "label": str(item.get("label") or "").strip()[:100]})
+    return result
 
 
 def _link(session, document_id: int, person: Person, raw_mention: str, confidence: str) -> bool:
