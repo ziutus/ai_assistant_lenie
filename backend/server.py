@@ -893,6 +893,7 @@ def persons_search():
             {
                 "id": p.id, "uuid": p.uuid, "canonical_name": p.canonical_name,
                 "wikidata_qid": p.wikidata_qid, "description": p.description,
+                "long_description": p.long_description, "links": p.links or [],
                 "aliases": [a.alias for a in p.aliases],
             }
             for p in persons
@@ -944,6 +945,7 @@ def person_documents():
         "status": "success",
         "person": {"id": person.id, "canonical_name": person.canonical_name,
                    "description": person.description, "wikidata_qid": person.wikidata_qid,
+                   "long_description": person.long_description, "links": person.links or [],
                    "aliases": [a.alias for a in person.aliases]},
         "documents": documents,
     }, 200
@@ -962,7 +964,9 @@ def person_update(person_id: int):
     from library import person_registry
     from library.db.models import Person
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not data:
+        return {"status": "error", "message": "JSON body required"}, 400
     session = get_scoped_session()
     person = session.get(Person, person_id)
     if person is None:
@@ -974,6 +978,16 @@ def person_update(person_id: int):
     description = data.get('description')
     if description is not None and not isinstance(description, str):
         return {"status": "error", "message": "Nieprawidłowy opis."}, 400
+    long_description = data.get('long_description')
+    if long_description is not None and not isinstance(long_description, str):
+        return {"status": "error", "message": "Nieprawidłowy długi opis."}, 400
+    links = None
+    if 'links' in data:
+        from library.person_registry import normalize_person_links
+        try:
+            links = normalize_person_links(data['links'])
+        except ValueError as exc:
+            return {"status": "error", "message": str(exc)}, 400
     qid = data.get('wikidata_qid')
     if qid is not None:
         qid = qid.strip() if isinstance(qid, str) else qid
@@ -997,6 +1011,10 @@ def person_update(person_id: int):
             person_registry.add_person_alias(session, person, old_name)
         if description is not None:
             person.description = description.strip() or None
+        if long_description is not None:
+            person.long_description = long_description.strip() or None
+        if links is not None:
+            person.links = links
         if 'wikidata_qid' in data:
             person.wikidata_qid = qid or None
         if aliases is not None:
@@ -1016,6 +1034,7 @@ def person_update(person_id: int):
         return {"status": "error", "message": "DB error"}, 500
     return jsonify({"status": "success", "person": {
         "id": person.id, "canonical_name": person.canonical_name, "description": person.description,
+        "long_description": person.long_description, "links": person.links or [],
         "wikidata_qid": person.wikidata_qid, "aliases": [a.alias for a in person.aliases]}}), 200
 
 

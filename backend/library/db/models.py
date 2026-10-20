@@ -2297,7 +2297,12 @@ class Person(Base):
     )
     canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
     wikidata_qid: Mapped[str | None] = mapped_column(String(20), unique=True)
+    # short description: tooltip on every mention in the reader
     description: Mapped[str | None] = mapped_column(Text)
+    # long description: shown only on the person page (/persons/:id)
+    long_description: Mapped[str | None] = mapped_column(Text)
+    # external pages about the person: [{"url": "https://…", "label": "Wikipedia"}]
+    links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
