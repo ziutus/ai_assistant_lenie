@@ -26,6 +26,8 @@ interface Props {
   apiUrl: string;
   docId: string;
   headers: Record<string, string>;
+  // The document's channel (byline); enables the channel-only scope of a transcript fix.
+  byline?: string;
   onClose: () => void;
   onAdded: (message: string) => void;
 }
@@ -34,8 +36,12 @@ interface Props {
 // or place (POST /document/:id/entities/add_mention). The name field is the canonical form; typing an
 // existing entity's name adds the fragment to it as a new surface form ("kaliningradzkiej enklawy"
 // -> "Obwód Kaliningradzki").
-const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, onClose, onAdded }: Props) => {
+const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClose, onAdded }: Props) => {
   const [name, setName] = React.useState(text);
+  const [fixing, setFixing] = React.useState(false);
+  const [replacement, setReplacement] = React.useState(text);
+  const [channelOnly, setChannelOnly] = React.useState(false);
+  const channel = byline?.trim() ?? "";
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const ref = React.useRef<HTMLDivElement>(null);
@@ -56,6 +62,45 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, onClose, onAd
   const copy = async () => {
     if (await copyText(text)) onClose();
     else setError("Nie udało się skopiować — zaznacz tekst i użyj Ctrl+C.");
+  };
+
+  // "Popraw błąd w transkrypcji": stores a literal phrase rule (POST /transcript_corrections, applied to
+  // every future transcript) and rewrites this document's text now (POST /transcript_corrections/apply).
+  // Entities are not rebuilt by the backend, so the page refreshes the panel and the reviewer re-runs NER.
+  const fixTranscript = async () => {
+    if (busy) return;
+    const fixed = replacement.trim();
+    if (!fixed || fixed === text) {
+      setError("Wpisz poprawną wersję zaznaczonej frazy.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      try {
+        await axios.post(`${apiUrl}/transcript_corrections`, {
+          pattern: text, replacement: fixed,
+          ...(channelOnly && channel ? { scope: "author", author: channel } : { scope: "global" }),
+        }, { headers });
+      } catch (failure) {
+        // 409: the same rule already exists — still rewrite this document.
+        if (!(axios.isAxiosError(failure) && failure.response?.status === 409)) throw failure;
+      }
+      const applied = await axios.post(`${apiUrl}/transcript_corrections/apply`,
+        { document_id: Number(docId), dry_run: false }, { headers });
+      const changed = Object.values(applied.data.fields ?? {}).some((field) => (field as { changed?: boolean }).changed);
+      onAdded(changed
+        ? `Poprawiono „${text}” → „${fixed}” w transkrypcji. Uruchom ponownie wykrywanie encji, aby odświeżyć chipy.`
+        : `Zapisano regułę „${text}” → „${fixed}”, ale w tym dokumencie nic się nie zmieniło.`);
+    } catch (failure) {
+      const data = axios.isAxiosError(failure) ? failure.response?.data : undefined;
+      if (axios.isAxiosError(failure) && failure.response?.status === 403) {
+        setError("Ten klucz API nie może zapisywać poprawek transkrypcji (wymagany klucz service).");
+      } else {
+        setError(data?.message ?? "Nie udało się poprawić transkrypcji.");
+      }
+      setBusy(false);
+    }
   };
 
   const add = async (entityType: AddableEntityType) => {
@@ -88,19 +133,47 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, onClose, onAd
         border: "1px solid #94a3b8", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: "0.9em",
       }}>
       <div style={{ marginBottom: 6 }}>Zaznaczono: <strong>„{text}”</strong></div>
-      <label style={{ display: "block", marginBottom: 8 }}>
-        Nazwa encji
-        <input type="text" value={name} aria-label="Nazwa encji" maxLength={200} autoFocus
-          onChange={(event) => setName(event.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
-      </label>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {CHOICES.map((choice) => (
-          <button key={choice.type} type="button" role="menuitem" disabled={busy || !name.trim()}
-            onClick={() => void add(choice.type)}>{choice.label}</button>
-        ))}
-        <button type="button" role="menuitem" onClick={() => void copy()}>📋 Kopiuj</button>
-        <button type="button" onClick={onClose}>Anuluj</button>
-      </div>
+      {fixing ? (
+        <>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            Poprawna wersja
+            <input type="text" value={replacement} aria-label="Poprawna wersja" maxLength={200} autoFocus
+              onChange={(event) => setReplacement(event.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+          </label>
+          {channel && (
+            <label style={{ display: "block", marginBottom: 8 }}>
+              <input type="checkbox" checked={channelOnly} onChange={(event) => setChannelOnly(event.target.checked)} />
+              {" "}Tylko dla kanału „{channel}”
+            </label>
+          )}
+          <p style={{ margin: "0 0 8px", color: "#475569" }}>
+            Reguła obejmie też przyszłe transkrypcje; ten dokument zostanie poprawiony od razu.
+          </p>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button type="button" disabled={busy} onClick={() => void fixTranscript()}>✏️ Popraw w transkrypcji</button>
+            <button type="button" disabled={busy} onClick={() => setFixing(false)}>Wstecz</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            Nazwa encji
+            <input type="text" value={name} aria-label="Nazwa encji" maxLength={200} autoFocus
+              onChange={(event) => setName(event.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {CHOICES.map((choice) => (
+              <button key={choice.type} type="button" role="menuitem" disabled={busy || !name.trim()}
+                onClick={() => void add(choice.type)}>{choice.label}</button>
+            ))}
+            <button type="button" role="menuitem" onClick={() => { setError(""); setFixing(true); }}>
+              ✏️ Popraw błąd w transkrypcji
+            </button>
+            <button type="button" role="menuitem" onClick={() => void copy()}>📋 Kopiuj</button>
+            <button type="button" onClick={onClose}>Anuluj</button>
+          </div>
+        </>
+      )}
       {error && <p role="alert" style={{ color: "#a33", margin: "6px 0 0" }}>{error}</p>}
     </div>
   );
