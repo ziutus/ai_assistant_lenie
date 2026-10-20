@@ -293,7 +293,7 @@ const NerChapters = () => {
   // A click on a highlighted person / organization / place / country in the text opens the chip's action menu
   // (retype, rename, delete, ...) right there, so the reviewer does not have to look for the chip in the side column.
   const [mentionMenu, setMentionMenu] = React.useState<
-    { item: EntityItem; kind: "persName" | "orgName" | "place"; x: number; y: number } | null>(null);
+    { item: EntityItem; kind: "persName" | "orgName" | "place"; x: number; y: number; chapterPersons?: EntityItem[] } | null>(null);
   const closeMentionMenu = React.useCallback(() => setMentionMenu(null), []);
   const openMentionMenu = (position: number, segment: { kind?: HighlightKind; label?: string }) => (event: React.MouseEvent) => {
     // Selecting text (to add an entity) must not pop the menu.
@@ -317,7 +317,7 @@ const NerChapters = () => {
     if (!found || found.item.id === undefined) return;
     event.stopPropagation();
     setAddedMessage("");
-    setMentionMenu({ ...found, x: event.clientX, y: event.clientY });
+    setMentionMenu({ ...found, x: event.clientX, y: event.clientY, chapterPersons: raw?.persName ?? [] });
   };
 
   // Right click on a selected fragment of the text opens the "add entity" menu; without a selection
