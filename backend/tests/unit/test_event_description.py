@@ -68,3 +68,26 @@ def test_replay_restores_the_approved_description():
     assert replay_manual_added_entities(session, 1) == {"entity_added": 1}
     (created,) = [call.args[0] for call in session.add.call_args_list]
     assert created.description == "Wspólne ćwiczenia."
+
+
+CHAPTERS = ("## Wstęp\n\nPowitanie widzów.\n\n## Energetyka\n\nEDF to francuski operator. EDF zarządza elektrowniami. "
+            "Rząd rozmawia z EDF.\n\n## Koniec\n\nEDF wspomniane raz.\n")
+
+
+def test_best_chapter_is_the_one_mentioning_the_organization_most_often():
+    from library.event_description import best_chapter
+
+    title, body = best_chapter(CHAPTERS, ["EDF"])
+    assert title == "Energetyka" and "operator" in body
+    assert best_chapter(CHAPTERS, ["NATO"]) is None and best_chapter("", ["EDF"]) is None
+
+
+def test_describe_organization_sends_the_chapter_and_maps_brak_to_none():
+    from library.event_description import describe_organization
+
+    with ask_returning("Francuski operator energetyczny.") as ask:
+        assert describe_organization("EDF", "Energetyka", "EDF to operator.", "Tytuł") == "Francuski operator energetyczny."
+    assert "EDF to operator." in ask.call_args.args[0] and "Energetyka" in ask.call_args.args[0]
+    with ask_returning("BRAK"):
+        assert describe_organization("EDF", "", "EDF.") is None
+    assert describe_organization("EDF", "", "   ") is None
