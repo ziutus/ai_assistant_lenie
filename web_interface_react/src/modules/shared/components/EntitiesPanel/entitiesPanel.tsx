@@ -584,6 +584,7 @@ const EntitiesPanel = ({
   const [slipText, setSlipText] = React.useState("");
   const [realNameFor, setRealNameFor] = React.useState<EntityItem | null>(null);
   const [realNameText, setRealNameText] = React.useState("");
+  const [placeMergeQuery, setPlaceMergeQuery] = React.useState("");
   const [personMergeAll, setPersonMergeAll] = React.useState(false);
   const [personMergeQuery, setPersonMergeQuery] = React.useState("");
   // Floating action menu of a mention clicked in the host's text (see the mentionMenu prop).
@@ -1484,7 +1485,7 @@ const EntitiesPanel = ({
     ...relevanceEntries(item),
     { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },
     ...(places.some((place) => place.id != null && place.id !== item.id)
-      ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeFor(item); } }] : []),
+      ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeQuery(""); setPlaceMergeFor(item); } }] : []),
     { label: item.split_suggestion ? `Podziel na: ${item.split_suggestion.join(", ")}` : "Podziel na kilka miejsc…",
       action: () => {
         resetFlows(); setSplitKind("place"); setSplitFor(item); setSplitText(item.split_suggestion?.join(", ") ?? item.text);
@@ -2182,7 +2183,21 @@ const EntitiesPanel = ({
             Połącz „{placeMergeFor.text}" z innym miejscem w tym dokumencie:
             <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setPlaceMergeFor(null)}>✕ anuluj</button>
           </div>
-          {places.filter((p) => p.id !== placeMergeFor.id).map((p) => (
+          <input type="search" value={placeMergeQuery} placeholder="Szukaj miejsca…" aria-label="Szukaj miejsca do połączenia"
+            onChange={(event) => setPlaceMergeQuery(event.target.value)} style={{ padding: "2px 6px", marginBottom: 4 }} />
+          {(() => {
+            // Names that start alike come first ("Rijad" for "Riad"), then the rest alphabetically.
+            const own = placeMergeFor.text.toLowerCase();
+            const prefix = (name: string) => {
+              const other = name.toLowerCase();
+              let n = 0;
+              while (n < own.length && n < other.length && own[n] === other[n]) n += 1;
+              return n;
+            };
+            const needle = placeMergeQuery.trim().toLowerCase();
+            return places.filter((p) => p.id !== placeMergeFor.id && (!needle || p.text.toLowerCase().includes(needle)))
+              .sort((a, b) => prefix(b.text) - prefix(a.text) || a.text.localeCompare(b.text, "pl"));
+          })().map((p) => (
             <div key={p.id} style={{ padding: "3px 0" }}>
               <button className={"button"} type="button" onClick={() => handlePlaceMergePick(p)}>wybierz</button>
               {" "}<strong>{p.text}</strong>
