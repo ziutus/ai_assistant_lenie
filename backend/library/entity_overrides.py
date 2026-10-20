@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 REPLAYED_DECISIONS = (
     "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
-    "person_to_place", "organization_to_place", "organization_to_person", "deleted", "rejected",
+    "person_to_place", "person_to_organization", "organization_to_place", "organization_to_person", "deleted",
+    "rejected", "person_merged", "transcription_error",
 )
 
 
@@ -50,8 +51,10 @@ def _by_name_or_variant(entities: list[DocumentEntity], name: str, types: tuple[
     )
 
 
-def convert_place_to_organization(session, entity: DocumentEntity, survivors: frozenset[int] = frozenset()):
-    """Retype a place entity as an organization of the same document.
+def convert_place_to_organization(
+    session, entity: DocumentEntity, survivors: frozenset[int] = frozenset(), new_text: str | None = None,
+):
+    """Retype a place (or person) entity as an organization of the same document.
 
     The mention is resolved against the global organization registry (alias or
     canonical match, else a new ``Organization``) and replaces the place row
@@ -60,12 +63,14 @@ def convert_place_to_organization(session, entity: DocumentEntity, survivors: fr
     the place's ``miejsce-*`` tag first, while the row still has its geocode.
     Returns ``(orgName entity, Organization)``. ``survivors`` (replay only) are manual rows that already
     carry this mention's count from before the refresh, so it is not added to them a second time.
+    ``new_text`` names the organization when the mention is a mis-heard form of it ("Xie" for "X"); the
+    mention itself stays a surface form so the text keeps highlighting.
     """
     from library.db.models import DocumentOrganization
     from library.organization_registry import resolve_or_create
 
     surface_forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
-    organization, confidence = resolve_or_create(session, entity.entity_text, surface_forms)
+    organization, confidence = resolve_or_create(session, (new_text or entity.entity_text).strip(), surface_forms)
     canonical = organization.canonical_name
     variants = [value for value in surface_forms if value.casefold() != canonical.casefold()]
     document_id, count = entity.document_id, entity.mention_count
@@ -554,6 +559,33 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             entities.remove(row)
             touched.pop(id(row), None)
             stats["to_organization"] = stats.get("to_organization", 0) + 1
+        elif decision.decision == "person_to_organization":
+            row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
+            if row is None:
+                continue
+            convert_place_to_organization(session, row, survivors, details.get("new_text"))
+            entities.remove(row)
+            touched.pop(id(row), None)
+            stats["person_to_organization"] = stats.get("person_to_organization", 0) + 1
+        elif decision.decision == "person_merged":
+            row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
+            target = _by_name_or_variant(entities, details.get("target_entity_text") or "", ("persName",))
+            if row is None or target is None or row is target:
+                continue
+            merge_document_entities(row, target, add_count=id(target) not in survivors)
+            drop(row)
+            stats["person_merged"] = stats.get("person_merged", 0) + 1
+        elif decision.decision == "transcription_error":
+            types = PLACE_TYPES if decision.entity_type in PLACE_TYPES else (decision.entity_type,)
+            row = _by_name_or_variant(entities, decision.entity_text, types)
+            target = _by_name_or_variant(entities, details.get("target_entity_text") or "", (*PLACE_TYPES, "persName", "orgName"))
+            if row is None or target is None or row is target:
+                continue
+            if row.entity_type == "orgName":
+                drop_organization_links(session, row)
+            merge_document_entities(row, target, add_count=id(target) not in survivors)
+            drop(row)
+            stats["transcription_error"] = stats.get("transcription_error", 0) + 1
         elif decision.decision == "person_to_place":
             row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
             if row is None:
@@ -647,9 +679,9 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
             or_(
                 EntityReviewDecision.entity_type.in_(PLACE_TYPES),
                 (EntityReviewDecision.entity_type == "persName")
-                & (EntityReviewDecision.decision == "person_to_place"),
+                & EntityReviewDecision.decision.in_(("person_to_place", "person_to_organization", "person_merged", "transcription_error")),
                 (EntityReviewDecision.entity_type == "orgName")
-                & EntityReviewDecision.decision.in_(("organization_to_place", "organization_to_person")),
+                & EntityReviewDecision.decision.in_(("organization_to_place", "organization_to_person", "transcription_error")),
             ),
         )
         .order_by(EntityReviewDecision.id)

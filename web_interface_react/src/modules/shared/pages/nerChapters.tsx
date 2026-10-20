@@ -290,6 +290,36 @@ const NerChapters = () => {
     setDescribing(item);
   };
 
+  // A click on a highlighted person / organization / place / country in the text opens the chip's action menu
+  // (retype, rename, delete, ...) right there, so the reviewer does not have to look for the chip in the side column.
+  const [mentionMenu, setMentionMenu] = React.useState<
+    { item: EntityItem; kind: "persName" | "orgName" | "place"; x: number; y: number; chapterPersons?: EntityItem[] } | null>(null);
+  const closeMentionMenu = React.useCallback(() => setMentionMenu(null), []);
+  const openMentionMenu = (position: number, segment: { kind?: HighlightKind; label?: string }) => (event: React.MouseEvent) => {
+    // Selecting text (to add an entity) must not pop the menu.
+    if (!segment.kind || selectedFragment(window.getSelection())) return;
+    const raw = entityData?.sections.find((section) => section.position === position)?.entities;
+    const places = [
+      ...(raw?.geogName ?? []).map((item) => ({ ...item, entity_type: "geogName" as const })),
+      ...(raw?.placeName ?? []).map((item) => ({ ...item, entity_type: "placeName" as const })),
+    ];
+    const candidates: { item: EntityItem; kind: "persName" | "orgName" | "place" }[] = segment.kind === "persName"
+      ? (raw?.persName ?? []).map((item) => ({ item, kind: "persName" as const }))
+      : segment.kind === "orgName"
+        ? (raw?.orgName ?? []).filter((item) => !item.is_country).map((item) => ({ item, kind: "orgName" as const }))
+        : segment.kind === "place"
+          ? places.filter((item) => !item.is_country).map((item) => ({ item, kind: "place" as const }))
+          : segment.kind === "country"
+            ? [...places.filter((item) => item.is_country).map((item) => ({ item, kind: "place" as const })),
+              ...(raw?.orgName ?? []).filter((item) => item.is_country).map((item) => ({ item, kind: "orgName" as const }))]
+            : [];
+    const found = candidates.find(({ item }) => itemName(item) === segment.label);
+    if (!found || found.item.id === undefined) return;
+    event.stopPropagation();
+    setAddedMessage("");
+    setMentionMenu({ ...found, x: event.clientX, y: event.clientY, chapterPersons: raw?.persName ?? [] });
+  };
+
   // Right click on a selected fragment of the text opens the "add entity" menu; without a selection
   // (or over the chips, buttons and fields) the browser's own menu stays.
   const [selectionMenu, setSelectionMenu] = React.useState<{ x: number; y: number; text: string } | null>(null);
@@ -415,6 +445,8 @@ const NerChapters = () => {
             docId={id}
             refreshKey={panelKey}
             onShowInText={showInText}
+            mentionMenu={mentionMenu}
+            onMentionMenuClose={closeMentionMenu}
             onEntitiesChanged={() => setVersion((current) => current + 1)}
             chapterRenderer={(renderGroups) => (
               <div>
@@ -469,8 +501,9 @@ const NerChapters = () => {
                                   {...(focused ? { "data-focus-mark": "" } : {})}
                                   {...(segment.kind === "event"
                                     ? { onContextMenu: describeFromText(entities.eventName?.find((item) => itemName(item) === segment.label)) }
-                                    : {})}
+                                    : { onClick: openMentionMenu(section.position, segment) })}
                                   style={{
+                                    cursor: segment.kind === "event" || segment.kind === "product" ? undefined : "pointer",
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
                                     ...(focused ? { outline: "2px solid #d97706" } : {}),
                                   }}>{segment.text}</mark>;

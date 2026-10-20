@@ -158,6 +158,8 @@ interface MenuEntry {
   action?: () => void;
   // Navigation entry (rendered as a router link) instead of an in-panel action.
   to?: string;
+  // With `to`: open the page in a new browser tab (a plain link) so the reviewed text stays where it is.
+  newTab?: boolean;
   // Submenu: the entry expands in place (no flyout, so it works on touch screens).
   children?: MenuEntry[];
 }
@@ -358,6 +360,14 @@ export const EntityChips = ({
                 {entries.map((entry) => {
                   const itemStyle: React.CSSProperties = { display: "block", width: "100%", textAlign: "left",
                     padding: "6px 8px", boxSizing: "border-box" };
+                  if (entry.to && entry.newTab) {
+                    return (
+                      <a key={entry.label} role="menuitem" href={entry.to} target="_blank" rel="noopener noreferrer"
+                        onClick={() => setOpenMenu(null)} style={{ ...itemStyle, color: "inherit", textDecoration: "none" }}>
+                        {entry.label}
+                      </a>
+                    );
+                  }
                   if (entry.to) {
                     return (
                       <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => setOpenMenu(null)}
@@ -484,8 +494,16 @@ const EntitiesPanel = ({
   refreshKey = 0,
   chapterRenderer,
   onShowInText,
+  mentionMenu,
+  onMentionMenuClose,
 }: {
   docId?: string | number;
+  // A click on a highlighted mention in the text (the /ner/:id page): opens the same action menu a
+  // chip has, at the click point. The host passes a fresh object per click and clears it on close.
+  mentionMenu?: {
+    item: EntityItem; kind: "persName" | "orgName" | "place"; x: number; y: number; chapterPersons?: EntityItem[];
+  } | null;
+  onMentionMenuClose?: () => void;
   // When set, every chip menu offers "Podświetl w tekście" and calls this with the chip's entity
   // and its kind (the /ner/:id page marks that entity's mentions in the transcript).
   onShowInText?: (item: EntityItem, kind: "persName" | "orgName" | "place") => void;
@@ -553,6 +571,39 @@ const EntitiesPanel = ({
   // "Zmień na miejsce" (person -> place) and "Podziel" (one place entity listing several places) forms.
   const [toPlaceFor, setToPlaceFor] = React.useState<EntityItem | null>(null);
   const [toPlaceText, setToPlaceText] = React.useState("");
+  // "Zmień na organizację" for a person: the organization may be named differently than the mention ("Xie" -> "X").
+  const [toOrgFor, setToOrgFor] = React.useState<EntityItem | null>(null);
+  const [toOrgText, setToOrgText] = React.useState("");
+  // "Połącz z inną osobą w dokumencie": two person rows of this document folded into one ("Stone" -> "Andy Stone").
+  // `chapter` = the persons of the chapter the menu was opened in (the list starts there; a book has hundreds).
+  const [personDocMergeFor, setPersonDocMergeFor] =
+    React.useState<{ item: EntityItem; chapter?: EntityItem[] } | null>(null);
+  // "Nadaj prawdziwe nazwisko": a nickname ("Łacha Piachu") is an alias of the person it names ("Icchak Herzog").
+  // "To błąd transkrypcji": the mention is a speech-to-text slip of another entity of this document ("Hutni" -> "Huti").
+  const [slipFor, setSlipFor] = React.useState<EntityItem | null>(null);
+  const [slipText, setSlipText] = React.useState("");
+  const [realNameFor, setRealNameFor] = React.useState<EntityItem | null>(null);
+  const [realNameText, setRealNameText] = React.useState("");
+  const [placeMergeQuery, setPlaceMergeQuery] = React.useState("");
+  const [personMergeAll, setPersonMergeAll] = React.useState(false);
+  const [personMergeQuery, setPersonMergeQuery] = React.useState("");
+  // Floating action menu of a mention clicked in the host's text (see the mentionMenu prop).
+  const [openMentionSub, setOpenMentionSub] = React.useState<string | null>(null);
+  const mentionMenuRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!mentionMenu) return;
+    setOpenMentionSub(null);
+    const outside = (event: PointerEvent) => {
+      if (!mentionMenuRef.current?.contains(event.target as Node)) onMentionMenuClose?.();
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") onMentionMenuClose?.(); };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [mentionMenu, onMentionMenuClose]);
   const [splitFor, setSplitFor] = React.useState<EntityItem | null>(null);
   const [splitKind, setSplitKind] = React.useState<"place" | "organization">("place");
   const [splitText, setSplitText] = React.useState("");
@@ -1027,6 +1078,23 @@ const EntitiesPanel = ({
   };
   const handlePlaceMergePick = (target: EntityItem) => mergePlaces(placeMergeFor, target);
 
+  const mergeDocumentPersons = async (source: EntityItem, target: EntityItem) => {
+    if (source.id == null || target.id == null || isMergingPlace) return;
+    setMessage("");
+    setIsMergingPlace(true);
+    try {
+      await axios.post(`${apiUrl}/document/${docId}/persons/merge`,
+        { source_entity_id: source.id, target_entity_id: target.id }, { headers: jsonHeaders });
+      setPersonDocMergeFor(null);
+      await fetchEntities();
+      setMessage(`Osoby „${source.text}” i „${target.text}” zostały połączone.`);
+    } catch (error: any) {
+      setMessage(`Nie udało się połączyć osób: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsMergingPlace(false);
+    }
+  };
+
   const handleExclude = async (scope: "global" | "author") => {
     if (!excludeFor || !reviewReason || (reviewReason === "other" && !reviewComment.trim())) {
       return;
@@ -1179,6 +1247,58 @@ const EntitiesPanel = ({
     }
   };
 
+  const changePersonToOrganization = async () => {
+    if (toOrgFor?.id == null || !toOrgText.trim()) return;
+    setIsRetyping(true);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${toOrgFor.id}/to_organization`,
+        { text: toOrgText.trim() }, { headers: jsonHeaders });
+      setMessage(`„${toOrgFor.text}” zmienione na organizację: ${response.data.organization_name}.`);
+      setToOrgFor(null);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się zmienić na organizację: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsRetyping(false);
+    }
+  };
+
+  const markTranscriptionError = async () => {
+    if (slipFor?.id == null || !slipText.trim()) return;
+    setIsRetyping(true);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${slipFor.id}/transcription_error`,
+        { correct_name: slipText.trim() }, { headers: jsonHeaders });
+      setMessage(`„${slipFor.text}” oznaczone jako błąd transkrypcji „${response.data.entity_text}”${
+        response.data.glossary ? " (dopisane do słownika kanału)" : ""}.`);
+      setSlipFor(null);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się oznaczyć błędu transkrypcji: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsRetyping(false);
+    }
+  };
+
+  const assignRealName = async () => {
+    if (realNameFor?.id == null || !realNameText.trim()) return;
+    setIsRetyping(true);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${realNameFor.id}/real_name`,
+        { name: realNameText.trim() }, { headers: jsonHeaders });
+      setMessage(`„${realNameFor.text}” to ${response.data.canonical_name}${response.data.created ? " (nowa osoba w rejestrze)" : ""}.`);
+      setRealNameFor(null);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się nadać nazwiska: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsRetyping(false);
+    }
+  };
+
   const savePlaceWikipedia = async () => {
     if (!wikiFor) return;
     setIsRetyping(true);
@@ -1248,6 +1368,11 @@ const EntitiesPanel = ({
     setMergeHint(null);
     setRenameFor(null);
     setToPlaceFor(null);
+    setToOrgFor(null);
+    setPersonDocMergeFor(null);
+    setRealNameFor(null);
+    setSlipFor(null);
+    setMergeFor(null);
     setSplitFor(null);
     setWikiFor(null);
     setDeleteFor(null);
@@ -1265,6 +1390,11 @@ const EntitiesPanel = ({
   };
   const showInTextEntry = (item: EntityItem, kind: "persName" | "orgName" | "place"): MenuEntry[] =>
     onShowInText ? [{ label: "🔎 Podświetl w tekście", action: () => onShowInText(item, kind) }] : [];
+
+  // A speech-to-text slip of another entity of this document: no registry change, no alias of a person name.
+  const slipEntry = (item: EntityItem): MenuEntry => ({
+    label: "To błąd transkrypcji…", action: () => { resetFlows(); setSlipFor(item); setSlipText(""); },
+  });
 
   const organizationMenuActions = (item: EntityItem): MenuEntry[] => {
     if (item.id == null) return [];
@@ -1310,6 +1440,7 @@ const EntitiesPanel = ({
       },
     });
     // NER mislabel: a place ("Tela Avivwu") or a person tagged as an organization.
+    entries.push(slipEntry(item));
     entries.push({ label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } });
     entries.push({ label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } });
     entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
@@ -1325,10 +1456,24 @@ const EntitiesPanel = ({
       action: () => void handleRelevanceChange(item, option.value),
     })),
   }];
-  const personMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
+  const personMenuActions = (item: EntityItem, chapterPersons?: EntityItem[]): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "persName"),
     ...relevanceEntries(item),
+    // A nickname ("Łacha Piachu") or a mishearing: name the real person, or point the mention at a registry person.
+    slipEntry(item),
+    { label: "Nadaj prawdziwe nazwisko…", action: () => { resetFlows(); setRealNameFor(item); setRealNameText(item.canonical_name ?? ""); } },
+    ...(item.link_id != null ? [{ label: "To inna osoba z rejestru…", action: () => {
+      resetFlows(); setMergeFor(item); setSearchQ(""); setSearchResults([]);
+    } }] : []),
+    { label: "Otwórz osobę w rejestrze (nowa karta, edycja)", to: item.person_id != null
+      ? `/persons/${item.person_id}` : `/persons?q=${encodeURIComponent(item.text)}`, newTab: true },
     { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
+    ...(persons.some((person) => person.id != null && person.id !== item.id)
+      ? [{ label: "Połącz z inną osobą w dokumencie…", action: () => {
+        resetFlows(); setPersonMergeAll(false); setPersonMergeQuery("");
+        setPersonDocMergeFor({ item, chapter: chapterPersons });
+      } }] : []),
+    { label: "Zmień na organizację", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
     { label: "🚫 To nie jest osoba", action: () => {
@@ -1340,7 +1485,7 @@ const EntitiesPanel = ({
     ...relevanceEntries(item),
     { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },
     ...(places.some((place) => place.id != null && place.id !== item.id)
-      ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeFor(item); } }] : []),
+      ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeQuery(""); setPlaceMergeFor(item); } }] : []),
     { label: item.split_suggestion ? `Podziel na: ${item.split_suggestion.join(", ")}` : "Podziel na kilka miejsc…",
       action: () => {
         resetFlows(); setSplitKind("place"); setSplitFor(item); setSplitText(item.split_suggestion?.join(", ") ?? item.text);
@@ -1348,6 +1493,7 @@ const EntitiesPanel = ({
     { label: item.wikipedia_url ? "Zmień stronę Wikipedii" : "Dodaj stronę Wikipedii",
       action: () => { resetFlows(); setWikiFor(item); setWikiText(item.wikipedia_url ?? ""); } },
     { label: "Otwórz w rejestrze miejsc", to: `/places?name=${encodeURIComponent(item.text)}` },
+    slipEntry(item),
     { label: "Zmień na organizację", action: () => { resetFlows(); void changePlaceToOrganization(item); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
@@ -1533,7 +1679,8 @@ const EntitiesPanel = ({
     ].filter((item) => !item.is_country && item.place_verification_status !== "rejected");
     return (
       <>
-        <EntityChips label={"Osoby"} items={source?.persName ?? []} menuActions={personMenuActions}
+        <EntityChips label={"Osoby"} items={source?.persName ?? []}
+          menuActions={(item) => personMenuActions(item, source?.persName)}
           actions={editMode ? editActions("persName") : undefined} />
         <EntityChips label={"Źródła cytowane"} items={scopedOrganizations.filter((item) => item.information_source_id != null)}
           linkInformationSources menuActions={organizationMenuActions}
@@ -1558,8 +1705,62 @@ const EntitiesPanel = ({
     );
   };
 
+  const mentionEntries: MenuEntry[] = !mentionMenu ? [] : [
+    { label: "Kopiuj nazwę", action: () => void copyText(mentionMenu.item.text) },
+    ...(mentionMenu.kind === "persName" ? personMenuActions(mentionMenu.item, mentionMenu.chapterPersons)
+      : mentionMenu.kind === "orgName" ? organizationMenuActions(mentionMenu.item)
+        : placeMenuActions(mentionMenu.item)),
+  ];
+  const mentionItemStyle: React.CSSProperties = { display: "block", width: "100%", textAlign: "left",
+    padding: "6px 8px", boxSizing: "border-box", background: "transparent", border: 0, cursor: "pointer" };
+
   return (
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
+      {mentionMenu && mentionEntries.length > 0 && (
+        <div role="menu" ref={mentionMenuRef} aria-label={`Działania: ${mentionMenu.item.text}`}
+          style={{ position: "fixed", zIndex: 30, minWidth: 230, maxWidth: "calc(100vw - 16px)", maxHeight: "70vh",
+            overflowY: "auto", padding: 4, background: "white", border: "1px solid #b9c8de", borderRadius: 6,
+            boxShadow: "0 2px 8px #0003",
+            left: Math.max(8, Math.min(mentionMenu.x, window.innerWidth - 250)),
+            top: Math.max(8, Math.min(mentionMenu.y, window.innerHeight - 320)) }}>
+          <div style={{ padding: "2px 8px", fontSize: "0.8em", color: "#667" }}>{mentionMenu.item.text}</div>
+          {mentionEntries.map((entry) => {
+            if (entry.to && entry.newTab) {
+              return (
+                <a key={entry.label} role="menuitem" href={entry.to} target="_blank" rel="noopener noreferrer"
+                  onClick={() => onMentionMenuClose?.()} style={{ ...mentionItemStyle, color: "inherit", textDecoration: "none" }}>
+                  {entry.label}
+                </a>
+              );
+            }
+            if (entry.to) {
+              return (
+                <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => onMentionMenuClose?.()}
+                  style={{ ...mentionItemStyle, color: "inherit", textDecoration: "none" }}>{entry.label}</Link>
+              );
+            }
+            if (entry.children) {
+              const subOpen = openMentionSub === entry.label;
+              return (
+                <React.Fragment key={entry.label}>
+                  <button type="button" role="menuitem" aria-expanded={subOpen} style={mentionItemStyle}
+                    onClick={() => setOpenMentionSub(subOpen ? null : entry.label)}>
+                    {entry.label} {subOpen ? "▾" : "▸"}
+                  </button>
+                  {subOpen && entry.children.map((child) => (
+                    <button key={child.label} type="button" role="menuitem" style={{ ...mentionItemStyle, paddingLeft: 24 }}
+                      onClick={() => { onMentionMenuClose?.(); child.action?.(); }}>{child.label}</button>
+                  ))}
+                </React.Fragment>
+              );
+            }
+            return (
+              <button key={entry.label} type="button" role="menuitem" style={mentionItemStyle}
+                onClick={() => { onMentionMenuClose?.(); entry.action?.(); }}>{entry.label}</button>
+            );
+          })}
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <strong>Osoby, miejsca i obiekty (NER)</strong>
         <button className={"button"} type="button" disabled={isRefreshing || isDetectingCountries || enrichmentActive || externalDisabled} onClick={handleRefresh}>
@@ -1701,6 +1902,23 @@ const EntitiesPanel = ({
         </div>
       )}
 
+      {toOrgFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void changePersonToOrganization();
+          }
+        }}
+          style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>Nazwa organizacji (zamiast „{toOrgFor.text}”)
+            <input autoFocus value={toOrgText} maxLength={500} disabled={isRetyping}
+              onChange={(event) => setToOrgText(event.target.value)} />
+          </label>
+          <button type="button" className="button" disabled={isRetyping || !toOrgText.trim()}
+            onClick={() => void changePersonToOrganization()}>Zmień na organizację</button>
+          <button type="button" disabled={isRetyping} onClick={() => setToOrgFor(null)}>Anuluj</button>
+        </div>
+      )}
+
       {toPlaceFor && (
         <div onKeyDown={(event) => {
           if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
@@ -1799,7 +2017,46 @@ const EntitiesPanel = ({
         </div>
       )}
 
-      {editMode && mergeFor && (
+      {slipFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void markTranscriptionError();
+          }
+        }}
+          style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>„{slipFor.text}” to błąd transkrypcji nazwy (encja już występująca w dokumencie, bez aliasu w rejestrze)
+            <input autoFocus value={slipText} maxLength={500} disabled={isRetyping} list="slip-targets"
+              placeholder="Poprawna nazwa, np. Huti" onChange={(event) => setSlipText(event.target.value)} />
+          </label>
+          <datalist id="slip-targets">
+            {[...persons, ...organizations, ...allPlaces, ...(entities?.orgName ?? []).filter((o) => o.is_country)]
+              .filter((candidate) => candidate.id !== slipFor.id)
+              .map((candidate) => <option key={`${candidate.entity_type ?? ""}${candidate.id}`} value={candidate.text} />)}
+          </datalist>
+          <button type="button" className="button" disabled={isRetyping || !slipText.trim()}
+            onClick={() => void markTranscriptionError()}>Oznacz</button>
+          <button type="button" disabled={isRetyping} onClick={() => setSlipFor(null)}>Anuluj</button>
+        </div>
+      )}
+
+      {realNameFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void assignRealName();
+          }
+        }}
+          style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>Prawdziwe nazwisko osoby „{realNameFor.text}” (z rejestru albo nowa osoba)
+            <input autoFocus value={realNameText} maxLength={500} disabled={isRetyping}
+              onChange={(event) => setRealNameText(event.target.value)} />
+          </label>
+          <button type="button" className="button" disabled={isRetyping || !realNameText.trim()}
+            onClick={() => void assignRealName()}>Zapisz</button>
+          <button type="button" disabled={isRetyping} onClick={() => setRealNameFor(null)}>Anuluj</button>
+        </div>
+      )}
+
+      {mergeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
           <div style={{ marginBottom: 4 }}>
             „{mergeFor.text}" to inna osoba — wyszukaj właściwą w rejestrze:
@@ -1887,13 +2144,60 @@ const EntitiesPanel = ({
         </div>
       ))}
 
+      {personDocMergeFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            Połącz „{personDocMergeFor.item.text}” z inną osobą (zostanie nazwą połączonej osoby):
+            <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setPersonDocMergeFor(null)}>✕ anuluj</button>
+          </div>
+          {personDocMergeFor.chapter && (
+            <label style={{ marginRight: 12 }}>
+              <input type="checkbox" checked={personMergeAll} onChange={(event) => setPersonMergeAll(event.target.checked)} />{" "}
+              cały dokument (domyślnie tylko ten rozdział)
+            </label>
+          )}
+          <input type="search" value={personMergeQuery} placeholder="Szukaj osoby…" aria-label="Szukaj osoby do połączenia"
+            onChange={(event) => setPersonMergeQuery(event.target.value)} style={{ padding: "2px 6px", marginBottom: 4 }} />
+          {(() => {
+            // People sharing a word with the source ("Andy Stone" for "Stone") come first.
+            const words = personDocMergeFor.item.text.toLowerCase().split(/\s+/);
+            const shares = (person: EntityItem) => person.text.toLowerCase().split(/\s+/).some((word) => words.includes(word));
+            const needle = personMergeQuery.trim().toLowerCase();
+            const pool = personDocMergeFor.chapter && !personMergeAll ? personDocMergeFor.chapter : persons;
+            return pool.filter((person) => person.id !== personDocMergeFor.item.id && person.id != null
+              && (!needle || person.text.toLowerCase().includes(needle)))
+              .sort((a, b) => Number(shares(b)) - Number(shares(a)) || a.text.localeCompare(b.text, "pl"));
+          })().map((person) => (
+            <div key={person.id} style={{ padding: "3px 0" }}>
+              <button className={"button"} type="button" disabled={isMergingPlace}
+                onClick={() => void mergeDocumentPersons(personDocMergeFor.item, person)}>wybierz</button>
+              {" "}<strong>{person.text}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+
       {placeMergeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
           <div style={{ marginBottom: 4 }}>
             Połącz „{placeMergeFor.text}" z innym miejscem w tym dokumencie:
             <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setPlaceMergeFor(null)}>✕ anuluj</button>
           </div>
-          {places.filter((p) => p.id !== placeMergeFor.id).map((p) => (
+          <input type="search" value={placeMergeQuery} placeholder="Szukaj miejsca…" aria-label="Szukaj miejsca do połączenia"
+            onChange={(event) => setPlaceMergeQuery(event.target.value)} style={{ padding: "2px 6px", marginBottom: 4 }} />
+          {(() => {
+            // Names that start alike come first ("Rijad" for "Riad"), then the rest alphabetically.
+            const own = placeMergeFor.text.toLowerCase();
+            const prefix = (name: string) => {
+              const other = name.toLowerCase();
+              let n = 0;
+              while (n < own.length && n < other.length && own[n] === other[n]) n += 1;
+              return n;
+            };
+            const needle = placeMergeQuery.trim().toLowerCase();
+            return places.filter((p) => p.id !== placeMergeFor.id && (!needle || p.text.toLowerCase().includes(needle)))
+              .sort((a, b) => prefix(b.text) - prefix(a.text) || a.text.localeCompare(b.text, "pl"));
+          })().map((p) => (
             <div key={p.id} style={{ padding: "3px 0" }}>
               <button className={"button"} type="button" onClick={() => handlePlaceMergePick(p)}>wybierz</button>
               {" "}<strong>{p.text}</strong>
