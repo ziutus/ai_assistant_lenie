@@ -893,6 +893,7 @@ def persons_search():
             {
                 "id": p.id, "uuid": p.uuid, "canonical_name": p.canonical_name,
                 "wikidata_qid": p.wikidata_qid, "description": p.description,
+                "long_description": p.long_description, "links": p.links or [],
                 "aliases": [a.alias for a in p.aliases],
             }
             for p in persons
@@ -943,7 +944,9 @@ def person_documents():
     return {
         "status": "success",
         "person": {"id": person.id, "canonical_name": person.canonical_name,
-                   "description": person.description, "wikidata_qid": person.wikidata_qid},
+                   "description": person.description, "wikidata_qid": person.wikidata_qid,
+                   "long_description": person.long_description, "links": person.links or [],
+                   "aliases": [a.alias for a in person.aliases]},
         "documents": documents,
     }, 200
 
@@ -1580,6 +1583,56 @@ def document_persons_decide(link_id: int):
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
     return _decide_person_link(link_id, require_review=False)
+
+
+@app.route('/persons/<int:person_id>', methods=['PATCH', 'OPTIONS'])
+def person_update(person_id: int):
+    """Edit a person's descriptions and external links.
+
+    JSON body, every key optional (absent = unchanged, empty string/list clears):
+    `description` (short — tooltip on every mention in the reader),
+    `long_description` (shown only on /persons/:id) and
+    `links` ([{"url": "https://…", "label": "Wikipedia"}], http(s) only).
+    """
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import Person
+    from library.person_registry import normalize_person_links
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not data:
+        return {"status": "error", "message": "JSON body required"}, 400
+
+    session = get_scoped_session()
+    person = session.get(Person, person_id)
+    if person is None:
+        return {"status": "error", "message": "Person not found"}, 404
+
+    for key in ('description', 'long_description'):
+        if key in data:
+            value = data[key]
+            if value is not None and not isinstance(value, str):
+                return {"status": "error", "message": f"{key} must be a string"}, 400
+            setattr(person, key, (value or "").strip() or None)
+    if 'links' in data:
+        try:
+            person.links = normalize_person_links(data['links'])
+        except ValueError as exc:
+            return {"status": "error", "message": str(exc)}, 400
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("person update failed for person %s", person_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "person": {
+        "id": person.id, "canonical_name": person.canonical_name,
+        "description": person.description, "long_description": person.long_description,
+        "links": person.links or [], "wikidata_qid": person.wikidata_qid,
+    }}), 200
 
 
 @app.route('/persons/<int:person_id>/aliases', methods=['POST', 'OPTIONS'])

@@ -7,14 +7,41 @@ import { Pagination } from "../components/Pagination/pagination";
 // Person registry browser (NER stage 4): fuzzy search over persons/aliases
 // (GET /persons?q=) and the person -> documents view (GET /person_documents).
 
+export interface PersonLink {
+  url: string;
+  label: string;
+}
+
 export interface PersonItem {
   id: number;
   uuid: string;
   canonical_name: string;
   wikidata_qid: string | null;
   description: string | null;
+  long_description?: string | null;
+  links?: PersonLink[];
   aliases: string[];
 }
+
+interface PersonDetail {
+  canonical_name: string;
+  description: string | null;
+  long_description: string | null;
+  wikidata_qid: string | null;
+  links: PersonLink[];
+  aliases?: string[];
+}
+
+export const linkLabel = (link: PersonLink): string => {
+  if (link.label) {
+    return link.label;
+  }
+  try {
+    return new URL(link.url).hostname.replace(/^www\./, "");
+  } catch {
+    return link.url;
+  }
+};
 
 interface PersonDocument {
   id: number;
@@ -76,9 +103,10 @@ const Persons = () => {
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(Number(searchParams.get("page")) || 1);
   const pageSize = 50;
-  const [person, setPerson] = React.useState<
-    { canonical_name: string; description: string | null; wikidata_qid: string | null } | null
-  >(null);
+  const [person, setPerson] = React.useState<PersonDetail | null>(null);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState({ description: "", long_description: "", links: [] as PersonLink[] });
+  const [isSaving, setIsSaving] = React.useState(false);
   const [documents, setDocuments] = React.useState<PersonDocument[]>([]);
   // per-document chapter drill-down ("wystąpienia w tej książce")
   const [occurrences, setOccurrences] = React.useState<Record<number, ChapterOccurrence[] | "loading">>({});
@@ -142,8 +170,43 @@ const Persons = () => {
     }
   };
 
+  const startEditing = () => {
+    if (!person) {
+      return;
+    }
+    setDraft({
+      description: person.description ?? "",
+      long_description: person.long_description ?? "",
+      links: (person.links ?? []).map((l) => ({ ...l })),
+    });
+    setIsEditing(true);
+  };
+
+  const saveProfile = async () => {
+    setIsSaving(true);
+    setMessage("");
+    try {
+      const response = await axios.patch(
+        `${apiUrl}/persons/${id}`,
+        {
+          description: draft.description,
+          long_description: draft.long_description,
+          links: draft.links.filter((l) => l.url.trim()).map((l) => ({ url: l.url.trim(), label: l.label.trim() })),
+        },
+        { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` } },
+      );
+      setPerson((prev) => (prev ? { ...prev, ...response.data.person } : prev));
+      setIsEditing(false);
+    } catch (error: any) {
+      console.error("Error saving person", error);
+      setMessage(`Nie udało się zapisać osoby: ${error.response?.data?.message || error.message}`);
+    }
+    setIsSaving(false);
+  };
+
   React.useEffect(() => {
     setPerson(null);
+    setIsEditing(false);
     setDocuments([]);
     setOccurrences({});
     if (!id) {
@@ -196,6 +259,95 @@ const Persons = () => {
       {id && person ? (
         <div style={{ marginBottom: 20, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
           <PersonHeader person={person} />
+          {!isEditing && (
+            <div style={{ marginTop: 8 }}>
+              {person.long_description && (
+                <p style={{ whiteSpace: "pre-wrap", margin: "6px 0" }}>{person.long_description}</p>
+              )}
+              {!!person.links?.length && (
+                <div style={{ margin: "6px 0" }}>
+                  🔗{" "}
+                  {person.links.map((link, index) => (
+                    <span key={link.url}>
+                      {index > 0 && " · "}
+                      <a href={link.url} target="_blank" rel="noreferrer" style={{ color: "#0369a1" }}>
+                        {linkLabel(link)}
+                      </a>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <button type="button" className={"button"} onClick={startEditing}>
+                ✏️ Edytuj opisy i linki
+              </button>
+            </div>
+          )}
+          {isEditing && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8, maxWidth: 720 }}>
+              <label>
+                Krótki opis (podpowiedź przy najechaniu na osobę w czytniku)
+                <input
+                  type="text"
+                  value={draft.description}
+                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                  style={{ width: "100%", padding: "6px 10px" }}
+                />
+              </label>
+              <label>
+                Długi opis (tylko na tej stronie)
+                <textarea
+                  value={draft.long_description}
+                  rows={8}
+                  onChange={(e) => setDraft({ ...draft, long_description: e.target.value })}
+                  style={{ width: "100%", padding: "6px 10px" }}
+                />
+              </label>
+              <div>
+                Linki (np. Wikipedia)
+                {draft.links.map((link, index) => (
+                  <div key={index} style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                    <input
+                      type="url"
+                      value={link.url}
+                      placeholder="https://pl.wikipedia.org/wiki/…"
+                      onChange={(e) => setDraft({ ...draft, links: draft.links.map((l, i) => (i === index ? { ...l, url: e.target.value } : l)) })}
+                      style={{ flex: 3, padding: "6px 10px" }}
+                    />
+                    <input
+                      type="text"
+                      value={link.label}
+                      placeholder="Etykieta (np. Wikipedia)"
+                      onChange={(e) => setDraft({ ...draft, links: draft.links.map((l, i) => (i === index ? { ...l, label: e.target.value } : l)) })}
+                      style={{ flex: 1, padding: "6px 10px" }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Usuń link"
+                      onClick={() => setDraft({ ...draft, links: draft.links.filter((_, i) => i !== index) })}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => setDraft({ ...draft, links: [...draft.links, { url: "", label: "" }] })}
+                  >
+                    + Dodaj link
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className={"button"} disabled={isSaving} onClick={saveProfile}>
+                  Zapisz
+                </button>
+                <button type="button" className={"button"} disabled={isSaving} onClick={() => setIsEditing(false)}>
+                  Anuluj
+                </button>
+              </div>
+            </div>
+          )}
           <h3 style={{ margin: "12px 0 6px" }}>Artykuły autora ({authoredDocuments.length})</h3>
           {!authoredDocuments.length && <div style={{ color: "#667" }}>Brak dokumentów oznaczonych jako autorstwa tej osoby.</div>}
           <ul style={{ listStyle: "none", padding: 0 }}>
