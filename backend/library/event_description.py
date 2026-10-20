@@ -130,9 +130,22 @@ def run_organization_description(prompt: str, model: str | None = None) -> dict:
                 "latency_ms": int((time.monotonic() - started) * 1000)}
     latency_ms = int((time.monotonic() - started) * 1000)
     description = (response.response_text or "").strip()
+    outcome = {"model": model, "latency_ms": latency_ms, **_usage_summary(response)}
     if not description or description.upper().startswith(NO_DESCRIPTION):
-        return {"status": "insufficient_context", "description": None, "model": model, "latency_ms": latency_ms}
-    return {"status": "ok", "description": description, "model": model, "latency_ms": latency_ms}
+        return {"status": "insufficient_context", "description": None, **outcome}
+    return {"status": "ok", "description": description, **outcome}
+
+
+def _usage_summary(response) -> dict:
+    """Tokens and cost of one call; ``None`` (never 0) where the usage record does not know them."""
+    usage = getattr(response, "usage", None)
+    cost = getattr(usage, "cost", None)
+    total = getattr(cost, "total_cost", None)
+    return {
+        "tokens": getattr(usage, "total_tokens", None),
+        "cost": str(total) if total is not None else None,
+        "currency": getattr(cost, "currency", None) if total is not None else None,
+    }
 
 
 def describe_organization(name: str, chapter_title: str, chapter_text: str, title: str = "") -> str | None:

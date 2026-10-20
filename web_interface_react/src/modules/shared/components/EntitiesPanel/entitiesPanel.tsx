@@ -564,7 +564,14 @@ const EntitiesPanel = ({
   const [orgDescriptionBusy, setOrgDescriptionBusy] = React.useState(false);
   const [orgPromptOpen, setOrgPromptOpen] = React.useState(false);
   const [orgPrompt, setOrgPrompt] = React.useState("");
-  const [orgModels, setOrgModels] = React.useState<{ id: string; label: string }[]>([]);
+  const [orgModels, setOrgModels] = React.useState<{ id: string; label: string; external?: boolean; verified?: boolean }[]>([]);
+  // Arena: the same prompt through 2-4 models, proposals side by side (nothing stored).
+  const [arenaOpen, setArenaOpen] = React.useState(false);
+  const [arenaModels, setArenaModels] = React.useState<string[]>([]);
+  const [arenaResults, setArenaResults] = React.useState<{
+    model: string; label: string; result_status: string; description: string | null; latency_ms: number;
+    tokens: number | null; cost: string | null; currency: string | null; error_code: string | null;
+  }[]>([]);
   const [orgModel, setOrgModel] = React.useState("");
   const [orgDescriptionInfo, setOrgDescriptionInfo] = React.useState("");
   // "Wyklucz" flow: entity to suppress in future NER runs (ner_exclusions)
@@ -1178,6 +1185,25 @@ const EntitiesPanel = ({
       setOrgDescriptionBusy(false);
     }
   };
+
+  const handleArenaRun = async () => {
+    if (orgDescriptionFor?.id == null) return;
+    setMessage("");
+    setArenaResults([]);
+    setOrgDescriptionBusy(true);
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe/arena`,
+        { models: arenaModels, prompt: orgPrompt }, { headers: jsonHeaders });
+      setArenaResults(response.data.results ?? []);
+    } catch (error: any) {
+      setMessage(`Arena nie powiodła się: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setOrgDescriptionBusy(false);
+    }
+  };
+
+  const toggleArenaModel = (id: string) => setArenaModels((current) =>
+    current.includes(id) ? current.filter((item) => item !== id) : current.length < 4 ? [...current, id] : current);
 
   const handleOrgDescriptionGenerate = async () => {
     if (orgDescriptionFor?.id == null) return;
@@ -2331,6 +2357,56 @@ const EntitiesPanel = ({
                 {orgDescriptionBusy ? "Pracuję…" : "Generuj"}
               </button>
               {orgDescriptionInfo && <span style={{ marginLeft: 8, color: "#475569" }}>{orgDescriptionInfo}</span>}
+              {orgModels.find((model) => model.id === orgModel)?.external && (
+                <p role="note" style={{ margin: "6px 0 0", color: "#92400e" }}>
+                  ⚠ Ten model wysyła tekst rozdziału do zewnętrznego pośrednika (OpenRouter).
+                  {orgModels.find((model) => model.id === orgModel)?.verified === false && " Identyfikator i cena nie są jeszcze sprawdzone."}
+                </p>
+              )}
+              <div style={{ marginTop: 10 }}>
+                <button type="button" onClick={() => setArenaOpen((open) => !open)}>
+                  {arenaOpen ? "▾" : "▸"} ⚔ Arena — porównaj modele
+                </button>
+                {arenaOpen && (
+                  <div style={{ marginTop: 6 }}>
+                    <div>Wybierz od 2 do 4 modeli (ten sam prompt trafi do wszystkich):</div>
+                    {orgModels.map((model) => (
+                      <label key={model.id} style={{ display: "block" }}>
+                        <input type="checkbox" checked={arenaModels.includes(model.id)} onChange={() => toggleArenaModel(model.id)} />
+                        {" "}{model.label}{model.external ? " ⚠ zewnętrzny" : ""}
+                      </label>
+                    ))}
+                    <button className={"button"} type="button" style={{ marginTop: 6 }}
+                      disabled={orgDescriptionBusy || arenaModels.length < 2 || !orgPrompt.trim()} onClick={handleArenaRun}>
+                      {orgDescriptionBusy ? "Pracuję…" : "Porównaj"}
+                    </button>
+                    {arenaResults.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                        {arenaResults.map((result) => (
+                          <div key={result.model} style={{ flex: "1 1 220px", maxWidth: 340, padding: 8, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6 }}>
+                            <strong>{result.label}</strong>
+                            <div style={{ fontSize: "0.8em", color: "#64748b" }}>
+                              {result.latency_ms} ms
+                              {result.tokens != null && ` · ${result.tokens} tok.`}
+                              {result.cost != null ? ` · ${result.cost} ${result.currency ?? ""}` : " · koszt nieznany"}
+                            </div>
+                            <p style={{ margin: "6px 0" }}>
+                              {result.result_status === "ok" && result.description}
+                              {result.result_status === "insufficient_context" && "Model uznał, że rozdział nie wystarcza do opisu."}
+                              {result.result_status === "error" && `Model nie odpowiedział: ${result.error_code ?? "błąd"}.`}
+                            </p>
+                            {result.result_status === "ok" && result.description && (
+                              <button type="button" onClick={() => { setOrgDescriptionText(result.description ?? ""); setOrgDescriptionInfo(`Propozycja: ${result.label}`); }}>
+                                Użyj tego opisu
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
