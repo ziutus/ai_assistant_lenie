@@ -562,6 +562,18 @@ const EntitiesPanel = ({
   const [orgDescriptionFor, setOrgDescriptionFor] = React.useState<EntityItem | null>(null);
   const [orgDescriptionText, setOrgDescriptionText] = React.useState("");
   const [orgDescriptionBusy, setOrgDescriptionBusy] = React.useState(false);
+  const [orgPromptOpen, setOrgPromptOpen] = React.useState(false);
+  const [orgPrompt, setOrgPrompt] = React.useState("");
+  const [orgModels, setOrgModels] = React.useState<{ id: string; label: string; external?: boolean; verified?: boolean }[]>([]);
+  // Arena: the same prompt through 2-4 models, proposals side by side (nothing stored).
+  const [arenaOpen, setArenaOpen] = React.useState(false);
+  const [arenaModels, setArenaModels] = React.useState<string[]>([]);
+  const [arenaResults, setArenaResults] = React.useState<{
+    model: string; label: string; result_status: string; description: string | null; latency_ms: number;
+    tokens: number | null; cost: string | null; currency: string | null; error_code: string | null;
+  }[]>([]);
+  const [orgModel, setOrgModel] = React.useState("");
+  const [orgDescriptionInfo, setOrgDescriptionInfo] = React.useState("");
   // "Wyklucz" flow: entity to suppress in future NER runs (ner_exclusions)
   const [excludeFor, setExcludeFor] = React.useState<{ item: EntityItem; entityType: string } | null>(null);
   const [deleteFor, setDeleteFor] = React.useState<EntityItem | null>(null);
@@ -1155,14 +1167,62 @@ const EntitiesPanel = ({
 
   // Bielik drafts the organization description from the chapter that mentions it most; nothing is
   // stored until the reviewer presses "Zapisz".
+  // The prompt and the model are shown first (POST .../describe/preview, no LLM call) so the reviewer can
+  // edit the prompt and pick the model before "Generuj" sends exactly that text.
   const handleOrgDescriptionSuggest = async () => {
     if (orgDescriptionFor?.id == null) return;
     setMessage("");
     setOrgDescriptionBusy(true);
     try {
-      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe`, {}, { headers: jsonHeaders });
-      if (response.data.description) setOrgDescriptionText(response.data.description);
-      else setMessage("Model uznał, że rozdział nie wystarcza do opisu — wpisz go ręcznie.");
+      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe/preview`, {}, { headers: jsonHeaders });
+      setOrgPrompt(response.data.prompt ?? "");
+      setOrgModels(response.data.models ?? []);
+      setOrgModel(response.data.default_model ?? response.data.models?.[0]?.id ?? "");
+      setOrgPromptOpen(true);
+    } catch (error: any) {
+      setMessage(`Nie udało się przygotować promptu: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setOrgDescriptionBusy(false);
+    }
+  };
+
+  const handleArenaRun = async () => {
+    if (orgDescriptionFor?.id == null) return;
+    setMessage("");
+    setArenaResults([]);
+    setOrgDescriptionBusy(true);
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe/arena`,
+        { models: arenaModels, prompt: orgPrompt }, { headers: jsonHeaders });
+      setArenaResults(response.data.results ?? []);
+    } catch (error: any) {
+      setMessage(`Arena nie powiodła się: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setOrgDescriptionBusy(false);
+    }
+  };
+
+  const toggleArenaModel = (id: string) => setArenaModels((current) =>
+    current.includes(id) ? current.filter((item) => item !== id) : current.length < 4 ? [...current, id] : current);
+
+  const handleOrgDescriptionGenerate = async () => {
+    if (orgDescriptionFor?.id == null) return;
+    setMessage("");
+    setOrgDescriptionBusy(true);
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe`,
+        { model: orgModel || undefined, prompt: orgPrompt }, { headers: jsonHeaders });
+      const data = response.data;
+      if (data.result_status === "ok" && data.description) {
+        setOrgDescriptionText(data.description);
+        setOrgDescriptionInfo(`Propozycja: ${data.model}, ${data.latency_ms} ms`);
+      } else if (data.result_status === "error") {
+        setOrgDescriptionInfo("");
+        setMessage(`Model ${data.model} nie odpowiedział: ${data.error_code ?? "błąd"}.`);
+      } else {
+        setOrgDescriptionInfo("");
+        setMessage(`Model ${data.model} uznał, że rozdział nie wystarcza do opisu — wpisz go ręcznie.`);
+      }
     } catch (error: any) {
       setMessage(`Nie udało się wygenerować opisu: ${error.response?.data?.message || error.message}`);
     } finally {
@@ -1438,6 +1498,8 @@ const EntitiesPanel = ({
         resetFlows();
         setOrgDescriptionFor(item);
         setOrgDescriptionText(item.organization_description ?? "");
+        setOrgPromptOpen(false);
+        setOrgDescriptionInfo("");
       } });
     }
     if (item.organization_id != null) {
@@ -2275,10 +2337,78 @@ const EntitiesPanel = ({
             </button>
             <button className={"button"} type="button" style={{ marginTop: 6, marginLeft: 8 }}
               disabled={orgDescriptionBusy || orgDescriptionFor.id == null} onClick={handleOrgDescriptionSuggest}
-              title="Model AI (Bielik) pisze opis na podstawie rozdziału, w którym organizacja pada najczęściej">
-              {orgDescriptionBusy ? "Pracuję…" : "🤖 Zaproponuj z tekstu"}
+              title="Pokaż prompt i wybierz model; opis powstaje z rozdziału, w którym organizacja pada najczęściej">
+              {orgDescriptionBusy && !orgPromptOpen ? "Pracuję…" : "🤖 Zaproponuj z tekstu"}
             </button>
           </div>
+          {orgPromptOpen && (
+            <div style={{ marginTop: 8 }}>
+              <label style={{ display: "block" }}>Model
+                <select value={orgModel} onChange={(e) => setOrgModel(e.target.value)} style={{ marginLeft: 6 }}>
+                  {orgModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </select>
+              </label>
+              <label style={{ display: "block", marginTop: 6 }}>Prompt wysyłany do modelu (możesz go zmienić)
+                <textarea value={orgPrompt} onChange={(e) => setOrgPrompt(e.target.value)} rows={10} maxLength={16000}
+                  style={{ display: "block", width: "min(720px, 95%)", boxSizing: "border-box" }} />
+              </label>
+              <button className={"button"} type="button" style={{ marginTop: 6 }}
+                disabled={orgDescriptionBusy || !orgPrompt.trim()} onClick={handleOrgDescriptionGenerate}>
+                {orgDescriptionBusy ? "Pracuję…" : "Generuj"}
+              </button>
+              {orgDescriptionInfo && <span style={{ marginLeft: 8, color: "#475569" }}>{orgDescriptionInfo}</span>}
+              {orgModels.find((model) => model.id === orgModel)?.external && (
+                <p role="note" style={{ margin: "6px 0 0", color: "#92400e" }}>
+                  ⚠ Ten model wysyła tekst rozdziału do zewnętrznego pośrednika (OpenRouter).
+                  {orgModels.find((model) => model.id === orgModel)?.verified === false && " Identyfikator i cena nie są jeszcze sprawdzone."}
+                </p>
+              )}
+              <div style={{ marginTop: 10 }}>
+                <button type="button" onClick={() => setArenaOpen((open) => !open)}>
+                  {arenaOpen ? "▾" : "▸"} ⚔ Arena — porównaj modele
+                </button>
+                {arenaOpen && (
+                  <div style={{ marginTop: 6 }}>
+                    <div>Wybierz od 2 do 4 modeli (ten sam prompt trafi do wszystkich):</div>
+                    {orgModels.map((model) => (
+                      <label key={model.id} style={{ display: "block" }}>
+                        <input type="checkbox" checked={arenaModels.includes(model.id)} onChange={() => toggleArenaModel(model.id)} />
+                        {" "}{model.label}{model.external ? " ⚠ zewnętrzny" : ""}
+                      </label>
+                    ))}
+                    <button className={"button"} type="button" style={{ marginTop: 6 }}
+                      disabled={orgDescriptionBusy || arenaModels.length < 2 || !orgPrompt.trim()} onClick={handleArenaRun}>
+                      {orgDescriptionBusy ? "Pracuję…" : "Porównaj"}
+                    </button>
+                    {arenaResults.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                        {arenaResults.map((result) => (
+                          <div key={result.model} style={{ flex: "1 1 220px", maxWidth: 340, padding: 8, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6 }}>
+                            <strong>{result.label}</strong>
+                            <div style={{ fontSize: "0.8em", color: "#64748b" }}>
+                              {result.latency_ms} ms
+                              {result.tokens != null && ` · ${result.tokens} tok.`}
+                              {result.cost != null ? ` · ${result.cost} ${result.currency ?? ""}` : " · koszt nieznany"}
+                            </div>
+                            <p style={{ margin: "6px 0" }}>
+                              {result.result_status === "ok" && result.description}
+                              {result.result_status === "insufficient_context" && "Model uznał, że rozdział nie wystarcza do opisu."}
+                              {result.result_status === "error" && `Model nie odpowiedział: ${result.error_code ?? "błąd"}.`}
+                            </p>
+                            {result.result_status === "ok" && result.description && (
+                              <button type="button" onClick={() => { setOrgDescriptionText(result.description ?? ""); setOrgDescriptionInfo(`Propozycja: ${result.label}`); }}>
+                                Użyj tego opisu
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

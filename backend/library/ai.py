@@ -26,7 +26,7 @@ SHERLOCK_VISION_MODELS = ("google/gemma-4-31B-it", "mistralai/Mistral-Small-4-11
 GOOGLE_MODELS = ("gemini-2.0-flash-lite-001",)
 
 # Providers whose API accepts a separate system-role message.
-_SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs")
+_SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs", "openrouter")
 # Providers accepting response_format; Sherlock enforces json_schema
 # (verified live 2026-07-18) but rejects json_object with HTTP 400.
 _RESPONSE_FORMAT_PROVIDERS = ("cloudferro",)
@@ -130,6 +130,17 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
             return arklabs_get_completion(query, model=actual_model, temperature=temperature,
                                           max_tokens=max_token_count, system_prompt=system_prompt,
                                           stateful=arklabs_stateful)
+
+    elif model.startswith("openrouter/"):
+        provider = "openrouter"
+        # Only the first prefix is ours: "openrouter/openai/gpt-4o-mini" -> OpenRouter id "openai/gpt-4o-mini".
+        actual_model = model.removeprefix("openrouter/")
+
+        def call():
+            from library.api.openrouter.openrouter_completion import openrouter_get_completion
+
+            return openrouter_get_completion(query, model=actual_model, temperature=temperature,
+                                             max_tokens=max_token_count, system_prompt=system_prompt)
 
     elif model in GOOGLE_MODELS:
         provider = "google-vertexai"

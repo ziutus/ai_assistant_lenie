@@ -70,6 +70,7 @@ def describe_event(name: str, sentences: list[str], title: str = "") -> str | No
 
 
 MAX_CHAPTER_CHARS = 3500
+MAX_CUSTOM_PROMPT_CHARS = 16000
 
 
 def best_chapter(text: str, forms: list[str]) -> tuple[str, str] | None:
@@ -93,14 +94,9 @@ def best_chapter(text: str, forms: list[str]) -> tuple[str, str] | None:
     return (best[1], best[2]) if best else None
 
 
-def describe_organization(name: str, chapter_title: str, chapter_text: str, title: str = "") -> str | None:
-    """One or two Polish sentences saying what the organization is, or None when the chapter does not say."""
-    from library.ai import ai_ask
-    from library.article_tagging import _tagging_model
-
-    if not chapter_text.strip():
-        return None
-    prompt = (
+def build_organization_prompt(name: str, chapter_title: str, chapter_text: str, title: str = "") -> str:
+    """The exact prompt sent to the model; the chapter is capped at ``MAX_CHAPTER_CHARS``."""
+    return (
         f"Poniżej jest rozdział dokumentu, w którym pada nazwa organizacji „{name}”.\n"
         "Napisz po polsku krótki opis tej organizacji (1-2 zdania): czym jest, czym się zajmuje, "
         "w jakim kraju działa — ale TYLKO jeśli wynika to z poniższego rozdziału. "
@@ -109,13 +105,51 @@ def describe_organization(name: str, chapter_title: str, chapter_text: str, titl
         f"Jeśli rozdział nie wystarcza do opisu, odpowiedz dokładnie: {NO_DESCRIPTION}\n\n"
         f"TYTUŁ DOKUMENTU: {title}\nTYTUŁ ROZDZIAŁU: {chapter_title}\n\nROZDZIAŁ:\n{chapter_text[:MAX_CHAPTER_CHARS]}"
     )
+
+
+def run_organization_description(prompt: str, model: str | None = None) -> dict:
+    """Send ``prompt`` to ``model`` (default: the tagging model) and classify the outcome.
+
+    ``status`` is ``ok``, ``insufficient_context`` (the model answered BRAK or nothing) or ``error``
+    (the call failed — kept apart from BRAK so a broken model is not mistaken for thin source text).
+    The prompt is never logged.
+    """
+    import time
+
+    from library.ai import ai_ask
+    from library.article_tagging import _tagging_model
+
+    model = model or _tagging_model()
+    started = time.monotonic()
     try:
-        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=200,
+        response = ai_ask(prompt, model=model, temperature=0.0, max_token_count=200,
                           operation="organization_description")
-    except Exception:
-        logger.exception("Organization description for %r failed", name)
-        return None
+    except Exception as exc:
+        logger.error("Organization description failed with model %s: %s", model, type(exc).__name__)
+        return {"status": "error", "description": None, "model": model, "error_code": type(exc).__name__,
+                "latency_ms": int((time.monotonic() - started) * 1000)}
+    latency_ms = int((time.monotonic() - started) * 1000)
     description = (response.response_text or "").strip()
+    outcome = {"model": model, "latency_ms": latency_ms, **_usage_summary(response)}
     if not description or description.upper().startswith(NO_DESCRIPTION):
+        return {"status": "insufficient_context", "description": None, **outcome}
+    return {"status": "ok", "description": description, **outcome}
+
+
+def _usage_summary(response) -> dict:
+    """Tokens and cost of one call; ``None`` (never 0) where the usage record does not know them."""
+    usage = getattr(response, "usage", None)
+    cost = getattr(usage, "cost", None)
+    total = getattr(cost, "total_cost", None)
+    return {
+        "tokens": getattr(usage, "total_tokens", None),
+        "cost": str(total) if total is not None else None,
+        "currency": getattr(cost, "currency", None) if total is not None else None,
+    }
+
+
+def describe_organization(name: str, chapter_title: str, chapter_text: str, title: str = "") -> str | None:
+    """One or two Polish sentences saying what the organization is, or None when nothing usable came back."""
+    if not chapter_text.strip():
         return None
-    return description
+    return run_organization_description(build_organization_prompt(name, chapter_title, chapter_text, title))["description"]
