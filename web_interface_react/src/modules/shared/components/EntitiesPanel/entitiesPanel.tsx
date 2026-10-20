@@ -561,6 +561,7 @@ const EntitiesPanel = ({
   // "Opis" flow (orgName): chip whose Organization.description is being edited
   const [orgDescriptionFor, setOrgDescriptionFor] = React.useState<EntityItem | null>(null);
   const [orgDescriptionText, setOrgDescriptionText] = React.useState("");
+  const [orgDescriptionBusy, setOrgDescriptionBusy] = React.useState(false);
   // "Wyklucz" flow: entity to suppress in future NER runs (ner_exclusions)
   const [excludeFor, setExcludeFor] = React.useState<{ item: EntityItem; entityType: string } | null>(null);
   const [deleteFor, setDeleteFor] = React.useState<EntityItem | null>(null);
@@ -1149,6 +1150,23 @@ const EntitiesPanel = ({
     } catch (error: any) {
       console.error("Error updating organization description", error);
       setMessage(`Nie udało się zapisać opisu: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  // Bielik drafts the organization description from the chapter that mentions it most; nothing is
+  // stored until the reviewer presses "Zapisz".
+  const handleOrgDescriptionSuggest = async () => {
+    if (orgDescriptionFor?.id == null) return;
+    setMessage("");
+    setOrgDescriptionBusy(true);
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe`, {}, { headers: jsonHeaders });
+      if (response.data.description) setOrgDescriptionText(response.data.description);
+      else setMessage("Model uznał, że rozdział nie wystarcza do opisu — wpisz go ręcznie.");
+    } catch (error: any) {
+      setMessage(`Nie udało się wygenerować opisu: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setOrgDescriptionBusy(false);
     }
   };
 
@@ -2254,6 +2272,11 @@ const EntitiesPanel = ({
           <div>
             <button className={"button"} type="button" style={{ marginTop: 6 }} onClick={handleOrgDescriptionSubmit}>
               Zapisz
+            </button>
+            <button className={"button"} type="button" style={{ marginTop: 6, marginLeft: 8 }}
+              disabled={orgDescriptionBusy || orgDescriptionFor.id == null} onClick={handleOrgDescriptionSuggest}
+              title="Model AI (Bielik) pisze opis na podstawie rozdziału, w którym organizacja pada najczęściej">
+              {orgDescriptionBusy ? "Pracuję…" : "🤖 Zaproponuj z tekstu"}
             </button>
           </div>
         </div>

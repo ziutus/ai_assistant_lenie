@@ -67,3 +67,55 @@ def describe_event(name: str, sentences: list[str], title: str = "") -> str | No
     if not description or description.upper().startswith(NO_DESCRIPTION):
         return None
     return description
+
+
+MAX_CHAPTER_CHARS = 3500
+
+
+def best_chapter(text: str, forms: list[str]) -> tuple[str, str] | None:
+    """(title, body) of the chapter that mentions ``forms`` most often, or None when none does.
+
+    Chapters are the ``##`` sections of the document (transcript_chapter_boundaries); a document
+    without headings counts as one chapter with an empty title.
+    """
+    from library.transcript_chapter_boundaries import parse_sections
+
+    needles = [form.strip().casefold() for form in forms if form and form.strip()]
+    if not text or not needles:
+        return None
+    best: tuple[int, str, str] | None = None
+    for section in parse_sections(text):
+        body = section.body.strip()
+        folded = body.casefold()
+        mentions = sum(folded.count(needle) for needle in needles)
+        if mentions and (best is None or mentions > best[0]):
+            best = (mentions, section.heading[3:].strip() if section.heading else "", body)
+    return (best[1], best[2]) if best else None
+
+
+def describe_organization(name: str, chapter_title: str, chapter_text: str, title: str = "") -> str | None:
+    """One or two Polish sentences saying what the organization is, or None when the chapter does not say."""
+    from library.ai import ai_ask
+    from library.article_tagging import _tagging_model
+
+    if not chapter_text.strip():
+        return None
+    prompt = (
+        f"Poniżej jest rozdział dokumentu, w którym pada nazwa organizacji „{name}”.\n"
+        "Napisz po polsku krótki opis tej organizacji (1-2 zdania): czym jest, czym się zajmuje, "
+        "w jakim kraju działa — ale TYLKO jeśli wynika to z poniższego rozdziału. "
+        "Niczego nie dodawaj z własnej wiedzy. Tekst pochodzi czasem z transkrypcji mowy, "
+        "więc może zawierać przejęzyczenia. "
+        f"Jeśli rozdział nie wystarcza do opisu, odpowiedz dokładnie: {NO_DESCRIPTION}\n\n"
+        f"TYTUŁ DOKUMENTU: {title}\nTYTUŁ ROZDZIAŁU: {chapter_title}\n\nROZDZIAŁ:\n{chapter_text[:MAX_CHAPTER_CHARS]}"
+    )
+    try:
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=200,
+                          operation="organization_description")
+    except Exception:
+        logger.exception("Organization description for %r failed", name)
+        return None
+    description = (response.response_text or "").strip()
+    if not description or description.upper().startswith(NO_DESCRIPTION):
+        return None
+    return description

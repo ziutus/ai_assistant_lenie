@@ -2213,28 +2213,37 @@ def website_entities_real_name(entity_id: int):
 
 @app.route('/website_entities/<int:entity_id>/describe', methods=['POST'])
 def website_entities_describe(entity_id: int):
-    """Propose a description of an event entity from the sentences that mention it (not stored).
+    """Propose a description of an event or organization entity from the document text (not stored).
 
-    The sentences containing the event's name or surface forms go to the tagging model (Bielik), which may
-    use nothing else (library/event_description.py). Answers ``description`` (null when the text does not
-    say enough) and the ``sentences`` used; ``PUT /website_entities/<id>/description`` stores the text the
-    reviewer approves or edits.
+    Event: the sentences that mention it go to the tagging model (Bielik). Organization: the chapter that
+    mentions it most often goes to the model. In both cases the model may use nothing else
+    (library/event_description.py). Answers ``description`` (null when the text does not say enough) and
+    the ``sentences`` used. An event description is stored by ``PUT /website_entities/<id>/description``,
+    an organization one by ``PATCH /organizations/<id>`` once the reviewer approves or edits it.
     """
     from library.db.models import DocumentEntity
-    from library.event_description import context_sentences, describe_event
+    from library.event_description import best_chapter, context_sentences, describe_event, describe_organization
 
     session = get_scoped_session()
     entity = session.get(DocumentEntity, entity_id)
     if entity is None:
         return jsonify(status="error", message="Nie znaleziono encji."), 404
-    if entity.entity_type != "eventName":
-        return jsonify(status="error", message="Opis można wygenerować tylko dla wydarzenia."), 400
+    if entity.entity_type not in ("eventName", "orgName"):
+        return jsonify(status="error", message="Opis można wygenerować tylko dla wydarzenia lub organizacji."), 400
     document = session.get(Document, entity.document_id)
     text = (document.text_md or document.text or "") if document is not None else ""
-    sentences = context_sentences(text, [entity.entity_text, *(entity.variants or [])])
+    forms = [entity.entity_text, *(entity.variants or [])]
+    doc_title = getattr(document, "title", "") or ""
+    if entity.entity_type == "orgName":
+        chapter = best_chapter(text, forms)
+        if chapter is None:
+            return jsonify(status="error", message="Nie znaleziono w tekście rozdziału z tą organizacją."), 404
+        description = describe_organization(entity.entity_text, chapter[0], chapter[1], doc_title)
+        return jsonify(status="success", description=description, chapter_title=chapter[0]), 200
+    sentences = context_sentences(text, forms)
     if not sentences:
         return jsonify(status="error", message="Nie znaleziono w tekście zdań z tym wydarzeniem."), 404
-    description = describe_event(entity.entity_text, sentences, getattr(document, "title", "") or "")
+    description = describe_event(entity.entity_text, sentences, doc_title)
     return jsonify(status="success", description=description, sentences=sentences), 200
 
 
