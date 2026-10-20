@@ -562,6 +562,11 @@ const EntitiesPanel = ({
   const [orgDescriptionFor, setOrgDescriptionFor] = React.useState<EntityItem | null>(null);
   const [orgDescriptionText, setOrgDescriptionText] = React.useState("");
   const [orgDescriptionBusy, setOrgDescriptionBusy] = React.useState(false);
+  const [orgPromptOpen, setOrgPromptOpen] = React.useState(false);
+  const [orgPrompt, setOrgPrompt] = React.useState("");
+  const [orgModels, setOrgModels] = React.useState<{ id: string; label: string }[]>([]);
+  const [orgModel, setOrgModel] = React.useState("");
+  const [orgDescriptionInfo, setOrgDescriptionInfo] = React.useState("");
   // "Wyklucz" flow: entity to suppress in future NER runs (ner_exclusions)
   const [excludeFor, setExcludeFor] = React.useState<{ item: EntityItem; entityType: string } | null>(null);
   const [deleteFor, setDeleteFor] = React.useState<EntityItem | null>(null);
@@ -1155,14 +1160,43 @@ const EntitiesPanel = ({
 
   // Bielik drafts the organization description from the chapter that mentions it most; nothing is
   // stored until the reviewer presses "Zapisz".
+  // The prompt and the model are shown first (POST .../describe/preview, no LLM call) so the reviewer can
+  // edit the prompt and pick the model before "Generuj" sends exactly that text.
   const handleOrgDescriptionSuggest = async () => {
     if (orgDescriptionFor?.id == null) return;
     setMessage("");
     setOrgDescriptionBusy(true);
     try {
-      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe`, {}, { headers: jsonHeaders });
-      if (response.data.description) setOrgDescriptionText(response.data.description);
-      else setMessage("Model uznał, że rozdział nie wystarcza do opisu — wpisz go ręcznie.");
+      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe/preview`, {}, { headers: jsonHeaders });
+      setOrgPrompt(response.data.prompt ?? "");
+      setOrgModels(response.data.models ?? []);
+      setOrgModel(response.data.default_model ?? response.data.models?.[0]?.id ?? "");
+      setOrgPromptOpen(true);
+    } catch (error: any) {
+      setMessage(`Nie udało się przygotować promptu: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setOrgDescriptionBusy(false);
+    }
+  };
+
+  const handleOrgDescriptionGenerate = async () => {
+    if (orgDescriptionFor?.id == null) return;
+    setMessage("");
+    setOrgDescriptionBusy(true);
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${orgDescriptionFor.id}/describe`,
+        { model: orgModel || undefined, prompt: orgPrompt }, { headers: jsonHeaders });
+      const data = response.data;
+      if (data.result_status === "ok" && data.description) {
+        setOrgDescriptionText(data.description);
+        setOrgDescriptionInfo(`Propozycja: ${data.model}, ${data.latency_ms} ms`);
+      } else if (data.result_status === "error") {
+        setOrgDescriptionInfo("");
+        setMessage(`Model ${data.model} nie odpowiedział: ${data.error_code ?? "błąd"}.`);
+      } else {
+        setOrgDescriptionInfo("");
+        setMessage(`Model ${data.model} uznał, że rozdział nie wystarcza do opisu — wpisz go ręcznie.`);
+      }
     } catch (error: any) {
       setMessage(`Nie udało się wygenerować opisu: ${error.response?.data?.message || error.message}`);
     } finally {
@@ -1438,6 +1472,8 @@ const EntitiesPanel = ({
         resetFlows();
         setOrgDescriptionFor(item);
         setOrgDescriptionText(item.organization_description ?? "");
+        setOrgPromptOpen(false);
+        setOrgDescriptionInfo("");
       } });
     }
     if (item.organization_id != null) {
@@ -2275,10 +2311,28 @@ const EntitiesPanel = ({
             </button>
             <button className={"button"} type="button" style={{ marginTop: 6, marginLeft: 8 }}
               disabled={orgDescriptionBusy || orgDescriptionFor.id == null} onClick={handleOrgDescriptionSuggest}
-              title="Model AI (Bielik) pisze opis na podstawie rozdziału, w którym organizacja pada najczęściej">
-              {orgDescriptionBusy ? "Pracuję…" : "🤖 Zaproponuj z tekstu"}
+              title="Pokaż prompt i wybierz model; opis powstaje z rozdziału, w którym organizacja pada najczęściej">
+              {orgDescriptionBusy && !orgPromptOpen ? "Pracuję…" : "🤖 Zaproponuj z tekstu"}
             </button>
           </div>
+          {orgPromptOpen && (
+            <div style={{ marginTop: 8 }}>
+              <label style={{ display: "block" }}>Model
+                <select value={orgModel} onChange={(e) => setOrgModel(e.target.value)} style={{ marginLeft: 6 }}>
+                  {orgModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </select>
+              </label>
+              <label style={{ display: "block", marginTop: 6 }}>Prompt wysyłany do modelu (możesz go zmienić)
+                <textarea value={orgPrompt} onChange={(e) => setOrgPrompt(e.target.value)} rows={10} maxLength={16000}
+                  style={{ display: "block", width: "min(720px, 95%)", boxSizing: "border-box" }} />
+              </label>
+              <button className={"button"} type="button" style={{ marginTop: 6 }}
+                disabled={orgDescriptionBusy || !orgPrompt.trim()} onClick={handleOrgDescriptionGenerate}>
+                {orgDescriptionBusy ? "Pracuję…" : "Generuj"}
+              </button>
+              {orgDescriptionInfo && <span style={{ marginLeft: 8, color: "#475569" }}>{orgDescriptionInfo}</span>}
+            </div>
+          )}
         </div>
       )}
 

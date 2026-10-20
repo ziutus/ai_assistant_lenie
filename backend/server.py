@@ -2222,7 +2222,7 @@ def website_entities_describe(entity_id: int):
     an organization one by ``PATCH /organizations/<id>`` once the reviewer approves or edits it.
     """
     from library.db.models import DocumentEntity
-    from library.event_description import best_chapter, context_sentences, describe_event, describe_organization
+    from library.event_description import best_chapter, context_sentences, describe_event
 
     session = get_scoped_session()
     entity = session.get(DocumentEntity, entity_id)
@@ -2235,16 +2235,61 @@ def website_entities_describe(entity_id: int):
     forms = [entity.entity_text, *(entity.variants or [])]
     doc_title = getattr(document, "title", "") or ""
     if entity.entity_type == "orgName":
+        from library.event_description import (
+            MAX_CUSTOM_PROMPT_CHARS, build_organization_prompt, run_organization_description,
+        )
+        from library.llm_model_registry import is_selectable
+
+        body = request.get_json(silent=True) or {}
+        model = body.get('model')
+        if model is not None and (not isinstance(model, str) or not is_selectable(model)):
+            return jsonify(status="error", message="Nieznany model."), 400
+        custom_prompt = body.get('prompt')
+        if custom_prompt is not None and (not isinstance(custom_prompt, str) or not custom_prompt.strip()):
+            return jsonify(status="error", message="Nieprawidłowy prompt."), 400
+        if custom_prompt is not None and len(custom_prompt) > MAX_CUSTOM_PROMPT_CHARS:
+            return jsonify(status="error",
+                           message=f"Prompt jest za długi (maks. {MAX_CUSTOM_PROMPT_CHARS} znaków)."), 400
         chapter = best_chapter(text, forms)
         if chapter is None:
             return jsonify(status="error", message="Nie znaleziono w tekście rozdziału z tą organizacją."), 404
-        description = describe_organization(entity.entity_text, chapter[0], chapter[1], doc_title)
-        return jsonify(status="success", description=description, chapter_title=chapter[0]), 200
+        prompt = custom_prompt if custom_prompt is not None else build_organization_prompt(
+            entity.entity_text, chapter[0], chapter[1], doc_title)
+        result = run_organization_description(prompt, model)
+        return jsonify(status="success", result_status=result["status"], description=result["description"],
+                       model=result["model"], latency_ms=result["latency_ms"],
+                       error_code=result.get("error_code"), chapter_title=chapter[0]), 200
     sentences = context_sentences(text, forms)
     if not sentences:
         return jsonify(status="error", message="Nie znaleziono w tekście zdań z tym wydarzeniem."), 404
     description = describe_event(entity.entity_text, sentences, doc_title)
     return jsonify(status="success", description=description, sentences=sentences), 200
+
+
+@app.route('/website_entities/<int:entity_id>/describe/preview', methods=['POST'])
+def website_entities_describe_preview(entity_id: int):
+    """The prompt ``/describe`` would send for an organization plus the selectable models (no LLM call)."""
+    from library.article_tagging import _tagging_model
+    from library.db.models import DocumentEntity
+    from library.event_description import MAX_CHAPTER_CHARS, best_chapter, build_organization_prompt
+    from library.llm_model_registry import selectable_models
+
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type != "orgName":
+        return jsonify(status="error", message="Podgląd dotyczy tylko organizacji."), 400
+    document = session.get(Document, entity.document_id)
+    text = (document.text_md or document.text or "") if document is not None else ""
+    chapter = best_chapter(text, [entity.entity_text, *(entity.variants or [])])
+    if chapter is None:
+        return jsonify(status="error", message="Nie znaleziono w tekście rozdziału z tą organizacją."), 404
+    prompt = build_organization_prompt(entity.entity_text, chapter[0], chapter[1],
+                                       getattr(document, "title", "") or "")
+    return jsonify(status="success", prompt=prompt, chapter_title=chapter[0],
+                   truncated=len(chapter[1]) > MAX_CHAPTER_CHARS, default_model=_tagging_model(),
+                   models=selectable_models()), 200
 
 
 @app.route('/website_entities/<int:entity_id>/description', methods=['PUT'])
