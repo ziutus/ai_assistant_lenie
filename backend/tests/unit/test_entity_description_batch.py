@@ -70,9 +70,16 @@ def test_parse_answer_handles_fences_nulls_brak_and_invented_keys():
     batch = _candidates()
     raw = '```json\n{"o1": " Polski koncern. ", "o2": null, "p1": "BRAK", "zzz": "wymyślone"}\n```'
     assert parse_answer(raw, batch) == {"o1": "Polski koncern.", "o2": None, "p1": None}
-    assert parse_answer('{"o1": "x"}', batch) == {"o1": "x", "o2": None, "p1": None}  # missing key = no description
+    assert parse_answer('{"o1": "Polski koncern."}', batch) == {"o1": "Polski koncern.", "o2": None, "p1": None}  # missing = none
     assert parse_answer('{"o1": 5, "o2": "", "p1": ["a"]}', batch) == {"o1": None, "o2": None, "p1": None}
-    assert len(parse_answer(json.dumps({"o1": "a" * 900}), batch)["o1"]) == batch_module.MAX_DESCRIPTION_CHARS
+    assert len(parse_answer(json.dumps({"o1": "ab " * 300}), batch)["o1"]) == batch_module.MAX_DESCRIPTION_CHARS
+
+
+def test_a_description_that_only_repeats_the_name_or_one_word_counts_as_none():
+    batch = _candidates()  # o1 = Orlen, o2 = Bank Światowy, p1 = Luka Nikulesku
+    raw = json.dumps({"o1": "Orlen.", "o2": "bank światowy", "p1": "Polityk"})
+    assert parse_answer(raw, batch) == {"o1": None, "o2": None, "p1": None}
+    assert parse_answer(json.dumps({"o1": "Polski koncern paliwowy."}), batch)["o1"] == "Polski koncern paliwowy."
 
 
 @pytest.mark.parametrize("raw", [None, "", "nie json", "[1, 2]", '{"o1": "ucięte', "{bad}"])

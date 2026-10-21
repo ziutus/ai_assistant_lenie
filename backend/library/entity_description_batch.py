@@ -131,11 +131,18 @@ def parse_answer(raw: str | None, batch: list[Candidate]) -> dict[str, str | Non
     for candidate in batch:
         value = data.get(candidate.key)
         description = value.strip() if isinstance(value, str) else ""
-        if not description or description.upper().startswith(NO_DESCRIPTION):
+        if (not description or description.upper().startswith(NO_DESCRIPTION)
+                or _echoes_name(description, candidate.name)):
             answers[candidate.key] = None
         else:
             answers[candidate.key] = description[:MAX_DESCRIPTION_CHARS]
     return answers
+
+
+def _echoes_name(description: str, name: str) -> bool:
+    """True for a "description" that only repeats the name or is a single word (a small model's way to say nothing)."""
+    plain = re.sub(r"[\W_]+", " ", description.casefold()).strip()
+    return len(plain.split()) < 2 or plain == re.sub(r"[\W_]+", " ", name.casefold()).strip()
 
 
 def supports_structured_output(model: str) -> bool:
