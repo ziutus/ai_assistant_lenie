@@ -81,6 +81,21 @@ it("says so when every organization and person already has a description", async
   expect(screen.queryByRole("button", { name: "Generuj opisy" })).toBeNull();
 });
 
+it("tells which models enforce JSON and warns about the ones that do not", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: { ...DRY_RUN.data, models: [
+    { id: "Bielik-11B-v3.0-Instruct", label: "Bielik", supports_structured_outputs: true },
+    { id: "gpt-4o-mini", label: "GPT-4o mini", supports_structured_outputs: false },
+  ] } });
+  renderPanel();
+  fireEvent.click(screen.getByRole("button", { name: /Uzupełnij brakujące opisy/ }));
+  await screen.findByRole("button", { name: "Generuj opisy" });
+  expect(screen.getByRole("option", { name: /Bielik — schemat JSON ✓/ })).toBeTruthy();
+  expect(screen.getByRole("option", { name: /GPT-4o mini — bez schematu JSON/ })).toBeTruthy();
+  expect(screen.queryByRole("note")).toBeNull(); // default model enforces the schema
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: "gpt-4o-mini" } });
+  expect(screen.getByRole("note").textContent).toContain("nie wymusza formatu JSON");
+});
+
 it("warns before sending the chapter to an external model", async () => {
   renderPanel();
   fireEvent.click(screen.getByRole("button", { name: /Uzupełnij brakujące opisy/ }));

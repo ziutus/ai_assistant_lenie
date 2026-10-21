@@ -10,6 +10,8 @@ export interface ModelOption {
   currency?: string | null;
   price_source?: string | null;
   listed_by_provider?: boolean | null;
+  /** true = the model honours a JSON-schema response format; false = it does not; null/undefined = unknown. */
+  supports_structured_outputs?: boolean | null;
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", EUR: "€", PLN: "zł" };
@@ -33,6 +35,8 @@ export const describeModel = (model: ModelOption): string => {
   }
   if (model.context_length) parts.push(`okno ${formatTokens(model.context_length)}`);
   if (model.max_output_tokens) parts.push(`wyjście do ${formatTokens(model.max_output_tokens)}`);
+  if (model.supports_structured_outputs === true) parts.push("schemat JSON ✓");
+  if (model.supports_structured_outputs === false) parts.push("bez schematu JSON");
   return parts.join(" · ");
 };
 

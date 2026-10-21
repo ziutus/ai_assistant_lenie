@@ -110,9 +110,13 @@ def selectable_models(task: str = "organization_description") -> list[dict]:
 
     Each item: ``id, label, provider, external, verified`` plus ``context_length, max_output_tokens,
     input_price_per_million, output_price_per_million, currency`` (prices per 1M tokens, as strings),
-    ``price_source`` (``openrouter_api`` / ``llm_pricing`` / None), ``supports_structured_outputs`` and
+    ``price_source`` (``openrouter_api`` / ``llm_pricing`` / None), ``supports_structured_outputs`` (True = a
+    JSON-schema ``response_format`` is honoured: Bielik on CloudFerro, OpenRouter models whose catalog entry
+    lists it; False = not sent; None = OpenRouter catalog unreachable) and
     ``listed_by_provider`` (False = an OpenRouter id the live catalog no longer knows).
     """
+    from library.ai import _RESPONSE_FORMAT_PROVIDERS
+
     models = _base_models(task)
     database_models = [item for item in models if item["provider"] != "openrouter"]
     stored = _database_prices(database_models) if database_models else {}
@@ -121,6 +125,8 @@ def selectable_models(task: str = "organization_description") -> list[dict]:
             item.update(_openrouter_details(item["id"]))
             continue
         item.update(_empty_details())
+        # Direct providers: a JSON-schema response_format is accepted exactly where ai_ask() forwards it.
+        item["supports_structured_outputs"] = item["provider"] in _RESPONSE_FORMAT_PROVIDERS
         row = stored.get((item["provider"], item["id"]))
         if row is not None and row[0] is not None and row[1] is not None:
             item.update(input_price_per_million=_money(row[0]), output_price_per_million=_money(row[1]),

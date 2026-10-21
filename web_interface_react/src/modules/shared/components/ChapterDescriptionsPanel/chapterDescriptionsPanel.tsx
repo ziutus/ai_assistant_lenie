@@ -147,6 +147,11 @@ const ChapterDescriptionsPanel = ({ apiUrl, apiKey, docId, position, onSaved }: 
               {models.map((option) => <option key={option.id} value={option.id}>{modelOptionText(option)}</option>)}
             </select>
           </label>
+          {models.find((option) => option.id === model)?.supports_structured_outputs === false && (
+            <p role="note" style={{ margin: "6px 0 0", color: "#475569" }}>
+              Ten model nie wymusza formatu JSON — odpowiedź jest odczytywana z tekstu i częściej wymaga ponowienia.
+            </p>
+          )}
           {models.find((option) => option.id === model)?.external && (
             <p role="note" style={{ margin: "6px 0 0", color: "#92400e" }}>
               ⚠ Ten model wysyła tekst rozdziału do zewnętrznego pośrednika (OpenRouter).
