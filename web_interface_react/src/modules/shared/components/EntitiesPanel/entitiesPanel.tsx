@@ -99,7 +99,15 @@ export interface EntitiesByType {
   geogName: EntityItem[];
   placeName: EntityItem[];
   facility?: EntityItem[];
+  // Added by hand from selected text (SelectionEntityMenu) or by retyping a mislabelled entity.
+  eventName?: EntityItem[];
+  productName?: EntityItem[];
 }
+
+type ManualTarget = "persName" | "orgName" | "placeName" | "productName" | "eventName";
+
+// Kinds the /ner/:id page can highlight; also what "Podświetl w tekście" reports back.
+export type ShownInTextKind = "persName" | "orgName" | "place" | "event" | "product";
 
 interface PersonSearchResult {
   id: number;
@@ -495,6 +503,8 @@ const EntitiesPanel = ({
   refreshKey = 0,
   chapterRenderer,
   onShowInText,
+  onDescribeEvent,
+  onMergeProducts,
   mentionMenu,
   onMentionMenuClose,
 }: {
@@ -507,7 +517,11 @@ const EntitiesPanel = ({
   onMentionMenuClose?: () => void;
   // When set, every chip menu offers "Podświetl w tekście" and calls this with the chip's entity
   // and its kind (the /ner/:id page marks that entity's mentions in the transcript).
-  onShowInText?: (item: EntityItem, kind: "persName" | "orgName" | "place") => void;
+  onShowInText?: (item: EntityItem, kind: ShownInTextKind) => void;
+  // Page-owned dialogs the event and product menus open (the panel has no form for them): an event's
+  // description dialog and the form that folds several spellings of a product into one.
+  onDescribeEvent?: (item: EntityItem) => void;
+  onMergeProducts?: (item: EntityItem) => void;
   // Chapter mode (the /ner/:id page): the host draws the entity groups itself, once per
   // chapter, through renderGroups(), so every chip keeps this panel's action menus and
   // dialogs. Dialogs then dock to the bottom of the window because the chips can be far
@@ -1322,16 +1336,32 @@ const EntitiesPanel = ({
     }
   };
 
-  const changeEntityToProduct = async (item: EntityItem) => {
+  // Person / organization / place -> product / system (default) or named event.
+  const changeEntityToProduct = async (item: EntityItem, target: "productName" | "eventName" = "productName") => {
+    if (item.id == null) return;
+    const noun = target === "eventName" ? "wydarzenie" : "produkt / system";
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${item.id}/to_product`,
+        target === "eventName" ? { entity_type: target } : {}, { headers: jsonHeaders });
+      setMessage(`„${item.text}” zmienione na ${noun}: ${response.data.product_name}.`);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się zmienić na ${noun}: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  // Product / event -> person, organization, place or the other of the two (marked by mistake).
+  const changeManualEntityTo = async (item: EntityItem, entityType: ManualTarget, label: string) => {
     if (item.id == null) return;
     setMessage("");
     try {
-      const response = await axios.post(`${apiUrl}/website_entities/${item.id}/to_product`, {},
+      await axios.post(`${apiUrl}/website_entities/${item.id}/from_product`, { entity_type: entityType },
         { headers: jsonHeaders });
-      setMessage(`„${item.text}” zmienione na produkt / system: ${response.data.product_name}.`);
+      setMessage(`„${item.text}” zmienione na ${label}.`);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zmienić na produkt / system: ${error.response?.data?.message || error.message}`);
+      setMessage(`Nie udało się zmienić na ${label}: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -1493,7 +1523,7 @@ const EntitiesPanel = ({
     setReviewReason("");
     setReviewComment("");
   };
-  const showInTextEntry = (item: EntityItem, kind: "persName" | "orgName" | "place"): MenuEntry[] =>
+  const showInTextEntry = (item: EntityItem, kind: ShownInTextKind): MenuEntry[] =>
     onShowInText ? [{ label: "🔎 Podświetl w tekście", action: () => onShowInText(item, kind) }] : [];
 
   // A speech-to-text slip of another entity of this document: no registry change, no alias of a person name.
@@ -1551,6 +1581,7 @@ const EntitiesPanel = ({
     entries.push({ label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } });
     entries.push({ label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } });
     entries.push({ label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } });
+    entries.push({ label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } });
     entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
     entries.push({ label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: "orgName" });
@@ -1583,6 +1614,7 @@ const EntitiesPanel = ({
       } }] : []),
     { label: "Zmień na organizację", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
     { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
+    { label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
     { label: "🚫 To nie jest osoba", action: () => {
@@ -1604,11 +1636,37 @@ const EntitiesPanel = ({
     { label: "Otwórz w rejestrze miejsc", to: `/places?name=${encodeURIComponent(item.text)}` },
     slipEntry(item),
     { label: "Zmień na organizację", action: () => { resetFlows(); void changePlaceToOrganization(item); } },
+    { label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } },
     { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
+    { label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: item.entity_type! });
     } },
+  ];
+
+  // Hand-added product / system and event chips share one menu shape with the NER chips: highlight, the
+  // type changes, delete. Their own actions (merge spellings, event description) open page-owned dialogs.
+  const manualRetypeEntries = (item: EntityItem, current: "productName" | "eventName"): MenuEntry[] => [
+    { label: "Zmień na osobę", action: () => { resetFlows(); void changeManualEntityTo(item, "persName", "osobę"); } },
+    { label: "Zmień na organizację", action: () => { resetFlows(); void changeManualEntityTo(item, "orgName", "organizację"); } },
+    { label: "Zmień na miejsce", action: () => { resetFlows(); void changeManualEntityTo(item, "placeName", "miejsce"); } },
+    current === "productName"
+      ? { label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeManualEntityTo(item, "eventName", "wydarzenie"); } }
+      : { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeManualEntityTo(item, "productName", "produkt / system"); } },
+  ];
+  const productMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
+    ...showInTextEntry(item, "product"),
+    ...(onMergeProducts ? [{ label: "Scal z innymi zapisami…", action: () => { resetFlows(); onMergeProducts(item); } }] : []),
+    ...manualRetypeEntries(item, "productName"),
+    { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
+  ];
+  const eventMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
+    ...showInTextEntry(item, "event"),
+    ...(onDescribeEvent ? [{ label: item.description ? "Opis wydarzenia…" : "Dodaj opis wydarzenia…",
+      action: () => { resetFlows(); onDescribeEvent(item); } }] : []),
+    ...manualRetypeEntries(item, "eventName"),
+    { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
   ];
 
   const reviewFields = (
@@ -1811,6 +1869,8 @@ const EntitiesPanel = ({
             )}
             {editMode && editActions("placeName")(item)}
           </>} />
+        <EntityChips label={"Wydarzenia"} items={source?.eventName ?? []} menuActions={eventMenuActions} />
+        <EntityChips label={"Produkty i systemy"} items={source?.productName ?? []} menuActions={productMenuActions} />
       </>
     );
   };

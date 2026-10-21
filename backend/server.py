@@ -2029,9 +2029,10 @@ def website_entities_to_place(entity_id: int):
 
 @app.route('/website_entities/<int:entity_id>/to_person', methods=['POST'])
 def website_entities_to_person(entity_id: int):
-    """Retype an organization entity as a person (NER mislabelled it).
+    """Retype an organization or place entity as a person (NER mislabelled it).
 
-    The organization's document link is dropped (the organization stays in the registry), a
+    The organization's document link is dropped (the organization stays in the registry; a place loses its
+    orphaned ``miejsce-*`` tag and is audited as ``place_to_person``), a
     ``source='manual'`` persName row replaces the entity and the mention is resolved through the person
     registry (Wikidata + context LLM; a failure of that lookup keeps the conversion). Audited as
     ``organization_to_person`` and replayed after entity refreshes (library/entity_overrides.py).
@@ -2045,17 +2046,25 @@ def website_entities_to_person(entity_id: int):
     entity = session.get(DocumentEntity, entity_id)
     if entity is None:
         return jsonify(status="error", message="Nie znaleziono encji."), 404
-    if entity.entity_type != "orgName":
-        return jsonify(status="error", message="Encja nie jest organizacją."), 400
-    old_text, old_variants = entity.entity_text, list(entity.variants or [])
+    from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
+
+    from_place = entity.entity_type in PLACE_ENTITY_TYPES
+    if entity.entity_type != "orgName" and not from_place:
+        return jsonify(status="error", message="Encja nie jest organizacją ani miejscem."), 400
+    old_text, old_type, old_variants = entity.entity_text, entity.entity_type, list(entity.variants or [])
     try:
         document = session.get(Document, entity.document_id)
-        drop_organization_links(session, entity)
+        removed_tag = None
+        if from_place:
+            removed_tag = remove_orphaned_tag(session, document, entity) if document is not None else None
+        else:
+            drop_organization_links(session, entity)
         person_entity = convert_entity_to_person(session, entity)
         record_entity_decision(
             session, document_id=person_entity.document_id, document_entity_id=person_entity.id,
-            entity_type="orgName", entity_text=old_text, decision="organization_to_person",
-            details={"variants": old_variants},
+            entity_type=old_type, entity_text=old_text,
+            decision="place_to_person" if from_place else "organization_to_person",
+            details={"variants": old_variants, "removed_tag": removed_tag},
         )
         session.commit()
     except Exception:
@@ -2080,7 +2089,8 @@ def website_entities_to_person(entity_id: int):
 def website_entities_to_product(entity_id: int):
     """Retype a person, organization or place entity as a product/system (NER mislabelled it, e.g. "Starshield").
 
-    Optional body {"text": "Starshield"} names the product (default: the mention as stored). A person's
+    Optional body {"text": "Starshield", "entity_type": "productName"|"eventName"} names the product (default:
+    the mention as stored) and picks product (default) or named event. A person's
     document link, an organization's link (it stays in the registry) or a place's orphaned tag is dropped
     like on a deletion; the row becomes a ``source='manual'`` productName. Audited as ``entity_to_product``
     and replayed after entity refreshes (library/entity_overrides.py).
@@ -2094,8 +2104,11 @@ def website_entities_to_product(entity_id: int):
 
     data = request.get_json(silent=True) or {}
     new_text = data.get('text')
+    target_type = data.get('entity_type') or "productName"
+    if target_type not in ("productName", "eventName"):
+        return jsonify(status="error", message="entity_type musi być productName lub eventName."), 400
     if new_text is not None and (not isinstance(new_text, str) or not new_text.strip() or len(new_text) > 500):
-        return jsonify(status="error", message="Nieprawidłowa nazwa produktu."), 400
+        return jsonify(status="error", message="Nieprawidłowa nazwa."), 400
     session = get_scoped_session()
     entity = session.get(DocumentEntity, entity_id)
     if entity is None:
@@ -2117,11 +2130,12 @@ def website_entities_to_product(entity_id: int):
             drop_organization_links(session, entity)
         elif document is not None:
             removed_tag = remove_orphaned_tag(session, document, entity)
-        product = convert_entity_to_product(session, entity, new_text)
+        product = convert_entity_to_product(session, entity, new_text, target_type=target_type)
         record_entity_decision(
             session, document_id=product.document_id, document_entity_id=product.id,
             entity_type=old_type, entity_text=old_text, decision="entity_to_product",
-            details={"variants": old_variants, "removed_tag": removed_tag, "new_text": product.entity_text},
+            details={"variants": old_variants, "removed_tag": removed_tag, "new_text": product.entity_text,
+                     "target_type": target_type},
         )
         session.commit()
     except Exception:
@@ -2134,9 +2148,10 @@ def website_entities_to_product(entity_id: int):
 
 @app.route('/website_entities/<int:entity_id>/from_product', methods=['POST'])
 def website_entities_from_product(entity_id: int):
-    """Turn a product/system entity back into a person, organization or place (marked by mistake).
+    """Turn a product/system (or named event) entity into another type (marked by mistake).
 
-    Body: {"entity_type": "persName"|"orgName"|"placeName", "text": "Kandahar"?}. The product row is removed
+    Body: {"entity_type": "persName"|"orgName"|"placeName"|"productName"|"eventName", "text": "Kandahar"?}; an
+    event's approved description is not carried over. The source row is removed
     and the mention is added like a hand-selected one (``add_manual_entity``): an organization is resolved
     through the registry, a place geocoded once (a country gets its ``kraj-*`` tag), a person through the
     person registry; counts and surface forms are kept. Audited as ``product_to_entity`` (so a replayed
@@ -2152,16 +2167,20 @@ def website_entities_from_product(entity_id: int):
 
     data = request.get_json(silent=True) or {}
     entity_type, new_text = data.get('entity_type'), data.get('text')
-    if entity_type not in ("persName", "orgName", "placeName"):
-        return jsonify(status="error", message="entity_type musi być persName, orgName lub placeName."), 400
+    if entity_type not in ("persName", "orgName", "placeName", "productName", "eventName"):
+        return jsonify(status="error", message="entity_type musi być persName, orgName, placeName, "
+                       "productName lub eventName."), 400
     if new_text is not None and (not isinstance(new_text, str) or not new_text.strip() or len(new_text) > 200):
         return jsonify(status="error", message="Nieprawidłowa nazwa."), 400
     session = get_scoped_session()
     product = session.get(DocumentEntity, entity_id)
     if product is None:
         return jsonify(status="error", message="Nie znaleziono encji."), 404
-    if product.entity_type != "productName":
-        return jsonify(status="error", message="Encja nie jest produktem / systemem."), 400
+    if product.entity_type not in ("productName", "eventName"):
+        return jsonify(status="error", message="Encja nie jest produktem / systemem ani wydarzeniem."), 400
+    if entity_type == product.entity_type:
+        return jsonify(status="error", message="Encja już ma ten typ."), 400
+    source_type = product.entity_type
     doc_id = product.document_id
     document = session.get(Document, doc_id)
     old_text, old_variants, count = product.entity_text, list(product.variants or []), product.mention_count or 1
@@ -2181,7 +2200,7 @@ def website_entities_from_product(entity_id: int):
             elif row.geocode_id is None:
                 geocode_single_place(session, document, row)
         record_entity_decision(
-            session, document_id=doc_id, document_entity_id=row.id, entity_type="productName",
+            session, document_id=doc_id, document_entity_id=row.id, entity_type=source_type,
             entity_text=old_text, decision="product_to_entity",
             details={"target_type": entity_type, "new_text": row.entity_text, "variants": old_variants},
         )

@@ -308,38 +308,6 @@ const NerChapters = () => {
     document.querySelector("[data-focus-mark]")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   }, [focus]);
 
-  // Events and products live only on this page (the shared panel does not draw them), so they are removed here.
-  const deleteManual = async (item: EntityItem, noun: string) => {
-    if (item.id === undefined || !window.confirm(`Usunąć ${noun} „${itemName(item)}” z dokumentu?`)) return;
-    try {
-      await axios.delete(`${apiUrl}/website_entities/${item.id}`, {
-        headers, data: { decision: "deleted", reason_code: "irrelevant" },
-      });
-      setVersion((current) => current + 1);
-    } catch {
-      setMergeError(`Nie udało się usunąć: ${noun}.`);
-    }
-  };
-  const deleteEvent = (item: EntityItem) => deleteManual(item, "wydarzenie");
-  const deleteProduct = (item: EntityItem) => deleteManual(item, "produkt / system");
-
-  // A product marked by mistake goes back to a person / organization / place (same as a hand-selected mention).
-  const PRODUCT_TARGETS = [
-    { type: "persName", label: "osobę", icon: "👤" },
-    { type: "orgName", label: "organizację", icon: "🏢" },
-    { type: "placeName", label: "miejsce", icon: "📍" },
-  ] as const;
-  const changeProductTo = async (item: EntityItem, target: typeof PRODUCT_TARGETS[number]) => {
-    if (item.id === undefined) return;
-    try {
-      await axios.post(`${apiUrl}/website_entities/${item.id}/from_product`, { entity_type: target.type }, { headers });
-      setVersion((current) => current + 1);
-      setPanelKey((current) => current + 1);
-    } catch (error: any) {
-      setMergeError(error.response?.data?.message || `Nie udało się zmienić na ${target.label}.`);
-    }
-  };
-
   // Several spellings of one product ("Starlinka", "Starlinek", "Starling") fold into a single entity. The form lists
   // every product of the document (the chapter chips show only the chapter's own), the reviewer ticks the spellings
   // and names the result; `POST /document/:id/products/merge` keeps counts and spellings as variants.
@@ -536,6 +504,35 @@ const NerChapters = () => {
             </div>
           )}
           {addedMessage && <div role="status" style={{ marginBottom: 8, color: "#166534" }}>{addedMessage}</div>}
+          {productMerge && (
+            <form aria-label="Scal produkty" style={{ marginBottom: 8, padding: "6px 10px", fontSize: "0.9em",
+              background: "#f5f3ff", border: "1px solid #c4b5fd", borderRadius: 6 }}
+              onSubmit={(event) => { event.preventDefault(); void submitProductMerge(); }}>
+              <div>Zaznacz zapisy tego samego produktu (min. 2):</div>
+              {productMerge.items.map((item) => (
+                <label key={item.id} style={{ display: "inline-block", marginRight: 10 }}>
+                  <input type="checkbox" checked={productMerge.selected.includes(item.id as number)}
+                    onChange={(event) => setProductMerge({
+                      ...productMerge,
+                      selected: event.target.checked
+                        ? [...productMerge.selected, item.id as number]
+                        : productMerge.selected.filter((value) => value !== item.id),
+                    })} /> {itemName(item)} ×{item.count}
+                </label>
+              ))}
+              <div>
+                <label>Nazwa po scaleniu:{" "}
+                  <input aria-label="Nazwa produktu po scaleniu" value={productMerge.name}
+                    onChange={(event) => setProductMerge({ ...productMerge, name: event.target.value })} />
+                </label>{" "}
+                <button type="submit"
+                  disabled={productMerge.busy || productMerge.selected.length < 2 || !productMerge.name.trim()}>
+                  Scal</button>{" "}
+                <button type="button" onClick={() => setProductMerge(null)}>Anuluj</button>
+                {productMerge.error && <span role="alert"> {productMerge.error}</span>}
+              </div>
+            </form>
+          )}
           {describing && describing.id !== undefined && (
             <EventDescriptionDialog key={describing.id} entityId={describing.id} name={itemName(describing)}
               description={describing.description ?? null} apiUrl={apiUrl} headers={headers} onClose={closeDescription}
@@ -550,6 +547,8 @@ const NerChapters = () => {
             docId={id}
             refreshKey={panelKey}
             onShowInText={showInText}
+            onDescribeEvent={setDescribing}
+            onMergeProducts={(item) => void openProductMerge(item)}
             mentionMenu={mentionMenu}
             onMentionMenuClose={closeMentionMenu}
             onEntitiesChanged={() => setVersion((current) => current + 1)}
@@ -623,75 +622,6 @@ const NerChapters = () => {
                           {renderGroups(entities)}
                           {id && <ChapterDescriptionsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
                             position={section.position} onSaved={() => setVersion((current) => current + 1)} />}
-                          {(entities.eventName?.length ?? 0) > 0 && (
-                            <div aria-label="Wydarzenia rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
-                              <strong style={{ fontSize: "0.85em" }}>Wydarzenia:</strong>
-                              {entities.eventName?.map((item) => (
-                                <span key={item.id ?? item.text}
-                                  title={item.description || "Wydarzenie dodane ręcznie — kliknij nazwę, by dodać opis"}
-                                  onContextMenu={describeFromText(item)}
-                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: KIND_COLORS.event }}>
-                                  📅 <button type="button" aria-label={`Opis wydarzenia ${itemName(item)}`}
-                                    onClick={() => setDescribing(item)}
-                                    style={{ border: "none", background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>
-                                    {itemName(item)}</button> ×{item.count}{item.description ? " ℹ️" : ""}{" "}
-                                  <button type="button" aria-label={`Usuń wydarzenie ${itemName(item)}`}
-                                    onClick={() => void deleteEvent(item)}>×</button>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {(entities.productName?.length ?? 0) > 0 && (
-                            <div aria-label="Produkty i systemy rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
-                              <strong style={{ fontSize: "0.85em" }}>Produkty i systemy:</strong>
-                              {entities.productName?.map((item) => (
-                                <span key={item.id ?? item.text} title="Produkt lub system dodany ręcznie"
-                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: KIND_COLORS.product }}>
-                                  🛰️ {itemName(item)} ×{item.count}{" "}
-                                  <button type="button" aria-label={`Scal produkt ${itemName(item)}`}
-                                    title="Scal z innymi zapisami tego produktu"
-                                    onClick={() => void openProductMerge(item)}>⇄</button>{" "}
-                                  {PRODUCT_TARGETS.map((target) => (
-                                    <React.Fragment key={target.type}>
-                                      <button type="button" aria-label={`Zmień produkt ${itemName(item)} na ${target.label}`}
-                                        title={`Zmień na ${target.label}`}
-                                        onClick={() => void changeProductTo(item, target)}>{target.icon}</button>{" "}
-                                    </React.Fragment>
-                                  ))}
-                                  <button type="button" aria-label={`Usuń produkt ${itemName(item)}`}
-                                    onClick={() => void deleteProduct(item)}>×</button>
-                                </span>
-                              ))}
-                              {productMerge && (
-                                <form aria-label="Scal produkty" style={{ flexBasis: "100%", fontSize: "0.85em" }}
-                                  onSubmit={(event) => { event.preventDefault(); void submitProductMerge(); }}>
-                                  <div>Zaznacz zapisy tego samego produktu (min. 2):</div>
-                                  {productMerge.items.map((item) => (
-                                    <label key={item.id} style={{ display: "inline-block", marginRight: 10 }}>
-                                      <input type="checkbox" checked={productMerge.selected.includes(item.id as number)}
-                                        onChange={(event) => setProductMerge({
-                                          ...productMerge,
-                                          selected: event.target.checked
-                                            ? [...productMerge.selected, item.id as number]
-                                            : productMerge.selected.filter((value) => value !== item.id),
-                                        })} /> {itemName(item)} ×{item.count}
-                                    </label>
-                                  ))}
-                                  <div>
-                                    <label>Nazwa po scaleniu:{" "}
-                                      <input aria-label="Nazwa produktu po scaleniu" value={productMerge.name}
-                                        onChange={(event) => setProductMerge({ ...productMerge, name: event.target.value })} />
-                                    </label>{" "}
-                                    <button type="submit"
-                                      disabled={productMerge.busy || productMerge.selected.length < 2 || !productMerge.name.trim()}>
-                                      Scal</button>{" "}
-                                    <button type="button" onClick={() => setProductMerge(null)}>Anuluj</button>
-                                    {productMerge.error && <span role="alert"> {productMerge.error}</span>}
-                                  </div>
-                                </form>
-                              )}
-                            </div>
-                          )}
                           {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>

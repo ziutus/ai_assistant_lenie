@@ -14,7 +14,7 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, mentionMenu }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
       return <div data-testid="panel">
         <button onClick={() => onEntitiesChanged?.()}>zmień encje</button>
@@ -25,6 +25,14 @@ vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
         <ul aria-label="Encje rozdziału">
           {[...(source?.persName ?? []), ...(source?.geogName ?? []), ...(source?.orgName ?? [])]
             .map((item: any) => <li key={item.id}>{item.text}</li>)}
+          {(source?.eventName ?? []).map((item: any) => (
+            <li key={item.id}>
+              <button type="button" onClick={() => onDescribeEvent?.(item)}>opis {item.text}</button>
+            </li>))}
+          {(source?.productName ?? []).map((item: any) => (
+            <li key={item.id}>
+              <button type="button" onClick={() => onMergeProducts?.(item)}>scal {item.text}</button>
+            </li>))}
         </ul>
       ))}</div>;
     },
@@ -371,51 +379,34 @@ it("shows a group of states with its members in the countries row and the toolti
   expect(mark.getAttribute("title")).toBe("Państwa bałtyckie (Państwa) — Obejmuje: Litwa, Łotwa, Estonia");
 });
 
-it("lists a hand-added event, highlights it and deletes it on request", async () => {
+
+it("highlights hand-added events and products and hands their chips to the shared panel", async () => {
+  const withManual = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups,
+      eventName: [{ id: 77, text: "Bez", count: 1, variants: [] }],
+      productName: [{ id: 78, text: "nazw", count: 1, variants: [] }] },
+  })) };
+  mockApi({ "/document/42/chapter_entities": withManual });
+  await open();
+  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
+  expect([...chapter.querySelectorAll("mark")].map((mark) => mark.getAttribute("title"))).toEqual([
+    "Bez (Wydarzenia)", "nazw (Produkty i systemy)"]);
+  // The page no longer draws its own event / product rows: the panel's chips (and menus) do.
+  expect(within(chapter).queryByLabelText("Wydarzenia rozdziału")).toBeNull();
+  expect(within(chapter).queryByLabelText("Produkty i systemy rozdziału")).toBeNull();
+  expect(within(chapter).getByRole("button", { name: "opis Bez" })).toBeTruthy();
+  expect(within(chapter).getByRole("button", { name: "scal nazw" })).toBeTruthy();
+});
+
+it("opens the event description dialog from the panel's event menu", async () => {
   const withEvent = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
     ...section, entities: { ...emptyGroups, eventName: [{ id: 77, text: "Bez nazw", count: 1, variants: ["nazw własnych"] }] },
   })) };
   mockApi({ "/document/42/chapter_entities": withEvent });
-  vi.mocked(axios.delete).mockResolvedValue({ data: {} });
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValue({ data: { description: "Opis.", sentences: [] } });
   await open();
-  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
-  const row = within(chapter).getByLabelText("Wydarzenia rozdziału");
-  expect(row.textContent).toContain("📅 Bez nazw ×1");
-  expect(chapter.querySelector("mark")?.getAttribute("title")).toBe("Bez nazw (Wydarzenia)");
-  fireEvent.click(within(row).getByRole("button", { name: "Usuń wydarzenie Bez nazw" }));
-  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
-    "/website_entities/77", { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } }));
-});
-
-it("lists a hand-added product/system, highlights it and deletes it on request", async () => {
-  const withProduct = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
-    ...section, entities: { ...emptyGroups, productName: [{ id: 78, text: "Bez nazw", count: 1, variants: ["nazw własnych"] }] },
-  })) };
-  mockApi({ "/document/42/chapter_entities": withProduct });
-  vi.mocked(axios.delete).mockResolvedValue({ data: {} });
-  vi.spyOn(window, "confirm").mockReturnValue(true);
-  await open();
-  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
-  const row = within(chapter).getByLabelText("Produkty i systemy rozdziału");
-  expect(row.textContent).toContain("🛰️ Bez nazw ×1");
-  expect(chapter.querySelector("mark")?.getAttribute("title")).toBe("Bez nazw (Produkty i systemy)");
-  fireEvent.click(within(row).getByRole("button", { name: "Usuń produkt Bez nazw" }));
-  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
-    "/website_entities/78", { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } }));
-});
-
-it("turns a product marked by mistake back into a person, organization or place", async () => {
-  const withProduct = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
-    ...section, entities: { ...emptyGroups, productName: [{ id: 78, text: "Kandahar", count: 3, variants: [] }] },
-  })) };
-  mockApi({ "/document/42/chapter_entities": withProduct });
-  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
-  await open();
-  const row = within(screen.getByRole("region", { name: "#3 Pusty" })).getByLabelText("Produkty i systemy rozdziału");
-  fireEvent.click(within(row).getByRole("button", { name: "Zmień produkt Kandahar na miejsce" }));
-  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/78/from_product",
-    { entity_type: "placeName" }, { headers: { "x-api-key": "test-key" } }));
+  fireEvent.click(screen.getByRole("button", { name: "opis Bez nazw" }));
+  expect(await screen.findByRole("dialog", { name: "Opis wydarzenia Bez nazw" })).toBeTruthy();
 });
 
 it("merges several spellings of a product into one entity under a chosen name", async () => {
@@ -430,8 +421,7 @@ it("merges several spellings of a product into one entity under a chosen name", 
   });
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
   await open();
-  const row = within(screen.getByRole("region", { name: "#3 Pusty" })).getByLabelText("Produkty i systemy rozdziału");
-  fireEvent.click(within(row).getByRole("button", { name: "Scal produkt Starlinek" }));
+  fireEvent.click(screen.getByRole("button", { name: "scal Starlinek" }));
   const form = await screen.findByRole("form", { name: "Scal produkty" });
   const submit = within(form).getByRole("button", { name: "Scal" }) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);

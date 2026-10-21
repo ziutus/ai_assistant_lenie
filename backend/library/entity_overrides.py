@@ -31,6 +31,7 @@ REPLAYED_DECISIONS = (
     "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
     "person_to_place", "person_to_organization", "organization_to_place", "organization_to_person", "deleted",
     "rejected", "person_merged", "transcription_error", "entity_to_product", "product_to_entity",
+    "place_to_person",
 )
 
 
@@ -323,8 +324,10 @@ def convert_entity_to_person(
 
 def convert_entity_to_product(
     session, entity: DocumentEntity, new_text: str | None = None, replay: bool = False,
+    target_type: str = "productName",
 ) -> DocumentEntity:
-    """Retype a person, organization or place entity as a product/system ("Starshield" tagged persName).
+    """Retype a person, organization or place entity as a product/system ("Starshield" tagged persName)
+    or, with ``target_type='eventName'``, as a named event.
 
     The row is replaced by a ``source='manual'`` ``productName`` row named ``new_text`` (default: the
     mention as it stands) that keeps the mention count and surface forms, or folded into a same-named
@@ -337,11 +340,11 @@ def convert_entity_to_product(
     forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
     variants = [form for form in forms if form.casefold() != name.casefold()]
     entities = list(session.scalars(select(DocumentEntity).where(
-        DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "productName",
+        DocumentEntity.document_id == document_id, DocumentEntity.entity_type == target_type,
     )).all())
     session.delete(entity)
     session.flush()
-    row = _exact(entities, name, ("productName",))
+    row = _exact(entities, name, (target_type,))
     if row is not None:
         if not (replay and row.source == "manual"):
             row.mention_count = (row.mention_count or 0) + count
@@ -349,7 +352,7 @@ def convert_entity_to_product(
         row.source = "manual"
     else:
         row = DocumentEntity(
-            document_id=document_id, entity_type="productName", entity_text=name,
+            document_id=document_id, entity_type=target_type, entity_text=name,
             mention_count=count, variants=variants, source="manual",
         )
         session.add(row)
@@ -692,6 +695,13 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             else:
                 convert_entity_to_person(session, row, entities, survivors)
             stats[decision.decision] = stats.get(decision.decision, 0) + 1
+        elif decision.decision == "place_to_person":
+            row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
+            if row is None:
+                continue
+            touched.pop(id(row), None)
+            convert_entity_to_person(session, row, entities, survivors)
+            stats["place_to_person"] = stats.get("place_to_person", 0) + 1
         elif decision.decision == "product_to_entity":
             continue  # only read by the look-ahead of entity_to_product; the new row comes back via entity_added
         elif decision.decision == "entity_to_product":
@@ -706,7 +716,8 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             if row.entity_type == "orgName":
                 drop_organization_links(session, row)
             entities.remove(row)
-            convert_entity_to_product(session, row, details.get("new_text"), replay=True)
+            convert_entity_to_product(
+                session, row, details.get("new_text"), replay=True, target_type=details.get("target_type") or "productName")
             stats["entity_to_product"] = stats.get("entity_to_product", 0) + 1
         elif decision.decision == "place_split":
             parts = [p for p in details.get("parts", []) if p]
@@ -787,7 +798,7 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
                 (EntityReviewDecision.entity_type == "orgName")
                 & EntityReviewDecision.decision.in_(
                     ("organization_to_place", "organization_to_person", "transcription_error", "entity_to_product")),
-                (EntityReviewDecision.entity_type == "productName")
+                EntityReviewDecision.entity_type.in_(("productName", "eventName"))
                 & (EntityReviewDecision.decision == "product_to_entity"),
             ),
         )

@@ -478,7 +478,7 @@ def test_organization_to_person(client, case, expected):
     entity = DocumentEntity(id=1, document_id=10872, entity_type="orgName", entity_text="Rawit Ruja",
                             mention_count=2, variants=["Rawit Ruja"], source="ner")
     if case == "not_org":
-        entity.entity_type = "placeName"
+        entity.entity_type = "eventName"
     session = MagicMock()
     session.get.side_effect = lambda model, key: (
         (None if case == "missing" else entity) if model is DocumentEntity else Document(id=10872, text_md="tekst"))
@@ -547,6 +547,43 @@ def test_entity_to_product(client, case, expected):
         session.commit.assert_not_called()
 
 
+def test_event_to_product_and_place_to_person(client):
+    from library.db.models import Document, DocumentEntity, EntityReviewDecision
+
+    def post(path, source_type, body):
+        entity = DocumentEntity(id=9, document_id=11143, entity_type=source_type, entity_text="Szczyt",
+                                mention_count=2, variants=["Szczytu"], source="manual")
+        session = MagicMock()
+        session.get.side_effect = lambda model, key: entity if model is DocumentEntity else Document(
+            id=11143, tags="", text_md="x")
+        session.scalars.return_value.all.return_value = []
+        with patch("server.get_scoped_session", return_value=session), patch(
+            "library.place_verification.remove_orphaned_tag", return_value="miejsce-x",
+        ), patch("library.person_registry.resolve_document_persons", return_value={"linked": []}):
+            response = client.post(f"/website_entities/9/{path}", headers=API_HEADERS, json=body)
+        return response, session, entity
+
+    response, session, _ = post("from_product", "eventName", {"entity_type": "productName"})
+    assert response.status_code == 200
+    added = [call.args[0] for call in session.add.call_args_list]
+    assert next(r for r in added if isinstance(r, DocumentEntity)).entity_type == "productName"
+    decision = next(r for r in added if isinstance(r, EntityReviewDecision) and r.decision == "product_to_entity")
+    assert decision.entity_type == "eventName"
+    assert post("from_product", "eventName", {"entity_type": "eventName"})[0].status_code == 400
+
+    response, session, _ = post("to_person", "placeName", {})
+    assert response.status_code == 200
+    added = [call.args[0] for call in session.add.call_args_list]
+    assert next(r for r in added if isinstance(r, DocumentEntity)).entity_type == "persName"
+    assert next(r for r in added if isinstance(r, EntityReviewDecision)).decision == "place_to_person"
+
+    response, session, _ = post("to_product", "persName", {"entity_type": "eventName"})
+    assert response.status_code == 200
+    added = [call.args[0] for call in session.add.call_args_list]
+    assert next(r for r in added if isinstance(r, DocumentEntity)).entity_type == "eventName"
+    assert post("to_product", "persName", {"entity_type": "persName"})[0].status_code == 400
+
+
 @pytest.mark.parametrize("case,expected", [("person", 200), ("place", 200), ("organization", 200), ("missing", 404),
                                            ("bad_type", 400), ("not_product", 400), ("rollback", 500)])
 def test_product_to_entity(client, case, expected):
@@ -561,7 +598,7 @@ def test_product_to_entity(client, case, expected):
     session.scalars.return_value.all.return_value = []
     if case == "rollback":
         session.commit.side_effect = RuntimeError("test failure")
-    target = {"person": "persName", "place": "placeName", "organization": "orgName", "bad_type": "eventName"}.get(
+    target = {"person": "persName", "place": "placeName", "organization": "orgName", "bad_type": "geogName"}.get(
         case, "persName")
     organization = MagicMock(id=7, canonical_name="Kandahar")
     with patch("server.get_scoped_session", return_value=session), patch(

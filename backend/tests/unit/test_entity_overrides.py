@@ -463,6 +463,30 @@ def test_entity_to_product_replay_drops_organization_link_and_ignores_missing_ro
     assert "entity_to_product" not in stats
 
 
+def test_place_to_person_is_replayed_and_keeps_surface_forms():
+    place = entity("Jan Kowalski", count=2, variants=["Janowi Kowalskiemu"])
+    rows = [place]
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    _, stats = apply_decisions(session, [decision("place_to_person", "Jan Kowalski")], rows)
+    person = rows[0]
+    assert (person.entity_type, person.entity_text, person.mention_count, person.source) == (
+        "persName", "Jan Kowalski", 2, "manual")
+    assert person.variants == ["Janowi Kowalskiemu"]
+    assert stats["place_to_person"] == 1
+
+
+def test_entity_to_event_is_replayed_as_an_event_row():
+    org = entity("Szczyt NATO", entity_type="orgName", count=2)
+    rows = [org]
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[], []]  # organization links, event rows
+    apply_decisions(session, [decision("entity_to_product", "Szczyt NATO", entity_type="orgName",
+                                       target_type="eventName")], rows)
+    created = [call.args[0] for call in session.add.call_args_list]
+    assert [(r.entity_type, r.entity_text, r.source) for r in created] == [("eventName", "Szczyt NATO", "manual")]
+
+
 def test_entity_to_product_is_not_replayed_when_the_product_was_turned_back():
     person = entity("Starshield", entity_type="persName", count=3)
     rows = [person]
