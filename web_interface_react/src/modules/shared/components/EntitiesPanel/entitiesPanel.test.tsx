@@ -457,7 +457,7 @@ it("gives product chips the shared dropdown menu with retype, merge, highlight a
   renderManualChips({ onMergeProducts, onShowInText });
   await openOrgMenu("Starlink");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Kopiuj nazwę", "🔎 Podświetl w tekście", "Scal z innymi zapisami…", "Zmień na osobę", "Zmień na organizację",
+    "Kopiuj nazwę", "🔎 Podświetl w tekście", "Otwórz stronę produktu", "Scal z innymi zapisami…", "Zmień na osobę", "Zmień na organizację",
     "Zmień na miejsce", "Zmień na wydarzenie", "× Usuń encję",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Scal z innymi zapisami…" }));

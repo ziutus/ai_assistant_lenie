@@ -1657,6 +1657,7 @@ const EntitiesPanel = ({
   ];
   const productMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "product"),
+    { label: "Otwórz stronę produktu", to: `/products/${encodeURIComponent(item.text)}`, newTab: true },
     ...(onMergeProducts ? [{ label: "Scal z innymi zapisami…", action: () => { resetFlows(); onMergeProducts(item); } }] : []),
     ...manualRetypeEntries(item, "productName"),
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
