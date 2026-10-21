@@ -20,13 +20,13 @@ beforeEach(() => {
 });
 afterEach(() => navigate.mockReset());
 
-it("saves a YouTube transcript for manual review and continues to the NER review by default", async () => {
+it("saves a YouTube transcript for manual review and continues to the first chapter's NER review by default", async () => {
   const { result } = hook();
   await act(async () => { await result.current.handleSaveWebsiteNext(youtube); });
   expect(axios.post).toHaveBeenCalledWith("/website_save", expect.objectContaining({
     id: 42, document_type: "youtube", processing_status: "NEED_MANUAL_REVIEW",
   }), expect.any(Object));
-  expect(navigate).toHaveBeenCalledWith("/ner/42");
+  expect(navigate).toHaveBeenCalledWith("/ner/42/1");
 });
 
 it("can skip the NER review and go straight to the chunk analysis, with the same save", async () => {
