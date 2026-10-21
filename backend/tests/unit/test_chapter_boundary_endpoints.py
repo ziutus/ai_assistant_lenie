@@ -306,3 +306,53 @@ def test_chapter_entities_without_stored_entities(setup, monkeypatch):
     client, _, _, _ = setup
     monkeypatch.setattr("library.entity_service.get_document_entities", lambda *_: {"persName": []})
     assert client.get("/document/42/chapter_entities").json["has_entities"] is False
+
+
+@pytest.mark.parametrize("position", [0, 1, 2])
+def test_sections_selected_position(setup, position):
+    client, session, doc, _ = setup
+    doc.text = "Wstęp.\n\n" + TEXT
+    session.scalar.side_effect = [2]
+    response = client.get(f"/document/42/chapter_sections?position={position}&with_sentences=1")
+    assert response.status_code == 200
+    assert response.json["selected_position"] == position
+    expected = describe_sections(doc.text, with_sentences=True)
+    for actual, full in zip(response.json["sections"], expected, strict=True):
+        if actual["position"] != position:
+            full.pop("sentences")
+        assert actual == full
+
+
+@pytest.mark.parametrize("endpoint", ["chapter_sections", "chapter_entities"])
+@pytest.mark.parametrize("position", ["", "abc", "1.5", "-1", "0", "3"])
+def test_invalid_selected_position(setup, endpoint, position):
+    client, _, _, _ = setup
+    response = client.get(f"/document/42/{endpoint}?position={position}")
+    assert response.status_code == 400
+    assert response.json["message"]
+
+
+@pytest.mark.parametrize("position", [0, 1, 2])
+def test_entities_only_compute_selected_chapter(setup, monkeypatch, position):
+    client, _, doc, _ = setup
+    doc.text = "Jan.\n\n" + TEXT
+    doc.chapter_types = ["TEMAT", "SZUM"]
+    grouped = {"persName": [{"text": "Jan"}], "orgName": []}
+    monkeypatch.setattr("library.entity_service.get_document_entities", lambda *_: grouped)
+    filtered = MagicMock(return_value=grouped)
+    countries = MagicMock(return_value=[{"name": "test"}])
+    monkeypatch.setattr("library.entity_service.filter_entities_to_text", filtered)
+    monkeypatch.setattr("library.country_group_gazetteer.detect_country_groups", countries)
+    response = client.get(f"/document/42/chapter_entities?position={position}")
+    assert response.status_code == 200
+    assert response.json["has_entities"] is True
+    assert [s["position"] for s in response.json["sections"]] == [0, 1, 2]
+    for section in response.json["sections"]:
+        selected = section["position"] == position and position != 2
+        assert section["entities"] == (grouped if selected else {"persName": [], "orgName": []})
+        assert section["country_groups"] == ([{"name": "test"}] if selected else [])
+    assert filtered.call_count == countries.call_count == (0 if position == 2 else 1)
+    if position != 2:
+        from library.transcript_chapter_boundaries import parse_sections
+        filtered.assert_called_once_with(grouped, parse_sections(doc.text)[position].body)
+        countries.assert_called_once_with(parse_sections(doc.text)[position].body)

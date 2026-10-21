@@ -93,6 +93,7 @@ function App() {
                   <Route path="/email/:id?" element={<DocumentEditorWithGroups><Email /></DocumentEditorWithGroups>} />
                   <Route path="/social_media_post/:id?" element={<DocumentEditorWithGroups><SocialMediaPost /></DocumentEditorWithGroups>} />
                   <Route path="/ner/:id" element={<NerChapters />} />
+                  <Route path="/ner/:id/:chapter" element={<NerChapters />} />
                   <Route path="/chunks/:id" element={<Chunks />} />
                   <Route path="/read/:id" element={<Read />} />
                   <Route path="/entities/:id" element={<Entities />} />
