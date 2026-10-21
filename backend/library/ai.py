@@ -29,7 +29,7 @@ GOOGLE_MODELS = ("gemini-2.0-flash-lite-001",)
 _SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs", "openrouter")
 # Providers accepting response_format; Sherlock enforces json_schema
 # (verified live 2026-07-18) but rejects json_object with HTTP 400.
-_RESPONSE_FORMAT_PROVIDERS = ("cloudferro",)
+_RESPONSE_FORMAT_PROVIDERS = ("cloudferro", "openrouter")
 
 
 def _unified_tokens(response) -> tuple[int | None, int | None, int | None]:
@@ -140,7 +140,8 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
             from library.api.openrouter.openrouter_completion import openrouter_get_completion
 
             return openrouter_get_completion(query, model=actual_model, temperature=temperature,
-                                             max_tokens=max_token_count, system_prompt=system_prompt)
+                                             max_tokens=max_token_count, system_prompt=system_prompt,
+                                             response_format=response_format)
 
     elif model in GOOGLE_MODELS:
         provider = "google-vertexai"

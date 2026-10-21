@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
+import ChapterDescriptionsPanel from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
@@ -572,6 +573,8 @@ const NerChapters = () => {
                         </div>
                         <div>
                           {renderGroups(entities)}
+                          {id && <ChapterDescriptionsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
+                            position={section.position} onSaved={() => setVersion((current) => current + 1)} />}
                           {(entities.eventName?.length ?? 0) > 0 && (
                             <div aria-label="Wydarzenia rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Wydarzenia:</strong>

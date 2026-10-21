@@ -25,8 +25,12 @@ def is_enabled() -> bool:
 
 
 def openrouter_get_completion(prompt: str, model: str, max_tokens: int = 1000, temperature: float = 0.1,
-                              system_prompt: str | None = None) -> AiResponse:
-    """``model`` is the OpenRouter id without the internal ``openrouter/`` prefix (e.g. ``openai/gpt-4o-mini``)."""
+                              system_prompt: str | None = None, response_format: dict | None = None) -> AiResponse:
+    """``model`` is the OpenRouter id without the internal ``openrouter/`` prefix (e.g. ``openai/gpt-4o-mini``).
+
+    ``response_format`` (a JSON-schema format) is forwarded as-is; only models whose catalog entry lists
+    ``structured_outputs`` honour it (``openrouter_catalog``), callers check that first.
+    """
     from library.config_loader import load_config
 
     if not is_enabled():
@@ -40,8 +44,9 @@ def openrouter_get_completion(prompt: str, model: str, max_tokens: int = 1000, t
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
+    extra_args = {"response_format": response_format} if response_format is not None else {}
     chat_response = client.chat.completions.create(
-        model=model, messages=messages, max_tokens=max_tokens, temperature=temperature,
+        model=model, messages=messages, max_tokens=max_tokens, temperature=temperature, **extra_args,
     )
 
     ai_response = AiResponse(query=prompt, model=model)

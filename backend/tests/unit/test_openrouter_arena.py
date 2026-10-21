@@ -62,16 +62,21 @@ def test_adapter_calls_openrouter_with_system_message_and_returns_tokens():
     assert response.total_tokens == 15 and response.id == "gen-1"
 
 
-def test_ai_ask_strips_only_the_first_openrouter_prefix_and_rejects_response_format():
+def test_ai_ask_strips_only_the_first_openrouter_prefix_and_forwards_response_format():
     from library import ai
 
     reply = SimpleNamespace(response_text="x", prompt_tokens=1, completion_tokens=1, total_tokens=2, id="1")
+    schema = {"type": "json_schema", "json_schema": {"name": "x", "schema": {"type": "object"}}}
     with patch("library.api.openrouter.openrouter_completion.openrouter_get_completion",
                return_value=reply) as completion, patch.object(ai, "_record_usage", return_value=None):
         ai.ai_ask("q", model=OPENROUTER_MODEL, system_prompt="s")
         assert completion.call_args.kwargs["model"] == "openai/gpt-4o-mini"
+        assert completion.call_args.kwargs["response_format"] is None
+        ai.ai_ask("q", model=OPENROUTER_MODEL, response_format=schema)
+        assert completion.call_args.kwargs["response_format"] == schema
+        # Other providers still refuse a response_format they cannot honour.
         with pytest.raises(ValueError):
-            ai.ai_ask("q", model=OPENROUTER_MODEL, response_format={"type": "json_object"})
+            ai.ai_ask("q", model="gpt-4o-mini", response_format=schema)
 
 
 def _arena(client, models, ask):

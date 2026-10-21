@@ -148,6 +148,9 @@ def _usage_summary(response) -> dict:
     }
 
 
+usage_summary = _usage_summary
+
+
 def describe_organization(name: str, chapter_title: str, chapter_text: str, title: str = "") -> str | None:
     """One or two Polish sentences saying what the organization is, or None when nothing usable came back."""
     if not chapter_text.strip():
