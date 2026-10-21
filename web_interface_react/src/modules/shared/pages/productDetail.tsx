@@ -8,7 +8,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 
 interface ProductDocument {
   id: number; title: string | null; mentions: number; entity_id: number;
-  document_type: string | null; created_at: string | null;
+  document_type: string | null; ingested_at: string | null;
 }
 interface ProductInfo { name: string; description: string | null; variants: string[]; mentions: number; documents: ProductDocument[] }
 
@@ -106,7 +106,7 @@ const ProductDetail = () => {
                   <Link to={`/webpage/${document.id}`}>{document.title || `Dokument ${document.id}`}</Link>{" "}
                   <span style={{ color: "#64748b", fontSize: "0.85em" }}>
                     ×{document.mentions}{document.document_type ? ` · ${document.document_type}` : ""}
-                    {document.created_at ? ` · ${document.created_at.slice(0, 10)}` : ""}
+                    {document.ingested_at ? ` · ${document.ingested_at.slice(0, 10)}` : ""}
                   </span>{" "}
                   <Link to={`/ner/${document.id}`} style={{ fontSize: "0.85em" }}>NER</Link>
                 </li>

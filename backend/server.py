@@ -2607,7 +2607,7 @@ def entity_product_detail():
     """One product page (``/products/:name``): description, spellings and every document mentioning it.
 
     Query: ``name`` (case-insensitive). Answers name, description, ``variants`` (surface forms found in
-    the documents), mentions and ``documents`` (id, title, mentions, entity_id, document_type, created_at),
+    the documents), mentions and ``documents`` (id, title, mentions, entity_id, document_type, ingested_at),
     most mentions first; 404 when no document has such a product.
     """
     from sqlalchemy import func as sa_func, select as sa_select
@@ -2618,7 +2618,7 @@ def entity_product_detail():
         return jsonify(status="error", message="Brakuje parametru name."), 400
     session = get_scoped_session()
     rows = session.execute(
-        sa_select(DocumentEntity, Document.title, Document.document_type, Document.created_at)
+        sa_select(DocumentEntity, Document.title, Document.document_type, Document.ingested_at)
         .join(Document, Document.id == DocumentEntity.document_id)
         .where(DocumentEntity.entity_type == "productName", sa_func.lower(DocumentEntity.entity_text) == name.lower())
         .order_by(DocumentEntity.mention_count.desc(), DocumentEntity.document_id)
@@ -2626,7 +2626,7 @@ def entity_product_detail():
     if not rows:
         return jsonify(status="error", message="Nie znaleziono produktu."), 404
     variants: list[str] = []
-    for entity, _title, _type, _created in rows:
+    for entity, _title, _type, _ingested in rows:
         for form in entity.variants or []:
             if form.casefold() != name.casefold() and form not in variants:
                 variants.append(form)
@@ -2636,8 +2636,8 @@ def entity_product_detail():
         variants=variants, mentions=sum(entity.mention_count or 0 for entity, *_rest in rows),
         documents=[{"id": entity.document_id, "title": title, "mentions": entity.mention_count, "entity_id": entity.id,
                     "document_type": str(document_type) if document_type else None,
-                    "created_at": created_at.isoformat() if created_at else None}
-                   for entity, title, document_type, created_at in rows],
+                    "ingested_at": ingested_at.isoformat() if ingested_at else None}
+                   for entity, title, document_type, ingested_at in rows],
     ), 200
 
 

@@ -15,7 +15,7 @@ afterEach(() => cleanup());
 
 const product = {
   name: "Starlink", description: null, variants: ["Starlinka", "Starlinek"], mentions: 7,
-  documents: [{ id: 10872, title: "Film o satelitach", mentions: 7, entity_id: 5, document_type: "youtube", created_at: "2026-10-01T10:00:00" }],
+  documents: [{ id: 10872, title: "Film o satelitach", mentions: 7, entity_id: 5, document_type: "youtube", ingested_at: "2026-10-01T10:00:00" }],
 };
 
 const renderPage = () => render(
