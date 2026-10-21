@@ -1,6 +1,6 @@
 import React from "react";
 import axios from "axios";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
@@ -135,7 +135,10 @@ type GlossaryInfo = {
 };
 
 const NerChapters = () => {
-  const { id } = useParams();
+  const { id, chapter } = useParams();
+  const navigate = useNavigate();
+  const position = chapter === undefined ? undefined : (/^\d+$/.test(chapter) ? Number(chapter) : NaN);
+  const chapterMode = chapter !== undefined;
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [sections, setSections] = React.useState<Section[]>([]);
   const [entityData, setEntityData] = React.useState<EntityResponse | null>(null);
@@ -156,7 +159,7 @@ const NerChapters = () => {
     if (!id) return;
     let cancelled = false;
     setLoadError("");
-    axios.get<{ sections: Section[] }>(`${base}/chapter_sections`, { headers, params: { with_sentences: 1 } })
+    axios.get<{ sections: Section[] }>(`${base}/chapter_sections`, { headers, params: chapterMode ? { position } : { with_sentences: 1 } })
       .then((response) => { if (!cancelled) setSections(response.data.sections); })
       .catch((error) => {
         if (cancelled) return;
@@ -166,7 +169,7 @@ const NerChapters = () => {
           : "Nie udało się pobrać rozdziałów dokumentu.");
       });
     return () => { cancelled = true; };
-  }, [id, base, headers, sectionsVersion]);
+  }, [id, base, headers, sectionsVersion, chapterMode, position]);
 
   React.useEffect(() => {
     if (!id) return;
@@ -186,7 +189,23 @@ const NerChapters = () => {
       .then((response) => { if (!cancelled) setGlossary(response.data); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [id, apiUrl, headers, version]);
+  }, [id, apiUrl, headers, chapterMode ? 0 : version]);
+
+  const refreshChapters = async (preferredPosition: number) => {
+    if (chapterMode) {
+      const response = await axios.get<{ sections: Section[] }>(`${base}/chapter_sections`, { headers });
+      const available = response.data.sections;
+      setSections(available);
+      const target = available.find((section) => section.position === preferredPosition)
+        ?? available[available.length - 1];
+      if (target && target.position !== position) {
+        navigate(`/ner/${id}/${target.position}`, { replace: true });
+        return;
+      }
+    }
+    setSectionsVersion((current) => current + 1);
+    setVersion((current) => current + 1);
+  };
 
   // Same endpoint and guards as the editor's chapter panel: the text is rewritten, so the
   // chapter list and the per-chapter entities are refetched afterwards.
@@ -196,8 +215,7 @@ const NerChapters = () => {
     setMergeError("");
     try {
       await axios.post(`${base}/merge_chapter`, { position }, { headers });
-      setSectionsVersion((current) => current + 1);
-      setVersion((current) => current + 1);
+      await refreshChapters(position - 1);
     } catch (error) {
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
       setMergeError(status === 409
@@ -212,7 +230,19 @@ const NerChapters = () => {
   // entities that were mentioned only there; entities shared with other chapters stay.
   const markAsNoise = async (position: number, label: string) => {
     if (merging) return;
-    const doomed = entitiesOnlyIn(entityData, position);
+    let fullData = entityData;
+    if (chapterMode) {
+      setMerging(true);
+      try {
+        fullData = (await axios.get<EntityResponse>(`${base}/chapter_entities`, { headers })).data;
+      } catch {
+        setMergeError("Nie udało się pobrać encji do oznaczenia rozdziału jako szum.");
+        return;
+      } finally {
+        setMerging(false);
+      }
+    }
+    const doomed = entitiesOnlyIn(fullData, position);
     if (!window.confirm(`Oznaczyć ${label} jako szum i usunąć ${doomed.length} encji występujących tylko w nim?`)) return;
     setMerging(true);
     setMergeError("");
@@ -237,21 +267,34 @@ const NerChapters = () => {
       }
     }
     if (failed > 0) setMergeError(`Rozdział oznaczono jako szum, ale nie udało się usunąć ${failed} z ${doomed.length} encji.`);
-    setSectionsVersion((current) => current + 1);
-    setVersion((current) => current + 1);
-    setMerging(false);
+    try {
+      await refreshChapters(position);
+    } catch {
+      setMergeError("Nie udało się odświeżyć rozdziałów.");
+    } finally {
+      setMerging(false);
+    }
   };
+
+  React.useEffect(() => {
+    setEntityData(null);
+    setEntityError(false);
+    setFocus(null);
+    setMentionMenu(null);
+    setSelectionMenu(null);
+    setDescribing(null);
+  }, [id, chapter]);
 
   // Entities are refetched whenever the panel reports a change (detect, rename, delete,
   // merge, exclude) — it also reports its own first load, so this covers the initial fetch.
   React.useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    axios.get<EntityResponse>(`${base}/chapter_entities`, { headers })
+    axios.get<EntityResponse>(`${base}/chapter_entities`, { headers, ...(chapterMode ? { params: { position } } : {}) })
       .then((response) => { if (!cancelled) { setEntityData(response.data); setEntityError(false); } })
       .catch(() => { if (!cancelled) setEntityError(true); });
     return () => { cancelled = true; };
-  }, [id, base, headers, version]);
+  }, [id, base, headers, version, chapterMode, position]);
 
   // "Podświetl w tekście" from a chip menu: that entity's mentions are marked strongly in every
   // chapter (whatever the kind filters say) and the view jumps to the first one.
@@ -356,7 +399,11 @@ const NerChapters = () => {
   // without one every chapter is shown, skipped (ad/noise/source) chapters included.
   const loadingEntities = entityData === null && !entityError;
   const filtering = onlyWithEntities || query.trim() !== "";
-  const visible = chapters.filter((chapter) => !filtering || (chapter.type === "TEMAT" && chapter.count + chapter.countryHighlights.length > 0));
+  const visible = chapters.filter((item) => chapterMode ? item.section.position === position
+    : !filtering || (item.type === "TEMAT" && item.count + item.countryHighlights.length > 0));
+  const selectedIndex = sections.findIndex((section) => section.position === position);
+  const previous = sections[selectedIndex - 1];
+  const next = selectedIndex >= 0 ? sections[selectedIndex + 1] : undefined;
   const editorPath = `/${doc?.document_type || "youtube"}/${id}`;
   const scrollTo = (position: number) => (event: React.MouseEvent) => {
     event.preventDefault();
@@ -398,18 +445,27 @@ const NerChapters = () => {
       {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
         <nav aria-label="Rozdziały" style={{ position: "sticky", top: 8, maxHeight: "calc(100vh - 16px)", overflowY: "auto", fontSize: "0.85em" }}>
-          {visible.map(({ section, type, count }) => (
+          {(chapterMode ? chapters : visible).map(({ section, type, count }) => (
             <div key={section.position} style={{ marginBottom: 6 }}>
-              <a href={`#ner-chapter-${section.position}`} onClick={scrollTo(section.position)} style={{ textDecoration: "none" }}>
+              {chapterMode ? <Link to={`/ner/${id}/${section.position}`}
+                aria-current={section.position === position ? "page" : undefined}
+                style={{ fontWeight: section.position === position ? "bold" : undefined }}>
                 {chapterTitle(section)}
-              </a>
+              </Link> : <a href={`#ner-chapter-${section.position}`} onClick={scrollTo(section.position)} style={{ textDecoration: "none" }}>
+                {chapterTitle(section)}
+              </a>}
               <span style={{ color: "#64748b" }}>
-                {type !== "TEMAT" ? ` · ${TYPE_LABELS[type]}` : loadingEntities ? "" : ` (${count})`}
+                {type !== "TEMAT" ? ` · ${TYPE_LABELS[type]}` : loadingEntities || (chapterMode && section.position !== position) ? "" : ` (${count})`}
               </span>
             </div>
           ))}
         </nav>
         <main style={{ minWidth: 0 }}>
+          {chapterMode && <nav aria-label="Nawigacja rozdziału" style={{ display: "flex", gap: 16, marginBottom: 12 }}>
+            {previous && <Link to={`/ner/${id}/${previous.position}`}>← Poprzedni</Link>}
+            <Link to={`/ner/${id}`}>Wszystkie rozdziały</Link>
+            {next && <Link to={`/ner/${id}/${next.position}`}>Następny →</Link>}
+          </nav>}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginBottom: 8 }}>
             {KINDS.map((kind) => (
               <label key={kind}>
@@ -459,6 +515,9 @@ const NerChapters = () => {
                     style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                       <strong>{chapterTitle(section)}</strong>
+                      {!chapterMode && <Link to={`/ner/${id}/${section.position}`} style={{ fontSize: "0.85em" }}>
+                        Tylko ten rozdział →
+                      </Link>}
                       {type !== "TEMAT" && (
                         <span style={{ fontSize: "0.8em", padding: "0 6px", borderRadius: 3, background: "#fef3c7" }}>
                           {TYPE_LABELS[type]}
