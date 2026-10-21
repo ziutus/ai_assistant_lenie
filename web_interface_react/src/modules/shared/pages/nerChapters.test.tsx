@@ -405,6 +405,31 @@ it("lists a hand-added product/system, highlights it and deletes it on request",
     "/website_entities/78", { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } }));
 });
 
+it("merges several spellings of a product into one entity under a chosen name", async () => {
+  const withProduct = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups, productName: [{ id: 78, text: "Starlinek", count: 8, variants: [] }] },
+  })) };
+  mockApi({
+    "/document/42/chapter_entities": withProduct,
+    "/website_entities": { entities: { productName: [
+      { id: 78, text: "Starlinek", count: 8 }, { id: 79, text: "Starlinka", count: 4 }, { id: 80, text: "Starling", count: 2 },
+    ] } },
+  });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  const row = within(screen.getByRole("region", { name: "#3 Pusty" })).getByLabelText("Produkty i systemy rozdziału");
+  fireEvent.click(within(row).getByRole("button", { name: "Scal produkt Starlinek" }));
+  const form = await screen.findByRole("form", { name: "Scal produkty" });
+  const submit = within(form).getByRole("button", { name: "Scal" }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(within(form).getByLabelText(/Starlinka/));
+  fireEvent.click(within(form).getByLabelText(/Starling/));
+  fireEvent.change(within(form).getByLabelText("Nazwa produktu po scaleniu"), { target: { value: "Starlink" } });
+  fireEvent.click(submit);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/products/merge",
+    { entity_ids: [78, 79, 80], name: "Starlink" }, { headers: { "x-api-key": "test-key" } }));
+});
+
 it("drafts an event description with the LLM and stores it only after the reviewer saves", async () => {
   const withEvent = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
     ...section, entities: { ...emptyGroups, eventName: [{ id: 77, text: "Bez nazw", count: 1, variants: ["nazw własnych"] }] },

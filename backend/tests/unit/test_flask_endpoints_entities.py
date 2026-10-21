@@ -547,6 +547,40 @@ def test_entity_to_product(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("one_id", 400), ("bad_name", 400), ("wrong_type", 400),
+                                           ("other_document", 400), ("rollback", 500)])
+def test_products_merge(client, case, expected):
+    from library.db.models import Document, DocumentEntity, EntityReviewDecision
+    rows = {i: DocumentEntity(id=i, document_id=11143, entity_type="productName", entity_text=text,
+                              mention_count=count, variants=[], source="manual")
+            for i, text, count in ((1, "Starlinek", 8), (2, "Starlinka", 4))}
+    if case == "wrong_type":
+        rows[2].entity_type = "persName"
+    if case == "other_document":
+        rows[2].document_id = 1
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: rows.get(key) if model is DocumentEntity else None
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    body = {"entity_ids": [1] if case == "one_id" else [1, 2], "name": " " if case == "bad_name" else "Starlink"}
+    with patch("server.get_scoped_session", return_value=session), patch.object(
+        Document, "get_by_id", return_value=Document(id=11143),
+    ):
+        response = client.post("/document/11143/products/merge", headers=API_HEADERS, json=body)
+    assert response.status_code == expected
+    if expected == 200:
+        assert (rows[1].entity_text, rows[1].mention_count) == ("Starlink", 12)
+        session.delete.assert_any_call(rows[2])
+        audit = next(call.args[0] for call in session.add.call_args_list
+                     if isinstance(call.args[0], EntityReviewDecision))
+        assert (audit.decision, audit.entity_text) == ("product_merged", "Starlink")
+        assert response.get_json()["entity_text"] == "Starlink"
+    elif case == "rollback":
+        session.rollback.assert_called()
+    else:
+        session.commit.assert_not_called()
+
+
 GROUPED = {
     "persName": [{"text": "Tusk", "count": 2}],
     "geogName": [{"text": "cieśnina Ormuz", "count": 1}],

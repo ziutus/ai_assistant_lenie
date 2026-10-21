@@ -3719,6 +3719,52 @@ def document_persons_merge(doc_id: int):
                     "mention_count": target.mention_count, "variants": target.variants}), 200
 
 
+@app.route('/document/<int:doc_id>/products/merge', methods=['POST', 'OPTIONS'])
+def document_products_merge(doc_id: int):
+    """Fold several product/system entities of a document ("Starlinka", "Starlinek") into one.
+
+    Body: {"entity_ids": [int, ...] (2-20 productName rows of this document), "name": "Starlink"}. The row
+    already called ``name`` survives, otherwise the first one is renamed; counts and surface forms of the
+    others (and the old name) become its variants. Audited as ``product_merged`` and replayed after entity
+    refreshes (library/entity_overrides.py).
+    """
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import DocumentEntity
+    from library.entity_overrides import merge_product_entities
+    from library.entity_review_audit import record_entity_decision
+
+    data = request.get_json(silent=True) or {}
+    ids, name = data.get('entity_ids'), data.get('name')
+    if not isinstance(ids, list) or not 2 <= len(ids) <= 20 or not all(isinstance(i, int) for i in ids) \
+            or len(set(ids)) != len(ids):
+        return {"status": "error", "message": "Podaj od 2 do 20 różnych produktów do scalenia."}, 400
+    if not isinstance(name, str) or not name.strip() or len(name) > 200:
+        return {"status": "error", "message": "Nieprawidłowa nazwa produktu."}, 400
+
+    session = get_scoped_session()
+    if Document.get_by_id(session, doc_id) is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    rows = [session.get(DocumentEntity, entity_id) for entity_id in ids]
+    if any(row is None or row.document_id != doc_id or row.entity_type != "productName" for row in rows):
+        return {"status": "error", "message": "Wszystkie encje muszą być produktami tego dokumentu."}, 400
+    sources = list(dict.fromkeys(v for row in rows for v in (row.entity_text, *(row.variants or []))))
+    try:
+        target = merge_product_entities(session, rows, " ".join(name.split()))
+        record_entity_decision(
+            session, document_id=doc_id, document_entity_id=target.id, entity_type="productName",
+            entity_text=target.entity_text, decision="product_merged", details={"sources": sources},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("product merge failed for document %s", doc_id)
+        return {"status": "error", "message": "Nie udało się scalić produktów."}, 500
+    return jsonify({"status": "success", "entity_id": target.id, "entity_text": target.entity_text,
+                    "mention_count": target.mention_count, "variants": target.variants}), 200
+
+
 @app.route('/tags', methods=['GET'])
 def tags_list():
     """Distinct tags across documents (CSV column), most used first — editor autocomplete."""

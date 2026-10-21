@@ -357,6 +357,55 @@ def convert_entity_to_product(
     return row
 
 
+def merge_product_entities(session, rows: list[DocumentEntity], name: str) -> DocumentEntity:
+    """Fold product rows of one document into a single ``productName`` row called ``name``.
+
+    The target is the row already named ``name`` (case-insensitive), else the first row, renamed. Counts and
+    surface forms of the others (and the target's old name) end up as variants. Queues changes without
+    committing.
+    """
+    from library.entity_service import merge_document_entities
+
+    name = name.strip()
+    target = next((row for row in rows if row.entity_text.casefold() == name.casefold()), rows[0])
+    old_name = target.entity_text
+    for row in rows:
+        if row is not target:
+            merge_document_entities(row, target)
+            session.delete(row)
+    variants = dict.fromkeys([*(target.variants or []), old_name])
+    target.entity_text = name
+    target.variants = [value for value in variants if value.casefold() != name.casefold()]
+    target.source = "manual"
+    session.flush()
+    return target
+
+
+def replay_product_merges(session, document_id: int) -> dict:
+    """Re-apply ``product_merged`` decisions after a rebuild (manual product rows are recreated separately)."""
+    decisions = session.scalars(select(EntityReviewDecision).where(
+        EntityReviewDecision.document_id == document_id, EntityReviewDecision.decision == "product_merged",
+    ).order_by(EntityReviewDecision.id)).all()
+    if not decisions:
+        return {}
+    products = list(session.scalars(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "productName",
+    )).all())
+    merged = 0
+    for decision in decisions:
+        rows: list[DocumentEntity] = []
+        for text in (decision.entity_text, *(decision.details or {}).get("sources", [])):
+            row = _by_name_or_variant(products, text, ("productName",))
+            if row is not None and all(row is not other for other in rows):
+                rows.append(row)
+        if len(rows) < 2:
+            continue
+        target = merge_product_entities(session, rows, decision.entity_text)
+        products = [row for row in products if row is target or all(row is not other for other in rows)]
+        merged += 1
+    return {"product_merged": merged} if merged else {}
+
+
 def split_place_entity(
     session, entity: DocumentEntity, parts: list[str], entities: list[DocumentEntity] | None = None,
     survivors: frozenset[int] = frozenset(),

@@ -461,3 +461,45 @@ def test_entity_to_product_replay_drops_organization_link_and_ignores_missing_ro
     rows = [entity("NATO", entity_type="orgName")]
     _, _, stats = run([decision("entity_to_product", "Starshield", entity_type="persName")], rows)
     assert "entity_to_product" not in stats
+
+
+def test_merge_product_entities_renames_the_first_row_and_folds_the_others():
+    from library.entity_overrides import merge_product_entities
+
+    rows = [entity("Starlinek", "productName", count=8, variants=["Starlinka"], source="manual"),
+            entity("Starlinka", "productName", count=4, variants=["Starlinki"], source="manual"),
+            entity("Starling", "productName", count=2, source="manual")]
+    session = MagicMock()
+    target = merge_product_entities(session, rows, "Starlink")
+    assert target is rows[0]
+    assert (target.entity_text, target.mention_count, target.source) == ("Starlink", 14, "manual")
+    assert set(target.variants) == {"Starlinek", "Starlinka", "Starlinki", "Starling"}
+    session.delete.assert_any_call(rows[1])
+    session.delete.assert_any_call(rows[2])
+
+
+def test_merge_product_entities_keeps_the_row_that_already_has_the_name():
+    from library.entity_overrides import merge_product_entities
+
+    rows = [entity("Starlinka", "productName", count=4, source="manual"),
+            entity("Starlink", "productName", count=3, source="manual")]
+    target = merge_product_entities(MagicMock(), rows, "starlink")
+    assert target is rows[1]
+    assert (target.mention_count, target.variants) == (7, ["Starlinka"])
+
+
+def test_replay_product_merges_folds_recreated_rows_and_is_idempotent():
+    from library.entity_overrides import replay_product_merges
+
+    fresh = [entity("Starlinek", "productName", count=8, source="manual"),
+             entity("Starlinka", "productName", count=4, source="manual")]
+    merge = SimpleNamespace(entity_text="Starlink", details={"sources": ["Starlinek", "Starlinka"]})
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[merge], fresh]
+    assert replay_product_merges(session, 1) == {"product_merged": 1}
+    assert (fresh[0].entity_text, fresh[0].mention_count) == ("Starlink", 12)
+    # A normal refresh keeps the merged manual row: nothing left to fold.
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[merge], [fresh[0]]]
+    assert replay_product_merges(session, 1) == {}
+    assert fresh[0].mention_count == 12
