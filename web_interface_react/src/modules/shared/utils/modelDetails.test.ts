@@ -23,6 +23,12 @@ describe("describeModel", () => {
     expect(describeModel({ id: "c", label: "C", listed_by_provider: false })).toBe("brak w katalogu dostawcy");
   });
 
+  it("says whether the model honours a JSON schema", () => {
+    expect(describeModel({ id: "e", label: "E", supports_structured_outputs: true })).toBe("schemat JSON ✓");
+    expect(describeModel({ id: "f", label: "F", supports_structured_outputs: false })).toBe("bez schematu JSON");
+    expect(describeModel({ id: "g", label: "G", supports_structured_outputs: null })).toBe("");
+  });
+
   it("appends details to the label", () => {
     expect(modelOptionText({ id: "d", label: "Bielik", input_price_per_million: "0.56", output_price_per_million: "0.56", currency: "EUR" }))
       .toBe("Bielik — €0.56 / €0.56 za 1 mln tok.");

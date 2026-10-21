@@ -120,6 +120,19 @@ def test_registry_uses_llm_pricing_rows_for_other_providers():
     assert items["gpt-4o-mini"]["input_price_per_million"] is None  # no row -> unknown, not a guess
 
 
+def test_registry_flags_json_schema_support_per_provider():
+    from library.llm_model_registry import selectable_models
+
+    p1, p2, p3 = _registry_with(catalog_module.parse_catalog(PAYLOAD))
+    with p1, p2, p3:
+        items = {item["id"]: item for item in selectable_models()}
+    assert items["Bielik-11B-v3.0-Instruct"]["supports_structured_outputs"] is True
+    assert items["gpt-4o-mini"]["supports_structured_outputs"] is False  # ai_ask() does not forward a schema there
+    assert items["gemini-2.0-flash-lite-001"]["supports_structured_outputs"] is False
+    assert items["openrouter/openai/gpt-4o-mini"]["supports_structured_outputs"] is True  # from the catalog
+    assert items["openrouter/qwen/qwen-2.5-7b-instruct"]["supports_structured_outputs"] is None  # not in the catalog
+
+
 def test_is_selectable_never_touches_catalog_or_database():
     from library import llm_model_registry
 
