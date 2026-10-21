@@ -563,12 +563,13 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     session.flush()
     from library.entity_overrides import (
         replay_manual_added_entities, replay_manual_organization_decisions, replay_manual_place_decisions,
-        replay_entity_relevance_decisions,
+        replay_entity_relevance_decisions, replay_product_merges,
     )
 
     replay_manual_place_decisions(session, document_id, doc)
     replay_manual_organization_decisions(session, document_id)
     replay_manual_added_entities(session, document_id, doc)
+    replay_product_merges(session, document_id)
     replay_entity_relevance_decisions(session, document_id, doc)
     # Named facilities are semantic entities assembled from a recognised object
     # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra

@@ -416,3 +416,130 @@ def test_organization_conversion_without_a_matching_row_is_a_no_op():
     _, _, stats = run([decision("organization_to_place", "Tela Avivwu", entity_type="orgName")], rows)
     assert rows[0].entity_type == "orgName"
     assert "organization_to_place" not in stats
+
+
+def test_entity_to_product_is_replayed_for_person_and_place_rows():
+    person = entity("Starshield", entity_type="persName", count=3, variants=["Starshielda"])
+    place = entity("Starlink", count=2)
+    rows = [person, place]
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    touched, stats = apply_decisions(
+        session,
+        [decision("entity_to_product", "Starshield", entity_type="persName"),
+         decision("entity_to_product", "Starlink", entity_type="placeName")],
+        rows,
+    )
+    session.delete.assert_any_call(person)
+    session.delete.assert_any_call(place)
+    assert rows == []
+    created = [call.args[0] for call in session.add.call_args_list]
+    assert [(r.entity_type, r.entity_text, r.mention_count, r.source) for r in created] == [
+        ("productName", "Starshield", 3, "manual"), ("productName", "Starlink", 2, "manual")]
+    assert created[0].variants == ["Starshielda"]
+    assert stats["entity_to_product"] == 2
+    assert touched == {}
+
+
+def test_entity_to_product_replay_does_not_count_the_mention_again_on_a_surviving_row():
+    survivor = entity("Starshield", entity_type="productName", count=3, source="manual")
+    person = entity("Starshield", entity_type="persName", count=3)
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = [survivor]
+    apply_decisions(session, [decision("entity_to_product", "Starshield", entity_type="persName")], [person])
+    assert survivor.mention_count == 3
+    session.add.assert_not_called()
+
+
+def test_entity_to_product_replay_drops_organization_link_and_ignores_missing_rows():
+    org = entity("Starshield", entity_type="orgName")
+    link = SimpleNamespace(id=4)
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[link], []]  # organization links, then product rows
+    apply_decisions(session, [decision("entity_to_product", "Starshield", entity_type="orgName")], [org])
+    session.delete.assert_any_call(link)
+    rows = [entity("NATO", entity_type="orgName")]
+    _, _, stats = run([decision("entity_to_product", "Starshield", entity_type="persName")], rows)
+    assert "entity_to_product" not in stats
+
+
+def test_place_to_person_is_replayed_and_keeps_surface_forms():
+    place = entity("Jan Kowalski", count=2, variants=["Janowi Kowalskiemu"])
+    rows = [place]
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    _, stats = apply_decisions(session, [decision("place_to_person", "Jan Kowalski")], rows)
+    person = rows[0]
+    assert (person.entity_type, person.entity_text, person.mention_count, person.source) == (
+        "persName", "Jan Kowalski", 2, "manual")
+    assert person.variants == ["Janowi Kowalskiemu"]
+    assert stats["place_to_person"] == 1
+
+
+def test_entity_to_event_is_replayed_as_an_event_row():
+    org = entity("Szczyt NATO", entity_type="orgName", count=2)
+    rows = [org]
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[], []]  # organization links, event rows
+    apply_decisions(session, [decision("entity_to_product", "Szczyt NATO", entity_type="orgName",
+                                       target_type="eventName")], rows)
+    created = [call.args[0] for call in session.add.call_args_list]
+    assert [(r.entity_type, r.entity_text, r.source) for r in created] == [("eventName", "Szczyt NATO", "manual")]
+
+
+def test_entity_to_product_is_not_replayed_when_the_product_was_turned_back():
+    person = entity("Starshield", entity_type="persName", count=3)
+    rows = [person]
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    _, stats = apply_decisions(
+        session,
+        [decision("entity_to_product", "Starshield", entity_type="persName"),
+         decision("product_to_entity", "Starshield", entity_type="productName")],
+        rows,
+    )
+    assert rows == [person]
+    session.delete.assert_not_called()
+    assert "entity_to_product" not in stats
+
+
+def test_merge_product_entities_renames_the_first_row_and_folds_the_others():
+    from library.entity_overrides import merge_product_entities
+
+    rows = [entity("Starlinek", "productName", count=8, variants=["Starlinka"], source="manual"),
+            entity("Starlinka", "productName", count=4, variants=["Starlinki"], source="manual"),
+            entity("Starling", "productName", count=2, source="manual")]
+    session = MagicMock()
+    target = merge_product_entities(session, rows, "Starlink")
+    assert target is rows[0]
+    assert (target.entity_text, target.mention_count, target.source) == ("Starlink", 14, "manual")
+    assert set(target.variants) == {"Starlinek", "Starlinka", "Starlinki", "Starling"}
+    session.delete.assert_any_call(rows[1])
+    session.delete.assert_any_call(rows[2])
+
+
+def test_merge_product_entities_keeps_the_row_that_already_has_the_name():
+    from library.entity_overrides import merge_product_entities
+
+    rows = [entity("Starlinka", "productName", count=4, source="manual"),
+            entity("Starlink", "productName", count=3, source="manual")]
+    target = merge_product_entities(MagicMock(), rows, "starlink")
+    assert target is rows[1]
+    assert (target.mention_count, target.variants) == (7, ["Starlinka"])
+
+
+def test_replay_product_merges_folds_recreated_rows_and_is_idempotent():
+    from library.entity_overrides import replay_product_merges
+
+    fresh = [entity("Starlinek", "productName", count=8, source="manual"),
+             entity("Starlinka", "productName", count=4, source="manual")]
+    merge = SimpleNamespace(entity_text="Starlink", details={"sources": ["Starlinek", "Starlinka"]})
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[merge], fresh]
+    assert replay_product_merges(session, 1) == {"product_merged": 1}
+    assert (fresh[0].entity_text, fresh[0].mention_count) == ("Starlink", 12)
+    # A normal refresh keeps the merged manual row: nothing left to fold.
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[merge], [fresh[0]]]
+    assert replay_product_merges(session, 1) == {}
+    assert fresh[0].mention_count == 12
