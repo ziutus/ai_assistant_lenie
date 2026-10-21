@@ -212,6 +212,34 @@ def _add_place_mentions(groups: dict[tuple[str, str], dict], text: str, raw: lis
                 group["variants"].append(surface)
 
 
+def _apply_country_abbreviations(
+    groups: dict[tuple[str, str], dict], text: str, title: str, document_id: int,
+) -> None:
+    """Turn abbreviations the LLM confirmed as a country ("DRK" = Kongo) into that country's place group.
+
+    spaCy types such an abbreviation as an organization or person (or misses it); here the group
+    of that spelling is dropped and its mentions counted from the text go to a `placeName` group
+    named after the country, the abbreviation staying as a surface form. Fails open.
+    """
+    from library.country_abbreviations import confirmed_country_abbreviations
+
+    for abbreviation, info in confirmed_country_abbreviations(text, title, document_id).items():
+        for key in [key for key in groups if key[1].casefold() == abbreviation.casefold()]:
+            del groups[key]
+        country = info["country"]
+        existing_key = next(
+            (key for key in groups if key[0] in {"placeName", "geogName"} and key[1].casefold() == country.casefold()),
+            None,
+        )
+        if existing_key is None:
+            groups[("placeName", country)] = {"count": info["count"], "variants": [abbreviation], "raw_lemmas": [country]}
+            continue
+        group = groups[existing_key]
+        group["count"] += info["count"]
+        if abbreviation not in group["variants"]:
+            group["variants"].append(abbreviation)
+
+
 def refresh_document_entities(session, document_id: int, text: str) -> list[DocumentEntity]:
     """Run NER on text and replace the document's rows in document_entities.
 
@@ -281,6 +309,10 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     # Places spaCy never reports (lowercase "królewca", the adjective-only
     # "obwód kaliningradzki", "przesmyk suwalski"): a closed, text-grounded list.
     _add_place_mentions(groups, text, raw)
+
+    # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
+    # country only when a contextual LLM check confirms it.
+    _apply_country_abbreviations(groups, text, getattr(doc, "title", None) or "", document_id)
 
     merged_orgs = merge_compound_org_names(
         strip_content_markers(strip_markdown_emphasis(text)), groups,

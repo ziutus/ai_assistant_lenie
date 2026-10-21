@@ -190,6 +190,23 @@ _COUNTRY_EXCERPT_CHARS = 3000
 
 
 def extract_countries_hybrid(text: str, title: str) -> list[str]:
+    """Kraje z gazetteera potwierdzone przez LLM plus kraje ukryte za dwuznacznymi skrótami.
+
+    Skrót wspólny z czymś innym ("DRK": Kongo albo niemiecki Czerwony Krzyż) daje tag kraju tylko
+    wtedy, gdy kontekstowa weryfikacja LLM (library.country_abbreviations) potwierdzi państwo.
+    """
+    from library.country_abbreviations import confirmed_country_abbreviations
+    from library.country_gazetteer import canonical_country_name, country_tag_for
+
+    tags = _extract_countries_from_gazetteer(text, title)
+    for info in confirmed_country_abbreviations(text, title).values():
+        tag = country_tag_for(info["country"]) if canonical_country_name(info["country"]) else None
+        if tag and tag not in tags:
+            tags.append(tag)
+    return tags
+
+
+def _extract_countries_from_gazetteer(text: str, title: str) -> list[str]:
     """Wykryj kraje: najpierw gazetteer (bez LLM), potem LLM potwierdza kandydatów.
 
     Tańsze i bardziej precyzyjne niż extract_countries_with_llm(): gazetteer
