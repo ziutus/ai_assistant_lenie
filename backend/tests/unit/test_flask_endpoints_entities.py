@@ -509,6 +509,44 @@ def test_organization_to_person(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("person", 200), ("organization", 200), ("place", 200), ("missing", 404),
+                                           ("not_convertible", 400), ("bad_text", 400), ("rollback", 500)])
+def test_entity_to_product(client, case, expected):
+    """Doc #11137: spaCy tagged the product "Starshield" as a person."""
+    from library.db.models import Document, DocumentEntity, EntityReviewDecision
+    entity = DocumentEntity(id=1, document_id=11137, entity_type="persName", entity_text="Starshield",
+                            mention_count=3, variants=["Starshielda"], source="ner")
+    entity.entity_type = {"organization": "orgName", "place": "placeName", "not_convertible": "eventName"}.get(
+        case, "persName")
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        (None if case == "missing" else entity) if model is DocumentEntity else Document(id=11137, tags=""))
+    session.scalars.return_value.all.return_value = []
+    session.execute.return_value.scalars.return_value.first.return_value = None
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    body = {"text": " "} if case == "bad_text" else {}
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.place_verification.remove_orphaned_tag", return_value=None,
+    ):
+        response = client.post("/website_entities/1/to_product", headers=API_HEADERS, json=body)
+    assert response.status_code == expected
+    if expected == 200:
+        added = [call.args[0] for call in session.add.call_args_list]
+        product = next(row for row in added if isinstance(row, DocumentEntity))
+        assert (product.entity_type, product.entity_text, product.mention_count, product.source) == (
+            "productName", "Starshield", 3, "manual")
+        assert product.variants == ["Starshielda"]
+        audit = next(row for row in added if isinstance(row, EntityReviewDecision))
+        assert (audit.decision, audit.entity_type) == ("entity_to_product", entity.entity_type)
+        session.delete.assert_any_call(entity)
+        assert response.get_json()["product_name"] == "Starshield"
+    elif case == "rollback":
+        session.rollback.assert_called()
+    else:
+        session.commit.assert_not_called()
+
+
 GROUPED = {
     "persName": [{"text": "Tusk", "count": 2}],
     "geogName": [{"text": "cieśnina Ormuz", "count": 1}],

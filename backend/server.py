@@ -2076,6 +2076,62 @@ def website_entities_to_person(entity_id: int):
                    linked=[canonical for _name, canonical, _conf in (resolved or {}).get("linked", [])]), 200
 
 
+@app.route('/website_entities/<int:entity_id>/to_product', methods=['POST'])
+def website_entities_to_product(entity_id: int):
+    """Retype a person, organization or place entity as a product/system (NER mislabelled it, e.g. "Starshield").
+
+    Optional body {"text": "Starshield"} names the product (default: the mention as stored). A person's
+    document link, an organization's link (it stays in the registry) or a place's orphaned tag is dropped
+    like on a deletion; the row becomes a ``source='manual'`` productName. Audited as ``entity_to_product``
+    and replayed after entity refreshes (library/entity_overrides.py).
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson
+    from library.entity_overrides import convert_entity_to_product, drop_organization_links
+    from library.entity_review_audit import record_entity_decision
+    from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
+
+    data = request.get_json(silent=True) or {}
+    new_text = data.get('text')
+    if new_text is not None and (not isinstance(new_text, str) or not new_text.strip() or len(new_text) > 500):
+        return jsonify(status="error", message="Nieprawidłowa nazwa produktu."), 400
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return jsonify(status="error", message="Nie znaleziono encji."), 404
+    if entity.entity_type not in ("persName", "orgName", *PLACE_ENTITY_TYPES):
+        return jsonify(status="error", message="Encja nie jest osobą, organizacją ani miejscem."), 400
+    try:
+        document = session.get(Document, entity.document_id)
+        old_text, old_type, old_variants = entity.entity_text, entity.entity_type, list(entity.variants or [])
+        removed_tag = None
+        if old_type == "persName":
+            link = session.execute(sa_select(DocumentPerson).where(
+                DocumentPerson.document_id == entity.document_id,
+                sa_func.lower(DocumentPerson.raw_mention) == old_text.lower(),
+            )).scalars().first()
+            if link is not None:
+                person_registry.reject_review_link(session, link)
+        elif old_type == "orgName":
+            drop_organization_links(session, entity)
+        elif document is not None:
+            removed_tag = remove_orphaned_tag(session, document, entity)
+        product = convert_entity_to_product(session, entity, new_text)
+        record_entity_decision(
+            session, document_id=product.document_id, document_entity_id=product.id,
+            entity_type=old_type, entity_text=old_text, decision="entity_to_product",
+            details={"variants": old_variants, "removed_tag": removed_tag, "new_text": product.entity_text},
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Entity to product conversion failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zmienić encji na produkt / system."), 500
+    return jsonify(status="success", entity_id=product.id, product_name=product.entity_text,
+                   removed_tag=removed_tag), 200
+
+
 @app.route('/website_entities/<int:entity_id>/transcription_error', methods=['POST'])
 def website_entities_transcription_error(entity_id: int):
     """Mark an entity as a speech-to-text slip of another entity of the same document ("Hutni" for "Huti").

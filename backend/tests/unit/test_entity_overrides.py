@@ -416,3 +416,48 @@ def test_organization_conversion_without_a_matching_row_is_a_no_op():
     _, _, stats = run([decision("organization_to_place", "Tela Avivwu", entity_type="orgName")], rows)
     assert rows[0].entity_type == "orgName"
     assert "organization_to_place" not in stats
+
+
+def test_entity_to_product_is_replayed_for_person_and_place_rows():
+    person = entity("Starshield", entity_type="persName", count=3, variants=["Starshielda"])
+    place = entity("Starlink", count=2)
+    rows = [person, place]
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    touched, stats = apply_decisions(
+        session,
+        [decision("entity_to_product", "Starshield", entity_type="persName"),
+         decision("entity_to_product", "Starlink", entity_type="placeName")],
+        rows,
+    )
+    session.delete.assert_any_call(person)
+    session.delete.assert_any_call(place)
+    assert rows == []
+    created = [call.args[0] for call in session.add.call_args_list]
+    assert [(r.entity_type, r.entity_text, r.mention_count, r.source) for r in created] == [
+        ("productName", "Starshield", 3, "manual"), ("productName", "Starlink", 2, "manual")]
+    assert created[0].variants == ["Starshielda"]
+    assert stats["entity_to_product"] == 2
+    assert touched == {}
+
+
+def test_entity_to_product_replay_does_not_count_the_mention_again_on_a_surviving_row():
+    survivor = entity("Starshield", entity_type="productName", count=3, source="manual")
+    person = entity("Starshield", entity_type="persName", count=3)
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = [survivor]
+    apply_decisions(session, [decision("entity_to_product", "Starshield", entity_type="persName")], [person])
+    assert survivor.mention_count == 3
+    session.add.assert_not_called()
+
+
+def test_entity_to_product_replay_drops_organization_link_and_ignores_missing_rows():
+    org = entity("Starshield", entity_type="orgName")
+    link = SimpleNamespace(id=4)
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[link], []]  # organization links, then product rows
+    apply_decisions(session, [decision("entity_to_product", "Starshield", entity_type="orgName")], [org])
+    session.delete.assert_any_call(link)
+    rows = [entity("NATO", entity_type="orgName")]
+    _, _, stats = run([decision("entity_to_product", "Starshield", entity_type="persName")], rows)
+    assert "entity_to_product" not in stats

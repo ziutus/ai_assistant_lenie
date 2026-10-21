@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 REPLAYED_DECISIONS = (
     "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
     "person_to_place", "person_to_organization", "organization_to_place", "organization_to_person", "deleted",
-    "rejected", "person_merged", "transcription_error",
+    "rejected", "person_merged", "transcription_error", "entity_to_product",
 )
 
 
@@ -321,6 +321,42 @@ def convert_entity_to_person(
     return row
 
 
+def convert_entity_to_product(
+    session, entity: DocumentEntity, new_text: str | None = None, replay: bool = False,
+) -> DocumentEntity:
+    """Retype a person, organization or place entity as a product/system ("Starshield" tagged persName).
+
+    The row is replaced by a ``source='manual'`` ``productName`` row named ``new_text`` (default: the
+    mention as it stands) that keeps the mention count and surface forms, or folded into a same-named
+    product the document already has. Dropping the registry link / place tag is the caller's job; this
+    only queues entity changes, without committing. ``replay`` (after an entity refresh) does not count
+    the mention again when a manual product row survived the refresh.
+    """
+    name = (new_text or entity.entity_text).strip()
+    document_id, count = entity.document_id, entity.mention_count or 0
+    forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
+    variants = [form for form in forms if form.casefold() != name.casefold()]
+    entities = list(session.scalars(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "productName",
+    )).all())
+    session.delete(entity)
+    session.flush()
+    row = _exact(entities, name, ("productName",))
+    if row is not None:
+        if not (replay and row.source == "manual"):
+            row.mention_count = (row.mention_count or 0) + count
+        row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
+        row.source = "manual"
+    else:
+        row = DocumentEntity(
+            document_id=document_id, entity_type="productName", entity_text=name,
+            mention_count=count, variants=variants, source="manual",
+        )
+        session.add(row)
+    session.flush()
+    return row
+
+
 def split_place_entity(
     session, entity: DocumentEntity, parts: list[str], entities: list[DocumentEntity] | None = None,
     survivors: frozenset[int] = frozenset(),
@@ -606,6 +642,17 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             else:
                 convert_entity_to_person(session, row, entities, survivors)
             stats[decision.decision] = stats.get(decision.decision, 0) + 1
+        elif decision.decision == "entity_to_product":
+            types = PLACE_TYPES if decision.entity_type in PLACE_TYPES else (decision.entity_type,)
+            row = _by_name_or_variant(entities, decision.entity_text, types)
+            if row is None:
+                continue
+            touched.pop(id(row), None)
+            if row.entity_type == "orgName":
+                drop_organization_links(session, row)
+            entities.remove(row)
+            convert_entity_to_product(session, row, details.get("new_text"), replay=True)
+            stats["entity_to_product"] = stats.get("entity_to_product", 0) + 1
         elif decision.decision == "place_split":
             parts = [p for p in details.get("parts", []) if p]
             row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
@@ -679,9 +726,12 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
             or_(
                 EntityReviewDecision.entity_type.in_(PLACE_TYPES),
                 (EntityReviewDecision.entity_type == "persName")
-                & EntityReviewDecision.decision.in_(("person_to_place", "person_to_organization", "person_merged", "transcription_error")),
+                & EntityReviewDecision.decision.in_(
+                    ("person_to_place", "person_to_organization", "person_merged", "transcription_error",
+                     "entity_to_product")),
                 (EntityReviewDecision.entity_type == "orgName")
-                & EntityReviewDecision.decision.in_(("organization_to_place", "organization_to_person", "transcription_error")),
+                & EntityReviewDecision.decision.in_(
+                    ("organization_to_place", "organization_to_person", "transcription_error", "entity_to_product")),
             ),
         )
         .order_by(EntityReviewDecision.id)

@@ -62,7 +62,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(11);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(12);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -241,7 +241,7 @@ it("offers the organization menu on a cited source, including a link to the sour
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
@@ -423,7 +423,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
@@ -452,6 +452,17 @@ it("changes an organization into a person and reports the registry match", async
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/31/to_person", {},
     { headers: expect.any(Object) }));
   expect(await screen.findByText(/zmienione na osobę: Rawit Ruja/)).toBeTruthy();
+});
+
+it("changes a mis-tagged organization into a product / system", async () => {
+  mockOrgEntities({ id: 41, text: "Starshield", count: 6, organization_id: 9 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", product_name: "Starshield" } });
+  renderInRouter(<EntitiesPanel docId={11137} />);
+  await openOrgMenu("Starshield");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na produkt / system" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/41/to_product", {},
+    { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na produkt \/ system: Starshield/)).toBeTruthy();
 });
 
 it("offers 'Podświetl w tekście' in the person, organization and place menus when the host asks for it", async () => {

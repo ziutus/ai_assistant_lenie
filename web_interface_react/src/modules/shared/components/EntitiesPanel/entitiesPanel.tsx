@@ -1322,6 +1322,19 @@ const EntitiesPanel = ({
     }
   };
 
+  const changeEntityToProduct = async (item: EntityItem) => {
+    if (item.id == null) return;
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/website_entities/${item.id}/to_product`, {},
+        { headers: jsonHeaders });
+      setMessage(`„${item.text}” zmienione na produkt / system: ${response.data.product_name}.`);
+      await fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się zmienić na produkt / system: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   const changePersonToPlace = async () => {
     if (toPlaceFor?.id == null || !toPlaceText.trim()) return;
     setIsRetyping(true);
@@ -1537,6 +1550,7 @@ const EntitiesPanel = ({
     entries.push(slipEntry(item));
     entries.push({ label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } });
     entries.push({ label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } });
+    entries.push({ label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } });
     entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
     entries.push({ label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: "orgName" });
@@ -1568,6 +1582,7 @@ const EntitiesPanel = ({
         setPersonDocMergeFor({ item, chapter: chapterPersons });
       } }] : []),
     { label: "Zmień na organizację", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
+    { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
     { label: "🚫 To nie jest osoba", action: () => {
@@ -1589,6 +1604,7 @@ const EntitiesPanel = ({
     { label: "Otwórz w rejestrze miejsc", to: `/places?name=${encodeURIComponent(item.text)}` },
     slipEntry(item),
     { label: "Zmień na organizację", action: () => { resetFlows(); void changePlaceToOrganization(item); } },
+    { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: item.entity_type! });
