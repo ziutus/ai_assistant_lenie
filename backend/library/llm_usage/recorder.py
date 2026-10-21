@@ -76,13 +76,50 @@ def _sanitize_tokens(name: str, value) -> int | None:
     return value
 
 
-def _active_pricing(session, provider: str, model: str) -> LlmPricing | None:
+@dataclass(frozen=True)
+class _CatalogPricing:
+    """Rates taken from OpenRouter's live catalog when ``llm_pricing`` has no row for the model.
+
+    Duck-types the ``LlmPricing`` attributes the recorder reads. ``pricing_version`` is None: the
+    usage row snapshots the rates themselves, and there is no immutable price-list row to point at.
+    """
+
+    pricing_mode: str
+    input_price_per_million: Decimal
+    output_price_per_million: Decimal
+    currency: str
+    pricing_version: None = None
+
+
+def _openrouter_catalog_pricing(model: str) -> _CatalogPricing | None:
+    """Live catalog price of ``openrouter/<id>``; None when the catalog or the price is unavailable."""
+    try:
+        from library.api.openrouter.openrouter_catalog import get_model_info
+
+        info = get_model_info(model.removeprefix("openrouter/"))
+    except Exception:
+        logger.warning("OpenRouter catalog lookup failed for %s", model)
+        return None
+    if info is None or info.input_price_per_million is None or info.output_price_per_million is None:
+        return None
+    return _CatalogPricing(
+        pricing_mode=PricingMode.PER_TOKEN.value,
+        input_price_per_million=info.input_price_per_million,
+        output_price_per_million=info.output_price_per_million,
+        currency=info.currency,
+    )
+
+
+def _active_pricing(session, provider: str, model: str) -> LlmPricing | _CatalogPricing | None:
     stmt = select(LlmPricing).where(
         LlmPricing.provider == provider,
         LlmPricing.model == model,
         LlmPricing.effective_to.is_(None),
     )
-    return session.execute(stmt).scalar_one_or_none()
+    stored = session.execute(stmt).scalar_one_or_none()
+    if stored is None and provider == "openrouter":
+        return _openrouter_catalog_pricing(model)
+    return stored
 
 
 def _resolve_cost(
