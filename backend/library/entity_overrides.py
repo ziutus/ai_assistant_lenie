@@ -224,7 +224,7 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
             details.get("count") or 1, entities,
         )
         added.append(row)
-        if row.entity_type == "eventName" and row.description is None:
+        if row.entity_type in ("eventName", "productName") and row.description is None:
             row.description = descriptions.get(row.entity_text.casefold())
     if doc is not None:
         from library.country_gazetteer import canonical_country_name

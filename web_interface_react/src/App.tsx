@@ -17,6 +17,8 @@ import Chunks from "./modules/shared/pages/chunks";
 import NerChapters from "./modules/shared/pages/nerChapters";
 import Places from "./modules/shared/pages/places";
 import WorldEvents from "./modules/shared/pages/worldEvents";
+import Products from "./modules/shared/pages/products";
+import ProductDetail from "./modules/shared/pages/productDetail";
 import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
@@ -107,6 +109,8 @@ function App() {
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/places" element={<Places />} />
                   <Route path="/world-events" element={<WorldEvents />} />
+                  <Route path="/products" element={<Products />} />
+                  <Route path="/products/:name" element={<ProductDetail />} />
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/contacts" element={<Contacts />} />
                   <Route path="/topics" element={<Topics />} />

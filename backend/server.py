@@ -2542,13 +2542,12 @@ def website_entities_set_description(entity_id: int):
     return jsonify(status="success", entity_id=entity.id, description=entity.description), 200
 
 
-@app.route('/entity_events', methods=['GET'])
-def entity_events_list():
-    """Index of the events added to documents, grouped by case-folded name (``/events`` page).
+def _named_entity_index(entity_type: str):
+    """Rows of one manual entity type grouped by case-folded name across documents (events, products).
 
     Query: ``q`` (name or description contains, case-insensitive), ``limit`` (default 50, max 200),
-    ``offset``. Each row: name, documents (count), mentions, a description when any document has one,
-    and the documents themselves (id, title, mentions) so the page can link to ``/ner/<id>``.
+    ``offset``. Returns ``(groups_page, total, limit, offset)`` or a 400 response. Each group: name, description (first
+    non-empty one), mentions, document_count and documents (id, title, mentions, entity_id).
     """
     from sqlalchemy import func as sa_func, select as sa_select
     from library.db.models import DocumentEntity
@@ -2561,7 +2560,7 @@ def entity_events_list():
     needle = (request.args.get('q') or "").strip().lower()
     session = get_scoped_session()
     query = sa_select(DocumentEntity, Document.title).join(Document, Document.id == DocumentEntity.document_id).where(
-        DocumentEntity.entity_type == "eventName")
+        DocumentEntity.entity_type == entity_type)
     if needle:
         like = f"%{needle}%"
         query = query.where(sa_func.lower(DocumentEntity.entity_text).like(like)
@@ -2576,8 +2575,107 @@ def entity_events_list():
         group["documents"].append({"id": entity.document_id, "title": title, "mentions": entity.mention_count,
                                    "entity_id": entity.id})
     rows = sorted(groups.values(), key=lambda group: group["name"].casefold())
-    return jsonify(status="success", total=len(rows), limit=limit, offset=offset,
-                   events=[{**group, "document_count": len(group["documents"])} for group in rows[offset:offset + limit]]), 200
+    page = [{**group, "document_count": len(group["documents"])} for group in rows[offset:offset + limit]]
+    return page, len(rows), limit, offset
+
+
+@app.route('/entity_events', methods=['GET'])
+def entity_events_list():
+    """Index of the events added to documents, grouped by case-folded name (``/world-events`` page)."""
+    result = _named_entity_index("eventName")
+    if not isinstance(result, tuple):
+        return result
+    page, total, limit, offset = result
+    return jsonify(status="success", total=total, limit=limit, offset=offset, events=page), 200
+
+
+@app.route('/entity_products', methods=['GET'])
+def entity_products_list():
+    """Index of the products/systems added to documents, grouped by case-folded name (``/products`` page).
+
+    Same query and row shape as ``/entity_events``, under ``products``.
+    """
+    result = _named_entity_index("productName")
+    if not isinstance(result, tuple):
+        return result
+    page, total, limit, offset = result
+    return jsonify(status="success", total=total, limit=limit, offset=offset, products=page), 200
+
+
+@app.route('/entity_product', methods=['GET'])
+def entity_product_detail():
+    """One product page (``/products/:name``): description, spellings and every document mentioning it.
+
+    Query: ``name`` (case-insensitive). Answers name, description, ``variants`` (surface forms found in
+    the documents), mentions and ``documents`` (id, title, mentions, entity_id, document_type, ingested_at),
+    most mentions first; 404 when no document has such a product.
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library.db.models import DocumentEntity
+
+    name = (request.args.get('name') or "").strip()
+    if not name:
+        return jsonify(status="error", message="Brakuje parametru name."), 400
+    session = get_scoped_session()
+    rows = session.execute(
+        sa_select(DocumentEntity, Document.title, Document.document_type, Document.ingested_at)
+        .join(Document, Document.id == DocumentEntity.document_id)
+        .where(DocumentEntity.entity_type == "productName", sa_func.lower(DocumentEntity.entity_text) == name.lower())
+        .order_by(DocumentEntity.mention_count.desc(), DocumentEntity.document_id)
+    ).all()
+    if not rows:
+        return jsonify(status="error", message="Nie znaleziono produktu."), 404
+    variants: list[str] = []
+    for entity, _title, _type, _ingested in rows:
+        for form in entity.variants or []:
+            if form.casefold() != name.casefold() and form not in variants:
+                variants.append(form)
+    return jsonify(
+        status="success", name=rows[0][0].entity_text,
+        description=next((entity.description for entity, *_rest in rows if entity.description), None),
+        variants=variants, mentions=sum(entity.mention_count or 0 for entity, *_rest in rows),
+        documents=[{"id": entity.document_id, "title": title, "mentions": entity.mention_count, "entity_id": entity.id,
+                    "document_type": str(document_type) if document_type else None,
+                    "ingested_at": ingested_at.isoformat() if ingested_at else None}
+                   for entity, title, document_type, ingested_at in rows],
+    ), 200
+
+
+@app.route('/entity_product/description', methods=['PUT'])
+def entity_product_set_description():
+    """Store (or clear, with an empty string) the description of a product, shared by all its documents.
+
+    Body: ``{"name", "description"}``. Every ``productName`` row of that name gets the text and each is
+    audited as ``entity_described``, so it survives a reopen for editing (``replay_manual_added_entities``).
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library.db.models import DocumentEntity
+    from library.entity_review_audit import record_entity_decision
+
+    data = request.get_json(silent=True) or {}
+    name, description = data.get('name'), data.get('description')
+    if not isinstance(name, str) or not name.strip() or not isinstance(description, str) or len(description) > 2000:
+        return jsonify(status="error", message="Nieprawidłowa nazwa lub opis."), 400
+    session = get_scoped_session()
+    entities = session.scalars(sa_select(DocumentEntity).where(
+        DocumentEntity.entity_type == "productName", sa_func.lower(DocumentEntity.entity_text) == name.strip().lower(),
+    )).all()
+    if not entities:
+        return jsonify(status="error", message="Nie znaleziono produktu."), 404
+    try:
+        for entity in entities:
+            entity.description = description.strip() or None
+            record_entity_decision(
+                session, document_id=entity.document_id, document_entity_id=entity.id, entity_type="productName",
+                entity_text=entity.entity_text, decision="entity_described", details={"description": entity.description},
+            )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("Saving the description of product %r failed", name)
+        return jsonify(status="error", message="Nie udało się zapisać opisu."), 500
+    return jsonify(status="success", name=entities[0].entity_text, description=entities[0].description,
+                   documents=len(entities)), 200
 
 
 @app.route('/document/<int:document_id>/entities/add_mention', methods=['POST'])
