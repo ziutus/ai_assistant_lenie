@@ -2397,7 +2397,12 @@ const EntitiesPanel = ({
                               {result.result_status === "error" && `Model nie odpowiedział: ${result.error_code ?? "błąd"}.`}
                             </p>
                             {result.result_status === "ok" && result.description && (
-                              <button type="button" onClick={() => { setOrgDescriptionText(result.description ?? ""); setOrgDescriptionInfo(`Propozycja: ${result.label}`); }}>
+                              <button type="button" onClick={() => {
+                                setOrgDescriptionText(result.description ?? "");
+                                setOrgDescriptionInfo(`Propozycja: ${result.label}`);
+                                setArenaOpen(false);
+                                setArenaResults([]);
+                              }}>
                                 Użyj tego opisu
                               </button>
                             )}
