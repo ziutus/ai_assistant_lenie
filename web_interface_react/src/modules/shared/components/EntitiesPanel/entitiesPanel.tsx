@@ -4,6 +4,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import { copyText } from "../../utils/copyText";
+import { modelOptionText, type ModelOption } from "../../utils/modelDetails";
 import type { CountryTag } from "../CountryMap/countryMap";
 import InfoTip from "../InfoTip";
 import RejectedPlaces from "./rejectedPlaces";
@@ -564,7 +565,7 @@ const EntitiesPanel = ({
   const [orgDescriptionBusy, setOrgDescriptionBusy] = React.useState(false);
   const [orgPromptOpen, setOrgPromptOpen] = React.useState(false);
   const [orgPrompt, setOrgPrompt] = React.useState("");
-  const [orgModels, setOrgModels] = React.useState<{ id: string; label: string; external?: boolean; verified?: boolean }[]>([]);
+  const [orgModels, setOrgModels] = React.useState<ModelOption[]>([]);
   // Arena: the same prompt through 2-4 models, proposals side by side (nothing stored).
   const [arenaOpen, setArenaOpen] = React.useState(false);
   const [arenaModels, setArenaModels] = React.useState<string[]>([]);
@@ -2345,7 +2346,7 @@ const EntitiesPanel = ({
             <div style={{ marginTop: 8 }}>
               <label style={{ display: "block" }}>Model
                 <select value={orgModel} onChange={(e) => setOrgModel(e.target.value)} style={{ marginLeft: 6 }}>
-                  {orgModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                  {orgModels.map((model) => <option key={model.id} value={model.id}>{modelOptionText(model)}</option>)}
                 </select>
               </label>
               <label style={{ display: "block", marginTop: 6 }}>Prompt wysyłany do modelu (możesz go zmienić)
@@ -2360,7 +2361,7 @@ const EntitiesPanel = ({
               {orgModels.find((model) => model.id === orgModel)?.external && (
                 <p role="note" style={{ margin: "6px 0 0", color: "#92400e" }}>
                   ⚠ Ten model wysyła tekst rozdziału do zewnętrznego pośrednika (OpenRouter).
-                  {orgModels.find((model) => model.id === orgModel)?.verified === false && " Identyfikator i cena nie są jeszcze sprawdzone."}
+                  {orgModels.find((model) => model.id === orgModel)?.verified === false && " Jakość odpowiedzi po polsku nie jest jeszcze sprawdzona (cena i limity pochodzą z katalogu OpenRouter)."}
                 </p>
               )}
               <div style={{ marginTop: 10 }}>
@@ -2373,7 +2374,7 @@ const EntitiesPanel = ({
                     {orgModels.map((model) => (
                       <label key={model.id} style={{ display: "block" }}>
                         <input type="checkbox" checked={arenaModels.includes(model.id)} onChange={() => toggleArenaModel(model.id)} />
-                        {" "}{model.label}{model.external ? " ⚠ zewnętrzny" : ""}
+                        {" "}{modelOptionText(model)}{model.external ? " ⚠ zewnętrzny" : ""}
                       </label>
                     ))}
                     <button className={"button"} type="button" style={{ marginTop: 6 }}
