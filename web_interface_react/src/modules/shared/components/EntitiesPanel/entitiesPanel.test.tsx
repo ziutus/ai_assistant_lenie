@@ -817,3 +817,28 @@ it.each(["related", "figurative"] as const)("styles %s chips and explains their 
   expect(chip?.classList.contains(`entity-chip--${relevance}`)).toBe(true);
   expect(chip?.getAttribute("title")).toContain(relevance === "related" ? "Pośredni związek" : "Wzmianka przenośna");
 });
+
+it("folds several persons into one target from a single merge dialog", async () => {
+  const persons = [
+    { id: 1, text: "Luka Nikulesku", count: 7 },
+    { id: 2, text: "Nikuleswsku", count: 1 },
+    { id: 3, text: "Ninkulesko", count: 1 },
+  ];
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: persons, orgName: [], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  render(<MemoryRouter><EntitiesPanel docId={11139} /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: /Nikuleswsku/ }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Połącz z inną osobą w dokumencie…" }));
+  // Also take the third spelling along, then merge both into the full name.
+  const ninkulesko = screen.getByText("Ninkulesko", { selector: "strong" }).parentElement as HTMLElement;
+  fireEvent.click(within(ninkulesko).getByRole("checkbox", { name: "dołącz" }));
+  const target = screen.getByText("Luka Nikulesku", { selector: "strong" }).parentElement as HTMLElement;
+  fireEvent.click(within(target).getByRole("button", { name: "scal 2 do tej osoby" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+  expect(axios.post).toHaveBeenNthCalledWith(1, "/document/11139/persons/merge",
+    { source_entity_id: 2, target_entity_id: 1 }, { headers: expect.any(Object) });
+  expect(axios.post).toHaveBeenNthCalledWith(2, "/document/11139/persons/merge",
+    { source_entity_id: 3, target_entity_id: 1 }, { headers: expect.any(Object) });
+  expect(await screen.findByText(/Połączono 2 osoby/)).toBeTruthy();
+});

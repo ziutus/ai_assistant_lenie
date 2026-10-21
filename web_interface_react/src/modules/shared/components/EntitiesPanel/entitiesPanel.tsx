@@ -601,6 +601,8 @@ const EntitiesPanel = ({
   const [placeMergeQuery, setPlaceMergeQuery] = React.useState("");
   const [personMergeAll, setPersonMergeAll] = React.useState(false);
   const [personMergeQuery, setPersonMergeQuery] = React.useState("");
+  // Further persons (entity ids) folded into the same target together with the one the menu was opened on.
+  const [personMergeExtra, setPersonMergeExtra] = React.useState<number[]>([]);
   // Floating action menu of a mention clicked in the host's text (see the mentionMenu prop).
   const [openMentionSub, setOpenMentionSub] = React.useState<string | null>(null);
   const mentionMenuRef = React.useRef<HTMLDivElement>(null);
@@ -1092,19 +1094,30 @@ const EntitiesPanel = ({
   };
   const handlePlaceMergePick = (target: EntityItem) => mergePlaces(placeMergeFor, target);
 
-  const mergeDocumentPersons = async (source: EntityItem, target: EntityItem) => {
-    if (source.id == null || target.id == null || isMergingPlace) return;
+  // Folds every source into the target one after another (the endpoint merges a single pair). Stops at the first
+  // failure; the ones already merged stay merged and the list is refetched either way.
+  const mergeDocumentPersons = async (sources: EntityItem[], target: EntityItem) => {
+    const pending = sources.filter((source) => source.id != null && source.id !== target.id);
+    if (target.id == null || pending.length === 0 || isMergingPlace) return;
     setMessage("");
     setIsMergingPlace(true);
+    const merged: string[] = [];
     try {
-      await axios.post(`${apiUrl}/document/${docId}/persons/merge`,
-        { source_entity_id: source.id, target_entity_id: target.id }, { headers: jsonHeaders });
+      for (const source of pending) {
+        await axios.post(`${apiUrl}/document/${docId}/persons/merge`,
+          { source_entity_id: source.id, target_entity_id: target.id }, { headers: jsonHeaders });
+        merged.push(source.text);
+      }
       setPersonDocMergeFor(null);
-      await fetchEntities();
-      setMessage(`Osoby „${source.text}” i „${target.text}” zostały połączone.`);
+      setPersonMergeExtra([]);
+      setMessage(merged.length === 1
+        ? `Osoby „${merged[0]}” i „${target.text}” zostały połączone.`
+        : `Połączono ${merged.length} osoby (${merged.map((name) => `„${name}”`).join(", ")}) z „${target.text}”.`);
     } catch (error: any) {
-      setMessage(`Nie udało się połączyć osób: ${error.response?.data?.message || error.message}`);
+      const done = merged.length ? ` Połączono już: ${merged.map((name) => `„${name}”`).join(", ")}.` : "";
+      setMessage(`Nie udało się połączyć osób: ${error.response?.data?.message || error.message}.${done}`);
     } finally {
+      await fetchEntities();
       setIsMergingPlace(false);
     }
   };
@@ -1551,7 +1564,7 @@ const EntitiesPanel = ({
     { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
     ...(persons.some((person) => person.id != null && person.id !== item.id)
       ? [{ label: "Połącz z inną osobą w dokumencie…", action: () => {
-        resetFlows(); setPersonMergeAll(false); setPersonMergeQuery("");
+        resetFlows(); setPersonMergeAll(false); setPersonMergeQuery(""); setPersonMergeExtra([]);
         setPersonDocMergeFor({ item, chapter: chapterPersons });
       } }] : []),
     { label: "Zmień na organizację", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
@@ -2231,6 +2244,10 @@ const EntitiesPanel = ({
             Połącz „{personDocMergeFor.item.text}” z inną osobą (zostanie nazwą połączonej osoby):
             <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setPersonDocMergeFor(null)}>✕ anuluj</button>
           </div>
+          <div style={{ marginBottom: 4, fontSize: "0.9em", color: "#475569" }}>
+            Zaznacz „dołącz” przy innych osobach, które też mają trafić do tej samej osoby, a potem „scal do tej osoby” przy właściwej.
+            {personMergeExtra.length > 0 && ` Zaznaczono dodatkowo: ${personMergeExtra.length}.`}
+          </div>
           {personDocMergeFor.chapter && (
             <label style={{ marginRight: 12 }}>
               <input type="checkbox" checked={personMergeAll} onChange={(event) => setPersonMergeAll(event.target.checked)} />{" "}
@@ -2251,7 +2268,20 @@ const EntitiesPanel = ({
           })().map((person) => (
             <div key={person.id} style={{ padding: "3px 0" }}>
               <button className={"button"} type="button" disabled={isMergingPlace}
-                onClick={() => void mergeDocumentPersons(personDocMergeFor.item, person)}>wybierz</button>
+                onClick={() => void mergeDocumentPersons(
+                  [personDocMergeFor.item, ...persons.filter((other) => other.id != null && personMergeExtra.includes(other.id))],
+                  person)}>
+                {(() => {
+                  const count = 1 + personMergeExtra.filter((id) => id !== person.id).length;
+                  return count > 1 ? `scal ${count} do tej osoby` : "scal do tej osoby";
+                })()}
+              </button>
+              {" "}<label>
+                <input type="checkbox" checked={person.id != null && personMergeExtra.includes(person.id)}
+                  onChange={(event) => setPersonMergeExtra((current) => event.target.checked
+                    ? [...current, person.id as number] : current.filter((id) => id !== person.id))} />
+                {" "}dołącz
+              </label>
               {" "}<strong>{person.text}</strong>
             </div>
           ))}
