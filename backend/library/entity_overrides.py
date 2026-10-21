@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 REPLAYED_DECISIONS = (
     "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
     "person_to_place", "person_to_organization", "organization_to_place", "organization_to_person", "deleted",
-    "rejected", "person_merged", "transcription_error", "entity_to_product",
+    "rejected", "person_merged", "transcription_error", "entity_to_product", "product_to_entity",
 )
 
 
@@ -199,7 +199,7 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
     for removal in session.scalars(select(EntityReviewDecision).where(
         EntityReviewDecision.document_id == document_id,
         EntityReviewDecision.decision.in_(
-            ("deleted", "rejected", "excluded_global", "excluded_author", "entity_described")),
+            ("deleted", "rejected", "excluded_global", "excluded_author", "entity_described", "product_to_entity")),
     ).order_by(EntityReviewDecision.id)).all():
         if removal.decision == "entity_described":
             descriptions[removal.entity_text.casefold()] = (removal.details or {}).get("description")
@@ -605,7 +605,8 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
         # Flush now: a later decision may rename another row into this name.
         session.flush()
 
-    for decision in decisions:
+    decisions = list(decisions)
+    for position, decision in enumerate(decisions):
         details = decision.details or {}
         if decision.decision == "place_confirmed":
             row = None
@@ -691,7 +692,12 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             else:
                 convert_entity_to_person(session, row, entities, survivors)
             stats[decision.decision] = stats.get(decision.decision, 0) + 1
+        elif decision.decision == "product_to_entity":
+            continue  # only read by the look-ahead of entity_to_product; the new row comes back via entity_added
         elif decision.decision == "entity_to_product":
+            if any(later.decision == "product_to_entity" and later.entity_text.casefold() == decision.entity_text.casefold()
+                   for later in decisions[position + 1:]):
+                continue  # the reviewer turned the product back into a person/place/organization
             types = PLACE_TYPES if decision.entity_type in PLACE_TYPES else (decision.entity_type,)
             row = _by_name_or_variant(entities, decision.entity_text, types)
             if row is None:
@@ -781,6 +787,8 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
                 (EntityReviewDecision.entity_type == "orgName")
                 & EntityReviewDecision.decision.in_(
                     ("organization_to_place", "organization_to_person", "transcription_error", "entity_to_product")),
+                (EntityReviewDecision.entity_type == "productName")
+                & (EntityReviewDecision.decision == "product_to_entity"),
             ),
         )
         .order_by(EntityReviewDecision.id)

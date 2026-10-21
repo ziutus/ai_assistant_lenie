@@ -405,6 +405,19 @@ it("lists a hand-added product/system, highlights it and deletes it on request",
     "/website_entities/78", { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } }));
 });
 
+it("turns a product marked by mistake back into a person, organization or place", async () => {
+  const withProduct = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups, productName: [{ id: 78, text: "Kandahar", count: 3, variants: [] }] },
+  })) };
+  mockApi({ "/document/42/chapter_entities": withProduct });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  const row = within(screen.getByRole("region", { name: "#3 Pusty" })).getByLabelText("Produkty i systemy rozdziału");
+  fireEvent.click(within(row).getByRole("button", { name: "Zmień produkt Kandahar na miejsce" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/78/from_product",
+    { entity_type: "placeName" }, { headers: { "x-api-key": "test-key" } }));
+});
+
 it("merges several spellings of a product into one entity under a chosen name", async () => {
   const withProduct = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
     ...section, entities: { ...emptyGroups, productName: [{ id: 78, text: "Starlinek", count: 8, variants: [] }] },

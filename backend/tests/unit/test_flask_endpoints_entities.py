@@ -547,6 +547,45 @@ def test_entity_to_product(client, case, expected):
         session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("case,expected", [("person", 200), ("place", 200), ("organization", 200), ("missing", 404),
+                                           ("bad_type", 400), ("not_product", 400), ("rollback", 500)])
+def test_product_to_entity(client, case, expected):
+    from library.db.models import Document, DocumentEntity, EntityReviewDecision
+    product = DocumentEntity(id=5, document_id=11143, entity_type="productName", entity_text="Kandahar",
+                             mention_count=3, variants=["Kandaharem"], source="manual")
+    if case == "not_product":
+        product.entity_type = "persName"
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        (None if case == "missing" else product) if model is DocumentEntity else Document(id=11143, tags="", text_md="x"))
+    session.scalars.return_value.all.return_value = []
+    if case == "rollback":
+        session.commit.side_effect = RuntimeError("test failure")
+    target = {"person": "persName", "place": "placeName", "organization": "orgName", "bad_type": "eventName"}.get(
+        case, "persName")
+    organization = MagicMock(id=7, canonical_name="Kandahar")
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.place_verification.geocode_single_place",
+    ), patch("library.organization_registry.resolve_or_create", return_value=(organization, "exact")), patch(
+        "library.person_registry.resolve_document_persons", return_value={"linked": []},
+    ):
+        response = client.post("/website_entities/5/from_product", headers=API_HEADERS, json={"entity_type": target})
+    assert response.status_code == expected
+    if expected == 200:
+        added = [call.args[0] for call in session.add.call_args_list]
+        row = next(r for r in added if isinstance(r, DocumentEntity))
+        assert row.entity_type == target and row.mention_count == 3 and row.source == "manual"
+        assert "Kandaharem" in row.variants
+        decisions = {r.decision: r for r in added if isinstance(r, EntityReviewDecision)}
+        assert decisions["product_to_entity"].entity_type == "productName"
+        assert decisions["entity_added"].entity_type == target
+        session.delete.assert_any_call(product)
+    elif case == "rollback":
+        session.rollback.assert_called()
+    else:
+        session.commit.assert_not_called()
+
+
 @pytest.mark.parametrize("case,expected", [("success", 200), ("one_id", 400), ("bad_name", 400), ("wrong_type", 400),
                                            ("other_document", 400), ("rollback", 500)])
 def test_products_merge(client, case, expected):

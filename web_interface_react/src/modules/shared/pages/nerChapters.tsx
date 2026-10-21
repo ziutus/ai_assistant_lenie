@@ -323,6 +323,23 @@ const NerChapters = () => {
   const deleteEvent = (item: EntityItem) => deleteManual(item, "wydarzenie");
   const deleteProduct = (item: EntityItem) => deleteManual(item, "produkt / system");
 
+  // A product marked by mistake goes back to a person / organization / place (same as a hand-selected mention).
+  const PRODUCT_TARGETS = [
+    { type: "persName", label: "osobę", icon: "👤" },
+    { type: "orgName", label: "organizację", icon: "🏢" },
+    { type: "placeName", label: "miejsce", icon: "📍" },
+  ] as const;
+  const changeProductTo = async (item: EntityItem, target: typeof PRODUCT_TARGETS[number]) => {
+    if (item.id === undefined) return;
+    try {
+      await axios.post(`${apiUrl}/website_entities/${item.id}/from_product`, { entity_type: target.type }, { headers });
+      setVersion((current) => current + 1);
+      setPanelKey((current) => current + 1);
+    } catch (error: any) {
+      setMergeError(error.response?.data?.message || `Nie udało się zmienić na ${target.label}.`);
+    }
+  };
+
   // Several spellings of one product ("Starlinka", "Starlinek", "Starling") fold into a single entity. The form lists
   // every product of the document (the chapter chips show only the chapter's own), the reviewer ticks the spellings
   // and names the result; `POST /document/:id/products/merge` keeps counts and spellings as variants.
@@ -634,6 +651,13 @@ const NerChapters = () => {
                                   <button type="button" aria-label={`Scal produkt ${itemName(item)}`}
                                     title="Scal z innymi zapisami tego produktu"
                                     onClick={() => void openProductMerge(item)}>⇄</button>{" "}
+                                  {PRODUCT_TARGETS.map((target) => (
+                                    <React.Fragment key={target.type}>
+                                      <button type="button" aria-label={`Zmień produkt ${itemName(item)} na ${target.label}`}
+                                        title={`Zmień na ${target.label}`}
+                                        onClick={() => void changeProductTo(item, target)}>{target.icon}</button>{" "}
+                                    </React.Fragment>
+                                  ))}
                                   <button type="button" aria-label={`Usuń produkt ${itemName(item)}`}
                                     onClick={() => void deleteProduct(item)}>×</button>
                                 </span>

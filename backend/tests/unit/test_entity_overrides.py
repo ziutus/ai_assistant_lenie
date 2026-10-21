@@ -463,6 +463,22 @@ def test_entity_to_product_replay_drops_organization_link_and_ignores_missing_ro
     assert "entity_to_product" not in stats
 
 
+def test_entity_to_product_is_not_replayed_when_the_product_was_turned_back():
+    person = entity("Starshield", entity_type="persName", count=3)
+    rows = [person]
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    _, stats = apply_decisions(
+        session,
+        [decision("entity_to_product", "Starshield", entity_type="persName"),
+         decision("product_to_entity", "Starshield", entity_type="productName")],
+        rows,
+    )
+    assert rows == [person]
+    session.delete.assert_not_called()
+    assert "entity_to_product" not in stats
+
+
 def test_merge_product_entities_renames_the_first_row_and_folds_the_others():
     from library.entity_overrides import merge_product_entities
 
