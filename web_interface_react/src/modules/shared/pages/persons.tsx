@@ -7,12 +7,30 @@ import { Pagination } from "../components/Pagination/pagination";
 // Person registry browser (NER stage 4): fuzzy search over persons/aliases
 // (GET /persons?q=) and the person -> documents view (GET /person_documents).
 
+export interface PersonLink {
+  url: string;
+  label: string;
+}
+
+export const linkLabel = (link: PersonLink): string => {
+  if (link.label) {
+    return link.label;
+  }
+  try {
+    return new URL(link.url).hostname.replace(/^www\./, "");
+  } catch {
+    return link.url;
+  }
+};
+
 export interface PersonItem {
   id: number;
   uuid: string;
   canonical_name: string;
   wikidata_qid: string | null;
   description: string | null;
+  long_description?: string | null;
+  links?: PersonLink[];
   aliases: string[];
 }
 
@@ -77,8 +95,17 @@ const Persons = () => {
   const [page, setPage] = React.useState(Number(searchParams.get("page")) || 1);
   const pageSize = 50;
   const [person, setPerson] = React.useState<
-    { canonical_name: string; description: string | null; wikidata_qid: string | null } | null
+    {
+      canonical_name: string; description: string | null; long_description?: string | null; wikidata_qid: string | null;
+      links?: PersonLink[]; aliases?: string[];
+    } | null
   >(null);
+  // Edit form of the registry person: name (the old one stays an alias), description, Wikidata id, aliases.
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState({
+    name: "", description: "", long_description: "", qid: "", aliases: "", links: [] as PersonLink[],
+  });
+  const [saving, setSaving] = React.useState(false);
   const [documents, setDocuments] = React.useState<PersonDocument[]>([]);
   // per-document chapter drill-down ("wystąpienia w tej książce")
   const [occurrences, setOccurrences] = React.useState<Record<number, ChapterOccurrence[] | "loading">>({});
@@ -142,7 +169,37 @@ const Persons = () => {
     }
   };
 
+  const startEdit = () => {
+    if (!person) return;
+    setDraft({
+      name: person.canonical_name, description: person.description ?? "", qid: person.wikidata_qid ?? "",
+      aliases: (person.aliases ?? []).join("\n"),
+      long_description: person.long_description ?? "", links: (person.links ?? []).map((link) => ({ ...link })),
+    });
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    if (!id || !draft.name.trim()) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await axios.patch(`${apiUrl}/persons/${id}`, {
+        canonical_name: draft.name.trim(), description: draft.description, wikidata_qid: draft.qid.trim(),
+        long_description: draft.long_description,
+        links: draft.links.filter((link) => link.url.trim()).map((link) => ({ url: link.url.trim(), label: link.label.trim() })),
+        aliases: draft.aliases.split("\n").map((alias) => alias.trim()).filter(Boolean),
+      }, { headers: { ...headers, "Content-Type": "application/json" } });
+      setPerson(response.data.person);
+      setEditing(false);
+    } catch (error: any) {
+      setMessage(`Nie udało się zapisać osoby: ${error.response?.data?.message || error.message}`);
+    }
+    setSaving(false);
+  };
+
   React.useEffect(() => {
+    setEditing(false);
     setPerson(null);
     setDocuments([]);
     setOccurrences({});
@@ -196,6 +253,68 @@ const Persons = () => {
       {id && person ? (
         <div style={{ marginBottom: 20, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
           <PersonHeader person={person} />
+          {!editing && (
+            <div style={{ marginTop: 8 }}>
+              {person.long_description && (
+                <p style={{ whiteSpace: "pre-wrap", margin: "6px 0" }}>{person.long_description}</p>
+              )}
+              {!!person.links?.length && (
+                <div style={{ margin: "6px 0" }}>
+                  🔗{" "}
+                  {person.links.map((link, index) => (
+                    <span key={link.url}>
+                      {index > 0 && " · "}
+                      <a href={link.url} target="_blank" rel="noreferrer" style={{ color: "#0369a1" }}>{linkLabel(link)}</a>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <button type="button" className={"button"} onClick={startEdit}>✏️ Edytuj osobę</button>
+            </div>
+          )}
+          {editing && (
+            <div style={{ marginTop: 10, padding: 8, background: "#f0f6ff", borderRadius: 6, display: "grid", gap: 6, maxWidth: 520 }}>
+              <label>Nazwisko (poprzednie zostanie aliasem)
+                <input value={draft.name} maxLength={500} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              </label>
+              <label>Opis
+                <input value={draft.description} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+              </label>
+              <label>Długi opis (tylko na tej stronie)
+                <textarea rows={8} value={draft.long_description} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, long_description: e.target.value })} />
+              </label>
+              <div>
+                Linki (np. Wikipedia)
+                {draft.links.map((link, index) => (
+                  <div key={index} style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                    <input type="url" value={link.url} placeholder="https://pl.wikipedia.org/wiki/…" style={{ flex: 3 }}
+                      onChange={(e) => setDraft({ ...draft, links: draft.links.map((l, i) => (i === index ? { ...l, url: e.target.value } : l)) })} />
+                    <input type="text" value={link.label} placeholder="Etykieta (np. Wikipedia)" style={{ flex: 1 }}
+                      onChange={(e) => setDraft({ ...draft, links: draft.links.map((l, i) => (i === index ? { ...l, label: e.target.value } : l)) })} />
+                    <button type="button" aria-label="Usuń link"
+                      onClick={() => setDraft({ ...draft, links: draft.links.filter((_, i) => i !== index) })}>×</button>
+                  </div>
+                ))}
+                <button type="button" style={{ marginTop: 6 }}
+                  onClick={() => setDraft({ ...draft, links: [...draft.links, { url: "", label: "" }] })}>+ Dodaj link</button>
+              </div>
+              <label>Identyfikator Wikidata (np. Q12345, puste = brak)
+                <input value={draft.qid} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, qid: e.target.value })} />
+              </label>
+              <label>Aliasy (jeden w wierszu)
+                <textarea rows={4} value={draft.aliases} style={{ width: "100%" }}
+                  onChange={(e) => setDraft({ ...draft, aliases: e.target.value })} />
+              </label>
+              <div>
+                <button type="button" className={"button"} disabled={saving || !draft.name.trim()} onClick={() => void saveEdit()}>Zapisz</button>
+                <button type="button" disabled={saving} onClick={() => setEditing(false)} style={{ marginLeft: 8 }}>Anuluj</button>
+              </div>
+            </div>
+          )}
           <h3 style={{ margin: "12px 0 6px" }}>Artykuły autora ({authoredDocuments.length})</h3>
           {!authoredDocuments.length && <div style={{ color: "#667" }}>Brak dokumentów oznaczonych jako autorstwa tej osoby.</div>}
           <ul style={{ listStyle: "none", padding: 0 }}>

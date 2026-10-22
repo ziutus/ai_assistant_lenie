@@ -448,13 +448,25 @@ def _apply_tags(doc: Document, text: str) -> None:
     analysis runs (e.g. one run per book chapter) should accumulate tags
     across runs, not clobber ones set by a previous run.
     """
+    from sqlalchemy.orm import object_session
+
     from library.article_tagging import extract_countries_hybrid, tag_article_with_llm
 
     article_tags = tag_article_with_llm(text, doc.title or "")
     # Country detection has its own cheap gazetteer prescreen.  It must not be
     # gated by thematic tags: a failed/empty thematic classification used to
     # hide plainly mentioned countries such as Sudan and Qatar from the reader.
-    country_tags = extract_countries_hybrid(text, doc.title or "")
+    country_text = text
+    try:
+        session = object_session(doc)
+    except Exception:  # not a mapped instance (detached stub)
+        session = None
+    if session is not None and doc.id is not None:
+        from library.entity_service import apply_channel_glossary_text
+
+        # Channel euphemisms ("państwo z gwiazdką" = Izrael) are resolved on a copy of the text.
+        country_text = apply_channel_glossary_text(session, doc.id, text)
+    country_tags = extract_countries_hybrid(country_text, doc.title or "")
     new_tags = article_tags + country_tags
     if not new_tags:
         return

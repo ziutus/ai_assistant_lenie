@@ -44,12 +44,13 @@ Each subproject manages its own Python/Node dependencies independently (no share
 
 ## Common commands
 
-Run from repo root unless noted. Full reference: `Makefile`.
+Run from repo root unless noted. `make` is not installed on the Windows dev machine — run the underlying
+commands directly (the `Makefile` targets are thin wrappers; it is the reference for the rest).
 
 ```bash
 # Docker stack (local dev)
-make build && make dev        # build + run backend/db/frontend via docker compose
-make down                     # stop and remove containers
+docker compose build && docker compose up -d   # make build && make dev
+docker compose down        # stop containers; `make down` adds -v, which also DELETES volumes (local DB data)
 
 # Backend deps (uv only — never pip)
 cd backend && uv sync                    # base deps
@@ -57,17 +58,14 @@ cd backend && uv sync --all-extras       # everything
 cd backend && uv lock                    # after editing pyproject.toml
 
 # Lint / format (ruff, line-length=120)
-make lint                     # or: cd backend && uv run ruff check .
-make lint-fix
-make format
-make format-check
+cd backend && uv run ruff check .        # add --fix to auto-fix
+cd backend && uv run ruff format .       # add --check for check-only
 
 # Security (all via uvx — no venv pollution)
-make security                 # semgrep
-make security-deps            # pip-audit
-make security-bandit
-make security-safety
-make security-all
+uvx semgrep --config=auto backend/
+cd backend && uvx pip-audit
+uvx --from "bandit[toml]" bandit -c backend/pyproject.toml -r backend/
+cd backend && uvx safety scan
 ```
 
 ### Tests
@@ -101,7 +99,12 @@ cd ner_service && .venv/Scripts/python -m pytest tests/ -q
 - The user tests every completed product change on the NAS. After implementing
   and verifying a change, deploy it to the active NAS environment and provide
   the test URL. Do not treat the change as handed off before deployment unless
-  the user explicitly asks for local-only work or no deployment.
+  the user explicitly asks for local-only work or no deployment. Exception:
+  deploy only when the user is on the home LAN; away from home (VPN or not)
+  never deploy to the NAS (see [AGENTS.md](AGENTS.md)) — finish locally and
+  report that deployment is pending until the user is back home.
 - Feature branch + PR to `main` always — never commit directly to `main` (branch protection also enforces this).
 - `.gitattributes` enforces LF line endings repo-wide; don't fight it on Windows.
-- Pre-commit hooks include gitleaks + TruffleHog secret scanning — don't bypass with `--no-verify`.
+- Pre-commit hooks include gitleaks + TruffleHog secret scanning — don't bypass with `--no-verify`. They only
+  run once installed per clone (`scripts/setup-dev-hooks.ps1`, see `docs/security/dev-hooks-setup.md`); if
+  `.git/hooks/pre-commit` is missing, commits are not scanned.

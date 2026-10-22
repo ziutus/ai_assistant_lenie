@@ -640,11 +640,25 @@ def paragraphize_document_transcript(doc_id: int):
 
 
 
+def _requested_chapter_position(descriptions):
+    """Validate an optional editor chapter position, including the preamble."""
+    raw = request.args.get("position")
+    if raw is None:
+        return None
+    try:
+        position = int(raw)
+    except ValueError:
+        raise ValueError("Numer rozdziału musi być liczbą całkowitą.") from None
+    if not any(section["position"] == position for section in descriptions):
+        raise ValueError("Nie ma rozdziału o podanym numerze.")
+    return position
+
+
 @bp.route("/document/<int:doc_id>/chapter_sections", methods=["GET"])
 def document_chapter_sections(doc_id: int):
     """Describe editable H2 chapter boundaries from the authoritative transcript."""
     from library.document_editing import document_has_embeddings
-    from library.transcript_chapter_boundaries import describe_sections
+    from library.transcript_chapter_boundaries import chapter_sentences, describe_sections
 
     session = get_scoped_session()
     doc = session.get(Document, doc_id)
@@ -652,10 +666,21 @@ def document_chapter_sections(doc_id: int):
         abort(404, f"Document {doc_id} not found")
     if not (doc.text or "").strip():
         return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    sections = describe_sections(
+        doc.text, stored_types=doc.chapter_types,
+        with_sentences="position" not in request.args and request.args.get("with_sentences") == "1",
+    )
+    try:
+        position = _requested_chapter_position(sections)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    if position is not None:
+        selected = chapter_sentences(doc.text, position)
+        next(section for section in sections if section["position"] == position)["sentences"] = selected["sentences"]
     return jsonify({
         "status": "success", "doc_id": doc_id,
-        "sections": describe_sections(doc.text, with_sentences=request.args.get("with_sentences") == "1",
-                                      stored_types=doc.chapter_types),
+        "sections": sections,
+        **({"selected_position": position} if position is not None else {}),
         "has_embeddings": document_has_embeddings(session, doc_id),
         "has_analysis_runs": bool(_chapter_boundary_run_count(session, doc_id)),
     })
@@ -674,12 +699,17 @@ def document_editor_chapter_entities(doc_id: int):
         abort(404, f"Document {doc_id} not found")
     if not (doc.text or "").strip():
         return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    descriptions = describe_sections(doc.text, stored_types=doc.chapter_types)
+    try:
+        position = _requested_chapter_position(descriptions)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
     grouped = get_document_entities(session, doc_id)
     sections = []
     for description, section in zip(
-        describe_sections(doc.text, stored_types=doc.chapter_types), parse_sections(doc.text), strict=True,
+        descriptions, parse_sections(doc.text), strict=True,
     ):
-        is_content = description["type"] == "TEMAT"
+        is_content = description["type"] == "TEMAT" and (position is None or description["position"] == position)
         sections.append({
             "position": description["position"], "type": description["type"],
             "entities": (filter_entities_to_text(grouped, section.body) if is_content
@@ -691,6 +721,64 @@ def document_editor_chapter_entities(doc_id: int):
         "status": "success", "doc_id": doc_id, "sections": sections,
         "has_entities": any(grouped.values()),
     })
+
+
+@bp.route("/document/<int:doc_id>/chapter/<int:position>/describe_entities", methods=["POST"])
+def document_chapter_describe_entities(doc_id: int, position: int):
+    """Propose descriptions for the organizations and persons of one editor chapter that have none (not stored).
+
+    The chapter text is quoted once and every undescribed organization/person of the chapter is answered in
+    one JSON object (``library/entity_description_batch.py``, up to six entities per model call). Body:
+    ``{"model"?, "dry_run"?}``; ``dry_run`` lists the candidates, the first prompt and the selectable models
+    (``models``, ``default_model``) without calling a model.
+    Approved texts are saved by the UI through ``PATCH /organizations/<id>`` and ``PATCH /persons/<id>``.
+    """
+    from library.entity_description_batch import (
+        MAX_ENTITIES_PER_CALL, build_prompt, candidates_for_chapter, describe_candidates,
+    )
+    from library.entity_service import filter_entities_to_text, get_document_entities
+    from library.llm_model_registry import is_selectable
+    from library.transcript_chapter_boundaries import describe_sections, parse_sections
+
+    body = request.get_json(silent=True) or {}
+    model = body.get("model")
+    if model is not None and (not isinstance(model, str) or not is_selectable(model)):
+        return jsonify({"status": "error", "message": "Nieznany model."}), 400
+    dry_run = bool(body.get("dry_run"))
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    descriptions = describe_sections(doc.text, stored_types=doc.chapter_types)
+    pairs = [(description, section) for description, section in zip(descriptions, parse_sections(doc.text), strict=True)
+             if description["position"] == position]
+    if not pairs:
+        return jsonify({"status": "error", "message": "Nie ma rozdziału o podanym numerze."}), 404
+    description, section = pairs[0]
+    if description["type"] != "TEMAT":
+        return jsonify({"status": "error", "message": "Rozdział nie jest treścią (reklama, szum lub źródła)."}), 400
+
+    chapter_title = section.heading[3:].strip() if section.heading else ""
+    chapter_entities = filter_entities_to_text(get_document_entities(session, doc_id), section.body)
+    candidates = candidates_for_chapter(chapter_entities)
+    summary = {"status": "success", "position": position, "chapter_title": chapter_title,
+               "candidates": [{"key": c.key, "kind": c.kind, "name": c.name, "mentions": c.mentions}
+                              for c in candidates]}
+    if not candidates:
+        return jsonify({**summary, "proposals": [], "model": model, "model_calls": 0,
+                        "usage": {"tokens": None, "cost": None, "currency": None}}), 200
+    doc_title = getattr(doc, "title", "") or ""
+    if dry_run:
+        from library.article_tagging import _tagging_model
+        from library.llm_model_registry import selectable_models
+
+        return jsonify({**summary, "default_model": _tagging_model(), "models": selectable_models(),
+                        "prompt": build_prompt(candidates[:MAX_ENTITIES_PER_CALL], chapter_title,
+                                               section.body, doc_title)}), 200
+    return jsonify({**summary, **describe_candidates(candidates, chapter_title, section.body, doc_title, model)}), 200
 
 
 def _chapter_boundary_run_count(session, doc_id: int) -> int:
@@ -1942,7 +2030,11 @@ def document_chapter_entities(doc_id: int, position: int):
     material.
     """
     from library.country_gazetteer import detect_countries
-    from library.entity_service import filter_entities_to_text, get_document_entities
+    from library.entity_service import (
+        apply_channel_glossary_text,
+        filter_entities_to_text,
+        get_document_entities,
+    )
 
     session = get_scoped_session()
     doc = session.get(Document, doc_id)
@@ -1962,7 +2054,7 @@ def document_chapter_entities(doc_id: int, position: int):
     doc_country_slugs = {t[len("kraj-"):] for t in doc_tags if t.startswith("kraj-")}
     countries = [
         {"slug": c.slug, "name_pl": c.name_pl}
-        for c in detect_countries(chapter_text)
+        for c in detect_countries(apply_channel_glossary_text(session, doc_id, chapter_text))
         if c.slug in doc_country_slugs
     ]
 

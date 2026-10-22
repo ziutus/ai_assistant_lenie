@@ -11,6 +11,14 @@ from library.ner_normalization import (
 )
 
 
+def test_shipped_rules_file_is_not_under_a_data_directory():
+    # On the NAS /app/data is a named Docker volume that shadows the image's data/ with a stale
+    # copy; doc #11137 lost every demonym pattern that way ("Polacy", "Algierczycy" stayed places).
+    assert ner_normalization.RULES_PATH.is_file()
+    assert "data" not in ner_normalization.RULES_PATH.parent.parts[-2:]
+    assert ner_normalization.load_demonym_patterns()
+
+
 def test_missing_rules_file_falls_back_to_empty_rules(monkeypatch, tmp_path, caplog):
     missing_path = tmp_path / "missing-ner-normalization.json"
     monkeypatch.setattr(ner_normalization, "RULES_PATH", missing_path)
@@ -67,6 +75,9 @@ DEMONYM_FORMS = [
      "Libanka Libanki Libance Libankę Libanką Libanko Libanek Libankom Libankami Libankach"),
     ("Polska", "Polak Polaka Polakowi Polakiem Polaku Polacy Polaków Polakom Polakami Polakach "
      "Polka Polki Polce Polkę Polką Polko Polek Polkom Polkami Polkach"),
+    ("Algieria", "Algierczyk Algierczyka Algierczykowi Algierczykiem Algierczyku "
+     "Algierczycy Algierczyków Algierczykom Algierczykami Algierczykach "
+     "Algierka Algierki Algierce Algierkę Algierką Algierko Algierek Algierkom Algierkami Algierkach"),
     ("Francja", "Francuz Francuza Francuzowi Francuzem Francuzie Francuzi Francuzów "
      "Francuzom Francuzami Francuzach Francuzka Francuzki Francuzce Francuzkę Francuzką Francuzko "
      "Francuzek Francuzkom Francuzkami Francuzkach"),
@@ -88,7 +99,8 @@ def test_demonym_case_forms(country, surface):
 @pytest.mark.parametrize("surface", [
     "Polkowice", "Ameryka", "Ameryce", "Niemcy", "Niemiec", "Arabowie", "Kurdowie",
     "Palestyńczycy", "Turcy", "Włosi", "Izraelski", "izraelski", "Irankowie", "Rosjanów",
-    "Izraelczykówka", "przedIzraelczyk", "Polka extra", "Polka\n", "", " ", None,
+    "Algier", "Algierii", "Algierczykówka", "Izraelczykówka", "przedIzraelczyk",
+    "Polka extra", "Polka\n", "", " ", None,
 ])
 def test_demonym_patterns_do_not_match_unlisted_words(surface):
     assert ner_normalization.canonical_country_for_demonym_pattern(surface) is None

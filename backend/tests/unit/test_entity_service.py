@@ -538,10 +538,10 @@ class TestGetDocumentEntities:
 
     def test_groups_by_type(self):
         row1 = MagicMock(id=1, entity_type="persName", entity_text="Tusk", mention_count=2, geocode=None,
-                         place_verification_status=None, place_review_reason=None,
+                         relevance="central", place_verification_status=None, place_review_reason=None,
                          variants=["Tuska", "Tusk"])
         row2 = MagicMock(id=2, entity_type="geogName", entity_text="kotlina kłodzki", mention_count=1, geocode=None,
-                         place_verification_status=None, place_review_reason=None,
+                         relevance="central", place_verification_status=None, place_review_reason=None,
                          variants=["Kotlinie Kłodzkiej"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row1, row2]
@@ -549,20 +549,22 @@ class TestGetDocumentEntities:
         grouped = get_document_entities(session, 42)
 
         assert grouped == {
-            "persName": [{"id": 1, "text": "Tusk", "count": 2, "variants": ["Tuska", "Tusk"]}],
+            "persName": [{"id": 1, "text": "Tusk", "count": 2, "relevance": "central", "variants": ["Tuska", "Tusk"]}],
             "orgName": [],
             "geogName": [{"id": 2, "text": "kotlina kłodzki", "count": 1, "variants": ["Kotlinie Kłodzkiej"],
-                          "is_country": False, "place_verification_status": None, "place_review_reason": None}],
+                          "is_country": False, "relevance": "central",
+                          "place_verification_status": None, "place_review_reason": None}],
             "placeName": [],
             "facility": [],
             "eventName": [],
+            "productName": [],
         }
 
     def test_groups_organization_without_geocoding_fields(self):
         row = MagicMock(
             id=4, entity_type="orgName", entity_text="Bloomberg",
             mention_count=1, geocode=None,
-                         place_verification_status=None, place_review_reason=None, variants=["Bloomberg"],
+            relevance="central", place_verification_status=None, place_review_reason=None, variants=["Bloomberg"],
         )
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -570,7 +572,8 @@ class TestGetDocumentEntities:
         grouped = get_document_entities(session, 42)
 
         assert grouped["orgName"] == [{
-            "id": 4, "text": "Bloomberg", "count": 1, "variants": ["Bloomberg"], "is_country": False,
+            "id": 4, "text": "Bloomberg", "count": 1, "relevance": "central",
+            "variants": ["Bloomberg"], "is_country": False,
         }]
         assert grouped["geogName"] == []
         assert grouped["placeName"] == []
@@ -578,7 +581,7 @@ class TestGetDocumentEntities:
     def test_verified_place_carries_geocode_fields(self):
         geo = MagicMock(resolved=True, lat=50.45, lon=30.52, display_name="Kyiv, Ukraine")
         row = MagicMock(id=3, entity_type="placeName", entity_text="Kijów", mention_count=3, geocode=geo,
-                        place_verification_status=None, place_review_reason=None,
+                        relevance="central", place_verification_status=None, place_review_reason=None,
                         variants=["Kijowa"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -587,14 +590,14 @@ class TestGetDocumentEntities:
 
         assert grouped["placeName"] == [{
             "id": 3, "text": "Kijów", "count": 3, "variants": ["Kijowa"], "place_verification_status": None,
-            "place_review_reason": None, "is_country": False, "verified": True,
+            "relevance": "central", "place_review_reason": None, "is_country": False, "verified": True,
             "lat": 50.45, "lon": 30.52, "display_name": "Kyiv, Ukraine",
         }]
 
     def test_unresolved_place_marked_not_verified(self):
         geo = MagicMock(resolved=False)
         row = MagicMock(id=4, entity_type="geogName", entity_text="Jagami", mention_count=1, geocode=geo,
-                        place_verification_status=None, place_review_reason=None,
+                        relevance="central", place_verification_status=None, place_review_reason=None,
                         variants=[])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -603,7 +606,8 @@ class TestGetDocumentEntities:
 
         assert grouped["geogName"] == [{"id": 4, "text": "Jagami", "count": 1, "variants": [],
                                         "place_verification_status": None,
-                                        "place_review_reason": None, "is_country": False, "verified": False}]
+                                        "relevance": "central", "place_review_reason": None,
+                                        "is_country": False, "verified": False}]
 
     def test_country_substring_in_a_place_name_is_not_flagged_as_country(self):
         """doc #9394: "Port Sudan" contains "Sudan" but is a city, not the
@@ -612,7 +616,7 @@ class TestGetDocumentEntities:
         (detect_countries() over-matched this and silently dropped "Port
         Sudan" out of place_verification.py's geocoding candidates)."""
         row = MagicMock(id=5, entity_type="placeName", entity_text="Port Sudan", mention_count=2, geocode=None,
-                         place_verification_status=None, place_review_reason=None,
+                         relevance="central", place_verification_status=None, place_review_reason=None,
                         variants=["Port Sudanu"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -621,12 +625,12 @@ class TestGetDocumentEntities:
 
         assert grouped["placeName"] == [{
             "id": 5, "text": "Port Sudan", "count": 2, "variants": ["Port Sudanu"], "is_country": False,
-            "place_verification_status": None, "place_review_reason": None,
+            "relevance": "central", "place_verification_status": None, "place_review_reason": None,
         }]
 
     def test_actual_country_name_is_flagged_as_country(self):
         row = MagicMock(id=6, entity_type="placeName", entity_text="Sudan", mention_count=13, geocode=None,
-                         place_verification_status=None, place_review_reason=None,
+                         relevance="central", place_verification_status=None, place_review_reason=None,
                         variants=["Sudanie", "Sudanu"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
@@ -635,7 +639,7 @@ class TestGetDocumentEntities:
 
         assert grouped["placeName"] == [{
             "id": 6, "text": "Sudan", "count": 13, "variants": ["Sudanie", "Sudanu"], "is_country": True,
-            "place_verification_status": None, "place_review_reason": None,
+            "relevance": "central", "place_verification_status": None, "place_review_reason": None,
         }]
 
     def test_empty_document_returns_all_type_keys(self):
@@ -643,4 +647,72 @@ class TestGetDocumentEntities:
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
         assert get_document_entities(session, 42) == {
             "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
+            "productName": [],
         }
+
+
+def test_refresh_replays_relevance_on_replacement_rows():
+    from library.db.models import EntityReviewDecision
+
+    session = _session_with_exclusions([])
+    saved = EntityReviewDecision(id=10, document_id=42, entity_type="persName", entity_text="TUSKA",
+                                 decision="relevance_set", details={"relevance": "related", "variants": []})
+
+    def scalars(statement):
+        result = MagicMock()
+        sql = str(statement)
+        if "entity_review_decisions" in sql:
+            result.all.return_value = [saved] if statement.compile().params.get("decision_1") == "relevance_set" else []
+        elif "FROM document_entities" in sql:
+            result.all.return_value = [
+                row for call in session.add_all.call_args_list for row in call.args[0]
+                if isinstance(row, DocumentEntity)
+            ]
+        else:
+            result.all.return_value = []
+        return result
+
+    session.scalars.side_effect = scalars
+    with patch("library.entity_service.extract_entities", return_value=RAW), patch(
+        "library.person_context_classifier.classify_single_word_person_candidates", return_value=[],
+    ):
+        rows = refresh_document_entities(session, 42, "Tusk mówił o Kotlinie Kłodzkiej.")
+    person = next(row for row in rows if row.entity_type == "persName")
+    assert person.relevance == "related"
+    assert person.source != "manual"
+
+
+class TestApplyChannelGlossaryText:
+    """Channel euphemisms resolved for country detection ("państwo z gwiazdką" = Izrael)."""
+
+    def test_euphemism_becomes_the_country_name_on_a_copy(self):
+        from library.country_gazetteer import detect_countries
+        from library.db.models import NerChannelGlossaryEntry
+        from library.entity_service import apply_channel_glossary_text
+
+        entry = NerChannelGlossaryEntry(id=7, author="Na Wschód od Bliskiego Wschodu", canonical_name="Izrael",
+                                        aliases=["państwo z gwiazdką", "państwem z gwiazdką"], fuzzy=False)
+        session = MagicMock()
+        session.get.return_value = MagicMock(byline="Na Wschód od Bliskiego Wschodu")
+        session.execute.return_value.scalars.return_value.all.return_value = [entry]
+        text = "Rozmowy z państwem z gwiazdką trwają, a państwo z gwiazdką atakuje."
+
+        result = apply_channel_glossary_text(session, 10872, text)
+
+        assert result == "Rozmowy z Izrael trwają, a Izrael atakuje."
+        assert [c.name_pl for c in detect_countries(text)] == []
+        assert [c.name_pl for c in detect_countries(result)] == ["Izrael"]
+
+    def test_document_without_channel_returns_text_unchanged(self):
+        from library.entity_service import apply_channel_glossary_text
+
+        session = MagicMock()
+        session.get.return_value = MagicMock(byline=None)
+        assert apply_channel_glossary_text(session, 1, "tekst") == "tekst"
+
+    def test_database_failure_returns_text_unchanged(self):
+        from library.entity_service import apply_channel_glossary_text
+
+        session = MagicMock()
+        session.get.side_effect = RuntimeError("db down")
+        assert apply_channel_glossary_text(session, 1, "tekst") == "tekst"

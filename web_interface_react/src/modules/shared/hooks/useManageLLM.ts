@@ -302,7 +302,8 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
         setMessage(response.data.message);
         setIsLoading(false);
         setIsError(false);
-        navigate(destination === "chunks" ? `/chunks/${website.id}` : `/ner/${website.id}`);
+        // NER review is per chapter: land on the first content chapter (position 1), not the whole document.
+        navigate(destination === "chunks" ? `/chunks/${website.id}` : `/ner/${website.id}/1`);
         return;
       }
 

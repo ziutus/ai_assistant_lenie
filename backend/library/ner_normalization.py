@@ -13,7 +13,9 @@ from library.country_gazetteer import canonical_country_name
 
 logger = logging.getLogger(__name__)
 
-RULES_PATH = Path(__file__).resolve().parents[1] / "data" / "ner_normalization.json"
+# Lives next to the code, not in data/: on the NAS /app/data is a named Docker volume that
+# shadows the image's data/ with a stale copy (doc #11137: demonym_patterns never took effect).
+RULES_PATH = Path(__file__).resolve().parent / "ner_normalization_rules.json"
 
 # Bold/italic markdown markers (**, __) glue onto an adjacent entity when the
 # source text has no whitespace before them (e.g. "Aktywów Państwowych.**-Tymczasem"),

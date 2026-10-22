@@ -511,3 +511,22 @@ class TestAuthorBiographyIsolationOnLateDetection:
         assert doc.byline == "Jan Kowalski"
         assert bio_calls == []
         assert doc.text_md == ARTICLE_TEXT
+
+
+def test_country_confirmation_prompt_shows_mentions_beyond_the_excerpt(monkeypatch):
+    import types
+
+    from library import article_tagging
+
+    prompts = []
+
+    def fake_ask(prompt, **_kwargs):
+        prompts.append(prompt)
+        return types.SimpleNamespace(response_text="Izrael")
+
+    monkeypatch.setattr("library.ai.ai_ask", fake_ask)
+    text = "Wstęp. " * 600 + "Rozmowy z Izraelem trwają."
+
+    assert article_tagging.extract_countries_hybrid(text, "Tytuł") == ["kraj-izrael"]
+    assert "FRAGMENTY Z DALSZEJ CZĘŚCI TEKSTU" in prompts[0]
+    assert "Rozmowy z Izraelem" in prompts[0]

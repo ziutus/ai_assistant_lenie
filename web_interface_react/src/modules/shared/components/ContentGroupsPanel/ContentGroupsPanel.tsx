@@ -5,9 +5,14 @@ import type { ContentGroup, ContentGroupSuggestion } from "../../../../types";
 // Priority group backing the ★ button; created once by the owner (kind=priority, rank 10).
 const FAVORITE_GROUP_NAME = "Ulubione";
 
-type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; onSaved?: (groups: ContentGroup[]) => void };
+// How often and how many times a freshly requested suggestion run is polled for its result.
+const SUGGESTION_POLL_MS = 4000;
+const SUGGESTION_POLL_MAX = 15;
 
-export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, onSaved }: Props) {
+// autoSuggest: ask the backend to classify the target when it has no suggestion run yet (feed review).
+type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; autoSuggest?: boolean; onSaved?: (groups: ContentGroup[]) => void };
+
+export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, autoSuggest, onSaved }: Props) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [catalog, setCatalog] = React.useState<ContentGroup[]>([]);
   const [groups, setGroups] = React.useState<ContentGroup[]>(initialGroups || []);
@@ -16,6 +21,10 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [topicIds, setTopicIds] = React.useState<number[]>([]);
   const [priorityId, setPriorityId] = React.useState<number | "">("");
   const [error, setError] = React.useState("");
+  const [pendingRun, setPendingRun] = React.useState(false);
+  const [newTopicName, setNewTopicName] = React.useState("");
+  const requestedRef = React.useRef(false);
+  const pollsRef = React.useRef(0);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
   const target = documentId !== undefined ? `document/${documentId}` : `feed_items/${feedItemId}`;
 
@@ -38,10 +47,25 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       if (!suggestionResponse.ok) throw new Error(`group-suggestions: HTTP ${suggestionResponse.status}`);
       const suggestionData = await suggestionResponse.json();
       setSuggestions(Array.isArray(suggestionData.suggestions) ? suggestionData.suggestions : []);
+      const runStatus: string | undefined = suggestionData.run?.status;
+      if (autoSuggest && !suggestionData.run && !requestedRef.current && groupData.content_groups?.some((group: ContentGroup) => group.kind === "topic")) {
+        requestedRef.current = true;
+        const requestResponse = await fetch(`${apiUrl}/${target}/group-suggestions`, { method: "POST", headers, body: "{}" });
+        if (requestResponse.ok) setPendingRun(true);
+      } else {
+        setPendingRun(runStatus === "queued" || runStatus === "running");
+      }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać grup"); }
-  }, [apiUrl, headers, target]);
+  }, [apiUrl, headers, target, autoSuggest]);
 
   React.useEffect(() => { void load(); }, [load]);
+
+  // Poll quietly until the queued classification finishes (or give up after a minute).
+  React.useEffect(() => {
+    if (!pendingRun || pollsRef.current >= SUGGESTION_POLL_MAX) return;
+    const timer = window.setTimeout(() => { pollsRef.current += 1; void load(); }, SUGGESTION_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [pendingRun, load, suggestions]);
 
   const save = async () => {
     setError("");
@@ -50,6 +74,19 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     if (!response.ok) { setError(data.message || data.error || "Nie udało się zapisać grup"); return; }
     const next = data.groups || data.feed_item?.groups || [];
     setGroups(next); setEditing(false); onSaved?.(next);
+  };
+
+  // Creates a topic on the spot and ticks it, so a misclassified item can be fixed without leaving the page.
+  const createTopic = async () => {
+    const name = newTopicName.trim();
+    if (!name) return;
+    setError("");
+    const response = await fetch(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name, kind: "topic" }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { setError(response.status === 409 ? "Temat o tej nazwie już istnieje" : data.message || data.error || "Nie udało się dodać tematu"); return; }
+    setCatalog(items => [...items, data]);
+    setTopicIds(ids => [...ids, data.id]);
+    setNewTopicName("");
   };
 
   const favoriteGroup = catalog.find(group => group.kind === "priority" && group.name === FAVORITE_GROUP_NAME);
@@ -88,9 +125,14 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     </div>
     {editing && <div style={{ marginTop: 10 }}>
       <fieldset><legend>Tematy</legend>{topics.map(group => <label key={group.id} style={{ display: "inline-block", marginRight: 10 }}><input type="checkbox" checked={topicIds.includes(group.id)} onChange={event => setTopicIds(ids => event.target.checked ? [...ids, group.id] : ids.filter(id => id !== group.id))} /> {group.name}</label>)}</fieldset>
+      <div style={{ margin: "6px 0" }}>
+        <input aria-label="Nowy temat" placeholder="Nowy temat, np. Smart home" value={newTopicName} onChange={event => setNewTopicName(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void createTopic(); } }} />{" "}
+        <button type="button" disabled={!newTopicName.trim()} onClick={() => void createTopic()}>Dodaj temat</button>
+      </div>
       <label>Priorytet <select value={priorityId} onChange={event => setPriorityId(event.target.value ? Number(event.target.value) : "")}><option value="">Brak priorytetu</option>{priorities.map(group => <option key={group.id} value={group.id}>{group.name} ({group.priority_rank})</option>)}</select></label>{" "}
       <button type="button" className="button" onClick={() => void save()}>Zapisz</button>
     </div>}
+    {pendingRun && <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>🤖 Szukam kategorii…</div>}
     {suggestions.filter(item => item.status === "pending").map(item => <div key={item.id} style={{ marginTop: 8, border: "1px dashed #64748b", padding: 6 }}><span>Sugestia: {catalog.find(group => group.id === item.group_id)?.name || item.group_id} ({Math.round(item.confidence * 100)}%)</span>{" "}<button type="button" onClick={() => void decide(item.id, "accept")}>Akceptuj</button>{" "}<button type="button" onClick={() => void decide(item.id, "dismiss")}>Odrzuć</button></div>)}
     {suggestions.filter(item => item.status === "accepted").map(item => <div key={item.id} style={{ marginTop: 8, fontSize: "0.85em", color: "#475569" }}>
       <span>{item.decided_by_user_id ? "👤" : "🤖"} {catalog.find(group => group.id === item.group_id)?.name || item.group_id} — {Math.round(item.confidence * 100)}%{item.reason ? `: ${item.reason}` : ""}</span>{" "}

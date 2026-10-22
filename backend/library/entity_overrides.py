@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 
 REPLAYED_DECISIONS = (
     "renamed", "place_merged", "place_confirmed", "place_rejected", "place_to_organization", "place_split",
-    "person_to_place", "organization_to_place", "organization_to_person", "deleted", "rejected",
+    "person_to_place", "person_to_organization", "organization_to_place", "organization_to_person", "deleted",
+    "rejected", "person_merged", "transcription_error", "entity_to_product", "product_to_entity",
+    "place_to_person",
 )
 
 
@@ -50,8 +52,10 @@ def _by_name_or_variant(entities: list[DocumentEntity], name: str, types: tuple[
     )
 
 
-def convert_place_to_organization(session, entity: DocumentEntity, survivors: frozenset[int] = frozenset()):
-    """Retype a place entity as an organization of the same document.
+def convert_place_to_organization(
+    session, entity: DocumentEntity, survivors: frozenset[int] = frozenset(), new_text: str | None = None,
+):
+    """Retype a place (or person) entity as an organization of the same document.
 
     The mention is resolved against the global organization registry (alias or
     canonical match, else a new ``Organization``) and replaces the place row
@@ -60,12 +64,14 @@ def convert_place_to_organization(session, entity: DocumentEntity, survivors: fr
     the place's ``miejsce-*`` tag first, while the row still has its geocode.
     Returns ``(orgName entity, Organization)``. ``survivors`` (replay only) are manual rows that already
     carry this mention's count from before the refresh, so it is not added to them a second time.
+    ``new_text`` names the organization when the mention is a mis-heard form of it ("Xie" for "X"); the
+    mention itself stays a surface form so the text keeps highlighting.
     """
     from library.db.models import DocumentOrganization
     from library.organization_registry import resolve_or_create
 
     surface_forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
-    organization, confidence = resolve_or_create(session, entity.entity_text, surface_forms)
+    organization, confidence = resolve_or_create(session, (new_text or entity.entity_text).strip(), surface_forms)
     canonical = organization.canonical_name
     variants = [value for value in surface_forms if value.casefold() != canonical.casefold()]
     document_id, count = entity.document_id, entity.mention_count
@@ -103,7 +109,8 @@ def convert_place_to_organization(session, entity: DocumentEntity, survivors: fr
     return target, organization
 
 
-ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName")
+# productName: a product, service or system ("Starshield", "Starlink") — a plain document-scoped manual row like eventName.
+ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName", "productName")
 
 
 def count_mentions(text: str | None, surface: str) -> int:
@@ -193,7 +200,7 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
     for removal in session.scalars(select(EntityReviewDecision).where(
         EntityReviewDecision.document_id == document_id,
         EntityReviewDecision.decision.in_(
-            ("deleted", "rejected", "excluded_global", "excluded_author", "entity_described")),
+            ("deleted", "rejected", "excluded_global", "excluded_author", "entity_described", "product_to_entity")),
     ).order_by(EntityReviewDecision.id)).all():
         if removal.decision == "entity_described":
             descriptions[removal.entity_text.casefold()] = (removal.details or {}).get("description")
@@ -217,7 +224,7 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
             details.get("count") or 1, entities,
         )
         added.append(row)
-        if row.entity_type == "eventName" and row.description is None:
+        if row.entity_type in ("eventName", "productName") and row.description is None:
             row.description = descriptions.get(row.entity_text.casefold())
     if doc is not None:
         from library.country_gazetteer import canonical_country_name
@@ -313,6 +320,93 @@ def convert_entity_to_person(
         entities.append(row)
     session.flush()
     return row
+
+
+def convert_entity_to_product(
+    session, entity: DocumentEntity, new_text: str | None = None, replay: bool = False,
+    target_type: str = "productName",
+) -> DocumentEntity:
+    """Retype a person, organization or place entity as a product/system ("Starshield" tagged persName)
+    or, with ``target_type='eventName'``, as a named event.
+
+    The row is replaced by a ``source='manual'`` ``productName`` row named ``new_text`` (default: the
+    mention as it stands) that keeps the mention count and surface forms, or folded into a same-named
+    product the document already has. Dropping the registry link / place tag is the caller's job; this
+    only queues entity changes, without committing. ``replay`` (after an entity refresh) does not count
+    the mention again when a manual product row survived the refresh.
+    """
+    name = (new_text or entity.entity_text).strip()
+    document_id, count = entity.document_id, entity.mention_count or 0
+    forms = list(dict.fromkeys([entity.entity_text, *(entity.variants or [])]))
+    variants = [form for form in forms if form.casefold() != name.casefold()]
+    entities = list(session.scalars(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id, DocumentEntity.entity_type == target_type,
+    )).all())
+    session.delete(entity)
+    session.flush()
+    row = _exact(entities, name, (target_type,))
+    if row is not None:
+        if not (replay and row.source == "manual"):
+            row.mention_count = (row.mention_count or 0) + count
+        row.variants = list(dict.fromkeys([*(row.variants or []), *variants]))
+        row.source = "manual"
+    else:
+        row = DocumentEntity(
+            document_id=document_id, entity_type=target_type, entity_text=name,
+            mention_count=count, variants=variants, source="manual",
+        )
+        session.add(row)
+    session.flush()
+    return row
+
+
+def merge_product_entities(session, rows: list[DocumentEntity], name: str) -> DocumentEntity:
+    """Fold product rows of one document into a single ``productName`` row called ``name``.
+
+    The target is the row already named ``name`` (case-insensitive), else the first row, renamed. Counts and
+    surface forms of the others (and the target's old name) end up as variants. Queues changes without
+    committing.
+    """
+    from library.entity_service import merge_document_entities
+
+    name = name.strip()
+    target = next((row for row in rows if row.entity_text.casefold() == name.casefold()), rows[0])
+    old_name = target.entity_text
+    for row in rows:
+        if row is not target:
+            merge_document_entities(row, target)
+            session.delete(row)
+    variants = dict.fromkeys([*(target.variants or []), old_name])
+    target.entity_text = name
+    target.variants = [value for value in variants if value.casefold() != name.casefold()]
+    target.source = "manual"
+    session.flush()
+    return target
+
+
+def replay_product_merges(session, document_id: int) -> dict:
+    """Re-apply ``product_merged`` decisions after a rebuild (manual product rows are recreated separately)."""
+    decisions = session.scalars(select(EntityReviewDecision).where(
+        EntityReviewDecision.document_id == document_id, EntityReviewDecision.decision == "product_merged",
+    ).order_by(EntityReviewDecision.id)).all()
+    if not decisions:
+        return {}
+    products = list(session.scalars(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "productName",
+    )).all())
+    merged = 0
+    for decision in decisions:
+        rows: list[DocumentEntity] = []
+        for text in (decision.entity_text, *(decision.details or {}).get("sources", [])):
+            row = _by_name_or_variant(products, text, ("productName",))
+            if row is not None and all(row is not other for other in rows):
+                rows.append(row)
+        if len(rows) < 2:
+            continue
+        target = merge_product_entities(session, rows, decision.entity_text)
+        products = [row for row in products if row is target or all(row is not other for other in rows)]
+        merged += 1
+    return {"product_merged": merged} if merged else {}
 
 
 def split_place_entity(
@@ -514,7 +608,8 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
         # Flush now: a later decision may rename another row into this name.
         session.flush()
 
-    for decision in decisions:
+    decisions = list(decisions)
+    for position, decision in enumerate(decisions):
         details = decision.details or {}
         if decision.decision == "place_confirmed":
             row = None
@@ -553,6 +648,33 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             entities.remove(row)
             touched.pop(id(row), None)
             stats["to_organization"] = stats.get("to_organization", 0) + 1
+        elif decision.decision == "person_to_organization":
+            row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
+            if row is None:
+                continue
+            convert_place_to_organization(session, row, survivors, details.get("new_text"))
+            entities.remove(row)
+            touched.pop(id(row), None)
+            stats["person_to_organization"] = stats.get("person_to_organization", 0) + 1
+        elif decision.decision == "person_merged":
+            row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
+            target = _by_name_or_variant(entities, details.get("target_entity_text") or "", ("persName",))
+            if row is None or target is None or row is target:
+                continue
+            merge_document_entities(row, target, add_count=id(target) not in survivors)
+            drop(row)
+            stats["person_merged"] = stats.get("person_merged", 0) + 1
+        elif decision.decision == "transcription_error":
+            types = PLACE_TYPES if decision.entity_type in PLACE_TYPES else (decision.entity_type,)
+            row = _by_name_or_variant(entities, decision.entity_text, types)
+            target = _by_name_or_variant(entities, details.get("target_entity_text") or "", (*PLACE_TYPES, "persName", "orgName"))
+            if row is None or target is None or row is target:
+                continue
+            if row.entity_type == "orgName":
+                drop_organization_links(session, row)
+            merge_document_entities(row, target, add_count=id(target) not in survivors)
+            drop(row)
+            stats["transcription_error"] = stats.get("transcription_error", 0) + 1
         elif decision.decision == "person_to_place":
             row = _by_name_or_variant(entities, decision.entity_text, ("persName",))
             if row is None:
@@ -573,6 +695,30 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
             else:
                 convert_entity_to_person(session, row, entities, survivors)
             stats[decision.decision] = stats.get(decision.decision, 0) + 1
+        elif decision.decision == "place_to_person":
+            row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
+            if row is None:
+                continue
+            touched.pop(id(row), None)
+            convert_entity_to_person(session, row, entities, survivors)
+            stats["place_to_person"] = stats.get("place_to_person", 0) + 1
+        elif decision.decision == "product_to_entity":
+            continue  # only read by the look-ahead of entity_to_product; the new row comes back via entity_added
+        elif decision.decision == "entity_to_product":
+            if any(later.decision == "product_to_entity" and later.entity_text.casefold() == decision.entity_text.casefold()
+                   for later in decisions[position + 1:]):
+                continue  # the reviewer turned the product back into a person/place/organization
+            types = PLACE_TYPES if decision.entity_type in PLACE_TYPES else (decision.entity_type,)
+            row = _by_name_or_variant(entities, decision.entity_text, types)
+            if row is None:
+                continue
+            touched.pop(id(row), None)
+            if row.entity_type == "orgName":
+                drop_organization_links(session, row)
+            entities.remove(row)
+            convert_entity_to_product(
+                session, row, details.get("new_text"), replay=True, target_type=details.get("target_type") or "productName")
+            stats["entity_to_product"] = stats.get("entity_to_product", 0) + 1
         elif decision.decision == "place_split":
             parts = [p for p in details.get("parts", []) if p]
             row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
@@ -646,9 +792,14 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
             or_(
                 EntityReviewDecision.entity_type.in_(PLACE_TYPES),
                 (EntityReviewDecision.entity_type == "persName")
-                & (EntityReviewDecision.decision == "person_to_place"),
+                & EntityReviewDecision.decision.in_(
+                    ("person_to_place", "person_to_organization", "person_merged", "transcription_error",
+                     "entity_to_product")),
                 (EntityReviewDecision.entity_type == "orgName")
-                & EntityReviewDecision.decision.in_(("organization_to_place", "organization_to_person")),
+                & EntityReviewDecision.decision.in_(
+                    ("organization_to_place", "organization_to_person", "transcription_error", "entity_to_product")),
+                EntityReviewDecision.entity_type.in_(("productName", "eventName"))
+                & (EntityReviewDecision.decision == "product_to_entity"),
             ),
         )
         .order_by(EntityReviewDecision.id)
@@ -680,3 +831,47 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
     if any(stats.values()):
         logger.info("Re-applied manual place decisions for doc %s: %s", document_id, stats)
     return stats
+
+
+def replay_entity_relevance_decisions(session, document_id: int, doc=None) -> dict:
+    """Restore the latest manual relevance by type and casefolded name or surface form.
+
+    Run after structural replays so renamed, merged and re-added rows are present.
+    Never change source: derived rows must still be replaceable on the next refresh.
+    """
+    decisions = session.scalars(select(EntityReviewDecision).where(
+        EntityReviewDecision.document_id == document_id,
+        EntityReviewDecision.decision == "relevance_set",
+    ).order_by(EntityReviewDecision.id)).all()
+    if not decisions:
+        return {}
+    entities = session.scalars(select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id,
+    )).all()
+    latest = {}
+    for decision in decisions:
+        details = decision.details or {}
+        if details.get("relevance") not in ("central", "related", "figurative"):
+            continue
+        for name in (decision.entity_text, *details.get("variants", [])):
+            latest[(decision.entity_type, name.casefold())] = decision
+    touched = []
+    for row in entities:
+        matches = [latest[(row.entity_type, name.casefold())]
+                   for name in (row.entity_text, *(row.variants or []))
+                   if (row.entity_type, name.casefold()) in latest]
+        if matches:
+            row.relevance = max(matches, key=lambda decision: decision.id).details["relevance"]
+            touched.append(row)
+    # Reconcile tags only after all rows have their final relevance, including
+    # duplicate mentions of the same place and tags added by structural replays.
+    if doc is not None:
+        from library.place_verification import add_place_tag, remove_orphaned_tag
+
+        for row in touched:
+            if row.entity_type in PLACE_TYPES:
+                if row.relevance == "figurative":
+                    remove_orphaned_tag(session, doc, row)
+                else:
+                    add_place_tag(doc, row)
+    return {"relevance_set": len(touched)} if touched else {}

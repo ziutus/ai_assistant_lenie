@@ -133,3 +133,18 @@ class TestStripCountryEdge:
         so a lone "saudyjski" never fullmatched it and the edge was never
         found."""
         assert country_gazetteer.strip_country_edge("Białym Domu saudyjski") == ("Białym Domu", "Arabia Saudyjska")
+
+
+class TestMentionSnippets:
+    def test_returns_context_only_for_mentions_after_start(self):
+        text = "Wstęp o Polsce. " + "x " * 50 + "Dalej mowa o Izraelu i jego sąsiadach."
+        entries = country_gazetteer.detect_countries(text)
+        later = country_gazetteer.mention_snippets(text, entries, start=40, width=10)
+        assert "Polska" not in later
+        assert "Izraelu" in later["Izrael"][0]
+
+    def test_limits_snippets_per_country_and_keeps_original_text(self):
+        text = "Ukraina. " * 10
+        entries = country_gazetteer.detect_countries(text)
+        later = country_gazetteer.mention_snippets(text, entries, per_country=2, width=5)
+        assert len(later["Ukraina"]) == 2

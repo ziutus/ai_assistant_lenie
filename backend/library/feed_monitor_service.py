@@ -15,7 +15,8 @@ from library.url_normalization import canonicalize_url
 from library.content_group_service import replace_feed_item_groups
 
 logger = logging.getLogger(__name__)
-REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other"}
+NEW_ENTRIES_LISTED = 10  # per feed in a run_check() result; a first import of a feed can bring hundreds
+REVIEW_REASONS ={"not_interested", "duplicate", "already_known", "too_long", "other"}
 ACTIVE_TRANSITIONS = {
     "new": {"llm_analysis_requested", "saved_for_later", "imported", "skipped", "ignored", "error"},
     "llm_analysis_requested": {"saved_for_later", "imported", "skipped", "ignored", "error"},
@@ -99,22 +100,27 @@ def run_check(feed_source_id: int | None = None, session=None) -> dict:
         if feed_source_id is not None:
             query = query.where(FeedSource.id == feed_source_id)
         for feed in session.scalars(query.order_by(FeedSource.id)).all():
+            fresh = []
             try:
                 entries = fetch_entries(_feed_config(feed))
                 kept, ignored = apply_skip_filters(entries, _feed_config(feed))
                 # An unflushed (pending) FeedItem is one _upsert just created.
                 new_items = 0
                 for entry in kept:
-                    new_items += _upsert(session, feed, entry) in session.new
+                    item = _upsert(session, feed, entry)
+                    if item in session.new:
+                        new_items += 1
+                        fresh.append(item)
                 for entry in ignored:
                     new_items += _upsert(session, feed, entry, "ignored") in session.new
                 feed.last_checked_at, feed.last_error = dt.datetime.now(dt.timezone.utc), None
                 result["items"] += len(entries)
                 result["new_items"] += new_items
                 result["checked"] += 1
-                result["feeds"].append(
-                    {"feed_source_id": feed.id, "feed_name": feed.name, "items": len(entries), "new_items": new_items}
-                )
+                feed_result = {
+                    "feed_source_id": feed.id, "feed_name": feed.name, "items": len(entries), "new_items": new_items,
+                }
+                result["feeds"].append(feed_result)
             except Exception as exc:
                 feed.last_checked_at, feed.last_error_at, feed.last_error = (
                     dt.datetime.now(dt.timezone.utc),
@@ -131,6 +137,13 @@ def run_check(feed_source_id: int | None = None, session=None) -> dict:
                     }
                 )
             session.commit()
+            if fresh:
+                # Ids exist only after the commit; ignored entries are counted in new_items but not listed.
+                feed_result["new_entries"] = [
+                    {"feed_item_id": item.id, "title": item.title, "url": item.url, "status": item.status}
+                    for item in fresh[:NEW_ENTRIES_LISTED]
+                ]
+                feed_result["new_entries_truncated"] = max(0, len(fresh) - NEW_ENTRIES_LISTED)
         return result
     finally:
         if own:

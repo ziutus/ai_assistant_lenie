@@ -22,6 +22,10 @@
       "amerykan(?:in|ina|inowi|inem|inie|ie|ow|om|ami|ach)",
       "amerykan(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
     ],
+    "Algieria": [
+      "algier(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
+      "algier(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+    ],
     "Iran": [
       "iran(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
       "iran(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"

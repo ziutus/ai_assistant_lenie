@@ -518,6 +518,21 @@ class TestAggregateNormalization:
             },
         }
 
+    def test_doc_11137_nationalities_are_not_separate_places(self):
+        # Real sentences from doc #11137 (youtube transcript): "Także kiedyś dominowali Algierczycy
+        # dawno temu, teraz już tam Algierczycy są marginesem." / "Zresztą nawet Polacy przecież,
+        # którzy tam mieszkają wiedzą o czymś..." — spaCy lemmatized them to "Algierczyk"/"Polak".
+        entities = [
+            {"text": "Algierczycy", "label": "geogName", "lemma": "Algierczyk", "pos": "NOUN"},
+            {"text": "Algierczycy", "label": "geogName", "lemma": "Algierczyk", "pos": "NOUN"},
+            {"text": "Polacy", "label": "placeName", "lemma": "Polak", "pos": "NOUN"},
+            {"text": "Polsce", "label": "placeName", "lemma": "Polska", "pos": "PROPN"},
+        ]
+        assert aggregate_entities(entities) == {
+            ("geogName", "Algieria"): 2,
+            ("placeName", "Polska"): 2,
+        }
+
     @pytest.mark.parametrize("label,expected_label", [
         ("placeName", "placeName"), ("geogName", "geogName"), ("orgName", "placeName"),
     ])
@@ -612,6 +627,19 @@ class TestAggregateNormalization:
     def test_dana_is_kept_without_pos_for_legacy_service(self):
         entities = [{"text": "Dana", "label": "persName", "lemma": "Dan"}]
         assert aggregate_entities(entities) == {("persName", "Dan"): 1}
+
+    def test_doc_11137_sri_lanki_survives_unknown_root_pos(self):
+        # Doc #11137: "siły te składają się obecnie z ponad 2000 żołnierzy z Czadu,
+        # Salwadoru, Gwatemalii, Jamajki, Mongolii i Sri Lanki."
+        entities = [{"label": "placeName", "text": "Sri Lanki", "lemma": "Sri Lanka", "pos": "X"}]
+        groups = aggregate_entities_detailed(entities)
+        assert ("placeName", "Sri Lanka") in groups
+        assert groups[("placeName", "Sri Lanka")]["variants"] == ["Sri Lanki"]
+
+    @pytest.mark.parametrize("surface", ["Warszawa", "warszawa", "sri lanki"])
+    def test_unknown_root_pos_does_not_bypass_non_country_or_lowercase_filters(self, surface):
+        entities = [{"label": "placeName", "text": surface, "lemma": "Sri Lanka", "pos": "X"}]
+        assert aggregate_entities_detailed(entities) == {}
 
     def test_non_nominal_root_is_rejected(self):
         entities = [{"text": "Polski", "label": "placeName", "lemma": "polski", "pos": "ADJ"}]

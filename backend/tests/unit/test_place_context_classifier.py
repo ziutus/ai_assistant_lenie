@@ -6,10 +6,12 @@ miejsce-pilica without ever reaching an LLM, even though the mentions were
 about the "Wisła-Narew-Pilica" air-defense system, not the town/river.
 """
 
+import json
 from unittest.mock import MagicMock, patch
 
 from library.place_context_classifier import (
     _SYSTEM_PROMPT,
+    MAX_CANDIDATES_PER_CALL,
     _candidate_payloads,
     classify_place_context_candidates,
 )
@@ -28,6 +30,14 @@ def test_prompt_distinguishes_western_bloc_from_direction_and_formation_name():
         assert phrase in not_place
     assert "high" in _SYSTEM_PROMPT
     assert "jednoznacznie" in _SYSTEM_PROMPT
+
+
+def test_prompt_limits_political_bloc_to_the_west_and_keeps_countries_as_places():
+    """doc 11137: "Stany" (of "Stany Zjednoczone") and the surname "Cornin" became organizations."""
+    organization = " ".join(_SYSTEM_PROMPT.split("- organization:")[1].split("- not_place:")[0].split())
+    assert "blok dotyczy tylko słowa \"Zachód\"" in organization
+    for phrase in ("Europa", "Ameryka", "Stany", "Stany Zjednoczone", "Cornin", "Interfax"):
+        assert phrase in organization.split("blok dotyczy tylko")[1]
 
 
 def test_snippets_match_whole_words_and_use_actual_variants():
@@ -155,6 +165,66 @@ def test_llm_failure_is_fail_open():
         result = classify_place_context_candidates(
             "system Wisła-Narew-Pilica", "", groups, 1
         )
+    assert result == []
+
+
+def test_prompt_marks_place_names_inside_idioms_as_not_place():
+    """doc 11137: "odsyła do Jerozolimy niewinnych cywilów" is a channel euphemism for killing."""
+    not_place = " ".join(_SYSTEM_PROMPT.split("- not_place:")[1].split("- uncertain:")[0].split())
+    for phrase in (
+        "związku frazeologicznego", "eufemizmu", "odsyła do Jerozolimy niewinnych cywilów",
+        "na drogę do Jerozolimy udało się 22 000 osób", "pielgrzymka do Jerozolimy",
+    ):
+        assert phrase in not_place
+
+
+def _truncating_ai_ask(max_batch):
+    """ai_ask double: answers with cut-off JSON for batches larger than max_batch."""
+    def ask(prompt, **kwargs):
+        items = json.loads(prompt.split("DANE JSON:\n")[1])
+        response = MagicMock()
+        if len(items) > max_batch:
+            response.response_text = '{"results":[{"id":0,"class":"place","confidence":"high","rationale":"Mowa o mie'
+        else:
+            response.response_text = json.dumps({"results": [
+                {
+                    "id": item["id"],
+                    "class": "not_place" if item["candidate"].startswith("Jerozolim") else "place",
+                    "confidence": "high",
+                    "rationale": "x",
+                }
+                for item in items
+            ]})
+        return response
+    return ask
+
+
+def test_truncated_json_batch_is_split_and_every_candidate_gets_a_verdict():
+    """doc 11137: the first batch's answer was cut off, so "Jerozolima" never got a verdict."""
+    sentence = "każdego dnia odsyła do Jerozolimy niewinnych cywilów."
+    groups = {"Jerozolima": {"surface": "Jerozolima", "variants": ["Jerozolimy"]}}
+    groups.update({f"Miasto{i}": {"surface": f"Miasto{i}"} for i in range(26)})
+    text = sentence + " " + " ".join(f"Miasto{i} jest duże." for i in range(26))
+
+    assert MAX_CANDIDATES_PER_CALL <= 8
+    with patch("library.place_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(
+        "library.ai.ai_ask", side_effect=_truncating_ai_ask(max_batch=2)
+    ):
+        results = classify_place_context_candidates(text, "Tytuł", groups, 11137)
+
+    assert {result["key"] for result in results} == set(groups)
+    jerusalem = next(result for result in results if result["key"] == "Jerozolima")
+    assert jerusalem["predicted_class"] == "not_place"
+    assert jerusalem["dropped"] is True
+    assert sentence in jerusalem["context"]
+
+
+def test_single_candidate_with_unparseable_json_is_dropped_without_raising():
+    groups = {"Jerozolima": {"surface": "Jerozolima", "variants": ["Jerozolimy"]}}
+    with patch("library.place_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(
+        "library.ai.ai_ask", side_effect=_truncating_ai_ask(max_batch=0)
+    ):
+        result = classify_place_context_candidates("odsyła do Jerozolimy cywilów", "", groups, 11137)
     assert result == []
 
 

@@ -1,16 +1,18 @@
 import React from "react";
 import axios from "axios";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
+import ChapterDescriptionsPanel from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
-// Events (eventName) are added by hand from selected text; the shared panel does not draw them.
-type ChapterEntities = Partial<EntitiesByType> & { eventName?: EntityItem[] };
+// Events (eventName) and products/systems (productName) are added by hand from selected text; the shared panel
+// does not draw them.
+type ChapterEntities = Partial<EntitiesByType> & { eventName?: EntityItem[]; productName?: EntityItem[] };
 
 interface Sentence { index: number; text: string }
 interface Section {
@@ -31,11 +33,13 @@ interface EntityResponse {
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
 const KIND_LABELS: Record<HighlightKind, string> = {
   persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Wydarzenia",
+  product: "Produkty i systemy",
 };
 const KIND_COLORS: Record<HighlightKind, string> = {
   persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a", event: "#fbcfe8",
+  product: "#ddd6fe",
 };
-const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event"];
+const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event", "product"];
 
 const isShown = (item: EntityItem) => !item.is_country && item.place_verification_status !== "rejected";
 const itemName = (item: EntityItem) => item.canonical_name ?? item.text;
@@ -52,6 +56,7 @@ function filterEntities(entities: ChapterEntities | undefined, kinds: Set<Highli
     geogName: kinds.has("place") ? (entities?.geogName ?? []).filter(keep) : [],
     placeName: kinds.has("place") ? (entities?.placeName ?? []).filter(keep) : [],
     eventName: kinds.has("event") ? (entities?.eventName ?? []).filter(keep) : [],
+    productName: kinds.has("product") ? (entities?.productName ?? []).filter(keep) : [],
   };
 }
 
@@ -66,6 +71,7 @@ function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
     ...(entities.geogName ?? []).map(entry("place")),
     ...(entities.placeName ?? []).map(entry("place")),
     ...(entities.eventName ?? []).map(entry("event")),
+    ...(entities.productName ?? []).map(entry("product")),
   ];
 }
 
@@ -101,11 +107,12 @@ const groupHighlights = (groups: CountryGroup[]): HighlightEntry[] => groups.map
 
 const entityCount = (entities: ChapterEntities) =>
   (entities.persName?.length ?? 0) + (entities.orgName?.length ?? 0)
-  + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0) + (entities.eventName?.length ?? 0);
+  + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0) + (entities.eventName?.length ?? 0)
+  + (entities.productName?.length ?? 0);
 
 const allItems = (entities: ChapterEntities | undefined): EntityItem[] =>
-  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName, entities?.eventName]
-    .flatMap((items) => items ?? []);
+  [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName, entities?.eventName,
+    entities?.productName].flatMap((items) => items ?? []);
 
 // Entities that appear in the given chapter and in no other content (TEMAT) chapter: once the
 // chapter is marked as noise these have no mention left in the text NER is run on.
@@ -129,7 +136,10 @@ type GlossaryInfo = {
 };
 
 const NerChapters = () => {
-  const { id } = useParams();
+  const { id, chapter } = useParams();
+  const navigate = useNavigate();
+  const position = chapter === undefined ? undefined : (/^\d+$/.test(chapter) ? Number(chapter) : NaN);
+  const chapterMode = chapter !== undefined;
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [sections, setSections] = React.useState<Section[]>([]);
   const [entityData, setEntityData] = React.useState<EntityResponse | null>(null);
@@ -150,7 +160,7 @@ const NerChapters = () => {
     if (!id) return;
     let cancelled = false;
     setLoadError("");
-    axios.get<{ sections: Section[] }>(`${base}/chapter_sections`, { headers, params: { with_sentences: 1 } })
+    axios.get<{ sections: Section[] }>(`${base}/chapter_sections`, { headers, params: chapterMode ? { position } : { with_sentences: 1 } })
       .then((response) => { if (!cancelled) setSections(response.data.sections); })
       .catch((error) => {
         if (cancelled) return;
@@ -160,7 +170,7 @@ const NerChapters = () => {
           : "Nie udało się pobrać rozdziałów dokumentu.");
       });
     return () => { cancelled = true; };
-  }, [id, base, headers, sectionsVersion]);
+  }, [id, base, headers, sectionsVersion, chapterMode, position]);
 
   React.useEffect(() => {
     if (!id) return;
@@ -180,7 +190,23 @@ const NerChapters = () => {
       .then((response) => { if (!cancelled) setGlossary(response.data); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [id, apiUrl, headers, version]);
+  }, [id, apiUrl, headers, chapterMode ? 0 : version]);
+
+  const refreshChapters = async (preferredPosition: number) => {
+    if (chapterMode) {
+      const response = await axios.get<{ sections: Section[] }>(`${base}/chapter_sections`, { headers });
+      const available = response.data.sections;
+      setSections(available);
+      const target = available.find((section) => section.position === preferredPosition)
+        ?? available[available.length - 1];
+      if (target && target.position !== position) {
+        navigate(`/ner/${id}/${target.position}`, { replace: true });
+        return;
+      }
+    }
+    setSectionsVersion((current) => current + 1);
+    setVersion((current) => current + 1);
+  };
 
   // Same endpoint and guards as the editor's chapter panel: the text is rewritten, so the
   // chapter list and the per-chapter entities are refetched afterwards.
@@ -190,8 +216,7 @@ const NerChapters = () => {
     setMergeError("");
     try {
       await axios.post(`${base}/merge_chapter`, { position }, { headers });
-      setSectionsVersion((current) => current + 1);
-      setVersion((current) => current + 1);
+      await refreshChapters(position - 1);
     } catch (error) {
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
       setMergeError(status === 409
@@ -206,7 +231,19 @@ const NerChapters = () => {
   // entities that were mentioned only there; entities shared with other chapters stay.
   const markAsNoise = async (position: number, label: string) => {
     if (merging) return;
-    const doomed = entitiesOnlyIn(entityData, position);
+    let fullData = entityData;
+    if (chapterMode) {
+      setMerging(true);
+      try {
+        fullData = (await axios.get<EntityResponse>(`${base}/chapter_entities`, { headers })).data;
+      } catch {
+        setMergeError("Nie udało się pobrać encji do oznaczenia rozdziału jako szum.");
+        return;
+      } finally {
+        setMerging(false);
+      }
+    }
+    const doomed = entitiesOnlyIn(fullData, position);
     if (!window.confirm(`Oznaczyć ${label} jako szum i usunąć ${doomed.length} encji występujących tylko w nim?`)) return;
     setMerging(true);
     setMergeError("");
@@ -231,21 +268,34 @@ const NerChapters = () => {
       }
     }
     if (failed > 0) setMergeError(`Rozdział oznaczono jako szum, ale nie udało się usunąć ${failed} z ${doomed.length} encji.`);
-    setSectionsVersion((current) => current + 1);
-    setVersion((current) => current + 1);
-    setMerging(false);
+    try {
+      await refreshChapters(position);
+    } catch {
+      setMergeError("Nie udało się odświeżyć rozdziałów.");
+    } finally {
+      setMerging(false);
+    }
   };
+
+  React.useEffect(() => {
+    setEntityData(null);
+    setEntityError(false);
+    setFocus(null);
+    setMentionMenu(null);
+    setSelectionMenu(null);
+    setDescribing(null);
+  }, [id, chapter]);
 
   // Entities are refetched whenever the panel reports a change (detect, rename, delete,
   // merge, exclude) — it also reports its own first load, so this covers the initial fetch.
   React.useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    axios.get<EntityResponse>(`${base}/chapter_entities`, { headers })
+    axios.get<EntityResponse>(`${base}/chapter_entities`, { headers, ...(chapterMode ? { params: { position } } : {}) })
       .then((response) => { if (!cancelled) { setEntityData(response.data); setEntityError(false); } })
       .catch(() => { if (!cancelled) setEntityError(true); });
     return () => { cancelled = true; };
-  }, [id, base, headers, version]);
+  }, [id, base, headers, version, chapterMode, position]);
 
   // "Podświetl w tekście" from a chip menu: that entity's mentions are marked strongly in every
   // chapter (whatever the kind filters say) and the view jumps to the first one.
@@ -258,16 +308,34 @@ const NerChapters = () => {
     document.querySelector("[data-focus-mark]")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   }, [focus]);
 
-  // Events live only on this page (the shared panel does not draw them), so they are removed here.
-  const deleteEvent = async (item: EntityItem) => {
-    if (item.id === undefined || !window.confirm(`Usunąć wydarzenie „${itemName(item)}” z dokumentu?`)) return;
+  // Several spellings of one product ("Starlinka", "Starlinek", "Starling") fold into a single entity. The form lists
+  // every product of the document (the chapter chips show only the chapter's own), the reviewer ticks the spellings
+  // and names the result; `POST /document/:id/products/merge` keeps counts and spellings as variants.
+  const [productMerge, setProductMerge] = React.useState<
+    { items: EntityItem[]; selected: number[]; name: string; busy: boolean; error: string } | null>(null);
+  const openProductMerge = async (seed: EntityItem) => {
     try {
-      await axios.delete(`${apiUrl}/website_entities/${item.id}`, {
-        headers, data: { decision: "deleted", reason_code: "irrelevant" },
+      const response = await axios.get(`${apiUrl}/website_entities`, { params: { id }, headers });
+      const items: EntityItem[] = (response.data?.entities?.productName ?? []).filter((item: EntityItem) => item.id !== undefined);
+      setProductMerge({
+        items, selected: seed.id !== undefined ? [seed.id] : [], name: itemName(seed), busy: false, error: "",
       });
-      setVersion((current) => current + 1);
     } catch {
-      setMergeError("Nie udało się usunąć wydarzenia.");
+      setMergeError("Nie udało się pobrać listy produktów.");
+    }
+  };
+  const submitProductMerge = async () => {
+    if (!productMerge || productMerge.selected.length < 2 || !productMerge.name.trim()) return;
+    setProductMerge({ ...productMerge, busy: true, error: "" });
+    try {
+      await axios.post(`${apiUrl}/document/${id}/products/merge`,
+        { entity_ids: productMerge.selected, name: productMerge.name.trim() }, { headers });
+      setProductMerge(null);
+      setVersion((current) => current + 1);
+    } catch (error: any) {
+      setProductMerge((current) => current && ({
+        ...current, busy: false, error: error.response?.data?.message || "Nie udało się scalić produktów.",
+      }));
     }
   };
 
@@ -280,6 +348,36 @@ const NerChapters = () => {
     event.preventDefault();
     event.stopPropagation();
     setDescribing(item);
+  };
+
+  // A click on a highlighted person / organization / place / country in the text opens the chip's action menu
+  // (retype, rename, delete, ...) right there, so the reviewer does not have to look for the chip in the side column.
+  const [mentionMenu, setMentionMenu] = React.useState<
+    { item: EntityItem; kind: "persName" | "orgName" | "place"; x: number; y: number; chapterPersons?: EntityItem[] } | null>(null);
+  const closeMentionMenu = React.useCallback(() => setMentionMenu(null), []);
+  const openMentionMenu = (position: number, segment: { kind?: HighlightKind; label?: string }) => (event: React.MouseEvent) => {
+    // Selecting text (to add an entity) must not pop the menu.
+    if (!segment.kind || selectedFragment(window.getSelection())) return;
+    const raw = entityData?.sections.find((section) => section.position === position)?.entities;
+    const places = [
+      ...(raw?.geogName ?? []).map((item) => ({ ...item, entity_type: "geogName" as const })),
+      ...(raw?.placeName ?? []).map((item) => ({ ...item, entity_type: "placeName" as const })),
+    ];
+    const candidates: { item: EntityItem; kind: "persName" | "orgName" | "place" }[] = segment.kind === "persName"
+      ? (raw?.persName ?? []).map((item) => ({ item, kind: "persName" as const }))
+      : segment.kind === "orgName"
+        ? (raw?.orgName ?? []).filter((item) => !item.is_country).map((item) => ({ item, kind: "orgName" as const }))
+        : segment.kind === "place"
+          ? places.filter((item) => !item.is_country).map((item) => ({ item, kind: "place" as const }))
+          : segment.kind === "country"
+            ? [...places.filter((item) => item.is_country).map((item) => ({ item, kind: "place" as const })),
+              ...(raw?.orgName ?? []).filter((item) => item.is_country).map((item) => ({ item, kind: "orgName" as const }))]
+            : [];
+    const found = candidates.find(({ item }) => itemName(item) === segment.label);
+    if (!found || found.item.id === undefined) return;
+    event.stopPropagation();
+    setAddedMessage("");
+    setMentionMenu({ ...found, x: event.clientX, y: event.clientY, chapterPersons: raw?.persName ?? [] });
   };
 
   // Right click on a selected fragment of the text opens the "add entity" menu; without a selection
@@ -318,7 +416,11 @@ const NerChapters = () => {
   // without one every chapter is shown, skipped (ad/noise/source) chapters included.
   const loadingEntities = entityData === null && !entityError;
   const filtering = onlyWithEntities || query.trim() !== "";
-  const visible = chapters.filter((chapter) => !filtering || (chapter.type === "TEMAT" && chapter.count + chapter.countryHighlights.length > 0));
+  const visible = chapters.filter((item) => chapterMode ? item.section.position === position
+    : !filtering || (item.type === "TEMAT" && item.count + item.countryHighlights.length > 0));
+  const selectedIndex = sections.findIndex((section) => section.position === position);
+  const previous = sections[selectedIndex - 1];
+  const next = selectedIndex >= 0 ? sections[selectedIndex + 1] : undefined;
   const editorPath = `/${doc?.document_type || "youtube"}/${id}`;
   const scrollTo = (position: number) => (event: React.MouseEvent) => {
     event.preventDefault();
@@ -360,18 +462,27 @@ const NerChapters = () => {
       {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
         <nav aria-label="Rozdziały" style={{ position: "sticky", top: 8, maxHeight: "calc(100vh - 16px)", overflowY: "auto", fontSize: "0.85em" }}>
-          {visible.map(({ section, type, count }) => (
+          {(chapterMode ? chapters : visible).map(({ section, type, count }) => (
             <div key={section.position} style={{ marginBottom: 6 }}>
-              <a href={`#ner-chapter-${section.position}`} onClick={scrollTo(section.position)} style={{ textDecoration: "none" }}>
+              {chapterMode ? <Link to={`/ner/${id}/${section.position}`}
+                aria-current={section.position === position ? "page" : undefined}
+                style={{ fontWeight: section.position === position ? "bold" : undefined }}>
                 {chapterTitle(section)}
-              </a>
+              </Link> : <a href={`#ner-chapter-${section.position}`} onClick={scrollTo(section.position)} style={{ textDecoration: "none" }}>
+                {chapterTitle(section)}
+              </a>}
               <span style={{ color: "#64748b" }}>
-                {type !== "TEMAT" ? ` · ${TYPE_LABELS[type]}` : loadingEntities ? "" : ` (${count})`}
+                {type !== "TEMAT" ? ` · ${TYPE_LABELS[type]}` : loadingEntities || (chapterMode && section.position !== position) ? "" : ` (${count})`}
               </span>
             </div>
           ))}
         </nav>
         <main style={{ minWidth: 0 }}>
+          {chapterMode && <nav aria-label="Nawigacja rozdziału" style={{ display: "flex", gap: 16, marginBottom: 12 }}>
+            {previous && <Link to={`/ner/${id}/${previous.position}`}>← Poprzedni</Link>}
+            <Link to={`/ner/${id}`}>Wszystkie rozdziały</Link>
+            {next && <Link to={`/ner/${id}/${next.position}`}>Następny →</Link>}
+          </nav>}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginBottom: 8 }}>
             {KINDS.map((kind) => (
               <label key={kind}>
@@ -393,20 +504,53 @@ const NerChapters = () => {
             </div>
           )}
           {addedMessage && <div role="status" style={{ marginBottom: 8, color: "#166534" }}>{addedMessage}</div>}
+          {productMerge && (
+            <form aria-label="Scal produkty" style={{ marginBottom: 8, padding: "6px 10px", fontSize: "0.9em",
+              background: "#f5f3ff", border: "1px solid #c4b5fd", borderRadius: 6 }}
+              onSubmit={(event) => { event.preventDefault(); void submitProductMerge(); }}>
+              <div>Zaznacz zapisy tego samego produktu (min. 2):</div>
+              {productMerge.items.map((item) => (
+                <label key={item.id} style={{ display: "inline-block", marginRight: 10 }}>
+                  <input type="checkbox" checked={productMerge.selected.includes(item.id as number)}
+                    onChange={(event) => setProductMerge({
+                      ...productMerge,
+                      selected: event.target.checked
+                        ? [...productMerge.selected, item.id as number]
+                        : productMerge.selected.filter((value) => value !== item.id),
+                    })} /> {itemName(item)} ×{item.count}
+                </label>
+              ))}
+              <div>
+                <label>Nazwa po scaleniu:{" "}
+                  <input aria-label="Nazwa produktu po scaleniu" value={productMerge.name}
+                    onChange={(event) => setProductMerge({ ...productMerge, name: event.target.value })} />
+                </label>{" "}
+                <button type="submit"
+                  disabled={productMerge.busy || productMerge.selected.length < 2 || !productMerge.name.trim()}>
+                  Scal</button>{" "}
+                <button type="button" onClick={() => setProductMerge(null)}>Anuluj</button>
+                {productMerge.error && <span role="alert"> {productMerge.error}</span>}
+              </div>
+            </form>
+          )}
           {describing && describing.id !== undefined && (
             <EventDescriptionDialog key={describing.id} entityId={describing.id} name={itemName(describing)}
               description={describing.description ?? null} apiUrl={apiUrl} headers={headers} onClose={closeDescription}
               onSaved={() => { setDescribing(null); setVersion((current) => current + 1); }} />
           )}
           {selectionMenu && (
-            <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers}
+            <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers} byline={doc?.byline}
               onClose={closeSelectionMenu}
-              onAdded={(message) => { setSelectionMenu(null); setAddedMessage(message); setPanelKey((current) => current + 1); }} />
+              onAdded={(message) => { setSelectionMenu(null); setAddedMessage(message); setPanelKey((current) => current + 1); setVersion((current) => current + 1); }} />
           )}
           <EntitiesPanel
             docId={id}
             refreshKey={panelKey}
             onShowInText={showInText}
+            onDescribeEvent={setDescribing}
+            onMergeProducts={(item) => void openProductMerge(item)}
+            mentionMenu={mentionMenu}
+            onMentionMenuClose={closeMentionMenu}
             onEntitiesChanged={() => setVersion((current) => current + 1)}
             chapterRenderer={(renderGroups) => (
               <div>
@@ -419,6 +563,9 @@ const NerChapters = () => {
                     style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                       <strong>{chapterTitle(section)}</strong>
+                      {!chapterMode && <Link to={`/ner/${id}/${section.position}`} style={{ fontSize: "0.85em" }}>
+                        Tylko ten rozdział →
+                      </Link>}
                       {type !== "TEMAT" && (
                         <span style={{ fontSize: "0.8em", padding: "0 6px", borderRadius: 3, background: "#fef3c7" }}>
                           {TYPE_LABELS[type]}
@@ -461,8 +608,9 @@ const NerChapters = () => {
                                   {...(focused ? { "data-focus-mark": "" } : {})}
                                   {...(segment.kind === "event"
                                     ? { onContextMenu: describeFromText(entities.eventName?.find((item) => itemName(item) === segment.label)) }
-                                    : {})}
+                                    : { onClick: openMentionMenu(section.position, segment) })}
                                   style={{
+                                    cursor: segment.kind === "event" || segment.kind === "product" ? undefined : "pointer",
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
                                     ...(focused ? { outline: "2px solid #d97706" } : {}),
                                   }}>{segment.text}</mark>;
@@ -472,24 +620,8 @@ const NerChapters = () => {
                         </div>
                         <div>
                           {renderGroups(entities)}
-                          {(entities.eventName?.length ?? 0) > 0 && (
-                            <div aria-label="Wydarzenia rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
-                              <strong style={{ fontSize: "0.85em" }}>Wydarzenia:</strong>
-                              {entities.eventName?.map((item) => (
-                                <span key={item.id ?? item.text}
-                                  title={item.description || "Wydarzenie dodane ręcznie — kliknij nazwę, by dodać opis"}
-                                  onContextMenu={describeFromText(item)}
-                                  style={{ fontSize: "0.85em", padding: "0 6px", borderRadius: 3, background: KIND_COLORS.event }}>
-                                  📅 <button type="button" aria-label={`Opis wydarzenia ${itemName(item)}`}
-                                    onClick={() => setDescribing(item)}
-                                    style={{ border: "none", background: "none", padding: 0, cursor: "pointer", font: "inherit" }}>
-                                    {itemName(item)}</button> ×{item.count}{item.description ? " ℹ️" : ""}{" "}
-                                  <button type="button" aria-label={`Usuń wydarzenie ${itemName(item)}`}
-                                    onClick={() => void deleteEvent(item)}>×</button>
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                          {id && <ChapterDescriptionsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
+                            position={section.position} onSaved={() => setVersion((current) => current + 1)} />}
                           {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>

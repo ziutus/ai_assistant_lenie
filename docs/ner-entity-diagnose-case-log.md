@@ -188,8 +188,16 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T22 | Błąd transkrypcji rozpoznany jako osoba | automatyczne tłumaczenie dźwięku zapisuje zwrot jako nazwę własną; nie ma tabeli poprawek transkrypcji | „Egekwo” (zamiast „ex aequo”) | E035 |
 | T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036 |
 | T24 | Miasto oznaczone przez spaCy jako organizacja | rzadka pisownia + odmiana („Tela Avivwu”) nie przypomina niczego znanego, więc model typuje ją jako `orgName` | „Tela Avivwu” → Tel Awiw | E037 |
+| T25 | Błąd STT w tekście źródłowym (pisownia/odmiana frazy) | transkrypcja zapisuje frazę w złej formie gramatycznej, a tekst trafia bez zmian do czytnika i NER; dotyczy tekstu, nie encji | „pięto Achillesa” zamiast „pięta Achillesa” | E038 |
+| T26 | Reguły NER z obrazu przesłonięte starą kopią w wolumenie | plik reguł w `data/` jest ukryty pod wolumenem `lenie-ai-data` (`/app/data`) ze starą kopią, więc nowy kod czyta stare dane i wzorce z repo nie działają na produkcji | „Polacy”, „Algierczycy” jako osobne miejsca | E039 |
+| T27 | Produkt/usługa/system bez kategorii encji | spaCy nie ma typu „produkt”, więc nazwa własna usługi (Starshield) trafia do `persName`, a jej odmiany („Starshielda”, „Starshieldu”) do osobnych encji | „Starshielda” jako osoba | E040 |
+| T28 | Metonimia stolicy/osoby: ten sam byt w dwóch typach i odmianach | stolica w znaczeniu rządu („między Kijowem i Waszyngtonem”) i nazwisko jako organizacja: narzędnik nie jest sprowadzany do mianownika, więc powstaje osobny `placeName`, a wzmianki o osobie trafiają także do `orgName`; rejestr organizacji utrwala to globalnie | „Kijowem”, „Waszyngtonem” jako miejsca; „Trump” jako organizacja | E041 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T25,
+| T29 | Nazwa miejsca w związku frazeologicznym / eufemizmie, plus ucięta paczka klasyfikatora | nazwa miejsca jest tylko elementem zwrotu („odsyła do Jerozolimy” = zabija), a klasyfikator kontekstu nie ma takiej reguły; dodatkowo paczka 20 kandydatów przekraczała limit odpowiedzi, JSON się uciął i cała paczka zachowała encje bez werdyktów (fail-open) | „odsyła do Jerozolimy niewinnych cywilów” | E042 |
+
+| T30 | Nazwa kraju odrzucona przez filtr POS | Root poprawnego spanu kraju ma błędny POS, więc wzmianka znika przed kanonikalizacją z gazetteera | „Sri Lanki”, root „Sri” z `POS=X` | E043 |
+
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T31,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -623,7 +631,73 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Test regresyjny:** `test_ner_client.py::TestCityTaggedAsOrganization`, `test_flask_endpoints_entities.py::test_organization_to_place` / `test_organization_to_person`, `test_entity_overrides.py` (odtwarzanie), `entitiesPanel.test.tsx`, `nerChapters.test.tsx`.
 - **Status:** kod w PR; dane (scalenie ręcznej encji „Tel Avivw”, usunięcie osieroconej organizacji 1140) po wdrożeniu.
 
-### E038 — „Enklawę Kaliningradu” podświetlona jako miasto zamiast obwodu (dok. #10872, PR n/d, 2026-10-19)
+### E038 — „pięto Achillesa” (błąd STT) i „Achilles” jako osoba (dok. #10872, PR #856, 2026-10-19)
+
+- **Typ encji:** persName
+- **Kategoria:** T25 — błąd STT w tekście źródłowym; do tego T9 (fałszywy pozytyw spaCy) dla samej encji.
+- **Zdanie źródłowe:** „…że on jest tą pięto Achillesa do Rosji, no bo nie ma go za bardzo ani jak zaopatrzyć…”
+- **Objaw:** w tekście forma „pięto” zamiast „pięta”, a „Achilles” (wariant „Achillesa”, encja 19893) rozpoznany jako osoba, choć to frazeologizm.
+- **Przyczyna źródłowa:** napisy zapisały frazę w złym przypadku. spaCy oznaczył „Achillesa” jako `persName`, bo nie rozpoznaje frazeologizmów. Nie było mechanizmu poprawiającego sam tekst transkrypcji (`ner_corrections` zmienia nazwę encji, `ner_exclusions` ją wycina, `ner_channel_glossary` działa tylko na kopii tekstu przed NER i tylko per kanał).
+- **Poprawka:** kod — `transcript_corrections` (`backend/library/transcript_corrections.py`): literalne, frazowe zamiany (nigdy pojedyncze słowa), zakres global lub per `byline`, stosowane przy zapisie napisów/transkrypcji YouTube (`youtube_processing._store_transcript_text`), więc czytnik i NER widzą poprawiony tekst. REST `/transcript_corrections`, podgląd i backfill jednego dokumentu: `POST /transcript_corrections/apply` (domyślnie `dry_run`). Seed: „pięto Achillesa” → „pięta Achillesa”. Dane — #10872 poprawiony przez backfill (1 trafienie).
+- **Test regresyjny:** `test_transcript_corrections.py` (cytat zdania z #10872, `piętro` / `piętę Achillesa` / `pięty Achillesa` bez zmian, granice słów, wielkość liter, zakres per autor, odrzucenie pojedynczego słowa), `test_transcript_corrections_routes.py`, `test_youtube_processing_orm.py` (hook zapisu).
+- **Status:** kod w PR #856 (draft), wdrożony na NAS. Encja „Achilles” (19893) czeka na decyzję o zakresie `ner_exclusions` (`author` lub `global`); backfill nie przebudowuje encji ani chunków.
+
+### E039 — „Polak” i „Algierczyk” jako miejsca (dok. #11137, PR n/d, 2026-10-19)
+
+- **Typ encji:** placeName / geogName
+- **Kategoria:** T26 — reguły NER z obrazu przesłonięte starą kopią w wolumenie; do tego T1 (etnonim jako miejsce) dla Algierii, której brakowało we wzorcach.
+- **Zdanie źródłowe:** „Także kiedyś dominowali Algierczycy dawno temu, teraz już tam Algierczycy są marginesem.” oraz „Zresztą nawet Polacy przecież, którzy tam mieszkają wiedzą o czymś…”
+- **Objaw:** „Polak” (encja 20229, geokoder trafił w górę „Polak” w woj. lubelskim; klasyfikator kontekstu odrzucił ją jako `not_place`) i „Algierczyk” (encja 20063, bez geokodu) wisiały w panelu `/ner` jako osobne miejsca, choć to narodowości.
+- **Przyczyna źródłowa:** `demonym_patterns` (Polska itd.) były w repozytorium od PR dla dok. #10756, ale na NAS `/app/data` to wolumen `lenie-ai-data`, który przesłania `data/` z obrazu; leżała tam stara, 427-bajtowa kopia `ner_normalization.json` z 13 lipca bez wzorców demonimów. Kod był aktualny, dane nie — wzorce nigdy nie zadziałały na produkcji. Osobno brakowało wzorca dla Algierii.
+- **Poprawka:** kod — plik reguł przeniesiony do `backend/library/ner_normalization_rules.json` (obraz kopiuje `library/`, wolumen go nie przesłania), `RULES_PATH` zmieniony, dopisany wzorzec „Algieria”. Dane — odświeżenie NER dok. #11137 po wdrożeniu.
+- **Test regresyjny:** `test_ner_normalization.py` (`test_shipped_rules_file_is_not_under_a_data_directory`, pełny paradygmat „Algieria”, negatywne „Algier”/„Algierii”), `test_ner_client.py::test_doc_11137_nationalities_are_not_separate_places`.
+- **Status:** kod w PR; wdrożenie i odświeżenie dok. #11137 w toku. Inne dokumenty przetworzone od 13 lipca mogą mieć te same fałszywe encje-narodowości (audyt hurtowy nie wykonany).
+
+### E040 — „Starshielda” jako osoba, „Space XA / Space Xem” jako osobne organizacje, „Pentagonem” jako osoba (dok. #11137, PR n/d, 2026-10-19)
+
+- **Typ encji:** persName / orgName
+- **Kategoria:** T27 — produkt/usługa/system bez kategorii encji; do tego T25 (błąd STT: SpaceX rozbite na dwa słowa i odmienione) i T9 (fałszywy pozytyw spaCy).
+- **Zdanie źródłowe:** „…Zełeński naciskał w niedzielę na więcej informacji na temat yyy yyy możliwych ograniczeń dla Starshieldu. To jest amerykańska usługa internetu satelitarnego…” oraz „…świadczona w ramach kontraktu Pentagonu za pośrednictwem Space XA. Kijów wykorzystuje Starshielda do zapewnienia łączności swoim dronom…”
+- **Objaw:** „Starshield” i „Starshielda” jako dwie osoby (encje 20058, 20059), „Space XA” i „Space Xem” jako dwie organizacje (20125, 20126), „Pentagonem” jako osoba (20169). Starshield to wojskowa wersja Starlinka (SpaceX), ważna dla tekstu, ale bez sensownej kategorii.
+- **Przyczyna źródłowa:** napisy zapisały SpaceX jako „Space XA / Xa / Xem”, a spaCy typuje obce nazwy własne w odmianie jako `persName`. Model nie ma typu dla produktów i systemów, więc nie było dla Starshielda poprawnego miejsca.
+- **Poprawka:** dane — `transcript_corrections` „Space Xa” i „Space Xem” → „SpaceX” (backfill dok. #11137, 3 trafienia), `ner_exclusions` persName: „Starshield”, „Starshielda”, „Pentagonem”, odświeżenie NER (powstał jeden `SpaceX`, Pentagon bez osoby). Kod — nowa ręczna kategoria `productName` („🛰️ Produkt / system”): `ADDABLE_ENTITY_TYPES`, `get_document_entities`, menu zaznaczenia i wiersz „Produkty i systemy” na `/ner/:id`; zwykły wiersz `source='manual'` jak `eventName`, bez rejestru i bez opisu.
+- **Test regresyjny:** `test_entity_added_from_selection.py::test_a_product_is_a_plain_manual_entity_and_folds_its_inflected_forms` / `test_replay_readds_a_product_after_the_document_was_reopened` (zdanie z #11137), `test_entity_service.py` (klucz `productName`), `nerChapters.test.tsx` (wiersz produktu).
+- **Status:** dane naprawione na NAS; kod w PR, po wdrożeniu Starshield dodaje się z menu zaznaczenia („🛰️ Produkt / system”, nazwa „Starshield”). Koszt kodu: Codex niedostępny (`helper_unknown_error`), kod napisał Claude Code.
+
+### E041 — „Kijowem” / „Waszyngtonem” jako miejsca i „Trump” jako organizacja (dok. #11137, PR n/d, 2026-10-19)
+
+- **Typ encji:** placeName / orgName
+- **Kategoria:** T28 — metonimia stolicy/osoby: ten sam byt w dwóch typach i odmianach.
+- **Zdanie źródłowe:** „…komentarze Zełeńskiego zwieńczyły tydzień narastających napięć między Kijowem i Waszyngtonem, który rozpoczął się 9 października ogłoszeniem Trumpa, że…”
+- **Objaw:** „Kijowem” i „Waszyngtonem” jako osobne `placeName` (geokoder bez trafienia, bez tagów `miejsce-*`) obok `orgName` „Kijów” (5) i „Waszyngton” (3); „Trump” jednocześnie jako `persName` (61) i `orgName` (18).
+- **Przyczyna źródłowa:** spaCy nie sprowadza narzędnika do mianownika, więc „Kijowem” i „Waszyngtonem” zostały osobnymi miejscami. Klasyfikator kontekstu uznał „Waszyngtonem” za `organization` (pewność wysoka), ale wiersz przetrwał. Mianownikowe „Kijów”/„Waszyngton” są organizacjami w rejestrze (4, 38) od lipca 2026 — spójna decyzja „stolica = rząd”, jak „Kreml” (E012). „Trump” jako organizacja 45 powstał w lipcu 2026 z automatu (16 dokumentów, aliasy Trumpa/Trumpowi/Trumpo/Trumep) i do niego rejestr sprowadzał odmienione formy już po wykluczeniu; do organizacji było przypięte też źródło informacji 27 „Trump”.
+- **Poprawka:** dane — aliasy „Kijowem” (org. 4) i „Waszyngtonem” (org. 38) + `POST /website_entities/<id>/to_organization`; `ner_exclusions` `orgName`: Trump, Trumpa, Trumpowi, Trumep; odświeżenie NER dokumentów bez embeddingów (9348, 9358, 9360, 9380, 10774, 11137); w dokumentach z embeddingami (9353, 9354, 9355, 9356, 9369, 10330, 10453, 10872, 10873, 10874) usunięty tylko wiersz `orgName` „Trump” (`DELETE /website_entities/<id>`, bez „reopen”, który kasuje chunki i embeddingi); źródło 27 odpięte od organizacji (`UPDATE information_sources SET organization_id = NULL`, 4 cytowania zostały) i `DELETE /organizations/45`. Kod bez zmian.
+- **Test regresyjny:** n/d — przypadek czysto danowy (wniosek z Etapu 2b: stare dane rejestru). Do rozważenia: sprowadzanie narzędnika nazw stolic do mianownika, żeby „Kijowem” nie tworzyło osobnej encji.
+- **Status:** dane naprawione i zweryfikowane w bazie NAS; zostały prawdziwe organizacje „Trump Organization” i „Trump Island” (dok. 9358). Wykluczenia `orgName` działają globalnie. Brak poprawki kodu na powtarzalne formy narzędnika.
+
+### E042 — „Jerozolima” jako miejsce we frazeologizmie „odsyła do Jerozolimy” (dok. #11137, PR n/d, 2026-10-19)
+
+- **Typ encji:** placeName
+- **Kategoria:** T29 — nazwa miejsca w związku frazeologicznym / eufemizmie, plus ucięta paczka klasyfikatora.
+- **Zdanie źródłowe:** „…rosyjskim dyktatorem, który nielegalnie najechał Ukrainę i każdego dnia odsyła do Jerozolimy niewinnych cywilów.” oraz „…kryzysie gangów, które od 2021 roku oficjalnie na drogę do Jerozolimy udało się 22 000 osób…” (kanał „Na Wschód od Bliskiego Wschodu”; eufemizm oznacza zabijanie).
+- **Objaw:** `placeName` „Jerozolima” (encja 20887, 2 wzmianki, geokodowana) w panelu `/ner/11137`, choć żadna wzmianka nie dotyczy miasta; brak tagu `miejsce-jerozolima`.
+- **Przyczyna źródłowa:** dwie warstwy. (1) `place_context_classifier`: paczki po 20 kandydatów przy limicie odpowiedzi 700 tokenów — dla ok. 27 kandydatów dok. #11137 pierwsza paczka dostała ucięty JSON, `json.loads` rzucił wyjątek, a fail-open zostawił całą paczkę bez werdyktów (w `ner_context_classifications` były tylko 7 ostatnich kandydatów; log `lenie-worker`: „Contextual place verification failed for document 11137; retaining batch”). (2) Prompt nie miał reguły dla nazwy miejsca użytej we frazeologizmie. Ten sam klasyfikator osób wprost napisał o „Jerozolim” „odnosi się do miejsca”.
+- **Poprawka:** kod — `library/place_context_classifier.py`: paczka 8 kandydatów, `MAX_RESPONSE_TOKENS=1500`, `_classify_with_split()` dzieli paczkę na połowy przy błędzie parsowania JSON (pojedynczy kandydat z błędem odpada, fail-open), nowa reguła `not_place` dla frazeologizmów i eufemizmów (z kontrprzykładem „pielgrzymka do Jerozolimy”). Dane — `DELETE /website_entities/20887` po wdrożeniu (audytowane, odtwarzane po odświeżeniu NER). Przy pierwszym przebiegu poprawionego klasyfikatora wyszedł ukryty błąd: werdykt `organization` dla miejsca „MSZU” kończył się `UniqueViolation` w `document_organizations`, bo rejestr zmapował je na organizację „mSZU” (1211) już podpiętą do dokumentu przez wiersz `orgName` „mSZU”; `place_verification._reclassify_as_organization()` scala teraz wiersz z istniejącym linkiem zamiast dopisywać drugi.
+- **Test regresyjny:** `backend/tests/unit/test_place_context_classifier.py::test_truncated_json_batch_is_split_and_every_candidate_gets_a_verdict`, `test_single_candidate_with_unparseable_json_is_dropped_without_raising`, `test_prompt_marks_place_names_inside_idioms_as_not_place` (zdanie z #11137); `test_place_verification.py::TestReclassifyAsOrganizationExistingLink`.
+- **Status:** żywy bug naprawiony w kodzie, wdrożony na NAS (PR #862); reguła „blok polityczny” zawężona do słowa „Zachód” (nazwy państw/kontynentów i nazwiska → `place`/`not_place`; „Cornin”, „Interfaksu” odrzucone); potoczne „w Stanach” (= USA) nadal bywa czytane jako organizacja — naprawione danymi (`to_place` → „Stany Zjednoczone”); po odświeżeniu NER dok. #11137 klasyfikator ocenił 41 kandydatów, „Jerozolimy” → `not_place`/high („użyta metaforycznie jako symbol śmierci”), encja 22275 ma `rejected`/`context_not_place`, bez tagu `miejsce-jerozolima`; `DELETE` nie był potrzebny. Skutek uboczny pełnego przebiegu: „Europa”, „Ameryka”, „Stany” zostały `orgName` (istniejąca reguła „blok polityczny”), a stare tagi `miejsce-europa/ameryka/uran/cornin` zostały w dokumencie. Codex niedostępny (`helper_unknown_error`), kod napisał Claude Code. Ten sam wzorzec ucięcia paczki widać w logach dla dok. 9380 oraz w klasyfikatorze osób (`person_context_classifier`, ten sam `json.loads` w `_classify_batch`) — nieruszony, poza zakresem.
+
+### E043 — „Sri Lanki” znika przez POS=X tokenu „Sri” (dok. #11137, 2026-10-19)
+
+- **Typ encji:** placeName
+- **Kategoria:** T30 — nazwa kraju odrzucona przez filtr POS.
+- **Zdanie źródłowe:** „siły te składają się obecnie z ponad 2000 żołnierzy z Czadu, Salwadoru, Gwatemalii, Jamajki, Mongolii i Sri Lanki.”
+- **Objaw:** brak Sri Lanki w zagregowanych miejscach mimo wzmianki w tekście.
+- **Przyczyna źródłowa:** spaCy zwraca span „Sri Lanki” z etykietą `placeName` i lematem „Sri Lanka”, ale jego root „Sri” ma `POS=X`. Filtr w `aggregate_entities_detailed()` odrzuca wzmiankę przed sprawdzeniem gazetteera, który już rozpoznaje tę odmianę.
+- **Poprawka:** kod — wyjątek od odrzucenia przez filtr POS w `backend/library/ner_client.py` wyłącznie dla `POS=X`, etykiet z `COUNTRY_CHECK_TYPES` i powierzchni rozpoznanej przez `canonical_country_for_surface(surface)`. Inne POS (ADJ „Polski”, „Izraelski”), filtr małej litery i logika nazwisk pozostają bez zmian. Kod napisał Codex, zawężenie do `POS=X` Claude Code (Codex nie mógł uruchomić testów w swoim sandboxie).
+- **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestAggregateNormalization::test_doc_11137_sri_lanki_survives_unknown_root_pos` — przed poprawką nie przechodzi; dodatkowy test odrzuca niekrajowe i małoliterowe powierzchnie z `POS=X`.
+- **Status:** żywy bug naprawiony w kodzie (PR #863), backend wdrożony na NAS z gałęzi PR; NER dok. #11137 odświeżony przez `POST /website_entities` — encja `Sri Lanka` (wariant „Sri Lanki”, 1 wzmianka) pojawiła się obok pozostałych krajów z listy. Tag `kraj-sri-lanka` nie powstał: tagi krajów dodaje osobna ścieżka (`extract_countries_hybrid`), nie odświeżenie encji.
+
+### E044 — „Enklawę Kaliningradu” podświetlona jako miasto zamiast obwodu (dok. #10872, PR n/d, 2026-10-19)
 
 - **Typ encji:** placeName
 - **Kategoria:** T21 — miejsce, którego spaCy nie zgłasza w ogóle (opisowa nazwa obwodu).
