@@ -7,6 +7,7 @@ from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import joinedload, selectinload
 
+from library import github_repo_stats
 from library.db.engine import get_scoped_session
 from library.db.models import Document, Tool, ToolRecommendation, ToolRecommendationEvidence
 from library.tool_recommendation_importer import fetch_markdown, parse_markdown_recommendations
@@ -79,9 +80,10 @@ def _user():
         abort(403, "user API key required")
 
 
-def _dict(item: ToolRecommendation) -> dict:
+def _dict(item: ToolRecommendation, github: dict | None = None) -> dict:
     document = item.source_document
     return {
+        "github": github,
         "id": item.id,
         "name": item.name,
         "homepage_url": item.homepage_url,
@@ -150,11 +152,40 @@ def get_tool_recommendations():
         .distinct()
         .order_by(ToolRecommendation.category)
     ).scalars().all()
+    github = github_repo_stats.stats_for_urls(session, [item.homepage_url for item in items])
     return jsonify({
-        "tool_recommendations": [_dict(item) for item in items],
+        "tool_recommendations": [_dict(item, github.get(item.homepage_url)) for item in items],
         "categories": categories,
         "filters": {"status": status, "category": category, "origin": origin},
     })
+
+
+@bp.post("/tool_recommendations/github_stats/refresh")
+def refresh_github_stats():
+    """Pull fresh GitHub numbers for the radar entries of one status (or all), a bounded batch per call.
+
+    Never-fetched repositories go first, then the ones older than a day. GitHub allows
+    60 unauthenticated requests per hour, so ``pending`` tells the caller to come back.
+    """
+    _user()
+    body = request.get_json(silent=True) or {}
+    status = body.get("status", "watchlist")
+    if status not in STATUSES and status != "all":
+        abort(400, "unsupported status")
+    try:
+        limit = int(body.get("limit", github_repo_stats.DEFAULT_REFRESH_LIMIT))
+    except (TypeError, ValueError):
+        abort(400, "limit must be an integer")
+    if not 1 <= limit <= github_repo_stats.MAX_REFRESH_LIMIT:
+        abort(400, f"limit must be between 1 and {github_repo_stats.MAX_REFRESH_LIMIT}")
+    session = get_scoped_session()
+    query = select(ToolRecommendation.homepage_url).where(ToolRecommendation.homepage_url.is_not(None))
+    if status != "all":
+        query = query.where(ToolRecommendation.status == status)
+    urls = session.execute(query).scalars().all()
+    summary = github_repo_stats.refresh_stale(session, urls, limit=limit)
+    session.commit()
+    return jsonify(summary)
 
 
 @bp.post("/tool_recommendations")

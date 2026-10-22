@@ -3296,6 +3296,42 @@ class ToolRecommendationEvidence(Base):
     recommender_document: Mapped["Document | None"] = relationship(foreign_keys=[recommender_document_id])
 
 
+class GithubRepoStats(Base):
+    """Latest public GitHub numbers for one repository (stars, forks, activity).
+
+    Keyed by the lower-cased ``owner/repo`` so every surface that shows a
+    repository — the tool radar, the tool catalog, a saved link — shares one
+    row and one API call. This is a snapshot, not a history: a refresh
+    overwrites the numbers. ``status`` is ``not_found`` when GitHub answered
+    404 (the last known numbers are kept).
+    """
+
+    __tablename__ = "github_repo_stats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    full_name_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    owner: Mapped[str] = mapped_column(String(255), nullable=False)
+    repo: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    stars: Mapped[int | None] = mapped_column()
+    forks: Mapped[int | None] = mapped_column()
+    watchers: Mapped[int | None] = mapped_column()
+    open_issues: Mapped[int | None] = mapped_column()
+    language: Mapped[str | None] = mapped_column(String(100))
+    license: Mapped[str | None] = mapped_column(String(100))
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    repo_created_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    pushed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'ok'"))
+    fetched_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('ok', 'not_found')", name="ck_github_repo_stats_status"),
+    )
+
+
 class Tool(Base):
     """Human-approved tool/technology entity, written to Obsidian (Epic 46/47).
 
