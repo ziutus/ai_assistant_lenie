@@ -3,8 +3,16 @@ import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "adopted" | "rejected" | "archived";
+type GithubStats = {
+  full_name: string; status: "ok" | "not_found";
+  stars: number | null; forks: number | null; watchers: number | null; open_issues: number | null;
+  language: string | null; license: string | null; archived: boolean;
+  pushed_at: string | null; fetched_at: string | null;
+};
+type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?: number; rate_limited?: boolean; pending?: number };
 type Recommendation = {
   id: number; name: string; homepage_url: string | null; description: string | null;
+  github: GithubStats | null;
   category: string | null; status: RecommendationStatus; personal_note: string | null;
   origin: "ai_detected" | "curated";
   source_url: string | null; source_context: string | null;
@@ -33,6 +41,30 @@ const statusHelp: Record<RecommendationStatus, string> = {
   archived: "Zachowaj historycznie, ale ukryj z bieżącego radaru.",
 };
 
+const countFormat = new Intl.NumberFormat("pl-PL");
+const formatCount = (value: number | null) => value === null ? "—" : countFormat.format(value);
+const INACTIVE_AFTER_MS = 365 * 24 * 60 * 60 * 1000;
+
+function GithubStatsLine({ stats }: { stats: GithubStats }) {
+  const pushed = stats.pushed_at ? Date.parse(stats.pushed_at) : NaN;
+  const inactive = !Number.isNaN(pushed) && Date.now() - pushed > INACTIVE_AFTER_MS;
+  const badge = (text: string, background: string, color: string) =>
+    <span style={{ marginLeft: 6, background, color, borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{text}</span>;
+  return <div title={`Dane z GitHuba (${stats.full_name}), pobrane ${stats.fetched_at ? stats.fetched_at.slice(0, 10) : "—"}`}
+    style={{ color: "#475569", fontSize: ".85rem", margin: "6px 0" }}>
+    <span aria-label="gwiazdki">★ {formatCount(stats.stars)}</span>
+    {" · "}<span aria-label="forki">⑂ {formatCount(stats.forks)}</span>
+    {" · "}<span aria-label="obserwujący">👁 {formatCount(stats.watchers)}</span>
+    {" · "}<span aria-label="otwarte issues">issues {formatCount(stats.open_issues)}</span>
+    {stats.language && <>{" · "}{stats.language}</>}
+    {stats.license && <>{" · "}{stats.license}</>}
+    {stats.pushed_at && <>{" · "}ostatni push {stats.pushed_at.slice(0, 10)}</>}
+    {stats.status === "not_found" && badge("repozytorium nie istnieje", "#fee2e2", "#991b1b")}
+    {stats.archived && badge("zarchiwizowane", "#fef3c7", "#92400e")}
+    {inactive && !stats.archived && badge("brak aktywności od ponad roku", "#fef3c7", "#92400e")}
+  </div>;
+}
+
 export default function ToolRecommendations() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [searchParams] = useSearchParams();
@@ -53,6 +85,8 @@ export default function ToolRecommendations() {
   const [importUrl, setImportUrl] = React.useState("");
   const [recommendationSource, setRecommendationSource] = React.useState("");
   const [importMessage, setImportMessage] = React.useState("");
+  const [githubBusy, setGithubBusy] = React.useState(false);
+  const [githubMessage, setGithubMessage] = React.useState("");
   const [skippedItems, setSkippedItems] = React.useState<Array<{ name: string; reason?: string }>>([]);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
 
@@ -117,6 +151,21 @@ export default function ToolRecommendations() {
     finally { setBulkBusy(false); }
   };
 
+  const refreshGithub = async () => {
+    setGithubBusy(true); setError(""); setGithubMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/github_stats/refresh`, {
+        method: "POST", headers, body: JSON.stringify({ status }),
+      });
+      const data = await response.json().catch(() => ({})) as GithubRefreshResult & Record<string, unknown>;
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać danych z GitHuba"));
+      const pending = data.pending ?? 0;
+      setGithubMessage(`GitHub: pobrano ${data.refreshed ?? 0}${data.failed ? `, błędy: ${data.failed}` : ""}${data.rate_limited ? ". Limit zapytań GitHuba wyczerpany — spróbuj za godzinę" : pending ? `. Zostało do pobrania: ${pending} — kliknij ponownie` : ". Wszystko aktualne"}.`);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
+    finally { setGithubBusy(false); }
+  };
+
   const importMarkdown = async () => {
     if (!importUrl.trim()) return;
     setError(""); setImportMessage("");
@@ -146,8 +195,12 @@ export default function ToolRecommendations() {
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
       <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi</h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
-      <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do 30 repozytoriów na raz)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
+        <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
+      </div>
     </div>
+    {githubMessage && <p role="status" style={{ color: "#166534", margin: "8px 0 0" }}>{githubMessage}</p>}
     <div role="tablist" aria-label="Status rekomendacji" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "18px 0" }}>
       {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}
     </div>
@@ -205,6 +258,7 @@ export default function ToolRecommendations() {
       {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI</span>}
       {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
       {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
+      {item.github && <GithubStatsLine stats={item.github} />}
       {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>
         <summary style={{ cursor: "help" }}>Dlaczego jest w radarze? ({item.evidences.length})</summary>
         <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
