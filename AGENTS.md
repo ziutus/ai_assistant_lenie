@@ -11,6 +11,12 @@
   (nie `.ps1` przez PowerShell — `docker build` pisze na stderr). Użytkownik,
   host i ścieżka Dockera są na górze skryptu; szczegóły w
   [NAS_Deployment.md](docs/CICD/NAS_Deployment.md).
+- **VPN = bez deployu.** Gdy użytkownik łączy się z siecią przez VPN, nie
+  wdrażaj na NAS (`nas-deploy.sh`, `ssh`/`docker` na NAS). Zrób kod, testy i
+  commit lokalnie, a w raporcie napisz, że wdrożenie czeka na połączenie
+  bez VPN. Nie próbuj też „sprawdzać, czy NAS odpowiada" przez SSH — samo
+  nieudane połączenie nie jest powodem, by prosić o VPN. Wyjątek tylko na
+  wyraźne polecenie użytkownika w danej sesji.
 
 ## Masowe operacje na Obsidianie
 
