@@ -6,68 +6,6 @@ React 18 single-page application for managing documents and running AI operation
 
 2026-09-10 (0.3.17.2): added piggyback browse telemetry to Document List and Search, with per-tab sessions and criterion provenance.
 
-## Directory Structure
-
-```
-web_interface_react/
-├── public/                             # Static assets (favicon, icons, manifest)
-├── src/
-│   ├── main.tsx                        # Entry point (AuthorizationProvider + Router)
-│   ├── App.tsx                         # Route definitions (React Router v6) + RequireAuth guard
-│   ├── App.test.tsx                    # Vitest smoke tests
-│   ├── utils.tsx                       # Utility components
-│   ├── vite-env.d.ts                   # Vite + CSS module type declarations
-│   ├── types/
-│   │   └── index.ts                    # Re-exports from @lenie/shared + app-specific AuthorizationState
-│   ├── modules/shared/
-│   │   ├── context/
-│   │   │   └── authorizationContext.tsx # Global state: API config (from localStorage), DB/VPN status, filters
-│   │   ├── services/
-│   │   │   └── storage.ts              # localStorage persistence for connection config
-│   │   ├── hooks/
-│   │   │   ├── useManageLLM.ts         # Core document CRUD + AI operations
-│   │   │   ├── useList.ts              # Document list fetching
-│   │   │   ├── useSearch.ts            # Vector similarity search
-│   │   │   └── useFileSubmit.ts        # Image file upload
-│   │   ├── components/
-│   │   │   ├── Layout/                 # Sidebar navigation + content area
-│   │   │   ├── Authorization/          # DB/VPN status panel, connection indicator, disconnect
-│   │   │   ├── Input/                  # Reusable text/textarea input
-│   │   │   ├── Select/                 # Reusable select dropdown
-│   │   │   ├── SharedInputs/           # Common document form fields
-│   │   │   ├── EntitiesPanel/          # NER persons/places chips + refresh button (GET/POST /website_entities)
-│   │   │   ├── DocumentLinksPanel/     # "Powiązane dokumenty" — typed links to other documents (GET/POST /document/:id/links + detect, PATCH/DELETE /document_links/:id); on link/webpage/social_media_post editors + reader sidebar (compact prop)
-│   │   │   ├── ContactFacts.tsx        # "Fakty i źródła" table on the contact page (GET /contacts/:id/facts): every claim with source, status, reason/notes and the visible value; edit mode confirms/rejects (PATCH .../facts/assertions/:id, optional `note`) or reopens non-manual claims
-│   │   │   ├── TagsInput/              # Chip editor over the CSV tags field (suggestions from GET /tags)
-│   │   │   └── FormButtons/            # Save/delete action buttons
-│   │   ├── pages/
-│   │   │   ├── connect.tsx             # Connection configuration (/connect)
-│   │   │   ├── list.tsx                # Document list with type/state filtering
-│   │   │   ├── search.tsx              # Vector similarity search
-│   │   │   ├── link.tsx                # Link document editing
-│   │   │   ├── webpage.tsx             # Webpage editing + AI processing
-│   │   │   ├── youtube.tsx             # YouTube transcript editing
-│   │   │   ├── movie.tsx               # Movie transcript editing
-│   │   │   ├── chunks.tsx              # Chunk analysis review (/chunks/:id)
-│   │   │   ├── read.tsx                # Reader view (/read/:id)
-│   │   │   ├── persons.tsx             # Person registry search + person → documents (/persons/:id?)
-│   │   │   ├── personsReview.tsx       # manual_review person queue (/persons-review)
-│   │   │   └── file.tsx                # File upload (alpha)
-│   │   ├── constants/
-│   │   │   └── variables.ts            # App version
-│   │   └── styles/
-│   │       └── index.css               # Global styles (buttons, loader, errors)
-├── index.html                          # Root HTML (Vite entry point)
-├── vite.config.ts                      # Vite + Vitest configuration
-├── tsconfig.json                       # TypeScript strict configuration
-├── Dockerfile                          # Multi-stage: Vite build + nginx
-├── nginx.conf                          # SPA routing + cache headers
-├── package.json                        # Dependencies & scripts
-├── .prettierrc                         # Code formatting
-├── .stylelintrc                        # CSS linting
-└── .gitignore
-```
-
 ## Pages & Routes
 
 All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. Unauthenticated users redirected to `/connect`.
@@ -261,29 +199,7 @@ The alias is configured in both `tsconfig.json` (`paths`) and `vite.config.ts` (
 
 See `docs/shared-types.md` for full details.
 
-## Dependencies
-
-| Library | Version | Purpose |
-|---------|---------|---------|
-| react | ^18.3.1 | UI framework |
-| react-router-dom | ^6.30.3 | Client-side routing |
-| axios | ^1.13.5 | HTTP client |
-| formik | ^2.4.9 | Form state management |
-| react-i18next | ^15.7.4 | i18n support (installed, not yet configured) |
-| i18next | ^23.16.8 | i18n core |
-| vite | ^6.0.7 | Build toolchain |
-| typescript | ^5.7.3 | Type checking |
-| vitest | ^2.1.8 | Test framework |
-
 ## Running
-
-```bash
-npm run dev       # Dev server (port 3000)
-npm run build     # TypeScript check + Vite production build (output: build/)
-npm run preview   # Preview production build
-npm test          # Run Vitest tests
-npm run lint      # TypeScript type check only
-```
 
 **Installing dependencies.** `package-lock.json` is deliberately not committed (`Dockerfile` runs `npm install`), and `.npmrc` sets `shamefully-hoist=true`, a pnpm-only option that npm ignores with a warning. With **npm 10.9.x** `npm install` can crash in arborist with `TypeError: Cannot read properties of null (reading 'edgesOut')` (`#loadPeerSet`, triggered by vitest's optional `@vitest/*`/`jsdom` peers) — it fails even in an empty directory and leaves a half-installed `node_modules` (symptom: vitest dies with `Cannot find module '@asamuzakjp/css-color'`, no `.bin`). Use a newer npm without touching the global one: `npx --yes npm@11 install --no-audit --no-fund`. Worktrees share the main checkout's `node_modules` through a link, so repair it there once. vitest 4 declares Node `^20 || ^22 || >=24` (a Node 23 only prints an `EBADENGINE` warning; the suite passes).
 
