@@ -245,7 +245,7 @@ export default function FeedReview() {
         {view === "later" && item.saved_at && <div>Zapisano: {formatDate(item.saved_at)}</div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
         {item.summary && <p>{item.summary}</p>}
-        <ContentGroupsPanel feedItemId={item.id} initialGroups={item.groups} />
+        <ContentGroupsPanel feedItemId={item.id} initialGroups={item.groups} autoSuggest />
         <div>
           {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : item.status === "saved_for_later" ? <>
             <span style={{ color: "#166534", fontWeight: 600 }}>Zachowano tylko link do oceny</span>{" "}
