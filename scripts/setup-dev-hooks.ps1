@@ -33,7 +33,7 @@ foreach ($tool in 'gitleaks', 'trufflehog', 'python3') {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { $missing += $tool }
 }
 if ($missing.Count -gt 0) {
-    Write-Warning ("Not in PATH: " + ($missing -join ', ') + ". The pre-push history scan skips missing scanners.")
+    Write-Warning ("Not in PATH: " + ($missing -join ', ') + ". The TruffleHog hook fails without trufflehog; the pre-push history scan skips missing scanners.")
     Write-Warning "gitleaks:   https://github.com/gitleaks/gitleaks/releases (or: choco install gitleaks)"
     Write-Warning "trufflehog: https://github.com/trufflesecurity/trufflehog/releases (or: choco install trufflehog)"
 }
