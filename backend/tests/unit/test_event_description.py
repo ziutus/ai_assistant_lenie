@@ -68,3 +68,56 @@ def test_replay_restores_the_approved_description():
     assert replay_manual_added_entities(session, 1) == {"entity_added": 1}
     (created,) = [call.args[0] for call in session.add.call_args_list]
     assert created.description == "Wspólne ćwiczenia."
+
+
+CHAPTERS = ("## Wstęp\n\nPowitanie widzów.\n\n## Energetyka\n\nEDF to francuski operator. EDF zarządza elektrowniami. "
+            "Rząd rozmawia z EDF.\n\n## Koniec\n\nEDF wspomniane raz.\n")
+
+
+def test_best_chapter_is_the_one_mentioning_the_organization_most_often():
+    from library.event_description import best_chapter
+
+    title, body = best_chapter(CHAPTERS, ["EDF"])
+    assert title == "Energetyka" and "operator" in body
+    assert best_chapter(CHAPTERS, ["NATO"]) is None and best_chapter("", ["EDF"]) is None
+
+
+def test_describe_organization_sends_the_chapter_and_maps_brak_to_none():
+    from library.event_description import describe_organization
+
+    with ask_returning("Francuski operator energetyczny.") as ask:
+        assert describe_organization("EDF", "Energetyka", "EDF to operator.", "Tytuł") == "Francuski operator energetyczny."
+    assert "EDF to operator." in ask.call_args.args[0] and "Energetyka" in ask.call_args.args[0]
+    with ask_returning("BRAK"):
+        assert describe_organization("EDF", "", "EDF.") is None
+    assert describe_organization("EDF", "", "   ") is None
+
+
+def test_build_organization_prompt_is_pure_and_caps_the_chapter():
+    from library.event_description import MAX_CHAPTER_CHARS, build_organization_prompt
+
+    prompt = build_organization_prompt("EDF", "Energetyka", "x" * (MAX_CHAPTER_CHARS + 500), "Tytuł")
+    assert "„EDF”" in prompt and "TYTUŁ ROZDZIAŁU: Energetyka" in prompt
+    assert prompt.count("x") == MAX_CHAPTER_CHARS
+    assert build_organization_prompt("EDF", "E", "tekst") == build_organization_prompt("EDF", "E", "tekst")
+
+
+def test_run_organization_description_separates_ok_brak_and_error():
+    from library.event_description import run_organization_description
+
+    with ask_returning("  Francuski operator.  ") as ask:
+        result = run_organization_description("prompt", "gpt-4o-mini")
+    assert result["status"] == "ok" and result["description"] == "Francuski operator."
+    assert ask.call_args.kwargs["model"] == "gpt-4o-mini" and ask.call_args.args[0] == "prompt"
+    with ask_returning("BRAK"):
+        assert run_organization_description("p", "gpt-4o-mini")["status"] == "insufficient_context"
+    with patch("library.ai.ai_ask", side_effect=RuntimeError("boom")):
+        failed = run_organization_description("p", "gpt-4o-mini")
+    assert failed["status"] == "error" and failed["error_code"] == "RuntimeError" and failed["description"] is None
+
+
+def test_model_registry_allowlist():
+    from library.llm_model_registry import is_selectable, selectable_models
+
+    assert is_selectable("Bielik-11B-v3.0-Instruct") and not is_selectable("evil/model")
+    assert all({"id", "label", "provider"} <= set(item) for item in selectable_models())

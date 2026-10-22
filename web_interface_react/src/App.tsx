@@ -17,6 +17,8 @@ import Chunks from "./modules/shared/pages/chunks";
 import NerChapters from "./modules/shared/pages/nerChapters";
 import Places from "./modules/shared/pages/places";
 import WorldEvents from "./modules/shared/pages/worldEvents";
+import Products from "./modules/shared/pages/products";
+import ProductDetail from "./modules/shared/pages/productDetail";
 import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
@@ -36,6 +38,8 @@ import Contact from "./modules/shared/pages/contact";
 import ContactCategories from "./modules/shared/pages/contactCategories";
 import ProjectCards from "./modules/shared/pages/projectCards";
 import ProjectCard from "./modules/shared/pages/projectCard";
+import Recipes from "./modules/shared/pages/recipes";
+import Recipe from "./modules/shared/pages/recipe";
 import ContactGroups from "./modules/shared/pages/contactGroups";
 import ContactGroupDetail from "./modules/shared/pages/contactGroupDetail";
 import ContactEventDetail from "./modules/shared/pages/contactEventDetail";
@@ -93,6 +97,7 @@ function App() {
                   <Route path="/email/:id?" element={<DocumentEditorWithGroups><Email /></DocumentEditorWithGroups>} />
                   <Route path="/social_media_post/:id?" element={<DocumentEditorWithGroups><SocialMediaPost /></DocumentEditorWithGroups>} />
                   <Route path="/ner/:id" element={<NerChapters />} />
+                  <Route path="/ner/:id/:chapter" element={<NerChapters />} />
                   <Route path="/chunks/:id" element={<Chunks />} />
                   <Route path="/read/:id" element={<Read />} />
                   <Route path="/entities/:id" element={<Entities />} />
@@ -106,6 +111,8 @@ function App() {
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/places" element={<Places />} />
                   <Route path="/world-events" element={<WorldEvents />} />
+                  <Route path="/products" element={<Products />} />
+                  <Route path="/products/:name" element={<ProductDetail />} />
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/contacts" element={<Contacts />} />
                   <Route path="/topics" element={<Topics />} />
@@ -119,6 +126,8 @@ function App() {
                   <Route path="/contact-categories" element={<ContactCategories />} />
                   <Route path="/project-cards" element={<ProjectCards />} />
                   <Route path="/project-cards/:id" element={<ProjectCard />} />
+                  <Route path="/recipes" element={<Recipes />} />
+                  <Route path="/recipes/:id" element={<Recipe />} />
                   <Route path="/contact-groups" element={<ContactGroups />} />
                   <Route path="/contact_groups/:id" element={<ContactGroupDetail />} />
                   <Route path="/information-sources" element={<InformationSources />} />

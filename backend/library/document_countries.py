@@ -23,6 +23,10 @@ def detect_document_countries(session, doc_id: int) -> dict:
     if not text.strip():
         raise ValueError("Document has no text content")
 
+    from library.entity_service import apply_channel_glossary_text
+
+    # Channel euphemisms ("państwo z gwiazdką" = Izrael) are resolved on a copy of the text.
+    text = apply_channel_glossary_text(session, doc_id, text)
     detected = article_tagging.extract_countries_hybrid(text, doc.title or "")
     existing = list(dict.fromkeys(t.strip() for t in (doc.tags or "").split(",") if t.strip()))
     seen = set(existing)

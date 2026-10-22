@@ -38,6 +38,18 @@ logger = logging.getLogger(__name__)
 # part is stripped below, so whitespace consumption here is unnecessary.
 _AUTHOR_SEPARATORS = re.compile(r"[,;/\n]|\bi\b|\boraz\b", re.IGNORECASE)
 
+# A role/affiliation glued to a name with a spaced dash ("Wojciech Pokora –
+# Redaktor naczelny Disinfo Digest"). Requires spaces around the dash so
+# hyphenated surnames ("Anna Nowak-Kowalska") stay intact.
+# Fixed-length pattern, cut with a slice (no trailing ``.*``): linear on
+# untrusted input, unlike ``sub(r"\s[–—-]\s.*$", ...)`` which CodeQL flags.
+_ROLE_SEPARATOR = re.compile(r"\s[–—-]\s")
+
+
+def _strip_role_suffix(part: str) -> str:
+    match = _ROLE_SEPARATOR.search(part)
+    return part[: match.start()] if match else part
+
 # Portal UI junk that survives a byline copy-paste ("Michał Rogalski\nObserwuj").
 _AUTHOR_STOPWORDS = {"obserwuj", "autor", "autorzy", "autorka", "red.", "redakcja", "opracowanie"}
 
@@ -51,7 +63,7 @@ def split_author_names(raw: str) -> list[str]:
     names: list[str] = []
     seen: set[str] = set()
     for part in _AUTHOR_SEPARATORS.split(raw or ""):
-        name = part.strip()
+        name = _strip_role_suffix(part).strip()
         if not name or name.lower() in seen or name.lower() in _AUTHOR_STOPWORDS:
             continue
         seen.add(name.lower())

@@ -14,15 +14,25 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
       return <div data-testid="panel">
+        <button onClick={() => onEntitiesChanged?.()}>zmień encje</button>
+        {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
         <button type="button" onClick={() => onShowInText?.(
           { id: 2, text: "Kijów", variants: ["Kijów", "Kijowie"], chapter_variants: ["Kijowie"] }, "place")}>pokaż Kijów</button>
         {chapterRenderer((source: any) => (
         <ul aria-label="Encje rozdziału">
           {[...(source?.persName ?? []), ...(source?.geogName ?? []), ...(source?.orgName ?? [])]
             .map((item: any) => <li key={item.id}>{item.text}</li>)}
+          {(source?.eventName ?? []).map((item: any) => (
+            <li key={item.id}>
+              <button type="button" onClick={() => onDescribeEvent?.(item)}>opis {item.text}</button>
+            </li>))}
+          {(source?.productName ?? []).map((item: any) => (
+            <li key={item.id}>
+              <button type="button" onClick={() => onMergeProducts?.(item)}>scal {item.text}</button>
+            </li>))}
         </ul>
       ))}</div>;
     },
@@ -53,14 +63,20 @@ const entities = {
 const entityCalls = () => vi.mocked(axios.get).mock.calls.filter(([url]) => String(url).endsWith("/chapter_entities"));
 
 function mockApi(overrides: Record<string, unknown> = {}) {
-  vi.mocked(axios.get).mockImplementation(async (url: string) => {
+  vi.mocked(axios.get).mockImplementation(async (url: string, config) => {
     if (url in overrides) {
       const value = overrides[url];
       if (value instanceof Error) throw value;
       return { data: value };
     }
-    if (url.endsWith("/chapter_sections")) return { data: { sections } };
-    if (url.endsWith("/chapter_entities")) return { data: entities };
+    const position = (config?.params as { position?: number } | undefined)?.position;
+    if (url.endsWith("/chapter_sections")) return { data: { sections: sections.map(section => {
+      if (position === undefined || section.position === position) return section;
+      const { sentences: _sentences, ...header } = section;
+      return header;
+    }) } };
+    if (url.endsWith("/chapter_entities")) return { data: { ...entities, sections: entities.sections.map(section =>
+      position === undefined || section.position === position ? section : { ...section, entities: emptyGroups }) } };
     if (url.endsWith("/website_get")) return { data: { title: "Film testowy", document_type: "youtube" } };
     if (url.endsWith("/ner_channel_glossary/applications")) return { data: { author: null, entries: [], applications: [] } };
     throw new Error("unexpected " + url);
@@ -228,6 +244,15 @@ it("marks a chapter as noise and deletes only the entities found nowhere else", 
     { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } });
 });
 
+it("opens the chip's action menu when a highlighted mention in the text is clicked", async () => {
+  await open();
+  const marks = [...document.querySelectorAll("mark")];
+  fireEvent.click(marks[0]);
+  expect(screen.getByTestId("mention-menu").textContent).toBe("persName:Donald Tusk:1");
+  fireEvent.click(marks[1]);
+  expect(screen.getByTestId("mention-menu").textContent).toBe("place:Kijów:2");
+});
+
 it("marks one entity's mentions strongly after \"Podświetl w tekście\", even when its kind is filtered out", async () => {
   Element.prototype.scrollIntoView = vi.fn();
   await open();
@@ -297,6 +322,37 @@ it("adds an entity from a selected fragment through the context menu", async () 
   expect(screen.queryByRole("menu")).toBeNull();
 });
 
+it("fixes a transcript slip from the selection: stores the rule and rewrites the document", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: { fields: { text: { changed: true } } } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => " Wina Burki na Faso " } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  const menu = screen.getByRole("menu", { name: "Dodaj encję z zaznaczenia" });
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "✏️ Popraw błąd w transkrypcji" }));
+  fireEvent.change(within(menu).getByLabelText("Poprawna wersja"), { target: { value: "Burkina Faso" } });
+  fireEvent.click(within(menu).getByRole("button", { name: "✏️ Popraw w transkrypcji" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    "/transcript_corrections",
+    { pattern: "Wina Burki na Faso", replacement: "Burkina Faso", scope: "global" },
+    { headers: { "x-api-key": "test-key" } },
+  ));
+  expect(axios.post).toHaveBeenCalledWith(
+    "/transcript_corrections/apply", { document_id: 42, dry_run: false }, { headers: { "x-api-key": "test-key" } },
+  );
+  expect(await screen.findByText(/Poprawiono „Wina Burki na Faso” → „Burkina Faso”/)).toBeTruthy();
+});
+
+it("copies the selected fragment from the context menu", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "  Nic   więcej " } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  fireEvent.click(screen.getByRole("menuitem", { name: "📋 Kopiuj" }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith("Nic więcej"));
+  await waitFor(() => expect(screen.queryByRole("menu", { name: "Dodaj encję z zaznaczenia" })).toBeNull());
+});
+
 it("explains that a selected fragment is already an entity", async () => {
   vi.mocked(axios.post).mockRejectedValue(Object.assign(new Error("409"), {
     isAxiosError: true,
@@ -323,21 +379,58 @@ it("shows a group of states with its members in the countries row and the toolti
   expect(mark.getAttribute("title")).toBe("Państwa bałtyckie (Państwa) — Obejmuje: Litwa, Łotwa, Estonia");
 });
 
-it("lists a hand-added event, highlights it and deletes it on request", async () => {
+
+it("highlights hand-added events and products and hands their chips to the shared panel", async () => {
+  const withManual = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups,
+      eventName: [{ id: 77, text: "Bez", count: 1, variants: [] }],
+      productName: [{ id: 78, text: "nazw", count: 1, variants: [] }] },
+  })) };
+  mockApi({ "/document/42/chapter_entities": withManual });
+  await open();
+  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
+  expect([...chapter.querySelectorAll("mark")].map((mark) => mark.getAttribute("title"))).toEqual([
+    "Bez (Wydarzenia)", "nazw (Produkty i systemy)"]);
+  // The page no longer draws its own event / product rows: the panel's chips (and menus) do.
+  expect(within(chapter).queryByLabelText("Wydarzenia rozdziału")).toBeNull();
+  expect(within(chapter).queryByLabelText("Produkty i systemy rozdziału")).toBeNull();
+  expect(within(chapter).getByRole("button", { name: "opis Bez" })).toBeTruthy();
+  expect(within(chapter).getByRole("button", { name: "scal nazw" })).toBeTruthy();
+});
+
+it("opens the event description dialog from the panel's event menu", async () => {
   const withEvent = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
     ...section, entities: { ...emptyGroups, eventName: [{ id: 77, text: "Bez nazw", count: 1, variants: ["nazw własnych"] }] },
   })) };
   mockApi({ "/document/42/chapter_entities": withEvent });
-  vi.mocked(axios.delete).mockResolvedValue({ data: {} });
-  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValue({ data: { description: "Opis.", sentences: [] } });
   await open();
-  const chapter = screen.getByRole("region", { name: "#3 Pusty" });
-  const row = within(chapter).getByLabelText("Wydarzenia rozdziału");
-  expect(row.textContent).toContain("📅 Bez nazw ×1");
-  expect(chapter.querySelector("mark")?.getAttribute("title")).toBe("Bez nazw (Wydarzenia)");
-  fireEvent.click(within(row).getByRole("button", { name: "Usuń wydarzenie Bez nazw" }));
-  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
-    "/website_entities/77", { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } }));
+  fireEvent.click(screen.getByRole("button", { name: "opis Bez nazw" }));
+  expect(await screen.findByRole("dialog", { name: "Opis wydarzenia Bez nazw" })).toBeTruthy();
+});
+
+it("merges several spellings of a product into one entity under a chosen name", async () => {
+  const withProduct = { ...entities, sections: entities.sections.map((section) => section.position !== 3 ? section : ({
+    ...section, entities: { ...emptyGroups, productName: [{ id: 78, text: "Starlinek", count: 8, variants: [] }] },
+  })) };
+  mockApi({
+    "/document/42/chapter_entities": withProduct,
+    "/website_entities": { entities: { productName: [
+      { id: 78, text: "Starlinek", count: 8 }, { id: 79, text: "Starlinka", count: 4 }, { id: 80, text: "Starling", count: 2 },
+    ] } },
+  });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "scal Starlinek" }));
+  const form = await screen.findByRole("form", { name: "Scal produkty" });
+  const submit = within(form).getByRole("button", { name: "Scal" }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(within(form).getByLabelText(/Starlinka/));
+  fireEvent.click(within(form).getByLabelText(/Starling/));
+  fireEvent.change(within(form).getByLabelText("Nazwa produktu po scaleniu"), { target: { value: "Starlink" } });
+  fireEvent.click(submit);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/products/merge",
+    { entity_ids: [78, 79, 80], name: "Starlink" }, { headers: { "x-api-key": "test-key" } }));
 });
 
 it("drafts an event description with the LLM and stores it only after the reviewer saves", async () => {
@@ -368,4 +461,102 @@ it("keeps the browser menu when nothing is selected", async () => {
   vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "" } as Selection);
   expect(fireEvent.contextMenu(sentenceBlock())).toBe(true);
   expect(screen.queryByRole("menu")).toBeNull();
+});
+
+
+async function openChapter(position: number) {
+  render(<MemoryRouter initialEntries={[`/ner/42/${position}`]}><Routes>
+    <Route path="/ner/:id/:chapter" element={<NerChapters />} />
+    <Route path="/ner/:id" element={<NerChapters />} />
+  </Routes></MemoryRouter>);
+  await waitFor(() => expect(screen.getAllByRole("region")).toHaveLength(1));
+}
+
+it("loads a single chapter with scoped requests and full navigation", async () => {
+  await openChapter(2);
+  expect(screen.getByRole("region", { name: "#2 Sponsor" })).toBeTruthy();
+  const nav = screen.getByRole("navigation", { name: "Rozdziały" });
+  expect(within(nav).getAllByRole("link")).toHaveLength(3);
+  expect(within(nav).getByRole("link", { name: "#2 Sponsor" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("link", { name: "← Poprzedni" }).getAttribute("href")).toBe("/ner/42/1");
+  expect(screen.getByRole("link", { name: "Następny →" }).getAttribute("href")).toBe("/ner/42/3");
+  expect(screen.getByRole("link", { name: "Wszystkie rozdziały" }).getAttribute("href")).toBe("/ner/42");
+  for (const [url, config] of vi.mocked(axios.get).mock.calls) {
+    if (/chapter_(sections|entities)$/.test(String(url))) expect(config?.params).toEqual({ position: 2 });
+  }
+  fireEvent.click(screen.getByRole("link", { name: "Następny →" }));
+  await screen.findByRole("region", { name: "#3 Pusty" });
+  expect(screen.queryByRole("link", { name: "Następny →" })).toBeNull();
+});
+
+it("refetches only scoped entities after a panel edit without reloading sentences", async () => {
+  await openChapter(1);
+  await waitFor(() => expect(entityCalls()).toHaveLength(2));
+  expect(screen.queryByRole("link", { name: "← Poprzedni" })).toBeNull();
+  vi.mocked(axios.get).mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "zmień encje" }));
+  await waitFor(() => expect(entityCalls()).toHaveLength(1));
+  expect(vi.mocked(axios.get).mock.calls).toEqual([
+    ["/document/42/chapter_entities", { headers: { "x-api-key": "test-key" }, params: { position: 1 } }],
+  ]);
+  expect(screen.getAllByRole("region")).toHaveLength(1);
+});
+
+it("links each card in the all-chapters view to chapter mode", async () => {
+  await open();
+  expect(screen.getAllByRole("link", { name: "Tylko ten rozdział →" }).map(link => link.getAttribute("href")))
+    .toEqual(["/ner/42/1", "/ner/42/2", "/ner/42/3"]);
+});
+
+
+it.each([
+  [2, "Scal rozdział 2 z poprzednim", 2, 1],
+  [1, "Scal rozdział 1 z następnym", 2, 1],
+  [3, "Scal rozdział 3 z poprzednim", 3, 2],
+])("keeps a valid chapter after merging from %s", async (initial, button, merged, target) => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await openChapter(initial as number);
+  await waitFor(() => expect(entityCalls()).toHaveLength(2));
+  const updated = sections.filter(section => section.position !== merged).map((section, index) => ({ ...section, position: index + 1 }));
+  mockApi({ "/document/42/chapter_sections": { sections: updated } });
+  vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  vi.mocked(axios.get).mockClear();
+  fireEvent.click(screen.getByRole("button", { name: button as string }));
+  await waitFor(() => expect(screen.getByRole("navigation", { name: "Rozdziały" })
+    .querySelector('[aria-current="page"]')?.getAttribute("href")).toBe(`/ner/42/${target}`));
+  await waitFor(() => expect(entityCalls().some(([, config]) => (config?.params as { position?: number } | undefined)?.position === target)).toBe(true));
+  expect(entityCalls().every(([, config]) => (config?.params as { position?: number } | undefined)?.position === target)).toBe(true);
+  expect(screen.getAllByRole("region")).toHaveLength(1);
+  expect(axios.post).toHaveBeenCalledWith("/document/42/merge_chapter", { position: merged }, { headers: { "x-api-key": "test-key" } });
+});
+
+it("fetches all entities lazily before marking noise and preserves shared entities", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await openChapter(1);
+  await waitFor(() => expect(entityCalls()).toHaveLength(2));
+  const shared = entities.sections[0].entities.geogName;
+  mockApi({ "/document/42/chapter_entities": { ...entities, sections: [
+    entities.sections[0], entities.sections[1],
+    { ...entities.sections[2], entities: { ...emptyGroups, geogName: shared } },
+  ] } });
+  vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  vi.mocked(axios.delete).mockResolvedValue({ data: {} });
+  vi.mocked(axios.get).mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Oznacz rozdział 1 jako szum" }));
+  await waitFor(() => expect(entityCalls()).toHaveLength(2));
+  expect(entityCalls().map(([, config]) => config?.params)).toEqual([undefined, { position: 1 }]);
+  expect(axios.delete).toHaveBeenCalledTimes(1);
+  expect(axios.delete).toHaveBeenCalledWith("/website_entities/1", expect.anything());
+});
+
+it("shows preamble navigation at position zero", async () => {
+  mockApi({ "/document/42/chapter_sections": { sections: [
+    { position: 0, title: "", is_preamble: true, sentence_count: 1, sentences: [{ index: 1, text: "Preambuła." }] },
+    ...sections,
+  ] } });
+  await openChapter(0);
+  expect(screen.getByRole("region", { name: "Wstęp (przed pierwszym rozdziałem)" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "← Poprzedni" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Następny →" }).getAttribute("href")).toBe("/ner/42/1");
+  expect(entityCalls().every(([, config]) => (config?.params as { position?: number } | undefined)?.position === 0)).toBe(true);
 });

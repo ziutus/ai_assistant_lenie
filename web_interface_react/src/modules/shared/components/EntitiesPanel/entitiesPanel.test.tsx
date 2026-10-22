@@ -62,7 +62,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(9);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(14);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -241,7 +241,7 @@ it("offers the organization menu on a cited source, including a link to the sour
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "Zmień na miejsce", "Zmień na osobę",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
@@ -423,7 +423,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "Zmień na miejsce", "Zmień na osobę",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
@@ -443,6 +443,68 @@ it("changes a mis-tagged organization into a place with an editable name", async
   expect(await screen.findByText(/zmienione na miejsce: Tel Awiw/)).toBeTruthy();
 });
 
+const renderManualChips = (props: Record<string, unknown> = {}) => {
+  mockOrgEntities();
+  renderInRouter(<EntitiesPanel docId={11143} {...props} chapterRenderer={(renderGroups) => <>{renderGroups({
+    productName: [{ id: 78, text: "Starlink", count: 3 }],
+    eventName: [{ id: 77, text: "Szczyt NATO", count: 1, description: null }],
+  })}</>} />);
+};
+
+it("gives product chips the shared dropdown menu with retype, merge, highlight and delete", async () => {
+  const onMergeProducts = vi.fn();
+  const onShowInText = vi.fn();
+  renderManualChips({ onMergeProducts, onShowInText });
+  await openOrgMenu("Starlink");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "🔎 Podświetl w tekście", "Otwórz stronę produktu", "Scal z innymi zapisami…", "Zmień na osobę", "Zmień na organizację",
+    "Zmień na miejsce", "Zmień na wydarzenie", "× Usuń encję",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Scal z innymi zapisami…" }));
+  expect(onMergeProducts).toHaveBeenCalledWith(expect.objectContaining({ id: 78 }));
+  await openOrgMenu("Starlink");
+  fireEvent.click(screen.getByRole("menuitem", { name: "🔎 Podświetl w tekście" }));
+  expect(onShowInText).toHaveBeenCalledWith(expect.objectContaining({ id: 78 }), "product");
+});
+
+it("turns a product back into a place from its menu", async () => {
+  renderManualChips();
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await openOrgMenu("Starlink");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na miejsce" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/78/from_product",
+    { entity_type: "placeName" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na miejsce/)).toBeTruthy();
+});
+
+it("gives event chips the shared menu: description, retype to product, delete", async () => {
+  const onDescribeEvent = vi.fn();
+  renderManualChips({ onDescribeEvent });
+  await openOrgMenu("Szczyt NATO");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "Dodaj opis wydarzenia…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
+    "Zmień na produkt / system", "× Usuń encję",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj opis wydarzenia…" }));
+  expect(onDescribeEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 77 }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await openOrgMenu("Szczyt NATO");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na produkt / system" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/77/from_product",
+    { entity_type: "productName" }, { headers: expect.any(Object) }));
+});
+
+it("changes an organization into a named event", async () => {
+  mockOrgEntities({ id: 31, text: "Szczyt", count: 2, organization_id: 8 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", product_name: "Szczyt" } });
+  renderInRouter(<EntitiesPanel docId={10872} />);
+  await openOrgMenu("Szczyt");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na wydarzenie" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/31/to_product",
+    { entity_type: "eventName" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na wydarzenie: Szczyt/)).toBeTruthy();
+});
+
 it("changes an organization into a person and reports the registry match", async () => {
   mockOrgEntities({ id: 31, text: "Rawit Ruja", count: 2, organization_id: 8 });
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", linked: ["Rawit Ruja"] } });
@@ -452,6 +514,17 @@ it("changes an organization into a person and reports the registry match", async
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/31/to_person", {},
     { headers: expect.any(Object) }));
   expect(await screen.findByText(/zmienione na osobę: Rawit Ruja/)).toBeTruthy();
+});
+
+it("changes a mis-tagged organization into a product / system", async () => {
+  mockOrgEntities({ id: 41, text: "Starshield", count: 6, organization_id: 9 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", product_name: "Starshield" } });
+  renderInRouter(<EntitiesPanel docId={11137} />);
+  await openOrgMenu("Starshield");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na produkt / system" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/41/to_product", {},
+    { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na produkt \/ system: Starshield/)).toBeTruthy();
 });
 
 it("offers 'Podświetl w tekście' in the person, organization and place menus when the host asks for it", async () => {
@@ -781,4 +854,64 @@ it("saves a Wikipedia article for a place and shows the 📖 link", async () => 
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect((await screen.findByRole("link", { name: `Wikipedia: ${place.text}` })).getAttribute("href"))
     .toBe("https://en.wikipedia.org/wiki/Aden");
+});
+
+const relevanceLabel = { related: "Pośrednio", figurative: "Przenośnie" } as const;
+
+it.each(["related", "figurative"] as const)("sets person and place relevance to %s from the chip menu", async (relevance) => {
+  const person = { id: 11, text: "Trump", count: 1 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [place], placeName: [] } } }));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  for (const item of [person, place]) {
+    fireEvent.click(await screen.findByRole("button", { name: item.text }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ }));
+    expect(screen.getByRole("menuitem", { name: "✓ Główny temat" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: `○ ${relevanceLabel[relevance]}` }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(`/website_entities/${item.id}/relevance`,
+      { relevance }, { headers: expect.objectContaining({ "Content-Type": "application/json" }) }));
+  }
+});
+
+it("reports an error and keeps the previous relevance when saving fails", async () => {
+  vi.mocked(axios.patch).mockRejectedValue(new Error("offline"));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: place.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "○ Przenośnie" }));
+  expect(await screen.findByText("Nie udało się zapisać związku encji z tematem.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: place.text }));
+  expect(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ })).toBeTruthy();
+});
+
+it.each(["related", "figurative"] as const)("styles %s chips and explains their relevance", (relevance) => {
+  render(<EntityChips label="Miejsca" items={[{ ...place, relevance }]} />);
+  const chip = screen.getByText(place.text).closest(".entity-chip");
+  expect(chip?.classList.contains(`entity-chip--${relevance}`)).toBe(true);
+  expect(chip?.getAttribute("title")).toContain(relevance === "related" ? "Pośredni związek" : "Wzmianka przenośna");
+});
+
+it("folds several persons into one target from a single merge dialog", async () => {
+  const persons = [
+    { id: 1, text: "Luka Nikulesku", count: 7 },
+    { id: 2, text: "Nikuleswsku", count: 1 },
+    { id: 3, text: "Ninkulesko", count: 1 },
+  ];
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: persons, orgName: [], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  render(<MemoryRouter><EntitiesPanel docId={11139} /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: /Nikuleswsku/ }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Połącz z inną osobą w dokumencie…" }));
+  // Also take the third spelling along, then merge both into the full name.
+  const ninkulesko = screen.getByText("Ninkulesko", { selector: "strong" }).parentElement as HTMLElement;
+  fireEvent.click(within(ninkulesko).getByRole("checkbox", { name: "dołącz" }));
+  const target = screen.getByText("Luka Nikulesku", { selector: "strong" }).parentElement as HTMLElement;
+  fireEvent.click(within(target).getByRole("button", { name: "scal 2 do tej osoby" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+  expect(axios.post).toHaveBeenNthCalledWith(1, "/document/11139/persons/merge",
+    { source_entity_id: 2, target_entity_id: 1 }, { headers: expect.any(Object) });
+  expect(axios.post).toHaveBeenNthCalledWith(2, "/document/11139/persons/merge",
+    { source_entity_id: 3, target_entity_id: 1 }, { headers: expect.any(Object) });
+  expect(await screen.findByText(/Połączono 2 osoby/)).toBeTruthy();
 });

@@ -133,6 +133,10 @@ interface ChapterOccurrence {
   count: number;
 }
 
+const AUTO_CHAPTER_DOCS = 30;
+const AUTO_CHAPTER_CONCURRENCY = 4;
+const TOP_CHAPTERS_SHOWN = 3;
+
 const EDITOR_TYPES = ["webpage", "link", "youtube", "movie", "email"];
 
 const CONFIDENCE_LABELS: Record<string, string> = {
@@ -190,6 +194,8 @@ const Organizations = () => {
   const [documents, setDocuments] = React.useState<OrganizationDocument[]>([]);
   // per-document chapter drill-down ("wystąpienia w tej książce")
   const [occurrences, setOccurrences] = React.useState<Record<number, ChapterOccurrence[] | "loading">>({});
+  // documents whose full chapter list is expanded (default: top chapters only)
+  const [expandedChapters, setExpandedChapters] = React.useState<Record<number, boolean>>({});
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [isError, setIsError] = React.useState(false);
@@ -317,6 +323,7 @@ const Organizations = () => {
     setNewCountrySlug("");
     setNewCountryNote("");
     setOccurrences({});
+    setExpandedChapters({});
     setIsEditing(false);
     setShowMergePicker(false);
     setMergeQuery("");
@@ -363,6 +370,36 @@ const Organizations = () => {
       setMessage(`Nie udało się usunąć kraju: ${error.response?.data?.message || error.message}`);
     }
   };
+
+  // Chapters shown inline per document without a click: the first
+  // AUTO_CHAPTER_DOCS documents are fetched, a few requests at a time.
+  React.useEffect(() => {
+    if (!documents.length) return;
+    let cancelled = false;
+    const queue = documents.filter((d) => d.raw_mention).slice(0, AUTO_CHAPTER_DOCS);
+    const worker = async () => {
+      for (let doc = queue.shift(); doc && !cancelled; doc = queue.shift()) {
+        setOccurrences((prev) => (prev[doc!.id] ? prev : { ...prev, [doc!.id]: "loading" }));
+        try {
+          const response = await axios.get(`${apiUrl}/document/${doc.id}/entity_occurrences`, {
+            params: { text: doc.raw_mention }, headers,
+          });
+          if (!cancelled) setOccurrences((prev) => ({ ...prev, [doc!.id]: response.data.occurrences ?? [] }));
+        } catch (error) {
+          console.error("Error fetching occurrences", error);
+          if (!cancelled) {
+            setOccurrences((prev) => {
+              const next = { ...prev };
+              delete next[doc!.id];
+              return next;
+            });
+          }
+        }
+      }
+    };
+    for (let i = 0; i < AUTO_CHAPTER_CONCURRENCY; i++) worker();
+    return () => { cancelled = true; };
+  }, [documents]);
 
   const toggleOccurrences = async (doc: OrganizationDocument) => {
     if (!doc.raw_mention) return;
@@ -923,17 +960,37 @@ const Organizations = () => {
                     {(occurrences[doc.id] as ChapterOccurrence[]).length === 0 && (
                       <span style={{ color: "#94a3b8" }}>Brak rozdziałów (dokument bez struktury) lub wystąpień.</span>
                     )}
-                    {(occurrences[doc.id] as ChapterOccurrence[]).map((o) => (
-                      <div key={o.position} style={{ padding: "1px 0" }}>
-                        <NavLink
-                          to={`/read/${doc.id}?chapter=${o.position}&highlight=${encodeURIComponent(doc.raw_mention ?? "")}`}
-                          style={{ color: "#0369a1" }}
-                        >
-                          {o.position}. {o.title}
-                        </NavLink>
-                        <span style={{ color: "#667" }}> ×{o.count}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const all = occurrences[doc.id] as ChapterOccurrence[];
+                      const byCount = [...all].sort((a, b) => b.count - a.count || a.position - b.position);
+                      const expanded = !!expandedChapters[doc.id];
+                      const shown = expanded ? [...all] : byCount.slice(0, TOP_CHAPTERS_SHOWN);
+                      if (expanded) shown.sort((a, b) => a.position - b.position);
+                      return (
+                        <>
+                          {shown.map((o) => (
+                            <div key={o.position} style={{ padding: "1px 0" }}>
+                              <NavLink
+                                to={`/read/${doc.id}?chapter=${o.position}&highlight=${encodeURIComponent(doc.raw_mention ?? "")}`}
+                                style={{ color: "#0369a1" }}
+                              >
+                                {o.position}. {o.title}
+                              </NavLink>
+                              <span style={{ color: "#667" }}> ×{o.count}</span>
+                            </div>
+                          ))}
+                          {all.length > TOP_CHAPTERS_SHOWN && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedChapters((prev) => ({ ...prev, [doc.id]: !expanded }))}
+                              style={{ fontSize: "0.9em", color: "#0369a1", border: "none", background: "none", cursor: "pointer", padding: 0 }}
+                            >
+                              {expanded ? "▴ tylko najczęstsze" : `+ ${all.length - TOP_CHAPTERS_SHOWN} więcej`}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </li>

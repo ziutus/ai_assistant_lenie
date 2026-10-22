@@ -11,6 +11,22 @@
   (nie `.ps1` przez PowerShell — `docker build` pisze na stderr). Użytkownik,
   host i ścieżka Dockera są na górze skryptu; szczegóły w
   [NAS_Deployment.md](docs/CICD/NAS_Deployment.md).
+- **Deploy tylko z domowej sieci LAN, nigdy przez VPN.** NAS (`192.168.200.7`)
+  wdrażamy wyłącznie wtedy, gdy użytkownik jest w domu, w tej samej sieci co
+  NAS. Gdy jest poza domem (VPN włączony albo nie), nie wdrażaj na NAS
+  (`nas-deploy.sh`, `ssh`/`docker` na NAS). Samo rozłączenie VPN nie pomaga:
+  poza domem NAS jest po prostu nieosiągalny. Zrób kod, testy i commit
+  lokalnie, a w raporcie napisz, że wdrożenie czeka na powrót użytkownika do
+  domu (nie „na rozłączenie VPN"). Nie próbuj też „sprawdzać, czy NAS
+  odpowiada" przez SSH i nie proś o włączanie lub wyłączanie VPN. Wyjątek tylko
+  na wyraźne polecenie użytkownika w danej sesji.
+
+- Gdy użytkownik pracuje przez VPN (jest poza domem), **nie wdrażaj na NAS**:
+  wdrożenie przez VPN jest wolne i zawodne (zrywa SSH i push do rejestru).
+  Skończ pracę do commita/PR, zgłoś, że wdrożenie czeka, i wróć do niego, gdy
+  użytkownik napisze, że jest w domu. Nie ponawiaj `nas-deploy.sh`, dopóki
+  NAS nie odpowiada na `ssh admin@192.168.200.7` bez VPN-a, albo użytkownik
+  wyraźnie nie poleci wdrożyć mimo VPN-a.
 
 ## Masowe operacje na Obsidianie
 
@@ -35,5 +51,14 @@ environments.
 - Then run `git worktree remove --force <path>` (nested worktrees first) and
   `git worktree prune`.
 - Remove a task's worktree right after its PR is merged. Close the session that
-  uses it first; a live process keeps the directory locked.
-- Delete only the worktree, never its branch, without asking the user.
+  uses it first; a live process keeps the directory locked (a leftover Codex
+  `app-server-broker.mjs` node process started with the worktree as `--cwd` is
+  the usual culprit — stop that one process, not other node processes).
+- After the worktree is removed, delete its branch once the PR is merged into
+  `main`: confirm with `gh pr view <number> --json state` (must be `MERGED`) or
+  `git branch --merged origin/main`, then `git branch -d <branch>` (the safe
+  form refuses an unmerged branch) and, if it still exists,
+  `git push origin --delete <branch>`.
+- Never use `git branch -D`, never delete a branch whose PR is still open or
+  unmerged, and never delete `before_claude_code`. In any of those cases ask
+  the user first.
