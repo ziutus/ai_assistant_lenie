@@ -707,3 +707,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — `PATCH /ner_gazetteer/2`: wzorce `enklaw* kaliningrad*` i `kaliningradzk* enklaw*` (pierwszy obejmuje oba przypadki), bez deployu; potem `POST /website_entities` dla dok. #10872 (bez embeddingów, ręczne encje zachowane). „Obwód Kaliningradzki”: 7 → 10 wzmianek, warianty „enklawę Kaliningradu” i „kaliningradzkiej enklawy”. Miasto „Kaliningrad” zachowuje własne wzmianki („Kaliningradu” z tej frazy liczy się też tam).
 - **Test regresyjny:** brak — czysto danowa poprawka; wpis w `ner_gazetteer_entries` dokumentuje przypadek, a wzorzec sprawdzono na pełnym tekście dok. #10872 kodem z `place_mention_gazetteer.py`.
 - **Status:** tylko dane bez zmiany kodu. Skutek uboczny pełnego odświeżenia NER: kilka drobnych zmian etykiet w tym dokumencie (m.in. „Pentagon” podzielony na orgName i placeName, „Waszyngtonem” i „Saudowa” z orgName na placeName, zniknięcie fałszywego „Nato” jako miejsca).
+
+### E045 — „Porty w Petersburgu” jako organizacja (dok. #10872, PR n/d, 2026-10-19)
+
+- **Typ encji:** orgName (fałszywy pozytyw)
+- **Kategoria:** T9
+- **Zdanie źródłowe:** „No iż właśnie Kalinigrad, potem Porty w Petersburgu i flota rosyjska w Petersburgu i Murmańsk…” (transkrypcja YouTube).
+- **Objaw:** w panelu organizacji pojawiła się fraza pospolita „Porty w Petersburgu”; „Petersburg” był równolegle poprawnie rozpoznany jako `placeName` (geocode 600).
+- **Przyczyna źródłowa:** spaCy oznaczył całą frazę rzeczownikową jako ORG (wielka litera po przecinku z napisów STT + człon „w Petersburgu”). Rejestr organizacji dopasowuje tylko dokładnie i niczego nie waliduje, więc utworzył wpis `organizations.id=1137`. Żaden mechanizm kodu nie zawiódł — brakowało reguły wykluczenia.
+- **Poprawka:** tylko dane — globalna reguła `ner_exclusions` (id=21), `DELETE /website_entities/19564`, usunięta osierocona organizacja 1137 (SQL; brak linków i aliasów).
+- **Test regresyjny:** brak — bez zmiany kodu; reguła `ner_exclusions` jest regresją danych.
+- **Status:** tylko dane, bez zmiany kodu.
