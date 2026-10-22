@@ -26,7 +26,12 @@ by Google) is retried once after `CAPTIONS_RETRY_DELAY_SECONDS` (60 s); the resu
 Every attempt is logged in `external_service_events` (`youtube_captions`, operation `via_webshare_proxy` or `direct`,
 `error_code` `GoogleSorryBlock` for the Google block) and shown on `/service-status` — the data for judging whether the
 paid Webshare proxy is worth keeping. `run_check()` reports `new_items` and a `feeds`
-list (id, name, items, new_items) shown on the Jobs page.
+list (id, name, items, new_items) shown on the Jobs page; per feed it also lists up to
+`NEW_ENTRIES_LISTED` new non-ignored entries as `new_entries` (`feed_item_id`, `title`, `url`,
+`status`) plus `new_entries_truncated`, which the Jobs page renders as links. A manual
+`feed_check` / `feed_check_all` job (worker.py) runs `run_auto_import()` right after the check and
+returns its result under `import`, so new items of `auto_import` feeds become documents without
+waiting for `feed_daily`; caption fetching stays in `feed_daily`.
 
 ### Domain Model & Database
 
