@@ -35,6 +35,14 @@ const reviewReasons: Array<[ReviewReason, string]> = [
   ["other", "Inny powód"],
 ];
 
+const SKIP_HELP = "Pomiń: odrzuca tylko ten jeden wpis. Zapytam o powód (np. nie interesuje mnie, duplikat) — zostanie zapisany do przyszłej oceny preferencji.";
+const IGNORE_HELP = "Ignoruj: dodaje regułę do źródła (wzorzec w tytule lub początek adresu URL). Pasujące wpisy w kolejce są od razu ignorowane, a nowe z tego źródła pomijane automatycznie.";
+
+function HelpBadge({ text }: { text: string }) {
+  return <span title={text} aria-label={text} role="img"
+    style={{ cursor: "help", color: "#64748b", fontSize: ".85rem", marginRight: 6 }}>ⓘ</span>;
+}
+
 export default function FeedReview() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -255,7 +263,9 @@ export default function FeedReview() {
               <button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "link", keep_for_review: true })}>Zaimportuj jako link i zapisz do przeczytania</button>{" "}
               <button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "webpage" })}>Zaimportuj jako webpage</button>
             </>}{" "}
+            <HelpBadge text={SKIP_HELP} />
             <button disabled={busy} onClick={() => { setSkipItemId(item.id); setSkipReason("not_interested"); }}>Pomiń</button>{" "}
+            <HelpBadge text={IGNORE_HELP} />
             <button disabled={busy} onClick={() => { setIgnoreItemId(item.id); setIgnorePattern(""); }}>Ignoruj</button>
           </> : <>
             {isVideo(item) ? <><button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "youtube" })}>Zaimportuj jako film</button>{" "}
@@ -263,7 +273,9 @@ export default function FeedReview() {
               <button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "link" })}>Zaimportuj jako link</button>{" "}
               <button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "webpage" })}>Zaimportuj jako webpage</button>
             </>}{" "}
+            <HelpBadge text="Nie dodawaj: odrzuca tylko ten jeden wpis, bez reguły dla źródła." />
             <button disabled={busy} onClick={() => void act(item.id, "skip")}>Nie dodawaj</button>{" "}
+            <HelpBadge text={IGNORE_HELP} />
             <button disabled={busy} onClick={() => { setIgnoreItemId(item.id); setIgnorePattern(""); }}>Ignoruj</button>{" "}
             <button disabled={busy} onClick={() => void act(item.id, "restore")}>Wróć do nowych</button>
           </>}

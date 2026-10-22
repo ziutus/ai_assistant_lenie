@@ -11,6 +11,15 @@
   (nie `.ps1` przez PowerShell — `docker build` pisze na stderr). Użytkownik,
   host i ścieżka Dockera są na górze skryptu; szczegóły w
   [NAS_Deployment.md](docs/CICD/NAS_Deployment.md).
+- **Deploy tylko z domowej sieci LAN, nigdy przez VPN.** NAS (`192.168.200.7`)
+  wdrażamy wyłącznie wtedy, gdy użytkownik jest w domu, w tej samej sieci co
+  NAS. Gdy jest poza domem (VPN włączony albo nie), nie wdrażaj na NAS
+  (`nas-deploy.sh`, `ssh`/`docker` na NAS). Samo rozłączenie VPN nie pomaga:
+  poza domem NAS jest po prostu nieosiągalny. Zrób kod, testy i commit
+  lokalnie, a w raporcie napisz, że wdrożenie czeka na powrót użytkownika do
+  domu (nie „na rozłączenie VPN"). Nie próbuj też „sprawdzać, czy NAS
+  odpowiada" przez SSH i nie proś o włączanie lub wyłączanie VPN. Wyjątek tylko
+  na wyraźne polecenie użytkownika w danej sesji.
 
 ## Masowe operacje na Obsidianie
 
