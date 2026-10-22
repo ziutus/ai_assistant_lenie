@@ -189,6 +189,11 @@ This is a narrower, cheaper deviation than it looks: the "DNS: Google Cloud DNS"
 
 ## Open items for implementation
 
+- Start/stop control from a phone (2026-10-22): the API Gateway half of the
+  "Start/stop control" section, with an Android app in place of the Firebase
+  Hosting frontend, is planned in
+  [`docs/deployment/nas/vpn-relay-mobile-control-plan.md`](../deployment/nas/vpn-relay-mobile-control-plan.md).
+
 - Verify current GCloud pricing via the official calculator before
   provisioning (see caveat above).
 - Confirm QNAP's native outbound VPN client actually supports OpenVPN
