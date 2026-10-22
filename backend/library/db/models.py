@@ -4146,3 +4146,66 @@ class ChatMessage(Base):
             f"ChatMessage(id={self.id!r}, conversation_id={self.conversation_id!r}, "
             f"sender_name_raw={self.sender_name_raw!r}, sent_at={self.sent_at!r})"
         )
+
+
+class NarrativeSet(Base):
+    """A documented set of narratives pushed by one actor (state, company, movement).
+
+    kind: state_propaganda | disinformation | lobbying | marketing. ``source_url``
+    must point to the independent analysis the narratives were taken from; a set
+    without a documented source is not comparable with the others.
+    """
+
+    __tablename__ = "narrative_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str] = mapped_column(String(200), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    source_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    narratives: Mapped[list["Narrative"]] = relationship(
+        back_populates="narrative_set", cascade="all, delete-orphan", order_by="Narrative.code",
+    )
+
+
+class Narrative(Base):
+    """One narrative (thesis). ``description`` is sent to the classifier as the question."""
+
+    __tablename__ = "narratives"
+    __table_args__ = (UniqueConstraint("set_id", "code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    set_id: Mapped[int] = mapped_column(ForeignKey("narrative_sets.id", ondelete="CASCADE"), nullable=False)
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    narrative_set: Mapped["NarrativeSet"] = relationship(back_populates="narratives")
+
+
+class DocumentNarrativeScore(Base):
+    """Classifier match of a document (or one of its chunks) with a narrative.
+
+    ``probability`` is a model score for "the text touches this thesis", not a
+    verdict on intent; ``review`` records the human call: promotes (repeats the
+    thesis) | describes (analyses or debunks it) | unrelated.
+    """
+
+    __tablename__ = "document_narrative_scores"
+    __table_args__ = (
+        UniqueConstraint("document_id", "narrative_id", "model"),
+        Index("idx_document_narrative_scores_narrative", "narrative_id", "probability"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    narrative_id: Mapped[int] = mapped_column(ForeignKey("narratives.id", ondelete="CASCADE"), nullable=False)
+    model: Mapped[str] = mapped_column(String(60), nullable=False)
+    probability: Mapped[decimal.Decimal] = mapped_column(Numeric(4, 3), nullable=False)
+    confidence: Mapped[decimal.Decimal | None] = mapped_column(Numeric(4, 3))
+    review: Mapped[str | None] = mapped_column(String(20))
+    scored_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())

@@ -1,0 +1,132 @@
+{
+  "set": {
+    "slug": "ru-viedm-2026-10",
+    "name": "Rosja – narracje strumienia VIEDM (Disinfo Digest, 11–12.10.2026)",
+    "actor": "Federacja Rosyjska",
+    "kind": "state_propaganda",
+    "source_url": "https://disinfodigest.pl/2026/10/13/rosyjski-aparat-wplywu-w-okresie-zaklocen-infrastruktury-yandexu-oddzialywanie-rosyjskiej-propagandy-w-polsce-11-12-pazdziernik-2026/",
+    "source_note": "Raport Fundacji INFO OPS Polska / Disinfo Digest (autorzy: Wojciech Pokora, Katarzyna Wojda); dokument 10774 w Lenie"
+  },
+  "narratives": [
+    {
+      "code": "RU-01",
+      "title": "Rosyjskie zwycięstwo jest przesądzone, a dalszy opór Ukrainy bezcelowy",
+      "description": "Analizowane przekazy przedstawiają zwycięstwo Rosji jako nieuchronne, niezależnie od sytuacji na froncie i zdolności obronnych Ukrainy. W takiej interpretacji dalsza walka Kijowa jedynie opóźnia przesądzony rezultat, a zachodnia pomoc wojskowa i finansowa traci uzasadnienie. W polskim obiegu informacyjnym taka argumentacja może osłabiać poparcie dla wspierania Ukrainy i sprzyjać akceptacji rosyjskich żądań politycznych."
+    },
+    {
+      "code": "RU-02",
+      "title": "Rosyjskie zdolności militarne przewyższają możliwości Ukrainy i NATO",
+      "description": "W publikacjach eksponuje się skuteczność rosyjskich środków rażenia i rozwój technologii wojskowych, a zdolności obronne Ukrainy oraz potencjał NATO przedstawia jako niewystarczające wobec rosyjskich możliwości ofensywnych. Przekaz opiera się na selektywnym eksponowaniu sukcesów rosyjskiej armii przy pomniejszaniu zdolności adaptacyjnych i potencjału militarnego jej przeciwników. Może to wzmacniać poczucie zagrożenia oraz podważać zaufanie do skuteczności odstraszania NATO."
+    },
+    {
+      "code": "RU-03",
+      "title": "NATO przygotowuje ofensywną wojnę przeciwko Federacji Rosyjskiej",
+      "description": "W publikacjach dotyczących Warszawskiego Forum Bezpieczeństwa koncepcje obronne NATO przedstawiano jako przygotowania do bezpośredniej konfrontacji militarnej z Rosją. Mechanizm przekazu polegał na odwróceniu odpowiedzialności za eskalację poprzez przedstawianie działań odstraszających i obronnych Sojuszu jako zagrożenia dla bezpieczeństwa europejskiego. Taka interpretacja pozwala uzasadniać rosyjską rozbudowę potencjału militarnego jako odpowiedź na działania NATO, a zarazem podważać zasadność wzmacniania wschodniej flanki Sojuszu."
+    },
+    {
+      "code": "RU-04",
+      "title": "Polska staje się głównym ośrodkiem antyrosyjskiej polityki militarnej Zachodu",
+      "description": "Warszawa przedstawiana jest jako jeden z głównych inicjatorów konfrontacji z Rosją, wykorzystujący struktury NATO i instytucje europejskie do prowadzenia agresywnej polityki bezpieczeństwa. Przekaz przenosi odpowiedzialność za wzrost napięć z działań Rosji na decyzje polskich władz, przedstawiając wzmacnianie zdolności obronnych państwa jako prowokowanie konfliktu. W takiej interpretacji obecność wojsk sojuszniczych i zaangażowanie Polski we wzmacnianie wschodniej flanki NATO stają się czynnikami zwiększającymi ryzyko rosyjskiego odwetu, a nie elementami polityki odstraszania."
+    },
+    {
+      "code": "RU-05",
+      "title": "Militaryzacja państw bałtyckich zwiększa ryzyko konfliktu nuklearnego",
+      "description": "Doniesienia o możliwości rozmieszczenia broni jądrowej na Litwie oraz wzmacnianiu zdolności obronnych państw bałtyckich wykorzystywano do przedstawiania regionu jako potencjalnego źródła eskalacji nuklearnej. Przekaz koncentrował się na zagrożeniach wynikających z działań NATO, pomijając lub ograniczając znaczenie rosyjskiego nacisku militarnego. W rezultacie odpowiedzialność za wzrost napięć strategicznych przypisywano państwom wzmacniającym własną obronność. Taka argumentacja może zwiększać obawy przed konfliktem nuklearnym i podważać społeczną akceptację dla rozbudowy infrastruktury sojuszniczej w regionie."
+    },
+    {
+      "code": "RU-06",
+      "title": "Stany Zjednoczone wycofują się ze wspierania Ukrainy",
+      "description": "Doniesienia o możliwym wstrzymaniu amerykańskich dostaw uzbrojenia i informacji wywiadowczych wykorzystywano do przedstawiania współpracy Waszyngtonu z Kijowem jako niestabilnej i uzależnionej od bieżących decyzji politycznych administracji USA. W publikacjach z 11 października powoływano się między innymi na „Financial Times”, „Axios” i „The Wall Street Journal”, przedstawiając możliwość ograniczenia pomocy jako instrument amerykańskiej presji na ukraińskie władze. Eksponowano zależność zdolności obronnych Ukrainy od wsparcia zagranicznego oraz możliwość wykorzystania tej zależności do wymuszenia ustępstw politycznych. W polskim środowisku informacyjnym przekaz ten może podważać zaufanie do Stanów Zjednoczonych jako sojusznika i wzmacniać przekonanie o niepewności amerykańskiego zaangażowania w bezpieczeństwo Europy."
+    },
+    {
+      "code": "RU-07",
+      "title": "Waszyngton i Moskwa zawierają porozumienia ponad głowami europejskich sojuszników",
+      "description": "Doniesienia o decyzjach administracji USA dotyczących rosyjskiego oleju napędowego wykorzystywano do przedstawiania zbliżenia gospodarczego Waszyngtonu i Moskwy jako przełomu w dotychczasowej polityce izolowania Rosji. Publikacje zestawiały te informacje z wypowiedziami amerykańskich przedstawicieli krytykujących europejską politykę energetyczną oraz polityków europejskich postulujących wznowienie współpracy gospodarczej z Moskwą. W ten sposób budowano obraz sytuacji, w której Stany Zjednoczone i Rosja podejmują decyzje z pominięciem interesów Ukrainy oraz europejskich sojuszników. Rosyjska polityka przedstawiana była jako skuteczna, natomiast stanowisko Unii Europejskiej jako tracące znaczenie wobec amerykańskiego pragmatyzmu. W polskim kontekście przekaz ten podważał wiarygodność solidarności transatlantyckiej i sugerował potrzebę dostosowania polityki Warszawy do zmieniających się relacji amerykańsko-rosyjskich."
+    },
+    {
+      "code": "RU-08",
+      "title": "Zachodnia polityka sankcyjna wobec Rosji poniosła strategiczną porażkę",
+      "description": "Publikacje dotyczące eksportu rosyjskiego oleju napędowego i kolejnych europejskich pakietów sankcyjnych przedstawiały restrykcje gospodarcze jako nieskuteczne i szkodliwe przede wszystkim dla państw, które je wprowadziły. Wykorzystywano wypowiedzi rosyjskich urzędników oraz wybrane dane gospodarcze, koncentrując uwagę na kosztach ponoszonych przez Europę i pomijając szersze konsekwencje sankcji dla rosyjskiej gospodarki. Przekaz podważał zasadność dalszego ograniczania współpracy z Moskwą, przedstawiając zniesienie restrykcji jako rozwiązanie korzystniejsze gospodarczo od kontynuowania dotychczasowej polityki."
+    },
+    {
+      "code": "RU-09",
+      "title": "Europa ponosi koszty wojny, podczas gdy Stany Zjednoczone korzystają ze współpracy z Rosją",
+      "description": "W analizowanych przekazach politykę gospodarczą Stanów Zjednoczonych przedstawiano jako pragmatyczną, przeciwstawiając ją europejskiej polityce sankcyjnej, której koszty ponoszą obywatele państw Unii Europejskiej. Wydatki na energię i utrzymanie wykorzystywano jako argument przemawiający za ograniczeniem konfrontacji z Rosją, przy jednoczesnym pomniejszaniu znaczenia konsekwencji rosyjskiej agresji. Takie zestawienie eksponowało rozbieżność interesów gospodarczych USA i Europy, wspierając argumentację na rzecz zmiany europejskiej polityki wobec Moskwy i ograniczenia kosztów związanych ze wspieraniem Ukrainy."
+    },
+    {
+      "code": "RU-10",
+      "title": "Polska ponosi wielomiliardowe straty wskutek wspierania Ukrainy",
+      "description": "W badanych publikacjach pojawiały się twierdzenia o wielomiliardowych stratach polskiej gospodarki, przypisywanych zaangażowaniu Polski we wspieranie Ukrainy. Koszty gospodarcze związane z wojną przedstawiano jako konsekwencję decyzji polskich władz o udzielaniu pomocy Kijowowi, a nie jako następstwo rosyjskiej agresji. Tak skonstruowany przekaz podważał zasadność dalszego finansowania pomocy Ukrainie i przedstawiał ją jako działanie sprzeczne z interesami gospodarczymi Polski."
+    },
+    {
+      "code": "RU-11",
+      "title": "Ukraina traci demokratyczną legitymację, a Zełenski ogranicza konkurencję polityczną",
+      "description": "W badanych publikacjach nieprzeprowadzenie wyborów w warunkach wojny, ograniczenia działalności opozycji oraz dyskusje o potencjalnych następcach Wołodymyra Zełenskiego wykorzystywano do przedstawiania jego władzy jako pozbawionej demokratycznej legitymacji. Okoliczności funkcjonowania państwa podczas wojny interpretowano przede wszystkim jako działania służące utrzymaniu władzy, pomijając ich uwarunkowania prawne i bezpieczeństwa. Powoływano się również na wypowiedzi wybranych polityków zagranicznych postulujących zmianę ukraińskiego przywództwa. Zestawiano je z doniesieniami o napięciach między Kijowem a Waszyngtonem, sugerując, że zastrzeżenia wobec Zełenskiego podzielają także zagraniczni partnerzy Ukrainy."
+    },
+    {
+      "code": "RU-12",
+      "title": "Zełenski stanowi przeszkodę dla zakończenia wojny i porozumienia pokojowego",
+      "description": "Przekazy dotyczące napięć między Wołodymyrem Zełenskim a administracją amerykańską przedstawiały ukraińskiego prezydenta jako główną przeszkodę dla zawieszenia broni i rozpoczęcia negocjacji pokojowych. Eksponowano jego domniemaną niechęć do kompromisu, ograniczając znaczenie rosyjskich żądań oraz odpowiedzialności Moskwy za kontynuowanie wojny. W takiej interpretacji przedłużający się konflikt wynikał przede wszystkim z decyzji ukraińskiego przywództwa, a przyjęcie rosyjskich warunków negocjacyjnych przedstawiano jako drogę do zakończenia działań wojennych."
+    },
+    {
+      "code": "RU-13",
+      "title": "Rosja dąży do trwałego pokoju, podczas gdy Ukraina i Zachód sabotują negocjacje",
+      "description": "Wypowiedzi rosyjskich przedstawicieli dotyczące zawieszenia broni i negocjacji wykorzystywano do przedstawiania Moskwy jako strony gotowej do zakończenia konfliktu, w przeciwieństwie do Ukrainy i jej zachodnich partnerów. Mechanizm ten był widoczny w publikacjach dotyczących zapowiadanego rozejmu energetycznego. Doniesienia o deklaracjach Donalda Trumpa, reakcjach władz Ukrainy oraz stanowisku Rosji zestawiano w sposób eksponujący rosyjską gotowość do rozmów i przypisujący Kijowowi odpowiedzialność za trudności w osiągnięciu porozumienia. W przekazach ograniczano znaczenie prowadzonych równolegle przez Rosję działań wojennych, traktując jej deklaracje dyplomatyczne jako potwierdzenie pokojowych intencji."
+    },
+    {
+      "code": "RU-14",
+      "title": "Ukraińskie ataki na rosyjską infrastrukturę energetyczną są działaniami terrorystycznymi",
+      "description": "Ataki Ukrainy na rosyjskie rafinerie i instalacje energetyczne przedstawiano jako działania terrorystyczne oraz przejawy agresywnej polityki Kijowa. Publikacje koncentrowały się na zagrożeniach dla rosyjskiej infrastruktury i ludności cywilnej, pomijając lub ograniczając kontekst rosyjskiej agresji oraz ataków na ukraiński system energetyczny. Takie ujęcie odwracało role stron konfliktu, przedstawiając Ukrainę jako sprawcę eskalacji, a Rosję jako państwo reagujące na zagrożenie. Pozwalało również uzasadniać rosyjskie uderzenia w ukraińską infrastrukturę jako działania odwetowe."
+    },
+    {
+      "code": "RU-15",
+      "title": "Ukraina znajduje się na granicy załamania infrastrukturalnego",
+      "description": "Doniesienia o zniszczeniach ukraińskiej infrastruktury energetycznej, zagrożeniach dla systemów komunalnych i problemach z systemami wczesnego ostrzegania wykorzystywano do przedstawiania Ukrainy jako państwa stopniowo tracącego zdolność zapewnienia obywatelom podstawowych usług i bezpieczeństwa. Rzeczywiste skutki rosyjskich ataków łączono z prognozami dalszego pogarszania się sytuacji, przedstawiając problemy poszczególnych sektorów jako zapowiedź ogólnokrajowego załamania. W ten sposób informacje o zniszczeniach infrastruktury wspierały szerszy przekaz o nieuchronności ukraińskiej porażki i trwałej przewadze Rosji."
+    },
+    {
+      "code": "RU-16",
+      "title": "Ukraińscy uchodźcy stają się źródłem narastającego konfliktu społecznego w Polsce",
+      "description": "Publikacje dotyczące wrogości wobec ukraińskich uchodźców oraz incydentów z udziałem obywateli Ukrainy przedstawiały napięcia narodowościowe jako zjawisko narastające w polskim społeczeństwie. Pojedyncze zdarzenia i wypowiedzi publicystyczne wykorzystywano do formułowania uogólnionych ocen relacji polsko-ukraińskich, bez wykazania, że opisywane przypadki odzwierciedlają szerszy trend. W takim ujęciu lokalne konflikty stawały się argumentem na rzecz przekonania o pogłębiającej się wrogości między Polakami a Ukraińcami."
+    },
+    {
+      "code": "RU-17",
+      "title": "Ukraiński nacjonalizm stanowi zagrożenie dla bezpieczeństwa Polski",
+      "description": "W badanych publikacjach odwoływano się do „banderyzmu”, działalności Ukraińskiej Powstańczej Armii i sporów o pamięć historyczną, wykorzystując te zagadnienia do formułowania negatywnych ocen współczesnego państwa ukraińskiego. Historyczne konflikty przedstawiano jako dowód utrzymywania się tendencji ekstremistycznych w ukraińskiej polityce i społeczeństwie. W ten sposób rzeczywiste spory dotyczące przeszłości łączono z oskarżeniami wobec obecnych władz Ukrainy, a polskie wsparcie dla Kijowa przedstawiano jako działanie sprzeczne z interesem narodowym."
+    },
+    {
+      "code": "RU-18",
+      "title": "Polska jest państwem narastającej przemocy i niewydolnych instytucji bezpieczeństwa",
+      "description": "W monitorowanych publikacjach informacje o przemocy w szkołach, atakach z użyciem noży oraz groźbach wobec przedstawicieli władz wykorzystywano do przedstawiania Polski jako państwa zmagającego się z narastającym zagrożeniem dla bezpieczeństwa wewnętrznego. Zdarzenia o różnym charakterze i przyczynach zestawiano w sposób sugerujący pogłębianie się problemów z przemocą oraz nieskuteczność instytucji odpowiedzialnych za bezpieczeństwo. Pojedyncze incydenty stawały się w ten sposób podstawą uogólnionych ocen sytuacji w kraju, mimo że same w sobie nie pozwalają stwierdzić istnienia ogólnokrajowego trendu wzrostu przestępczości."
+    },
+    {
+      "code": "RU-19",
+      "title": "Polskie elity polityczne są niekompetentne, skorumpowane i podporządkowane obcym interesom",
+      "description": "W monitorowanych publikacjach pojawiały się oskarżenia o niekompetencję, korupcję i podporządkowanie zagranicznym interesom, kierowane zarówno wobec przedstawicieli rządu, jak i prezydenta. Część przekazów wykraczała poza krytykę konkretnych decyzji politycznych, przedstawiając nadużycia i niewydolność instytucji jako trwałe cechy polskiego systemu państwowego. W ten sposób negatywne oceny poszczególnych polityków rozszerzano na całe instytucje publiczne, budując obraz państwa, którego elity działają wbrew interesom obywateli niezależnie od przynależności politycznej."
+    },
+    {
+      "code": "RU-20",
+      "title": "Unia Europejska ogranicza polską suwerenność i przejmuje kontrolę nad strategicznymi obszarami państwa",
+      "description": "Publikacje dotyczące uprawnień unijnych organów nadzorczych, polityki sankcyjnej i regulacji gospodarczych przedstawiały działania instytucji UE jako stopniowe ograniczanie suwerenności państw członkowskich. Zmiany przepisów oraz mechanizmy wspólnego podejmowania decyzji interpretowano jako przejmowanie kontroli nad obszarami pozostającymi w kompetencjach władz krajowych. W przekazach eksponowano zagrożenia dla samodzielności Polski, często bez wyjaśnienia rzeczywistego zakresu uprawnień instytucji unijnych. Takie ujęcie przedstawiało integrację europejską jako proces osłabiania państwa, a nie współpracy opartej na uzgodnionym podziale kompetencji."
+    },
+    {
+      "code": "RU-21",
+      "title": "Zachodni system polityczno-gospodarczy znajduje się w fazie nieodwracalnego kryzysu",
+      "description": "W badanych materiałach problemy gospodarcze, napięcia społeczne i krytykę zachodnich instytucji wykorzystywano do przedstawiania obecnego modelu polityczno-gospodarczego jako systemu znajdującego się w trwałym kryzysie. Poszczególne niepowodzenia i konflikty interpretowano jako oznaki postępującego osłabienia Zachodu, a nie problemy wynikające z konkretnych uwarunkowań politycznych czy ekonomicznych. Przekaz sprowadzał złożone zjawiska do ogólnej diagnozy upadku zachodniego porządku, sugerując, że dotychczasowy model rozwoju utracił zdolność do przezwyciężania własnych problemów."
+    },
+    {
+      "code": "RU-22",
+      "title": "Rosja i jej partnerzy tworzą alternatywę wobec zachodniego porządku międzynarodowego",
+      "description": "Publikacje dotyczące rosyjskiej dyplomacji, współpracy energetycznej oraz relacji z Chinami i Iranem przedstawiały Moskwę jako ważnego uczestnika kształtującego się układu międzynarodowego, zdolnego do przeciwstawienia się dominacji Zachodu. Rosyjskie inicjatywy zestawiano z problemami politycznymi i gospodarczymi Stanów Zjednoczonych oraz Europy, podkreślając rosnące znaczenie państw rozwijających współpracę poza zachodnimi strukturami. W takim ujęciu Rosja nie była państwem izolowanym wskutek agresji przeciwko Ukrainie, lecz jednym z ośrodków zmieniającego się porządku światowego. Odrębny wątek dotyczył Białorusi, przedstawianej jako państwo zainteresowane normalizacją stosunków z Polską. Eksponowano wypowiedzi białoruskich przedstawicieli o możliwości odbudowy kontaktów dyplomatycznych i gospodarczych, ograniczając znaczenie współodpowiedzialności Mińska za wspieranie rosyjskiej agresji przeciwko Ukrainie. Przekazy te przedstawiały utrzymywanie restrykcji wobec Białorusi jako przeszkodę dla odbudowy współpracy korzystnej dla Polski. W materiałach dotyczących konfliktów pozaeuropejskich wykorzystywano również rosyjskie deklaracje potępiające ataki na infrastrukturę cywilną i wzywające do ograniczenia eskalacji. Pozwalało to przedstawiać Moskwę jako państwo opowiadające się za rozwiązaniami dyplomatycznymi i ochroną ludności cywilnej, mimo prowadzonej przez nią wojny przeciwko Ukrainie. Wizerunek ten uzupełniał przekaz o Rosji jako odpowiedzialnym uczestniku stosunków międzynarodowych."
+    },
+    {
+      "code": "RU-23",
+      "title": "Zachodnie rządy i media uczestniczą w systemowej manipulacji społeczeństwami",
+      "description": "W badanych publikacjach pojawiały się odniesienia do tajnych programów kontroli społecznej, manipulacji medialnych oraz ukrytych struktur władzy, przedstawianych jako elementy systemowego oddziaływania na społeczeństwa zachodnie. Przekazy te podważały wiarygodność instytucji publicznych i mediów, sugerując, że oficjalne informacje służą ukrywaniu rzeczywistych mechanizmów sprawowania władzy. Charakterystycznym elementem tej argumentacji było przedstawianie braku publicznie dostępnych dowodów nie jako ograniczenia wiarygodności stawianych zarzutów, lecz jako oznaki skutecznego ukrywania prawdy. W rezultacie nawet informacje przeczące przedstawianym teoriom mogły być interpretowane jako część domniemanego mechanizmu manipulacji."
+    },
+    {
+      "code": "RU-24",
+      "title": "Zachodnie struktury bezpieczeństwa nie radzą sobie z zagrożeniami technologicznymi i informacyjnymi",
+      "description": "Doniesienia o możliwości rejestrowania danych związanych z aktywnością wojskową przez pojazdy chińskiej produkcji, wykorzystywaniu oprogramowania Pegasus, podatnościach technologicznych oraz problemach z wyposażeniem sił zbrojnych służyły przedstawianiu zachodnich instytucji bezpieczeństwa jako podatnych na naruszenia i niewystarczająco przygotowanych do przeciwdziałania zagrożeniom. Incydenty o różnym charakterze zestawiano w jednym przekazie, sugerując, że problemy dotyczą nie pojedynczych rozwiązań lub instytucji, lecz całego systemu bezpieczeństwa państw NATO. W ten sposób konkretne przypadki i doniesienia o zagrożeniach technologicznych wykorzystywano do formułowania szerszych ocen zdolności Zachodu do ochrony informacji, infrastruktury i zasobów wojskowych."
+    }
+  ]
+}
