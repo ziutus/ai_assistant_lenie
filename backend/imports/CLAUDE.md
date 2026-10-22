@@ -2,46 +2,6 @@
 
 Standalone CLI scripts that add or manage documents in the Lenie database, bypassing the REST API. Covers single-item ad-hoc tools, bulk import pipelines, and a few standalone helper tools that do not touch the database at all.
 
-## Directory Structure
-
-```
-imports/
-├── book_import_pdf_twierdza_linux.py  # Import "Twierdza Linux" PDF into a Document — one script per book, see below
-├── book_extract_images.py    # Backfill: extract images for a book PDF already imported (no text_md rewrite)
-├── backfill_obsidian_content_groups.py  # One-off: enqueue Bielik content-group (Tematy) classification for already-imported obsidian_note documents
-├── check_pdf_text_layer.py   # Check if a PDF has a usable text layer or needs OCR (no DB)
-├── project_cards_parse.py    # Parse a directory of project-card PDFs ("Robotyka – 100 projektów") into cards.json + review.csv (no DB)
-├── project_cards_family_parse.py  # Parse one card-book PDF (science experiments / toddler crafts / logic puzzles) into cards.json + review.csv (no DB)
-├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
-├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
-├── select_control_questions.py # Cheap-LLM (Bielik) router: which control questions a document actually answers
-├── dynamodb_sync.py          # Sync documents from DynamoDB + S3 to local PostgreSQL
-├── extract_references.py     # Extract book footnotes from text_md into document_references
-├── extract_time_periods.py   # Classify the historical period a document is about (per chapter for books)
-├── extract_tones.py          # Classify emotional tone + language register per chapter
-├── detect_document_links.py  # Backfill: propose `references` document_links from verbatim URL mentions (dry-run by default, --apply, --id)
-├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
-├── reattribute_facebook_facts.py # One-off: re-label Facebook facts stored as user_manual (PATCH) back to source "facebook", release the pin
-├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
-├── strip_webpage_images_backfill.py  # One-off: strip raw inline images (incl. base64) out of text_md for webpage/link documents
-├── strip_onet_google_promo_backfill.py  # One-off: remove Onet's "Dodaj w Google" promo block (logo marker + button) from stored text_md
-├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
-├── organization_descriptions_backfill.py  # One-off: LLM-generated short descriptions for organizations missing one (reader tooltip)
-├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
-├── whatsapp_neighbor_profiles.py  # Build/update per-neighbor social-memory-aid profiles on Contact.whatsapp_profile from a WhatsApp chat export
-├── whatsapp_neighbor_profiles_migrate_to_contacts.py  # One-off: migrate the old Document-based neighbor profiles onto Contact + delete the Documents
-├── whatsapp_chat_import.py   # Full message log + attachment import into chat_conversations/chat_messages (raw archive, not the LLM-distilled Contact profile)
-├── whatsapp_chat_backfill_contacts.py  # One-off: re-resolve contact_id for already-imported chat_messages rows missed before sender-suffix stripping existed
-├── google_contacts_import.py # One-off: full import of a Google Contacts CSV export into the private contact book
-├── court_case_contacts_import.py  # One-off: match/import a KRZ court-case creditor list against the private contact book
-├── backfill_krz_tuwima_group.py  # One-off: backfill contact_groups membership for KRZ creditors missed by google_contacts_import.py's name match
-├── fix_filip_gr4_false_name_matches.py  # One-off: undo a bare-first-name false merge from the Filip gr4 import
-├── backfill_filip_gr4_contact_photos.py  # One-off: upload Filip gr4 group members' profile photos
-├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
-├── youtube_backfill_author.py # One-off: fetch channel name for existing videos missing 'byline'
-└── youtube_batch_analyze.py  # Bielik LLM chunk analysis of an existing document (by ID)
-```
-
 ## Scripts
 
 | Script | Purpose | DB Access |

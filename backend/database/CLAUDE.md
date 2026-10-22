@@ -2,48 +2,6 @@
 
 PostgreSQL database schema for Project Lenie. Init scripts are executed automatically by the `postgres` Docker image on first container startup (when the data volume is empty).
 
-## Directory Structure
-
-```
-database/
-└── init/                                        # Docker entrypoint init scripts (run in alphabetical order)
-    ├── 01-create-database.sql                    # Creates the "lenie-ai" database
-    ├── 02-create-extension.sql                   # Installs pgvector extension
-    ├── 03-create-table.sql                       # Creates documents table + indexes
-    ├── 04-create-table.sql                       # Creates document_embeddings table + indexes
-    ├── 05-migrate-ready-for-translation.sql
-    ├── 06-drop-english-columns.sql
-    ├── 07-add-transcript-needed.sql
-    ├── 08-fix-language-typo.sql                  # document_embeddings.langauge → language
-    ├── 09-create-lookup-tables.sql
-    ├── 10-add-foreign-keys.sql
-    ├── 11-create-transcription-log.sql
-    ├── 12-add-video-description.sql
-    ├── 13-create-analysis-tables.sql             # document_analysis_runs, document_chunks, document_topic_sections
-    ├── 14-add-speakers-to-analysis-runs.sql
-    ├── 15-add-analysis-run-workflow-columns.sql  # mode, status, scope on document_analysis_runs
-    ├── 16-add-chunk-id-to-embeddings.sql         # document_embeddings.chunk_id FK
-    ├── 17-add-text-extracted-to-web-documents.sql
-    ├── 18-create-document-removed-lines.sql
-    ├── 19-create-reader-user-tables.sql          # users, user_reading_progress, user_document_notes
-    ├── 20-create-api-keys.sql                    # api_keys
-    ├── 21-create-document-entities.sql           # document_entities (raw NER persons/places)
-    ├── 22-create-geocode-cache.sql               # geocode_cache + document_entities.geocode_id
-    ├── 23-create-persons-tables.sql              # persons, person_aliases, document_persons
-    ├── 24-create-ner-exclusions.sql              # ner_exclusions (NER false-positive suppressions)
-    ├── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
-    ├── 26-create-document-references.sql         # document_references (book footnotes extracted from text_md)
-    ├── 27-create-document-events.sql             # document_events (LLM-extracted document timeline)
-    ├── 28-create-sources.sql                     # discovery_sources lookup + FK on documents.discovery_source_id
-    ├── 29-add-author-biography-review.sql
-    ├── 30-create-information-sources.sql         # information_sources (claim/reporting provenance)
-    ├── 31-add-tags-to-user-document-notes.sql
-    ├── 31-create-cited-publications.sql
-    ├── 32-create-document-analysis-jobs.sql
-    ├── 33-create-collections.sql                 # collections lookup + FK on documents.collection_id (stage 11c)
-    └── 34-create-document-images.sql             # document_images (images extracted from article text, url/caption preserved)
-```
-
 ## How Init Scripts Are Used
 
 The scripts in `init/` are copied into `/docker-entrypoint-initdb.d` inside the PostgreSQL container (see `infra/docker/Postgresql/Dockerfile`). PostgreSQL's official Docker image executes all `.sql` files in that directory **once** — only when the data directory is empty (first run). Re-running the container with an existing volume will **not** re-execute the scripts.
