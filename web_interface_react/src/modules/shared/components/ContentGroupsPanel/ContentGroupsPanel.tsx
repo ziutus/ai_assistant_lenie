@@ -22,6 +22,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [priorityId, setPriorityId] = React.useState<number | "">("");
   const [error, setError] = React.useState("");
   const [pendingRun, setPendingRun] = React.useState(false);
+  const [newTopicName, setNewTopicName] = React.useState("");
   const requestedRef = React.useRef(false);
   const pollsRef = React.useRef(0);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
@@ -75,6 +76,19 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     setGroups(next); setEditing(false); onSaved?.(next);
   };
 
+  // Creates a topic on the spot and ticks it, so a misclassified item can be fixed without leaving the page.
+  const createTopic = async () => {
+    const name = newTopicName.trim();
+    if (!name) return;
+    setError("");
+    const response = await fetch(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name, kind: "topic" }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { setError(response.status === 409 ? "Temat o tej nazwie już istnieje" : data.message || data.error || "Nie udało się dodać tematu"); return; }
+    setCatalog(items => [...items, data]);
+    setTopicIds(ids => [...ids, data.id]);
+    setNewTopicName("");
+  };
+
   const favoriteGroup = catalog.find(group => group.kind === "priority" && group.name === FAVORITE_GROUP_NAME);
   const currentPriority = groups.find(group => group.kind === "priority");
   const isFavorite = !!favoriteGroup && currentPriority?.id === favoriteGroup.id;
@@ -111,6 +125,10 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     </div>
     {editing && <div style={{ marginTop: 10 }}>
       <fieldset><legend>Tematy</legend>{topics.map(group => <label key={group.id} style={{ display: "inline-block", marginRight: 10 }}><input type="checkbox" checked={topicIds.includes(group.id)} onChange={event => setTopicIds(ids => event.target.checked ? [...ids, group.id] : ids.filter(id => id !== group.id))} /> {group.name}</label>)}</fieldset>
+      <div style={{ margin: "6px 0" }}>
+        <input aria-label="Nowy temat" placeholder="Nowy temat, np. Smart home" value={newTopicName} onChange={event => setNewTopicName(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void createTopic(); } }} />{" "}
+        <button type="button" disabled={!newTopicName.trim()} onClick={() => void createTopic()}>Dodaj temat</button>
+      </div>
       <label>Priorytet <select value={priorityId} onChange={event => setPriorityId(event.target.value ? Number(event.target.value) : "")}><option value="">Brak priorytetu</option>{priorities.map(group => <option key={group.id} value={group.id}>{group.name} ({group.priority_rank})</option>)}</select></label>{" "}
       <button type="button" className="button" onClick={() => void save()}>Zapisz</button>
     </div>}
