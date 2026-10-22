@@ -65,6 +65,21 @@ function GithubStatsLine({ stats }: { stats: GithubStats }) {
   </div>;
 }
 
+const tabHelp: Record<RecommendationStatus | "all", string> = {
+  watchlist: "Nieocenione: nowe rekomendacje, którym jeszcze nie nadano etapu. " + statusHelp.watchlist,
+  compare: "Do porównania: " + statusHelp.compare,
+  testing: "Testowane: " + statusHelp.testing,
+  adopted: "Używane: " + statusHelp.adopted,
+  rejected: "Odrzucone: " + statusHelp.rejected,
+  archived: "Archiwum: " + statusHelp.archived,
+  all: "Wszystkie: wpisy ze wszystkich etapów radaru naraz.",
+};
+
+function Help({ text }: { text: string }) {
+  return <span role="img" tabIndex={0} title={text} aria-label={text}
+    style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, marginLeft: 4, borderRadius: "50%", background: "#e2e8f0", color: "#334155", fontSize: ".7rem", fontWeight: 700, cursor: "help", flex: "none" }}>?</span>;
+}
+
 export default function ToolRecommendations() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [searchParams] = useSearchParams();
@@ -202,15 +217,16 @@ export default function ToolRecommendations() {
     </div>
     {githubMessage && <p role="status" style={{ color: "#166534", margin: "8px 0 0" }}>{githubMessage}</p>}
     <div role="tablist" aria-label="Status rekomendacji" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "18px 0" }}>
-      {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}
+      {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} title={tabHelp[value]} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}
+      <Help text="Etapy radaru: rekomendacja przechodzi od Nieocenionych przez Do porównania i Testowane do Używanych (albo Odrzuconych / Archiwum). Najedź na „?” przy zakładce lub przycisku, żeby zobaczyć, co oznacza." />
     </div>
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px" }}>Kategoria:
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px" }}>Kategoria:<Help text="Filtruje po kategorii narzędzia (np. monitoring, backup) nadanej przy imporcie katalogu lub wykryciu przez AI." />
       <select value={category} onChange={event => setCategory(event.target.value)}>
         <option value="">Wszystkie kategorie</option>
         {categories.map(value => <option key={value} value={value}>{value}</option>)}
       </select>
     </label>
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px 12px" }}>Wejście:
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px 12px" }}>Wejście:<Help text="Skąd wpis trafił do radaru: „Katalogi i ręczne” — zaimportowane z katalogu GitHub lub dodane ręcznie; „Wykryte przez AI” — Bielik wykrył narzędzie w tekście dokumentu." />
       <select value={origin} onChange={event => setOrigin(event.target.value as "all" | "ai_detected" | "curated")}>
         <option value="all">Wszystkie</option><option value="curated">Katalogi i ręczne</option><option value="ai_detected">Wykryte przez AI</option>
       </select>
@@ -227,8 +243,8 @@ export default function ToolRecommendations() {
       </ul>
     </details>
     <div style={{ display: "flex", alignItems: "end", gap: 8, flexWrap: "wrap", padding: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 18 }}>
-      <label style={{ flex: "2 1 420px" }}>Importuj katalog GitHub (README Markdown)<input value={importUrl} onChange={event => setImportUrl(event.target.value)} placeholder="https://github.com/AwesomeHomelab/awesome-homelab" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
-      <label style={{ flex: "1 1 220px" }}>Nadpisz źródło linkiem Lenie (opcjonalnie)<input value={recommendationSource} onChange={event => setRecommendationSource(event.target.value)} placeholder="Zwykle wykrywane automatycznie" title="Importer najpierw szuka adresu katalogu w Lenie. Podaj ID lub link tylko, gdy chcesz wskazać inne źródło." style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
+      <label style={{ flex: "2 1 420px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Importuj katalog GitHub (README Markdown)<Help text="Wklej adres repozytorium GitHub z listą narzędzi (np. awesome-list). Lenie pobierze README i doda każdą pozycję jako rekomendację; narzędzia już obecne w radarze lub Spisie narzędzi są pomijane." /></span><input value={importUrl} onChange={event => setImportUrl(event.target.value)} placeholder="https://github.com/AwesomeHomelab/awesome-homelab" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
+      <label style={{ flex: "1 1 220px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Nadpisz źródło linkiem Lenie (opcjonalnie)<Help text="Dokument w Lenie (ID lub /link/10333), który poleca ten katalog — zapisze się jako „polecone przez”. Zwykle wykrywane automatycznie z adresu katalogu." /></span><input value={recommendationSource} onChange={event => setRecommendationSource(event.target.value)} placeholder="Zwykle wykrywane automatycznie" title="Importer najpierw szuka adresu katalogu w Lenie. Podaj ID lub link tylko, gdy chcesz wskazać inne źródło." style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
       <button className="button" disabled={!importUrl.trim()} onClick={() => void importMarkdown()}>Importuj</button>
       {importMessage && <span role="status" style={{ color: "#166534" }}>{importMessage}</span>}
     </div>
@@ -240,13 +256,14 @@ export default function ToolRecommendations() {
       <button type="button" onClick={selectVisible}>Zaznacz wszystkie widoczne ({visibleItems.length})</button>
       <button type="button" onClick={() => setSelectedIds(new Set())} disabled={!selectedIds.size}>Wyczyść zaznaczenie</button>
       <strong>{selectedIds.size} zaznaczonych</strong>
+      <Help text="Zaznacz wpisy polami wyboru przy nazwach, żeby przenieść wiele rekomendacji do jednego etapu naraz. „Pokaż tylko zaznaczone” zawęża listę do wybranych." />
       <button type="button" disabled={!selectedIds.size} onClick={() => setShowSelected(current => !current)}>{showSelected ? "Pokaż wszystkie" : "Pokaż tylko zaznaczone"}</button>
       <label>Przenieś do:
         <select value={bulkStatus} onChange={event => setBulkStatus(event.target.value as RecommendationStatus)} style={{ marginLeft: 6 }}>
           {nextStatuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
-      <button className="button" type="button" disabled={!selectedIds.size || bulkBusy} title={statusHelp[bulkStatus]} onClick={() => void applyBulkStatus}>Zastosuj do zaznaczonych</button>
+      <button className="button" type="button" disabled={!selectedIds.size || bulkBusy} title={statusHelp[bulkStatus]} onClick={() => void applyBulkStatus()}>Zastosuj do zaznaczonych</button>
     </div>}
     {error && <p className="errorText" role="alert">{error}</p>}
     {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
@@ -255,12 +272,12 @@ export default function ToolRecommendations() {
     {visibleItems.map(item => <article key={item.id} style={{ border: selectedIds.has(item.id) ? "2px solid #2563eb" : "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggle(item.id)} aria-label={`Zaznacz ${item.name}`} /><h3 style={{ margin: 0 }}>{item.name}</h3></div>
       {item.category && <span style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{item.category}</span>}
-      {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI</span>}
+      {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
       {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
       {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
       {item.github && <GithubStatsLine stats={item.github} />}
       {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>
-        <summary style={{ cursor: "help" }}>Dlaczego jest w radarze? ({item.evidences.length})</summary>
+        <summary style={{ cursor: "help" }} title="Katalogi lub dokumenty, w których to narzędzie wystąpiło, wraz z kontekstem.">Dlaczego jest w radarze? ({item.evidences.length})</summary>
         <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
           {item.evidences.map(evidence => <li key={evidence.id}>
             {evidence.relation_type === "mentioned_in" ? "Wspomniane w: " : "Znajduje się w katalogu: "}
