@@ -6,15 +6,17 @@ repos:
         name: gitleaks - Detect secrets in code
         description: Detect hardcoded secrets using regex patterns (offline, fast).
         stages: ["pre-commit", "pre-push"]
-  - repo: https://github.com/trufflesecurity/trufflehog
-    rev: v3.93.4
+  - repo: local
     hooks:
+      # Upstream hook (trufflesecurity/trufflehog) is language: golang, so pre-commit compiles TruffleHog from
+      # source on first run (20-40 min). Use the trufflehog binary from PATH instead; same entry as upstream.
       - id: trufflehog
         name: TruffleHog - Detect verified secrets
         description: Detect secrets with online verification.
+        entry: trufflehog git file://. --since-commit HEAD --results=verified --fail --trust-local-git-config
+        language: system
+        pass_filenames: false
         stages: ["pre-commit", "pre-push"]
-  - repo: local
-    hooks:
       - id: scan-history-secrets
         name: Scan unpushed commit history for secrets
         description: Scans all commits between local branch and remote for secrets using TruffleHog.
