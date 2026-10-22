@@ -121,6 +121,16 @@ python imports/book_import_pdf_twierdza_linux.py other.pdf --title "..." --bylin
 
 After import, run [`extract_references.py`](#extract_referencespy) for book footnotes, then the usual per-chapter analyses (`extract_time_periods.py`, `extract_tones.py`, `select_control_questions.py`) and chunk review via `/chunks/:id`.
 
+### `book_import_recipes_insulinoopornosc.py`
+
+Cookbook counterpart to `book_import_pdf_<slug>.py`: instead of one `Document` per book it parses a cookbook PDF ("Insulinooporność. Szybkie dania", ebookpoint) into **one recipe per entry** via `library/recipe_book_parser.py` (pure functions: title → `•` ingredient block → method paragraph; meal-plan titles `obiad: … – 2 porcje` and plain titles; labelled sub-blocks such as "spód"; dishes repeated across the 3-month meal plan are merged by normalised title and every serving slot is kept in `occurrences`). The ebookpoint licence watermark (buyer name/e-mail/id) is stripped from every page. The book's own constants (recipe page ranges, week start pages, the printed "Indeks przepisów" pages used as a completeness check) live in the script; a different cookbook needs its own wrapper. Currently **dry-run only** — prints counts, a comparison with the book's index and, with `--show N` / `--dump FILE`, the recipes rendered as markdown; nothing is written to the database.
+
+```bash
+cd backend
+PYTHONPATH=. python -X utf8 imports/book_import_recipes_insulinoopornosc.py book.pdf
+PYTHONPATH=. python -X utf8 imports/book_import_recipes_insulinoopornosc.py book.pdf --show 3 --dump tmp/recipes.md
+```
+
 ### `book_extract_images.py`
 
 Backfill counterpart to `book_import_pdf_<slug>.py`'s image extraction, for books imported before it existed. Re-derives per-page chapter positions by rebuilding markdown from the PDF (`build_book_markdown()`), but **never writes that markdown back** — the document's real `text_md` may already have been edited by `extract_references.py` (footnotes cut out), and overwriting it would lose that work. For the same reason this backfill never inserts `[imgN]` markers; images land in the reader's collapsible "Ilustracje" section instead of inline (`GET /document/<id>/chapter/<pos>`'s `inline` flag on each image). Also uploads the source PDF to storage if it isn't already there — a book imported while local storage writes were silently failing (permissions) never got its PDF saved at all. Uses `library/book_pdf_import.py`'s default heading font/size (Twierdza Linux's) — pass a different book's PDF and the subheading detection (cosmetic only, doesn't affect chapter_position) just won't match, which is harmless since this script never writes the rebuilt markdown anywhere.
