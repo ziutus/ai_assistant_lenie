@@ -104,4 +104,6 @@ cd ner_service && .venv/Scripts/python -m pytest tests/ -q
   the user explicitly asks for local-only work or no deployment.
 - Feature branch + PR to `main` always — never commit directly to `main` (branch protection also enforces this).
 - `.gitattributes` enforces LF line endings repo-wide; don't fight it on Windows.
-- Pre-commit hooks include gitleaks + TruffleHog secret scanning — don't bypass with `--no-verify`.
+- Pre-commit hooks include gitleaks + TruffleHog secret scanning — don't bypass with `--no-verify`. They only
+  run once installed per clone (`scripts/setup-dev-hooks.ps1`, see `docs/security/dev-hooks-setup.md`); if
+  `.git/hooks/pre-commit` is missing, commits are not scanned.
