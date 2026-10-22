@@ -21,6 +21,13 @@
   odpowiada" przez SSH i nie proś o włączanie lub wyłączanie VPN. Wyjątek tylko
   na wyraźne polecenie użytkownika w danej sesji.
 
+- Gdy użytkownik pracuje przez VPN (jest poza domem), **nie wdrażaj na NAS**:
+  wdrożenie przez VPN jest wolne i zawodne (zrywa SSH i push do rejestru).
+  Skończ pracę do commita/PR, zgłoś, że wdrożenie czeka, i wróć do niego, gdy
+  użytkownik napisze, że jest w domu. Nie ponawiaj `nas-deploy.sh`, dopóki
+  NAS nie odpowiada na `ssh admin@192.168.200.7` bez VPN-a, albo użytkownik
+  wyraźnie nie poleci wdrożyć mimo VPN-a.
+
 ## Masowe operacje na Obsidianie
 
 Nie uruchamiaj pełnego `obsidian_reimport` jako jednorazowej migracji na NAS-ie.

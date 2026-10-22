@@ -35,6 +35,40 @@ const reviewReasons: Array<[ReviewReason, string]> = [
   ["other", "Inny powód"],
 ];
 
+// Without a timeout a request sent while the VPN/network is down can hang for
+// minutes (packets are silently dropped), leaving the button disabled and no
+// message. Imports fetch the page server-side, so they get a longer budget.
+const ACTION_TIMEOUT_MS = 20_000;
+const IMPORT_TIMEOUT_MS = 90_000;
+
+class RequestTimeoutError extends Error {}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (cause) {
+    if (controller.signal.aborted) throw new RequestTimeoutError();
+    throw cause;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+// fetch() rejects with TypeError ("Failed to fetch") when no connection could
+// be opened — VPN off, Wi-Fi down, wrong API address — as opposed to an HTTP
+// error the backend actually returned.
+function describeActionError(cause: unknown, apiUrl: string | undefined, fallback: string): string {
+  if (cause instanceof RequestTimeoutError) {
+    return `Brak odpowiedzi z API ${apiUrl} — zmiana NIE została zapisana. Sprawdź połączenie (VPN) i spróbuj ponownie.`;
+  }
+  if (cause instanceof TypeError) {
+    return `Nie można połączyć się z API ${apiUrl} — zmiana NIE została zapisana. Sprawdź połączenie (VPN) i spróbuj ponownie.`;
+  }
+  return cause instanceof Error ? cause.message : fallback;
+}
+
 const SKIP_HELP = "Pomiń: odrzuca tylko ten jeden wpis. Zapytam o powód (np. nie interesuje mnie, duplikat) — zostanie zapisany do przyszłej oceny preferencji.";
 const IGNORE_HELP = "Ignoruj: dodaje regułę do źródła (wzorzec w tytule lub początek adresu URL). Pasujące wpisy w kolejce są od razu ignorowane, a nowe z tego źródła pomijane automatycznie.";
 
@@ -55,6 +89,7 @@ export default function FeedReview() {
   const [loading, setLoading] = React.useState(true);
   const [busyItemId, setBusyItemId] = React.useState<number | null>(null);
   const [error, setError] = React.useState("");
+  const [itemError, setItemError] = React.useState<{ id: number; message: string } | null>(null);
   const [ignoreItemId, setIgnoreItemId] = React.useState<number | null>(null);
   const [ignoreField, setIgnoreField] = React.useState<"title" | "url">("title");
   const [ignorePattern, setIgnorePattern] = React.useState("");
@@ -127,12 +162,12 @@ export default function FeedReview() {
     try {
       const params = new URLSearchParams({ limit: "100" });
       if (selectedSource) params.set("feed_source_id", selectedSource);
-      const response = await fetch(`${apiUrl}/feed_review_decisions?${params.toString()}`, { headers });
+      const response = await fetchWithTimeout(`${apiUrl}/feed_review_decisions?${params.toString()}`, { headers }, ACTION_TIMEOUT_MS);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || `Nie udało się pobrać historii (${response.status})`);
       setDecisions(Array.isArray(data.decisions) ? data.decisions as ReviewDecision[] : []);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Nie udało się pobrać historii");
+      setError(describeActionError(cause, apiUrl, "Nie udało się pobrać historii"));
     } finally { setHistoryLoading(false); }
   }, [apiUrl, headers, selectedSource]);
 
@@ -155,11 +190,12 @@ export default function FeedReview() {
   const act = async (id: number, action: Action, body?: object) => {
     setBusyItemId(id);
     setError("");
+    setItemError(null);
     try {
-      const response = await fetch(`${apiUrl}/feed_items/${id}/${action}`, {
+      const response = await fetchWithTimeout(`${apiUrl}/feed_items/${id}/${action}`, {
         method: "POST", headers: { ...headers, "Content-Type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
-      });
+      }, action === "import" ? IMPORT_TIMEOUT_MS : ACTION_TIMEOUT_MS);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || data.error || `Akcja nie powiodła się (${response.status})`);
       setIgnoreItemId(null);
@@ -183,7 +219,11 @@ export default function FeedReview() {
         await load();
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się");
+      const message = describeActionError(cause, apiUrl, "Akcja nie powiodła się");
+      setError(message);
+      // The page-level alert sits above the list and is easy to miss when
+      // scrolled down — repeat it on the item the user just clicked.
+      setItemError({ id, message });
     } finally {
       setBusyItemId(null);
     }
@@ -217,9 +257,15 @@ export default function FeedReview() {
         <strong>{decision.title}</strong><br />
         <small>{decision.action}: {decision.previous_status} → {decision.new_status} · {formatDate(decision.created_at)} · batch {decision.batch_id}</small>{" "}
         <button type="button" onClick={async () => {
-          const response = await fetch(`${apiUrl}/feed_review_decisions/${decision.id}/undo`, { method: "POST", headers });
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) { setError(data.message || `Nie udało się cofnąć decyzji (${response.status})`); return; }
+          setError("");
+          try {
+            const response = await fetchWithTimeout(`${apiUrl}/feed_review_decisions/${decision.id}/undo`, { method: "POST", headers }, ACTION_TIMEOUT_MS);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) { setError(data.message || `Nie udało się cofnąć decyzji (${response.status})`); return; }
+          } catch (cause) {
+            setError(describeActionError(cause, apiUrl, "Nie udało się cofnąć decyzji"));
+            return;
+          }
           await loadHistory(); await load();
         }}>Cofnij</button>
       </div>)}
@@ -280,6 +326,8 @@ export default function FeedReview() {
             <button disabled={busy} onClick={() => void act(item.id, "restore")}>Wróć do nowych</button>
           </>}
         </div>
+        {busy && <div style={{ color: "#64748b", fontSize: ".85rem", marginTop: 6 }}>Zapisywanie…</div>}
+        {itemError?.id === item.id && <p className="errorText" role="alert" style={{ marginTop: 6 }}>{itemError.message}</p>}
         {ignoreItemId === item.id && <form onSubmit={event => { event.preventDefault(); void act(item.id, "ignore", { field: ignoreField, pattern: ignorePattern }); }}>
           <select aria-label="Pole wzorca" value={ignoreField} onChange={event => setIgnoreField(event.target.value as "title" | "url")} disabled={busy}>
             <option value="title">Tytuł</option><option value="url">URL</option>
