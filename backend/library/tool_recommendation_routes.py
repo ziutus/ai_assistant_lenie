@@ -33,6 +33,7 @@ def _ensure_tool(session, item: ToolRecommendation) -> tuple[Tool, bool]:
     tool = Tool(
         name=item.name,
         homepage_url=item.homepage_url,
+        github_url=item.homepage_url if github_repo_stats.parse_repo_url(item.homepage_url) else None,
         category_tags=[item.category] if item.category else [],
         personal_notes=item.personal_note,
         source_document_id=item.source_document_id,
