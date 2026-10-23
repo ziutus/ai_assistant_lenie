@@ -6,7 +6,7 @@ import datetime
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, select, update
 
-from library import tool_relations_service
+from library import github_repo_stats, tool_relations_service
 from library.db.engine import get_scoped_session
 from library.db.models import ObsidianNoteVersion, Tool, ToolRecommendation
 from library.obsidian_vault import (
@@ -30,9 +30,17 @@ def _user():
         abort(403, "user API key required")
 
 
-def _tool_dict(tool: Tool, relations: list | None = None) -> dict:
+def _github_url(tool: Tool) -> str | None:
+    """The repository the GitHub numbers are looked up for: the explicit link, else a GitHub homepage."""
+    if tool.github_url:
+        return tool.github_url
+    return tool.homepage_url if github_repo_stats.parse_repo_url(tool.homepage_url) else None
+
+
+def _tool_dict(tool: Tool, relations: list | None = None, github: dict | None = None) -> dict:
     return {
         "relations": relations or [],
+        "github": github,
         "id": tool.id,
         "uuid": tool.uuid,
         "name": tool.name,
@@ -40,6 +48,15 @@ def _tool_dict(tool: Tool, relations: list | None = None) -> dict:
         "homepage_url": tool.homepage_url,
         "license": tool.license,
         "pricing": tool.pricing,
+        "github_url": tool.github_url,
+        "wikipedia_url": tool.wikipedia_url,
+        "pricing_url": tool.pricing_url,
+        "pricing_type": tool.pricing_type,
+        "app_type": tool.app_type,
+        "key_points": tool.key_points or [],
+        "important_commands": tool.important_commands,
+        "migrating_away": bool(tool.migrating_away),
+        "migration_note": tool.migration_note,
         "personal_notes": tool.personal_notes,
         "source_document_id": tool.source_document_id,
         "source_candidate_id": tool.source_candidate_id,
@@ -60,10 +77,29 @@ def get_tools():
         query = query.where(Tool.category_tags.contains([tag]))
     tools = session.execute(query).scalars().all()
     relations = tool_relations_service.relations_for_tools(session, tools)
+    github = github_repo_stats.stats_for_urls(session, [url for url in map(_github_url, tools) if url])
     return jsonify({
-        "tools": [_tool_dict(tool, relations.get(tool.id)) for tool in tools],
+        "tools": [_tool_dict(tool, relations.get(tool.id), github.get(_github_url(tool))) for tool in tools],
         "filters": {"tag": tag},
     })
+
+
+@bp.post("/tools/github_stats/refresh")
+def refresh_github_stats():
+    """Pull fresh GitHub numbers for the catalog's repositories, a bounded batch per call (shared table with the radar)."""
+    _user()
+    body = request.get_json(silent=True) or {}
+    try:
+        limit = int(body.get("limit", github_repo_stats.DEFAULT_REFRESH_LIMIT))
+    except (TypeError, ValueError):
+        abort(400, "limit must be an integer")
+    if not 1 <= limit <= github_repo_stats.MAX_REFRESH_LIMIT:
+        abort(400, f"limit must be between 1 and {github_repo_stats.MAX_REFRESH_LIMIT}")
+    session = get_scoped_session()
+    tools = session.execute(select(Tool)).scalars().all()
+    summary = github_repo_stats.refresh_stale(session, [url for url in map(_github_url, tools) if url], limit=limit)
+    session.commit()
+    return jsonify(summary)
 
 
 @bp.post("/tools")
@@ -90,15 +126,14 @@ def create_tool():
 
     tool = Tool(
         name=name,
-        category_tags=body.get("category_tags") or [],
-        homepage_url=body.get("homepage_url"),
-        license=body.get("license"),
-        pricing=body.get("pricing"),
-        personal_notes=body.get("personal_notes"),
+        category_tags=[],
+        key_points=[],
+        migrating_away=False,
         source_document_id=body.get("source_document_id"),
         source_candidate_id=body.get("source_candidate_id"),
         status="accepted",
     )
+    _apply_fields(tool, body)
     session.add(tool)
     session.flush()
     # A radar entry of the same name that is not linked yet now points at the new catalog tool.
@@ -142,31 +177,71 @@ def create_tool():
 
 MAX_TAGS = 30
 MAX_TAG_LENGTH = 60
-EDITABLE_TEXT_FIELDS = ("homepage_url", "license", "pricing", "personal_notes")
+MAX_KEY_POINTS = 50
+MAX_KEY_POINT_LENGTH = 500
+PRICING_TYPES = {"free", "freemium", "paid", "subscription", "usage_based", "open_core"}
+# Fields kept verbatim (markdown / commands); the other text fields are trimmed. An empty value clears.
+MULTILINE_FIELDS = ("personal_notes", "important_commands", "migration_note")
+SHORT_TEXT_FIELDS = ("license", "pricing", "app_type")
+URL_FIELDS = ("homepage_url", "github_url", "wikipedia_url", "pricing_url")
+
+
+def _text_field(body: dict, field: str) -> tuple[bool, str | None]:
+    if field not in body:
+        return False, None
+    value = body[field]
+    if value is not None and not isinstance(value, str):
+        abort(400, f"{field} must be a string or null")
+    text = value if field in MULTILINE_FIELDS else (value or "").strip()
+    return True, text if text and text.strip() else None
+
+
+def _apply_fields(tool: Tool, body: dict) -> None:
+    """Copy the editable catalog fields present in ``body`` onto ``tool``; aborts 400 on a bad value."""
+    for field in (*MULTILINE_FIELDS, *SHORT_TEXT_FIELDS):
+        present, text = _text_field(body, field)
+        if present:
+            setattr(tool, field, text)
+    for field in URL_FIELDS:
+        present, text = _text_field(body, field)
+        if not present:
+            continue
+        if text is not None and not text.lower().startswith(("http://", "https://")):
+            abort(400, f"{field} must start with http:// or https://")
+        if field == "github_url" and text is not None and github_repo_stats.parse_repo_url(text) is None:
+            abort(400, "github_url must point at a github.com/owner/repo repository")
+        setattr(tool, field, text)
+    present, pricing_type = _text_field(body, "pricing_type")
+    if present:
+        if pricing_type is not None and pricing_type not in PRICING_TYPES:
+            abort(400, f"pricing_type must be one of: {', '.join(sorted(PRICING_TYPES))}")
+        tool.pricing_type = pricing_type
+    if "category_tags" in body:
+        tags = body["category_tags"]
+        if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags) or len(tags) > MAX_TAGS:
+            abort(400, "category_tags must be a list of strings")
+        tool.category_tags = list(dict.fromkeys(tag.strip()[:MAX_TAG_LENGTH] for tag in tags if tag.strip()))
+    if "key_points" in body:
+        points = body["key_points"]
+        if not isinstance(points, list) or not all(isinstance(point, str) for point in points) or len(points) > MAX_KEY_POINTS:
+            abort(400, "key_points must be a list of strings")
+        tool.key_points = [point.strip()[:MAX_KEY_POINT_LENGTH] for point in points if point.strip()]
+    if "migrating_away" in body:
+        if not isinstance(body["migrating_away"], bool):
+            abort(400, "migrating_away must be a boolean")
+        tool.migrating_away = body["migrating_away"]
 
 
 @bp.patch("/tools/<int:tool_id>")
 def update_tool(tool_id):
-    """Edit the catalog entry in Lenie itself: note (``personal_notes``), tags, homepage, licence, pricing."""
+    """Edit the catalog entry in Lenie itself: note, tags, links, licence, pricing, key points, migrating away."""
     _user()
     body = request.get_json(silent=True) or {}
     session = get_scoped_session()
     tool = session.get(Tool, tool_id)
     if tool is None:
         abort(404, "tool not found")
-    for field in EDITABLE_TEXT_FIELDS:
-        if field in body:
-            value = body[field]
-            if value is not None and not isinstance(value, str):
-                abort(400, f"{field} must be a string or null")
-            # The note keeps its own whitespace (markdown); the short fields are trimmed. Empty clears.
-            text = value if field == "personal_notes" else (value or "").strip()
-            setattr(tool, field, text if text and text.strip() else None)
-    if "category_tags" in body:
-        tags = body["category_tags"]
-        if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags) or len(tags) > MAX_TAGS:
-            abort(400, "category_tags must be a list of strings")
-        tool.category_tags = list(dict.fromkeys(tag.strip()[:MAX_TAG_LENGTH] for tag in tags if tag.strip()))
+    _apply_fields(tool, body)
     tool.updated_at = datetime.datetime.now(datetime.timezone.utc)
     session.commit()
     return jsonify({"tool": _tool_dict(tool)})

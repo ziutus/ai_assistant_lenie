@@ -26,6 +26,8 @@ def _make_tool(**overrides):
         license="MPL-2.0", pricing="free", personal_notes="uzywamy w projekcie X",
         source_document_id=9381, source_candidate_id=5, status="accepted",
         obsidian_note_path="Narzedzia/Terraform.md",
+        github_url=None, wikipedia_url=None, pricing_url=None, pricing_type=None, app_type=None,
+        key_points=[], important_commands=None, migrating_away=False, migration_note=None,
         created_at=dt.datetime(2026, 8, 10, 12, 0, tzinfo=dt.timezone.utc),
         updated_at=dt.datetime(2026, 8, 11, 9, 0, tzinfo=dt.timezone.utc),
     )
@@ -100,6 +102,7 @@ class TestResponseShape:
 
         assert response.json["tools"] == [{
             "relations": [],
+            "github": None,
             "id": 1,
             "uuid": "11111111-1111-1111-1111-111111111111",
             "name": "Terraform",
@@ -107,6 +110,15 @@ class TestResponseShape:
             "homepage_url": "https://terraform.io",
             "license": "MPL-2.0",
             "pricing": "free",
+            "github_url": None,
+            "wikipedia_url": None,
+            "pricing_url": None,
+            "pricing_type": None,
+            "app_type": None,
+            "key_points": [],
+            "important_commands": None,
+            "migrating_away": False,
+            "migration_note": None,
             "personal_notes": "uzywamy w projekcie X",
             "source_document_id": 9381,
             "source_candidate_id": 5,
@@ -620,9 +632,9 @@ class TestLenieNativeNotes:
     """The Obsidian note is optional; the tool's own note lives in personal_notes and is edited in Lenie."""
 
     def _tool(self):
-        return SimpleNamespace(id=4, uuid="u", name="GCP", category_tags=[], homepage_url=None, license=None, pricing=None,
-                               personal_notes=None, source_document_id=None, source_candidate_id=None, status="accepted",
-                               obsidian_note_path=None, created_at=None, updated_at=None)
+        return _make_tool(id=4, uuid="u", name="GCP", category_tags=[], homepage_url=None, license=None, pricing=None,
+                          personal_notes=None, source_document_id=None, source_candidate_id=None,
+                          obsidian_note_path=None, created_at=None, updated_at=None)
 
     def test_patch_updates_note_tags_and_clears_empty_fields(self, monkeypatch):
         from library.tool_routes import update_tool
