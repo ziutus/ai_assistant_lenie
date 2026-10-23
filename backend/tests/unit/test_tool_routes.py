@@ -243,7 +243,7 @@ VALID_BODY = {
 
 
 class TestCreateToolServiceKeyForbidden:
-    def test_service_key_403_before_any_mutation(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_routes import create_tool
 
         get_scoped_session_mock = MagicMock()
@@ -251,7 +251,7 @@ class TestCreateToolServiceKeyForbidden:
         app = Flask(__name__)
 
         with app.test_request_context("/tools", method="POST", json=VALID_BODY), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             create_tool()
 
         assert exc_info.value.code == 403
@@ -455,7 +455,7 @@ class TestCreateToolAcceptedStatus:
 
 
 class TestRetryObsidianWriteAuthForbidden:
-    def test_service_key_403_before_any_mutation(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_routes import retry_obsidian_write
 
         get_scoped_session_mock = MagicMock()
@@ -463,7 +463,7 @@ class TestRetryObsidianWriteAuthForbidden:
         app = Flask(__name__)
 
         with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             retry_obsidian_write(42)
 
         assert exc_info.value.code == 403

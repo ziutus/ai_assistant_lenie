@@ -3241,6 +3241,8 @@ class ToolRecommendation(Base):
     source_context: Mapped[str | None] = mapped_column(Text)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     source_candidate_id: Mapped[int | None] = mapped_column(ForeignKey("tool_candidates.id", ondelete="SET NULL"))
+    # Vault-relative path of the Obsidian note that already describes this tool (may predate the radar entry).
+    obsidian_note_path: Mapped[str | None] = mapped_column(Text)
     # The catalog tool (Spis narzędzi) this radar entry became or is described by; set when the entry is adopted.
     tool_id: Mapped[int | None] = mapped_column(ForeignKey("tools.id", ondelete="SET NULL"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

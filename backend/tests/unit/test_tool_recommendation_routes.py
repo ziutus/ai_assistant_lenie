@@ -13,7 +13,7 @@ def _item(status="watchlist"):
     return SimpleNamespace(
         id=17, name="LinkStack", homepage_url="https://github.com/LinkStackOrg/linkstack",
         description="Współdzielona strona z linkami", category="bookmarking", status=status,
-        personal_note=None, source_url="https://example.com/awesome", source_context="Awesome Homelab",
+        personal_note=None, obsidian_note_path=None, source_url="https://example.com/awesome", source_context="Awesome Homelab",
         source_document_id=None, source_candidate_id=None, source_document=None, tool_id=None,
         created_at=dt.datetime(2026, 8, 23, tzinfo=dt.timezone.utc),
         updated_at=dt.datetime(2026, 8, 23, tzinfo=dt.timezone.utc),
@@ -180,13 +180,74 @@ class TestToolRecommendationRoutes:
 
         assert response.json == {"category": None, "radar": [], "tools": []}
 
-    def test_read_only_key_cannot_change_status(self):
+    def test_unsupported_key_kind_forbidden(self):
         from library.tool_recommendation_routes import update_status
 
         app = Flask(__name__)
         with app.test_request_context("/tool_recommendations/17/status", method="POST", json={"status": "compare"}):
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             with pytest.raises(Exception) as exc_info:
                 update_status(17)
 
         assert exc_info.value.code == 403
+
+    def test_service_key_can_change_status(self, monkeypatch):
+        from library.tool_recommendation_routes import update_status
+
+        item = _item()
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_recommendations/17/status", method="POST", json={"status": "compare"}):
+            g.auth = SimpleNamespace(kind="service", user_id=None)
+            update_status(17)
+
+        assert item.status == "compare"
+
+    def test_patch_sets_and_clears_obsidian_note_path(self, monkeypatch):
+        from library.tool_recommendation_routes import update_tool_recommendation
+
+        item = _item()
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context(
+            "/tool_recommendations/17", method="PATCH", json={"obsidian_note_path": " 02-wiedza/Informatyka/jq.md "},
+        ):
+            g.auth = SimpleNamespace(kind="service", user_id=None)
+            response = update_tool_recommendation(17)
+
+        assert item.obsidian_note_path == "02-wiedza/Informatyka/jq.md"
+        assert response.json["tool_recommendation"]["obsidian_note_path"] == "02-wiedza/Informatyka/jq.md"
+
+        with app.test_request_context("/tool_recommendations/17", method="PATCH", json={"obsidian_note_path": ""}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            update_tool_recommendation(17)
+
+        assert item.obsidian_note_path is None
+        assert session.commit.call_count == 2
+
+    def test_patch_leaves_absent_fields_and_rejects_non_strings(self, monkeypatch):
+        from library.tool_recommendation_routes import update_tool_recommendation
+
+        item = _item()
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_recommendations/17", method="PATCH", json={"category": "cli"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            update_tool_recommendation(17)
+        assert item.category == "cli"
+        assert item.description == "Współdzielona strona z linkami"
+
+        with app.test_request_context("/tool_recommendations/17", method="PATCH", json={"category": 5}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(Exception) as exc_info:
+                update_tool_recommendation(17)
+        assert exc_info.value.code == 400

@@ -36,6 +36,7 @@ def _ensure_tool(session, item: ToolRecommendation) -> tuple[Tool, bool]:
         github_url=item.homepage_url if github_repo_stats.parse_repo_url(item.homepage_url) else None,
         category_tags=[item.category] if item.category else [],
         personal_notes=item.personal_note,
+        obsidian_note_path=item.obsidian_note_path,
         source_document_id=item.source_document_id,
         source_candidate_id=item.source_candidate_id,
         status="accepted",
@@ -80,8 +81,9 @@ def _reader():
 
 
 def _user():
-    if getattr(g, "auth", None) is None or g.auth.kind != "user":
-        abort(403, "user API key required")
+    # Single-owner project: a service key (scripts, skills) may write to the radar like a user key.
+    if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
+        abort(403, "user or service API key required")
 
 
 def _dict(item: ToolRecommendation, github: dict | None = None, relations: list | None = None,
@@ -101,6 +103,7 @@ def _dict(item: ToolRecommendation, github: dict | None = None, relations: list 
         "category": item.category,
         "status": item.status,
         "personal_note": item.personal_note,
+        "obsidian_note_path": item.obsidian_note_path,
         "source_url": item.source_url,
         "source_context": item.source_context,
         "source_document_id": item.source_document_id,
@@ -278,6 +281,7 @@ def create_tool_recommendation():
     item = ToolRecommendation(
         name=name[:255], homepage_url=body.get("homepage_url"), description=body.get("description"),
         category=body.get("category"), status=status, personal_note=body.get("personal_note"),
+        obsidian_note_path=(str(body.get("obsidian_note_path") or "").strip() or None),
         source_url=body.get("source_url"), source_context=body.get("source_context"),
         source_document_id=body.get("source_document_id"), source_candidate_id=body.get("source_candidate_id"),
     )
@@ -453,6 +457,26 @@ def import_markdown_recommendations():
         },
         "parsed": len(parsed),
     }), 201
+
+
+@bp.patch("/tool_recommendations/<int:recommendation_id>")
+def update_tool_recommendation(recommendation_id):
+    """Edit the descriptive fields of one radar entry (absent key = unchanged, empty string clears)."""
+    _user()
+    body = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    item = session.get(ToolRecommendation, recommendation_id)
+    if item is None:
+        abort(404, "tool recommendation not found")
+    for field in ("homepage_url", "description", "category", "personal_note", "obsidian_note_path"):
+        if field in body:
+            value = body[field]
+            if value is not None and not isinstance(value, str):
+                abort(400, f"{field} must be a string")
+            setattr(item, field, (value or "").strip() or None)
+    item.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    session.commit()
+    return jsonify({"tool_recommendation": _dict(item)})
 
 
 @bp.post("/tool_recommendations/<int:recommendation_id>/status")

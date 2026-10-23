@@ -26,8 +26,9 @@ def _reader():
 
 
 def _user():
-    if getattr(g, "auth", None) is None or g.auth.kind != "user":
-        abort(403, "user API key required")
+    # Single-owner project: a service key (scripts, skills) may write to the catalog like a user key.
+    if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
+        abort(403, "user or service API key required")
 
 
 def _github_url(tool: Tool) -> str | None:

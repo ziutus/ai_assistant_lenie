@@ -12,7 +12,7 @@ type Recommendation = {
   github: GithubStats | null;
   relations: ToolRelation[]; stack_matches: string[];
   feed_mentions: { count: number; samples: Array<{ id: number; title: string; url: string }> };
-  category: string | null; status: RecommendationStatus; personal_note: string | null;
+  category: string | null; status: RecommendationStatus; personal_note: string | null; obsidian_note_path?: string | null;
   origin: "ai_detected" | "curated";
   source_url: string | null; source_context: string | null;
   source_document: { title: string | null; url: string | null; discovery_source: string | null } | null;
@@ -261,6 +261,7 @@ export default function ToolRecommendations() {
     {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
     {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
     {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
+    {item.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".8rem" }}>Notatka w Obsidianie: {item.obsidian_note_path}</div>}
     {item.github && <GithubStatsLine stats={item.github} />}
     {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
       title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
