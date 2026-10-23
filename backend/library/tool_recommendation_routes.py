@@ -1,6 +1,7 @@
 """API for the lightweight, provenance-preserving tool recommendation radar."""
 
 import datetime
+import logging
 from urllib.parse import urlparse
 
 from flask import Blueprint, abort, g, jsonify, request
@@ -9,11 +10,13 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from library import github_repo_stats
 from library.db.engine import get_scoped_session
-from library import feed_mentions, tool_radar_feed, tool_relations_service
+from library import feed_mentions, tool_note_parser, tool_radar_feed, tool_relations_service
 from library.db.models import Document, Tool, ToolRecommendation, ToolRecommendationEvidence, ToolRelation
+from library.obsidian_vault import read_note
 from library.tool_recommendation_importer import fetch_markdown, parse_markdown_recommendations
 
 bp = Blueprint("tool_recommendations", __name__)
+logger = logging.getLogger(__name__)
 
 STATUSES = {"watchlist", "compare", "testing", "adopted", "rejected", "archived"}
 
@@ -41,10 +44,25 @@ def _ensure_tool(session, item: ToolRecommendation) -> tuple[Tool, bool]:
         source_candidate_id=item.source_candidate_id,
         status="accepted",
     )
+    _fill_from_vault_note(tool)
+    if not tool.purpose:
+        tool.purpose = item.description
     session.add(tool)
     session.flush()
     item.tool_id = tool.id
     return tool, True
+
+
+def _fill_from_vault_note(tool: Tool) -> None:
+    """Best effort: read the tool's Obsidian note (if any) into its still-empty fields; never blocks adoption."""
+    if not tool.obsidian_note_path:
+        return
+    try:
+        text = read_note(tool.obsidian_note_path)
+        if text:
+            tool_note_parser.apply_note_to_tool(tool, tool_note_parser.parse_tool_note(text))
+    except Exception:  # vault unmounted, bad path, unreadable file
+        logger.warning("could not read the Obsidian note of tool %s", tool.name, exc_info=True)
 
 
 def _catalog_label(url: str) -> str:

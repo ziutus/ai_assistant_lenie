@@ -3395,6 +3395,9 @@ class Tool(Base):
     pricing_url: Mapped[str | None] = mapped_column(Text)
     pricing_type: Mapped[str | None] = mapped_column(String(30))
     app_type: Mapped[str | None] = mapped_column(String(100))
+    # What the tool is for (the note template's "Purpose") and where it runs ("Works on", e.g. "Linux, macOS (brew)").
+    purpose: Mapped[str | None] = mapped_column(Text)
+    works_on: Mapped[str | None] = mapped_column(Text)
     key_points: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     important_commands: Mapped[str | None] = mapped_column(Text)
     # The tool is still in use but being phased out (e.g. Obsidian); migration_note says where to / why.

@@ -17,6 +17,8 @@ type Tool = {
   pricing_url: string | null;
   pricing_type: string | null;
   app_type: string | null;
+  purpose?: string | null;
+  works_on?: string | null;
   key_points: string[];
   important_commands: string | null;
   migrating_away: boolean;
@@ -44,12 +46,13 @@ const pricingTypeLabel = (value: string | null) => pricingTypes.find(([key]) => 
 
 // Editable detail fields as form strings; key points are one per line.
 type DetailsDraft = {
-  app_type: string; license: string; homepage_url: string; github_url: string; wikipedia_url: string;
+  app_type: string; purpose: string; works_on: string; license: string; homepage_url: string; github_url: string; wikipedia_url: string;
   pricing_type: string; pricing: string; pricing_url: string; key_points: string; important_commands: string;
   migrating_away: boolean; migration_note: string; migration_target_tool_id: string;
 };
 const draftFromTool = (tool: Tool): DetailsDraft => ({
-  app_type: tool.app_type ?? "", license: tool.license ?? "", homepage_url: tool.homepage_url ?? "",
+  app_type: tool.app_type ?? "", purpose: tool.purpose ?? "", works_on: tool.works_on ?? "",
+  license: tool.license ?? "", homepage_url: tool.homepage_url ?? "",
   github_url: tool.github_url ?? "", wikipedia_url: tool.wikipedia_url ?? "",
   pricing_type: tool.pricing_type ?? "", pricing: tool.pricing ?? "", pricing_url: tool.pricing_url ?? "",
   key_points: (tool.key_points ?? []).join("\n"), important_commands: tool.important_commands ?? "",
@@ -62,6 +65,7 @@ const detailsPayload = (draft: DetailsDraft) => ({
   migration_target_tool_id: draft.migrating_away && draft.migration_target_tool_id ? Number(draft.migration_target_tool_id) : null,
 });
 const textFields: Array<[keyof DetailsDraft, string]> = [
+  ["purpose", "Do czego służy"], ["works_on", "Działa na (system, platforma)"],
   ["app_type", "Typ aplikacji"], ["license", "Licencja"], ["homepage_url", "Strona"], ["github_url", "GitHub"],
   ["wikipedia_url", "Wikipedia"], ["pricing", "Cennik (opis)"], ["pricing_url", "Strona z cennikiem"],
 ];
@@ -84,6 +88,7 @@ export default function Tools() {
   const [onlyLeaving, setOnlyLeaving] = React.useState(false);
   const [githubBusy, setGithubBusy] = React.useState(false);
   const [githubMessage, setGithubMessage] = React.useState("");
+  const [importMessage, setImportMessage] = React.useState<{ id: number; text: string } | null>(null);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
   // Guards against out-of-order responses: switching the tag filter quickly
   // aborts the previous in-flight request so a slower, stale response for an
@@ -158,6 +163,24 @@ export default function Tools() {
     if (await patchTool(tool, detailsPayload(detailsDraft), "Nie udało się zapisać danych narzędzia")) {
       setDetailsId(null); setDetailsDraft(null);
     }
+  };
+
+  const importNote = async (tool: Tool) => {
+    setSavingId(tool.id); setError(""); setImportMessage(null);
+    try {
+      const response = await fetch(`${apiUrl}/tools/${tool.id}/import_note`, {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: "{}",
+      });
+      const data = await response.json().catch(() => ({})) as { tool?: Tool; imported?: string[]; message?: string };
+      if (!response.ok || !data.tool) throw new Error(data.message || `Nie udało się wczytać notatki (HTTP ${response.status})`);
+      const saved = data.tool;
+      setTools(current => current.map(item => item.id === tool.id
+        ? { ...saved, relations: item.relations, github: saved.github_url === item.github_url ? item.github : null }
+        : item));
+      const count = data.imported?.length ?? 0;
+      setImportMessage({ id: tool.id, text: count ? `Uzupełniono ${count} pól: ${data.imported?.join(", ")}.` : "Nic nowego w notatce — wszystkie pola już wypełnione." });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się wczytać notatki"); }
+    finally { setSavingId(null); }
   };
 
   const refreshGithub = async () => {
@@ -278,7 +301,12 @@ export default function Tools() {
       {tool.category_tags.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "8px 0" }}>
         {tool.category_tags.map(tag => <span key={tag} style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{tag}</span>)}
       </div>}
-      {tool.app_type && <div style={{ color: "#64748b", fontSize: ".85rem" }}>Typ: {tool.app_type}</div>}
+      {tool.purpose && <blockquote style={{ margin: "8px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{tool.purpose}</blockquote>}
+      {(tool.app_type || tool.works_on) && <div style={{ color: "#64748b", fontSize: ".85rem" }}>
+        {tool.app_type && <span>Typ: {tool.app_type}</span>}
+        {tool.app_type && tool.works_on && <span> · </span>}
+        {tool.works_on && <span>Działa na: {tool.works_on}</span>}
+      </div>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, margin: "4px 0" }}>
         {tool.homepage_url && <a style={linkStyle} href={tool.homepage_url} target="_blank" rel="noreferrer">Strona</a>}
         {tool.github_url && <a style={linkStyle} href={tool.github_url} target="_blank" rel="noreferrer">GitHub</a>}
@@ -366,6 +394,10 @@ export default function Tools() {
         </div>
       </div> : <div style={{ margin: "8px 0" }}>
         <button type="button" onClick={() => { setDetailsId(tool.id); setDetailsDraft(draftFromTool(tool)); }}>Edytuj dane</button>
+        {tool.obsidian_note_path && <button type="button" style={{ marginLeft: 8 }} disabled={savingId === tool.id}
+          title="Czyta notatkę z vaulta Obsidian (szablon opisu aplikacji) i uzupełnia tylko puste pola: do czego służy, system, licencję, linki, cennik, punkty i polecenia."
+          onClick={() => void importNote(tool)}>Wczytaj z notatki</button>}
+        {importMessage?.id === tool.id && <span role="status" style={{ marginLeft: 10, color: "#166534", fontSize: ".85rem" }}>{importMessage.text}</span>}
       </div>}
       <ToolRelations relations={tool.relations ?? []} onReview={(id, status) => void reviewRelation(id, status)} />
       {editingId === tool.id ? <div style={{ margin: "8px 0" }}>

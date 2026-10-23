@@ -6,13 +6,14 @@ import datetime
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, select, update
 
-from library import github_repo_stats, tool_relations_service
+from library import github_repo_stats, tool_note_parser, tool_relations_service
 from library.db.engine import get_scoped_session
 from library.db.models import ObsidianNoteVersion, Tool, ToolRecommendation
 from library.obsidian_vault import (
     VaultPathInvalidError,
     ensure_within_vault,
     is_vault_mount_available,
+    read_note,
     retry_write_note,
     write_note_with_version,
 )
@@ -62,6 +63,8 @@ def _tool_dict(
         "pricing_url": tool.pricing_url,
         "pricing_type": tool.pricing_type,
         "app_type": tool.app_type,
+        "purpose": tool.purpose,
+        "works_on": tool.works_on,
         "key_points": tool.key_points or [],
         "important_commands": tool.important_commands,
         "migrating_away": bool(tool.migrating_away),
@@ -195,8 +198,8 @@ MAX_KEY_POINTS = 50
 MAX_KEY_POINT_LENGTH = 500
 PRICING_TYPES = {"free", "freemium", "paid", "subscription", "usage_based", "open_core"}
 # Fields kept verbatim (markdown / commands); the other text fields are trimmed. An empty value clears.
-MULTILINE_FIELDS = ("personal_notes", "important_commands", "migration_note")
-SHORT_TEXT_FIELDS = ("license", "pricing", "app_type")
+MULTILINE_FIELDS = ("personal_notes", "important_commands", "migration_note", "purpose")
+SHORT_TEXT_FIELDS = ("license", "pricing", "app_type", "works_on")
 URL_FIELDS = ("homepage_url", "github_url", "wikipedia_url", "pricing_url")
 
 
@@ -272,6 +275,43 @@ def update_tool(tool_id):
     tool.updated_at = datetime.datetime.now(datetime.timezone.utc)
     session.commit()
     return jsonify({"tool": _tool_dict(tool, target_name=_target_name(session, tool))})
+
+
+@bp.post("/tools/<int:tool_id>/import_note")
+def import_note(tool_id):
+    """Fill the tool's empty catalog fields from its Obsidian note (the "application description" template).
+
+    Body (optional): ``note_path`` (default: the tool's own ``obsidian_note_path``, which is then saved when
+    it was empty) and ``overwrite`` (replace fields that already have a value; default false).
+    """
+    _user()
+    body = request.get_json(silent=True) or {}
+    overwrite = body.get("overwrite", False)
+    if not isinstance(overwrite, bool):
+        abort(400, "overwrite must be a boolean")
+    session = get_scoped_session()
+    tool = session.get(Tool, tool_id)
+    if tool is None:
+        abort(404, "tool not found")
+    note_path = (body.get("note_path") or tool.obsidian_note_path or "").strip()
+    if not note_path:
+        abort(400, "the tool has no obsidian_note_path; send note_path")
+    try:
+        ensure_within_vault(note_path)
+    except VaultPathInvalidError:
+        abort(400, "note_path escapes vault root")
+    text = read_note(note_path)
+    if text is None:
+        abort(404, "note not found in the vault")
+    parsed = tool_note_parser.parse_tool_note(text)
+    changed = tool_note_parser.apply_note_to_tool(tool, parsed, overwrite=overwrite)
+    if not tool.obsidian_note_path:
+        tool.obsidian_note_path = note_path
+        changed.append("obsidian_note_path")
+    if changed:
+        tool.updated_at = datetime.datetime.now(datetime.timezone.utc)
+        session.commit()
+    return jsonify({"tool": _tool_dict(tool, target_name=_target_name(session, tool)), "imported": changed, "found": sorted(parsed)})
 
 
 @bp.post("/tools/<int:tool_id>/retry_obsidian_write")
