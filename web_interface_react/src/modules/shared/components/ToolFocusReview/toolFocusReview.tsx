@@ -1,6 +1,6 @@
 import React from "react";
 
-export type FocusStatus = "watchlist" | "compare" | "testing" | "adopted" | "rejected" | "archived";
+export type FocusStatus = "watchlist" | "compare" | "testing" | "adopted" | "phasing_out" | "rejected" | "archived";
 
 type PeerRadar = {
   id: number; name: string; status: FocusStatus; category: string | null; description: string | null;
@@ -15,10 +15,10 @@ type Peers = { category: string | null; radar: PeerRadar[]; tools: PeerTool[] };
 
 const statusLabel: Record<FocusStatus, string> = {
   watchlist: "Nieocenione", compare: "Do porównania", testing: "Testowane",
-  adopted: "Używam", rejected: "Odrzucone", archived: "Archiwum",
+  adopted: "Używam", phasing_out: "Wygaszam", rejected: "Odrzucone", archived: "Archiwum",
 };
 // Tools in use come first: the candidate is judged against what is already running.
-const statusOrder: Record<FocusStatus, number> = { adopted: 0, testing: 1, compare: 2, watchlist: 3, rejected: 4, archived: 5 };
+const statusOrder: Record<FocusStatus, number> = { adopted: 0, phasing_out: 1, testing: 2, compare: 3, watchlist: 4, rejected: 5, archived: 6 };
 const badgeStyle = (adopted: boolean) => ({
   background: adopted ? "#dcfce7" : "#e2e8f0", color: adopted ? "#166534" : "#334155",
   borderRadius: 4, padding: "2px 6px", fontSize: ".75rem", marginLeft: 8,

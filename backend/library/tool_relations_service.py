@@ -132,7 +132,7 @@ def relations_for(session, item_ids: list[int]) -> dict[int, list[dict]]:
             result.setdefault(own_id, []).append({
                 "id": r.id, "relation": r.relation, "direction": "out" if own_id == r.from_tool_id else "in", "status": r.status, "detected_by": r.detected_by,
                 "context": r.context, "other_id": other.id, "other_name": other.name,
-                "other_status": other.status, "in_my_stack": other.status == "adopted",
+                "other_status": other.status, "in_my_stack": other.status in ("adopted", "phasing_out"),
             })
     return result
 

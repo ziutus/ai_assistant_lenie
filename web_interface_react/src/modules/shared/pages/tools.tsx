@@ -58,7 +58,7 @@ type RadarOrigin = {
   }>;
 };
 const radarStatusLabel: Record<string, string> = {
-  watchlist: "Obserwuję", compare: "Porównuję", testing: "Testuję", adopted: "Używam", rejected: "Odrzuciłem", archived: "Archiwum",
+  watchlist: "Obserwuję", compare: "Porównuję", testing: "Testuję", adopted: "Używam", phasing_out: "Wygaszam", rejected: "Odrzuciłem", archived: "Archiwum",
 };
 
 type ToolsResponse = { tools?: unknown; filters?: { tag?: string | null } };

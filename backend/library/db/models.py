@@ -3265,7 +3265,7 @@ class ToolRecommendation(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('watchlist', 'compare', 'testing', 'adopted', 'rejected', 'archived')",
+            "status IN ('watchlist', 'compare', 'testing', 'adopted', 'phasing_out', 'rejected', 'archived')",
             name="ck_tool_recommendations_status",
         ),
         Index("idx_tool_recommendations_status_created", "status", "created_at"),
