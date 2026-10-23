@@ -177,6 +177,15 @@ class DiscoverySource(Base):
     description: Mapped[str | None] = mapped_column(Text)
     url: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    # Knowledge-source fields (library/knowledge_sources.py): what kind of place the knowledge came from
+    # (a course, a newsletter, a channel...), how far the user got with it and what they think of it.
+    kind: Mapped[str | None] = mapped_column(String(30))
+    status: Mapped[str | None] = mapped_column(String(20))
+    started_on: Mapped[datetime.date | None] = mapped_column(Date)
+    finished_on: Mapped[datetime.date | None] = mapped_column(Date)
+    rating: Mapped[int | None] = mapped_column(SmallInteger)
+    review_note: Mapped[str | None] = mapped_column(Text)
+    obsidian_note_path: Mapped[str | None] = mapped_column(Text)
 
     @classmethod
     def ensure(cls, session: Session, name: str) -> "DiscoverySource | None":
@@ -3412,6 +3421,26 @@ class Tool(Base):
     obsidian_note_path: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ToolSource(Base):
+    """Where the user learned about a catalog tool (a course, a newsletter...): tool <-> knowledge source, M:N."""
+
+    __tablename__ = "tool_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tool_id: Mapped[int] = mapped_column(ForeignKey("tools.id", ondelete="CASCADE"), nullable=False)
+    source_id: Mapped[int] = mapped_column(ForeignKey("discovery_sources.id", ondelete="CASCADE"), nullable=False)
+    # A lesson link, a quote, "odcinek 5" - whatever tells where inside the source the tool appeared.
+    context: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    source: Mapped["DiscoverySource"] = relationship("DiscoverySource")
+
+    __table_args__ = (
+        UniqueConstraint("tool_id", "source_id", name="uq_tool_sources_tool_source"),
+        Index("idx_tool_sources_source", "source_id"),
+    )
 
 
 class ObsidianNoteVersion(Base):

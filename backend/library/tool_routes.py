@@ -6,9 +6,9 @@ import datetime
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, select, update
 
-from library import github_repo_stats, tool_note_parser, tool_relations_service
+from library import github_repo_stats, knowledge_sources, tool_note_parser, tool_provenance, tool_relations_service
 from library.db.engine import get_scoped_session
-from library.db.models import ObsidianNoteVersion, Tool, ToolRecommendation
+from library.db.models import DiscoverySource, ObsidianNoteVersion, Tool, ToolRecommendation
 from library.obsidian_vault import (
     VaultPathInvalidError,
     ensure_within_vault,
@@ -47,10 +47,13 @@ def _target_name(session, tool: Tool) -> str | None:
 
 def _tool_dict(
     tool: Tool, relations: list | None = None, github: dict | None = None, target_name: str | None = None,
+    sources: list | None = None, radar: list | None = None,
 ) -> dict:
     return {
         "relations": relations or [],
         "github": github,
+        "sources": sources or [],
+        "radar": radar or [],
         "id": tool.id,
         "uuid": tool.uuid,
         "name": tool.name,
@@ -92,9 +95,15 @@ def get_tools():
     tools = session.execute(query).scalars().all()
     relations = tool_relations_service.relations_for_tools(session, tools)
     github = github_repo_stats.stats_for_urls(session, [url for url in map(_github_url, tools) if url])
+    tool_ids = [tool.id for tool in tools]
+    sources = knowledge_sources.sources_for_tools(session, tool_ids)
+    radar = tool_provenance.radar_for_tools(session, tool_ids)
     return jsonify({
         "tools": [
-            _tool_dict(tool, relations.get(tool.id), github.get(_github_url(tool)), names.get(tool.migration_target_tool_id))
+            _tool_dict(
+                tool, relations.get(tool.id), github.get(_github_url(tool)), names.get(tool.migration_target_tool_id),
+                sources.get(tool.id), radar.get(tool.id),
+            )
             for tool in tools
         ],
         "filters": {"tag": tag},
@@ -308,10 +317,67 @@ def import_note(tool_id):
     if not tool.obsidian_note_path:
         tool.obsidian_note_path = note_path
         changed.append("obsidian_note_path")
+    source_result = None
+    if parsed.get("sources"):
+        source_result = knowledge_sources.link_note_sources(session, tool, parsed["sources"])
+        if source_result["linked"] or source_result["created"]:
+            changed.append("sources")
     if changed:
         tool.updated_at = datetime.datetime.now(datetime.timezone.utc)
         session.commit()
-    return jsonify({"tool": _tool_dict(tool, target_name=_target_name(session, tool)), "imported": changed, "found": sorted(parsed)})
+    sources = knowledge_sources.sources_for_tools(session, [tool.id]).get(tool.id)
+    return jsonify({
+        "tool": _tool_dict(tool, target_name=_target_name(session, tool), sources=sources),
+        "imported": changed, "found": sorted(parsed), "sources": source_result,
+    })
+
+
+@bp.post("/tools/<int:tool_id>/sources")
+def add_tool_source(tool_id):
+    """Record where the user learned about the tool: an existing source (``source_id``) or a name (found or created).
+
+    Body: ``{source_id | name, context?, kind?}``; ``context`` is a lesson / link / remark inside that source.
+    """
+    _user()
+    body = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    tool = session.get(Tool, tool_id)
+    if tool is None:
+        abort(404, "tool not found")
+    context = body.get("context")
+    if context is not None and not isinstance(context, str):
+        abort(400, "context must be a string")
+    try:
+        fields = knowledge_sources.validate_fields({key: body[key] for key in ("kind",) if key in body})
+    except ValueError as exc:
+        abort(400, str(exc))
+    if body.get("source_id") is not None:
+        source = session.get(DiscoverySource, body["source_id"]) if isinstance(body["source_id"], int) else None
+        if source is None:
+            abort(404, "source not found")
+        created = False
+    else:
+        name = body.get("name")
+        if not isinstance(name, str) or not name.strip():
+            abort(400, "source_id or name is required")
+        source, created = knowledge_sources.get_or_create_source(session, name, kind=fields.get("kind"))
+    link, linked = knowledge_sources.link_tool(session, tool, source, context=(context or "").strip() or None)
+    if not linked and context is not None:
+        link.context = context.strip() or None
+    session.commit()
+    sources = knowledge_sources.sources_for_tools(session, [tool.id]).get(tool.id)
+    return jsonify({"sources": sources, "source_created": created, "linked": linked}), 201 if linked else 200
+
+
+@bp.delete("/tools/<int:tool_id>/sources/<int:source_id>")
+def remove_tool_source(tool_id, source_id):
+    """Detach a source from the tool (the source itself stays)."""
+    _user()
+    session = get_scoped_session()
+    if not knowledge_sources.unlink_tool(session, tool_id, source_id):
+        abort(404, "the tool is not linked to this source")
+    session.commit()
+    return jsonify({"sources": knowledge_sources.sources_for_tools(session, [tool_id]).get(tool_id, [])})
 
 
 @bp.post("/tools/<int:tool_id>/retry_obsidian_write")

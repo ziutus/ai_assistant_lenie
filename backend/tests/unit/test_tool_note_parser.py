@@ -113,6 +113,7 @@ class TestParseToolNote:
             "app_type": "console tool",
             "license": "GPL",
             "works_on": "Linux, Macos (brew)",
+            "sources": [{"label": "docker swarm Udemy", "url": None, "wikilink": True}],
         }
 
     def test_full_note_maps_every_section(self):

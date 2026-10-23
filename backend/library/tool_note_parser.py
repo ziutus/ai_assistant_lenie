@@ -34,7 +34,11 @@ _LABELS = {
     "platforms": "works_on",
 }
 
-_PLACEHOLDER_POINT = re.compile(r"^poin?t?\d+$", re.IGNORECASE)  # "point1" / the template's typo "poin2"
+# Parsed keys that are not columns of the tool itself (the "Source of note" entries become linked knowledge sources).
+NON_COLUMN_FIELDS = ("sources",)
+_WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
+_DATE_LINE = re.compile(r"^(creation|modification) date\b", re.IGNORECASE)
+_PLACEHOLDER_POINT =re.compile(r"^poin?t?\d+$", re.IGNORECASE)  # "point1" / the template's typo "poin2"
 _URL = re.compile(r"https?://[^\s)>\]]+")
 _HEADING = re.compile(r"^(#{1,6})\s*(.*?)\s*:?\s*$")
 _SECTION_TITLES = {
@@ -43,7 +47,8 @@ _SECTION_TITLES = {
     "additional notes": "additional_notes",
 }
 # Headings that end the note body (everything after is bookkeeping, not content).
-_TAIL_TITLES = {"source of note", "connected notes", "external links"}
+_TAIL_TITLES = {"connected notes", "external links", "metadata"}
+_SOURCE_TITLE = "source of note"
 
 MAX_KEY_POINTS = 50
 MAX_KEY_POINT_LENGTH = 500
@@ -101,6 +106,10 @@ def _split_header_and_sections(text: str) -> tuple[list[str], dict[str, list[str
         heading = None if in_fence else _HEADING.match(line)
         if heading:
             title = heading.group(2).strip().lower()
+            if title == _SOURCE_TITLE:
+                current = "source_of_note"
+                sections.setdefault(current, [])
+                continue
             if title in _TAIL_TITLES:
                 stopped = True
                 current = None
@@ -120,7 +129,7 @@ def _split_header_and_sections(text: str) -> tuple[list[str], dict[str, list[str
                     sections[current].append(line)
                 continue
             continue
-        if stopped:
+        if stopped and current != "source_of_note":
             continue
         if current is None:
             header.append(line)
@@ -172,6 +181,38 @@ def _notes(lines: list[str]) -> str | None:
     return text or None
 
 
+def _sources(lines: list[str]) -> list[dict]:
+    """Entries of the "Source of note" section: ``{"label", "url", "wikilink"}`` in note order, without duplicates.
+
+    ``[[Kurs]]`` is a labelled wikilink, ``AI Devs 3: https://...`` a labelled URL, a bare URL has no label;
+    the section's ``creation date`` / ``modification date`` bookkeeping lines are not sources.
+    """
+    entries: list[dict] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or _DATE_LINE.match(stripped) or stripped.startswith("<%"):
+            continue
+        links = _WIKILINK.findall(stripped)
+        url = _first_url(stripped)
+        if links:
+            entries.extend({"label": title.strip(), "url": None, "wikilink": True} for title in links if title.strip())
+        elif url:
+            label = stripped[:stripped.index(url)].strip(" -:*•\t")
+            entries.append({"label": label or None, "url": url, "wikilink": False})
+        else:
+            label = stripped.lstrip("-*• ").strip()
+            if label and label.lower() not in ("brak", "none", "n/a"):
+                entries.append({"label": label[:200], "url": None, "wikilink": False})
+    seen = set()
+    unique = []
+    for entry in entries:
+        key = (entry["label"], entry["url"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(entry)
+    return unique
+
+
 def parse_tool_note(text: str) -> dict:
     """Catalog fields found in a template note. Missing / placeholder values are simply absent."""
     header, sections = _split_header_and_sections(text)
@@ -209,6 +250,9 @@ def parse_tool_note(text: str) -> dict:
     notes = _notes(sections.get("additional_notes", []))
     if notes:
         parsed["personal_notes"] = notes
+    sources = _sources(sections.get("source_of_note", []))
+    if sources:
+        parsed["sources"] = sources
     return parsed
 
 
@@ -219,6 +263,8 @@ def apply_note_to_tool(tool, parsed: dict, overwrite: bool = False) -> list[str]
     """
     changed = []
     for field, value in parsed.items():
+        if field in NON_COLUMN_FIELDS:
+            continue
         current = getattr(tool, field, None)
         if current not in (None, "", []) and not overwrite:
             continue

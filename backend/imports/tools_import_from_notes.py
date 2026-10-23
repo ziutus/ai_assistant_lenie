@@ -6,7 +6,8 @@ For every catalog tool the script reads its vault note, parses the template
 Key Points, Important Commands, Additional Notes) and fills the fields that are still empty. A tool
 without ``obsidian_note_path`` is matched to a vault note by name (file name = tool name, or
 "<name> - ..."); an ambiguous match is reported and skipped. Template placeholders ("point1", an
-empty code block) are never imported.
+empty code block) are never imported. The "Source of note" section becomes knowledge sources
+(``discovery_sources``: a ``[[course]]`` wikilink or "Label: URL") linked to the tool.
 
 Reads the vault from a local directory (``--vault``) and writes to the database the Lenie
 configuration points at (see "Running scripts against the NAS production DB" in imports/CLAUDE.md).
@@ -33,6 +34,7 @@ cfg = load_config()  # noqa: F841 — side effect: populates os.environ for libr
 
 from library.db.engine import get_session  # noqa: E402
 from library.db.models import Tool  # noqa: E402
+from library.knowledge_sources import link_note_sources  # noqa: E402
 from library.tool_note_parser import apply_note_to_tool, parse_tool_note  # noqa: E402
 
 DEFAULT_VAULT = os.environ.get("OBSIDIAN_VAULT_PATH", r"C:\Users\ziutus\Obsydian\personal")
@@ -112,6 +114,12 @@ def main():
             if not tool.obsidian_note_path:
                 tool.obsidian_note_path = note.relative_to(vault).as_posix()
                 changed.append("obsidian_note_path")
+            if parsed.get("sources"):
+                result = link_note_sources(session, tool, parsed["sources"])
+                if result["linked"] or result["created"]:
+                    changed.append("sources: " + ", ".join(result["linked"] or result["created"]))
+                for url in result["skipped_urls"]:
+                    logging.info("%-28s   bare link without a source skipped: %s", tool.name, url)
             if changed:
                 updated += 1
             logging.info("%-28s %s -> %s", tool.name, note.relative_to(vault).as_posix(), ", ".join(changed) or "nothing new")

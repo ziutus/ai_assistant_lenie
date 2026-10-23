@@ -31,8 +31,30 @@ type Tool = {
   status: string;
   obsidian_note_path: string | null;
   relations: ToolRelation[];
+  sources?: ToolSourceLink[];
+  radar?: RadarOrigin[];
   created_at: string | null;
   updated_at: string | null;
+};
+
+// Where the user learned about the tool (a course, a newsletter...) - knowledge sources linked through /tools/:id/sources.
+type ToolSourceLink = {
+  id: number; name: string; kind: string | null; url: string | null; status: string | null; rating: number | null;
+  context: string | null;
+};
+type KnownSource = { id: number; name: string; is_active: boolean };
+type DocumentRef = { id: number; title: string | null; url: string | null; discovery_source: string | null };
+// Why the tool was on the radar: the linked radar entry's own provenance (read through tool_recommendations.tool_id).
+type RadarOrigin = {
+  id: number; status: string; source_context: string | null; source_url: string | null; created_at: string | null;
+  source_document: DocumentRef | null; evidence_count: number;
+  evidences: Array<{
+    relation_type: string; catalog_label: string | null; catalog_url: string | null; context: string | null;
+    recommender_document: DocumentRef | null;
+  }>;
+};
+const radarStatusLabel: Record<string, string> = {
+  watchlist: "Obserwuję", compare: "Porównuję", testing: "Testuję", adopted: "Używam", rejected: "Odrzuciłem", archived: "Archiwum",
 };
 
 type ToolsResponse = { tools?: unknown; filters?: { tag?: string | null } };
@@ -89,6 +111,9 @@ export default function Tools() {
   const [githubBusy, setGithubBusy] = React.useState(false);
   const [githubMessage, setGithubMessage] = React.useState("");
   const [importMessage, setImportMessage] = React.useState<{ id: number; text: string } | null>(null);
+  const [knownSources, setKnownSources] = React.useState<KnownSource[]>([]);
+  const [sourceToolId, setSourceToolId] = React.useState<number | null>(null);
+  const [sourceDraft, setSourceDraft] = React.useState("");
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
   // Guards against out-of-order responses: switching the tag filter quickly
   // aborts the previous in-flight request so a slower, stale response for an
@@ -147,7 +172,7 @@ export default function Tools() {
       const saved = data.tool;
       // The PATCH answer carries no relations or GitHub numbers; keep the ones already loaded unless the link changed.
       setTools(current => current.map(item => item.id === tool.id
-        ? { ...saved, relations: item.relations, github: saved.github_url === item.github_url ? item.github : null }
+        ? { ...saved, relations: item.relations, sources: item.sources, radar: item.radar, github: saved.github_url === item.github_url ? item.github : null }
         : item));
       return true;
     } catch (cause) { setError(cause instanceof Error ? cause.message : failure); return false; }
@@ -165,6 +190,49 @@ export default function Tools() {
     }
   };
 
+  // The picker offers the existing sources (fetched on first use); a new name is created on the fly by the server.
+  const openSourcePicker = (tool: Tool) => {
+    setSourceToolId(tool.id); setSourceDraft("");
+    if (knownSources.length) return;
+    fetch(`${apiUrl}/sources?active=1`, { headers })
+      .then(response => response.ok ? response.json() : { sources: [] })
+      .then((data: { sources?: KnownSource[] }) => setKnownSources(data.sources ?? []))
+      .catch(() => { /* the picker just stays empty */ });
+  };
+
+  const setToolSources = (toolId: number, sources: ToolSourceLink[]) =>
+    setTools(current => current.map(item => item.id === toolId ? { ...item, sources } : item));
+
+  const addSource = async (tool: Tool) => {
+    const name = sourceDraft.trim();
+    if (!name) return;
+    setSavingId(tool.id); setError("");
+    try {
+      const known = knownSources.find(source => source.name.toLowerCase() === name.toLowerCase());
+      const response = await fetch(`${apiUrl}/tools/${tool.id}/sources`, {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify(known ? { source_id: known.id } : { name }),
+      });
+      const data = await response.json().catch(() => ({})) as { sources?: ToolSourceLink[]; source_created?: boolean; message?: string };
+      if (!response.ok || !data.sources) throw new Error(data.message || `Nie udało się dodać źródła (HTTP ${response.status})`);
+      setToolSources(tool.id, data.sources);
+      if (data.source_created) setKnownSources(current => [...current, { id: -1, name, is_active: true }]);
+      setSourceDraft(""); setSourceToolId(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się dodać źródła"); }
+    finally { setSavingId(null); }
+  };
+
+  const removeSource = async (tool: Tool, source: ToolSourceLink) => {
+    setSavingId(tool.id); setError("");
+    try {
+      const response = await fetch(`${apiUrl}/tools/${tool.id}/sources/${source.id}`, { method: "DELETE", headers });
+      const data = await response.json().catch(() => ({})) as { sources?: ToolSourceLink[]; message?: string };
+      if (!response.ok || !data.sources) throw new Error(data.message || `Nie udało się usunąć źródła (HTTP ${response.status})`);
+      setToolSources(tool.id, data.sources);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się usunąć źródła"); }
+    finally { setSavingId(null); }
+  };
+
   const importNote = async (tool: Tool) => {
     setSavingId(tool.id); setError(""); setImportMessage(null);
     try {
@@ -175,7 +243,7 @@ export default function Tools() {
       if (!response.ok || !data.tool) throw new Error(data.message || `Nie udało się wczytać notatki (HTTP ${response.status})`);
       const saved = data.tool;
       setTools(current => current.map(item => item.id === tool.id
-        ? { ...saved, relations: item.relations, github: saved.github_url === item.github_url ? item.github : null }
+        ? { ...saved, relations: item.relations, radar: item.radar, github: saved.github_url === item.github_url ? item.github : null }
         : item));
       const count = data.imported?.length ?? 0;
       setImportMessage({ id: tool.id, text: count ? `Uzupełniono ${count} pól: ${data.imported?.join(", ")}.` : "Nic nowego w notatce — wszystkie pola już wypełnione." });
@@ -314,6 +382,48 @@ export default function Tools() {
         {tool.pricing_url && <a style={linkStyle} href={tool.pricing_url} target="_blank" rel="noreferrer">Cennik</a>}
       </div>
       {tool.github && <GithubStatsLine stats={tool.github} />}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "8px 0", fontSize: ".85rem" }}>
+        <span style={{ color: "#64748b" }} title="Kurs, szkolenie, newsletter, kanał… — skąd o tym narzędziu wiem. Źródła ocenisz na stronie Źródła.">Skąd wiem:</span>
+        {(tool.sources ?? []).map(source => <span key={source.id} title={source.context ?? undefined}
+          style={{ background: "#ecfeff", color: "#155e75", borderRadius: 4, padding: "2px 6px" }}>
+          <Link to="/sources" style={{ color: "inherit" }}>{source.name}</Link>
+          {source.context && source.context.startsWith("http") && <> · <a href={source.context} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>link</a></>}
+          <button type="button" aria-label={`Usuń źródło ${source.name}`} disabled={savingId === tool.id}
+            style={{ border: 0, background: "none", cursor: "pointer", color: "inherit", marginLeft: 4 }}
+            onClick={() => void removeSource(tool, source)}>×</button>
+        </span>)}
+        {!(tool.sources ?? []).length && sourceToolId !== tool.id && <span style={{ color: "#94a3b8" }}>nie zapisano</span>}
+        {sourceToolId === tool.id
+          ? <>
+            <input list={`known-sources-${tool.id}`} value={sourceDraft} placeholder="nazwa kursu, newslettera…" disabled={savingId === tool.id}
+              onChange={event => setSourceDraft(event.target.value)}
+              onKeyDown={event => { if (event.key === "Enter") void addSource(tool); }} />
+            <datalist id={`known-sources-${tool.id}`}>{knownSources.map(source => <option key={source.name} value={source.name} />)}</datalist>
+            <button type="button" disabled={savingId === tool.id || !sourceDraft.trim()} onClick={() => void addSource(tool)}>Dodaj</button>
+            <button type="button" onClick={() => { setSourceToolId(null); setSourceDraft(""); }}>Anuluj</button>
+          </>
+          : <button type="button" onClick={() => openSourcePicker(tool)}>+ źródło</button>}
+      </div>
+      {(tool.radar ?? []).length > 0 && <div style={{ color: "#64748b", fontSize: ".85rem", margin: "4px 0" }}>
+        <span title="Dlaczego to narzędzie trafiło na Radar narzędzi (dane z wpisu radaru, nie kopia).">Na radarze:</span>{" "}
+        {(tool.radar ?? []).map(origin => <span key={origin.id}>
+          {radarStatusLabel[origin.status] ?? origin.status}
+          {origin.source_context && <> · {origin.source_context}</>}
+          {origin.source_document && <> · <Link to={`/read/${origin.source_document.id}`}>{origin.source_document.title ?? `#${origin.source_document.id}`}</Link>
+            {origin.source_document.discovery_source && <> ({origin.source_document.discovery_source})</>}</>}
+          {origin.source_url && origin.source_url.startsWith("http") && <> · <a href={origin.source_url} target="_blank" rel="noreferrer">źródło</a></>}
+          {focusedId !== null && origin.evidences.length > 0 && <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+            {origin.evidences.map((evidence, index) => <li key={index}>
+              {evidence.relation_type === "listed_in" ? "Na liście" : "Wspomniane w"}{" "}
+              {evidence.catalog_url ? <a href={evidence.catalog_url} target="_blank" rel="noreferrer">{evidence.catalog_label ?? evidence.catalog_url}</a> : evidence.catalog_label}
+              {evidence.context && <> ({evidence.context})</>}
+              {evidence.recommender_document && <> · <Link to={`/read/${evidence.recommender_document.id}`}>{evidence.recommender_document.title ?? `#${evidence.recommender_document.id}`}</Link>
+                {evidence.recommender_document.discovery_source && <> ({evidence.recommender_document.discovery_source})</>}</>}
+            </li>)}
+            {origin.evidence_count > origin.evidences.length && <li>…i {origin.evidence_count - origin.evidences.length} więcej</li>}
+          </ul>}
+        </span>)}
+      </div>}
       {focusedId !== null && <div style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 12px", margin: "8px 0", fontSize: ".85rem", color: "#475569" }}>
         <strong>Linki i źródła</strong>
         <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>

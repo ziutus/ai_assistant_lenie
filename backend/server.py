@@ -3980,13 +3980,17 @@ def tags_list():
     return {"status": "success", "tags": [{"tag": t, "count": c} for t, c in ordered]}, 200
 
 
-def _source_dict(row, count: int = 0):
+def _source_dict(row, count: int = 0, tools: list | None = None):
     # "source" duplicates "name" for backward compatibility (editor autocomplete
     # consumed the old distinct-values shape).
+    from library import knowledge_sources
+
     return {
         "id": row.id, "name": row.name, "source": row.name,
         "description": row.description, "url": row.url,
         "is_active": row.is_active, "count": count,
+        **knowledge_sources.source_fields(row),
+        "tools": tools or [],
     }
 
 
@@ -4019,8 +4023,11 @@ def sources_list():
     if request.args.get('active') in ('1', 'true', 'yes'):
         query = query.where(DiscoverySource.is_active.is_(True))
     rows = session.execute(query.order_by(doc_count.desc(), DiscoverySource.name)).all()
+    from library import knowledge_sources
+
+    tools = knowledge_sources.tools_for_sources(session)
     return {"status": "success",
-            "sources": [_source_dict(row, count) for row, count in rows]}, 200
+            "sources": [_source_dict(row, count, tools.get(row.id)) for row, count in rows]}, 200
 
 
 @app.route('/sources', methods=['POST', 'OPTIONS'])
@@ -4037,11 +4044,19 @@ def sources_add():
     if not name:
         return {"status": "error", "message": "name is required"}, 400
 
+    from library import knowledge_sources
+
+    try:
+        extra = knowledge_sources.validate_fields(data)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+
     session = get_scoped_session()
     row = DiscoverySource(name=name,
                  description=(data.get('description') or "").strip() or None,
-                 url=(data.get('url') or "").strip() or None,
                  is_active=bool(data.get('is_active', True)))
+    for field, value in extra.items():
+        setattr(row, field, value)
     session.add(row)
     try:
         session.commit()
@@ -4077,8 +4092,14 @@ def sources_update(source_id: int):
         row.name = name
     if 'description' in data:
         row.description = (data.get('description') or "").strip() or None
-    if 'url' in data:
-        row.url = (data.get('url') or "").strip() or None
+    from library import knowledge_sources
+
+    try:
+        extra = knowledge_sources.validate_fields(data)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+    for field, value in extra.items():  # includes url, kind, status, dates, rating, review note, note path
+        setattr(row, field, value)
     if 'is_active' in data:
         row.is_active = bool(data.get('is_active'))
 

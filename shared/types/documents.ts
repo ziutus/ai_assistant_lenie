@@ -82,6 +82,15 @@ export interface Source {
   url: string | null;
   is_active: boolean;
   count: number;
+  // Knowledge-source fields: what kind of place the knowledge came from and how it went (optional: older API builds omit them).
+  kind?: string | null;
+  status?: string | null;
+  started_on?: string | null;
+  finished_on?: string | null;
+  rating?: number | null;
+  review_note?: string | null;
+  obsidian_note_path?: string | null;
+  tools?: Array<{ id: number; name: string }>;
 }
 
 export interface SearchResult {

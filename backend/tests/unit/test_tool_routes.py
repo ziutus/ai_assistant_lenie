@@ -9,6 +9,13 @@ pytest.importorskip("sqlalchemy")
 from flask import Flask, g
 
 
+@pytest.fixture(autouse=True)
+def _no_source_queries(monkeypatch):
+    """These tests feed one canned result set to every query; the source/provenance lookups are covered elsewhere."""
+    monkeypatch.setattr("library.tool_routes.knowledge_sources.sources_for_tools", lambda *_args: {})
+    monkeypatch.setattr("library.tool_routes.tool_provenance.radar_for_tools", lambda *_args: {})
+
+
 def _compiled(query) -> str:
     return str(query.compile(compile_kwargs={"literal_binds": True}))
 
@@ -104,6 +111,8 @@ class TestResponseShape:
         assert response.json["tools"] == [{
             "relations": [],
             "github": None,
+            "sources": [],
+            "radar": [],
             "id": 1,
             "uuid": "11111111-1111-1111-1111-111111111111",
             "name": "Terraform",
