@@ -94,8 +94,11 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         def call(resolved_model=model):
             import library.api.openai.openai_my
 
-            response = library.api.openai.openai_my.OpenAIClient.get_completion(query, resolved_model)
+            response, tokens = library.api.openai.openai_my.OpenAIClient.get_completion_with_usage(query, resolved_model)
             ai_response = AiResponse(query=query, model=resolved_model)
+            ai_response.prompt_tokens = tokens.get("prompt_tokens")
+            ai_response.completion_tokens = tokens.get("completion_tokens")
+            ai_response.total_tokens = tokens.get("total_tokens")
             if isinstance(response, bytes):
                 response = response.decode('utf-8')
             ai_response.response_text = response
@@ -180,7 +183,13 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
 
     latency_ms = int((time.monotonic() - started) * 1000)
     prompt_tokens, completion_tokens, total_tokens = _unified_tokens(ai_response)
+    reported = {}
+    if provider == "openrouter":
+        cost = ai_response.__dict__.pop("_openrouter_reported_cost", None)
+        if cost is not None:
+            reported = {"reported_cost": cost, "reported_cost_currency": "USD"}
     ai_response.usage = _record_usage(
+        **reported,
         operation=operation,
         provider=provider,
         model=model,

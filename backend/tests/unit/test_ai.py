@@ -5,7 +5,9 @@ Every test that reaches a provider patches the central recorder
 write a real llm_usage_logs row.
 """
 
-from unittest.mock import patch
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -191,3 +193,77 @@ class TestRegressions:
         for name in ("cost_usd", "cost", "credits_used"):
             assert not hasattr(response, name)
         assert response.usage is None
+
+
+@pytest.mark.parametrize("usage", [None, SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15)])
+def test_openai_usage_is_recorded_once(usage):
+    client = MagicMock()
+    client.chat.completions.create.return_value = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))], usage=usage,
+    )
+    with patch("library.api.openai.openai_my.OpenAI", return_value=client), patched_recorder() as recorder:
+        response = ai_ask("q", "gpt-4o-mini")
+    client.chat.completions.create.assert_called_once()
+    recorder.assert_called_once()
+    assert response.response_text == "ok"
+    for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        assert recorder.call_args.kwargs[name] == getattr(usage, name, None)
+
+
+def test_openai_failure_records_once():
+    with patch("library.api.openai.openai_my.OpenAI") as client, patched_recorder() as recorder:
+        client.return_value.chat.completions.create.side_effect = RuntimeError("timeout")
+        with pytest.raises(Exception, match="timeout"):
+            ai_ask("q", "gpt-4o-mini")
+    recorder.assert_called_once()
+    assert recorder.call_args.kwargs["success"] is False
+
+
+def test_openai_existing_return_types():
+    from library.api.openai.openai_my import OpenAIClient
+
+    with patch("library.api.openai.openai_my.OpenAI") as client:
+        client.return_value.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))], usage=None,
+        )
+        assert OpenAIClient.get_completion("q") == '{"ok": true}'
+        assert OpenAIClient.get_completion2("q") == {"ok": True}
+        assert OpenAIClient.get_completion_image("q") == '{"ok": true}'
+
+
+@pytest.mark.parametrize("value", [0.0001234567, 0, None, "0.1", -1, True, float("nan"), float("inf")])
+@pytest.mark.parametrize("extra", [False, True])
+def test_openrouter_exact_cost_or_catalog_estimate(value, extra):
+    from library.llm_usage.recorder import record_llm_usage
+    from tests.unit.test_llm_usage_recorder import FakeSessionFactory
+
+    usage = SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+    if extra:
+        usage.model_extra = {"cost": value}
+    elif value is not None:
+        usage.cost = value
+    client = MagicMock()
+    client.chat.completions.create.return_value = SimpleNamespace(
+        id="gen-1", choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))], usage=usage,
+    )
+    factory = FakeSessionFactory()
+    catalog = SimpleNamespace(pricing_mode="per_token", input_price_per_million=Decimal("0.15"),
+                              output_price_per_million=Decimal("0.60"), currency="USD", pricing_version=None)
+    with patch("library.api.openrouter.openrouter_completion.OpenAI", return_value=client), \
+            patch("library.api.openrouter.openrouter_completion.is_enabled", return_value=True), \
+            patch("library.config_loader.load_config", return_value={"OPENROUTER_API_KEY": "fake"}), \
+            patch("library.llm_usage.recorder._openrouter_catalog_pricing", return_value=catalog), \
+            patched_recorder(side_effect=lambda **kw: record_llm_usage(**kw, session_factory=factory)) as recorder:
+        response = ai_ask("q", "openrouter/openai/gpt-4o-mini")
+    recorder.assert_called_once()
+    assert len(factory.added) == 1
+    log = factory.added[0]
+    valid = type(value) in (int, float) and Decimal(str(value)).is_finite() and value >= 0
+    assert log.cost_status == ("reported" if valid else "estimated")
+    assert log.cost_amount == (Decimal(str(value)) if valid else Decimal("0.0000045000"))
+    assert log.cost_currency == "USD"
+    assert response.usage.cost.total_cost == log.cost_amount
+    assert not hasattr(response, "_openrouter_reported_cost")
+    for name in ("cost", "cost_usd", "credits_used"):
+        assert not hasattr(response, name)
+    assert client.chat.completions.create.call_args.kwargs["extra_body"] == {"usage": {"include": True}}

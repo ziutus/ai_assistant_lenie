@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,6 +8,34 @@ pytest.importorskip("sqlalchemy")
 
 import library.embedding as embedding_module  # noqa: E402
 from library.models.embedding_results import EmbeddingResults  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def mock_usage_recorder(monkeypatch):
+    monkeypatch.setattr("library.llm_usage.recorder.record_llm_usage", MagicMock())
+
+
+@pytest.mark.parametrize("status,prompt,expected", [(200, 1000, 0), (200, 0, 0), (200, None, None),
+                                                       (503, 1000, None)])
+def test_embedding_completion_tokens_and_price(monkeypatch, status, prompt, expected):
+    from library.llm_usage.recorder import _resolve_cost
+
+    recorder = MagicMock()
+    monkeypatch.setattr("library.llm_usage.recorder.record_llm_usage", recorder)
+    response = _batch_response(["text"], status_code=status)
+    response.prompt_tokens = prompt
+    embedding_module._record_sherlock_embedding_usage(response, "BAAI/bge-multilingual-gemma2", 10)
+    recorder.assert_called_once()
+    assert recorder.call_args.kwargs["completion_tokens"] == expected
+    price = SimpleNamespace(pricing_mode="per_token", input_price_per_million=Decimal("0.5"),
+                            output_price_per_million=Decimal("0.5"), currency="PLN")
+    cost = _resolve_cost(price, None, None, prompt, expected)
+    if expected == 0:
+        assert cost.total_cost == Decimal(prompt) * Decimal("0.5") / Decimal(1_000_000)
+        assert cost.currency == "PLN"
+        assert cost.status == "estimated"
+    else:
+        assert cost.status == "unknown"
 
 
 def _batch_response(texts, status_code=200, model="BAAI/bge-multilingual-gemma2"):
