@@ -6,6 +6,7 @@ Standalone CLI scripts that add or manage documents in the Lenie database, bypas
 
 | Script | Purpose | DB Access |
 |--------|---------|-----------|
+| `backfill_llm_costs.py` | Price historical unknown LLM costs using prices valid on the call date; optional provider/model filters and batched updates | ORM (SQLAlchemy); dry-run by default, writes only with `--apply` |
 | `rebuild_image_catalog_from_extracted.py` | One-document pilot: reconstruct missing URL image catalog from original `text_extracted` | ORM (SQLAlchemy); reads in dry-run, writes only with `--apply` |
 
 ### `outline_chunk_preview.py`

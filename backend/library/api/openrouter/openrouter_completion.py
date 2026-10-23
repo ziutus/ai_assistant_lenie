@@ -5,6 +5,7 @@ stays disabled until ``OPENROUTER_ENABLED`` is switched on in the config (see ``
 """
 
 import logging
+from decimal import Decimal
 
 from openai import OpenAI
 
@@ -47,6 +48,7 @@ def openrouter_get_completion(prompt: str, model: str, max_tokens: int = 1000, t
     extra_args = {"response_format": response_format} if response_format is not None else {}
     chat_response = client.chat.completions.create(
         model=model, messages=messages, max_tokens=max_tokens, temperature=temperature, **extra_args,
+        extra_body={"usage": {"include": True}},
     )
 
     ai_response = AiResponse(query=prompt, model=model)
@@ -57,4 +59,12 @@ def openrouter_get_completion(prompt: str, model: str, max_tokens: int = 1000, t
         ai_response.prompt_tokens = usage.prompt_tokens
         ai_response.completion_tokens = usage.completion_tokens
         ai_response.total_tokens = usage.total_tokens
+        value = getattr(usage, "cost", None)
+        if value is None:
+            value = (getattr(usage, "model_extra", None) or {}).get("cost")
+        if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+            cost = Decimal(str(value))
+            if cost.is_finite() and cost >= 0:
+                # Private transport only; ai_ask consumes this before returning the response.
+                ai_response._openrouter_reported_cost = cost
     return ai_response

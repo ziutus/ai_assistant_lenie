@@ -30,6 +30,7 @@ def _record_sherlock_embedding_usage(response, model: str, latency_ms: int) -> N
             provider="cloudferro",
             model=model,
             prompt_tokens=response.prompt_tokens,
+            completion_tokens=0 if success and response.prompt_tokens is not None else None,
             total_tokens=response.total_tokens,
             endpoint=_SHERLOCK_EMBEDDINGS_ENDPOINT,
             success=success,
