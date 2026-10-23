@@ -31,7 +31,9 @@ class TestPrompt:
         prompt = profile.build_prompt(item.name, item.homepage_url, item.links, item.description, item.category,
                                       item.tags, github, CATEGORIES, ["python", "docker"])
 
-        assert "JupyterLab" in prompt and "https://jupyter.org" in prompt
+        lines = prompt.splitlines()
+        assert "Tool: JupyterLab" in lines
+        assert "Other links: https://jupyter.org" in lines
         assert "GitHub description: Notebook IDE" in prompt and "GitHub topics: jupyter, ide" in prompt
         assert "Development (80), AI (22), DataScience (4), DecisionModels (3)" in prompt
         assert "Tags already used elsewhere on the radar: python, docker" in prompt
