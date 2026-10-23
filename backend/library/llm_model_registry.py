@@ -25,6 +25,9 @@ _ORGANIZATION_DESCRIPTION_MODELS: tuple[tuple[str, str, str, bool, bool], ...] =
     ("openrouter/qwen/qwen-2.5-7b-instruct", "Qwen 2.5 7B (OpenRouter)", "openrouter", True, False),
 )
 
+# Tasks that share the list above. ``tool_tags`` sends only public tool metadata (name, URL, description).
+_TASKS = {"organization_description", "tool_tags"}
+
 _OPENROUTER_PREFIX = "openrouter/"
 PRICE_SOURCE_OPENROUTER = "openrouter_api"
 PRICE_SOURCE_DATABASE = "llm_pricing"
@@ -41,7 +44,7 @@ def _openrouter_enabled() -> bool:
 
 def _base_models(task: str) -> list[dict]:
     """The allowlist as ``{id, label, provider, external, verified}`` dicts — no network, no database."""
-    if task != "organization_description":
+    if task not in _TASKS:
         return []
     show_openrouter = _openrouter_enabled()
     return [{"id": model_id, "label": label, "provider": provider, "external": external, "verified": verified}
