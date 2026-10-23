@@ -68,3 +68,10 @@ environments.
 - Never use `git branch -D`, never delete a branch whose PR is still open or
   unmerged, and never delete `before_claude_code`. In any of those cases ask
   the user first.
+- A sandboxed Codex run leaves `backend/.pytest_cache` ACL-locked (owned by the
+  `CodexSandbox*` account), after which the worktree cannot be deleted without
+  an elevated shell. `backend/` and `ner_service/` set
+  `addopts = ["-p", "no:cacheprovider"]` in `pyproject.toml`, so pytest creates
+  no cache; do not override it (`-p cacheprovider`) in a worktree. If a cleanup
+  is denied anyway, stop and report the path, the owner and the ACL
+  (`icacls`, `Get-Acl`); do not change ownership or permissions automatically.
