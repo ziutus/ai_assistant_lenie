@@ -13,7 +13,7 @@ import datetime
 import re
 import unicodedata
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from library.db.models import DiscoverySource, Document, Person, PersonAlias, SourcePerson, Tool, ToolSource
 
@@ -277,6 +277,13 @@ def validate_person_fields(data: dict) -> dict:
     if present:
         cleaned["obsidian_note_path"] = path
     return cleaned
+
+
+def link_count(session, source_id: int) -> int:
+    """How many tools and people are attached to the source (a source with links must be deactivated, not deleted)."""
+    tools = session.execute(select(func.count()).select_from(ToolSource).where(ToolSource.source_id == source_id)).scalar_one()
+    people = session.execute(select(func.count()).select_from(SourcePerson).where(SourcePerson.source_id == source_id)).scalar_one()
+    return tools + people
 
 
 def person_fields(person: Person) -> dict:

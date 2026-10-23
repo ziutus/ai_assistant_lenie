@@ -548,6 +548,18 @@ python -X utf8 imports/tools_import_from_notes.py --apply
 python -X utf8 imports/tools_import_from_notes.py --id 52 --apply
 ```
 
+### `public_people_import.py`
+
+Imports the vault notes about public people (`02-wiedza/people i firmy/public/**`) into the person registry as `kind='public'` persons (not contacts): description from the first prose line, links from the note's URLs (labelled by their text or host), the note path, aliases (a nickname in "Claudowski - Tomasz Cholewa"), and links to knowledge sources — `[[wikilinks]]` to courses and the sources named in an `--overrides` JSON (e.g. a channel the person hosts). Fills only empty fields; an existing registry person is promoted to public. File names the script cannot read as a person ("talkpython", surname-first "Górczyk Przemek") are listed and skipped until an override gives the name. See the script's docstring for the overrides format.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, writes only with `--apply`.
+
+```bash
+cd backend
+python -X utf8 imports/public_people_import.py --overrides ../tmp/people.json            # dry-run (default)
+python -X utf8 imports/public_people_import.py --overrides ../tmp/people.json --apply
+```
+
 ### `youtube_batch_analyze.py`
 
 Bielik LLM chunk analysis of an **existing** document (by `--doc_id`): chunk splitting, speaker extraction/labeling, two-pass rewrite + summarize, topic grouping, synthesis, DB persistence. Moved from `test_code/` — the pipeline lives in `library/document_analysis_service.py` + `library/chunk_llm_analysis.py` (shared with Flask `chunk_review_routes.py`); file exports in `library/analysis_exports.py`. For a brand-new video, use `youtube_add.py <URL> --analyze` instead.

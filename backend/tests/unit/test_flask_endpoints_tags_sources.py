@@ -53,6 +53,8 @@ def _source_row(id_, name, count, is_active=True, description=None, url=None):
     row.description = description
     row.url = url
     row.is_active = is_active
+    row.kind = row.status = row.started_on = row.finished_on = row.rating = None  # knowledge-source fields
+    row.review_note = row.obsidian_note_path = None
     return (row, count)
 
 
@@ -62,11 +64,15 @@ class TestSourcesList:
         session.execute.return_value.all.return_value = [
             _source_row(1, "unknow.news", 120), _source_row(2, "own", 80),
         ]
-        with patch("server.get_scoped_session", return_value=session):
+        with patch("server.get_scoped_session", return_value=session), \
+                patch("library.knowledge_sources.tools_for_sources", return_value={1: [{"id": 9, "name": "Semgrep"}]}), \
+                patch("library.knowledge_sources.persons_for_sources", return_value={1: [{"id": 3, "name": "X", "role": "host"}]}):
             resp = client.get("/sources", headers=API_HEADERS)
 
         assert resp.status_code == 200
         sources = resp.get_json()["sources"]
+        assert sources[0]["tools"] == [{"id": 9, "name": "Semgrep"}] and sources[1]["tools"] == []
+        assert sources[0]["persons"][0]["role"] == "host" and sources[0]["kind"] is None
         # Backward-compat keys consumed by the editor autocomplete.
         assert sources[0]["source"] == "unknow.news"
         assert sources[0]["count"] == 120

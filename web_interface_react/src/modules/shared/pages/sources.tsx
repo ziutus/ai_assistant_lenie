@@ -20,6 +20,9 @@ const statuses: Array<[string, string]> = [
   ["planned", "planuję"], ["in_progress", "w trakcie"], ["finished", "ukończone"], ["dropped", "porzucone"],
 ];
 const label = (list: Array<[string, string]>, value?: string | null) => list.find(([key]) => key === value)?.[1] ?? value;
+const personRoles: Array<[string, string]> = [
+  ["author", "autor"], ["host", "prowadzący"], ["instructor", "wykładowca"], ["guest", "gość"], ["other", "inne"],
+];
 
 type Form = {
   name: string; description: string; url: string; kind: string; status: string; started_on: string;
@@ -49,6 +52,9 @@ const Sources = () => {
   const [editId, setEditId] = React.useState<number | null>(null);
   const [editForm, setEditForm] = React.useState<Form>(emptyForm);
   const [kindFilter, setKindFilter] = React.useState("");
+  // Adding a person (host / author) to a source: the person must already be in the registry (page "Osoby").
+  const [personSourceId, setPersonSourceId] = React.useState<number | null>(null);
+  const [personDraft, setPersonDraft] = React.useState({ name: "", role: "author" });
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
@@ -151,6 +157,38 @@ const Sources = () => {
     } catch (error: any) {
       console.error("Error deleting source", error);
       report(`Nie udało się usunąć: ${error.response?.data?.message || error.message}`, true);
+    }
+    setBusyId(null);
+  };
+
+  const setPersons = (sourceId: number, persons: Source["persons"]) =>
+    setSources((current) => current.map((item) => (item.id === sourceId ? { ...item, persons } : item)));
+
+  const addPerson = async (source: Source) => {
+    if (!personDraft.name.trim()) return;
+    setBusyId(source.id);
+    setIsError(false);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/sources/${source.id}/persons`, personDraft, { headers });
+      setPersons(source.id, response.data.persons);
+      setPersonSourceId(null);
+      setPersonDraft({ name: "", role: "author" });
+    } catch (error: any) {
+      report(`Nie udało się dodać osoby: ${error.response?.data?.message || error.message}`, true);
+    }
+    setBusyId(null);
+  };
+
+  const removePerson = async (source: Source, personId: number) => {
+    setBusyId(source.id);
+    setIsError(false);
+    setMessage("");
+    try {
+      const response = await axios.delete(`${apiUrl}/sources/${source.id}/persons/${personId}`, { headers });
+      setPersons(source.id, response.data.persons);
+    } catch (error: any) {
+      report(`Nie udało się usunąć osoby: ${error.response?.data?.message || error.message}`, true);
     }
     setBusyId(null);
   };
@@ -302,7 +340,7 @@ const Sources = () => {
                     <button className={"button"} type="button" disabled={busyId === source.id} onClick={() => toggleActive(source)}>
                       {source.is_active ? "Dezaktywuj" : "Aktywuj"}
                     </button>
-                    {source.count === 0 && !source.tools?.length && (
+                    {source.count === 0 && !source.tools?.length && !source.persons?.length && (
                       <button className={"button"} type="button" disabled={busyId === source.id} onClick={() => remove(source)}>
                         Usuń
                       </button>
@@ -316,6 +354,33 @@ const Sources = () => {
                 )}
                 {source.review_note && <blockquote style={{ margin: "6px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 10, whiteSpace: "pre-wrap" }}>{source.review_note}</blockquote>}
                 {source.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".85rem" }}>Notatka: {source.obsidian_note_path}</div>}
+                <div style={{ fontSize: ".85rem", marginTop: 4, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "#64748b" }}>Osoby:</span>
+                  {(source.persons ?? []).map((person) => (
+                    <span key={person.id} style={{ background: "#f1f5f9", borderRadius: 4, padding: "1px 7px" }}>
+                      <Link to={`/persons/${person.id}`}>{person.name}</Link>
+                      <span style={{ color: "#667" }}> ({label(personRoles, person.role)})</span>
+                      <button type="button" aria-label={`Usuń osobę ${person.name}`} disabled={busyId === source.id}
+                        style={{ border: 0, background: "none", cursor: "pointer", marginLeft: 4 }}
+                        onClick={() => removePerson(source, person.id)}>×</button>
+                    </span>
+                  ))}
+                  {!source.persons?.length && personSourceId !== source.id && <span style={{ color: "#94a3b8" }}>brak</span>}
+                  {personSourceId === source.id ? (
+                    <>
+                      <input type="text" placeholder="imię i nazwisko z rejestru osób" value={personDraft.name}
+                        onChange={(e) => setPersonDraft({ ...personDraft, name: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === "Enter") void addPerson(source); }} />
+                      <select value={personDraft.role} onChange={(e) => setPersonDraft({ ...personDraft, role: e.target.value })}>
+                        {personRoles.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+                      </select>
+                      <button type="button" disabled={busyId === source.id || !personDraft.name.trim()} onClick={() => addPerson(source)}>Dodaj</button>
+                      <button type="button" onClick={() => setPersonSourceId(null)}>Anuluj</button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => { setPersonSourceId(source.id); setPersonDraft({ name: "", role: "author" }); }}>+ osoba</button>
+                  )}
+                </div>
                 {source.tools && source.tools.length > 0 && (
                   <div style={{ fontSize: ".85rem", marginTop: 4 }}>
                     Narzędzia z tego źródła ({source.tools.length}):{" "}

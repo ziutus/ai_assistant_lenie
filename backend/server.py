@@ -32,6 +32,7 @@ from library.feed_monitor_service import link_matching_feed_items_to_document
 from library.tool_candidate_routes import bp as tool_candidate_bp
 from library.tool_recommendation_routes import bp as tool_recommendation_bp
 from library.tool_routes import bp as tool_bp
+from library.public_person_routes import bp as public_person_bp
 from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.contact_routes import bp as contact_bp
 from library.document_links_routes import bp as document_links_bp
@@ -127,6 +128,7 @@ app.register_blueprint(feed_bp)
 app.register_blueprint(tool_candidate_bp)
 app.register_blueprint(tool_recommendation_bp)
 app.register_blueprint(tool_bp)
+app.register_blueprint(public_person_bp)
 app.register_blueprint(llm_analysis_bp)
 app.register_blueprint(contact_bp)
 app.register_blueprint(document_links_bp)
@@ -862,8 +864,11 @@ def persons_search():
     from sqlalchemy import func as sa_func, select as sa_select
     from library.db.models import Person, PersonAlias
 
+    from library import knowledge_sources
+
     session = get_scoped_session()
     query = (request.args.get('q') or "").strip()
+    kind = (request.args.get('kind') or "").strip()  # kind=public: the public figures the user follows
     if query:
         by_name = session.execute(
             sa_select(Person)
@@ -879,6 +884,12 @@ def persons_search():
         ).scalars().all()
         seen: set[int] = set()
         persons = [p for p in list(by_name) + list(by_alias) if p.id not in seen and not seen.add(p.id)]
+        if kind:
+            persons = [p for p in persons if p.kind == kind]
+    elif kind:
+        persons = session.execute(
+            sa_select(Person).where(Person.kind == kind).order_by(Person.canonical_name)
+        ).scalars().all()
     else:
         persons = session.execute(
             sa_select(Person).order_by(Person.created_at.desc()).limit(50)
@@ -888,6 +899,7 @@ def persons_search():
     offset = max(request.args.get('offset', 0, type=int), 0)
     limit = min(max(request.args.get('limit', 50, type=int), 1), 100)
     persons = persons[offset:offset + limit]
+    sources = knowledge_sources.sources_for_persons(session, [p.id for p in persons])
     return {
         "status": "success",
         "total": total, "limit": limit, "offset": offset,
@@ -897,6 +909,7 @@ def persons_search():
                 "wikidata_qid": p.wikidata_qid, "description": p.description,
                 "long_description": p.long_description, "links": p.links or [],
                 "aliases": [a.alias for a in p.aliases],
+                **knowledge_sources.person_fields(p), "sources": sources.get(p.id, []),
             }
             for p in persons
         ],
@@ -943,12 +956,16 @@ def person_documents():
             "mention_count": mention_count, "role": link.role,
         })
     documents.sort(key=lambda d: (d["role"] != "author", -d["mention_count"]))
+    from library import knowledge_sources
+
     return {
         "status": "success",
         "person": {"id": person.id, "canonical_name": person.canonical_name,
                    "description": person.description, "wikidata_qid": person.wikidata_qid,
                    "long_description": person.long_description, "links": person.links or [],
-                   "aliases": [a.alias for a in person.aliases]},
+                   "aliases": [a.alias for a in person.aliases],
+                   **knowledge_sources.person_fields(person),
+                   "sources": knowledge_sources.sources_for_persons(session, [person.id]).get(person.id, [])},
         "documents": documents,
     }, 200
 
@@ -998,8 +1015,16 @@ def person_update(person_id: int):
     aliases = data.get('aliases')
     if aliases is not None and not (isinstance(aliases, list) and all(isinstance(a, str) for a in aliases)):
         return {"status": "error", "message": "Aliasy muszą być listą tekstów."}, 400
+    from library import knowledge_sources
 
     try:
+        public_fields = knowledge_sources.validate_person_fields(data)  # kind / role / obsidian_note_path
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+
+    try:
+        for field, value in public_fields.items():
+            setattr(person, field, value)
         if qid:
             other = session.execute(sa_select(Person).where(
                 Person.wikidata_qid == qid, Person.id != person_id)).scalars().first()
@@ -1037,7 +1062,9 @@ def person_update(person_id: int):
     return jsonify({"status": "success", "person": {
         "id": person.id, "canonical_name": person.canonical_name, "description": person.description,
         "long_description": person.long_description, "links": person.links or [],
-        "wikidata_qid": person.wikidata_qid, "aliases": [a.alias for a in person.aliases]}}), 200
+        "wikidata_qid": person.wikidata_qid, "aliases": [a.alias for a in person.aliases],
+        **knowledge_sources.person_fields(person),
+        "sources": knowledge_sources.sources_for_persons(session, [person.id]).get(person.id, [])}}), 200
 
 
 @app.route('/persons_review', methods=['GET'])
@@ -3980,7 +4007,7 @@ def tags_list():
     return {"status": "success", "tags": [{"tag": t, "count": c} for t, c in ordered]}, 200
 
 
-def _source_dict(row, count: int = 0, tools: list | None = None):
+def _source_dict(row, count: int = 0, tools: list | None = None, persons: list | None = None):
     # "source" duplicates "name" for backward compatibility (editor autocomplete
     # consumed the old distinct-values shape).
     from library import knowledge_sources
@@ -3991,6 +4018,7 @@ def _source_dict(row, count: int = 0, tools: list | None = None):
         "is_active": row.is_active, "count": count,
         **knowledge_sources.source_fields(row),
         "tools": tools or [],
+        "persons": persons or [],
     }
 
 
@@ -4026,8 +4054,9 @@ def sources_list():
     from library import knowledge_sources
 
     tools = knowledge_sources.tools_for_sources(session)
+    persons = knowledge_sources.persons_for_sources(session)
     return {"status": "success",
-            "sources": [_source_dict(row, count, tools.get(row.id)) for row, count in rows]}, 200
+            "sources": [_source_dict(row, count, tools.get(row.id), persons.get(row.id)) for row, count in rows]}, 200
 
 
 @app.route('/sources', methods=['POST', 'OPTIONS'])
@@ -4131,6 +4160,12 @@ def sources_delete(source_id: int):
     if used_by > 0:
         return jsonify({"status": "error",
                         "message": f"Source is used by {used_by} documents — deactivate it instead"}), 409
+    from library import knowledge_sources
+
+    linked = knowledge_sources.link_count(session, row.id)
+    if linked > 0:
+        return jsonify({"status": "error",
+                        "message": f"Source is linked to {linked} tools/people — deactivate it instead"}), 409
     try:
         session.delete(row)
         session.commit()

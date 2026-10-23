@@ -27,6 +27,8 @@ def _row(id_=1, name="own", description=None, url=None, is_active=True):
     row.description = description
     row.url = url
     row.is_active = is_active
+    row.kind = row.status = row.started_on = row.finished_on = row.rating = None  # knowledge-source fields
+    row.review_note = row.obsidian_note_path = None
     return row
 
 

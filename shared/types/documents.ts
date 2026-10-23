@@ -91,6 +91,8 @@ export interface Source {
   review_note?: string | null;
   obsidian_note_path?: string | null;
   tools?: Array<{ id: number; name: string }>;
+  // The people behind the source (host of a channel, author of a course) - registry persons.
+  persons?: Array<{ id: number; name: string; role: string }>;
 }
 
 export interface SearchResult {
