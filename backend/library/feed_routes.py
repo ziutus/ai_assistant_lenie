@@ -417,7 +417,17 @@ def _suggestions_response(session, target_type, target_id):
     run = session.scalar(select(ContentGroupSuggestionRun).where(target_column == target_id).order_by(ContentGroupSuggestionRun.id.desc()))
     if run is None:
         return {"run": None, "suggestions": []}
-    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions]}
+    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "model": run.model, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions]}
+
+
+@bp.get("/content_group_suggestion_models")
+def content_group_suggestion_models():
+    """Models a reviewer may pick for topic suggestions, with limits and prices, and the configured default."""
+    from library.content_group_suggestion_service import SUGGESTION_TASK, suggestion_model
+    from library.llm_model_registry import selectable_models
+
+    _user()
+    return jsonify({"models": selectable_models(SUGGESTION_TASK), "default_model": suggestion_model()})
 
 
 @bp.get("/feed_items/<int:item_id>/group-suggestions")
@@ -441,7 +451,8 @@ def get_document_suggestions(document_id):
 def _request_suggestions(target_type, target_id, user_id):
     session = get_scoped_session()
     try:
-        job, run = request_suggestions(session, target_type, target_id, user_id=user_id, force=bool((request.get_json(silent=True) or {}).get("force")))
+        body = request.get_json(silent=True) or {}
+        job, run = request_suggestions(session, target_type, target_id, user_id=user_id, force=bool(body.get("force")), model=body.get("model") or None)
     except LookupError as exc:
         abort(404, str(exc))
     except ValueError as exc:

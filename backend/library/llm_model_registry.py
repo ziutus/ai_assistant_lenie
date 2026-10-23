@@ -23,7 +23,13 @@ _ORGANIZATION_DESCRIPTION_MODELS: tuple[tuple[str, str, str, bool, bool], ...] =
     ("openrouter/google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (OpenRouter)", "openrouter", True, False),
     ("openrouter/meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B (OpenRouter)", "openrouter", True, False),
     ("openrouter/qwen/qwen-2.5-7b-instruct", "Qwen 2.5 7B (OpenRouter)", "openrouter", True, False),
+    ("openrouter/google/gemini-2.0-flash-001", "Gemini 2.0 Flash (OpenRouter)", "openrouter", True, False),
+    ("openrouter/qwen/qwen-2.5-72b-instruct", "Qwen 2.5 72B (OpenRouter)", "openrouter", True, False),
+    ("openrouter/deepseek/deepseek-chat-v3.1", "DeepSeek V3.1 (OpenRouter)", "openrouter", True, False),
 )
+
+# Tasks that offer the same list of models.
+_TASKS = frozenset({"organization_description", "content_group_suggestion"})
 
 _OPENROUTER_PREFIX = "openrouter/"
 PRICE_SOURCE_OPENROUTER = "openrouter_api"
@@ -41,7 +47,7 @@ def _openrouter_enabled() -> bool:
 
 def _base_models(task: str) -> list[dict]:
     """The allowlist as ``{id, label, provider, external, verified}`` dicts — no network, no database."""
-    if task != "organization_description":
+    if task not in _TASKS:
         return []
     show_openrouter = _openrouter_enabled()
     return [{"id": model_id, "label": label, "provider": provider, "external": external, "verified": verified}
