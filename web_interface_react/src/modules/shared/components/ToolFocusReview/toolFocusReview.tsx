@@ -166,7 +166,7 @@ export default function ToolFocusReview({
         <strong>{peer.name}</strong><span style={badgeStyle(peer.status === "adopted")}>{statusLabel[peer.status]}</span>
         <button type="button" onClick={() => onOpenPeer(peer.id)} style={{ marginLeft: 8 }} title={`Otwórz kartę ${peer.name} do pełnej oceny`}>Oceń</button>
         {peer.status !== "adopted" && <span style={{ marginLeft: 8, display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
-          {actions.filter(([value]) => value !== peer.status && value !== "adopted").map(([value, label, help]) =>
+          {actions.filter(([value]) => value !== peer.status).map(([value, label, help]) =>
             <button key={value} type="button" disabled={peerBusy === peer.id} title={`${peer.name}: ${help}`}
               aria-label={`${peer.name}: ${label}`} onClick={() => void movePeer(peer.id, value)}>{label}</button>)}
         </span>}
