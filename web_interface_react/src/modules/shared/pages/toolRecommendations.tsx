@@ -5,6 +5,8 @@ import ToolRelations, { type ToolRelation } from "../components/ToolRelations/to
 import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
 import GithubAbout from "../components/GithubAbout/githubAbout";
+import ToolLinksEditor from "../components/ToolLinksEditor/toolLinksEditor";
+import { isRepositoryUrl } from "../components/ToolCard/toolCardParts";
 import GithubRate, { type GithubRateInfo } from "../components/GithubRate/githubRate";
 import { modelOptionText, type ModelOption } from "../utils/modelDetails";
 
@@ -12,6 +14,7 @@ type RecommendationStatus = "watchlist" | "compare" | "testing" | "test_future" 
 type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?: number; rate_limited?: boolean; pending?: number };
 type Recommendation = {
   id: number; name: string; homepage_url: string | null; description: string | null;
+  links?: Array<{ url: string; label: string }>;
   github: GithubStats | null;
   relations: ToolRelation[]; stack_matches: string[];
   feed_mentions: { count: number; samples: Array<{ id: number; title: string; url: string }> };
@@ -256,6 +259,18 @@ export default function ToolRecommendations() {
     finally { setBusy(null); }
   };
   const saveTags = (item: Recommendation, tags: string[]) => patchItem(item, { tags }, "Nie udało się zapisać tagów");
+  const saveLinks = (item: Recommendation, links: Array<{ url: string; label: string }>) => patchItem(item, { links }, "Nie udało się zapisać linków");
+  // The repository's own website becomes the tool's page; the old address stays as a link when it is a repository,
+  // because the statistics are counted from the homepage and the links.
+  const useRepositoryWebsite = (item: Recommendation, url: string) => {
+    const links = item.links ?? [];
+    const keepOld = item.homepage_url && isRepositoryUrl(item.homepage_url) && !links.some(link => link.url === item.homepage_url);
+    return patchItem(item, {
+      homepage_url: url, links: keepOld ? [...links, { url: item.homepage_url, label: "Repozytorium" }] : links,
+    }, "Nie udało się zapisać strony narzędzia");
+  };
+  const addLink = (item: Recommendation, url: string, label: string) =>
+    patchItem(item, { links: [...(item.links ?? []), { url, label }] }, "Nie udało się zapisać linku");
   const saveDescription = (item: Recommendation, description: string) => patchItem(item, { description }, "Nie udało się zapisać opisu");
 
   // Forced refresh of ONE entry's repository, ignoring the 24 h freshness rule of the bulk button.
@@ -427,13 +442,16 @@ export default function ToolRecommendations() {
       onSave={tags => saveTags(item, tags)} onSuggest={() => suggestTags(item)} disabled={busy === item.id} />
     {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
     {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
-    {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
+    <ToolLinksEditor homepageUrl={item.homepage_url} links={item.links ?? []} disabled={busy === item.id}
+      onSave={links => saveLinks(item, links)} />
     {item.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".8rem" }}>Notatka w Obsidianie: {item.obsidian_note_path}</div>}
     {item.github && <GithubStatsLine stats={item.github} />}
-    {/github\.com\/[^/\s]+\/[^/\s]+/i.test(item.homepage_url ?? "") && <button type="button" disabled={busy === item.id} onClick={() => void refreshOneGithub(item)}
-      title="Pobiera z GitHuba liczby, opis i tematy tego jednego repozytorium od razu, także gdy dane są młodsze niż 24 godziny. Zużywa 1 z 60 zapytań na godzinę.">
-      {busy === item.id ? "Pobieram…" : "↻ Odśwież z GitHuba"}</button>}
+    {[item.homepage_url, ...(item.links ?? []).map(link => link.url)].some(isRepositoryUrl) && <button type="button" disabled={busy === item.id} onClick={() => void refreshOneGithub(item)}
+      title="Pobiera liczby, opis i tematy repozytoriów tego wpisu (GitHub i GitLab) od razu, także gdy dane są młodsze niż 24 godziny. Każde repozytorium z GitHuba zużywa 1 z 60 zapytań na godzinę.">
+      {busy === item.id ? "Pobieram…" : "↻ Odśwież z GitHuba / GitLaba"}</button>}
     {item.github && <GithubAbout stats={item.github} ownDescription={item.description} tags={item.tags ?? []} disabled={busy === item.id}
+      homepageUrl={item.homepage_url} links={item.links ?? []}
+      onUseHomepage={url => void useRepositoryWebsite(item, url)} onAddLink={url => void addLink(item, url, "Strona projektu")}
       onUseDescription={text => void saveDescription(item, text)}
       onAddTags={topics => void saveTags(item, [...(item.tags ?? []), ...topics.filter(topic => !(item.tags ?? []).includes(topic))])} />}
     {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}

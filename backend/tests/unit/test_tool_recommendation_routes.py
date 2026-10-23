@@ -14,7 +14,7 @@ def _item(status="watchlist"):
         id=17, name="LinkStack", homepage_url="https://github.com/LinkStackOrg/linkstack",
         description="Współdzielona strona z linkami", category="bookmarking", tags=["links"], status=status,
         personal_note=None, obsidian_note_path=None, source_url="https://example.com/awesome", source_context="Awesome Homelab",
-        source_document_id=None, source_candidate_id=None, source_document=None, tool_id=None,
+        source_document_id=None, source_candidate_id=None, source_document=None, tool_id=None, links=[],
         created_at=dt.datetime(2026, 8, 23, tzinfo=dt.timezone.utc),
         updated_at=dt.datetime(2026, 8, 23, tzinfo=dt.timezone.utc),
     )
@@ -154,7 +154,7 @@ class TestToolRecommendationRoutes:
         session.get.return_value = clef
         session.execute.return_value.scalars.return_value.all.side_effect = [[basal, other], [basal_tool, manual_tool]]
         monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
-        monkeypatch.setattr("library.tool_recommendation_routes.github_repo_stats.stats_for_urls", lambda *_args: {})
+        monkeypatch.setattr("library.tool_recommendation_routes.github_repo_stats.combined_stats_for_entries", lambda *_args: {})
         app = Flask(__name__)
 
         with app.test_request_context("/tool_recommendations/730/peers"):
@@ -285,3 +285,139 @@ class TestTags:
         from library.tool_recommendation_routes import _dict
 
         assert _dict(_item())["tags"] == ["links"]
+
+
+class TestLinks:
+    def _patch(self, monkeypatch, body, item=None):
+        from library.tool_recommendation_routes import update_tool_recommendation
+
+        item = item or _item()
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/tool_recommendations/17", method="PATCH", json=body):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = update_tool_recommendation(17)
+        return item, response, session
+
+    def test_dict_exposes_links(self):
+        from library.tool_recommendation_routes import _dict
+
+        item = _item()
+        item.links = [{"url": "https://example.com/pricing", "label": "Cennik"}]
+        assert _dict(item)["links"] == [{"url": "https://example.com/pricing", "label": "Cennik"}]
+        item.links = None
+        assert _dict(item)["links"] == []
+
+    def test_patch_replaces_the_whole_list_and_cleans_it(self, monkeypatch):
+        item, response, session = self._patch(monkeypatch, {"links": [
+            {"url": " https://tt-rss.org ", "label": " Strona "}, "https://github.com/tt-rss/tt-rss",
+            {"url": "https://tt-rss.org"},
+        ]})
+
+        assert item.links == [
+            {"url": "https://tt-rss.org", "label": "Strona"}, {"url": "https://github.com/tt-rss/tt-rss", "label": ""},
+        ]
+        assert response.json["tool_recommendation"]["links"] == item.links
+        session.commit.assert_called_once()
+
+    def test_patch_without_links_leaves_them(self, monkeypatch):
+        item = _item()
+        item.links = [{"url": "https://example.com", "label": ""}]
+        self._patch(monkeypatch, {"category": "cli"}, item)
+        assert item.links == [{"url": "https://example.com", "label": ""}]
+
+    def test_patch_empty_list_clears(self, monkeypatch):
+        item = _item()
+        item.links = [{"url": "https://example.com", "label": ""}]
+        self._patch(monkeypatch, {"links": []}, item)
+        assert item.links == []
+
+    @pytest.mark.parametrize("links", [
+        "https://example.com", [{"url": "javascript:alert(1)"}], [{"url": ""}], [5], [{"url": "https://a.b", "label": 3}],
+        [{"url": f"https://example.com/{i}"} for i in range(21)],
+    ])
+    def test_patch_rejects_bad_links(self, monkeypatch, links):
+        with pytest.raises(Exception) as exc_info:
+            self._patch(monkeypatch, {"links": links})
+        assert exc_info.value.code == 400
+
+    def test_create_accepts_links(self, monkeypatch):
+        from library.tool_recommendation_routes import create_tool_recommendation
+
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_recommendation_routes.tool_relations_service.detect_relations", lambda *_a: None)
+        with Flask(__name__).test_request_context("/tool_recommendations", method="POST", json={
+            "name": "Tiny Tiny RSS", "homepage_url": "https://github.com/tt-rss/tt-rss",
+            "links": [{"url": "https://gitlab.tt-rss.org/tt-rss/tt-rss", "label": "GitLab"}],
+        }):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            create_tool_recommendation()
+
+        created = session.add.call_args[0][0]
+        assert created.links == [{"url": "https://gitlab.tt-rss.org/tt-rss/tt-rss", "label": "GitLab"}]
+
+    def test_adoption_copies_links_to_the_catalog_tool(self):
+        from library.tool_recommendation_routes import _ensure_tool
+
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+        item = _item("adopted")
+        item.links = [{"url": "https://example.com/pricing", "label": "Cennik"}]
+
+        tool, created = _ensure_tool(session, item)
+
+        assert created is True
+        assert tool.links == [{"url": "https://example.com/pricing", "label": "Cennik"}]
+
+    def test_refresh_of_one_entry_uses_every_repository_link(self, monkeypatch):
+        from library.tool_recommendation_routes import refresh_github_stats
+
+        item = _item()
+        item.homepage_url = "https://tt-rss.org"
+        item.links = [{"url": "https://github.com/tt-rss/tt-rss", "label": ""}, {"url": "https://gitlab.com/tt/mirror", "label": ""}]
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        seen = {}
+
+        def fake_refresh(_session, urls, limit, force=False):
+            seen.update(urls=list(urls), limit=limit, force=force)
+            return {"refreshed": 2}
+
+        monkeypatch.setattr("library.tool_recommendation_routes.github_repo_stats.refresh_stale", fake_refresh)
+        with Flask(__name__).test_request_context("/x", method="POST", json={"id": 17, "force": True}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            assert refresh_github_stats().json == {"refreshed": 2}
+
+        assert seen == {
+            "urls": ["https://tt-rss.org", "https://github.com/tt-rss/tt-rss", "https://gitlab.com/tt/mirror"],
+            "limit": 2, "force": True,
+        }
+
+    def test_entry_without_any_repository_is_a_400(self, monkeypatch):
+        from library.tool_recommendation_routes import refresh_github_stats
+
+        item = _item()
+        item.homepage_url = "https://example.com"
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/x", method="POST", json={"id": 17}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(Exception) as exc_info:
+                refresh_github_stats()
+        assert exc_info.value.code == 400
+
+
+class TestToolLinksModule:
+    def test_merge_links_adds_new_urls_and_caps(self):
+        from library import tool_links, tool_note_parser
+
+        merged = tool_links.merge_links([{"url": "https://a.com", "label": "A"}], [{"url": "https://a.com"}, {"url": "https://b.com", "label": "B"}])
+        assert merged == [{"url": "https://a.com", "label": "A"}, {"url": "https://b.com", "label": "B"}]
+        many = tool_links.merge_links([], [{"url": f"https://x.com/{i}"} for i in range(tool_note_parser.MAX_LINKS + 5)])
+        assert len(many) == tool_note_parser.MAX_LINKS
+        assert tool_links.merge_links(None, None) == []

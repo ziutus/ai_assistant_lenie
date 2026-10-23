@@ -8,7 +8,7 @@ from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import Text, func, or_, select
 from sqlalchemy.orm import joinedload, selectinload
 
-from library import github_repo_stats
+from library import github_repo_stats, tool_links
 from library.db.engine import get_scoped_session
 from library import feed_mentions, tool_note_parser, tool_radar_feed, tool_relations_service
 from library.db.models import Document, Tool, ToolRecommendation, ToolRecommendationEvidence, ToolRelation
@@ -68,6 +68,7 @@ def _ensure_tool(session, item: ToolRecommendation) -> tuple[Tool, bool]:
         name=item.name,
         homepage_url=item.homepage_url,
         github_url=item.homepage_url if github_repo_stats.parse_repo_url(item.homepage_url) else None,
+        links=tool_links.merge_links([], item.links),
         category_tags=_catalog_tags(item),
         personal_notes=item.personal_note,
         obsidian_note_path=item.obsidian_note_path,
@@ -124,6 +125,11 @@ def _resolve_source_document(session, source_url: str, requested_id: int | None)
     ).scalars().first()
 
 
+def _repository_urls(item: ToolRecommendation) -> list[str]:
+    """Every URL of the entry that may be a repository: the homepage first, then its further links."""
+    return github_repo_stats.repository_urls(item.homepage_url, item.links)
+
+
 def _reader():
     if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
         abort(403, "user or service API key required")
@@ -148,6 +154,7 @@ def _dict(item: ToolRecommendation, github: dict | None = None, relations: list 
         "tool_id": item.tool_id,
         "name": item.name,
         "homepage_url": item.homepage_url,
+        "links": list(item.links or []),
         "description": item.description,
         "category": item.category,
         "tags": list(item.tags or []),
@@ -232,12 +239,12 @@ def get_tool_recommendations():
     for tag_list in session.execute(select(ToolRecommendation.tags)).scalars().all():
         for tag in tag_list or []:
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
-    github = github_repo_stats.stats_for_urls(session, [item.homepage_url for item in items])
+    github = github_repo_stats.combined_stats_for_entries(session, {item.id: _repository_urls(item) for item in items})
     relations = tool_relations_service.relations_for(session, [item.id for item in items])
     mentions = feed_mentions.mentions_for(session, {item.id: item.name for item in items})
     return jsonify({
         "tool_recommendations": [
-            _dict(item, github.get(item.homepage_url), relations.get(item.id), mentions.get(item.id)) for item in items
+            _dict(item, github.get(item.id), relations.get(item.id), mentions.get(item.id)) for item in items
         ],
         "categories": categories,
         "all_tags": [{"tag": tag, "count": count} for tag, count in sorted(tag_counts.items())],
@@ -278,7 +285,7 @@ def get_recommendation_peers(recommendation_id):
         tool for tool in session.execute(select(Tool).order_by(Tool.name)).scalars().all()
         if any(_category_key(str(tag)) == key for tag in (tool.category_tags or []))
     ]
-    github = github_repo_stats.stats_for_urls(session, [other.homepage_url for other in radar])
+    github = github_repo_stats.combined_stats_for_entries(session, {other.id: _repository_urls(other) for other in radar})
     linked_tool_ids = {entry.tool_id for entry in [item, *radar] if entry.tool_id is not None}
     radar_urls = {other.homepage_url for other in radar if other.homepage_url}
     return jsonify({
@@ -286,7 +293,7 @@ def get_recommendation_peers(recommendation_id):
         "radar": [{
             "id": other.id, "name": other.name, "status": other.status, "category": other.category,
             "description": other.description, "homepage_url": other.homepage_url,
-            "personal_note": other.personal_note, "github": github.get(other.homepage_url),
+            "personal_note": other.personal_note, "github": github.get(other.id),
         } for other in radar],
         # A tool adopted from the radar exists in both lists; show it once, as the radar entry.
         "tools": [{
@@ -325,9 +332,11 @@ def refresh_github_stats():
             abort(400, "id must be an integer")
         if item is None:
             abort(404, "tool recommendation not found")
-        if github_repo_stats.parse_repo_url(item.homepage_url) is None:
-            abort(400, "this entry has no GitHub repository")
-        summary = github_repo_stats.refresh_stale(session, [item.homepage_url], limit=1, force=force)
+        urls = _repository_urls(item)
+        repositories = [ref for ref in map(github_repo_stats.parse_repository_url, urls) if ref is not None]
+        if not repositories:
+            abort(400, "this entry has no GitHub or GitLab repository")
+        summary = github_repo_stats.refresh_stale(session, urls, limit=len(repositories), force=force)
         session.commit()
         return jsonify(summary)
     if force:
@@ -342,10 +351,12 @@ def refresh_github_stats():
     if not 1 <= limit <= github_repo_stats.MAX_REFRESH_LIMIT:
         abort(400, f"limit must be between 1 and {github_repo_stats.MAX_REFRESH_LIMIT}")
     session = get_scoped_session()
-    query = select(ToolRecommendation.homepage_url).where(ToolRecommendation.homepage_url.is_not(None))
+    query = select(ToolRecommendation.homepage_url, ToolRecommendation.links)
     if status != "all":
         query = query.where(ToolRecommendation.status == status)
-    urls = session.execute(query).scalars().all()
+    urls = github_repo_stats.repository_urls(*(
+        value for homepage_url, links in session.execute(query).all() for value in (homepage_url, links)
+    ))
     summary = github_repo_stats.refresh_stale(session, urls, limit=limit)
     session.commit()
     return jsonify(summary)
@@ -372,6 +383,7 @@ def create_tool_recommendation():
         return jsonify({"existing_tool_recommendation": {"id": existing_item.id, "name": existing_item.name}}), 200
     item = ToolRecommendation(
         name=name[:255], homepage_url=body.get("homepage_url"), description=body.get("description"),
+        links=tool_links.clean_links(body["links"]) if "links" in body else [],
         category=body.get("category"), tags=normalize_tags(body.get("tags")), status=status,
         personal_note=body.get("personal_note"),
         obsidian_note_path=(str(body.get("obsidian_note_path") or "").strip() or None),
@@ -563,6 +575,8 @@ def update_tool_recommendation(recommendation_id):
         abort(404, "tool recommendation not found")
     if "tags" in body:
         item.tags = normalize_tags(body["tags"])
+    if "links" in body:
+        item.links = tool_links.clean_links(body["links"])
     for field in ("homepage_url", "description", "category", "personal_note", "obsidian_note_path"):
         if field in body:
             value = body[field]
@@ -634,7 +648,7 @@ def suggest_tags(recommendation_id):
         for tag in tag_list or []:
             counts[tag] = counts.get(tag, 0) + 1
     vocabulary = [tag for tag, _ in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))]
-    github = github_repo_stats.stats_for_urls(session, [item.homepage_url]).get(item.homepage_url)
+    github = github_repo_stats.combined_stats_for_entries(session, {item.id: _repository_urls(item)}).get(item.id)
     return jsonify(tool_tag_suggester.suggest_tags(item, vocabulary, model, github))
 
 

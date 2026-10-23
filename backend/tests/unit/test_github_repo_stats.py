@@ -275,7 +275,7 @@ class TestRefreshEndpoint:
         from library.tool_recommendation_routes import refresh_github_stats
 
         session = MagicMock()
-        session.execute.return_value.scalars.return_value.all.return_value = ["https://github.com/a/b"]
+        session.execute.return_value.all.return_value = [("https://github.com/a/b", [])]
         monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
         seen = {}
 
@@ -326,21 +326,21 @@ class TestRefreshEndpoint:
         return response, seen, session
 
     def test_force_refreshes_one_entry_whatever_its_age(self, monkeypatch):
-        item = SimpleNamespace(homepage_url="https://github.com/anchore/grype")
+        item = SimpleNamespace(homepage_url="https://github.com/anchore/grype", links=[])
         response, seen, session = self._call_one(monkeypatch, {"id": 778, "force": True}, item)
         assert response.json["refreshed"] == 1
         assert seen == {"urls": ["https://github.com/anchore/grype"], "limit": 1, "force": True}
         session.commit.assert_called_once()
 
     def test_single_entry_without_force_keeps_the_freshness_rule(self, monkeypatch):
-        item = SimpleNamespace(homepage_url="https://github.com/anchore/grype")
+        item = SimpleNamespace(homepage_url="https://github.com/anchore/grype", links=[])
         _, seen, _ = self._call_one(monkeypatch, {"id": 778}, item)
         assert seen["force"] is False
 
     @pytest.mark.parametrize("body, item", [
-        ({"id": 1, "force": True}, SimpleNamespace(homepage_url="https://example.com/tool")),
-        ({"id": 1, "force": "yes"}, SimpleNamespace(homepage_url="https://github.com/a/b")),
-        ({"id": "x"}, SimpleNamespace(homepage_url="https://github.com/a/b")),
+        ({"id": 1, "force": True}, SimpleNamespace(homepage_url="https://example.com/tool", links=[])),
+        ({"id": 1, "force": "yes"}, SimpleNamespace(homepage_url="https://github.com/a/b", links=[])),
+        ({"id": "x"}, SimpleNamespace(homepage_url="https://github.com/a/b", links=[])),
     ])
     def test_single_entry_rejects_bad_input(self, monkeypatch, body, item):
         from werkzeug.exceptions import BadRequest
@@ -386,3 +386,254 @@ class TestRefreshEndpoint:
 
         with pytest.raises(Forbidden):
             self._call(monkeypatch, {}, kind="anonymous")
+
+
+class TestParseRepositoryUrl:
+    @pytest.mark.parametrize("url, provider, key, path", [
+        ("https://github.com/GaiaNet-AI/gaianet-node", "github", "gaianet-ai/gaianet-node", "GaiaNet-AI/gaianet-node"),
+        ("https://gitlab.com/gitlab-org/gitlab", "gitlab", "gitlab.com/gitlab-org/gitlab", "gitlab-org/gitlab"),
+        ("https://gitlab.tt-rss.org/tt-rss/tt-rss", "gitlab", "gitlab.tt-rss.org/tt-rss/tt-rss", "tt-rss/tt-rss"),
+        ("https://gitlab.tt-rss.org/tt-rss/tt-rss/-/tree/master/docs", "gitlab", "gitlab.tt-rss.org/tt-rss/tt-rss", "tt-rss/tt-rss"),
+        ("gitlab.com/group/sub/project.git", "gitlab", "gitlab.com/group/sub/project", "group/sub/project"),
+        ("  HTTPS://GitLab.com/Group/Project/ ", "gitlab", "gitlab.com/group/project", "Group/Project"),
+    ])
+    def test_repositories(self, url, provider, key, path):
+        ref = svc.parse_repository_url(url)
+        assert (ref.provider, ref.key, ref.path) == (provider, key, path)
+
+    def test_gitlab_ref_splits_owner_and_repo(self):
+        ref = svc.parse_repository_url("https://gitlab.com/group/sub/project")
+        assert (ref.host, ref.owner, ref.repo, ref.url) == ("gitlab.com", "group/sub", "project", "https://gitlab.com/group/sub/project")
+
+    @pytest.mark.parametrize("url", [
+        None, "", "https://example.com/a/b", "https://notgitlab.com/a/b", "https://gitlab.com/a", "https://gitlab.com/",
+        "https://gitlab.com/explore/projects", "https://gitlab.com/users/someone", "https://gitlab.com/-/profile/x",
+        "https://gitlab/a/b", "ftp://gitlab.com/a/b", "https://gitlab.com/a b/c",
+    ])
+    def test_not_a_repository(self, url):
+        assert svc.parse_repository_url(url) is None
+
+    def test_repository_urls_flattens_and_dedupes(self):
+        links = [{"url": "https://docs.example.com", "label": "Docs"}, {"url": "https://github.com/a/b"}, "bad", {"label": "x"}]
+        result = svc.repository_urls(" https://github.com/a/b ", None, links, "")
+        assert result == ["https://github.com/a/b", "https://docs.example.com", "bad"]
+
+
+class TestFetchGitlabRepo:
+    def _patch(self, monkeypatch, status, payload=None):
+        seen = {}
+        response = SimpleNamespace(status_code=status, headers={}, ok=200 <= status < 400, json=lambda: payload)
+
+        def fake(*, service, operation, request_fn, success_fn=None):
+            seen["service"] = service
+            seen["success"] = success_fn(response)
+            return response
+
+        monkeypatch.setattr(svc, "_assert_public_host", lambda host: None)
+        monkeypatch.setattr(svc, "observed_request", fake)
+        return seen
+
+    def test_ok(self, monkeypatch):
+        seen = self._patch(monkeypatch, 200, {"star_count": 3})
+        assert svc.fetch_gitlab_repo("gitlab.com", "a/b") == {"star_count": 3}
+        assert seen == {"service": "gitlab", "success": True}
+
+    @pytest.mark.parametrize("status", [404, 301, 302])
+    def test_missing_or_moved_project_has_no_numbers(self, monkeypatch, status):
+        # gitlab.tt-rss.org answers 301 to github.com/tt-rss: the numbers live at the other address
+        self._patch(monkeypatch, status)
+        assert svc.fetch_gitlab_repo("gitlab.tt-rss.org", "tt-rss/tt-rss") is None
+
+    def test_rate_limit(self, monkeypatch):
+        self._patch(monkeypatch, 429)
+        with pytest.raises(svc.GithubRateLimited):
+            svc.fetch_gitlab_repo("gitlab.com", "a/b")
+
+    def test_server_error(self, monkeypatch):
+        self._patch(monkeypatch, 500)
+        with pytest.raises(svc.GithubError):
+            svc.fetch_gitlab_repo("gitlab.com", "a/b")
+
+    def test_private_address_is_refused(self, monkeypatch):
+        monkeypatch.setattr(svc.socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("127.0.0.1", 443))])
+        with pytest.raises(svc.GithubError):
+            svc.fetch_gitlab_repo("gitlab.internal.example", "a/b")
+
+    def test_unresolvable_host_is_an_error(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise OSError("no such host")
+
+        monkeypatch.setattr(svc.socket, "getaddrinfo", boom)
+        with pytest.raises(svc.GithubError):
+            svc.fetch_gitlab_repo("gitlab.gone.example", "a/b")
+
+
+GITLAB_JSON = {
+    "path": "tt-rss", "namespace": {"full_path": "tt-rss"}, "description": "Feed reader", "star_count": 120,
+    "forks_count": 15, "open_issues_count": 9, "archived": False, "topics": ["rss", 5], "created_at": "2013-01-02T03:04:05.000Z",
+    "last_activity_at": "2026-10-20T10:00:00.123Z", "license": {"key": "gpl-3.0", "nickname": "GNU GPLv3"},
+}
+
+
+class TestRefreshGitlabRepo:
+    def test_maps_gitlab_fields_onto_a_new_row(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_gitlab_repo", lambda host, path: GITLAB_JSON)
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        row = svc.refresh_gitlab_repo(session, "gitlab.tt-rss.org", "tt-rss/tt-rss", now=NOW)
+
+        session.add.assert_called_once_with(row)
+        assert (row.full_name_key, row.provider, row.host) == ("gitlab.tt-rss.org/tt-rss/tt-rss", "gitlab", "gitlab.tt-rss.org")
+        assert (row.owner, row.repo) == ("tt-rss", "tt-rss")
+        assert (row.stars, row.forks, row.watchers, row.open_issues) == (120, 15, None, 9)
+        assert (row.license, row.topics, row.archived, row.status) == ("GNU GPLv3", ["rss"], False, "ok")
+        assert row.pushed_at == dt.datetime(2026, 10, 20, 10, 0, 0, 123000, tzinfo=dt.timezone.utc)
+
+    def test_not_found_keeps_the_last_known_numbers(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_gitlab_repo", lambda host, path: None)
+        existing = SimpleNamespace(stars=10, status="ok", fetched_at=None)
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = existing
+
+        row = svc.refresh_gitlab_repo(session, "gitlab.com", "a/b", now=NOW)
+
+        assert (row.status, row.stars, row.fetched_at) == ("not_found", 10, NOW)
+
+
+class TestRefreshStaleMixedProviders:
+    def test_each_provider_uses_its_own_refresher(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(svc, "refresh_repo", lambda session, owner, repo, now=None: calls.append(("github", owner, repo)))
+        monkeypatch.setattr(svc, "refresh_gitlab_repo", lambda session, host, path, now=None: calls.append(("gitlab", host, path)))
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.all.return_value = []
+
+        summary = svc.refresh_stale(
+            session, ["https://github.com/tt-rss/tt-rss", "https://gitlab.tt-rss.org/tt-rss/tt-rss", "https://tt-rss.org"],
+            limit=10, now=NOW,
+        )
+
+        assert calls == [("github", "tt-rss", "tt-rss"), ("gitlab", "gitlab.tt-rss.org", "tt-rss/tt-rss")]
+        assert summary["repositories"] == 2 and summary["refreshed"] == 2
+
+    def test_gitlab_rate_limit_stops_the_run(self, monkeypatch):
+        def limited(session, host, path, now=None):
+            raise svc.GithubRateLimited("slow down")
+
+        monkeypatch.setattr(svc, "refresh_gitlab_repo", limited)
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.all.return_value = []
+
+        summary = svc.refresh_stale(session, ["https://gitlab.com/a/b", "https://gitlab.com/a/c"], now=NOW)
+
+        assert summary["rate_limited"] is True and summary["pending"] == 2
+
+
+def _row(key, provider="github", host="github.com", owner="o", repo="r", **kwargs):
+    values = dict(
+        full_name_key=key, provider=provider, host=host, owner=owner, repo=repo, status="ok", stars=None, forks=None,
+        watchers=None, open_issues=None, language=None, license=None, archived=False, pushed_at=None, fetched_at=NOW,
+        description=None, topics=[],
+    )
+    values.update(kwargs)
+    return SimpleNamespace(**values)
+
+
+class TestCombinedStats:
+    def _session(self, rows):
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.all.return_value = rows
+        return session
+
+    def test_sums_repositories_and_keeps_the_breakdown(self):
+        github = _row("tt-rss/tt-rss", owner="tt-rss", repo="tt-rss", stars=868, forks=88, watchers=40, open_issues=5,
+                      language="PHP", license="GPL-3.0", pushed_at=NOW, topics=["rss"], description="Feed reader")
+        gitlab = _row("gitlab.example.org/tt/mirror", provider="gitlab", host="gitlab.example.org", owner="tt", repo="mirror",
+                      stars=12, forks=2, open_issues=1, fetched_at=NOW - dt.timedelta(days=2), topics=["rss", "php"],
+                      pushed_at=NOW - dt.timedelta(days=1))
+        entries = {576: ["https://github.com/tt-rss/tt-rss", "https://gitlab.example.org/tt/mirror", "https://tt-rss.org"]}
+
+        result = svc.combined_stats_for_entries(self._session([github, gitlab]), entries)[576]
+
+        assert (result["stars"], result["forks"], result["watchers"], result["open_issues"]) == (880, 90, 40, 6)
+        assert (result["full_name"], result["language"], result["license"]) == ("tt-rss/tt-rss", "PHP", "GPL-3.0")
+        assert result["topics"] == ["rss", "php"] and result["archived"] is False
+        assert result["pushed_at"] == NOW.isoformat()
+        assert result["fetched_at"] == (NOW - dt.timedelta(days=2)).isoformat()  # the oldest row decides staleness
+        assert [r["provider"] for r in result["repositories"]] == ["github", "gitlab"]
+        assert result["repositories"][1]["full_name"] == "gitlab.example.org/tt/mirror"
+
+    def test_a_moved_gitlab_project_without_numbers_adds_nothing(self):
+        github = _row("tt-rss/tt-rss", owner="tt-rss", repo="tt-rss", stars=868, forks=88)
+        moved = _row("gitlab.tt-rss.org/tt-rss/tt-rss", provider="gitlab", host="gitlab.tt-rss.org", owner="tt-rss",
+                     repo="tt-rss", status="not_found")
+        entries = {1: ["https://gitlab.tt-rss.org/tt-rss/tt-rss", "https://github.com/tt-rss/tt-rss"]}
+
+        result = svc.combined_stats_for_entries(self._session([github, moved]), entries)[1]
+
+        assert (result["stars"], result["forks"], result["status"]) == (868, 88, "ok")
+        assert result["watchers"] is None and len(result["repositories"]) == 2
+
+    def test_same_repository_named_twice_counts_once(self):
+        row = _row("a/b", owner="a", repo="b", stars=5)
+        entries = {1: ["https://github.com/a/b", "https://github.com/A/B/", "github.com/a/b.git"]}
+
+        result = svc.combined_stats_for_entries(self._session([row]), entries)[1]
+
+        assert result["stars"] == 5 and len(result["repositories"]) == 1
+
+    def test_archived_only_when_every_repository_is(self):
+        first = _row("a/b", owner="a", repo="b", archived=True)
+        second = _row("a/c", owner="a", repo="c", archived=False)
+        both = svc.combined_stats_for_entries(self._session([first, second]), {1: ["https://github.com/a/b", "https://github.com/a/c"]})
+        assert both[1]["archived"] is False
+        only = svc.combined_stats_for_entries(self._session([first]), {1: ["https://github.com/a/b"]})
+        assert only[1]["archived"] is True
+
+    def test_entries_without_stored_rows_or_repositories_are_absent(self):
+        entries = {1: ["https://github.com/a/never-fetched"], 2: ["https://example.com"], 3: []}
+        assert svc.combined_stats_for_entries(self._session([]), entries) == {}
+
+    def test_no_repository_urls_means_no_query(self):
+        session = MagicMock()
+        assert svc.combined_stats_for_entries(session, {1: ["https://example.com"]}) == {}
+        session.execute.assert_not_called()
+
+    def test_homepage_is_the_first_one_any_repository_names(self):
+        github = _row("a/b", owner="a", repo="b", homepage="https://feedbin.com")
+        mirror = _row("gitlab.example.org/a/b", provider="gitlab", host="gitlab.example.org", owner="a", repo="b")
+        entries = {1: ["https://gitlab.example.org/a/b", "https://github.com/a/b"]}
+
+        result = svc.combined_stats_for_entries(self._session([github, mirror]), entries)[1]
+
+        assert result["homepage"] == "https://feedbin.com"
+
+
+class TestHomepage:
+    @pytest.mark.parametrize("value, expected", [
+        ("https://feedbin.com", "https://feedbin.com"), ("  feedbin.com  ", "https://feedbin.com"),
+        ("http://example.org/docs", "http://example.org/docs"), ("", None), ("   ", None), (None, None),
+        ("javascript:alert(1)", None), ("ftp://example.org", None), (5, None),
+    ])
+    def test_clean_homepage(self, value, expected):
+        assert svc.clean_homepage(value) == expected
+
+    def test_github_website_field_is_stored_normalised(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: {**GITHUB_JSON, "homepage": "feedbin.com"})
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        row = svc.refresh_repo(session, "feedbin", "feedbin", now=NOW)
+
+        assert row.homepage == "https://feedbin.com"
+        assert svc.to_dict(row)["homepage"] == "https://feedbin.com"
+
+    def test_empty_github_website_is_none_and_gitlab_has_none(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: {**GITHUB_JSON, "homepage": ""})
+        monkeypatch.setattr(svc, "fetch_gitlab_repo", lambda host, path: GITLAB_JSON)
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        assert svc.refresh_repo(session, "tt-rss", "tt-rss", now=NOW).homepage is None
+        assert svc.refresh_gitlab_repo(session, "gitlab.com", "a/b", now=NOW).homepage is None

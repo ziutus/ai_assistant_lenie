@@ -56,4 +56,39 @@ describe("GithubAbout", () => {
       disabled={false} onUseDescription={vi.fn()} onAddTags={vi.fn()} />);
     expect(container.textContent).toBe("");
   });
+
+  describe("repository website", () => {
+    const withWebsite = (props: Partial<React.ComponentProps<typeof GithubAbout>> = {}, overrides: Partial<GithubStats> = {}) => {
+      const onUseHomepage = vi.fn();
+      const onAddLink = vi.fn();
+      const view = render(<GithubAbout stats={stats({ description: null, topics: [], homepage: "https://feedbin.com", ...overrides })}
+        ownDescription={null} tags={[]} disabled={false} onUseDescription={vi.fn()} onAddTags={vi.fn()}
+        homepageUrl="https://github.com/feedbin/feedbin" links={[]} onUseHomepage={onUseHomepage} onAddLink={onAddLink} {...props} />);
+      return { onUseHomepage, onAddLink, ...view };
+    };
+
+    it("offers the website with two explicit buttons and writes nothing until one is clicked", () => {
+      const { onUseHomepage, onAddLink } = withWebsite();
+      expect(screen.getByRole("link", { name: "https://feedbin.com" })).toBeTruthy();
+      expect(onUseHomepage).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Użyj jako strony" }));
+      expect(onUseHomepage).toHaveBeenCalledWith("https://feedbin.com");
+      fireEvent.click(screen.getByRole("button", { name: "Dodaj do linków" }));
+      expect(onAddLink).toHaveBeenCalledWith("https://feedbin.com");
+    });
+
+    it("does not offer a website the entry already has, however it is spelled", () => {
+      const { container } = withWebsite({ homepageUrl: "https://www.Feedbin.com/" });
+      expect(container.textContent).toBe("");
+      cleanup();
+      const second = withWebsite({ links: [{ url: "feedbin.com" }] });
+      expect(second.container.textContent).toBe("");
+    });
+
+    it("shows nothing when GitHub has no website", () => {
+      const { container } = withWebsite({}, { homepage: null });
+      expect(container.textContent).toBe("");
+    });
+  });
 });

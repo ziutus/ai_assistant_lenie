@@ -3262,6 +3262,9 @@ class ToolRecommendation(Base):
     tool_id: Mapped[int | None] = mapped_column(ForeignKey("tools.id", ondelete="SET NULL"))
     # Lowercase free-form tags (docker, kubernetes, sbom); ``category`` stays the one catalog section.
     tags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    # Further pages about the tool next to ``homepage_url``: [{"url": "https://…", "label": "Docs"}]. Repository
+    # links (GitHub/GitLab) here are counted in the radar's repository statistics together with the homepage.
+    links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -3360,7 +3363,7 @@ class ToolRelation(Base):
 
 
 class GithubRepoStats(Base):
-    """Latest public GitHub numbers for one repository (stars, forks, activity).
+    """Latest public GitHub or GitLab numbers for one repository (stars, forks, activity).
 
     Keyed by the lower-cased ``owner/repo`` so every surface that shows a
     repository — the tool radar, the tool catalog, a saved link — shares one
@@ -3373,6 +3376,9 @@ class GithubRepoStats(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     full_name_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    # github: key is ``owner/repo``; gitlab: key is ``host/group/.../project`` (the dot in the host keeps keys apart).
+    provider: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'github'"))
+    host: Mapped[str] = mapped_column(String(255), nullable=False, server_default=sa_text("'github.com'"))
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
     repo: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -3382,6 +3388,8 @@ class GithubRepoStats(Base):
     open_issues: Mapped[int | None] = mapped_column()
     language: Mapped[str | None] = mapped_column(String(100))
     license: Mapped[str | None] = mapped_column(String(100))
+    # The repository's "Website" field (GitHub only): a hint for the entry's own homepage, never applied by itself.
+    homepage: Mapped[str | None] = mapped_column(Text)
     # The repository's own topics (the "About" chips), as GitHub spells them.
     topics: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
@@ -3394,6 +3402,7 @@ class GithubRepoStats(Base):
 
     __table_args__ = (
         CheckConstraint("status IN ('ok', 'not_found')", name="ck_github_repo_stats_status"),
+        CheckConstraint("provider IN ('github', 'gitlab')", name="ck_github_repo_stats_provider"),
     )
 
 
