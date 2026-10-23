@@ -54,6 +54,20 @@ class TestPrompt:
         assert "Tags already on this tool: security" in prompt
 
 
+    def test_github_description_and_topics_are_given_to_the_model(self):
+        item = _item()
+        github = {"description": "A vulnerability scanner for container images", "topics": ["sbom", "containers"]}
+        prompt = suggester.build_prompt(item.name, item.homepage_url, item.description, item.category,
+                                        item.tags, [], github)
+        assert "GitHub description: A vulnerability scanner for container images" in prompt
+        assert "GitHub topics: sbom, containers" in prompt
+
+    def test_without_github_data_the_prompt_has_no_github_lines(self):
+        item = _item()
+        prompt = suggester.build_prompt(item.name, item.homepage_url, item.description, item.category, item.tags, [])
+        assert "GitHub" not in prompt
+
+
 class TestSuggestTags:
     def _patch_model(self, monkeypatch, answer=None, error=None):
         def fake_ask(prompt, **kwargs):

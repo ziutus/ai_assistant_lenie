@@ -57,8 +57,13 @@ def response_schema() -> dict:
 
 
 def build_prompt(name: str, homepage_url: str | None, description: str | None, category: str | None,
-                 current_tags: list[str], vocabulary: list[str]) -> str:
+                 current_tags: list[str], vocabulary: list[str], github: dict | None = None) -> str:
     known = ", ".join(vocabulary[:MAX_VOCABULARY]) or "(none yet)"
+    github = github or {}
+    about = ""
+    if github.get("description") or github.get("topics"):
+        about = (f"GitHub description: {(github.get('description') or '-')[:MAX_DESCRIPTION_CHARS]}\n"
+                 f"GitHub topics: {', '.join(github.get('topics') or []) or '-'}\n")
     return (
         "You label software tools for a personal tool radar so they can be found by what they work with and what "
         "they are for.\n\n"
@@ -66,6 +71,7 @@ def build_prompt(name: str, homepage_url: str | None, description: str | None, c
         f"Homepage: {homepage_url or '-'}\n"
         f"Category: {category or '-'}\n"
         f"Description: {(description or '-')[:MAX_DESCRIPTION_CHARS]}\n"
+        f"{about}"
         f"Tags already on this tool: {', '.join(current_tags) or '(none)'}\n"
         f"Tags already used elsewhere on the radar: {known}\n\n"
         f"Propose up to {MAX_SUGGESTIONS} NEW tags. Rules:\n"
@@ -112,7 +118,7 @@ def clean_suggestions(tags: list[str], current_tags: list[str], name: str) -> li
     return cleaned[:MAX_SUGGESTIONS]
 
 
-def suggest_tags(item, vocabulary: list[str], model: str) -> dict:
+def suggest_tags(item, vocabulary: list[str], model: str, github: dict | None = None) -> dict:
     """Ask ``model`` for tags of the radar entry ``item``.
 
     Returns ``{"status": "ok"|"error", "tags": [...], "model", "tokens", "cost", "currency"}``; an unusable
@@ -121,7 +127,7 @@ def suggest_tags(item, vocabulary: list[str], model: str) -> dict:
     from library.ai import ai_ask
 
     current = list(item.tags or [])
-    prompt = build_prompt(item.name, item.homepage_url, item.description, item.category, current, vocabulary)
+    prompt = build_prompt(item.name, item.homepage_url, item.description, item.category, current, vocabulary, github)
     try:
         response = ai_ask(
             prompt, model=model, temperature=0.0, max_token_count=MAX_TOKENS,

@@ -4,6 +4,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
+import GithubAbout from "../components/GithubAbout/githubAbout";
 import { modelOptionText, type ModelOption } from "../utils/modelDetails";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "test_future" | "adopted" | "phasing_out" | "rejected" | "archived";
@@ -232,16 +233,18 @@ export default function ToolRecommendations() {
 
   const toggleTag = (tag: string) => setSelectedTags(current => current.includes(tag) ? current.filter(value => value !== tag) : [...current, tag]);
 
-  const saveTags = async (item: Recommendation, tags: string[]) => {
+  const patchItem = async (item: Recommendation, body: Record<string, unknown>, failure: string) => {
     setBusy(item.id); setError("");
     try {
-      const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}`, { method: "PATCH", headers, body: JSON.stringify({ tags }) });
+      const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}`, { method: "PATCH", headers, body: JSON.stringify(body) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(String(data.message || "Nie udało się zapisać tagów"));
+      if (!response.ok) throw new Error(String(data.message || failure));
       await load();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Zapis tagów nie powiódł się"); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : failure); }
     finally { setBusy(null); }
   };
+  const saveTags = (item: Recommendation, tags: string[]) => patchItem(item, { tags }, "Nie udało się zapisać tagów");
+  const saveDescription = (item: Recommendation, description: string) => patchItem(item, { description }, "Nie udało się zapisać opisu");
 
   const suggestTags = async (item: Recommendation): Promise<TagSuggestion> => {
     const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/suggest_tags`, {
@@ -398,6 +401,9 @@ export default function ToolRecommendations() {
     {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
     {item.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".8rem" }}>Notatka w Obsidianie: {item.obsidian_note_path}</div>}
     {item.github && <GithubStatsLine stats={item.github} />}
+    {item.github && <GithubAbout stats={item.github} ownDescription={item.description} tags={item.tags ?? []} disabled={busy === item.id}
+      onUseDescription={text => void saveDescription(item, text)}
+      onAddTags={topics => void saveTags(item, [...(item.tags ?? []), ...topics.filter(topic => !(item.tags ?? []).includes(topic))])} />}
     {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
       title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
       📰 {item.feed_mentions.count} {item.feed_mentions.count === 1 ? "wzmianka" : "wzmianek"} w feedach

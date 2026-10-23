@@ -132,6 +132,7 @@ def refresh_repo(session, owner: str, repo: str, now: datetime.datetime | None =
     row.open_issues = data.get("open_issues_count")
     row.language = data.get("language")
     row.license = (data.get("license") or {}).get("spdx_id")
+    row.topics = [topic for topic in (data.get("topics") or []) if isinstance(topic, str)]
     row.archived = bool(data.get("archived"))
     row.repo_created_at = _parse_time(data.get("created_at"))
     row.pushed_at = _parse_time(data.get("pushed_at"))
@@ -148,6 +149,8 @@ def to_dict(row: GithubRepoStats) -> dict:
         "open_issues": row.open_issues,
         "language": row.language,
         "license": row.license,
+        "description": row.description,
+        "topics": list(row.topics or []),
         "archived": row.archived,
         "pushed_at": row.pushed_at.isoformat() if row.pushed_at else None,
         "fetched_at": row.fetched_at.isoformat() if row.fetched_at else None,

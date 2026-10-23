@@ -607,7 +607,8 @@ def suggest_tags(recommendation_id):
         for tag in tag_list or []:
             counts[tag] = counts.get(tag, 0) + 1
     vocabulary = [tag for tag, _ in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))]
-    return jsonify(tool_tag_suggester.suggest_tags(item, vocabulary, model))
+    github = github_repo_stats.stats_for_urls(session, [item.homepage_url]).get(item.homepage_url)
+    return jsonify(tool_tag_suggester.suggest_tags(item, vocabulary, model, github))
 
 
 @bp.post("/tool_recommendations/<int:recommendation_id>/status")

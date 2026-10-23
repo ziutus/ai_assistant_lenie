@@ -3382,6 +3382,8 @@ class GithubRepoStats(Base):
     open_issues: Mapped[int | None] = mapped_column()
     language: Mapped[str | None] = mapped_column(String(100))
     license: Mapped[str | None] = mapped_column(String(100))
+    # The repository's own topics (the "About" chips), as GitHub spells them.
+    topics: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     repo_created_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     pushed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))

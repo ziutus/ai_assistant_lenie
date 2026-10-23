@@ -66,6 +66,28 @@ class TestRefreshRepo:
         assert row.pushed_at == dt.datetime(2025, 10, 13, 3, 27, 9, tzinfo=dt.timezone.utc)
         assert row.fetched_at == NOW
 
+    def test_stores_the_topics_and_ignores_junk_entries(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: {**GITHUB_JSON, "topics": ["sbom", "containers", None, 3]})
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        row = svc.refresh_repo(session, "o", "r", now=NOW)
+
+        assert row.topics == ["sbom", "containers"]
+        payload = svc.to_dict(SimpleNamespace(
+            owner="o", repo="r", status="ok", stars=1, forks=0, watchers=0, open_issues=0, language=None, license=None,
+            archived=False, pushed_at=None, fetched_at=None, description=row.description, topics=row.topics,
+        ))
+        assert payload["topics"] == ["sbom", "containers"]
+        assert payload["description"].startswith("Install, run")
+
+    def test_a_repository_without_topics_gets_an_empty_list(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: GITHUB_JSON)  # the key is absent
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        assert svc.refresh_repo(session, "o", "r", now=NOW).topics == []
+
     def test_not_found_keeps_the_last_known_numbers(self, monkeypatch):
         monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: None)
         existing = SimpleNamespace(stars=10, status="ok", fetched_at=None)
@@ -169,7 +191,7 @@ class TestStatsForUrls:
         row = SimpleNamespace(
             full_name_key="gaianet-ai/gaianet-node", owner="GaiaNet-AI", repo="gaianet-node", status="ok",
             stars=5018, forks=325, watchers=38, open_issues=60, language="Shell", license="GPL-3.0",
-            archived=False, pushed_at=NOW, fetched_at=NOW,
+            archived=False, pushed_at=NOW, fetched_at=NOW, description="Run your own AI agent", topics=["ai", "node"],
         )
         session = MagicMock()
         session.execute.return_value.scalars.return_value.all.return_value = [row]
@@ -180,6 +202,8 @@ class TestStatsForUrls:
         assert list(result) == [url]
         assert result[url]["full_name"] == "GaiaNet-AI/gaianet-node"
         assert (result[url]["stars"], result[url]["forks"]) == (5018, 325)
+        assert result[url]["topics"] == ["ai", "node"]
+        assert result[url]["description"] == "Run your own AI agent"
 
     def test_nothing_to_look_up(self):
         session = MagicMock()
