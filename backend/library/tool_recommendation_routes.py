@@ -215,6 +215,11 @@ def create_tool_recommendation():
     existing_tool = _existing_tool(session, name, body.get("homepage_url"))
     if existing_tool is not None:
         return jsonify({"existing_tool": {"id": existing_tool.id, "name": existing_tool.name}}), 200
+    existing_item = session.execute(
+        select(ToolRecommendation).where(func.lower(ToolRecommendation.name) == name.lower()).limit(1)
+    ).scalars().first()
+    if existing_item is not None:
+        return jsonify({"existing_tool_recommendation": {"id": existing_item.id, "name": existing_item.name}}), 200
     item = ToolRecommendation(
         name=name[:255], homepage_url=body.get("homepage_url"), description=body.get("description"),
         category=body.get("category"), status=status, personal_note=body.get("personal_note"),
