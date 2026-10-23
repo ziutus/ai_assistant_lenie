@@ -24,11 +24,13 @@ const renderFocus = (onDecide = vi.fn(), handlers: { onOpenPeer?: (id: number) =
 describe("ToolFocusReview", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-  it("shows the candidate next to the tools already used, adopted first", async () => {
+  it("keeps the tools already used apart from the candidates, with the bulk bar over the candidates only", async () => {
     renderFocus();
     await screen.findByText("Basal (Fabryka AI)");
     const names = screen.getAllByRole("region", { name: /Alternatywy/ })[0].querySelectorAll("strong");
-    expect(Array.from(names).map(node => node.textContent)).toEqual(["Basal (Fabryka AI)", "Jev", "Zapier"]);
+    expect(Array.from(names).map(node => node.textContent)).toEqual(["Basal (Fabryka AI)", "Zapier", "Jev"]);
+    expect(screen.getByRole("heading", { name: /Już używam \(2\)/ })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /Do oceny \(1\)/ })).toBeTruthy();
     expect(screen.getByText("opis Clefa")).toBeTruthy();
     expect(screen.getByText("W Spisie narzędzi")).toBeTruthy();
   });
