@@ -139,6 +139,7 @@ def get_tool_recommendations():
     origin = request.args.get("origin", "all")
     if origin not in {"all", "ai_detected", "curated"}:
         abort(400, "unsupported origin")
+    entry_id = request.args.get("id", type=int)
     session = get_scoped_session()
     query = select(ToolRecommendation).options(
         joinedload(ToolRecommendation.source_document).joinedload(Document.discovery_source),
@@ -146,6 +147,8 @@ def get_tool_recommendations():
         .joinedload(ToolRecommendationEvidence.recommender_document)
         .joinedload(Document.discovery_source),
     ).order_by(ToolRecommendation.created_at.desc())
+    if entry_id is not None:  # one entry of any stage, for a shareable link to a single tool
+        query = query.where(ToolRecommendation.id == entry_id)
     if status != "all":
         query = query.where(ToolRecommendation.status == status)
     if category:

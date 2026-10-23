@@ -36,6 +36,8 @@ type Props = {
   actions: Array<[FocusStatus, string, string]>;
   details: React.ReactNode;
   onDecide: (status: FocusStatus, note: string | null) => void;
+  onOpenPeer: (id: number) => void;
+  onChanged: () => void;
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
@@ -43,10 +45,12 @@ type Props = {
 
 export default function ToolFocusReview({
   apiUrl, headers, itemId, itemName, initialNote, position, total, busy, actions, details,
-  onDecide, onPrev, onNext, onClose,
+  onDecide, onOpenPeer, onChanged, onPrev, onNext, onClose,
 }: Props) {
   const [peers, setPeers] = React.useState<Peers | null>(null);
   const [peersError, setPeersError] = React.useState("");
+  const [reloadKey, setReloadKey] = React.useState(0);
+  const [peerBusy, setPeerBusy] = React.useState<number | null>(null);
   const [note, setNote] = React.useState(initialNote ?? "");
 
   React.useEffect(() => { setNote(initialNote ?? ""); }, [itemId, initialNote]);
@@ -65,7 +69,20 @@ export default function ToolFocusReview({
       }
     })();
     return () => { cancelled = true; };
-  }, [apiUrl, headers, itemId]);
+  }, [apiUrl, headers, itemId, reloadKey]);
+
+  // Quick decision on a neighbour from the same category, without leaving this card.
+  const movePeer = async (peerId: number, status: FocusStatus) => {
+    setPeerBusy(peerId); setPeersError("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/${peerId}/status`, { method: "POST", headers, body: JSON.stringify({ status }) });
+      if (!response.ok) throw new Error("Nie udało się zmienić statusu narzędzia");
+      setReloadKey(current => current + 1);
+      onChanged();
+    } catch (cause) {
+      setPeersError(cause instanceof Error ? cause.message : "Nie udało się zmienić statusu narzędzia");
+    } finally { setPeerBusy(null); }
+  };
 
   const radar = peers ? [...peers.radar].sort((a, b) => statusOrder[a.status] - statusOrder[b.status] || a.name.localeCompare(b.name)) : [];
   const trimmedNote = note.trim();
@@ -73,9 +90,11 @@ export default function ToolFocusReview({
 
   return <div>
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-      <button type="button" onClick={onPrev} disabled={position <= 1 || busy}>← Poprzednie</button>
-      <strong aria-live="polite">{position} / {total}</strong>
-      <button type="button" onClick={onNext} disabled={position >= total || busy}>Następne →</button>
+      {position > 0 ? <>
+        <button type="button" onClick={onPrev} disabled={position <= 1 || busy}>← Poprzednie</button>
+        <strong aria-live="polite">{position} / {total}</strong>
+        <button type="button" onClick={onNext} disabled={position >= total || busy}>Następne →</button>
+      </> : <span style={{ color: "#64748b" }}>Narzędzie spoza bieżącej zakładki</span>}
       <button type="button" onClick={onClose} style={{ marginLeft: "auto" }}>Wróć do listy</button>
     </div>
     <div style={{ border: "2px solid #2563eb", borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}>
@@ -94,6 +113,12 @@ export default function ToolFocusReview({
       {peers && peers.category && !radar.length && !peers.tools.length && <p style={{ color: "#64748b" }}>Brak innych narzędzi w tej kategorii — to jedyne w tym obszarze.</p>}
       {radar.map(peer => <div key={`r${peer.id}`} style={{ borderTop: "1px solid #e2e8f0", padding: "8px 0" }}>
         <strong>{peer.name}</strong><span style={badgeStyle(peer.status === "adopted")}>{statusLabel[peer.status]}</span>
+        <button type="button" onClick={() => onOpenPeer(peer.id)} style={{ marginLeft: 8 }} title={`Otwórz kartę ${peer.name} do pełnej oceny`}>Oceń</button>
+        {peer.status !== "adopted" && <span style={{ marginLeft: 8, display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+          {actions.filter(([value]) => value !== peer.status && value !== "adopted").map(([value, label, help]) =>
+            <button key={value} type="button" disabled={peerBusy === peer.id} title={`${peer.name}: ${help}`}
+              aria-label={`${peer.name}: ${label}`} onClick={() => void movePeer(peer.id, value)}>{label}</button>)}
+        </span>}
         {peer.homepage_url && <> · <a href={peer.homepage_url} target="_blank" rel="noreferrer">strona</a></>}
         {peer.github && <span style={{ color: "#475569", fontSize: ".85rem" }}> · ★ {peer.github.stars ?? "—"}{peer.github.pushed_at ? ` · push ${peer.github.pushed_at.slice(0, 10)}` : ""}{peer.github.archived ? " · zarchiwizowane" : ""}</span>}
         {peer.description && <div style={{ color: "#475569", fontSize: ".9rem", marginTop: 2 }}>{peer.description}</div>}
@@ -116,7 +141,7 @@ export default function ToolFocusReview({
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       {actions.map(([value, label, help]) => <button key={value} title={help} aria-label={`${label}: ${help}`} disabled={busy}
         onClick={() => onDecide(value, noteChanged ? trimmedNote : null)}>{label}</button>)}
-      <button type="button" onClick={onNext} disabled={position >= total || busy} title="Zostaw bez zmian i przejdź do następnego narzędzia (notatka nie zostanie zapisana)">Pomiń</button>
+      {position > 0 && <button type="button" onClick={onNext} disabled={position >= total || busy} title="Zostaw bez zmian i przejdź do następnego narzędzia (notatka nie zostanie zapisana)">Pomiń</button>}
     </div>
   </div>;
 }

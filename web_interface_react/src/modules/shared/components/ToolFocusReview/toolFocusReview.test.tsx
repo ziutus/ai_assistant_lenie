@@ -11,12 +11,14 @@ const peers = {
   tools: [{ id: 9, name: "Zapier", homepage_url: null, personal_notes: null, pricing: null, license: null }],
 };
 
-const renderFocus = (onDecide = vi.fn()) => {
-  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => peers })));
+const renderFocus = (onDecide = vi.fn(), handlers: { onOpenPeer?: (id: number) => void; onChanged?: () => void } = {}) => {
+  const fetchMock = vi.fn(async () => ({ ok: true, json: async () => peers }));
+  vi.stubGlobal("fetch", fetchMock);
   render(<ToolFocusReview apiUrl="http://api" headers={{}} itemId={3} itemName="Clef" initialNote={null}
     position={1} total={2} busy={false} actions={[["compare", "Porównaj", "pomoc"], ["rejected", "Odrzuć", "pomoc"]]}
-    details={<p>opis Clefa</p>} onDecide={onDecide} onPrev={vi.fn()} onNext={vi.fn()} onClose={vi.fn()} />);
-  return onDecide;
+    details={<p>opis Clefa</p>} onDecide={onDecide} onOpenPeer={handlers.onOpenPeer ?? vi.fn()}
+    onChanged={handlers.onChanged ?? vi.fn()} onPrev={vi.fn()} onNext={vi.fn()} onClose={vi.fn()} />);
+  return fetchMock;
 };
 
 describe("ToolFocusReview", () => {
@@ -31,8 +33,22 @@ describe("ToolFocusReview", () => {
     expect(screen.getByText("W Spisie narzędzi")).toBeTruthy();
   });
 
+  it("lets a neighbour from the category be decided or opened without leaving the card", async () => {
+    const onOpenPeer = vi.fn();
+    const onChanged = vi.fn();
+    const fetchMock = renderFocus(vi.fn(), { onOpenPeer, onChanged });
+    await screen.findByText("Jev");
+    fireEvent.click(screen.getByRole("button", { name: "Jev: Odrzuć" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith("http://api/tool_recommendations/1/status", expect.objectContaining({ method: "POST", body: JSON.stringify({ status: "rejected" }) }));
+    expect(screen.queryByRole("button", { name: /Basal.*Odrzuć/ })).toBeNull();
+    fireEvent.click(screen.getByTitle("Otwórz kartę Jev do pełnej oceny"));
+    expect(onOpenPeer).toHaveBeenCalledWith(1);
+  });
+
   it("sends the note only when it was edited", async () => {
-    const onDecide = renderFocus();
+    const onDecide = vi.fn();
+    renderFocus(onDecide);
     await screen.findByText("Jev");
     fireEvent.click(screen.getByRole("button", { name: /^Odrzuć/ }));
     expect(onDecide).toHaveBeenLastCalledWith("rejected", null);
