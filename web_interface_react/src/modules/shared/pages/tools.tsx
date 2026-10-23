@@ -1,4 +1,5 @@
 import React from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
@@ -20,6 +21,7 @@ type Tool = {
   important_commands: string | null;
   migrating_away: boolean;
   migration_note: string | null;
+  migration_target: { id: number; name: string | null } | null;
   github: GithubStats | null;
   personal_notes: string | null;
   source_document_id: number | null;
@@ -44,7 +46,7 @@ const pricingTypeLabel = (value: string | null) => pricingTypes.find(([key]) => 
 type DetailsDraft = {
   app_type: string; license: string; homepage_url: string; github_url: string; wikipedia_url: string;
   pricing_type: string; pricing: string; pricing_url: string; key_points: string; important_commands: string;
-  migrating_away: boolean; migration_note: string;
+  migrating_away: boolean; migration_note: string; migration_target_tool_id: string;
 };
 const draftFromTool = (tool: Tool): DetailsDraft => ({
   app_type: tool.app_type ?? "", license: tool.license ?? "", homepage_url: tool.homepage_url ?? "",
@@ -52,9 +54,12 @@ const draftFromTool = (tool: Tool): DetailsDraft => ({
   pricing_type: tool.pricing_type ?? "", pricing: tool.pricing ?? "", pricing_url: tool.pricing_url ?? "",
   key_points: (tool.key_points ?? []).join("\n"), important_commands: tool.important_commands ?? "",
   migrating_away: tool.migrating_away, migration_note: tool.migration_note ?? "",
+  migration_target_tool_id: tool.migration_target ? String(tool.migration_target.id) : "",
 });
 const detailsPayload = (draft: DetailsDraft) => ({
   ...draft, key_points: draft.key_points.split("\n").map(line => line.trim()).filter(Boolean),
+  // The target only exists while migrating away; the server clears it otherwise, so send it consistently.
+  migration_target_tool_id: draft.migrating_away && draft.migration_target_tool_id ? Number(draft.migration_target_tool_id) : null,
 });
 const textFields: Array<[keyof DetailsDraft, string]> = [
   ["app_type", "Typ aplikacji"], ["license", "Licencja"], ["homepage_url", "Strona"], ["github_url", "GitHub"],
@@ -64,6 +69,8 @@ const linkStyle = { fontSize: ".85rem" } as const;
 
 export default function Tools() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusedId = Number(searchParams.get("tool")) || null;
   const [tools, setTools] = React.useState<Tool[]>([]);
   const [tags, setTags] = React.useState<string[]>([]);
   const [selectedTag, setSelectedTag] = React.useState("");
@@ -177,7 +184,34 @@ export default function Tools() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); }
   };
 
-  const visibleTools = onlyLeaving ? tools.filter(tool => tool.migrating_away) : tools;
+  const filteredTools = onlyLeaving ? tools.filter(tool => tool.migrating_away) : tools;
+  // Single-tool mode (`?tool=<id>`): one card plus previous/next within the currently filtered list.
+  const focusedIndex = focusedId === null ? -1 : filteredTools.findIndex(tool => tool.id === focusedId);
+  const focusedTool = focusedIndex >= 0 ? filteredTools[focusedIndex] : null;
+  const visibleTools = focusedId === null ? filteredTools : focusedTool ? [focusedTool] : [];
+  const previousTool = focusedIndex > 0 ? filteredTools[focusedIndex - 1] : null;
+  const nextTool = focusedIndex >= 0 && focusedIndex < filteredTools.length - 1 ? filteredTools[focusedIndex + 1] : null;
+
+  const focusTool = React.useCallback((id: number | null) => {
+    setSearchParams(current => {
+      const next = new URLSearchParams(current);
+      if (id === null) next.delete("tool"); else next.set("tool", String(id));
+      return next;
+    });
+    window.scrollTo({ top: 0 });
+  }, [setSearchParams]);
+
+  React.useEffect(() => {
+    if (focusedId === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (event.key === "ArrowLeft" && previousTool) focusTool(previousTool.id);
+      if (event.key === "ArrowRight" && nextTool) focusTool(nextTool.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusedId, previousTool, nextTool, focusTool]);
 
   const formatDate =(value: string | null) => value ? new Date(value).toLocaleString("pl-PL") : null;
 
@@ -220,12 +254,27 @@ export default function Tools() {
     </div>
     {error && <p className="errorText" role="alert">{error}</p>}
     {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
-    {!loading && !error && !visibleTools.length && <p>{onlyLeaving ? "Żadne narzędzie nie jest oznaczone jako „odchodzę”." : selectedTag ? "Brak zapisanych narzędzi dla wybranego tagu." : "Brak zapisanych narzędzi."}</p>}
+    {focusedId !== null && <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 14px" }}>
+      <button type="button" onClick={() => focusTool(null)}>← Wszystkie narzędzia</button>
+      <button type="button" disabled={!previousTool} onClick={() => previousTool && focusTool(previousTool.id)}
+        title={previousTool ? `Poprzednie: ${previousTool.name} (strzałka w lewo)` : "To pierwsze narzędzie"}>← Poprzednie</button>
+      {focusedTool && <span style={{ color: "#64748b", fontSize: ".85rem" }}>{focusedIndex + 1} / {filteredTools.length}</span>}
+      <button type="button" disabled={!nextTool} onClick={() => nextTool && focusTool(nextTool.id)}
+        title={nextTool ? `Następne: ${nextTool.name} (strzałka w prawo)` : "To ostatnie narzędzie"}>Następne →</button>
+    </div>}
+    {!loading && !error && focusedId !== null && !focusedTool && <p>Nie znaleziono narzędzia #{focusedId} na bieżącej liście (sprawdź filtry tagu).</p>}
+    {!loading && !error && focusedId === null && !visibleTools.length && <p>{onlyLeaving ? "Żadne narzędzie nie jest oznaczone jako „odchodzę”." : selectedTag ? "Brak zapisanych narzędzi dla wybranego tagu." : "Brak zapisanych narzędzi."}</p>}
     {visibleTools.map(tool => <article key={tool.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
-      <h3>{tool.name}
+      <h3>{focusedId === null
+        ? <Link to={`/tools?tool=${tool.id}`} title="Pokaż to narzędzie osobno" style={{ color: "inherit" }}>{tool.name}</Link>
+        : tool.name}
         {tool.migrating_away && <span title={tool.migration_note || "Wychodzę z tego narzędzia"} style={{ marginLeft: 8, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem", fontWeight: 400 }}>odchodzę</span>}
       </h3>
-      {tool.migrating_away && tool.migration_note && <div style={{ color: "#92400e", fontSize: ".85rem", margin: "4px 0" }}>{tool.migration_note}</div>}
+      {tool.migrating_away && (tool.migration_target || tool.migration_note) && <div style={{ color: "#92400e", fontSize: ".85rem", margin: "4px 0" }}>
+        {tool.migration_target && <span>Przechodzę na: <Link to={`/tools?tool=${tool.migration_target.id}`}>{tool.migration_target.name ?? `#${tool.migration_target.id}`}</Link></span>}
+        {tool.migration_target && tool.migration_note && <span> · </span>}
+        {tool.migration_note}
+      </div>}
       {tool.category_tags.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "8px 0" }}>
         {tool.category_tags.map(tag => <span key={tag} style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{tag}</span>)}
       </div>}
@@ -237,6 +286,18 @@ export default function Tools() {
         {tool.pricing_url && <a style={linkStyle} href={tool.pricing_url} target="_blank" rel="noreferrer">Cennik</a>}
       </div>
       {tool.github && <GithubStatsLine stats={tool.github} />}
+      {focusedId !== null && <div style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 12px", margin: "8px 0", fontSize: ".85rem", color: "#475569" }}>
+        <strong>Linki i źródła</strong>
+        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+          {tool.homepage_url && <li>Strona: <a href={tool.homepage_url} target="_blank" rel="noreferrer">{tool.homepage_url}</a></li>}
+          {tool.github_url && <li>Repozytorium GitHub: <a href={tool.github_url} target="_blank" rel="noreferrer">{tool.github_url}</a></li>}
+          {tool.wikipedia_url && <li>Wikipedia: <a href={tool.wikipedia_url} target="_blank" rel="noreferrer">{tool.wikipedia_url}</a></li>}
+          {tool.pricing_url && <li>Cennik: <a href={tool.pricing_url} target="_blank" rel="noreferrer">{tool.pricing_url}</a></li>}
+          {tool.source_document_id && <li>Dokument źródłowy w Lenie: <Link to={`/read/${tool.source_document_id}`}>#{tool.source_document_id}</Link></li>}
+          {tool.source_candidate_id && <li>Kandydat, z którego powstało: #{tool.source_candidate_id}</li>}
+          {!tool.homepage_url && !tool.github_url && !tool.wikipedia_url && !tool.pricing_url && !tool.source_document_id && <li>Brak zapisanych linków — użyj „Edytuj dane”.</li>}
+        </ul>
+      </div>}
       {(tool.license || tool.pricing || tool.pricing_type) && <div style={{ color: "#64748b", fontSize: ".85rem", margin: "8px 0" }}>
         {tool.license && <span>Licencja: {tool.license}</span>}
         {tool.license && (tool.pricing_type || tool.pricing) && <span> · </span>}
@@ -282,11 +343,23 @@ export default function Tools() {
             onChange={event => setDetailsDraft({ ...detailsDraft, migrating_away: event.target.checked })} />
           Odchodzę od tego narzędzia
         </label>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 6 }}>
-          Dokąd / dlaczego
-          <input value={detailsDraft.migration_note} disabled={savingId === tool.id}
-            onChange={event => setDetailsDraft({ ...detailsDraft, migration_note: event.target.value })} />
-        </label>
+        {detailsDraft.migrating_away && <>
+          <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 6 }}>
+            Na jakie narzędzie przechodzę
+            <select value={detailsDraft.migration_target_tool_id} disabled={savingId === tool.id}
+              onChange={event => setDetailsDraft({ ...detailsDraft, migration_target_tool_id: event.target.value })}>
+              <option value="">— jeszcze nie wybrane / spoza spisu —</option>
+              {tool.migration_target && !tools.some(other => other.id === tool.migration_target?.id)
+                && <option value={tool.migration_target.id}>{tool.migration_target.name}</option>}
+              {tools.filter(other => other.id !== tool.id).map(other => <option key={other.id} value={other.id}>{other.name}</option>)}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 6 }}>
+            Dlaczego / uwagi (np. narzędzie spoza spisu)
+            <input value={detailsDraft.migration_note} disabled={savingId === tool.id}
+              onChange={event => setDetailsDraft({ ...detailsDraft, migration_note: event.target.value })} />
+          </label>
+        </>}
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button className="button" type="button" disabled={savingId === tool.id} onClick={() => void saveDetails(tool)}>Zapisz dane</button>
           <button type="button" disabled={savingId === tool.id} onClick={() => { setDetailsId(null); setDetailsDraft(null); }}>Anuluj</button>

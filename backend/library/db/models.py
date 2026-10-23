@@ -3398,6 +3398,8 @@ class Tool(Base):
     # The tool is still in use but being phased out (e.g. Obsidian); migration_note says where to / why.
     migrating_away: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     migration_note: Mapped[str | None] = mapped_column(Text)
+    # The catalog tool being moved to (optional; set only while migrating_away).
+    migration_target_tool_id: Mapped[int | None] = mapped_column(ForeignKey("tools.id", ondelete="SET NULL"))
     personal_notes: Mapped[str | None] = mapped_column(Text)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     source_candidate_id: Mapped[int | None] = mapped_column(ForeignKey("tool_candidates.id", ondelete="SET NULL"))

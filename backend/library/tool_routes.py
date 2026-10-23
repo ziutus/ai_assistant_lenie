@@ -37,7 +37,15 @@ def _github_url(tool: Tool) -> str | None:
     return tool.homepage_url if github_repo_stats.parse_repo_url(tool.homepage_url) else None
 
 
-def _tool_dict(tool: Tool, relations: list | None = None, github: dict | None = None) -> dict:
+def _target_name(session, tool: Tool) -> str | None:
+    if not tool.migration_target_tool_id:
+        return None
+    return session.execute(select(Tool.name).where(Tool.id == tool.migration_target_tool_id)).scalar_one_or_none()
+
+
+def _tool_dict(
+    tool: Tool, relations: list | None = None, github: dict | None = None, target_name: str | None = None,
+) -> dict:
     return {
         "relations": relations or [],
         "github": github,
@@ -57,6 +65,7 @@ def _tool_dict(tool: Tool, relations: list | None = None, github: dict | None = 
         "important_commands": tool.important_commands,
         "migrating_away": bool(tool.migrating_away),
         "migration_note": tool.migration_note,
+        "migration_target": {"id": tool.migration_target_tool_id, "name": target_name} if tool.migration_target_tool_id else None,
         "personal_notes": tool.personal_notes,
         "source_document_id": tool.source_document_id,
         "source_candidate_id": tool.source_candidate_id,
@@ -75,11 +84,15 @@ def get_tools():
     query = select(Tool).order_by(Tool.name)
     if tag:
         query = query.where(Tool.category_tags.contains([tag]))
+    names = dict(session.execute(select(Tool.id, Tool.name)).all())  # migration targets may fall outside the tag filter
     tools = session.execute(query).scalars().all()
     relations = tool_relations_service.relations_for_tools(session, tools)
     github = github_repo_stats.stats_for_urls(session, [url for url in map(_github_url, tools) if url])
     return jsonify({
-        "tools": [_tool_dict(tool, relations.get(tool.id), github.get(_github_url(tool))) for tool in tools],
+        "tools": [
+            _tool_dict(tool, relations.get(tool.id), github.get(_github_url(tool)), names.get(tool.migration_target_tool_id))
+            for tool in tools
+        ],
         "filters": {"tag": tag},
     })
 
@@ -230,6 +243,19 @@ def _apply_fields(tool: Tool, body: dict) -> None:
         if not isinstance(body["migrating_away"], bool):
             abort(400, "migrating_away must be a boolean")
         tool.migrating_away = body["migrating_away"]
+        if not tool.migrating_away:
+            tool.migration_target_tool_id = None
+    if "migration_target_tool_id" in body:
+        target_id = body["migration_target_tool_id"]
+        if target_id is not None:
+            if not isinstance(target_id, int) or isinstance(target_id, bool):
+                abort(400, "migration_target_tool_id must be a tool id or null")
+            if tool.id is not None and target_id == tool.id:
+                abort(400, "a tool cannot be migrated to itself")
+            if get_scoped_session().get(Tool, target_id) is None:
+                abort(400, "migration_target_tool_id does not exist")
+        # A target only makes sense while the tool is being phased out.
+        tool.migration_target_tool_id = target_id if tool.migrating_away else None
 
 
 @bp.patch("/tools/<int:tool_id>")
@@ -244,7 +270,7 @@ def update_tool(tool_id):
     _apply_fields(tool, body)
     tool.updated_at = datetime.datetime.now(datetime.timezone.utc)
     session.commit()
-    return jsonify({"tool": _tool_dict(tool)})
+    return jsonify({"tool": _tool_dict(tool, target_name=_target_name(session, tool))})
 
 
 @bp.post("/tools/<int:tool_id>/retry_obsidian_write")
