@@ -183,7 +183,12 @@ export default function ToolRecommendations() {
 
   const stackFiltered = stackOnly ? items.filter(item => item.stack_matches.length > 0) : items;
   const visibleItems = showSelected ? stackFiltered.filter(item => selectedIds.has(item.id)) : stackFiltered;
-  const focusPosition = Math.min(focusIndex, Math.max(visibleItems.length - 1, 0));
+  const openFocus = (id: number) => {
+    setFocusIndex(Math.max(visibleItems.findIndex(item => item.id === id), 0));
+    setFocusMode(true);
+    window.scrollTo({ top: 0 });
+  };
+  const focusPosition =Math.min(focusIndex, Math.max(visibleItems.length - 1, 0));
   const focusItem = focusMode ? visibleItems[focusPosition] : undefined;
   const decideFocused = async (nextStatus: RecommendationStatus, note: string | null) => {
     if (!focusItem) return;
@@ -285,8 +290,7 @@ export default function ToolRecommendations() {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do 30 repozytoriów na raz)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
         <button type="button" onClick={() => void detectRelations()} disabled={relationsBusy || loading} title="Szuka w tekście źródłowym każdego wpisu nazw narzędzi, które już są w radarze (np. AWS, GCP, Terraform), i proponuje powiązania do potwierdzenia. Narzędzia oznaczone jako „Używam” tworzą Twój stack.">{relationsBusy ? "Szukam powiązań…" : "Wykryj powiązania"}</button>
-        <button type="button" onClick={() => { setFocusMode(current => !current); setFocusIndex(0); }} disabled={loading || (!focusMode && !visibleItems.length)} title="Pokazuje narzędzia z bieżącej zakładki i filtrów pojedynczo, razem z innymi narzędziami z tej samej kategorii (także tym, którego już używasz), żeby ocenić jedno po drugim.">{focusMode ? "Wróć do listy" : "Oceniaj po kolei"}</button>
-        <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
+        <button type="button" onClick={() => { setFocusMode(current => !current); setFocusIndex(0); }} disabled={loading || (!focusMode && !visibleItems.length)} title="Pokazuje narzędzia z bieżącej zakładki i filtrów pojedynczo, razem z innymi narzędziami z tej samej kategorii (także tym, którego już używasz), żeby ocenić jedno po drugim.">{focusMode ? "Wróć do listy" : "Oceniaj po kolei"}</button>        <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
       </div>
     </div>
     {githubMessage && <p role="status" style={{ color: "#166534", margin: "8px 0 0" }}>{githubMessage}</p>}
@@ -355,7 +359,7 @@ export default function ToolRecommendations() {
       onNext={() => setFocusIndex(Math.min(focusPosition + 1, visibleItems.length - 1))}
       onClose={() => setFocusMode(false)} />}
     {!focusMode && visibleItems.map(item => <article key={item.id} style={{ border: selectedIds.has(item.id) ? "2px solid #2563eb" : "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggle(item.id)} aria-label={`Zaznacz ${item.name}`} /><h3 style={{ margin: 0 }}>{item.name}</h3></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggle(item.id)} aria-label={`Zaznacz ${item.name}`} /><h3 style={{ margin: 0 }}><button type="button" onClick={() => openFocus(item.id)} title="Otwórz to narzędzie do oceny: opis, źródła i inne narzędzia z tej kategorii" style={{ all: "unset", cursor: "pointer", color: "#1d4ed8", textDecoration: "underline" }}>{item.name}</button></h3><button type="button" onClick={() => openFocus(item.id)} title="Otwórz to narzędzie do oceny: opis, źródła i inne narzędzia z tej kategorii">Oceń</button></div>
       {cardDetails(item)}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>{nextStatuses.filter(([value]) => value !== item.status).map(([value, label]) => <button key={value} title={statusHelp[value]} aria-label={`${label}: ${statusHelp[value]}`} disabled={busy === item.id} onClick={() => void move(item, value)}>{label}</button>)}</div>
     </article>)}
