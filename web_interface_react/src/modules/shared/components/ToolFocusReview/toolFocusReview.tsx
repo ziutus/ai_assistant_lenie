@@ -1,6 +1,6 @@
 import React from "react";
 
-export type FocusStatus = "watchlist" | "compare" | "testing" | "adopted" | "phasing_out" | "rejected" | "archived";
+export type FocusStatus = "watchlist" | "compare" | "testing" | "test_future" | "adopted" | "phasing_out" | "rejected" | "archived";
 
 type PeerRadar = {
   id: number; name: string; status: FocusStatus; category: string | null; description: string | null;
@@ -14,11 +14,11 @@ type PeerTool = {
 type Peers = { category: string | null; radar: PeerRadar[]; tools: PeerTool[] };
 
 const statusLabel: Record<FocusStatus, string> = {
-  watchlist: "Nieocenione", compare: "Do porównania", testing: "Testowane",
+  watchlist: "Nieocenione", compare: "Do porównania", testing: "Testowane", test_future: "Do przetestowania w przyszłości",
   adopted: "Używam", phasing_out: "Wygaszam", rejected: "Odrzucone", archived: "Archiwum",
 };
 // Tools in use come first: the candidate is judged against what is already running.
-const statusOrder: Record<FocusStatus, number> = { adopted: 0, phasing_out: 1, testing: 2, compare: 3, watchlist: 4, rejected: 5, archived: 6 };
+const statusOrder: Record<FocusStatus, number> = { adopted: 0, phasing_out: 1, testing: 2, test_future: 3, compare: 4, watchlist: 5, rejected: 6, archived: 7 };
 const badgeStyle = (adopted: boolean) => ({
   background: adopted ? "#dcfce7" : "#e2e8f0", color: adopted ? "#166534" : "#334155",
   borderRadius: 4, padding: "2px 6px", fontSize: ".75rem", marginLeft: 8,

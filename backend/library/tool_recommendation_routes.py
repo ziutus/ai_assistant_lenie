@@ -18,7 +18,7 @@ from library.tool_recommendation_importer import fetch_markdown, parse_markdown_
 bp = Blueprint("tool_recommendations", __name__)
 logger = logging.getLogger(__name__)
 
-STATUSES = {"watchlist", "compare", "testing", "adopted", "phasing_out", "rejected", "archived"}
+STATUSES = {"watchlist", "compare", "testing", "test_future", "adopted", "phasing_out", "rejected", "archived"}
 
 
 def _existing_tool(session, name: str, homepage_url: str | None = None) -> Tool | None:
