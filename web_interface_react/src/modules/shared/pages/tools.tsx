@@ -112,7 +112,7 @@ export default function Tools() {
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <h1 style={{ color: "#0c2f4a", margin: 0 }}>Spis narzędzi</h1>
         <span
-          title={"Spis narzędzi, które świadomie wybrałeś (etap „Używane” w Radarze narzędzi trafia tu automatycznie).\n\n" +
+          title={"Spis narzędzi, które świadomie wybrałeś (etap „Używam” w Radarze narzędzi trafia tu automatycznie).\n\n" +
             "Notatkę o narzędziu piszesz i edytujesz tutaj, w Lenie — Obsidian nie jest potrzebny. " +
             "Starsze narzędzia mogą mieć dodatkowo notatkę w Obsidianie (pokazana jako starsza kopia).\n\n" +
             "Powiązania (współpracuje z, alternatywa dla…) pochodzą z Radaru narzędzi; propozycje potwierdzasz ✓ lub odrzucasz ✗."}

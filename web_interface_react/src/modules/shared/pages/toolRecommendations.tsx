@@ -28,8 +28,8 @@ type Recommendation = {
 type ImportResult = { created?: number; skipped?: number; tools_skipped?: number; linked_existing?: number; evidence_created?: number; evidence_upgraded?: number; skipped_items?: Array<{ name?: string; reason?: string }>; resolved_source_document?: { id: number; title: string | null; discovery_source: string | null } | null };
 
 const tabs: Array<[RecommendationStatus | "all", string]> = [
-  ["watchlist", "Nieocenione"], ["compare", "Do porównania"], ["testing", "Testowane"],
-  ["adopted", "Używane"], ["rejected", "Odrzucone"], ["archived", "Archiwum"], ["all", "Wszystkie"],
+  ["watchlist", "Obserwuję"], ["compare", "Porównuję"], ["testing", "Testuję"],
+  ["adopted", "Używam"], ["rejected", "Odrzuciłem"], ["archived", "Archiwum"], ["all", "Wszystkie"],
 ];
 const nextStatuses: Array<[RecommendationStatus, string]> = [
   ["watchlist", "Obserwuj"], ["compare", "Porównaj"], ["testing", "Testuj"],
@@ -69,11 +69,11 @@ function GithubStatsLine({ stats }: { stats: GithubStats }) {
 }
 
 const tabHelp: Record<RecommendationStatus | "all", string> = {
-  watchlist: "Nieocenione: nowe rekomendacje, którym jeszcze nie nadano etapu. " + statusHelp.watchlist,
-  compare: "Do porównania: " + statusHelp.compare,
-  testing: "Testowane: " + statusHelp.testing,
-  adopted: "Używane: " + statusHelp.adopted,
-  rejected: "Odrzucone: " + statusHelp.rejected,
+  watchlist: "Obserwuję: nowe rekomendacje, którym jeszcze nie nadano etapu. " + statusHelp.watchlist,
+  compare: "Porównuję: " + statusHelp.compare,
+  testing: "Testuję: " + statusHelp.testing,
+  adopted: "Używam: " + statusHelp.adopted,
+  rejected: "Odrzuciłem: " + statusHelp.rejected,
   archived: "Archiwum: " + statusHelp.archived,
   all: "Wszystkie: wpisy ze wszystkich etapów radaru naraz.",
 };
@@ -249,7 +249,7 @@ export default function ToolRecommendations() {
     {githubMessage && <p role="status" style={{ color: "#166534", margin: "8px 0 0" }}>{githubMessage}</p>}
     <div role="tablist" aria-label="Status rekomendacji" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "18px 0" }}>
       {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} title={tabHelp[value]} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}
-      <Help text="Etapy radaru: rekomendacja przechodzi od Nieocenionych przez Do porównania i Testowane do Używanych (albo Odrzuconych / Archiwum). Najedź na „?” przy zakładce lub przycisku, żeby zobaczyć, co oznacza." />
+      <Help text="Etapy radaru: rekomendacja przechodzi od „Obserwuję” przez „Porównuję” i „Testuję” do „Używam” (albo „Odrzuciłem” / Archiwum). Najedź na „?” przy zakładce lub przycisku, żeby zobaczyć, co oznacza." />
     </div>
     <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px" }}>Kategoria:<Help text="Filtruje po kategorii narzędzia (np. monitoring, backup) nadanej przy imporcie katalogu lub wykryciu przez AI." />
       <select value={category} onChange={event => setCategory(event.target.value)}>
@@ -264,7 +264,7 @@ export default function ToolRecommendations() {
     </label>
     <label style={{ display: "inline-flex", alignItems: "center", gap: 6, margin: "0 0 18px 12px" }}>
       <input type="checkbox" checked={stackOnly} onChange={event => setStackOnly(event.target.checked)} />Tylko pasujące do mojego stacku
-      <Help text="Pokazuje wpisy powiązane z narzędziami, które masz w etapie „Używane” (np. AWS, GCP, Terraform). Powiązania wykrywa przycisk „Wykryj powiązania”." />
+      <Help text="Pokazuje wpisy powiązane z narzędziami, które masz w etapie „Używam” (np. AWS, GCP, Terraform). Powiązania wykrywa przycisk „Wykryj powiązania”." />
     </label>
     <details style={{ margin: "0 0 18px", color: "#475569" }}>
       <summary style={{ cursor: "help" }}>Co znaczą etapy radaru?</summary>
