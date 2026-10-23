@@ -1,11 +1,14 @@
 """REST API for the dynamic "Spis narzedzi" tool catalog view (Epic 46) and
 the human-gated dual write (Epic 47)."""
 
-from flask import Blueprint, abort, g, jsonify, request
-from sqlalchemy import select
+import datetime
 
+from flask import Blueprint, abort, g, jsonify, request
+from sqlalchemy import func, select, update
+
+from library import tool_relations_service
 from library.db.engine import get_scoped_session
-from library.db.models import ObsidianNoteVersion, Tool
+from library.db.models import ObsidianNoteVersion, Tool, ToolRecommendation
 from library.obsidian_vault import (
     VaultPathInvalidError,
     ensure_within_vault,
@@ -27,8 +30,9 @@ def _user():
         abort(403, "user API key required")
 
 
-def _tool_dict(tool: Tool) -> dict:
+def _tool_dict(tool: Tool, relations: list | None = None) -> dict:
     return {
+        "relations": relations or [],
         "id": tool.id,
         "uuid": tool.uuid,
         "name": tool.name,
@@ -55,8 +59,9 @@ def get_tools():
     if tag:
         query = query.where(Tool.category_tags.contains([tag]))
     tools = session.execute(query).scalars().all()
+    relations = tool_relations_service.relations_for_tools(session, tools)
     return jsonify({
-        "tools": [_tool_dict(tool) for tool in tools],
+        "tools": [_tool_dict(tool, relations.get(tool.id)) for tool in tools],
         "filters": {"tag": tag},
     })
 
@@ -70,13 +75,18 @@ def create_tool():
     note_path = body.get("note_path")
     content = body.get("content")
     name = body.get("name")
-    if not note_path or not content or not name:
-        abort(400, "name, note_path and content are required")
-
-    try:
-        ensure_within_vault(note_path)
-    except VaultPathInvalidError:
-        abort(400, "note_path escapes vault root")
+    if not name:
+        abort(400, "name is required")
+    # The Obsidian note is optional: Lenie keeps the tool's own note in personal_notes. The vault
+    # write (Epic 47) still happens when a note is supplied, and then needs both fields.
+    with_obsidian = bool(note_path or content)
+    if with_obsidian:
+        if not note_path or not content:
+            abort(400, "note_path and content must be sent together")
+        try:
+            ensure_within_vault(note_path)
+        except VaultPathInvalidError:
+            abort(400, "note_path escapes vault root")
 
     tool = Tool(
         name=name,
@@ -91,6 +101,16 @@ def create_tool():
     )
     session.add(tool)
     session.flush()
+    # A radar entry of the same name that is not linked yet now points at the new catalog tool.
+    session.execute(
+        update(ToolRecommendation)
+        .where(func.lower(ToolRecommendation.name) == tool.name.strip().lower(), ToolRecommendation.tool_id.is_(None))
+        .values(tool_id=tool.id)
+    )
+
+    if not with_obsidian:
+        session.commit()
+        return jsonify({"written": False, "obsidian": False, "tool_id": tool.id, "path": None}), 201
 
     try:
         write_note_with_version(session, note_path, content, tool_id=tool.id, user_prompt=body.get("user_prompt"))
@@ -118,6 +138,38 @@ def create_tool():
     tool.obsidian_note_path = note_path
     session.commit()
     return jsonify({"written": True, "tool_id": tool.id, "path": note_path})
+
+
+MAX_TAGS = 30
+MAX_TAG_LENGTH = 60
+EDITABLE_TEXT_FIELDS = ("homepage_url", "license", "pricing", "personal_notes")
+
+
+@bp.patch("/tools/<int:tool_id>")
+def update_tool(tool_id):
+    """Edit the catalog entry in Lenie itself: note (``personal_notes``), tags, homepage, licence, pricing."""
+    _user()
+    body = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    tool = session.get(Tool, tool_id)
+    if tool is None:
+        abort(404, "tool not found")
+    for field in EDITABLE_TEXT_FIELDS:
+        if field in body:
+            value = body[field]
+            if value is not None and not isinstance(value, str):
+                abort(400, f"{field} must be a string or null")
+            # The note keeps its own whitespace (markdown); the short fields are trimmed. Empty clears.
+            text = value if field == "personal_notes" else (value or "").strip()
+            setattr(tool, field, text if text and text.strip() else None)
+    if "category_tags" in body:
+        tags = body["category_tags"]
+        if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags) or len(tags) > MAX_TAGS:
+            abort(400, "category_tags must be a list of strings")
+        tool.category_tags = list(dict.fromkeys(tag.strip()[:MAX_TAG_LENGTH] for tag in tags if tag.strip()))
+    tool.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    session.commit()
+    return jsonify({"tool": _tool_dict(tool)})
 
 
 @bp.post("/tools/<int:tool_id>/retry_obsidian_write")

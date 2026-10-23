@@ -1,6 +1,7 @@
 import React from "react";
 import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "adopted" | "rejected" | "archived";
 type GithubStats = {
@@ -13,6 +14,8 @@ type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?:
 type Recommendation = {
   id: number; name: string; homepage_url: string | null; description: string | null;
   github: GithubStats | null;
+  relations: ToolRelation[]; stack_matches: string[];
+  feed_mentions: { count: number; samples: Array<{ id: number; title: string; url: string }> };
   category: string | null; status: RecommendationStatus; personal_note: string | null;
   origin: "ai_detected" | "curated";
   source_url: string | null; source_context: string | null;
@@ -103,6 +106,8 @@ export default function ToolRecommendations() {
   const [githubBusy, setGithubBusy] = React.useState(false);
   const [githubMessage, setGithubMessage] = React.useState("");
   const [skippedItems, setSkippedItems] = React.useState<Array<{ name: string; reason?: string }>>([]);
+  const [stackOnly, setStackOnly] = React.useState(false);
+  const [relationsBusy, setRelationsBusy] = React.useState(false);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
 
   const load = React.useCallback(async () => {
@@ -148,7 +153,32 @@ export default function ToolRecommendations() {
     return next;
   });
 
-  const visibleItems = showSelected ? items.filter(item => selectedIds.has(item.id)) : items;
+  const detectRelations = async () => {
+    setRelationsBusy(true); setError(""); setGithubMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/relations/detect`, {
+        method: "POST", headers, body: JSON.stringify({ status }),
+      });
+      const data = await response.json().catch(() => ({})) as { checked?: number; proposed?: Array<{ related: string[] }>; message?: string };
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się wykryć powiązań"));
+      const total = (data.proposed ?? []).reduce((sum, entry) => sum + entry.related.length, 0);
+      setGithubMessage(`Powiązania: sprawdzono ${data.checked ?? 0} wpisów, nowych propozycji: ${total}.`);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Wykrywanie powiązań nie powiodło się"); }
+    finally { setRelationsBusy(false); }
+  };
+
+  const reviewRelation = async (id: number, relationStatus: "confirmed" | "rejected") => {
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_relations/${id}`, { method: "PATCH", headers, body: JSON.stringify({ status: relationStatus }) });
+      if (!response.ok) throw new Error("Nie udało się zapisać decyzji o powiązaniu");
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); }
+  };
+
+  const stackFiltered = stackOnly ? items.filter(item => item.stack_matches.length > 0) : items;
+  const visibleItems = showSelected ? stackFiltered.filter(item => selectedIds.has(item.id)) : stackFiltered;
   const selectVisible = () => setSelectedIds(new Set(visibleItems.map(item => item.id)));
 
   const applyBulkStatus = async () => {
@@ -212,6 +242,7 @@ export default function ToolRecommendations() {
       <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi</h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do 30 repozytoriów na raz)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
+        <button type="button" onClick={() => void detectRelations()} disabled={relationsBusy || loading} title="Szuka w tekście źródłowym każdego wpisu nazw narzędzi, które już są w radarze (np. AWS, GCP, Terraform), i proponuje powiązania do potwierdzenia. Narzędzia oznaczone jako „Używam” tworzą Twój stack.">{relationsBusy ? "Szukam powiązań…" : "Wykryj powiązania"}</button>
         <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
       </div>
     </div>
@@ -230,6 +261,10 @@ export default function ToolRecommendations() {
       <select value={origin} onChange={event => setOrigin(event.target.value as "all" | "ai_detected" | "curated")}>
         <option value="all">Wszystkie</option><option value="curated">Katalogi i ręczne</option><option value="ai_detected">Wykryte przez AI</option>
       </select>
+    </label>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, margin: "0 0 18px 12px" }}>
+      <input type="checkbox" checked={stackOnly} onChange={event => setStackOnly(event.target.checked)} />Tylko pasujące do mojego stacku
+      <Help text="Pokazuje wpisy powiązane z narzędziami, które masz w etapie „Używane” (np. AWS, GCP, Terraform). Powiązania wykrywa przycisk „Wykryj powiązania”." />
     </label>
     <details style={{ margin: "0 0 18px", color: "#475569" }}>
       <summary style={{ cursor: "help" }}>Co znaczą etapy radaru?</summary>
@@ -276,6 +311,13 @@ export default function ToolRecommendations() {
       {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
       {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
       {item.github && <GithubStatsLine stats={item.github} />}
+      {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
+        title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
+        📰 {item.feed_mentions.count} {item.feed_mentions.count === 1 ? "wzmianka" : "wzmianek"} w feedach
+        <Help text="Tyle wpisów w obserwowanych feedach (tytuł lub streszczenie) wspomina to narzędzie — sygnał, jak głośno o nim jest. Najedź na wiersz, żeby zobaczyć kilka tytułów." />
+      </div>}
+      {item.stack_matches.length > 0 && <div style={{ margin: "6px 0", color: "#166534", fontSize: ".85rem" }}>Dotyczy Twojego stacku: <strong>{item.stack_matches.join(", ")}</strong></div>}
+      <ToolRelations relations={item.relations} onReview={(id, relationStatus) => void reviewRelation(id, relationStatus)} />
       {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>
         <summary style={{ cursor: "help" }} title="Katalogi lub dokumenty, w których to narzędzie wystąpiło, wraz z kontekstem.">Dlaczego jest w radarze? ({item.evidences.length})</summary>
         <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
