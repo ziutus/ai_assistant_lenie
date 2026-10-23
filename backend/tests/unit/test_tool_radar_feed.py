@@ -108,6 +108,15 @@ class TestPolishInflectionAndAlternatives:
         assert session.add.call_args.args[0].relation == "alternative_to"
 
 
+class TestOnePerName:
+    def test_duplicate_names_collapse_to_the_adopted_or_lowest_id_entry(self):
+        entries = [SimpleNamespace(id=8, name="Gemini", status="watchlist"), SimpleNamespace(id=3, name="gemini", status="watchlist"),
+                   SimpleNamespace(id=9, name="Gemini", status="adopted"), SimpleNamespace(id=4, name="AWS", status="adopted")]
+        assert sorted(e.id for e in relations._one_per_name(entries)) == [4, 9]
+        entries[2].status = "watchlist"
+        assert sorted(e.id for e in relations._one_per_name(entries)) == [3, 4]
+
+
 class TestFeedMentions:
     def test_counts_inflected_whole_word_mentions_with_samples(self, monkeypatch):
         feed_mentions.reset_cache()

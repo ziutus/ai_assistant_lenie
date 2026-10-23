@@ -54,6 +54,14 @@ def _snippet(text: str, match: re.Match) -> str:
     return " ".join(text[start:end].split())
 
 
+def _one_per_name(entries) -> list:
+    """The radar can hold several entries with one name (imported lists); link to one: adopted first, then lowest id."""
+    best: dict[str, ToolRecommendation] = {}
+    for entry in sorted(entries, key=lambda e: (e.status != "adopted", e.id)):
+        best.setdefault(entry.name.strip().lower(), entry)
+    return list(best.values())
+
+
 def detect_relations(session, item: ToolRecommendation) -> dict:
     """Propose edges from ``item`` to every other radar entry its source text names.
 
@@ -70,7 +78,7 @@ def detect_relations(session, item: ToolRecommendation) -> dict:
             ToolRecommendation.id != item.id, ToolRecommendation.status.notin_(IGNORED_STATUSES),
         )
     ).scalars().all()
-    for other in others:
+    for other in _one_per_name(others):
         pattern = name_pattern(other.name)
         matches = list(pattern.finditer(text)) if pattern else []
         if not matches:
