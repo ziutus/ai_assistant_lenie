@@ -137,6 +137,49 @@ class TestToolRecommendationRoutes:
         assert response.json["tool_recommendation"]["status"] == "compare"
         session.commit.assert_called_once()
 
+    def test_peers_match_category_spelling_and_hide_adopted_duplicate(self, monkeypatch):
+        from library.tool_recommendation_routes import get_recommendation_peers
+
+        clef = _item()
+        clef.id, clef.name, clef.category, clef.tool_id = 730, "Clef", "DecisionModels", None
+        basal = _item("adopted")
+        basal.id, basal.name, basal.category, basal.tool_id = 732, "Basal", "decision-models", 20
+        other = _item()
+        other.id, other.name, other.category, other.tool_id = 5, "Redis", "Caching", None
+        basal_tool = SimpleNamespace(id=20, name="Basal", homepage_url="https://fabryka.ai", status="accepted",
+                                     category_tags=["decision-models"], personal_notes=None, pricing=None, license=None)
+        manual_tool = SimpleNamespace(id=21, name="Zapier", homepage_url=None, status="accepted",
+                                      category_tags=["Decision Models"], personal_notes="notatka", pricing=None, license=None)
+        session = MagicMock()
+        session.get.return_value = clef
+        session.execute.return_value.scalars.return_value.all.side_effect = [[basal, other], [basal_tool, manual_tool]]
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_recommendation_routes.github_repo_stats.stats_for_urls", lambda *_args: {})
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_recommendations/730/peers"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = get_recommendation_peers(730)
+
+        assert [entry["name"] for entry in response.json["radar"]] == ["Basal"]
+        assert [tool["name"] for tool in response.json["tools"]] == ["Zapier"]
+
+    def test_peers_of_uncategorised_entry_are_empty(self, monkeypatch):
+        from library.tool_recommendation_routes import get_recommendation_peers
+
+        item = _item()
+        item.category = None
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_recommendations/17/peers"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = get_recommendation_peers(17)
+
+        assert response.json == {"category": None, "radar": [], "tools": []}
+
     def test_read_only_key_cannot_change_status(self):
         from library.tool_recommendation_routes import update_status
 
