@@ -345,11 +345,11 @@ def refresh_github_stats():
     if status not in STATUSES and status != "all":
         abort(400, "unsupported status")
     try:
-        limit = int(body.get("limit", github_repo_stats.DEFAULT_REFRESH_LIMIT))
+        limit = int(body.get("limit", github_repo_stats.default_refresh_limit()))
     except (TypeError, ValueError):
         abort(400, "limit must be an integer")
-    if not 1 <= limit <= github_repo_stats.MAX_REFRESH_LIMIT:
-        abort(400, f"limit must be between 1 and {github_repo_stats.MAX_REFRESH_LIMIT}")
+    if not 1 <= limit <= github_repo_stats.max_refresh_limit():
+        abort(400, f"limit must be between 1 and {github_repo_stats.max_refresh_limit()}")
     session = get_scoped_session()
     query = select(ToolRecommendation.homepage_url, ToolRecommendation.links)
     if status != "all":

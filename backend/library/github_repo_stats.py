@@ -16,6 +16,7 @@ import ipaddress
 import logging
 import re
 import socket
+from contextvars import ContextVar
 from dataclasses import dataclass
 from urllib.parse import quote, urlparse
 
@@ -33,6 +34,12 @@ REQUEST_TIMEOUT_S = 10
 STALE_AFTER = datetime.timedelta(hours=24)
 DEFAULT_REFRESH_LIMIT = 30
 MAX_REFRESH_LIMIT = 60
+TOKEN_DEFAULT_REFRESH_LIMIT = 250
+TOKEN_MAX_REFRESH_LIMIT = 500
+RATE_LIMIT_RESERVE = 200
+
+# Per execution context: concurrent refresh requests must not share quota observations.
+_rate_limit_remaining: ContextVar[int | None] = ContextVar("github_rate_limit_remaining", default=None)
 
 _GITHUB_HOSTS = {"github.com", "www.github.com"}
 _NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
@@ -153,6 +160,14 @@ def _token() -> str | None:
         return None
 
 
+def default_refresh_limit() -> int:
+    return TOKEN_DEFAULT_REFRESH_LIMIT if _token() else DEFAULT_REFRESH_LIMIT
+
+
+def max_refresh_limit() -> int:
+    return TOKEN_MAX_REFRESH_LIMIT if _token() else MAX_REFRESH_LIMIT
+
+
 def _parse_time(value: str | None) -> datetime.datetime | None:
     if not value:
         return None
@@ -188,6 +203,13 @@ def fetch_repo(owner: str, repo: str) -> dict | None:
         )
     except requests.RequestException as exc:
         raise GithubError(f"GitHub request failed: {exc}") from exc
+    if response.ok or response.status_code == 404:
+        try:
+            remaining = int(response.headers.get("X-RateLimit-Remaining"))
+        except (TypeError, ValueError):
+            pass  # Missing/invalid headers do not erase the last known quota.
+        else:
+            _rate_limit_remaining.set(remaining)
     if response.status_code == 404:
         return None
     if response.status_code == 429 or (response.status_code == 403 and response.headers.get("X-RateLimit-Remaining") == "0"):
@@ -444,7 +466,7 @@ def combined_stats_for_entries(session, entries: dict) -> dict:
     return result
 
 
-def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: datetime.datetime | None = None,
+def refresh_stale(session, urls, limit: int | None = None, now: datetime.datetime | None = None,
                   force: bool = False) -> dict:
     """Refresh up to ``limit`` GitHub/GitLab repositories behind ``urls`` that have no row yet or a row older than a day.
 
@@ -454,6 +476,9 @@ def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: dateti
     repositories the caller picked by hand, not for a bulk run, which would keep re-fetching the same ones.
     """
     now = now or datetime.datetime.now(datetime.timezone.utc)
+    if limit is None:
+        limit = default_refresh_limit()
+    _rate_limit_remaining.set(None)
     repos: dict[str, RepoRef] = {}
     for url in urls:
         ref = parse_repository_url(url)
@@ -474,8 +499,14 @@ def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: dateti
     batch = queue[:max(0, limit)]
     refreshed = failed = 0
     rate_limited = False
+    quota_reserved = False
+    reserve = RATE_LIMIT_RESERVE if _token() else 0  # the anonymous 60/h quota is too small to hold a reserve back
     for key in batch:
         ref = repos[key]
+        remaining = _rate_limit_remaining.get()
+        if ref.provider == "github" and reserve and remaining is not None and remaining < reserve:
+            quota_reserved = True
+            break
         try:
             if ref.provider == "github":
                 refresh_repo(session, ref.owner, ref.repo, now=now)
@@ -493,5 +524,7 @@ def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: dateti
         "refreshed": refreshed,
         "failed": failed,
         "rate_limited": rate_limited,
+        "quota_reserved": quota_reserved,
+        "rate_limit_remaining": _rate_limit_remaining.get(),
         "pending": len(queue) - refreshed - failed,
     }
