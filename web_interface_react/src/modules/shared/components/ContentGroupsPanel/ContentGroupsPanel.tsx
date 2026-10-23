@@ -10,9 +10,10 @@ const SUGGESTION_POLL_MS = 4000;
 const SUGGESTION_POLL_MAX = 15;
 
 // autoSuggest: ask the backend to classify the target when it has no suggestion run yet (feed review).
-type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; autoSuggest?: boolean; onSaved?: (groups: ContentGroup[]) => void };
+// manualSuggest: show a "Zaproponuj temat" button that asks `suggestModel` (empty = the server default) on demand.
+type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; autoSuggest?: boolean; manualSuggest?: boolean; suggestModel?: string; onSaved?: (groups: ContentGroup[]) => void };
 
-export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, autoSuggest, onSaved }: Props) {
+export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, autoSuggest, manualSuggest, suggestModel, onSaved }: Props) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [catalog, setCatalog] = React.useState<ContentGroup[]>([]);
   const [groups, setGroups] = React.useState<ContentGroup[]>(initialGroups || []);
@@ -23,6 +24,8 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [error, setError] = React.useState("");
   const [pendingRun, setPendingRun] = React.useState(false);
   const [newTopicName, setNewTopicName] = React.useState("");
+  const [runModel, setRunModel] = React.useState("");
+  const [runError, setRunError] = React.useState("");
   const requestedRef = React.useRef(false);
   const pollsRef = React.useRef(0);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
@@ -48,6 +51,8 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       const suggestionData = await suggestionResponse.json();
       setSuggestions(Array.isArray(suggestionData.suggestions) ? suggestionData.suggestions : []);
       const runStatus: string | undefined = suggestionData.run?.status;
+      setRunModel(suggestionData.run?.model || "");
+      setRunError(runStatus === "error" ? String(suggestionData.run?.error || "Klasyfikacja nie powiodła się") : "");
       if (autoSuggest && !suggestionData.run && !requestedRef.current && groupData.content_groups?.some((group: ContentGroup) => group.kind === "topic")) {
         requestedRef.current = true;
         const requestResponse = await fetch(`${apiUrl}/${target}/group-suggestions`, { method: "POST", headers, body: "{}" });
@@ -107,6 +112,23 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     onSaved?.(next);
   };
 
+  // One explicit request for this item with the model chosen on the page; always a fresh run (force).
+  const requestSuggestion = async () => {
+    setError("");
+    setRunError("");
+    const response = await fetch(`${apiUrl}/${target}/group-suggestions`, {
+      method: "POST", headers, body: JSON.stringify({ force: true, ...(suggestModel ? { model: suggestModel } : {}) }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.message || data.error || `Nie udało się zlecić propozycji (HTTP ${response.status})`);
+      return;
+    }
+    pollsRef.current = 0;
+    setPendingRun(true);
+    void load();
+  };
+
   const decide = async (id: number, action: "accept" | "dismiss" | "revert") => {
     const response = await fetch(`${apiUrl}/content_group_suggestions/${id}/${action}`, { method: "POST", headers });
     if (response.ok) void load(); else setError("Nie udało się wykonać decyzji sugestii");
@@ -122,6 +144,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       {groups.filter(group => group.kind === "topic").map(group => <span key={group.id} style={{ background: "#f1f5f9", borderRadius: 12, padding: "2px 8px" }}>{group.name}</span>)}
       {!groups.some(group => group.kind === "priority") && <span style={{ color: "#64748b" }}>Brak priorytetu</span>}
       <button type="button" onClick={() => setEditing(value => !value)}>{editing ? "Anuluj" : "Edytuj"}</button>
+      {manualSuggest && <button type="button" disabled={pendingRun} onClick={() => void requestSuggestion()} title="Zapytaj model o temat dla tego wpisu">🤖 Zaproponuj temat</button>}
     </div>
     {editing && <div style={{ marginTop: 10 }}>
       <fieldset><legend>Tematy</legend>{topics.map(group => <label key={group.id} style={{ display: "inline-block", marginRight: 10 }}><input type="checkbox" checked={topicIds.includes(group.id)} onChange={event => setTopicIds(ids => event.target.checked ? [...ids, group.id] : ids.filter(id => id !== group.id))} /> {group.name}</label>)}</fieldset>
@@ -133,7 +156,9 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       <button type="button" className="button" onClick={() => void save()}>Zapisz</button>
     </div>}
     {pendingRun && <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>🤖 Szukam kategorii…</div>}
-    {suggestions.filter(item => item.status === "pending").map(item => <div key={item.id} style={{ marginTop: 8, border: "1px dashed #64748b", padding: 6 }}><span>Sugestia: {catalog.find(group => group.id === item.group_id)?.name || item.group_id} ({Math.round(item.confidence * 100)}%)</span>{" "}<button type="button" onClick={() => void decide(item.id, "accept")}>Akceptuj</button>{" "}<button type="button" onClick={() => void decide(item.id, "dismiss")}>Odrzuć</button></div>)}
+    {runError && !pendingRun && <p role="alert" className="errorText">Propozycja nie powiodła się{runModel ? ` (${runModel})` : ""}: {runError}</p>}
+    {manualSuggest && !pendingRun && !runError && runModel && suggestions.length === 0 && <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>🤖 {runModel}: brak pasującego tematu.</div>}
+    {suggestions.filter(item => item.status === "pending").map(item => <div key={item.id} style={{ marginTop: 8, border: "1px dashed #64748b", padding: 6 }}><span>Sugestia: {catalog.find(group => group.id === item.group_id)?.name || item.group_id} ({Math.round(item.confidence * 100)}%){runModel ? ` · ${runModel}` : ""}</span>{item.reason && <div style={{ fontSize: "0.85em", color: "#475569" }}>{item.reason}</div>}{" "}<button type="button" onClick={() => void decide(item.id, "accept")}>Akceptuj</button>{" "}<button type="button" onClick={() => void decide(item.id, "dismiss")}>Odrzuć</button></div>)}
     {suggestions.filter(item => item.status === "accepted").map(item => <div key={item.id} style={{ marginTop: 8, fontSize: "0.85em", color: "#475569" }}>
       <span>{item.decided_by_user_id ? "👤" : "🤖"} {catalog.find(group => group.id === item.group_id)?.name || item.group_id} — {Math.round(item.confidence * 100)}%{item.reason ? `: ${item.reason}` : ""}</span>{" "}
       <button type="button" onClick={() => void decide(item.id, "revert")}>Cofnij</button>

@@ -5,6 +5,9 @@ import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPa
 import { loadFeedReviewFilters, saveFeedReviewFilters } from "../services/storage";
 import type { ContentGroup } from "../../../types";
 import { Pagination } from "../components/Pagination/pagination";
+import { modelOptionText, type ModelOption } from "../utils/modelDetails";
+
+const SUGGEST_MODEL_KEY = "lenie_feedReviewSuggestModel";
 
 type FeedSource = { id: number; name: string; type: string; disabled: boolean };
 type FeedItem = {
@@ -116,6 +119,29 @@ export default function FeedReview() {
     : storedFilters.view;
   const status = view === "later" ? "saved_for_later" : "new";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
+
+  // Topic suggestions are asked for on demand (per item), with a model picked here and remembered per browser.
+  const [suggestModels, setSuggestModels] = React.useState<ModelOption[]>([]);
+  const [defaultSuggestModel, setDefaultSuggestModel] = React.useState("");
+  const [suggestModel, setSuggestModel] = React.useState(() => {
+    try { return localStorage.getItem(SUGGEST_MODEL_KEY) || ""; } catch { return ""; }
+  });
+  const chooseSuggestModel = (value: string) => {
+    setSuggestModel(value);
+    try { localStorage.setItem(SUGGEST_MODEL_KEY, value); } catch { /* storage unavailable: the choice lasts for this visit */ }
+  };
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch(`${apiUrl}/content_group_suggestion_models`, { headers })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (cancelled || !data) return;
+        setSuggestModels(Array.isArray(data.models) ? data.models : []);
+        setDefaultSuggestModel(String(data.default_model || ""));
+      })
+      .catch(() => { /* the default model still works without the list */ });
+    return () => { cancelled = true; };
+  }, [apiUrl, headers]);
 
   const load = React.useCallback(async (nextPage = page) => {
     setLoading(true);
@@ -291,6 +317,14 @@ export default function FeedReview() {
         {sources.map(source => <option key={source.id} value={source.id}>{source.name}{source.disabled ? " (wyłączony)" : ""}</option>)}
       </select>
     </label>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 20px 16px" }}
+      title="Model używany przez przycisk „Zaproponuj temat” przy każdym wpisie. Modele z OpenRouter wysyłają tytuł i opis wpisu do zewnętrznego pośrednika.">
+      Model tematów:
+      <select aria-label="Model propozycji tematów" value={suggestModel} onChange={event => chooseSuggestModel(event.target.value)}>
+        <option value="">Domyślny{defaultSuggestModel ? ` (${defaultSuggestModel})` : ""}</option>
+        {suggestModels.map(model => <option key={model.id} value={model.id}>{modelOptionText(model)}{model.external ? " · zewnętrzny" : ""}</option>)}
+      </select>
+    </label>
     {/* Fixed to the viewport, not the top of the page: the user clicks pagination
         and actions far below the header, where an inline message goes unseen. */}
     {error && <div role="alert" style={{
@@ -316,7 +350,7 @@ export default function FeedReview() {
         {view === "later" && item.saved_at && <div>Zapisano: {formatDate(item.saved_at)}</div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
         {item.summary && <p>{item.summary}</p>}
-        <ContentGroupsPanel feedItemId={item.id} initialGroups={item.groups} autoSuggest />
+        <ContentGroupsPanel feedItemId={item.id} initialGroups={item.groups} manualSuggest suggestModel={suggestModel} />
         <div>
           {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : item.status === "saved_for_later" ? <>
             <span style={{ color: "#166534", fontWeight: 600 }}>Zachowano tylko link do oceny</span>{" "}

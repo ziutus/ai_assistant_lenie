@@ -33,6 +33,8 @@ list (id, name, items, new_items) shown on the Jobs page; per feed it also lists
 returns its result under `import`, so new items of `auto_import` feeds become documents without
 waiting for `feed_daily`; caption fetching stays in `feed_daily`.
 
+Topic suggestions (`content_group_suggestion_service.py`) take an optional `model` (`POST /feed_items/<id>/group-suggestions` body `{model?, force?}`, validated against `llm_model_registry` task `content_group_suggestion`; list + default at `GET /content_group_suggestion_models`). The model is stored on the run (`run.model`, returned by `GET .../group-suggestions`); a completed run is reused only for the same input AND model, `force` always creates a new one. A model without JSON-schema support gets the answer shape described in the prompt, and one that rejects a system message (direct OpenAI/Google) gets the instruction prepended to the prompt.
+
 ### Domain Model & Database
 
 - **`db/models.py`** — `Document` SQLAlchemy ORM model: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `get_by_id()`, `get_by_url()`, `populate_neighbors()`. `DocumentEmbedding` model for vector embeddings — optional `chunk_id` FK to `DocumentChunk`, set when the embedding was generated from a reviewed chunk (`generate_embeddings_from_run()`) rather than the fallback whole-document split.
