@@ -2,16 +2,18 @@ import React from "react";
 import axios from "axios";
 import { NavLink, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
 
 type CostRow = { currency: string | null; calls: number; tokens: number; cost: string | null; unknown_calls?: number };
 type OperationRow = CostRow & { operation: string; model: string };
+type ProviderRow = CostRow & { provider: string; failed_calls: number };
 type DailyRow = CostRow & { day: string };
 type AnalysisRow = CostRow & { job_id: string; run_id: number | null; started_at: string | null };
 type DocumentRow = CostRow & { document_id: number | null; title: string | null };
 type CallRow = { id: number; document_id: number | null; job_id: string | null; run_id: number | null; called_at: string;
   operation: string; provider: string; model: string; prompt_tokens: number | null; completion_tokens: number | null;
   tokens: number | null; cost: string | null; currency: string | null; cost_status: string; success: boolean; error_code: string | null };
-type Report = { totals: CostRow[]; documents: DocumentRow[]; daily: DailyRow[]; operations: OperationRow[]; analyses: AnalysisRow[]; calls: CallRow[] };
+type Report = { totals: CostRow[]; providers?: ProviderRow[]; documents: DocumentRow[]; daily: DailyRow[]; operations: OperationRow[]; analyses: AnalysisRow[]; calls: CallRow[] };
 
 const OPERATION_LABELS: Record<string, string> = {
   transcript_paragraphization: "Podział transkrypcji na akapity",
@@ -34,6 +36,12 @@ const OPERATION_LABELS: Record<string, string> = {
   infrastructure_relevance: "Ocena znaczenia infrastruktury",
 };
 const operationLabel = (operation: string) => OPERATION_LABELS[operation] ?? operation;
+
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: "OpenAI", "google-vertexai": "Google (Vertex AI, Gemini)", openrouter: "OpenRouter", cloudferro: "CloudFerro (Bielik)",
+  arklabs: "ARK Labs", "aws-bedrock": "AWS Bedrock",
+};
+const providerLabel = (provider: string) => PROVIDER_LABELS[provider] ?? provider;
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const money = (value: string | null, currency: string | null) => value == null ? "—" : `${Number(value).toFixed(6)} ${currency ?? "?"}`;
@@ -95,6 +103,7 @@ const LlmCosts = () => {
       <button className="button" onClick={load} disabled={loading}>{loading ? "Ładuję…" : "Pokaż"}</button>
       {documentId && <NavLink to={`/chunks/${documentId}`}>Otwórz dokument #{documentId}</NavLink>}
     </div>
+    <div style={{ margin: "10px 0 0" }}><OpenRouterBalance /></div>
     {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
     {report && <>
       <h3>Podsumowanie</h3>
@@ -104,6 +113,19 @@ const LlmCosts = () => {
           {!!r.unknown_calls && <div style={{ color: "#b45309" }}>{r.unknown_calls} bez wyceny</div>}
         </div>)}</div>
       {!report.totals.length && <p>Brak wywołań w wybranym okresie.</p>}
+      {!!report.providers?.length && <>
+        <h3>Koszt per dostawca</h3>
+        <table style={tableStyle}><thead><tr><th style={th}>Dostawca</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th><th style={th}>Wycena</th><th style={th}>Błędy</th></tr></thead><tbody>
+          {report.providers.map((r, i) => <tr key={`${r.provider}-${r.currency}-${i}`}>
+            <td style={td}>{providerLabel(r.provider)}<div style={{ color: "#64748b", fontSize: "0.8em" }}>{r.provider}</div></td>
+            <td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td>
+            <td style={td}>{r.unknown_calls
+              ? <span style={{ color: "#b45309" }} title="Dla tych wywołań w cenniku (llm_pricing) nie ma ceny modelu, więc kwota nie jest policzona; tokeny są znane.">{r.unknown_calls} bez ceny</span>
+              : "pełna"}</td>
+            <td style={td}>{r.failed_calls ? <span style={{ color: "#b91c1c" }}>{r.failed_calls}</span> : "—"}</td>
+          </tr>)}
+        </tbody></table>
+      </>}
       <h3>Koszt per dokument</h3>
       <table style={tableStyle}><thead><tr><th style={th}>Dokument</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th><th style={th}>Wycena</th></tr></thead><tbody>
         {report.documents.map((r, i) => <tr key={`${r.document_id ?? "none"}-${r.currency}-${i}`}>

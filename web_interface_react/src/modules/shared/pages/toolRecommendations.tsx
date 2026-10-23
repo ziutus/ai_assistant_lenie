@@ -6,6 +6,7 @@ import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
 import GithubAbout from "../components/GithubAbout/githubAbout";
 import ToolLinksEditor from "../components/ToolLinksEditor/toolLinksEditor";
+import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
 import ToolProfileSuggest, { type ProfileSuggestion } from "../components/ToolProfileSuggest/toolProfileSuggest";
 import { isRepositoryUrl } from "../components/ToolCard/toolCardParts";
 import GithubRate, { type GithubRateInfo } from "../components/GithubRate/githubRate";
@@ -170,6 +171,7 @@ export default function ToolRecommendations() {
   const [recommendationSource, setRecommendationSource] = React.useState("");
   const [importMessage, setImportMessage] = React.useState("");
   const [githubBusy, setGithubBusy] = React.useState(false);
+  const [modelCalls, setModelCalls] = React.useState(0); // bumped after each model request so the OpenRouter balance reloads
   const [githubMessage, setGithubMessage] = React.useState("");
   const [skippedItems, setSkippedItems] = React.useState<Array<{ name: string; reason?: string }>>([]);
   const [stackOnly, setStackOnly] = React.useState(false);
@@ -298,6 +300,7 @@ export default function ToolRecommendations() {
     const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/suggest_tags`, {
       method: "POST", headers, body: JSON.stringify(tagModel ? { model: tagModel } : {}),
     });
+    setModelCalls(count => count + 1);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać podpowiedzi tagów"));
     return data as TagSuggestion;
@@ -308,6 +311,7 @@ export default function ToolRecommendations() {
     const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/suggest_profile`, {
       method: "POST", headers, body: JSON.stringify(tagModel ? { model: tagModel } : {}),
     });
+    setModelCalls(count => count + 1);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać podpowiedzi"));
     return data as ProfileSuggestion;
@@ -506,6 +510,7 @@ export default function ToolRecommendations() {
       </div>
     </div>
     <div style={{ margin: "8px 0 0" }}><GithubRate rate={githubRate} /></div>
+    <div style={{ margin: "4px 0 0" }}><OpenRouterBalance refreshKey={modelCalls} /></div>
     {githubMessage && <p role="status" style={{ color: "#166534", margin: "8px 0 0" }}>{githubMessage}</p>}
     <div role="tablist" aria-label="Status rekomendacji" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "18px 0" }}>
       {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} title={tabHelp[value]} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}
