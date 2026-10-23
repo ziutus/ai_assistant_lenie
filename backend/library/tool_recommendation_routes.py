@@ -302,9 +302,29 @@ def refresh_github_stats():
 
     Never-fetched repositories go first, then the ones older than a day. GitHub allows
     60 unauthenticated requests per hour, so ``pending`` tells the caller to come back.
+    ``{"id": N, "force": true}`` refreshes that one entry's repository whatever its age; ``force`` is
+    accepted only together with ``id`` (a bulk forced run would re-fetch the same repositories again).
     """
     _user()
     body = request.get_json(silent=True) or {}
+    force = body.get("force", False)
+    if not isinstance(force, bool):
+        abort(400, "force must be a boolean")
+    if body.get("id") is not None:
+        session = get_scoped_session()
+        try:
+            item = session.get(ToolRecommendation, int(body["id"]))
+        except (TypeError, ValueError):
+            abort(400, "id must be an integer")
+        if item is None:
+            abort(404, "tool recommendation not found")
+        if github_repo_stats.parse_repo_url(item.homepage_url) is None:
+            abort(400, "this entry has no GitHub repository")
+        summary = github_repo_stats.refresh_stale(session, [item.homepage_url], limit=1, force=force)
+        session.commit()
+        return jsonify(summary)
+    if force:
+        abort(400, "force needs an id")
     status = body.get("status", "watchlist")
     if status not in STATUSES and status != "all":
         abort(400, "unsupported status")

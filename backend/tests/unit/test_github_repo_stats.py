@@ -156,6 +156,18 @@ class TestRefreshStale:
         assert calls == ["a/new", "a/older", "a/old"]
         assert summary == {"repositories": 4, "refreshed": 3, "failed": 0, "rate_limited": False, "pending": 0}
 
+    def test_force_refreshes_a_fresh_row_too(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(svc, "refresh_repo", lambda session, owner, repo, now=None: calls.append(f"{owner}/{repo}"))
+        existing = [_stored("a/fresh", NOW - dt.timedelta(minutes=5))]
+        urls = ["https://github.com/a/fresh"]
+
+        assert svc.refresh_stale(self._session(existing), urls, limit=10, now=NOW)["refreshed"] == 0
+        summary = svc.refresh_stale(self._session(existing), urls, limit=10, now=NOW, force=True)
+
+        assert calls == ["a/fresh"]
+        assert summary["refreshed"] == 1 and summary["pending"] == 0
+
     def test_limit_leaves_the_rest_pending(self, monkeypatch):
         monkeypatch.setattr(svc, "refresh_repo", lambda *args, **kwargs: None)
         urls = [f"https://github.com/a/r{i}" for i in range(5)]
@@ -248,8 +260,65 @@ class TestRefreshEndpoint:
         with pytest.raises(BadRequest):
             self._call(monkeypatch, body)
 
-    def test_service_key_is_refused(self, monkeypatch):
+    def _call_one(self, monkeypatch, body, item):
+        from library.tool_recommendation_routes import refresh_github_stats
+
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        seen = {}
+
+        def fake_refresh(sess, urls, limit, force=False):
+            seen.update(urls=list(urls), limit=limit, force=force)
+            return {"repositories": 1, "refreshed": 1, "failed": 0, "rate_limited": False, "pending": 0}
+
+        monkeypatch.setattr(svc, "refresh_stale", fake_refresh)
+        with Flask(__name__).test_request_context("/x", method="POST", json=body):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = refresh_github_stats()
+        return response, seen, session
+
+    def test_force_refreshes_one_entry_whatever_its_age(self, monkeypatch):
+        item = SimpleNamespace(homepage_url="https://github.com/anchore/grype")
+        response, seen, session = self._call_one(monkeypatch, {"id": 778, "force": True}, item)
+        assert response.json["refreshed"] == 1
+        assert seen == {"urls": ["https://github.com/anchore/grype"], "limit": 1, "force": True}
+        session.commit.assert_called_once()
+
+    def test_single_entry_without_force_keeps_the_freshness_rule(self, monkeypatch):
+        item = SimpleNamespace(homepage_url="https://github.com/anchore/grype")
+        _, seen, _ = self._call_one(monkeypatch, {"id": 778}, item)
+        assert seen["force"] is False
+
+    @pytest.mark.parametrize("body, item", [
+        ({"id": 1, "force": True}, SimpleNamespace(homepage_url="https://example.com/tool")),
+        ({"id": 1, "force": "yes"}, SimpleNamespace(homepage_url="https://github.com/a/b")),
+        ({"id": "x"}, SimpleNamespace(homepage_url="https://github.com/a/b")),
+    ])
+    def test_single_entry_rejects_bad_input(self, monkeypatch, body, item):
+        from werkzeug.exceptions import BadRequest
+
+        with pytest.raises(BadRequest):
+            self._call_one(monkeypatch, body, item)
+
+    def test_unknown_entry_is_404(self, monkeypatch):
+        from werkzeug.exceptions import NotFound
+
+        with pytest.raises(NotFound):
+            self._call_one(monkeypatch, {"id": 1}, None)
+
+    def test_bulk_force_is_refused(self, monkeypatch):
+        from werkzeug.exceptions import BadRequest
+
+        with pytest.raises(BadRequest):
+            self._call(monkeypatch, {"force": True})
+
+    def test_service_key_is_allowed_like_every_radar_write(self, monkeypatch):
+        response, _, _ = self._call(monkeypatch, {}, kind="service")
+        assert response.json["refreshed"] == 1
+
+    def test_unknown_key_kind_is_refused(self, monkeypatch):
         from werkzeug.exceptions import Forbidden
 
         with pytest.raises(Forbidden):
-            self._call(monkeypatch, {}, kind="service")
+            self._call(monkeypatch, {}, kind="anonymous")

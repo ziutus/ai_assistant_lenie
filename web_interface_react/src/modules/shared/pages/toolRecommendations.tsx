@@ -246,6 +246,23 @@ export default function ToolRecommendations() {
   const saveTags = (item: Recommendation, tags: string[]) => patchItem(item, { tags }, "Nie udało się zapisać tagów");
   const saveDescription = (item: Recommendation, description: string) => patchItem(item, { description }, "Nie udało się zapisać opisu");
 
+  // Forced refresh of ONE entry's repository, ignoring the 24 h freshness rule of the bulk button.
+  const refreshOneGithub = async (item: Recommendation) => {
+    setBusy(item.id); setError(""); setGithubMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/github_stats/refresh`, {
+        method: "POST", headers, body: JSON.stringify({ id: item.id, force: true }),
+      });
+      const data = await response.json().catch(() => ({})) as GithubRefreshResult & Record<string, unknown>;
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać danych z GitHuba"));
+      setGithubMessage(data.rate_limited
+        ? "GitHub: limit zapytań wyczerpany — spróbuj za godzinę (albo dodaj token GITHUB_TOKEN w konfiguracji)."
+        : data.failed ? `GitHub: nie udało się pobrać danych dla ${item.name}.` : `GitHub: odświeżono dane dla ${item.name}.`);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
+    finally { setBusy(null); }
+  };
+
   const suggestTags = async (item: Recommendation): Promise<TagSuggestion> => {
     const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/suggest_tags`, {
       method: "POST", headers, body: JSON.stringify(tagModel ? { model: tagModel } : {}),
@@ -401,6 +418,9 @@ export default function ToolRecommendations() {
     {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
     {item.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".8rem" }}>Notatka w Obsidianie: {item.obsidian_note_path}</div>}
     {item.github && <GithubStatsLine stats={item.github} />}
+    {/github\.com\/[^/\s]+\/[^/\s]+/i.test(item.homepage_url ?? "") && <button type="button" disabled={busy === item.id} onClick={() => void refreshOneGithub(item)}
+      title="Pobiera z GitHuba liczby, opis i tematy tego jednego repozytorium od razu, także gdy dane są młodsze niż 24 godziny. Zużywa 1 z 60 zapytań na godzinę.">
+      {busy === item.id ? "Pobieram…" : "↻ Odśwież z GitHuba"}</button>}
     {item.github && <GithubAbout stats={item.github} ownDescription={item.description} tags={item.tags ?? []} disabled={busy === item.id}
       onUseDescription={text => void saveDescription(item, text)}
       onAddTags={topics => void saveTags(item, [...(item.tags ?? []), ...topics.filter(topic => !(item.tags ?? []).includes(topic))])} />}

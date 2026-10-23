@@ -175,11 +175,14 @@ def stats_for_urls(session, urls) -> dict[str, dict]:
     return result
 
 
-def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: datetime.datetime | None = None) -> dict:
+def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: datetime.datetime | None = None,
+                  force: bool = False) -> dict:
     """Refresh up to ``limit`` repositories behind ``urls`` that have no row yet or a row older than a day.
 
     Repositories never fetched go first. Stops at the first rate-limit answer;
     a single failing repository is counted and skipped. The caller commits.
+    ``force`` ignores the one-day freshness rule (oldest rows first) - meant for a handful of
+    repositories the caller picked by hand, not for a bulk run, which would keep re-fetching the same ones.
     """
     now = now or datetime.datetime.now(datetime.timezone.utc)
     repos: dict[str, tuple[str, str]] = {}
@@ -195,7 +198,7 @@ def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: dateti
     } if repos else {}
     missing = [key for key in repos if key not in existing]
     stale = sorted(
-        (key for key, row in existing.items() if row.fetched_at is None or now - row.fetched_at >= STALE_AFTER),
+        (key for key, row in existing.items() if force or row.fetched_at is None or now - row.fetched_at >= STALE_AFTER),
         key=lambda key: existing[key].fetched_at or now,
     )
     queue = missing + stale
