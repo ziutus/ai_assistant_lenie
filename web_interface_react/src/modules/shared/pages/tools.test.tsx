@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import Tools from "./tools";
 
 vi.mock("../context/authorizationContext", async () => {
@@ -25,6 +26,9 @@ const obsidian = {
   key_points: [], important_commands: null, migrating_away: true, migration_note: "przechodzę na Lenie",
 };
 
+const renderTools = (path = "/tools") =>
+  render(<MemoryRouter initialEntries={[path]}><Tools /></MemoryRouter>);
+
 const jsonResponse = (body: unknown, ok = true) =>
   ({ ok, status: ok ? 200 : 400, text: async () => JSON.stringify(body), json: async () => body }) as unknown as Response;
 
@@ -33,7 +37,7 @@ afterEach(() => cleanup());
 
 it("shows the catalog fields, GitHub numbers and the migrating-away flag", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ tools: [baseTool, obsidian] })));
-  render(<Tools />);
+  renderTools();
 
   expect(await screen.findByText("Terraform")).toBeTruthy();
   expect(screen.getByText("Typ: CLI")).toBeTruthy();
@@ -46,7 +50,7 @@ it("shows the catalog fields, GitHub numbers and the migrating-away flag", async
 
 it("filters to the tools being phased out", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ tools: [baseTool, obsidian] })));
-  render(<Tools />);
+  renderTools();
   await screen.findByText("Terraform");
 
   fireEvent.click(screen.getByLabelText("Tylko te, z których odchodzę"));
@@ -60,7 +64,7 @@ it("saves the edited details with key points as a list", async () => {
     .mockResolvedValueOnce(jsonResponse({ tools: [baseTool] }))
     .mockResolvedValueOnce(jsonResponse({ tool: { ...baseTool, migrating_away: true, key_points: ["a", "b"] } }));
   vi.stubGlobal("fetch", fetchMock);
-  render(<Tools />);
+  renderTools();
   await screen.findByText("Terraform");
 
   fireEvent.click(screen.getByRole("button", { name: "Edytuj dane" }));
@@ -77,4 +81,25 @@ it("saves the edited details with key points as a list", async () => {
   expect(body.migrating_away).toBe(true);
   expect(body.pricing_type).toBe("open_core");
   expect(await screen.findByText("odchodzę")).toBeTruthy();
+});
+
+it("shows one tool with its links and steps between tools with previous/next", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ tools: [baseTool, obsidian] })));
+  vi.stubGlobal("scrollTo", vi.fn());
+  renderTools("/tools?tool=1");
+
+  expect(await screen.findByText("Linki i źródła")).toBeTruthy();
+  expect(screen.getByText("1 / 2")).toBeTruthy();
+  expect(screen.getByText("Repozytorium GitHub:")).toBeTruthy();
+  expect(screen.queryByText("Obsidian")).toBeNull();
+  expect((screen.getByRole("button", { name: "← Poprzednie" }) as HTMLButtonElement).disabled).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Następne →" }));
+  expect(await screen.findByText("Obsidian")).toBeTruthy();
+  expect(screen.getByText("2 / 2")).toBeTruthy();
+  expect(screen.queryByText("Terraform")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "← Wszystkie narzędzia" }));
+  expect(await screen.findByText("Terraform")).toBeTruthy();
+  expect(screen.getByText("Obsidian")).toBeTruthy();
 });

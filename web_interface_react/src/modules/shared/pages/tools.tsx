@@ -1,4 +1,5 @@
 import React from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
@@ -64,6 +65,8 @@ const linkStyle = { fontSize: ".85rem" } as const;
 
 export default function Tools() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusedId = Number(searchParams.get("tool")) || null;
   const [tools, setTools] = React.useState<Tool[]>([]);
   const [tags, setTags] = React.useState<string[]>([]);
   const [selectedTag, setSelectedTag] = React.useState("");
@@ -177,7 +180,34 @@ export default function Tools() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); }
   };
 
-  const visibleTools = onlyLeaving ? tools.filter(tool => tool.migrating_away) : tools;
+  const filteredTools = onlyLeaving ? tools.filter(tool => tool.migrating_away) : tools;
+  // Single-tool mode (`?tool=<id>`): one card plus previous/next within the currently filtered list.
+  const focusedIndex = focusedId === null ? -1 : filteredTools.findIndex(tool => tool.id === focusedId);
+  const focusedTool = focusedIndex >= 0 ? filteredTools[focusedIndex] : null;
+  const visibleTools = focusedId === null ? filteredTools : focusedTool ? [focusedTool] : [];
+  const previousTool = focusedIndex > 0 ? filteredTools[focusedIndex - 1] : null;
+  const nextTool = focusedIndex >= 0 && focusedIndex < filteredTools.length - 1 ? filteredTools[focusedIndex + 1] : null;
+
+  const focusTool = React.useCallback((id: number | null) => {
+    setSearchParams(current => {
+      const next = new URLSearchParams(current);
+      if (id === null) next.delete("tool"); else next.set("tool", String(id));
+      return next;
+    });
+    window.scrollTo({ top: 0 });
+  }, [setSearchParams]);
+
+  React.useEffect(() => {
+    if (focusedId === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (event.key === "ArrowLeft" && previousTool) focusTool(previousTool.id);
+      if (event.key === "ArrowRight" && nextTool) focusTool(nextTool.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusedId, previousTool, nextTool, focusTool]);
 
   const formatDate =(value: string | null) => value ? new Date(value).toLocaleString("pl-PL") : null;
 
@@ -220,9 +250,20 @@ export default function Tools() {
     </div>
     {error && <p className="errorText" role="alert">{error}</p>}
     {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
-    {!loading && !error && !visibleTools.length && <p>{onlyLeaving ? "Żadne narzędzie nie jest oznaczone jako „odchodzę”." : selectedTag ? "Brak zapisanych narzędzi dla wybranego tagu." : "Brak zapisanych narzędzi."}</p>}
+    {focusedId !== null && <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 14px" }}>
+      <button type="button" onClick={() => focusTool(null)}>← Wszystkie narzędzia</button>
+      <button type="button" disabled={!previousTool} onClick={() => previousTool && focusTool(previousTool.id)}
+        title={previousTool ? `Poprzednie: ${previousTool.name} (strzałka w lewo)` : "To pierwsze narzędzie"}>← Poprzednie</button>
+      {focusedTool && <span style={{ color: "#64748b", fontSize: ".85rem" }}>{focusedIndex + 1} / {filteredTools.length}</span>}
+      <button type="button" disabled={!nextTool} onClick={() => nextTool && focusTool(nextTool.id)}
+        title={nextTool ? `Następne: ${nextTool.name} (strzałka w prawo)` : "To ostatnie narzędzie"}>Następne →</button>
+    </div>}
+    {!loading && !error && focusedId !== null && !focusedTool && <p>Nie znaleziono narzędzia #{focusedId} na bieżącej liście (sprawdź filtry tagu).</p>}
+    {!loading && !error && focusedId === null && !visibleTools.length && <p>{onlyLeaving ? "Żadne narzędzie nie jest oznaczone jako „odchodzę”." : selectedTag ? "Brak zapisanych narzędzi dla wybranego tagu." : "Brak zapisanych narzędzi."}</p>}
     {visibleTools.map(tool => <article key={tool.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
-      <h3>{tool.name}
+      <h3>{focusedId === null
+        ? <Link to={`/tools?tool=${tool.id}`} title="Pokaż to narzędzie osobno" style={{ color: "inherit" }}>{tool.name}</Link>
+        : tool.name}
         {tool.migrating_away && <span title={tool.migration_note || "Wychodzę z tego narzędzia"} style={{ marginLeft: 8, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem", fontWeight: 400 }}>odchodzę</span>}
       </h3>
       {tool.migrating_away && tool.migration_note && <div style={{ color: "#92400e", fontSize: ".85rem", margin: "4px 0" }}>{tool.migration_note}</div>}
@@ -237,6 +278,18 @@ export default function Tools() {
         {tool.pricing_url && <a style={linkStyle} href={tool.pricing_url} target="_blank" rel="noreferrer">Cennik</a>}
       </div>
       {tool.github && <GithubStatsLine stats={tool.github} />}
+      {focusedId !== null && <div style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 12px", margin: "8px 0", fontSize: ".85rem", color: "#475569" }}>
+        <strong>Linki i źródła</strong>
+        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+          {tool.homepage_url && <li>Strona: <a href={tool.homepage_url} target="_blank" rel="noreferrer">{tool.homepage_url}</a></li>}
+          {tool.github_url && <li>Repozytorium GitHub: <a href={tool.github_url} target="_blank" rel="noreferrer">{tool.github_url}</a></li>}
+          {tool.wikipedia_url && <li>Wikipedia: <a href={tool.wikipedia_url} target="_blank" rel="noreferrer">{tool.wikipedia_url}</a></li>}
+          {tool.pricing_url && <li>Cennik: <a href={tool.pricing_url} target="_blank" rel="noreferrer">{tool.pricing_url}</a></li>}
+          {tool.source_document_id && <li>Dokument źródłowy w Lenie: <Link to={`/read/${tool.source_document_id}`}>#{tool.source_document_id}</Link></li>}
+          {tool.source_candidate_id && <li>Kandydat, z którego powstało: #{tool.source_candidate_id}</li>}
+          {!tool.homepage_url && !tool.github_url && !tool.wikipedia_url && !tool.pricing_url && !tool.source_document_id && <li>Brak zapisanych linków — użyj „Edytuj dane”.</li>}
+        </ul>
+      </div>}
       {(tool.license || tool.pricing || tool.pricing_type) && <div style={{ color: "#64748b", fontSize: ".85rem", margin: "8px 0" }}>
         {tool.license && <span>Licencja: {tool.license}</span>}
         {tool.license && (tool.pricing_type || tool.pricing) && <span> · </span>}
