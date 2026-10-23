@@ -3254,6 +3254,8 @@ class ToolRecommendation(Base):
         Index("idx_tool_recommendations_status_created", "status", "created_at"),
         Index("idx_tool_recommendations_source_candidate", "source_candidate_id"),
         Index("idx_tool_recommendations_tool", "tool_id"),
+        # One radar entry per tool name; a new mention of a known tool adds evidence instead of a row.
+        Index("uq_tool_recommendations_name_lower", sa_text("lower(name)"), unique=True),
     )
 
     source_document: Mapped["Document | None"] = relationship(foreign_keys=[source_document_id])

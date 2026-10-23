@@ -250,13 +250,18 @@ def execute_tool_candidate_detect(session: Session, job: Job) -> dict:
                 # already adopted tool back into the decision queue.
                 created += 1
                 continue
-            recommendation = ToolRecommendation(
-                name=name, description=candidate.context_snippet, source_url=doc.url,
-                source_context=doc.title, source_document_id=doc.id,
-                source_candidate_id=candidate.id, status="watchlist",
-            )
-            session.add(recommendation)
-            session.flush()
+            # A tool already on the radar gets one more evidence row, never a second entry.
+            recommendation = session.execute(
+                select(ToolRecommendation).where(func.lower(ToolRecommendation.name) == name.lower()).limit(1)
+            ).scalars().first()
+            if recommendation is None:
+                recommendation = ToolRecommendation(
+                    name=name, description=candidate.context_snippet, source_url=doc.url,
+                    source_context=doc.title, source_document_id=doc.id,
+                    source_candidate_id=candidate.id, status="watchlist",
+                )
+                session.add(recommendation)
+                session.flush()
             session.add(ToolRecommendationEvidence(
                 tool_recommendation_id=recommendation.id, relation_type="mentioned_in",
                 catalog_url=doc.url, catalog_label=doc.title,
