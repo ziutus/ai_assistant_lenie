@@ -9,7 +9,8 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from library import github_repo_stats
 from library.db.engine import get_scoped_session
-from library.db.models import Document, Tool, ToolRecommendation, ToolRecommendationEvidence
+from library import tool_relations_service
+from library.db.models import Document, Tool, ToolRecommendation, ToolRecommendationEvidence, ToolRelation
 from library.tool_recommendation_importer import fetch_markdown, parse_markdown_recommendations
 
 bp = Blueprint("tool_recommendations", __name__)
@@ -80,10 +81,13 @@ def _user():
         abort(403, "user API key required")
 
 
-def _dict(item: ToolRecommendation, github: dict | None = None) -> dict:
+def _dict(item: ToolRecommendation, github: dict | None = None, relations: list | None = None) -> dict:
     document = item.source_document
+    relations = relations or []
     return {
         "github": github,
+        "relations": relations,
+        "stack_matches": sorted({r["other_name"] for r in relations if r["in_my_stack"]}),
         "id": item.id,
         "name": item.name,
         "homepage_url": item.homepage_url,
@@ -153,8 +157,9 @@ def get_tool_recommendations():
         .order_by(ToolRecommendation.category)
     ).scalars().all()
     github = github_repo_stats.stats_for_urls(session, [item.homepage_url for item in items])
+    relations = tool_relations_service.relations_for(session, [item.id for item in items])
     return jsonify({
-        "tool_recommendations": [_dict(item, github.get(item.homepage_url)) for item in items],
+        "tool_recommendations": [_dict(item, github.get(item.homepage_url), relations.get(item.id)) for item in items],
         "categories": categories,
         "filters": {"status": status, "category": category, "origin": origin},
     })
@@ -209,8 +214,56 @@ def create_tool_recommendation():
         source_document_id=body.get("source_document_id"), source_candidate_id=body.get("source_candidate_id"),
     )
     session.add(item)
+    session.flush()
+    tool_relations_service.detect_relations(session, item)
     session.commit()
     return jsonify({"tool_recommendation": _dict(item)}), 201
+
+
+@bp.post("/tool_recommendations/relations/detect")
+def detect_tool_relations():
+    """Propose ``works_with`` relations from each entry's source text (``{id}`` for one, else all of ``status``)."""
+    _user()
+    body = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    query = select(ToolRecommendation)
+    if body.get("id") is not None:
+        query = query.where(ToolRecommendation.id == body["id"])
+    else:
+        status = body.get("status", "watchlist")
+        if status not in STATUSES and status != "all":
+            abort(400, "unsupported status")
+        if status != "all":
+            query = query.where(ToolRecommendation.status == status)
+    items = session.execute(query).scalars().all()
+    proposed = []
+    for item in items:
+        outcome = tool_relations_service.detect_relations(session, item)
+        if outcome["created"]:
+            proposed.append({"id": item.id, "name": item.name, "related": outcome["created"]})
+    session.commit()
+    return jsonify({"checked": len(items), "proposed": proposed})
+
+
+@bp.patch("/tool_relations/<int:relation_id>")
+def update_tool_relation(relation_id):
+    _user()
+    body = request.get_json(silent=True) or {}
+    status = body.get("status")
+    if status not in tool_relations_service.STATUSES:
+        abort(400, "unsupported status")
+    relation = body.get("relation")
+    if relation is not None and relation not in tool_relations_service.RELATIONS:
+        abort(400, "unsupported relation")
+    session = get_scoped_session()
+    edge = session.get(ToolRelation, relation_id)
+    if edge is None:
+        abort(404, "tool relation not found")
+    edge.status = status
+    if relation is not None:
+        edge.relation = relation
+    session.commit()
+    return jsonify({"id": edge.id, "status": edge.status, "relation": edge.relation})
 
 
 @bp.post("/tool_recommendations/import_markdown")

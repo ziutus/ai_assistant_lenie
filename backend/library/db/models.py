@@ -3296,6 +3296,35 @@ class ToolRecommendationEvidence(Base):
     recommender_document: Mapped["Document | None"] = relationship(foreign_keys=[recommender_document_id])
 
 
+class ToolRelation(Base):
+    """A directed relation between two radar entries (e.g. Floci ``works_with`` AWS).
+
+    Proposed automatically from the text of the document that introduced a tool
+    (``detected_by='name_match'``) and confirmed or rejected by a human, like
+    ``document_links`` (ADR-026). A rejected edge is never revived by detection.
+    """
+
+    __tablename__ = "tool_relations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_tool_id: Mapped[int] = mapped_column(ForeignKey("tool_recommendations.id", ondelete="CASCADE"), nullable=False)
+    to_tool_id: Mapped[int] = mapped_column(ForeignKey("tool_recommendations.id", ondelete="CASCADE"), nullable=False)
+    relation: Mapped[str] = mapped_column(String(30), nullable=False, server_default=sa_text("'works_with'"))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'proposed'"))
+    detected_by: Mapped[str] = mapped_column(String(30), nullable=False, server_default=sa_text("'name_match'"))
+    context: Mapped[str | None] = mapped_column(Text)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("relation IN ('works_with', 'emulates', 'alternative_to')", name="ck_tool_relations_relation"),
+        CheckConstraint("status IN ('proposed', 'confirmed', 'rejected')", name="ck_tool_relations_status"),
+        CheckConstraint("from_tool_id <> to_tool_id", name="ck_tool_relations_not_self"),
+        UniqueConstraint("from_tool_id", "to_tool_id", "relation", name="uq_tool_relations_edge"),
+        Index("idx_tool_relations_to", "to_tool_id"),
+    )
+
+
 class GithubRepoStats(Base):
     """Latest public GitHub numbers for one repository (stars, forks, activity).
 
