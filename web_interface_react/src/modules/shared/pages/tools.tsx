@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
+import MarkdownView from "../components/MarkdownView/markdownView";
+import MarkdownEditor from "../components/MarkdownView/markdownEditor";
 
 type Tool = {
   id: number;
@@ -369,15 +371,14 @@ export default function Tools() {
       </div>}
       <ToolRelations relations={tool.relations ?? []} onReview={(id, status) => void reviewRelation(id, status)} />
       {editingId === tool.id ? <div style={{ margin: "8px 0" }}>
-        <textarea aria-label={`Notatka o ${tool.name}`} value={draft} onChange={event => setDraft(event.target.value)} rows={8}
-          style={{ width: "100%", boxSizing: "border-box" }} disabled={savingId === tool.id} />
+        <MarkdownEditor label={`Notatka o ${tool.name}`} value={draft} onChange={setDraft} toolName={tool.name} disabled={savingId === tool.id} />
         <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
           <button className="button" type="button" disabled={savingId === tool.id} onClick={() => void saveNote(tool)}>Zapisz notatkę</button>
           <button type="button" disabled={savingId === tool.id} onClick={() => setEditingId(null)}>Anuluj</button>
         </div>
       </div> : <div style={{ margin: "8px 0" }}>
         {tool.personal_notes
-          ? <blockquote style={{ margin: "0 0 6px", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12, whiteSpace: "pre-wrap" }}>{tool.personal_notes}</blockquote>
+          ? <div style={{ margin: "0 0 6px", borderLeft: "3px solid #cbd5e1", paddingLeft: 14 }}><MarkdownView text={tool.personal_notes} /></div>
           : <div style={{ color: "#64748b", fontSize: ".85rem", marginBottom: 6 }}>Brak notatki — napisz, do czego używasz tego narzędzia.</div>}
         <button type="button" onClick={() => { setEditingId(tool.id); setDraft(tool.personal_notes ?? ""); }}>{tool.personal_notes ? "Edytuj notatkę" : "Dodaj notatkę"}</button>
       </div>}
