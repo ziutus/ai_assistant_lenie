@@ -3,6 +3,8 @@ export type GithubStats = {
   stars: number | null; forks: number | null; watchers: number | null; open_issues: number | null;
   language: string | null; license: string | null; archived: boolean;
   pushed_at: string | null; fetched_at: string | null;
+  /** The repository's own About text and topics; absent in responses of older backends. */
+  description?: string | null; topics?: string[];
 };
 
 const countFormat = new Intl.NumberFormat("pl-PL");

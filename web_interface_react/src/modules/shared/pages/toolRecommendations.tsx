@@ -4,6 +4,8 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
+import GithubAbout from "../components/GithubAbout/githubAbout";
+import GithubRate, { type GithubRateInfo } from "../components/GithubRate/githubRate";
 import { modelOptionText, type ModelOption } from "../utils/modelDetails";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "test_future" | "adopted" | "phasing_out" | "rejected" | "archived";
@@ -144,6 +146,8 @@ export default function ToolRecommendations() {
   const [categories, setCategories] = React.useState<string[]>([]);
   const [allTags, setAllTags] = React.useState<Array<{ tag: string; count: number }>>([]);
   const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
+  // undefined = not asked yet, null = GitHub did not answer
+  const [githubRate, setGithubRate] = React.useState<GithubRateInfo | null | undefined>(undefined);
   const [tagModels, setTagModels] = React.useState<ModelOption[]>([]);
   const [tagModel, setTagModel] = React.useState("");
   const [defaultTagModel, setDefaultTagModel] = React.useState("");
@@ -191,6 +195,15 @@ export default function ToolRecommendations() {
   }, [apiUrl, category, headers, origin, query, selectedTags, status]);
 
   React.useEffect(() => { void load(); }, [load]);
+
+  const loadGithubRate = React.useCallback(async () => {
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/github_rate`, { headers });
+      const data = await response.json().catch(() => ({}));
+      setGithubRate(response.ok ? (data.rate as GithubRateInfo | null) ?? null : null);
+    } catch { setGithubRate(null); }
+  }, [apiUrl, headers]);
+  React.useEffect(() => { void loadGithubRate(); }, [loadGithubRate]);
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -232,15 +245,34 @@ export default function ToolRecommendations() {
 
   const toggleTag = (tag: string) => setSelectedTags(current => current.includes(tag) ? current.filter(value => value !== tag) : [...current, tag]);
 
-  const saveTags = async (item: Recommendation, tags: string[]) => {
+  const patchItem = async (item: Recommendation, body: Record<string, unknown>, failure: string) => {
     setBusy(item.id); setError("");
     try {
-      const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}`, { method: "PATCH", headers, body: JSON.stringify({ tags }) });
+      const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}`, { method: "PATCH", headers, body: JSON.stringify(body) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(String(data.message || "Nie udało się zapisać tagów"));
+      if (!response.ok) throw new Error(String(data.message || failure));
       await load();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Zapis tagów nie powiódł się"); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : failure); }
     finally { setBusy(null); }
+  };
+  const saveTags = (item: Recommendation, tags: string[]) => patchItem(item, { tags }, "Nie udało się zapisać tagów");
+  const saveDescription = (item: Recommendation, description: string) => patchItem(item, { description }, "Nie udało się zapisać opisu");
+
+  // Forced refresh of ONE entry's repository, ignoring the 24 h freshness rule of the bulk button.
+  const refreshOneGithub = async (item: Recommendation) => {
+    setBusy(item.id); setError(""); setGithubMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/github_stats/refresh`, {
+        method: "POST", headers, body: JSON.stringify({ id: item.id, force: true }),
+      });
+      const data = await response.json().catch(() => ({})) as GithubRefreshResult & Record<string, unknown>;
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać danych z GitHuba"));
+      setGithubMessage(data.rate_limited
+        ? "GitHub: limit zapytań wyczerpany — spróbuj za godzinę (albo dodaj token GITHUB_TOKEN w konfiguracji)."
+        : data.failed ? `GitHub: nie udało się pobrać danych dla ${item.name}.` : `GitHub: odświeżono dane dla ${item.name}.`);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
+    finally { setBusy(null); void loadGithubRate(); }
   };
 
   const suggestTags = async (item: Recommendation): Promise<TagSuggestion> => {
@@ -360,7 +392,7 @@ export default function ToolRecommendations() {
       setGithubMessage(`GitHub: pobrano ${data.refreshed ?? 0}${data.failed ? `, błędy: ${data.failed}` : ""}${data.rate_limited ? ". Limit zapytań GitHuba wyczerpany — spróbuj za godzinę" : pending ? `. Zostało do pobrania: ${pending} — kliknij ponownie` : ". Wszystko aktualne"}.`);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
-    finally { setGithubBusy(false); }
+    finally { setGithubBusy(false); void loadGithubRate(); }
   };
 
   const importMarkdown = async () => {
@@ -398,6 +430,12 @@ export default function ToolRecommendations() {
     {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
     {item.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".8rem" }}>Notatka w Obsidianie: {item.obsidian_note_path}</div>}
     {item.github && <GithubStatsLine stats={item.github} />}
+    {/github\.com\/[^/\s]+\/[^/\s]+/i.test(item.homepage_url ?? "") && <button type="button" disabled={busy === item.id} onClick={() => void refreshOneGithub(item)}
+      title="Pobiera z GitHuba liczby, opis i tematy tego jednego repozytorium od razu, także gdy dane są młodsze niż 24 godziny. Zużywa 1 z 60 zapytań na godzinę.">
+      {busy === item.id ? "Pobieram…" : "↻ Odśwież z GitHuba"}</button>}
+    {item.github && <GithubAbout stats={item.github} ownDescription={item.description} tags={item.tags ?? []} disabled={busy === item.id}
+      onUseDescription={text => void saveDescription(item, text)}
+      onAddTags={topics => void saveTags(item, [...(item.tags ?? []), ...topics.filter(topic => !(item.tags ?? []).includes(topic))])} />}
     {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
       title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
       📰 {item.feed_mentions.count} {item.feed_mentions.count === 1 ? "wzmianka" : "wzmianek"} w feedach
@@ -430,6 +468,7 @@ export default function ToolRecommendations() {
         <button type="button" onClick={() => setFocus(focusId !== null ? null : visibleItems[0]?.id ?? null)} disabled={loading || (focusId === null && !visibleItems.length)} title="Pokazuje narzędzia z bieżącej zakładki i filtrów pojedynczo, razem z innymi narzędziami z tej samej kategorii (także tym, którego już używasz), żeby ocenić jedno po drugim.">{focusId !== null ? "Wróć do listy" : "Oceniaj po kolei"}</button>        <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
       </div>
     </div>
+    <div style={{ margin: "8px 0 0" }}><GithubRate rate={githubRate} /></div>
     {githubMessage && <p role="status" style={{ color: "#166534", margin: "8px 0 0" }}>{githubMessage}</p>}
     <div role="tablist" aria-label="Status rekomendacji" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "18px 0" }}>
       {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} title={tabHelp[value]} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}

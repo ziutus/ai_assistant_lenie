@@ -109,6 +109,36 @@ def fetch_repo(owner: str, repo: str) -> dict | None:
         raise GithubError(f"GitHub returned invalid JSON: {exc}") from exc
 
 
+RATE_LIMIT_URL = "https://api.github.com/rate_limit"
+
+
+def fetch_rate_limit() -> dict | None:
+    """Current core quota from GitHub (``limit``, ``remaining``, ``reset`` ISO time, ``authenticated``).
+
+    The ``/rate_limit`` endpoint itself is free - it does not use up the quota it reports. ``authenticated``
+    says whether a ``GITHUB_TOKEN`` is configured; its value is never returned. ``None`` when GitHub is unreachable.
+    """
+    token = _token()
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "lenie-server"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = requests.get(RATE_LIMIT_URL, headers=headers, timeout=REQUEST_TIMEOUT_S)
+        core = response.json()["resources"]["core"] if response.ok else None
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        logger.warning("GitHub rate limit lookup failed", exc_info=True)
+        return None
+    if not core:
+        return None
+    reset = core.get("reset")
+    return {
+        "limit": core.get("limit"),
+        "remaining": core.get("remaining"),
+        "reset": datetime.datetime.fromtimestamp(reset, datetime.timezone.utc).isoformat() if isinstance(reset, int) else None,
+        "authenticated": bool(token),
+    }
+
+
 def refresh_repo(session, owner: str, repo: str, now: datetime.datetime | None = None) -> GithubRepoStats:
     """Fetch one repository and upsert its row (no commit). A 404 keeps the last known numbers."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
@@ -132,6 +162,7 @@ def refresh_repo(session, owner: str, repo: str, now: datetime.datetime | None =
     row.open_issues = data.get("open_issues_count")
     row.language = data.get("language")
     row.license = (data.get("license") or {}).get("spdx_id")
+    row.topics = [topic for topic in (data.get("topics") or []) if isinstance(topic, str)]
     row.archived = bool(data.get("archived"))
     row.repo_created_at = _parse_time(data.get("created_at"))
     row.pushed_at = _parse_time(data.get("pushed_at"))
@@ -148,6 +179,8 @@ def to_dict(row: GithubRepoStats) -> dict:
         "open_issues": row.open_issues,
         "language": row.language,
         "license": row.license,
+        "description": row.description,
+        "topics": list(row.topics or []),
         "archived": row.archived,
         "pushed_at": row.pushed_at.isoformat() if row.pushed_at else None,
         "fetched_at": row.fetched_at.isoformat() if row.fetched_at else None,
@@ -172,11 +205,14 @@ def stats_for_urls(session, urls) -> dict[str, dict]:
     return result
 
 
-def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: datetime.datetime | None = None) -> dict:
+def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: datetime.datetime | None = None,
+                  force: bool = False) -> dict:
     """Refresh up to ``limit`` repositories behind ``urls`` that have no row yet or a row older than a day.
 
     Repositories never fetched go first. Stops at the first rate-limit answer;
     a single failing repository is counted and skipped. The caller commits.
+    ``force`` ignores the one-day freshness rule (oldest rows first) - meant for a handful of
+    repositories the caller picked by hand, not for a bulk run, which would keep re-fetching the same ones.
     """
     now = now or datetime.datetime.now(datetime.timezone.utc)
     repos: dict[str, tuple[str, str]] = {}
@@ -192,7 +228,7 @@ def refresh_stale(session, urls, limit: int = DEFAULT_REFRESH_LIMIT, now: dateti
     } if repos else {}
     missing = [key for key in repos if key not in existing]
     stale = sorted(
-        (key for key, row in existing.items() if row.fetched_at is None or now - row.fetched_at >= STALE_AFTER),
+        (key for key, row in existing.items() if force or row.fetched_at is None or now - row.fetched_at >= STALE_AFTER),
         key=lambda key: existing[key].fetched_at or now,
     )
     queue = missing + stale

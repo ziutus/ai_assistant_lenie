@@ -66,6 +66,28 @@ class TestRefreshRepo:
         assert row.pushed_at == dt.datetime(2025, 10, 13, 3, 27, 9, tzinfo=dt.timezone.utc)
         assert row.fetched_at == NOW
 
+    def test_stores_the_topics_and_ignores_junk_entries(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: {**GITHUB_JSON, "topics": ["sbom", "containers", None, 3]})
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        row = svc.refresh_repo(session, "o", "r", now=NOW)
+
+        assert row.topics == ["sbom", "containers"]
+        payload = svc.to_dict(SimpleNamespace(
+            owner="o", repo="r", status="ok", stars=1, forks=0, watchers=0, open_issues=0, language=None, license=None,
+            archived=False, pushed_at=None, fetched_at=None, description=row.description, topics=row.topics,
+        ))
+        assert payload["topics"] == ["sbom", "containers"]
+        assert payload["description"].startswith("Install, run")
+
+    def test_a_repository_without_topics_gets_an_empty_list(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: GITHUB_JSON)  # the key is absent
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        assert svc.refresh_repo(session, "o", "r", now=NOW).topics == []
+
     def test_not_found_keeps_the_last_known_numbers(self, monkeypatch):
         monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: None)
         existing = SimpleNamespace(stars=10, status="ok", fetched_at=None)
@@ -113,6 +135,53 @@ def _stored(key, fetched_at):
     return SimpleNamespace(full_name_key=key, fetched_at=fetched_at)
 
 
+class TestFetchRateLimit:
+    def _patch(self, monkeypatch, response=None, error=None, token="secret-token"):
+        seen = {}
+
+        def fake_get(url, headers=None, timeout=None):
+            seen.update(url=url, headers=headers)
+            if error:
+                raise error
+            return response
+
+        monkeypatch.setattr(svc.requests, "get", fake_get)
+        monkeypatch.setattr(svc, "_token", lambda: token)
+        return seen
+
+    def _response(self, payload, ok=True):
+        return SimpleNamespace(ok=ok, json=lambda: payload)
+
+    def test_reads_the_core_quota_and_never_returns_the_token(self, monkeypatch):
+        payload = {"resources": {"core": {"limit": 5000, "remaining": 4987, "reset": 1792776830}}}
+        seen = self._patch(monkeypatch, self._response(payload))
+
+        rate = svc.fetch_rate_limit()
+
+        assert rate == {"limit": 5000, "remaining": 4987, "reset": "2026-10-23T17:33:50+00:00", "authenticated": True}
+        assert seen["headers"]["Authorization"] == "Bearer secret-token"
+        assert "secret-token" not in str(rate)
+
+    def test_without_a_token_the_request_is_anonymous(self, monkeypatch):
+        payload = {"resources": {"core": {"limit": 60, "remaining": 60, "reset": 1792776830}}}
+        seen = self._patch(monkeypatch, self._response(payload), token=None)
+
+        rate = svc.fetch_rate_limit()
+
+        assert rate["authenticated"] is False and rate["limit"] == 60
+        assert "Authorization" not in seen["headers"]
+
+    @pytest.mark.parametrize("response, error", [
+        (None, svc.requests.ConnectionError("down")),
+        (SimpleNamespace(ok=False, json=lambda: {}), None),
+        (SimpleNamespace(ok=True, json=lambda: {"unexpected": 1}), None),
+        (SimpleNamespace(ok=True, json=lambda: (_ for _ in ()).throw(ValueError("bad json"))), None),
+    ])
+    def test_unreachable_or_odd_answers_give_none(self, monkeypatch, response, error):
+        self._patch(monkeypatch, response, error)
+        assert svc.fetch_rate_limit() is None
+
+
 class TestRefreshStale:
     def _session(self, existing):
         session = MagicMock()
@@ -133,6 +202,18 @@ class TestRefreshStale:
 
         assert calls == ["a/new", "a/older", "a/old"]
         assert summary == {"repositories": 4, "refreshed": 3, "failed": 0, "rate_limited": False, "pending": 0}
+
+    def test_force_refreshes_a_fresh_row_too(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(svc, "refresh_repo", lambda session, owner, repo, now=None: calls.append(f"{owner}/{repo}"))
+        existing = [_stored("a/fresh", NOW - dt.timedelta(minutes=5))]
+        urls = ["https://github.com/a/fresh"]
+
+        assert svc.refresh_stale(self._session(existing), urls, limit=10, now=NOW)["refreshed"] == 0
+        summary = svc.refresh_stale(self._session(existing), urls, limit=10, now=NOW, force=True)
+
+        assert calls == ["a/fresh"]
+        assert summary["refreshed"] == 1 and summary["pending"] == 0
 
     def test_limit_leaves_the_rest_pending(self, monkeypatch):
         monkeypatch.setattr(svc, "refresh_repo", lambda *args, **kwargs: None)
@@ -169,7 +250,7 @@ class TestStatsForUrls:
         row = SimpleNamespace(
             full_name_key="gaianet-ai/gaianet-node", owner="GaiaNet-AI", repo="gaianet-node", status="ok",
             stars=5018, forks=325, watchers=38, open_issues=60, language="Shell", license="GPL-3.0",
-            archived=False, pushed_at=NOW, fetched_at=NOW,
+            archived=False, pushed_at=NOW, fetched_at=NOW, description="Run your own AI agent", topics=["ai", "node"],
         )
         session = MagicMock()
         session.execute.return_value.scalars.return_value.all.return_value = [row]
@@ -180,6 +261,8 @@ class TestStatsForUrls:
         assert list(result) == [url]
         assert result[url]["full_name"] == "GaiaNet-AI/gaianet-node"
         assert (result[url]["stars"], result[url]["forks"]) == (5018, 325)
+        assert result[url]["topics"] == ["ai", "node"]
+        assert result[url]["description"] == "Run your own AI agent"
 
     def test_nothing_to_look_up(self):
         session = MagicMock()
@@ -224,8 +307,82 @@ class TestRefreshEndpoint:
         with pytest.raises(BadRequest):
             self._call(monkeypatch, body)
 
-    def test_service_key_is_refused(self, monkeypatch):
+    def _call_one(self, monkeypatch, body, item):
+        from library.tool_recommendation_routes import refresh_github_stats
+
+        session = MagicMock()
+        session.get.return_value = item
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        seen = {}
+
+        def fake_refresh(sess, urls, limit, force=False):
+            seen.update(urls=list(urls), limit=limit, force=force)
+            return {"repositories": 1, "refreshed": 1, "failed": 0, "rate_limited": False, "pending": 0}
+
+        monkeypatch.setattr(svc, "refresh_stale", fake_refresh)
+        with Flask(__name__).test_request_context("/x", method="POST", json=body):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = refresh_github_stats()
+        return response, seen, session
+
+    def test_force_refreshes_one_entry_whatever_its_age(self, monkeypatch):
+        item = SimpleNamespace(homepage_url="https://github.com/anchore/grype")
+        response, seen, session = self._call_one(monkeypatch, {"id": 778, "force": True}, item)
+        assert response.json["refreshed"] == 1
+        assert seen == {"urls": ["https://github.com/anchore/grype"], "limit": 1, "force": True}
+        session.commit.assert_called_once()
+
+    def test_single_entry_without_force_keeps_the_freshness_rule(self, monkeypatch):
+        item = SimpleNamespace(homepage_url="https://github.com/anchore/grype")
+        _, seen, _ = self._call_one(monkeypatch, {"id": 778}, item)
+        assert seen["force"] is False
+
+    @pytest.mark.parametrize("body, item", [
+        ({"id": 1, "force": True}, SimpleNamespace(homepage_url="https://example.com/tool")),
+        ({"id": 1, "force": "yes"}, SimpleNamespace(homepage_url="https://github.com/a/b")),
+        ({"id": "x"}, SimpleNamespace(homepage_url="https://github.com/a/b")),
+    ])
+    def test_single_entry_rejects_bad_input(self, monkeypatch, body, item):
+        from werkzeug.exceptions import BadRequest
+
+        with pytest.raises(BadRequest):
+            self._call_one(monkeypatch, body, item)
+
+    def test_unknown_entry_is_404(self, monkeypatch):
+        from werkzeug.exceptions import NotFound
+
+        with pytest.raises(NotFound):
+            self._call_one(monkeypatch, {"id": 1}, None)
+
+    def test_bulk_force_is_refused(self, monkeypatch):
+        from werkzeug.exceptions import BadRequest
+
+        with pytest.raises(BadRequest):
+            self._call(monkeypatch, {"force": True})
+
+    def test_service_key_is_allowed_like_every_radar_write(self, monkeypatch):
+        response, _, _ = self._call(monkeypatch, {}, kind="service")
+        assert response.json["refreshed"] == 1
+
+    def test_rate_endpoint_returns_the_quota(self, monkeypatch):
+        from library.tool_recommendation_routes import get_github_rate
+
+        quota = {"limit": 5000, "remaining": 5000, "reset": "2026-10-23T17:53:50+00:00", "authenticated": True}
+        monkeypatch.setattr(svc, "fetch_rate_limit", lambda: quota)
+        with Flask(__name__).test_request_context("/tool_recommendations/github_rate"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            assert get_github_rate().json == {"rate": quota}
+
+    def test_rate_endpoint_when_github_is_unreachable(self, monkeypatch):
+        from library.tool_recommendation_routes import get_github_rate
+
+        monkeypatch.setattr(svc, "fetch_rate_limit", lambda: None)
+        with Flask(__name__).test_request_context("/tool_recommendations/github_rate"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            assert get_github_rate().json == {"rate": None}
+
+    def test_unknown_key_kind_is_refused(self, monkeypatch):
         from werkzeug.exceptions import Forbidden
 
         with pytest.raises(Forbidden):
-            self._call(monkeypatch, {}, kind="service")
+            self._call(monkeypatch, {}, kind="anonymous")
