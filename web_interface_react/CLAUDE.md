@@ -22,6 +22,15 @@ instead of duplicating navigation controls. Views that intentionally load a
 single document progressively (for example, chunk review) may use a
 "load more" interaction instead.
 
+### Voice of status labels
+
+Labels that record a decision are worded by who made it: first person when the
+user decided (`Obserwuję`, `Porównuję`, `Testuję`, `Używam`, `Odrzuciłem` — the
+Tool Radar tabs), third person when an LLM or the system decided (`System
+odrzucił`, `Model zaproponował`). Never mix the voices within one label set;
+action buttons stay imperative. The short rule for agents lives in
+[AGENTS.md](AGENTS.md); keep the two in sync.
+
 ### Multi-value filters
 
 The short rule agents must follow when choosing a selection control lives in

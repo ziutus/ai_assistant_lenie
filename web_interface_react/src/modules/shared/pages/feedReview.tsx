@@ -38,7 +38,7 @@ const reviewReasons: Array<[ReviewReason, string]> = [
 // Without a timeout a request sent while the VPN/network is down can hang for
 // minutes (packets are silently dropped), leaving the button disabled and no
 // message. Imports fetch the page server-side, so they get a longer budget.
-const RADAR_HELP = "Do radaru: wpis trafia do Radaru narzędzi (etap „Nieocenione”) z tym materiałem jako źródłem, a stąd znika. Lenie od razu proponuje powiązania z narzędziami, które już masz w radarze (np. AWS, Terraform). Jeśli narzędzie jest już w radarze, materiał zostanie dopisany jako kolejna wzmianka.";
+const RADAR_HELP = "Do radaru: wpis trafia do Radaru narzędzi (etap „Obserwuję”) z tym materiałem jako źródłem, a stąd znika. Lenie od razu proponuje powiązania z narzędziami, które już masz w radarze (np. AWS, Terraform). Jeśli narzędzie jest już w radarze, materiał zostanie dopisany jako kolejna wzmianka.";
 const RADAR_CATEGORY_HINTS = ["DecisionModels", "Development", "AI", "InfraManagement", "Security"];
 const suggestToolName = (title: string) => (title.split(/\s+[-–—]\s+|\s*:\s+|\s*\|\s*/)[0] || title).trim();
 const ACTION_TIMEOUT_MS = 20_000;
