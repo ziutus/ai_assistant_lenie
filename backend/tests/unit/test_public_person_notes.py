@@ -75,9 +75,10 @@ class TestDeriveIdentity:
 
 
 class TestRoleFromFolder:
-    def test_sub_folder_names_become_roles(self):
+    def test_only_folders_that_name_a_role_give_one(self):
         assert role_from_folder("podcasterzy") == "podcaster"
-        assert role_from_folder("IT") == "IT"
+        assert role_from_folder("pisarze") == "pisarz"
+        assert role_from_folder("IT") is None  # a topic, not a role
         assert role_from_folder("") is None
 
 

@@ -97,6 +97,6 @@ def derive_identity(stem: str) -> dict:
 
 
 def role_from_folder(relative_folder: str) -> str | None:
-    """The sub-folder under ``public`` as the person's role ("podcasterzy" -> "podcaster"); none for the folder itself."""
+    """A role implied by the sub-folder under ``public`` ("podcasterzy" -> "podcaster"); topic folders ("IT") imply none."""
     first = relative_folder.strip("/").split("/")[0] if relative_folder.strip("/") else ""
-    return _FOLDER_ROLES.get(first.lower(), first) or None
+    return _FOLDER_ROLES.get(first.lower())

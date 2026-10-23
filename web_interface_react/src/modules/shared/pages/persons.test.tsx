@@ -39,7 +39,8 @@ it("asks only for public people when the filter is ticked", async () => {
   fireEvent.click(screen.getByLabelText("Tylko osoby publiczne"));
 
   await waitFor(() => {
-    const lastCall = vi.mocked(axios.get).mock.calls.at(-1) as [string, { params: Record<string, unknown> }];
+    const calls = vi.mocked(axios.get).mock.calls;
+    const lastCall = calls[calls.length - 1] as [string, { params: Record<string, unknown> }];
     expect(lastCall[1].params.kind).toBe("public");
   });
 });
