@@ -369,7 +369,7 @@ class FeedItem(Base):
             name="ck_feed_items_status",
         ),
         CheckConstraint(
-            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other')",
+            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other','sent_to_radar')",
             name="ck_feed_items_review_reason",
         ),
         Index("idx_feed_items_source_status", "feed_source_id", "status"),

@@ -18,6 +18,7 @@ type Recommendation = {
   id: number; name: string; homepage_url: string | null; description: string | null;
   github: GithubStats | null;
   relations: ToolRelation[]; stack_matches: string[];
+  feed_mentions: { count: number; samples: Array<{ id: number; title: string; url: string }> };
   category: string | null; status: RecommendationStatus; personal_note: string | null;
   origin: "ai_detected" | "curated";
   source_url: string | null; source_context: string | null;
@@ -332,6 +333,11 @@ export default function ToolRecommendations() {
       {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
       {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
       {item.github && <GithubStatsLine stats={item.github} />}
+      {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
+        title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
+        📰 {item.feed_mentions.count} {item.feed_mentions.count === 1 ? "wzmianka" : "wzmianek"} w feedach
+        <Help text="Tyle wpisów w obserwowanych feedach (tytuł lub streszczenie) wspomina to narzędzie — sygnał, jak głośno o nim jest. Najedź na wiersz, żeby zobaczyć kilka tytułów." />
+      </div>}
       {item.stack_matches.length > 0 && <div style={{ margin: "6px 0", color: "#166534", fontSize: ".85rem" }}>Dotyczy Twojego stacku: <strong>{item.stack_matches.join(", ")}</strong></div>}
       <RelationsLine relations={item.relations} onReview={(id, relationStatus) => void reviewRelation(id, relationStatus)} />
       {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>

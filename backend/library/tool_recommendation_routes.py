@@ -9,7 +9,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from library import github_repo_stats
 from library.db.engine import get_scoped_session
-from library import tool_relations_service
+from library import feed_mentions, tool_radar_feed, tool_relations_service
 from library.db.models import Document, Tool, ToolRecommendation, ToolRecommendationEvidence, ToolRelation
 from library.tool_recommendation_importer import fetch_markdown, parse_markdown_recommendations
 
@@ -81,11 +81,13 @@ def _user():
         abort(403, "user API key required")
 
 
-def _dict(item: ToolRecommendation, github: dict | None = None, relations: list | None = None) -> dict:
+def _dict(item: ToolRecommendation, github: dict | None = None, relations: list | None = None,
+          feed_mention: dict | None = None) -> dict:
     document = item.source_document
     relations = relations or []
     return {
         "github": github,
+        "feed_mentions": feed_mention or {"count": 0, "samples": []},
         "relations": relations,
         "stack_matches": sorted({r["other_name"] for r in relations if r["in_my_stack"]}),
         "id": item.id,
@@ -158,8 +160,11 @@ def get_tool_recommendations():
     ).scalars().all()
     github = github_repo_stats.stats_for_urls(session, [item.homepage_url for item in items])
     relations = tool_relations_service.relations_for(session, [item.id for item in items])
+    mentions = feed_mentions.mentions_for(session, {item.id: item.name for item in items})
     return jsonify({
-        "tool_recommendations": [_dict(item, github.get(item.homepage_url), relations.get(item.id)) for item in items],
+        "tool_recommendations": [
+            _dict(item, github.get(item.homepage_url), relations.get(item.id), mentions.get(item.id)) for item in items
+        ],
         "categories": categories,
         "filters": {"status": status, "category": category, "origin": origin},
     })
@@ -218,6 +223,28 @@ def create_tool_recommendation():
     tool_relations_service.detect_relations(session, item)
     session.commit()
     return jsonify({"tool_recommendation": _dict(item)}), 201
+
+
+@bp.post("/feed_items/<int:item_id>/to_radar")
+def feed_item_to_radar(item_id):
+    """Turn a feed candidate into a watchlist radar entry and take it out of the review queue.
+
+    Body (all optional): ``name`` (default: the title up to the first dash), ``homepage_url``
+    (default: the item's URL, ``""`` = none) and ``category``.
+    """
+    _user()
+    body = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    try:
+        outcome = tool_radar_feed.send_to_radar(
+            session, item_id, g.auth.user_id, name=body.get("name"), homepage_url=body.get("homepage_url"),
+            category=body.get("category"),
+        )
+    except ValueError as exc:
+        abort(404 if str(exc) == "feed item not found" else 400, str(exc))
+    except RuntimeError as exc:
+        abort(409, str(exc))
+    return jsonify(outcome), 201 if outcome["created"] else 200
 
 
 @bp.post("/tool_recommendations/relations/detect")

@@ -18,15 +18,26 @@ STATUSES = {"proposed", "confirmed", "rejected"}
 MIN_NAME_LENGTH = 3
 CASE_INSENSITIVE_FROM = 5  # shorter names (AWS, GCP, Go) must match with the same case
 CONTEXT_RADIUS = 80
+ALTERNATIVE_RADIUS = 50
 IGNORED_STATUSES = {"rejected", "archived"}
 
 
-def _name_pattern(name: str) -> re.Pattern | None:
+# Polish case endings after a foreign name: "konkurent Jeva", "z Terraformem", "w Flociem".
+_POLISH_SUFFIX = r"(?:e?m|owi|ie|ów|ach|ami|om|[auy])?"
+ALTERNATIVE_HINTS = re.compile(
+    r"konkurent|alternatyw|zamiennik|zamiast|competitor|alternative|replacement|instead of", re.IGNORECASE,
+)
+
+
+def name_pattern(name: str) -> re.Pattern | None:
     name = name.strip()
     if len(name) < MIN_NAME_LENGTH:
         return None
     flags = re.IGNORECASE if len(name) >= CASE_INSENSITIVE_FROM else 0
-    return re.compile(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])", flags)
+    return re.compile(r"(?<![\w-])" + re.escape(name) + _POLISH_SUFFIX + r"(?![\w-])", flags)
+
+
+_name_pattern = name_pattern  # kept for the unit tests written against the private name
 
 
 def _source_text(session, item: ToolRecommendation) -> str:
@@ -44,9 +55,11 @@ def _snippet(text: str, match: re.Match) -> str:
 
 
 def detect_relations(session, item: ToolRecommendation) -> dict:
-    """Propose ``works_with`` edges from ``item`` to every other radar entry its source text names.
+    """Propose edges from ``item`` to every other radar entry its source text names.
 
-    Idempotent: an existing edge (any status, either direction) is left alone, so a rejected one stays rejected.
+    ``alternative_to`` when a wording like "konkurent"/"alternatywa" sits next to the name, else ``works_with``.
+
+    Idempotent: an existing edge (any relation, status or direction) is left alone, so a rejected one stays rejected.
     """
     text = _source_text(session, item)
     created, existing = [], 0
@@ -58,13 +71,17 @@ def detect_relations(session, item: ToolRecommendation) -> dict:
         )
     ).scalars().all()
     for other in others:
-        pattern = _name_pattern(other.name)
-        match = pattern.search(text) if pattern else None
-        if match is None:
+        pattern = name_pattern(other.name)
+        matches = list(pattern.finditer(text)) if pattern else []
+        if not matches:
             continue
+        match, relation_kind = matches[0], "works_with"
+        for candidate in matches:
+            if ALTERNATIVE_HINTS.search(text[max(0, candidate.start() - ALTERNATIVE_RADIUS):candidate.end() + ALTERNATIVE_RADIUS]):
+                match, relation_kind = candidate, "alternative_to"
+                break
         found = session.execute(
             select(ToolRelation).where(
-                ToolRelation.relation == "works_with",
                 ((ToolRelation.from_tool_id == item.id) & (ToolRelation.to_tool_id == other.id))
                 | ((ToolRelation.from_tool_id == other.id) & (ToolRelation.to_tool_id == item.id)),
             ).limit(1)
@@ -73,7 +90,7 @@ def detect_relations(session, item: ToolRecommendation) -> dict:
             existing += 1
             continue
         session.add(ToolRelation(
-            from_tool_id=item.id, to_tool_id=other.id, relation="works_with", status="proposed",
+            from_tool_id=item.id, to_tool_id=other.id, relation=relation_kind, status="proposed",
             detected_by="name_match", context=_snippet(text, match), source_document_id=item.source_document_id,
         ))
         created.append(other.name)
