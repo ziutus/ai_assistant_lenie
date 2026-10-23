@@ -31,6 +31,7 @@ export const Pagination = ({ page, pageSize, total, isLoading = false, label, on
           {Array.from({ length: totalPages }, (_, index) => index + 1).map(number => <option key={number} value={number}>{number}</option>)}
         </select> z {totalPages}
       </label>
+      {isLoading && <span role="status" style={{ color: "#64748b", fontSize: ".9rem" }}>Ładowanie…</span>}
     </nav>
   );
 };
