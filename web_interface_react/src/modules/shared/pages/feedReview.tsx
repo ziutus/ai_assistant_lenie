@@ -277,7 +277,17 @@ export default function FeedReview() {
         {sources.map(source => <option key={source.id} value={source.id}>{source.name}{source.disabled ? " (wyłączony)" : ""}</option>)}
       </select>
     </label>
-    {error && <p className="errorText" role="alert">{error}</p>}
+    {/* Fixed to the viewport, not the top of the page: the user clicks pagination
+        and actions far below the header, where an inline message goes unseen. */}
+    {error && <div role="alert" style={{
+      position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 1000,
+      maxWidth: "min(720px, calc(100vw - 32px))", display: "flex", alignItems: "flex-start", gap: 12,
+      background: "#fef2f2", color: "#991b1b", border: "1px solid #fca5a5", borderRadius: 10,
+      padding: "12px 16px", boxShadow: "0 6px 24px rgba(0,0,0,.2)",
+    }}>
+      <span style={{ flex: 1 }}>{error}</span>
+      <button type="button" aria-label="Zamknij komunikat" onClick={() => setError("")}>✕</button>
+    </div>}
     <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wpisów feedu"
       onPageChange={nextPage => { void load(nextPage); }} />
     {!loading && !error && !items.length && <p>{view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}

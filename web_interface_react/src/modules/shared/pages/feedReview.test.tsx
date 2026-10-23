@@ -61,3 +61,21 @@ it("reports a timeout when the API never answers", async () => {
     vi.useRealTimers();
   }
 });
+
+it("shows a fixed, dismissible error when changing page fails", async () => {
+  vi.mocked(fetch).mockImplementation((url) => {
+    const u = String(url);
+    if (u.includes("/feed_items?") && u.includes("offset=0")) return Promise.resolve(jsonResponse({ feed_items: [feedItem], total: 500 }));
+    if (u.endsWith("/feed_sources")) return Promise.resolve(jsonResponse({ feed_sources: [] }));
+    if (u.endsWith("/content_groups")) return Promise.resolve(jsonResponse({ content_groups: [] }));
+    return Promise.reject(new TypeError("Failed to fetch"));
+  });
+  render(<MemoryRouter initialEntries={["/feed-review"]}><FeedReview /></MemoryRouter>);
+  await screen.findByText("Artykuł testowy");
+  fireEvent.click(screen.getAllByRole("button", { name: "Następna" })[0]);
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Nie można połączyć się z API");
+  expect(alert.style.position).toBe("fixed");
+  fireEvent.click(within(alert).getByRole("button", { name: "Zamknij komunikat" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+});
