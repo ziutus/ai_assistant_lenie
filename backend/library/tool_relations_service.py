@@ -130,8 +130,32 @@ def relations_for(session, item_ids: list[int]) -> dict[int, list[dict]]:
                 continue
             other = entries[other_id]
             result.setdefault(own_id, []).append({
-                "id": r.id, "relation": r.relation, "status": r.status, "detected_by": r.detected_by,
+                "id": r.id, "relation": r.relation, "direction": "out" if own_id == r.from_tool_id else "in", "status": r.status, "detected_by": r.detected_by,
                 "context": r.context, "other_id": other.id, "other_name": other.name,
                 "other_status": other.status, "in_my_stack": other.status == "adopted",
             })
+    return result
+
+
+def relations_for_tools(session, tools: list) -> dict[int, list[dict]]:
+    """Relations of catalog tools (``Tool``), through the radar entries that point at them (``tool_id``)."""
+    if not tools:
+        return {}
+    entries = session.execute(
+        select(ToolRecommendation).where(ToolRecommendation.tool_id.in_([t.id for t in tools]))
+    ).scalars().all()
+    per_entry = relations_for(session, [e.id for e in entries])
+    own_by_tool: dict[int, set[int]] = {}
+    for entry in entries:
+        own_by_tool.setdefault(entry.tool_id, set()).add(entry.id)
+    result: dict[int, list[dict]] = {}
+    for tool_id, own in own_by_tool.items():
+        seen, merged = set(), []
+        for entry_id in sorted(own):
+            for relation in per_entry.get(entry_id, []):
+                if relation["id"] not in seen and relation["other_id"] not in own:
+                    seen.add(relation["id"])
+                    merged.append(relation)
+        if merged:
+            result[tool_id] = merged
     return result

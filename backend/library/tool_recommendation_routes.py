@@ -28,6 +28,7 @@ def _existing_tool(session, name: str, homepage_url: str | None = None) -> Tool 
 def _ensure_tool(session, item: ToolRecommendation) -> tuple[Tool, bool]:
     existing = _existing_tool(session, item.name, item.homepage_url)
     if existing is not None:
+        item.tool_id = existing.id
         return existing, False
     tool = Tool(
         name=item.name,
@@ -40,6 +41,7 @@ def _ensure_tool(session, item: ToolRecommendation) -> tuple[Tool, bool]:
     )
     session.add(tool)
     session.flush()
+    item.tool_id = tool.id
     return tool, True
 
 
@@ -91,6 +93,7 @@ def _dict(item: ToolRecommendation, github: dict | None = None, relations: list 
         "relations": relations,
         "stack_matches": sorted({r["other_name"] for r in relations if r["in_my_stack"]}),
         "id": item.id,
+        "tool_id": item.tool_id,
         "name": item.name,
         "homepage_url": item.homepage_url,
         "description": item.description,

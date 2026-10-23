@@ -91,6 +91,7 @@ class TestResponseShape:
         tool = _make_tool()
         session = _session_with_rows([tool])
         monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.tool_relations_service.relations_for_tools", lambda *_a: {})
         app = Flask(__name__)
 
         with app.test_request_context("/tools"):
@@ -98,6 +99,7 @@ class TestResponseShape:
             response = get_tools()
 
         assert response.json["tools"] == [{
+            "relations": [],
             "id": 1,
             "uuid": "11111111-1111-1111-1111-111111111111",
             "name": "Terraform",
@@ -120,6 +122,7 @@ class TestResponseShape:
         tool = _make_tool(created_at=None, updated_at=None)
         session = _session_with_rows([tool])
         monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.tool_relations_service.relations_for_tools", lambda *_a: {})
         app = Flask(__name__)
 
         with app.test_request_context("/tools"):
@@ -608,3 +611,84 @@ class TestRetryObsidianWriteFailureMountAvailable:
         assert "path" not in response.json
         assert response.status_code == 502
         assert session.commit.call_count == 0
+
+
+NOTE = "## GCP\n  Używam do Vertex AI.\n"
+
+
+class TestLenieNativeNotes:
+    """The Obsidian note is optional; the tool's own note lives in personal_notes and is edited in Lenie."""
+
+    def _tool(self):
+        return SimpleNamespace(id=4, uuid="u", name="GCP", category_tags=[], homepage_url=None, license=None, pricing=None,
+                               personal_notes=None, source_document_id=None, source_candidate_id=None, status="accepted",
+                               obsidian_note_path=None, created_at=None, updated_at=None)
+
+    def test_patch_updates_note_tags_and_clears_empty_fields(self, monkeypatch):
+        from library.tool_routes import update_tool
+
+        tool = self._tool()
+        tool.license = "old"
+        session = MagicMock()
+        session.get.return_value = tool
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/4", method="PATCH", json={
+            "personal_notes": NOTE, "category_tags": [" cloud ", "cloud", "", "ai"], "license": "  ",
+            "homepage_url": " https://cloud.google.com/ ",
+        }):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = update_tool(4)
+
+        assert tool.personal_notes == NOTE
+        assert tool.category_tags == ["cloud", "ai"] and tool.license is None
+        assert tool.homepage_url == "https://cloud.google.com/"
+        assert response.json["tool"]["personal_notes"].startswith("## GCP")
+        session.commit.assert_called_once()
+
+    def test_patch_rejects_bad_types_and_unknown_tool(self, monkeypatch):
+        from werkzeug.exceptions import BadRequest, NotFound
+        from library.tool_routes import update_tool
+
+        session = MagicMock()
+        session.get.return_value = self._tool()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/tools/4", method="PATCH", json={"category_tags": "cloud"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(BadRequest):
+                update_tool(4)
+        session.get.return_value = None
+        with app.test_request_context("/tools/9", method="PATCH", json={}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(NotFound):
+                update_tool(9)
+
+    def test_post_without_note_creates_the_tool_and_skips_the_vault(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        session = MagicMock()
+        written = MagicMock()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.write_note_with_version", written)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json={"name": "GCP", "personal_notes": "chmura"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response, status = create_tool()
+
+        assert status == 201 and response.json["obsidian"] is False
+        written.assert_not_called()
+        session.commit.assert_called_once()
+
+    def test_post_with_half_a_note_is_rejected(self, monkeypatch):
+        from werkzeug.exceptions import BadRequest
+        from library.tool_routes import create_tool
+
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: MagicMock())
+        app = Flask(__name__)
+        with app.test_request_context("/tools", method="POST", json={"name": "GCP", "note_path": "Narzedzia/GCP.md"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(BadRequest):
+                create_tool()

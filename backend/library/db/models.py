@@ -3241,6 +3241,8 @@ class ToolRecommendation(Base):
     source_context: Mapped[str | None] = mapped_column(Text)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     source_candidate_id: Mapped[int | None] = mapped_column(ForeignKey("tool_candidates.id", ondelete="SET NULL"))
+    # The catalog tool (Spis narzędzi) this radar entry became or is described by; set when the entry is adopted.
+    tool_id: Mapped[int | None] = mapped_column(ForeignKey("tools.id", ondelete="SET NULL"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -3251,6 +3253,7 @@ class ToolRecommendation(Base):
         ),
         Index("idx_tool_recommendations_status_created", "status", "created_at"),
         Index("idx_tool_recommendations_source_candidate", "source_candidate_id"),
+        Index("idx_tool_recommendations_tool", "tool_id"),
     )
 
     source_document: Mapped["Document | None"] = relationship(foreign_keys=[source_document_id])
