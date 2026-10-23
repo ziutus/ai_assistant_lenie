@@ -5,7 +5,7 @@ import ToolRelations, { type ToolRelation } from "../components/ToolRelations/to
 import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
 
-type RecommendationStatus = "watchlist" | "compare" | "testing" | "adopted" | "rejected" | "archived";
+type RecommendationStatus = "watchlist" | "compare" | "testing" | "test_future" | "adopted" | "phasing_out" | "rejected" | "archived";
 type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?: number; rate_limited?: boolean; pending?: number };
 type Recommendation = {
   id: number; name: string; homepage_url: string | null; description: string | null;
@@ -25,22 +25,26 @@ type ImportResult = { created?: number; skipped?: number; tools_skipped?: number
 
 const tabs: Array<[RecommendationStatus | "all", string]> = [
   ["watchlist", "Obserwuję"], ["compare", "Porównuję"], ["testing", "Testuję"],
-  ["adopted", "Używam"], ["rejected", "Odrzuciłem"], ["archived", "Archiwum"], ["all", "Wszystkie"],
+  ["test_future", "Przetestuję w przyszłości"],
+  ["adopted", "Używam"], ["phasing_out", "Wygaszam"], ["rejected", "Odrzuciłem"], ["archived", "Archiwum"], ["all", "Wszystkie"],
 ];
 const nextStatuses: Array<[RecommendationStatus, string]> = [
   ["watchlist", "Obserwuj"], ["compare", "Porównaj"], ["testing", "Testuj"],
-  ["adopted", "Używam"], ["rejected", "Odrzuć"], ["archived", "Archiwizuj"],
+  ["test_future", "Testuj w przyszłości"],
+  ["adopted", "Używam"], ["phasing_out", "Wygaszaj"], ["rejected", "Odrzuć"], ["archived", "Archiwizuj"],
 ];
 // Per-tool buttons state the decision in first person ("Odrzucam"); the bulk selector keeps the imperative labels above.
 const decisionLabels: Record<RecommendationStatus, string> = {
   watchlist: "Obserwuję", compare: "Porównam", testing: "Przetestuję",
-  adopted: "Używam", rejected: "Odrzucam", archived: "Archiwizuję",
+  test_future: "Przetestuję w przyszłości", adopted: "Używam", phasing_out: "Wygaszam", rejected: "Odrzucam", archived: "Archiwizuję",
 };
 const statusHelp: Record<RecommendationStatus, string> = {
   watchlist: "Zachowuję jako ciekawą rekomendację na przyszłość — bez pracy teraz.",
   compare: "Zbieram alternatywy i porównuję je z obecnym rozwiązaniem, gdy pojawi się konkretny problem.",
   testing: "Uruchomię lub sprawdzę narzędzie w praktyce; wynik testu zdecyduje, czy trafi do używanych.",
+  test_future: "Na pewno chcę to przetestować, ale dopiero gdy spełnię warunek (np. kupię komputer do lokalnych modeli). Warunek wpisz w notatce.",
   adopted: "Narzędzie jest już świadomie wybrane do użycia. Zostanie dodane do Spisu narzędzi, jeśli nie ma go tam jeszcze.",
+  phasing_out: "Nadal z tego korzystam, ale odchodzę od narzędzia (np. nie odnowię licencji). Wpis zostaje w stosie, dopóki nie przejdę na coś innego.",
   rejected: "Nie pasuje do moich potrzeb albo zastąpiło je inne rozwiązanie.",
   archived: "Zachowuję wpis historycznie, ale chowam go z bieżącego radaru.",
 };
@@ -52,7 +56,9 @@ const tabHelp: Record<RecommendationStatus | "all", string> = {
   watchlist: "Obserwuję: nowe rekomendacje, którym jeszcze nie nadano etapu. " + statusHelp.watchlist,
   compare: "Porównuję: " + statusHelp.compare,
   testing: "Testuję: " + statusHelp.testing,
+  test_future: "Przetestuję w przyszłości: " + statusHelp.test_future,
   adopted: "Używam: " + statusHelp.adopted,
+  phasing_out: "Wygaszam: " + statusHelp.phasing_out,
   rejected: "Odrzuciłem: " + statusHelp.rejected,
   archived: "Archiwum: " + statusHelp.archived,
   all: "Wszystkie: wpisy ze wszystkich etapów radaru naraz.",
