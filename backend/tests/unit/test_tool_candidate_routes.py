@@ -269,7 +269,7 @@ class TestAcceptEndpoint:
         assert candidate.status == "accepted"
         assert "Terraform" in response.json["warning"]
 
-    def test_service_key_forbidden(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_candidate_routes import accept_candidate
 
         candidate = _make_candidate()
@@ -279,7 +279,7 @@ class TestAcceptEndpoint:
         app = Flask(__name__)
 
         with app.test_request_context("/tool_candidates/1/accept", method="POST"), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             accept_candidate(1)
 
         assert exc_info.value.code == 403
@@ -317,7 +317,7 @@ class TestRejectEndpoint:
         assert candidate.reviewed_at is not None
         assert session.execute.call_count == 1
 
-    def test_service_key_forbidden(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_candidate_routes import reject_candidate
 
         candidate = _make_candidate()
@@ -327,7 +327,7 @@ class TestRejectEndpoint:
         app = Flask(__name__)
 
         with app.test_request_context("/tool_candidates/1/reject", method="POST"), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             reject_candidate(1)
 
         assert exc_info.value.code == 403
@@ -349,7 +349,7 @@ class TestDeferEndpoint:
 
         assert candidate.status == "deferred"
 
-    def test_service_key_forbidden(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_candidate_routes import defer_candidate
 
         candidate = _make_candidate()
@@ -359,7 +359,7 @@ class TestDeferEndpoint:
         app = Flask(__name__)
 
         with app.test_request_context("/tool_candidates/1/defer", method="POST"), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             defer_candidate(1)
 
         assert exc_info.value.code == 403
