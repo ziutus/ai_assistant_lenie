@@ -34,6 +34,7 @@ type Props = {
   total: number;
   busy: boolean;
   actions: Array<[FocusStatus, string, string]>;
+  helpText: string;
   details: React.ReactNode;
   onDecide: (status: FocusStatus, note: string | null) => void;
   onOpenPeer: (id: number) => void;
@@ -44,7 +45,7 @@ type Props = {
 };
 
 export default function ToolFocusReview({
-  apiUrl, headers, itemId, itemName, initialNote, position, total, busy, actions, details,
+  apiUrl, headers, itemId, itemName, initialNote, position, total, busy, actions, helpText, details,
   onDecide, onOpenPeer, onChanged, onPrev, onNext, onClose,
 }: Props) {
   const [peers, setPeers] = React.useState<Peers | null>(null);
@@ -100,6 +101,21 @@ export default function ToolFocusReview({
     <div style={{ border: "2px solid #2563eb", borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}>
       <h2 style={{ margin: "0 0 8px", color: "#0c2f4a" }}>{itemName}</h2>
       {details}
+      <div style={{ borderTop: "1px solid #bfdbfe", marginTop: 12, paddingTop: 12 }}>
+        <label style={{ display: "block", marginBottom: 12 }}>
+          <span>Notatka do decyzji (opcjonalnie)</span>
+          <textarea value={note} onChange={event => setNote(event.target.value)} rows={3}
+            placeholder="Dlaczego tak: czym wygrywa lub przegrywa z używanym narzędziem…"
+            style={{ width: "100%", display: "block", marginTop: 4 }} />
+        </label>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+          {actions.map(([value, label, help]) => <button key={value} title={help} aria-label={`${label}: ${help}`} disabled={busy}
+            onClick={() => onDecide(value, noteChanged ? trimmedNote : null)}>{label}</button>)}
+          {position > 0 && <button type="button" onClick={onNext} disabled={position >= total || busy} title="Zostaw bez zmian i przejdź do następnego narzędzia (notatka nie zostanie zapisana)">Pomiń</button>}
+          <span role="img" tabIndex={0} title={helpText} aria-label={helpText}
+            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", background: "#e2e8f0", color: "#334155", fontSize: ".7rem", fontWeight: 700, cursor: "help" }}>?</span>
+        </div>
+      </div>
     </div>
 
     <section aria-label="Alternatywy w tej kategorii" style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 16px", marginBottom: 14, background: "#f8fafc" }}>
@@ -131,17 +147,5 @@ export default function ToolFocusReview({
         {tool.personal_notes && <div style={{ color: "#166534", fontSize: ".85rem", marginTop: 2 }}>Notatka: {tool.personal_notes}</div>}
       </div>)}
     </section>
-
-    <label style={{ display: "block", marginBottom: 12 }}>
-      <span>Notatka do decyzji (opcjonalnie)</span>
-      <textarea value={note} onChange={event => setNote(event.target.value)} rows={3}
-        placeholder="Dlaczego tak: czym wygrywa lub przegrywa z używanym narzędziem…"
-        style={{ width: "100%", display: "block", marginTop: 4 }} />
-    </label>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-      {actions.map(([value, label, help]) => <button key={value} title={help} aria-label={`${label}: ${help}`} disabled={busy}
-        onClick={() => onDecide(value, noteChanged ? trimmedNote : null)}>{label}</button>)}
-      {position > 0 && <button type="button" onClick={onNext} disabled={position >= total || busy} title="Zostaw bez zmian i przejdź do następnego narzędzia (notatka nie zostanie zapisana)">Pomiń</button>}
-    </div>
   </div>;
 }

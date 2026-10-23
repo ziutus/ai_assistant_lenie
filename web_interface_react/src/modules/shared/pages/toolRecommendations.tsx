@@ -36,13 +36,18 @@ const nextStatuses: Array<[RecommendationStatus, string]> = [
   ["watchlist", "Obserwuj"], ["compare", "Porównaj"], ["testing", "Testuj"],
   ["adopted", "Używam"], ["rejected", "Odrzuć"], ["archived", "Archiwizuj"],
 ];
+// Per-tool buttons state the decision in first person ("Odrzucam"); the bulk selector keeps the imperative labels above.
+const decisionLabels: Record<RecommendationStatus, string> = {
+  watchlist: "Obserwuję", compare: "Porównam", testing: "Przetestuję",
+  adopted: "Używam", rejected: "Odrzucam", archived: "Archiwizuję",
+};
 const statusHelp: Record<RecommendationStatus, string> = {
-  watchlist: "Zachowaj jako ciekawą rekomendację na przyszłość — bez pracy teraz.",
-  compare: "Zbierz alternatywy i porównaj je z obecnym rozwiązaniem, gdy pojawi się konkretny problem.",
-  testing: "Uruchom lub sprawdź narzędzie w praktyce; wynik testu zdecyduje, czy trafi do używanych.",
+  watchlist: "Zachowuję jako ciekawą rekomendację na przyszłość — bez pracy teraz.",
+  compare: "Zbieram alternatywy i porównuję je z obecnym rozwiązaniem, gdy pojawi się konkretny problem.",
+  testing: "Uruchomię lub sprawdzę narzędzie w praktyce; wynik testu zdecyduje, czy trafi do używanych.",
   adopted: "Narzędzie jest już świadomie wybrane do użycia. Zostanie dodane do Spisu narzędzi, jeśli nie ma go tam jeszcze.",
-  rejected: "Nie pasuje do Twoich potrzeb albo został zastąpiony innym rozwiązaniem.",
-  archived: "Zachowaj historycznie, ale ukryj z bieżącego radaru.",
+  rejected: "Nie pasuje do moich potrzeb albo zastąpiło je inne rozwiązanie.",
+  archived: "Zachowuję wpis historycznie, ale chowam go z bieżącego radaru.",
 };
 
 const countFormat = new Intl.NumberFormat("pl-PL");
@@ -68,6 +73,9 @@ function GithubStatsLine({ stats }: { stats: GithubStats }) {
     {inactive && !stats.archived && badge("brak aktywności od ponad roku", "#fef3c7", "#92400e")}
   </div>;
 }
+
+const decisionsHelp = (Object.keys(decisionLabels) as RecommendationStatus[])
+  .map(value => `${decisionLabels[value]} — ${statusHelp[value]}`).join("\n");
 
 const tabHelp: Record<RecommendationStatus | "all", string> = {
   watchlist: "Nieocenione: nowe rekomendacje, którym jeszcze nie nadano etapu. " + statusHelp.watchlist,
@@ -338,12 +346,12 @@ export default function ToolRecommendations() {
     <details style={{ margin: "0 0 18px", color: "#475569" }}>
       <summary style={{ cursor: "help" }}>Co znaczą etapy radaru?</summary>
       <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-        <li><strong>Obserwuj</strong> — zachowaj rekomendację na później, bez rozpoczynania researchu lub testów.</li>
-        <li><strong>Porównaj</strong> — zbierz alternatywy i sprawdź, czy coś rozwiąże obecny problem lepiej.</li>
-        <li><strong>Testuj</strong> — uruchom narzędzie w praktyce, zanim uznasz je za używane.</li>
+        <li><strong>Obserwuję</strong> — zachowuję rekomendację na później, bez rozpoczynania researchu lub testów.</li>
+        <li><strong>Porównam</strong> — zbieram alternatywy i sprawdzam, czy coś rozwiąże obecny problem lepiej.</li>
+        <li><strong>Przetestuję</strong> — uruchomię narzędzie w praktyce, zanim uznam je za używane.</li>
         <li><strong>Używam</strong> — narzędzie zostało świadomie wybrane i trafia do Spisu narzędzi (bez duplikowania istniejącego rekordu).</li>
-        <li><strong>Odrzuć</strong> — narzędzie nie pasuje do potrzeb albo lepszym wyborem jest alternatywa.</li>
-        <li><strong>Archiwizuj</strong> — zachowaj wpis i jego źródła historycznie, ale ukryj go z bieżącego radaru.</li>
+        <li><strong>Odrzucam</strong> — narzędzie nie pasuje do moich potrzeb albo lepszym wyborem jest alternatywa.</li>
+        <li><strong>Archiwizuję</strong> — zachowuję wpis i jego źródła historycznie, ale chowam go z bieżącego radaru.</li>
       </ul>
     </details>
     <div style={{ display: "flex", alignItems: "end", gap: 8, flexWrap: "wrap", padding: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 18 }}>
@@ -375,7 +383,7 @@ export default function ToolRecommendations() {
     {!loading && !error && focusId === null && items.length > 0 && !visibleItems.length && <p>Żaden z zaznaczonych wpisów nie pasuje do bieżących filtrów.</p>}
     {focusItem && <ToolFocusReview key={focusItem.id} apiUrl={apiUrl} headers={headers} itemId={focusItem.id} itemName={focusItem.name}
       initialNote={focusItem.personal_note} position={focusIdx + 1} total={visibleItems.length} busy={busy !== null}
-      actions={nextStatuses.filter(([value]) => value !== focusItem.status).map(([value, label]) => [value, label, statusHelp[value]])}
+      actions={nextStatuses.filter(([value]) => value !== focusItem.status).map(([value]) => [value, decisionLabels[value], statusHelp[value]])} helpText={decisionsHelp}
       details={cardDetails(focusItem)} onDecide={(next, note) => void decideFocused(next, note)}
       onOpenPeer={id => setFocus(id)} onChanged={() => void load()}
       onPrev={() => setFocus(visibleItems[Math.max(focusIdx - 1, 0)]?.id ?? null)}
@@ -384,7 +392,7 @@ export default function ToolRecommendations() {
     {focusId === null && visibleItems.map(item => <article key={item.id} style={{ border: selectedIds.has(item.id) ? "2px solid #2563eb" : "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggle(item.id)} aria-label={`Zaznacz ${item.name}`} /><h3 style={{ margin: 0 }}><button type="button" onClick={() => setFocus(item.id)} title="Otwórz to narzędzie do oceny: opis, źródła i inne narzędzia z tej kategorii" style={{ all: "unset", cursor: "pointer", color: "#1d4ed8", textDecoration: "underline" }}>{item.name}</button></h3><button type="button" onClick={() => setFocus(item.id)} title="Otwórz to narzędzie do oceny: opis, źródła i inne narzędzia z tej kategorii">Oceń</button></div>
       {cardDetails(item)}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>{nextStatuses.filter(([value]) => value !== item.status).map(([value, label]) => <button key={value} title={statusHelp[value]} aria-label={`${label}: ${statusHelp[value]}`} disabled={busy === item.id} onClick={() => void move(item, value)}>{label}</button>)}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 12 }}>{nextStatuses.filter(([value]) => value !== item.status).map(([value]) => <button key={value} title={statusHelp[value]} aria-label={`${decisionLabels[value]}: ${statusHelp[value]}`} disabled={busy === item.id} onClick={() => void move(item, value)}>{decisionLabels[value]}</button>)}<Help text={decisionsHelp} /></div>
     </article>)}
   </section>;
 }

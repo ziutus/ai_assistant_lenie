@@ -15,7 +15,7 @@ const renderFocus = (onDecide = vi.fn(), handlers: { onOpenPeer?: (id: number) =
   const fetchMock = vi.fn(async () => ({ ok: true, json: async () => peers }));
   vi.stubGlobal("fetch", fetchMock);
   render(<ToolFocusReview apiUrl="http://api" headers={{}} itemId={3} itemName="Clef" initialNote={null}
-    position={1} total={2} busy={false} actions={[["compare", "Porównaj", "pomoc"], ["rejected", "Odrzuć", "pomoc"]]}
+    position={1} total={2} busy={false} actions={[["compare", "Porównaj", "pomoc"], ["rejected", "Odrzuć", "pomoc"]]} helpText="opis akcji"
     details={<p>opis Clefa</p>} onDecide={onDecide} onOpenPeer={handlers.onOpenPeer ?? vi.fn()}
     onChanged={handlers.onChanged ?? vi.fn()} onPrev={vi.fn()} onNext={vi.fn()} onClose={vi.fn()} />);
   return fetchMock;
