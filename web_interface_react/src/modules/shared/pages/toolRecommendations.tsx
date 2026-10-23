@@ -383,7 +383,7 @@ export default function ToolRecommendations() {
     {!loading && !error && focusId === null && items.length > 0 && !visibleItems.length && <p>Żaden z zaznaczonych wpisów nie pasuje do bieżących filtrów.</p>}
     {focusItem && <ToolFocusReview key={focusItem.id} apiUrl={apiUrl} headers={headers} itemId={focusItem.id} itemName={focusItem.name}
       initialNote={focusItem.personal_note} position={focusIdx + 1} total={visibleItems.length} busy={busy !== null}
-      actions={nextStatuses.filter(([value]) => value !== focusItem.status).map(([value]) => [value, decisionLabels[value], statusHelp[value]])} helpText={decisionsHelp}
+      actions={nextStatuses.map(([value]) => [value, decisionLabels[value], statusHelp[value]])} currentStatus={focusItem.status} helpText={decisionsHelp}
       details={cardDetails(focusItem)} onDecide={(next, note) => void decideFocused(next, note)}
       onOpenPeer={id => setFocus(id)} onChanged={() => void load()}
       onPrev={() => setFocus(visibleItems[Math.max(focusIdx - 1, 0)]?.id ?? null)}

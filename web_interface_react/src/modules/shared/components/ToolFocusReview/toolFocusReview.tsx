@@ -33,7 +33,9 @@ type Props = {
   position: number;
   total: number;
   busy: boolean;
+  /** Every decision, in display order; the card hides the reviewed tool's own stage and each neighbour's. */
   actions: Array<[FocusStatus, string, string]>;
+  currentStatus: FocusStatus;
   helpText: string;
   details: React.ReactNode;
   onDecide: (status: FocusStatus, note: string | null) => void;
@@ -45,7 +47,7 @@ type Props = {
 };
 
 export default function ToolFocusReview({
-  apiUrl, headers, itemId, itemName, initialNote, position, total, busy, actions, helpText, details,
+  apiUrl, headers, itemId, itemName, initialNote, position, total, busy, actions, currentStatus, helpText, details,
   onDecide, onOpenPeer, onChanged, onPrev, onNext, onClose,
 }: Props) {
   const [peers, setPeers] = React.useState<Peers | null>(null);
@@ -109,7 +111,7 @@ export default function ToolFocusReview({
             style={{ width: "100%", display: "block", marginTop: 4 }} />
         </label>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-          {actions.map(([value, label, help]) => <button key={value} title={help} aria-label={`${label}: ${help}`} disabled={busy}
+          {actions.filter(([value]) => value !== currentStatus).map(([value, label, help]) => <button key={value} title={help} aria-label={`${label}: ${help}`} disabled={busy}
             onClick={() => onDecide(value, noteChanged ? trimmedNote : null)}>{label}</button>)}
           {position > 0 && <button type="button" onClick={onNext} disabled={position >= total || busy} title="Zostaw bez zmian i przejdź do następnego narzędzia (notatka nie zostanie zapisana)">Pomiń</button>}
           <span role="img" tabIndex={0} title={helpText} aria-label={helpText}
