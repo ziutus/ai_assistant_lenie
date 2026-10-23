@@ -54,6 +54,8 @@ export default function ToolFocusReview({
   const [peersError, setPeersError] = React.useState("");
   const [reloadKey, setReloadKey] = React.useState(0);
   const [peerBusy, setPeerBusy] = React.useState<number | null>(null);
+  const [selected, setSelected] = React.useState<Set<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = React.useState(false);
   const [note, setNote] = React.useState(initialNote ?? "");
 
   React.useEffect(() => { setNote(initialNote ?? ""); }, [itemId, initialNote]);
@@ -85,6 +87,28 @@ export default function ToolFocusReview({
     } catch (cause) {
       setPeersError(cause instanceof Error ? cause.message : "Nie udało się zmienić statusu narzędzia");
     } finally { setPeerBusy(null); }
+  };
+
+  // A tool already in use is the yardstick, so it is never part of a bulk move.
+  const selectable = peers ? peers.radar.filter(peer => peer.status !== "adopted") : [];
+  const toggleSelected = (id: number) => setSelected(current => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const movePeersBulk = async (status: FocusStatus) => {
+    const ids = selectable.filter(peer => selected.has(peer.id)).map(peer => peer.id);
+    if (!ids.length) return;
+    setBulkBusy(true); setPeersError("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/bulk_status`, { method: "POST", headers, body: JSON.stringify({ ids, status }) });
+      if (!response.ok) throw new Error("Nie udało się zmienić statusu zaznaczonych narzędzi");
+      setSelected(new Set());
+      setReloadKey(current => current + 1);
+      onChanged();
+    } catch (cause) {
+      setPeersError(cause instanceof Error ? cause.message : "Nie udało się zmienić statusu zaznaczonych narzędzi");
+    } finally { setBulkBusy(false); }
   };
 
   const radar = peers ? [...peers.radar].sort((a, b) => statusOrder[a.status] - statusOrder[b.status] || a.name.localeCompare(b.name)) : [];
@@ -129,7 +153,16 @@ export default function ToolFocusReview({
       {!peers && !peersError && <p style={{ color: "#64748b" }}>Ładowanie alternatyw…</p>}
       {peers && !peers.category && <p style={{ color: "#64748b" }}>To narzędzie nie ma kategorii, więc nie ma z czym go zestawić.</p>}
       {peers && peers.category && !radar.length && !peers.tools.length && <p style={{ color: "#64748b" }}>Brak innych narzędzi w tej kategorii — to jedyne w tym obszarze.</p>}
+      {selectable.length > 1 && <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "0 0 8px", padding: "8px 10px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8 }}>
+        <button type="button" onClick={() => setSelected(new Set(selectable.map(peer => peer.id)))}>Zaznacz wszystkie ({selectable.length})</button>
+        <button type="button" onClick={() => setSelected(new Set())} disabled={!selected.size}>Wyczyść</button>
+        <strong>{selected.size} zaznaczonych</strong>
+        {actions.filter(([value]) => value !== "adopted").map(([value, label, help]) =>
+          <button key={value} type="button" disabled={!selected.size || bulkBusy} title={`Dla zaznaczonych: ${help}`}
+            aria-label={`Zaznaczone: ${label}`} onClick={() => void movePeersBulk(value)}>{label} (zaznaczone)</button>)}
+      </div>}
       {radar.map(peer => <div key={`r${peer.id}`} style={{ borderTop: "1px solid #e2e8f0", padding: "8px 0" }}>
+        {peer.status !== "adopted" && <input type="checkbox" checked={selected.has(peer.id)} onChange={() => toggleSelected(peer.id)} aria-label={`Zaznacz ${peer.name}`} style={{ marginRight: 8 }} />}
         <strong>{peer.name}</strong><span style={badgeStyle(peer.status === "adopted")}>{statusLabel[peer.status]}</span>
         <button type="button" onClick={() => onOpenPeer(peer.id)} style={{ marginLeft: 8 }} title={`Otwórz kartę ${peer.name} do pełnej oceny`}>Oceń</button>
         {peer.status !== "adopted" && <span style={{ marginLeft: 8, display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
