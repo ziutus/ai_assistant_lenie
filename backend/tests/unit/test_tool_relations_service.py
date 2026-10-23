@@ -84,5 +84,42 @@ class TestRelationsFor:
         assert result[1][0]["other_name"] == "AWS" and result[1][0]["in_my_stack"] is True
         assert result[2][0]["other_name"] == "Floci" and result[2][0]["in_my_stack"] is False
 
+    def test_edge_is_rendered_with_its_direction(self):
+        edge = SimpleNamespace(id=9, from_tool_id=1, to_tool_id=2, relation="emulates", status="confirmed",
+                               detected_by="name_match", context=None)
+        session = MagicMock()
+        edges = MagicMock()
+        edges.scalars.return_value.all.return_value = [edge]
+        entries = MagicMock()
+        entries.scalars.return_value.all.return_value = [_tool(1, "Floci"), _tool(2, "AWS", "adopted")]
+        session.execute.side_effect = [edges, entries]
+
+        result = svc.relations_for(session, [1, 2])
+
+        assert result[1][0]["direction"] == "out" and result[2][0]["direction"] == "in"
+
     def test_empty_input(self):
         assert svc.relations_for(MagicMock(), []) == {}
+
+
+class TestRelationsForTools:
+    """Catalog tools reach their relations through ToolRecommendation.tool_id, never through the name."""
+
+    def test_relations_of_every_radar_entry_pointing_at_the_tool_are_merged_without_self_links(self, monkeypatch):
+        gcp_a = _tool(10, "GCP", "adopted", tool_id=4)
+        gcp_b = _tool(11, "GCP", "watchlist", tool_id=4)
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.all.return_value = [gcp_a, gcp_b]
+        floci = {"id": 1, "other_id": 31, "other_name": "Floci"}
+        duplicate = {"id": 1, "other_id": 31, "other_name": "Floci"}
+        to_twin = {"id": 2, "other_id": 11, "other_name": "GCP"}  # an edge between two entries of the same tool
+        monkeypatch.setattr(svc, "relations_for", lambda _s, ids: {10: [floci, to_twin], 11: [duplicate]})
+
+        result = svc.relations_for_tools(session, [SimpleNamespace(id=4), SimpleNamespace(id=5)])
+
+        assert result == {4: [floci]}
+
+    def test_no_tools_no_query(self):
+        session = MagicMock()
+        assert svc.relations_for_tools(session, []) == {}
+        session.execute.assert_not_called()

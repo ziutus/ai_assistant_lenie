@@ -20,7 +20,7 @@ type FeedItem = {
   groups?: ContentGroup[];
 };
 
-type Action = "import" | "skip" | "ignore" | "save-for-later" | "restore";
+type Action = "import" | "skip" | "ignore" | "save-for-later" | "restore" | "to_radar";
 type ReviewDecision = {
   id: number; batch_id: string; job_id: string | null; feed_item_id: number;
   feed_source_id: number; title: string; action: string; previous_status: string;
@@ -38,6 +38,9 @@ const reviewReasons: Array<[ReviewReason, string]> = [
 // Without a timeout a request sent while the VPN/network is down can hang for
 // minutes (packets are silently dropped), leaving the button disabled and no
 // message. Imports fetch the page server-side, so they get a longer budget.
+const RADAR_HELP = "Do radaru: wpis trafia do Radaru narzędzi (etap „Nieocenione”) z tym materiałem jako źródłem, a stąd znika. Lenie od razu proponuje powiązania z narzędziami, które już masz w radarze (np. AWS, Terraform). Jeśli narzędzie jest już w radarze, materiał zostanie dopisany jako kolejna wzmianka.";
+const RADAR_CATEGORY_HINTS = ["DecisionModels", "Development", "AI", "InfraManagement", "Security"];
+const suggestToolName = (title: string) => (title.split(/\s+[-–—]\s+|\s*:\s+|\s*\|\s*/)[0] || title).trim();
 const ACTION_TIMEOUT_MS = 20_000;
 const IMPORT_TIMEOUT_MS = 90_000;
 
@@ -95,6 +98,10 @@ export default function FeedReview() {
   const [ignorePattern, setIgnorePattern] = React.useState("");
   const [skipItemId, setSkipItemId] = React.useState<number | null>(null);
   const [skipReason, setSkipReason] = React.useState<ReviewReason>("not_interested");
+  const [radarItemId, setRadarItemId] = React.useState<number | null>(null);
+  const [radarName, setRadarName] = React.useState("");
+  const [radarCategory, setRadarCategory] = React.useState("");
+  const [radarMessage, setRadarMessage] = React.useState("");
   const [showHistory, setShowHistory] = React.useState(false);
   const [decisions, setDecisions] = React.useState<ReviewDecision[]>([]);
   const [historyLoading, setHistoryLoading] = React.useState(false);
@@ -201,7 +208,14 @@ export default function FeedReview() {
       setIgnoreItemId(null);
       setIgnorePattern("");
       setSkipItemId(null);
-      if (action === "import") {
+      setRadarItemId(null);
+      if (action === "to_radar") {
+        const related = Array.isArray(data.proposed_relations) ? data.proposed_relations as string[] : [];
+        const name = data.recommendation?.name ?? data.existing_tool?.name ?? "narzędzie";
+        setRadarMessage(data.existing_tool ? `„${name}” jest już w Spisie narzędzi — wpis usunięto z kolejki.`
+          : `${data.created ? "Dodano do radaru" : "Dopisano wzmiankę do wpisu w radarze"}: ${name}.${related.length ? ` Zaproponowane powiązania: ${related.join(", ")}.` : ""}`);
+        await load();
+      } else if (action === "import") {
         const feedItem = data.feed_item as FeedItem | undefined;
         if (feedItem) setItems(current => current.map(item => item.id === id ? { ...item, ...feedItem } : item));
         const requestedType = body && "document_type" in body
@@ -278,6 +292,7 @@ export default function FeedReview() {
       </select>
     </label>
     {error && <p className="errorText" role="alert">{error}</p>}
+    {radarMessage && <p role="status" style={{ color: "#166534" }}>{radarMessage} <a href="/tool-recommendations">Otwórz radar</a></p>}
     <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wpisów feedu"
       onPageChange={nextPage => { void load(nextPage); }} />
     {!loading && !error && !items.length && <p>{view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
@@ -309,6 +324,8 @@ export default function FeedReview() {
               <button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "link", keep_for_review: true })}>Zaimportuj jako link i zapisz do przeczytania</button>{" "}
               <button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "webpage" })}>Zaimportuj jako webpage</button>
             </>}{" "}
+            <HelpBadge text={RADAR_HELP} />
+            <button disabled={busy} onClick={() => { setRadarItemId(item.id); setRadarName(suggestToolName(item.title)); setRadarCategory(""); }}>Do radaru</button>{" "}
             <HelpBadge text={SKIP_HELP} />
             <button disabled={busy} onClick={() => { setSkipItemId(item.id); setSkipReason("not_interested"); }}>Pomiń</button>{" "}
             <HelpBadge text={IGNORE_HELP} />
@@ -319,6 +336,8 @@ export default function FeedReview() {
               <button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "link" })}>Zaimportuj jako link</button>{" "}
               <button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "webpage" })}>Zaimportuj jako webpage</button>
             </>}{" "}
+            <HelpBadge text={RADAR_HELP} />
+            <button disabled={busy} onClick={() => { setRadarItemId(item.id); setRadarName(suggestToolName(item.title)); setRadarCategory(""); }}>Do radaru</button>{" "}
             <HelpBadge text="Nie dodawaj: odrzuca tylko ten jeden wpis, bez reguły dla źródła." />
             <button disabled={busy} onClick={() => void act(item.id, "skip")}>Nie dodawaj</button>{" "}
             <HelpBadge text={IGNORE_HELP} />
@@ -335,6 +354,17 @@ export default function FeedReview() {
           <input aria-label="Wzorzec" value={ignorePattern} onChange={event => setIgnorePattern(event.target.value)} required disabled={busy} />{" "}
           <button type="submit" disabled={busy || !ignorePattern}>Zastosuj</button>{" "}
           <button type="button" onClick={() => setIgnoreItemId(null)} disabled={busy}>Anuluj</button>
+        </form>}
+        {radarItemId === item.id && <form onSubmit={event => { event.preventDefault(); void act(item.id, "to_radar", { name: radarName, category: radarCategory }); }}>
+          <label>Nazwa narzędzia:{" "}
+            <input aria-label="Nazwa narzędzia" value={radarName} onChange={event => setRadarName(event.target.value)} required disabled={busy} />
+          </label>{" "}
+          <label>Kategoria:{" "}
+            <input aria-label="Kategoria narzędzia" list="radar-category-hints" value={radarCategory} onChange={event => setRadarCategory(event.target.value)} disabled={busy} placeholder="np. DecisionModels" />
+          </label>
+          <datalist id="radar-category-hints">{RADAR_CATEGORY_HINTS.map(value => <option key={value} value={value} />)}</datalist>{" "}
+          <button type="submit" disabled={busy || !radarName.trim()}>Dodaj do radaru</button>{" "}
+          <button type="button" onClick={() => setRadarItemId(null)} disabled={busy}>Anuluj</button>
         </form>}
         {skipItemId === item.id && <form onSubmit={event => { event.preventDefault(); void act(item.id, "skip", { reason: skipReason }); }}>
           <label>Powód pominięcia:{" "}

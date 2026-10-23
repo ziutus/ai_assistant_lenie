@@ -14,7 +14,7 @@ def _item(status="watchlist"):
         id=17, name="LinkStack", homepage_url="https://github.com/LinkStackOrg/linkstack",
         description="Współdzielona strona z linkami", category="bookmarking", status=status,
         personal_note=None, source_url="https://example.com/awesome", source_context="Awesome Homelab",
-        source_document_id=None, source_candidate_id=None, source_document=None,
+        source_document_id=None, source_candidate_id=None, source_document=None, tool_id=None,
         created_at=dt.datetime(2026, 8, 23, tzinfo=dt.timezone.utc),
         updated_at=dt.datetime(2026, 8, 23, tzinfo=dt.timezone.utc),
     )

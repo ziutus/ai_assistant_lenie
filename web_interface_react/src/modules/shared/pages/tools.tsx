@@ -1,5 +1,6 @@
 import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
+import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 
 type Tool = {
   id: number;
@@ -14,6 +15,7 @@ type Tool = {
   source_candidate_id: number | null;
   status: string;
   obsidian_note_path: string | null;
+  relations: ToolRelation[];
   created_at: string | null;
   updated_at: string | null;
 };
@@ -27,6 +29,9 @@ export default function Tools() {
   const [selectedTag, setSelectedTag] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
+  const [editingId, setEditingId] = React.useState<number | null>(null);
+  const [draft, setDraft] = React.useState("");
+  const [savingId, setSavingId] = React.useState<number | null>(null);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
   // Guards against out-of-order responses: switching the tag filter quickly
   // aborts the previous in-flight request so a slower, stale response for an
@@ -74,6 +79,32 @@ export default function Tools() {
 
   React.useEffect(() => { void load(); }, [load]);
 
+  const saveNote = async (tool: Tool) => {
+    setSavingId(tool.id); setError("");
+    try {
+      const response = await fetch(`${apiUrl}/tools/${tool.id}`, {
+        method: "PATCH", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ personal_notes: draft }),
+      });
+      const data = await response.json().catch(() => ({})) as { tool?: Tool; message?: string };
+      if (!response.ok || !data.tool) throw new Error(data.message || `Nie udało się zapisać notatki (HTTP ${response.status})`);
+      const saved = data.tool;
+      setTools(current => current.map(item => item.id === tool.id ? { ...item, personal_notes: saved.personal_notes, updated_at: saved.updated_at } : item));
+      setEditingId(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się zapisać notatki"); }
+    finally { setSavingId(null); }
+  };
+
+  const reviewRelation = async (id: number, status: "confirmed" | "rejected") => {
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_relations/${id}`, {
+        method: "PATCH", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error("Nie udało się zapisać decyzji o powiązaniu");
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); }
+  };
+
   const formatDate = (value: string | null) => value ? new Date(value).toLocaleString("pl-PL") : null;
 
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
@@ -81,10 +112,10 @@ export default function Tools() {
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <h1 style={{ color: "#0c2f4a", margin: 0 }}>Spis narzędzi</h1>
         <span
-          title={"Ta strona pokazuje wyłącznie już zapisane narzędzia (widok do odczytu).\n\n" +
-            "Nowe narzędzie dodaje się przez zakładkę „Kandydaci-narzędzia”: zaakceptuj kandydata, " +
-            "a draft wygeneruje i zapisze Claude Code/Codex (POST /tools) po Twojej jawnej zgodzie. " +
-            "Z tej strony nie da się dodać ani edytować narzędzia ręcznie."}
+          title={"Spis narzędzi, które świadomie wybrałeś (etap „Używane” w Radarze narzędzi trafia tu automatycznie).\n\n" +
+            "Notatkę o narzędziu piszesz i edytujesz tutaj, w Lenie — Obsidian nie jest potrzebny. " +
+            "Starsze narzędzia mogą mieć dodatkowo notatkę w Obsidianie (pokazana jako starsza kopia).\n\n" +
+            "Powiązania (współpracuje z, alternatywa dla…) pochodzą z Radaru narzędzi; propozycje potwierdzasz ✓ lub odrzucasz ✗."}
           style={{
             display: "inline-flex", alignItems: "center", justifyContent: "center",
             width: 20, height: 20, borderRadius: "50%", background: "#e2e8f0", color: "#334155",
@@ -117,12 +148,23 @@ export default function Tools() {
         {tool.license && tool.pricing && <span> · </span>}
         {tool.pricing && <span>Cennik: {tool.pricing}</span>}
       </div>}
-      {tool.personal_notes && <blockquote style={{ margin: "8px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>
-        {tool.personal_notes}
-      </blockquote>}
-      <div style={{ color: tool.obsidian_note_path ? "#166534" : "#b45309", fontSize: ".85rem", marginTop: 8 }}>
-        {tool.obsidian_note_path ? `✓ Notatka w Obsidian: ${tool.obsidian_note_path}` : "⚠ brak notatki w Obsidian"}
-      </div>
+      <ToolRelations relations={tool.relations ?? []} onReview={(id, status) => void reviewRelation(id, status)} />
+      {editingId === tool.id ? <div style={{ margin: "8px 0" }}>
+        <textarea aria-label={`Notatka o ${tool.name}`} value={draft} onChange={event => setDraft(event.target.value)} rows={8}
+          style={{ width: "100%", boxSizing: "border-box" }} disabled={savingId === tool.id} />
+        <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+          <button className="button" type="button" disabled={savingId === tool.id} onClick={() => void saveNote(tool)}>Zapisz notatkę</button>
+          <button type="button" disabled={savingId === tool.id} onClick={() => setEditingId(null)}>Anuluj</button>
+        </div>
+      </div> : <div style={{ margin: "8px 0" }}>
+        {tool.personal_notes
+          ? <blockquote style={{ margin: "0 0 6px", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12, whiteSpace: "pre-wrap" }}>{tool.personal_notes}</blockquote>
+          : <div style={{ color: "#64748b", fontSize: ".85rem", marginBottom: 6 }}>Brak notatki — napisz, do czego używasz tego narzędzia.</div>}
+        <button type="button" onClick={() => { setEditingId(tool.id); setDraft(tool.personal_notes ?? ""); }}>{tool.personal_notes ? "Edytuj notatkę" : "Dodaj notatkę"}</button>
+      </div>}
+      {tool.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".85rem", marginTop: 8 }}>
+        Starsza kopia w Obsidianie: {tool.obsidian_note_path}
+      </div>}
       {formatDate(tool.created_at) && <div style={{ color: "#64748b", fontSize: ".85rem", marginTop: 6 }}>Dodano: {formatDate(tool.created_at)}</div>}
     </article>)}
   </section>;

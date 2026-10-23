@@ -1,6 +1,7 @@
 import React from "react";
 import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "adopted" | "rejected" | "archived";
 type GithubStats = {
@@ -10,14 +11,11 @@ type GithubStats = {
   pushed_at: string | null; fetched_at: string | null;
 };
 type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?: number; rate_limited?: boolean; pending?: number };
-type ToolRelation = {
-  id: number; relation: "works_with" | "emulates" | "alternative_to"; status: "proposed" | "confirmed";
-  context: string | null; other_id: number; other_name: string; other_status: RecommendationStatus; in_my_stack: boolean;
-};
 type Recommendation = {
   id: number; name: string; homepage_url: string | null; description: string | null;
   github: GithubStats | null;
   relations: ToolRelation[]; stack_matches: string[];
+  feed_mentions: { count: number; samples: Array<{ id: number; title: string; url: string }> };
   category: string | null; status: RecommendationStatus; personal_note: string | null;
   origin: "ai_detected" | "curated";
   source_url: string | null; source_context: string | null;
@@ -67,25 +65,6 @@ function GithubStatsLine({ stats }: { stats: GithubStats }) {
     {stats.status === "not_found" && badge("repozytorium nie istnieje", "#fee2e2", "#991b1b")}
     {stats.archived && badge("zarchiwizowane", "#fef3c7", "#92400e")}
     {inactive && !stats.archived && badge("brak aktywności od ponad roku", "#fef3c7", "#92400e")}
-  </div>;
-}
-
-const relationLabel: Record<ToolRelation["relation"], string> = {
-  works_with: "współpracuje z", emulates: "emuluje", alternative_to: "alternatywa dla",
-};
-
-function RelationsLine({ relations, onReview }: { relations: ToolRelation[]; onReview: (id: number, status: "confirmed" | "rejected") => void }) {
-  if (!relations.length) return null;
-  return <div style={{ margin: "8px 0", fontSize: ".85rem", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-    {relations.map(relation => <span key={relation.id}
-      title={`${relationLabel[relation.relation]} ${relation.other_name}${relation.status === "proposed" ? " — propozycja wykryta automatycznie" : ""}${relation.context ? `: …${relation.context}…` : ""}`}
-      style={{ border: relation.status === "proposed" ? "1px dashed #94a3b8" : "1px solid #94a3b8", background: relation.in_my_stack ? "#dcfce7" : "#f1f5f9", color: "#334155", borderRadius: 12, padding: "2px 8px" }}>
-      {relationLabel[relation.relation]} <strong>{relation.other_name}</strong>{relation.in_my_stack && " ✔ mój stack"}
-      {relation.status === "proposed" && <>
-        {" "}<button type="button" aria-label={`Potwierdź powiązanie z ${relation.other_name}`} title="Potwierdź" onClick={() => onReview(relation.id, "confirmed")} style={{ padding: "0 4px" }}>✓</button>
-        <button type="button" aria-label={`Odrzuć powiązanie z ${relation.other_name}`} title="Odrzuć — nie zostanie zaproponowane ponownie" onClick={() => onReview(relation.id, "rejected")} style={{ padding: "0 4px" }}>✗</button>
-      </>}
-    </span>)}
   </div>;
 }
 
@@ -332,8 +311,13 @@ export default function ToolRecommendations() {
       {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
       {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
       {item.github && <GithubStatsLine stats={item.github} />}
+      {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
+        title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
+        📰 {item.feed_mentions.count} {item.feed_mentions.count === 1 ? "wzmianka" : "wzmianek"} w feedach
+        <Help text="Tyle wpisów w obserwowanych feedach (tytuł lub streszczenie) wspomina to narzędzie — sygnał, jak głośno o nim jest. Najedź na wiersz, żeby zobaczyć kilka tytułów." />
+      </div>}
       {item.stack_matches.length > 0 && <div style={{ margin: "6px 0", color: "#166534", fontSize: ".85rem" }}>Dotyczy Twojego stacku: <strong>{item.stack_matches.join(", ")}</strong></div>}
-      <RelationsLine relations={item.relations} onReview={(id, relationStatus) => void reviewRelation(id, relationStatus)} />
+      <ToolRelations relations={item.relations} onReview={(id, relationStatus) => void reviewRelation(id, relationStatus)} />
       {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>
         <summary style={{ cursor: "help" }} title="Katalogi lub dokumenty, w których to narzędzie wystąpiło, wraz z kontekstem.">Dlaczego jest w radarze? ({item.evidences.length})</summary>
         <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
