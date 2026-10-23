@@ -18,6 +18,7 @@ def _make_tool(**overrides):
         source_document_id=None, source_candidate_id=None, status="accepted", obsidian_note_path=None,
         github_url=None, wikipedia_url=None, pricing_url=None, pricing_type=None, app_type=None,
         key_points=[], important_commands=None, migrating_away=False, migration_note=None,
+        migration_target_tool_id=None,
         created_at=dt.datetime(2026, 8, 10, 12, 0, tzinfo=dt.timezone.utc), updated_at=None,
     )
     defaults.update(overrides)
@@ -29,6 +30,7 @@ def _patch(monkeypatch, tool, body):
 
     session = MagicMock()
     session.get.return_value = tool
+    session.execute.return_value.scalar_one_or_none.return_value = "OpenTofu"  # name of the migration target
     monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
     with Flask(__name__).test_request_context("/tools/1", method="PATCH", json=body):
         g.auth = SimpleNamespace(kind="user", user_id=1)
@@ -60,7 +62,45 @@ class TestPatchDetailFields:
 
         assert tool.github_url is None and tool.migration_note is None and tool.migrating_away is False
 
+    def test_sets_and_clears_migration_target(self, monkeypatch):
+        tool = _make_tool(migrating_away=True)
+        _patch(monkeypatch, tool, {"migration_target_tool_id": 7})
+        assert tool.migration_target_tool_id == 7
+
+        _patch(monkeypatch, tool, {"migration_target_tool_id": None})
+        assert tool.migration_target_tool_id is None
+
+    def test_turning_migration_off_clears_the_target(self, monkeypatch):
+        tool = _make_tool(migrating_away=True, migration_target_tool_id=7)
+        _patch(monkeypatch, tool, {"migrating_away": False})
+        assert tool.migration_target_tool_id is None
+
+    def test_target_is_ignored_while_not_migrating(self, monkeypatch):
+        tool = _make_tool(migrating_away=False)
+        _patch(monkeypatch, tool, {"migration_target_tool_id": 7})
+        assert tool.migration_target_tool_id is None
+
+    def test_rejects_unknown_target(self, monkeypatch):
+        from flask import Flask, g
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from werkzeug.exceptions import BadRequest
+
+        from library.tool_routes import update_tool
+
+        tool = _make_tool(migrating_away=True)
+        session = MagicMock()
+        session.get.side_effect = lambda model, key: tool if key == tool.id else None
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/tools/1", method="PATCH", json={"migration_target_tool_id": 99}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(BadRequest):
+                update_tool(1)
+
     @pytest.mark.parametrize("body", [
+        {"migration_target_tool_id": 1},
+        {"migration_target_tool_id": "7"},
+        {"migration_target_tool_id": True},
         {"github_url": "https://gitlab.com/a/b"},
         {"github_url": "github.com/a/b"},
         {"wikipedia_url": "javascript:alert(1)"},

@@ -12,7 +12,7 @@ const baseTool = {
   id: 1, uuid: "u-1", name: "Terraform", category_tags: ["iac"], homepage_url: "https://terraform.io",
   license: "MPL-2.0", pricing: null, github_url: "https://github.com/hashicorp/terraform", wikipedia_url: null,
   pricing_url: null, pricing_type: "open_core", app_type: "CLI", key_points: ["plan/apply"],
-  important_commands: "terraform plan", migrating_away: false, migration_note: null,
+  important_commands: "terraform plan", migrating_away: false, migration_note: null, migration_target: null,
   github: {
     full_name: "hashicorp/terraform", status: "ok", stars: 40000, forks: 9000, watchers: 1000, open_issues: 2000,
     language: "Go", license: "BUSL-1.1", archived: false, pushed_at: new Date().toISOString(), fetched_at: "2026-10-23T10:00:00Z",
@@ -102,4 +102,27 @@ it("shows one tool with its links and steps between tools with previous/next", a
   fireEvent.click(screen.getByRole("button", { name: "← Wszystkie narzędzia" }));
   expect(await screen.findByText("Terraform")).toBeTruthy();
   expect(screen.getByText("Obsidian")).toBeTruthy();
+});
+
+it("lets you pick the tool you migrate to, only while migrating away is ticked", async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(jsonResponse({ tools: [baseTool, obsidian] }))
+    .mockResolvedValueOnce(jsonResponse({ tool: { ...obsidian, migration_target: { id: 1, name: "Terraform" } } }));
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("scrollTo", vi.fn());
+  renderTools("/tools?tool=2");
+  await screen.findByText("Obsidian");
+
+  fireEvent.click(screen.getByRole("button", { name: "Edytuj dane" }));
+  fireEvent.click(screen.getByLabelText("Odchodzę od tego narzędzia")); // untick: the target field disappears
+  expect(screen.queryByLabelText(/Na jakie narzędzie przechodzę/)).toBeNull();
+  fireEvent.click(screen.getByLabelText("Odchodzę od tego narzędzia"));
+  fireEvent.change(screen.getByLabelText(/Na jakie narzędzie przechodzę/), { target: { value: "1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz dane" }));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+  expect(url).toBe("http://api/tools/2");
+  expect(JSON.parse(String(init.body)).migration_target_tool_id).toBe(1);
+  expect(await screen.findByText("Przechodzę na:")).toBeTruthy();
 });

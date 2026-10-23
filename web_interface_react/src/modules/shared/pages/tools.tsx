@@ -21,6 +21,7 @@ type Tool = {
   important_commands: string | null;
   migrating_away: boolean;
   migration_note: string | null;
+  migration_target: { id: number; name: string | null } | null;
   github: GithubStats | null;
   personal_notes: string | null;
   source_document_id: number | null;
@@ -45,7 +46,7 @@ const pricingTypeLabel = (value: string | null) => pricingTypes.find(([key]) => 
 type DetailsDraft = {
   app_type: string; license: string; homepage_url: string; github_url: string; wikipedia_url: string;
   pricing_type: string; pricing: string; pricing_url: string; key_points: string; important_commands: string;
-  migrating_away: boolean; migration_note: string;
+  migrating_away: boolean; migration_note: string; migration_target_tool_id: string;
 };
 const draftFromTool = (tool: Tool): DetailsDraft => ({
   app_type: tool.app_type ?? "", license: tool.license ?? "", homepage_url: tool.homepage_url ?? "",
@@ -53,9 +54,12 @@ const draftFromTool = (tool: Tool): DetailsDraft => ({
   pricing_type: tool.pricing_type ?? "", pricing: tool.pricing ?? "", pricing_url: tool.pricing_url ?? "",
   key_points: (tool.key_points ?? []).join("\n"), important_commands: tool.important_commands ?? "",
   migrating_away: tool.migrating_away, migration_note: tool.migration_note ?? "",
+  migration_target_tool_id: tool.migration_target ? String(tool.migration_target.id) : "",
 });
 const detailsPayload = (draft: DetailsDraft) => ({
   ...draft, key_points: draft.key_points.split("\n").map(line => line.trim()).filter(Boolean),
+  // The target only exists while migrating away; the server clears it otherwise, so send it consistently.
+  migration_target_tool_id: draft.migrating_away && draft.migration_target_tool_id ? Number(draft.migration_target_tool_id) : null,
 });
 const textFields: Array<[keyof DetailsDraft, string]> = [
   ["app_type", "Typ aplikacji"], ["license", "Licencja"], ["homepage_url", "Strona"], ["github_url", "GitHub"],
@@ -266,7 +270,11 @@ export default function Tools() {
         : tool.name}
         {tool.migrating_away && <span title={tool.migration_note || "Wychodzę z tego narzędzia"} style={{ marginLeft: 8, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem", fontWeight: 400 }}>odchodzę</span>}
       </h3>
-      {tool.migrating_away && tool.migration_note && <div style={{ color: "#92400e", fontSize: ".85rem", margin: "4px 0" }}>{tool.migration_note}</div>}
+      {tool.migrating_away && (tool.migration_target || tool.migration_note) && <div style={{ color: "#92400e", fontSize: ".85rem", margin: "4px 0" }}>
+        {tool.migration_target && <span>Przechodzę na: <Link to={`/tools?tool=${tool.migration_target.id}`}>{tool.migration_target.name ?? `#${tool.migration_target.id}`}</Link></span>}
+        {tool.migration_target && tool.migration_note && <span> · </span>}
+        {tool.migration_note}
+      </div>}
       {tool.category_tags.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "8px 0" }}>
         {tool.category_tags.map(tag => <span key={tag} style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{tag}</span>)}
       </div>}
@@ -335,11 +343,23 @@ export default function Tools() {
             onChange={event => setDetailsDraft({ ...detailsDraft, migrating_away: event.target.checked })} />
           Odchodzę od tego narzędzia
         </label>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 6 }}>
-          Dokąd / dlaczego
-          <input value={detailsDraft.migration_note} disabled={savingId === tool.id}
-            onChange={event => setDetailsDraft({ ...detailsDraft, migration_note: event.target.value })} />
-        </label>
+        {detailsDraft.migrating_away && <>
+          <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 6 }}>
+            Na jakie narzędzie przechodzę
+            <select value={detailsDraft.migration_target_tool_id} disabled={savingId === tool.id}
+              onChange={event => setDetailsDraft({ ...detailsDraft, migration_target_tool_id: event.target.value })}>
+              <option value="">— jeszcze nie wybrane / spoza spisu —</option>
+              {tool.migration_target && !tools.some(other => other.id === tool.migration_target?.id)
+                && <option value={tool.migration_target.id}>{tool.migration_target.name}</option>}
+              {tools.filter(other => other.id !== tool.id).map(other => <option key={other.id} value={other.id}>{other.name}</option>)}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 6 }}>
+            Dlaczego / uwagi (np. narzędzie spoza spisu)
+            <input value={detailsDraft.migration_note} disabled={savingId === tool.id}
+              onChange={event => setDetailsDraft({ ...detailsDraft, migration_note: event.target.value })} />
+          </label>
+        </>}
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button className="button" type="button" disabled={savingId === tool.id} onClick={() => void saveDetails(tool)}>Zapisz dane</button>
           <button type="button" disabled={savingId === tool.id} onClick={() => { setDetailsId(null); setDetailsDraft(null); }}>Anuluj</button>

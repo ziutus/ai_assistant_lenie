@@ -28,6 +28,7 @@ def _make_tool(**overrides):
         obsidian_note_path="Narzedzia/Terraform.md",
         github_url=None, wikipedia_url=None, pricing_url=None, pricing_type=None, app_type=None,
         key_points=[], important_commands=None, migrating_away=False, migration_note=None,
+        migration_target_tool_id=None,
         created_at=dt.datetime(2026, 8, 10, 12, 0, tzinfo=dt.timezone.utc),
         updated_at=dt.datetime(2026, 8, 11, 9, 0, tzinfo=dt.timezone.utc),
     )
@@ -119,6 +120,7 @@ class TestResponseShape:
             "important_commands": None,
             "migrating_away": False,
             "migration_note": None,
+            "migration_target": None,
             "personal_notes": "uzywamy w projekcie X",
             "source_document_id": 9381,
             "source_candidate_id": 5,
