@@ -547,6 +547,69 @@ def update_tool_recommendation(recommendation_id):
     return jsonify({"tool_recommendation": _dict(item)})
 
 
+@bp.get("/tool_recommendations/tag_model")
+def get_tag_model():
+    """Models that may propose tags, the one in effect (``default_model``) and whether it was chosen (``saved``)."""
+    _reader()
+    from library import app_settings, tool_tag_suggester
+    from library.llm_model_registry import selectable_models
+
+    session = get_scoped_session()
+    saved = app_settings.get_setting(session, tool_tag_suggester.SETTING_KEY)
+    return jsonify({
+        "default_model": tool_tag_suggester.default_model(session),
+        "saved": isinstance(saved, str),
+        "models": selectable_models(tool_tag_suggester.TASK),
+    })
+
+
+@bp.put("/tool_recommendations/tag_model")
+def put_tag_model():
+    """Set the default tag model (``{"model": id}``); ``{"model": null}`` goes back to the built-in default."""
+    _user()
+    from library import app_settings, tool_tag_suggester
+    from library.llm_model_registry import is_selectable
+
+    body = request.get_json(silent=True) or {}
+    if "model" not in body:
+        abort(400, "model is required")
+    model = body["model"]
+    if model is not None and (not isinstance(model, str) or not is_selectable(model, tool_tag_suggester.TASK)):
+        abort(400, "unknown model")
+    session = get_scoped_session()
+    app_settings.set_setting(session, tool_tag_suggester.SETTING_KEY, model)
+    return jsonify({"default_model": tool_tag_suggester.default_model(session), "saved": model is not None})
+
+
+@bp.post("/tool_recommendations/<int:recommendation_id>/suggest_tags")
+def suggest_tags(recommendation_id):
+    """Ask a model for tags of one entry (``{"model"?}``, default = the saved choice). Nothing is stored.
+
+    The UI shows the proposals and saves the accepted ones through ``PATCH /tool_recommendations/<id>``.
+    """
+    _user()
+    from library import tool_tag_suggester
+    from library.llm_model_registry import is_selectable
+
+    body = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    item = session.get(ToolRecommendation, recommendation_id)
+    if item is None:
+        abort(404, "tool recommendation not found")
+    model = body.get("model")
+    if model is not None and (not isinstance(model, str) or not is_selectable(model, tool_tag_suggester.TASK)):
+        abort(400, "unknown model")
+    model = model or tool_tag_suggester.default_model(session)
+    if not model:
+        abort(503, "no model available")
+    counts: dict[str, int] = {}
+    for tag_list in session.execute(select(ToolRecommendation.tags)).scalars().all():
+        for tag in tag_list or []:
+            counts[tag] = counts.get(tag, 0) + 1
+    vocabulary = [tag for tag, _ in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))]
+    return jsonify(tool_tag_suggester.suggest_tags(item, vocabulary, model))
+
+
 @bp.post("/tool_recommendations/<int:recommendation_id>/status")
 def update_status(recommendation_id):
     _user()

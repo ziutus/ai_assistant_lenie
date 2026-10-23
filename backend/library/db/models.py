@@ -3284,6 +3284,16 @@ class ToolRecommendation(Base):
     )
 
 
+class AppSetting(Base):
+    """One UI-chosen setting (for example ``tool_tags_model``); the value is any JSON."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[object] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class ToolRecommendationEvidence(Base):
     """One directed provenance path supporting a tool recommendation.
 
