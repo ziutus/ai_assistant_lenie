@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
+import MarkdownView from "../components/MarkdownView/markdownView";
+import MarkdownEditor from "../components/MarkdownView/markdownEditor";
 import {
   Chip, DocumentLink, Section, ToolFacts, ToolLinks, shortDate, toolLinks,
 } from "../components/ToolCard/toolCardParts";
@@ -23,8 +25,6 @@ type Tool = {
   purpose?: string | null;
   works_on?: string | null;
   links?: Array<{ url: string; label: string }>;
-  key_points: string[];
-  important_commands: string | null;
   migrating_away: boolean;
   migration_note: string | null;
   migration_target: { id: number; name: string | null } | null;
@@ -73,7 +73,7 @@ const pricingTypeLabel = (value: string | null) => pricingTypes.find(([key]) => 
 // Editable detail fields as form strings; key points are one per line.
 type DetailsDraft = {
   app_type: string; purpose: string; works_on: string; license: string; homepage_url: string; github_url: string; wikipedia_url: string;
-  pricing_type: string; pricing: string; pricing_url: string; key_points: string; important_commands: string;
+  pricing_type: string; pricing: string; pricing_url: string;
   links: string; // one per line: "https://…" or "Label | https://…"
   migrating_away: boolean; migration_note: string; migration_target_tool_id: string;
 };
@@ -88,13 +88,12 @@ const draftFromTool = (tool: Tool): DetailsDraft => ({
   license: tool.license ?? "", homepage_url: tool.homepage_url ?? "",
   github_url: tool.github_url ?? "", wikipedia_url: tool.wikipedia_url ?? "",
   pricing_type: tool.pricing_type ?? "", pricing: tool.pricing ?? "", pricing_url: tool.pricing_url ?? "",
-  key_points: (tool.key_points ?? []).join("\n"), important_commands: tool.important_commands ?? "",
   links: linksToText(tool.links),
   migrating_away: tool.migrating_away, migration_note: tool.migration_note ?? "",
   migration_target_tool_id: tool.migration_target ? String(tool.migration_target.id) : "",
 });
 const detailsPayload = (draft: DetailsDraft) => ({
-  ...draft, key_points: draft.key_points.split("\n").map(line => line.trim()).filter(Boolean),
+  ...draft,
   links: textToLinks(draft.links),
   // The target only exists while migrating away; the server clears it otherwise, so send it consistently.
   migration_target_tool_id: draft.migrating_away && draft.migration_target_tool_id ? Number(draft.migration_target_tool_id) : null,
@@ -443,30 +442,16 @@ export default function Tools() {
           </div>)}
         </Section>}
 
-        {tool.key_points.length > 0 && <Section title="Najważniejsze punkty">
-          <ul style={{ margin: 0, paddingLeft: 20, color: "#334155" }}>
-            {tool.key_points.map(point => <li key={point}>{point}</li>)}
-          </ul>
-        </Section>}
-
-        {tool.important_commands && <Section title="Ważne polecenia">
-          <details open={focusedId !== null}>
-            <summary style={{ cursor: "pointer", color: "#475569", fontSize: ".85rem" }}>Pokaż polecenia</summary>
-            <pre style={{ background: "#f1f5f9", borderRadius: 6, padding: 10, overflowX: "auto", margin: "6px 0 0" }}>{tool.important_commands}</pre>
-          </details>
-        </Section>}
-
         <Section title="Notatka" hint="Twoja notatka o narzędziu — pisana i edytowana w Lenie.">
           {editingId === tool.id ? <div>
-            <textarea aria-label={`Notatka o ${tool.name}`} value={draft} onChange={event => setDraft(event.target.value)} rows={8}
-              style={{ width: "100%", boxSizing: "border-box" }} disabled={savingId === tool.id} />
+            <MarkdownEditor label={`Notatka o ${tool.name}`} value={draft} onChange={setDraft} toolName={tool.name} disabled={savingId === tool.id} />
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <button className="button" type="button" disabled={savingId === tool.id} onClick={() => void saveNote(tool)}>Zapisz notatkę</button>
               <button type="button" disabled={savingId === tool.id} onClick={() => setEditingId(null)}>Anuluj</button>
             </div>
           </div> : <div>
             {tool.personal_notes
-              ? <blockquote style={{ margin: "0 0 6px", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12, whiteSpace: "pre-wrap" }}>{tool.personal_notes}</blockquote>
+              ? <div style={{ margin: "0 0 6px", borderLeft: "3px solid #cbd5e1", paddingLeft: 14 }}><MarkdownView text={tool.personal_notes} /></div>
               : <div style={{ color: "#64748b", fontSize: ".85rem", marginBottom: 6 }}>Brak notatki — napisz, do czego używasz tego narzędzia.</div>}
             <button type="button" onClick={() => { setEditingId(tool.id); setDraft(tool.personal_notes ?? ""); }}>{tool.personal_notes ? "Edytuj notatkę" : "Dodaj notatkę"}</button>
           </div>}
@@ -494,16 +479,6 @@ export default function Tools() {
             Dodatkowe linki (jeden w wierszu: adres albo „Etykieta | adres”)
             <textarea rows={3} value={detailsDraft.links} disabled={savingId === tool.id}
               onChange={event => setDetailsDraft({ ...detailsDraft, links: event.target.value })} />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 10 }}>
-            Najważniejsze punkty (jeden w wierszu)
-            <textarea rows={4} value={detailsDraft.key_points} disabled={savingId === tool.id}
-              onChange={event => setDetailsDraft({ ...detailsDraft, key_points: event.target.value })} />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 10 }}>
-            Ważne polecenia
-            <textarea rows={4} value={detailsDraft.important_commands} disabled={savingId === tool.id} style={{ fontFamily: "monospace" }}
-              onChange={event => setDetailsDraft({ ...detailsDraft, important_commands: event.target.value })} />
           </label>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10 }}>
             <input type="checkbox" checked={detailsDraft.migrating_away} disabled={savingId === tool.id}
