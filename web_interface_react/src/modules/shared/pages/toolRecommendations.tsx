@@ -2,6 +2,7 @@ import React from "react";
 import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
+import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "adopted" | "rejected" | "archived";
 type GithubStats = {
@@ -108,6 +109,8 @@ export default function ToolRecommendations() {
   const [skippedItems, setSkippedItems] = React.useState<Array<{ name: string; reason?: string }>>([]);
   const [stackOnly, setStackOnly] = React.useState(false);
   const [relationsBusy, setRelationsBusy] = React.useState(false);
+  const [focusMode, setFocusMode] = React.useState(false);
+  const [focusIndex, setFocusIndex] = React.useState(0);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
 
   const load = React.useCallback(async () => {
@@ -130,11 +133,11 @@ export default function ToolRecommendations() {
   React.useEffect(() => { setSelectedIds(new Set()); }, [status, category]);
   React.useEffect(() => { if (!selectedIds.size) setShowSelected(false); }, [selectedIds]);
 
-  const move = async (item: Recommendation, nextStatus: RecommendationStatus) => {
+  const move = async (item: Recommendation, nextStatus: RecommendationStatus, note: string | null = null): Promise<boolean> => {
     setBusy(item.id); setError("");
     try {
       const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/status`, {
-        method: "POST", headers, body: JSON.stringify({ status: nextStatus }),
+        method: "POST", headers, body: JSON.stringify({ status: nextStatus, ...(note !== null ? { personal_note: note } : {}) }),
       });
       if (!response.ok) throw new Error("Nie udało się zmienić statusu rekomendacji");
       setSelectedIds(current => {
@@ -143,7 +146,8 @@ export default function ToolRecommendations() {
         return next;
       });
       await load();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); }
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); return false; }
     finally { setBusy(null); }
   };
 
@@ -179,6 +183,15 @@ export default function ToolRecommendations() {
 
   const stackFiltered = stackOnly ? items.filter(item => item.stack_matches.length > 0) : items;
   const visibleItems = showSelected ? stackFiltered.filter(item => selectedIds.has(item.id)) : stackFiltered;
+  const focusPosition = Math.min(focusIndex, Math.max(visibleItems.length - 1, 0));
+  const focusItem = focusMode ? visibleItems[focusPosition] : undefined;
+  const decideFocused = async (nextStatus: RecommendationStatus, note: string | null) => {
+    if (!focusItem) return;
+    const moved = await move(focusItem, nextStatus, note);
+    // In a tab the decided entry leaves the list and the next one slides into this slot;
+    // in "Wszystkie" it stays, so step over it.
+    if (moved && status === "all") setFocusIndex(Math.min(focusPosition + 1, visibleItems.length - 1));
+  };
   const selectVisible = () => setSelectedIds(new Set(visibleItems.map(item => item.id)));
 
   const applyBulkStatus = async () => {
@@ -237,12 +250,42 @@ export default function ToolRecommendations() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Import nie powiódł się"); }
   };
 
+  const cardDetails = (item: Recommendation) => <>
+    {item.category && <span style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{item.category}</span>}
+    {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
+    {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
+    {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
+    {item.github && <GithubStatsLine stats={item.github} />}
+    {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
+      title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
+      📰 {item.feed_mentions.count} {item.feed_mentions.count === 1 ? "wzmianka" : "wzmianek"} w feedach
+      <Help text="Tyle wpisów w obserwowanych feedach (tytuł lub streszczenie) wspomina to narzędzie — sygnał, jak głośno o nim jest. Najedź na wiersz, żeby zobaczyć kilka tytułów." />
+    </div>}
+    {item.stack_matches.length > 0 && <div style={{ margin: "6px 0", color: "#166534", fontSize: ".85rem" }}>Dotyczy Twojego stacku: <strong>{item.stack_matches.join(", ")}</strong></div>}
+    <ToolRelations relations={item.relations} onReview={(id, relationStatus) => void reviewRelation(id, relationStatus)} />
+    {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>
+      <summary style={{ cursor: "help" }} title="Katalogi lub dokumenty, w których to narzędzie wystąpiło, wraz z kontekstem.">Dlaczego jest w radarze? ({item.evidences.length})</summary>
+      <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+        {item.evidences.map(evidence => <li key={evidence.id}>
+          {evidence.relation_type === "mentioned_in" ? "Wspomniane w: " : "Znajduje się w katalogu: "}
+          {evidence.catalog_url ? <a href={evidence.catalog_url} target="_blank" rel="noreferrer">{evidence.catalog_label || evidence.catalog_url}</a> : evidence.catalog_label || "nieznane źródło"}
+          {evidence.context && ` · ${evidence.context}`}
+          {evidence.recommender_document && <div style={{ marginTop: 3 }}>↳ katalog polecony przez: {evidence.recommender_document.discovery_source || evidence.recommender_document.title || "link Lenie"}{evidence.recommender_document.title && evidence.recommender_document.discovery_source ? ` · ${evidence.recommender_document.title}` : ""}{evidence.recommender_document.url && <> · <a href={evidence.recommender_document.url} target="_blank" rel="noreferrer">otwórz</a></>}</div>}
+        </li>)}
+      </ul>
+    </details> : (item.source_document || item.source_url) && <div style={{ color: "#64748b", fontSize: ".85rem", margin: "8px 0" }}>
+      {item.source_document && <div>Polecone przez: {item.source_document.discovery_source || item.source_document.title || "link Lenie"}{item.source_document.title && item.source_document.discovery_source ? ` · ${item.source_document.title}` : ""}{item.source_document.url && <> · <a href={item.source_document.url} target="_blank" rel="noreferrer">otwórz rekomendację</a></>}</div>}
+      {item.source_url && <div>{item.source_document ? "Katalog: " : "Katalog źródłowy: "}<a href={item.source_url} target="_blank" rel="noreferrer">{item.source_url}</a>{item.source_context ? ` · ${item.source_context}` : ""}</div>}
+    </div>}
+  </>;
+
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
       <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi</h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do 30 repozytoriów na raz)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
         <button type="button" onClick={() => void detectRelations()} disabled={relationsBusy || loading} title="Szuka w tekście źródłowym każdego wpisu nazw narzędzi, które już są w radarze (np. AWS, GCP, Terraform), i proponuje powiązania do potwierdzenia. Narzędzia oznaczone jako „Używam” tworzą Twój stack.">{relationsBusy ? "Szukam powiązań…" : "Wykryj powiązania"}</button>
+        <button type="button" onClick={() => { setFocusMode(current => !current); setFocusIndex(0); }} disabled={loading || (!focusMode && !visibleItems.length)} title="Pokazuje narzędzia z bieżącej zakładki i filtrów pojedynczo, razem z innymi narzędziami z tej samej kategorii (także tym, którego już używasz), żeby ocenić jedno po drugim.">{focusMode ? "Wróć do listy" : "Oceniaj po kolei"}</button>
         <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
       </div>
     </div>
@@ -287,7 +330,7 @@ export default function ToolRecommendations() {
       <summary>Pomijane pozycje ({skippedItems.length})</summary>
       <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>{skippedItems.map(item => <li key={item.name}>{item.name} — {item.reason === "already_in_tools" ? "jest już w Spisie narzędzi" : "jest już w Radarze"}</li>)}</ul>
     </details>}
-    {!loading && items.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 16px", padding: "10px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8 }}>
+    {!loading && !focusMode && items.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 16px", padding: "10px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8 }}>
       <button type="button" onClick={selectVisible}>Zaznacz wszystkie widoczne ({visibleItems.length})</button>
       <button type="button" onClick={() => setSelectedIds(new Set())} disabled={!selectedIds.size}>Wyczyść zaznaczenie</button>
       <strong>{selectedIds.size} zaznaczonych</strong>
@@ -304,34 +347,16 @@ export default function ToolRecommendations() {
     {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
     {!loading && !error && !items.length && <p>Brak rekomendacji w tym widoku. Zaimportuj katalog albo poczekaj na wykrycie narzędzi przez AI.</p>}
     {!loading && !error && items.length > 0 && !visibleItems.length && <p>Żaden z zaznaczonych wpisów nie pasuje do bieżących filtrów.</p>}
-    {visibleItems.map(item => <article key={item.id} style={{ border: selectedIds.has(item.id) ? "2px solid #2563eb" : "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+    {focusItem && <ToolFocusReview key={focusItem.id} apiUrl={apiUrl} headers={headers} itemId={focusItem.id} itemName={focusItem.name}
+      initialNote={focusItem.personal_note} position={focusPosition + 1} total={visibleItems.length} busy={busy !== null}
+      actions={nextStatuses.filter(([value]) => value !== focusItem.status).map(([value, label]) => [value, label, statusHelp[value]])}
+      details={cardDetails(focusItem)} onDecide={(next, note) => void decideFocused(next, note)}
+      onPrev={() => setFocusIndex(Math.max(focusPosition - 1, 0))}
+      onNext={() => setFocusIndex(Math.min(focusPosition + 1, visibleItems.length - 1))}
+      onClose={() => setFocusMode(false)} />}
+    {!focusMode && visibleItems.map(item => <article key={item.id} style={{ border: selectedIds.has(item.id) ? "2px solid #2563eb" : "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggle(item.id)} aria-label={`Zaznacz ${item.name}`} /><h3 style={{ margin: 0 }}>{item.name}</h3></div>
-      {item.category && <span style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{item.category}</span>}
-      {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
-      {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
-      {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
-      {item.github && <GithubStatsLine stats={item.github} />}
-      {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
-        title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
-        📰 {item.feed_mentions.count} {item.feed_mentions.count === 1 ? "wzmianka" : "wzmianek"} w feedach
-        <Help text="Tyle wpisów w obserwowanych feedach (tytuł lub streszczenie) wspomina to narzędzie — sygnał, jak głośno o nim jest. Najedź na wiersz, żeby zobaczyć kilka tytułów." />
-      </div>}
-      {item.stack_matches.length > 0 && <div style={{ margin: "6px 0", color: "#166534", fontSize: ".85rem" }}>Dotyczy Twojego stacku: <strong>{item.stack_matches.join(", ")}</strong></div>}
-      <ToolRelations relations={item.relations} onReview={(id, relationStatus) => void reviewRelation(id, relationStatus)} />
-      {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>
-        <summary style={{ cursor: "help" }} title="Katalogi lub dokumenty, w których to narzędzie wystąpiło, wraz z kontekstem.">Dlaczego jest w radarze? ({item.evidences.length})</summary>
-        <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-          {item.evidences.map(evidence => <li key={evidence.id}>
-            {evidence.relation_type === "mentioned_in" ? "Wspomniane w: " : "Znajduje się w katalogu: "}
-            {evidence.catalog_url ? <a href={evidence.catalog_url} target="_blank" rel="noreferrer">{evidence.catalog_label || evidence.catalog_url}</a> : evidence.catalog_label || "nieznane źródło"}
-            {evidence.context && ` · ${evidence.context}`}
-            {evidence.recommender_document && <div style={{ marginTop: 3 }}>↳ katalog polecony przez: {evidence.recommender_document.discovery_source || evidence.recommender_document.title || "link Lenie"}{evidence.recommender_document.title && evidence.recommender_document.discovery_source ? ` · ${evidence.recommender_document.title}` : ""}{evidence.recommender_document.url && <> · <a href={evidence.recommender_document.url} target="_blank" rel="noreferrer">otwórz</a></>}</div>}
-          </li>)}
-        </ul>
-      </details> : (item.source_document || item.source_url) && <div style={{ color: "#64748b", fontSize: ".85rem", margin: "8px 0" }}>
-        {item.source_document && <div>Polecone przez: {item.source_document.discovery_source || item.source_document.title || "link Lenie"}{item.source_document.title && item.source_document.discovery_source ? ` · ${item.source_document.title}` : ""}{item.source_document.url && <> · <a href={item.source_document.url} target="_blank" rel="noreferrer">otwórz rekomendację</a></>}</div>}
-        {item.source_url && <div>{item.source_document ? "Katalog: " : "Katalog źródłowy: "}<a href={item.source_url} target="_blank" rel="noreferrer">{item.source_url}</a>{item.source_context ? ` · ${item.source_context}` : ""}</div>}
-      </div>}
+      {cardDetails(item)}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>{nextStatuses.filter(([value]) => value !== item.status).map(([value, label]) => <button key={value} title={statusHelp[value]} aria-label={`${label}: ${statusHelp[value]}`} disabled={busy === item.id} onClick={() => void move(item, value)}>{label}</button>)}</div>
     </article>)}
   </section>;

@@ -173,6 +173,57 @@ def get_tool_recommendations():
     })
 
 
+def _category_key(value: str | None) -> str:
+    """Fold spellings such as ``DecisionModels`` and ``decision-models`` into one key."""
+    return "".join(char for char in (value or "").lower() if char.isalnum())
+
+
+@bp.get("/tool_recommendations/<int:recommendation_id>/peers")
+def get_recommendation_peers(recommendation_id):
+    """Alternatives for one radar entry: other radar entries and saved tools of the same category.
+
+    Catalogs spell categories differently (``DecisionModels`` vs ``decision-models``), so
+    the match ignores case and punctuation. Saved tools (Spis narzędzi) are what the user
+    already uses, so the review card can set a candidate next to its incumbent.
+    """
+    _reader()
+    session = get_scoped_session()
+    item = session.get(ToolRecommendation, recommendation_id)
+    if item is None:
+        abort(404, "tool recommendation not found")
+    key = _category_key(item.category)
+    if not key:
+        return jsonify({"category": item.category, "radar": [], "tools": []})
+    radar = [
+        other for other in session.execute(
+            select(ToolRecommendation).where(
+                ToolRecommendation.id != item.id, ToolRecommendation.category.is_not(None),
+            ).order_by(ToolRecommendation.name)
+        ).scalars().all()
+        if _category_key(other.category) == key
+    ]
+    tools = [
+        tool for tool in session.execute(select(Tool).order_by(Tool.name)).scalars().all()
+        if any(_category_key(str(tag)) == key for tag in (tool.category_tags or []))
+    ]
+    github = github_repo_stats.stats_for_urls(session, [other.homepage_url for other in radar])
+    linked_tool_ids = {entry.tool_id for entry in [item, *radar] if entry.tool_id is not None}
+    radar_urls = {other.homepage_url for other in radar if other.homepage_url}
+    return jsonify({
+        "category": item.category,
+        "radar": [{
+            "id": other.id, "name": other.name, "status": other.status, "category": other.category,
+            "description": other.description, "homepage_url": other.homepage_url,
+            "personal_note": other.personal_note, "github": github.get(other.homepage_url),
+        } for other in radar],
+        # A tool adopted from the radar exists in both lists; show it once, as the radar entry.
+        "tools": [{
+            "id": tool.id, "name": tool.name, "homepage_url": tool.homepage_url, "status": tool.status,
+            "personal_notes": tool.personal_notes, "pricing": tool.pricing, "license": tool.license,
+        } for tool in tools if tool.id not in linked_tool_ids and tool.homepage_url not in radar_urls],
+    })
+
+
 @bp.post("/tool_recommendations/github_stats/refresh")
 def refresh_github_stats():
     """Pull fresh GitHub numbers for the radar entries of one status (or all), a bounded batch per call.
