@@ -11,8 +11,8 @@ vi.mock("../context/authorizationContext", async () => {
 const baseTool = {
   id: 1, uuid: "u-1", name: "Terraform", category_tags: ["iac"], homepage_url: "https://terraform.io",
   license: "MPL-2.0", pricing: null, github_url: "https://github.com/hashicorp/terraform", wikipedia_url: null,
-  pricing_url: null, pricing_type: "open_core", app_type: "CLI", key_points: ["plan/apply"],
-  important_commands: "terraform plan", migrating_away: false, migration_note: null, migration_target: null,
+  pricing_url: null, pricing_type: "open_core", app_type: "CLI",
+  migrating_away: false, migration_note: null, migration_target: null,
   github: {
     full_name: "hashicorp/terraform", status: "ok", stars: 40000, forks: 9000, watchers: 1000, open_issues: 2000,
     language: "Go", license: "BUSL-1.1", archived: false, pushed_at: new Date().toISOString(), fetched_at: "2026-10-23T10:00:00Z",
@@ -23,7 +23,7 @@ const baseTool = {
 const obsidian = {
   ...baseTool, id: 2, name: "Obsidian", category_tags: [], github_url: null, github: null, pricing_type: "freemium",
   app_type: "notatnik", license: null,
-  key_points: [], important_commands: null, migrating_away: true, migration_note: "przechodzę na Lenie",
+  migrating_away: true, migration_note: "przechodzę na Lenie",
 };
 
 const renderTools = (path = "/tools") =>
@@ -42,7 +42,7 @@ it("shows the catalog fields, GitHub numbers and the migrating-away flag", async
   expect(await screen.findByText("Terraform")).toBeTruthy();
   expect(screen.getByText("Typ: CLI")).toBeTruthy();
   expect(screen.getByLabelText("gwiazdki").textContent).toContain("40");
-  expect(screen.getByText("plan/apply")).toBeTruthy();
+  expect(screen.queryByText("Ważne polecenia")).toBeNull();
   expect(screen.getByText("Model: open core")).toBeTruthy();
   expect(screen.getByText("odchodzę")).toBeTruthy();
   expect(screen.getByText("przechodzę na Lenie")).toBeTruthy();
@@ -59,16 +59,16 @@ it("filters to the tools being phased out", async () => {
   expect(screen.getByText("Obsidian")).toBeTruthy();
 });
 
-it("saves the edited details with key points as a list", async () => {
+it("saves the edited details without key points or commands", async () => {
   const fetchMock = vi.fn()
     .mockResolvedValueOnce(jsonResponse({ tools: [baseTool] }))
-    .mockResolvedValueOnce(jsonResponse({ tool: { ...baseTool, migrating_away: true, key_points: ["a", "b"] } }));
+    .mockResolvedValueOnce(jsonResponse({ tool: { ...baseTool, migrating_away: true } }));
   vi.stubGlobal("fetch", fetchMock);
   renderTools();
   await screen.findByText("Terraform");
 
   fireEvent.click(screen.getByRole("button", { name: "Edytuj dane" }));
-  fireEvent.change(screen.getByLabelText(/Najważniejsze punkty/), { target: { value: "a\n\n b " } });
+  expect(screen.queryByLabelText(/Najważniejsze punkty|Ważne polecenia/)).toBeNull();
   fireEvent.click(screen.getByLabelText("Odchodzę od tego narzędzia"));
   fireEvent.click(screen.getByRole("button", { name: "Zapisz dane" }));
 
@@ -77,7 +77,8 @@ it("saves the edited details with key points as a list", async () => {
   expect(url).toBe("http://api/tools/1");
   expect(init.method).toBe("PATCH");
   const body = JSON.parse(String(init.body));
-  expect(body.key_points).toEqual(["a", "b"]);
+  expect(body).not.toHaveProperty("key_points");
+  expect(body).not.toHaveProperty("important_commands");
   expect(body.migrating_away).toBe(true);
   expect(body.pricing_type).toBe("open_core");
   expect(await screen.findByText("odchodzę")).toBeTruthy();

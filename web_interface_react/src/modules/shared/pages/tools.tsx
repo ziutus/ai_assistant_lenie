@@ -19,8 +19,6 @@ type Tool = {
   pricing_url: string | null;
   pricing_type: string | null;
   app_type: string | null;
-  key_points: string[];
-  important_commands: string | null;
   migrating_away: boolean;
   migration_note: string | null;
   migration_target: { id: number; name: string | null } | null;
@@ -47,19 +45,18 @@ const pricingTypeLabel = (value: string | null) => pricingTypes.find(([key]) => 
 // Editable detail fields as form strings; key points are one per line.
 type DetailsDraft = {
   app_type: string; license: string; homepage_url: string; github_url: string; wikipedia_url: string;
-  pricing_type: string; pricing: string; pricing_url: string; key_points: string; important_commands: string;
+  pricing_type: string; pricing: string; pricing_url: string;
   migrating_away: boolean; migration_note: string; migration_target_tool_id: string;
 };
 const draftFromTool = (tool: Tool): DetailsDraft => ({
   app_type: tool.app_type ?? "", license: tool.license ?? "", homepage_url: tool.homepage_url ?? "",
   github_url: tool.github_url ?? "", wikipedia_url: tool.wikipedia_url ?? "",
   pricing_type: tool.pricing_type ?? "", pricing: tool.pricing ?? "", pricing_url: tool.pricing_url ?? "",
-  key_points: (tool.key_points ?? []).join("\n"), important_commands: tool.important_commands ?? "",
   migrating_away: tool.migrating_away, migration_note: tool.migration_note ?? "",
   migration_target_tool_id: tool.migration_target ? String(tool.migration_target.id) : "",
 });
 const detailsPayload = (draft: DetailsDraft) => ({
-  ...draft, key_points: draft.key_points.split("\n").map(line => line.trim()).filter(Boolean),
+  ...draft,
   // The target only exists while migrating away; the server clears it otherwise, so send it consistently.
   migration_target_tool_id: draft.migrating_away && draft.migration_target_tool_id ? Number(draft.migration_target_tool_id) : null,
 });
@@ -307,13 +304,6 @@ export default function Tools() {
         {tool.pricing_type && tool.pricing && <span> · </span>}
         {tool.pricing && <span>Cennik: {tool.pricing}</span>}
       </div>}
-      {tool.key_points.length > 0 && <ul style={{ margin: "8px 0", paddingLeft: 20, color: "#334155" }}>
-        {tool.key_points.map(point => <li key={point}>{point}</li>)}
-      </ul>}
-      {tool.important_commands && <details style={{ margin: "8px 0" }}>
-        <summary style={{ cursor: "pointer", color: "#475569", fontSize: ".85rem" }}>Ważne polecenia</summary>
-        <pre style={{ background: "#f1f5f9", borderRadius: 6, padding: 10, overflowX: "auto", margin: "6px 0 0" }}>{tool.important_commands}</pre>
-      </details>}
       {detailsId === tool.id && detailsDraft ? <div style={{ border: "1px dashed #cbd5e1", borderRadius: 8, padding: 12, margin: "8px 0" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
           {textFields.map(([field, label]) => <label key={field} style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569" }}>
@@ -330,16 +320,6 @@ export default function Tools() {
             </select>
           </label>
         </div>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 10 }}>
-          Najważniejsze punkty (jeden w wierszu)
-          <textarea rows={4} value={detailsDraft.key_points} disabled={savingId === tool.id}
-            onChange={event => setDetailsDraft({ ...detailsDraft, key_points: event.target.value })} />
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", fontSize: ".85rem", color: "#475569", marginTop: 10 }}>
-          Ważne polecenia
-          <textarea rows={4} value={detailsDraft.important_commands} disabled={savingId === tool.id} style={{ fontFamily: "monospace" }}
-            onChange={event => setDetailsDraft({ ...detailsDraft, important_commands: event.target.value })} />
-        </label>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10 }}>
           <input type="checkbox" checked={detailsDraft.migrating_away} disabled={savingId === tool.id}
             onChange={event => setDetailsDraft({ ...detailsDraft, migrating_away: event.target.checked })} />
