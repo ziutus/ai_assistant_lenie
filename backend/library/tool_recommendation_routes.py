@@ -296,6 +296,13 @@ def get_recommendation_peers(recommendation_id):
     })
 
 
+@bp.get("/tool_recommendations/github_rate")
+def get_github_rate():
+    """GitHub quota left for this server (``limit``, ``remaining``, ``reset``, ``authenticated``); ``rate: null`` when unreachable."""
+    _reader()
+    return jsonify({"rate": github_repo_stats.fetch_rate_limit()})
+
+
 @bp.post("/tool_recommendations/github_stats/refresh")
 def refresh_github_stats():
     """Pull fresh GitHub numbers for the radar entries of one status (or all), a bounded batch per call.

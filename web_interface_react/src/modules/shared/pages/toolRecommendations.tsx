@@ -5,6 +5,7 @@ import ToolRelations, { type ToolRelation } from "../components/ToolRelations/to
 import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
 import GithubAbout from "../components/GithubAbout/githubAbout";
+import GithubRate, { type GithubRateInfo } from "../components/GithubRate/githubRate";
 import { modelOptionText, type ModelOption } from "../utils/modelDetails";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "test_future" | "adopted" | "phasing_out" | "rejected" | "archived";
@@ -145,6 +146,8 @@ export default function ToolRecommendations() {
   const [categories, setCategories] = React.useState<string[]>([]);
   const [allTags, setAllTags] = React.useState<Array<{ tag: string; count: number }>>([]);
   const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
+  // undefined = not asked yet, null = GitHub did not answer
+  const [githubRate, setGithubRate] = React.useState<GithubRateInfo | null | undefined>(undefined);
   const [tagModels, setTagModels] = React.useState<ModelOption[]>([]);
   const [tagModel, setTagModel] = React.useState("");
   const [defaultTagModel, setDefaultTagModel] = React.useState("");
@@ -192,6 +195,15 @@ export default function ToolRecommendations() {
   }, [apiUrl, category, headers, origin, query, selectedTags, status]);
 
   React.useEffect(() => { void load(); }, [load]);
+
+  const loadGithubRate = React.useCallback(async () => {
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/github_rate`, { headers });
+      const data = await response.json().catch(() => ({}));
+      setGithubRate(response.ok ? (data.rate as GithubRateInfo | null) ?? null : null);
+    } catch { setGithubRate(null); }
+  }, [apiUrl, headers]);
+  React.useEffect(() => { void loadGithubRate(); }, [loadGithubRate]);
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -260,7 +272,7 @@ export default function ToolRecommendations() {
         : data.failed ? `GitHub: nie udało się pobrać danych dla ${item.name}.` : `GitHub: odświeżono dane dla ${item.name}.`);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
-    finally { setBusy(null); }
+    finally { setBusy(null); void loadGithubRate(); }
   };
 
   const suggestTags = async (item: Recommendation): Promise<TagSuggestion> => {
@@ -380,7 +392,7 @@ export default function ToolRecommendations() {
       setGithubMessage(`GitHub: pobrano ${data.refreshed ?? 0}${data.failed ? `, błędy: ${data.failed}` : ""}${data.rate_limited ? ". Limit zapytań GitHuba wyczerpany — spróbuj za godzinę" : pending ? `. Zostało do pobrania: ${pending} — kliknij ponownie` : ". Wszystko aktualne"}.`);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
-    finally { setGithubBusy(false); }
+    finally { setGithubBusy(false); void loadGithubRate(); }
   };
 
   const importMarkdown = async () => {
@@ -456,6 +468,7 @@ export default function ToolRecommendations() {
         <button type="button" onClick={() => setFocus(focusId !== null ? null : visibleItems[0]?.id ?? null)} disabled={loading || (focusId === null && !visibleItems.length)} title="Pokazuje narzędzia z bieżącej zakładki i filtrów pojedynczo, razem z innymi narzędziami z tej samej kategorii (także tym, którego już używasz), żeby ocenić jedno po drugim.">{focusId !== null ? "Wróć do listy" : "Oceniaj po kolei"}</button>        <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
       </div>
     </div>
+    <div style={{ margin: "8px 0 0" }}><GithubRate rate={githubRate} /></div>
     {githubMessage && <p role="status" style={{ color: "#166534", margin: "8px 0 0" }}>{githubMessage}</p>}
     <div role="tablist" aria-label="Status rekomendacji" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "18px 0" }}>
       {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} title={tabHelp[value]} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}

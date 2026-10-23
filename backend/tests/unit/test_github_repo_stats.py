@@ -135,6 +135,53 @@ def _stored(key, fetched_at):
     return SimpleNamespace(full_name_key=key, fetched_at=fetched_at)
 
 
+class TestFetchRateLimit:
+    def _patch(self, monkeypatch, response=None, error=None, token="secret-token"):
+        seen = {}
+
+        def fake_get(url, headers=None, timeout=None):
+            seen.update(url=url, headers=headers)
+            if error:
+                raise error
+            return response
+
+        monkeypatch.setattr(svc.requests, "get", fake_get)
+        monkeypatch.setattr(svc, "_token", lambda: token)
+        return seen
+
+    def _response(self, payload, ok=True):
+        return SimpleNamespace(ok=ok, json=lambda: payload)
+
+    def test_reads_the_core_quota_and_never_returns_the_token(self, monkeypatch):
+        payload = {"resources": {"core": {"limit": 5000, "remaining": 4987, "reset": 1792776830}}}
+        seen = self._patch(monkeypatch, self._response(payload))
+
+        rate = svc.fetch_rate_limit()
+
+        assert rate == {"limit": 5000, "remaining": 4987, "reset": "2026-10-23T17:33:50+00:00", "authenticated": True}
+        assert seen["headers"]["Authorization"] == "Bearer secret-token"
+        assert "secret-token" not in str(rate)
+
+    def test_without_a_token_the_request_is_anonymous(self, monkeypatch):
+        payload = {"resources": {"core": {"limit": 60, "remaining": 60, "reset": 1792776830}}}
+        seen = self._patch(monkeypatch, self._response(payload), token=None)
+
+        rate = svc.fetch_rate_limit()
+
+        assert rate["authenticated"] is False and rate["limit"] == 60
+        assert "Authorization" not in seen["headers"]
+
+    @pytest.mark.parametrize("response, error", [
+        (None, svc.requests.ConnectionError("down")),
+        (SimpleNamespace(ok=False, json=lambda: {}), None),
+        (SimpleNamespace(ok=True, json=lambda: {"unexpected": 1}), None),
+        (SimpleNamespace(ok=True, json=lambda: (_ for _ in ()).throw(ValueError("bad json"))), None),
+    ])
+    def test_unreachable_or_odd_answers_give_none(self, monkeypatch, response, error):
+        self._patch(monkeypatch, response, error)
+        assert svc.fetch_rate_limit() is None
+
+
 class TestRefreshStale:
     def _session(self, existing):
         session = MagicMock()
@@ -316,6 +363,23 @@ class TestRefreshEndpoint:
     def test_service_key_is_allowed_like_every_radar_write(self, monkeypatch):
         response, _, _ = self._call(monkeypatch, {}, kind="service")
         assert response.json["refreshed"] == 1
+
+    def test_rate_endpoint_returns_the_quota(self, monkeypatch):
+        from library.tool_recommendation_routes import get_github_rate
+
+        quota = {"limit": 5000, "remaining": 5000, "reset": "2026-10-23T17:53:50+00:00", "authenticated": True}
+        monkeypatch.setattr(svc, "fetch_rate_limit", lambda: quota)
+        with Flask(__name__).test_request_context("/tool_recommendations/github_rate"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            assert get_github_rate().json == {"rate": quota}
+
+    def test_rate_endpoint_when_github_is_unreachable(self, monkeypatch):
+        from library.tool_recommendation_routes import get_github_rate
+
+        monkeypatch.setattr(svc, "fetch_rate_limit", lambda: None)
+        with Flask(__name__).test_request_context("/tool_recommendations/github_rate"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            assert get_github_rate().json == {"rate": None}
 
     def test_unknown_key_kind_is_refused(self, monkeypatch):
         from werkzeug.exceptions import Forbidden

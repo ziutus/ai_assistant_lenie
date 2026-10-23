@@ -109,6 +109,36 @@ def fetch_repo(owner: str, repo: str) -> dict | None:
         raise GithubError(f"GitHub returned invalid JSON: {exc}") from exc
 
 
+RATE_LIMIT_URL = "https://api.github.com/rate_limit"
+
+
+def fetch_rate_limit() -> dict | None:
+    """Current core quota from GitHub (``limit``, ``remaining``, ``reset`` ISO time, ``authenticated``).
+
+    The ``/rate_limit`` endpoint itself is free - it does not use up the quota it reports. ``authenticated``
+    says whether a ``GITHUB_TOKEN`` is configured; its value is never returned. ``None`` when GitHub is unreachable.
+    """
+    token = _token()
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "lenie-server"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = requests.get(RATE_LIMIT_URL, headers=headers, timeout=REQUEST_TIMEOUT_S)
+        core = response.json()["resources"]["core"] if response.ok else None
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        logger.warning("GitHub rate limit lookup failed", exc_info=True)
+        return None
+    if not core:
+        return None
+    reset = core.get("reset")
+    return {
+        "limit": core.get("limit"),
+        "remaining": core.get("remaining"),
+        "reset": datetime.datetime.fromtimestamp(reset, datetime.timezone.utc).isoformat() if isinstance(reset, int) else None,
+        "authenticated": bool(token),
+    }
+
+
 def refresh_repo(session, owner: str, repo: str, now: datetime.datetime | None = None) -> GithubRepoStats:
     """Fetch one repository and upsert its row (no commit). A 404 keeps the last known numbers."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
