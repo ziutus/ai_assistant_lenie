@@ -32,6 +32,7 @@ Szczegóły klienta, klucza i obserwacji statusu: [external-services.md](../exte
 | Usługa | Wniosek | Notatka |
 |---|---|---|
 | Shodan | Bez stałego publicznego IP nie ma sensu; do wznowienia po jego uzyskaniu | [shodan.md](shodan.md) |
+| SignalHire | Odrzucone: 10 darmowych kredytów miesięcznie to za mało, baza zawodowa nie pokrywa prywatnych kontaktów, broker danych (RODO) | [signalhire.md](signalhire.md) |
 
 ## Zasady dla nowych integracji
 
