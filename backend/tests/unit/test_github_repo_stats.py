@@ -599,3 +599,41 @@ class TestCombinedStats:
         session = MagicMock()
         assert svc.combined_stats_for_entries(session, {1: ["https://example.com"]}) == {}
         session.execute.assert_not_called()
+
+    def test_homepage_is_the_first_one_any_repository_names(self):
+        github = _row("a/b", owner="a", repo="b", homepage="https://feedbin.com")
+        mirror = _row("gitlab.example.org/a/b", provider="gitlab", host="gitlab.example.org", owner="a", repo="b")
+        entries = {1: ["https://gitlab.example.org/a/b", "https://github.com/a/b"]}
+
+        result = svc.combined_stats_for_entries(self._session([github, mirror]), entries)[1]
+
+        assert result["homepage"] == "https://feedbin.com"
+
+
+class TestHomepage:
+    @pytest.mark.parametrize("value, expected", [
+        ("https://feedbin.com", "https://feedbin.com"), ("  feedbin.com  ", "https://feedbin.com"),
+        ("http://example.org/docs", "http://example.org/docs"), ("", None), ("   ", None), (None, None),
+        ("javascript:alert(1)", None), ("ftp://example.org", None), (5, None),
+    ])
+    def test_clean_homepage(self, value, expected):
+        assert svc.clean_homepage(value) == expected
+
+    def test_github_website_field_is_stored_normalised(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: {**GITHUB_JSON, "homepage": "feedbin.com"})
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        row = svc.refresh_repo(session, "feedbin", "feedbin", now=NOW)
+
+        assert row.homepage == "https://feedbin.com"
+        assert svc.to_dict(row)["homepage"] == "https://feedbin.com"
+
+    def test_empty_github_website_is_none_and_gitlab_has_none(self, monkeypatch):
+        monkeypatch.setattr(svc, "fetch_repo", lambda owner, repo: {**GITHUB_JSON, "homepage": ""})
+        monkeypatch.setattr(svc, "fetch_gitlab_repo", lambda host, path: GITLAB_JSON)
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        assert svc.refresh_repo(session, "tt-rss", "tt-rss", now=NOW).homepage is None
+        assert svc.refresh_gitlab_repo(session, "gitlab.com", "a/b", now=NOW).homepage is None

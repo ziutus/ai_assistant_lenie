@@ -36,6 +36,7 @@ MAX_REFRESH_LIMIT = 60
 
 _GITHUB_HOSTS = {"github.com", "www.github.com"}
 _NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
+_BARE_HOST_RE = re.compile(r"[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(:\d+)?(/\S*)?")
 # First path segments of github.com that are site sections, not accounts.
 _RESERVED_OWNERS = {
     "about", "apps", "collections", "enterprise", "events", "explore", "features", "issues", "login",
@@ -158,6 +159,19 @@ def _parse_time(value: str | None) -> datetime.datetime | None:
     return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def clean_homepage(value) -> str | None:
+    """The repository's "Website" field as an http(s) URL; GitHub also stores bare hosts such as ``feedbin.com``."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if "://" not in text:
+        if not _BARE_HOST_RE.fullmatch(text):  # "javascript:alert(1)" and the like are not hosts
+            return None
+        text = f"https://{text}"
+    parsed = urlparse(text)
+    return text if parsed.scheme in ("http", "https") and parsed.hostname else None
+
+
 def fetch_repo(owner: str, repo: str) -> dict | None:
     """Raw repository JSON from GitHub, or ``None`` when the repository does not exist (404)."""
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "lenie-server"}
@@ -278,6 +292,7 @@ def refresh_repo(session, owner: str, repo: str, now: datetime.datetime | None =
     row.open_issues = data.get("open_issues_count")
     row.language = data.get("language")
     row.license = (data.get("license") or {}).get("spdx_id")
+    row.homepage = clean_homepage(data.get("homepage"))
     row.topics = [topic for topic in (data.get("topics") or []) if isinstance(topic, str)]
     row.archived = bool(data.get("archived"))
     row.repo_created_at = _parse_time(data.get("created_at"))
@@ -310,6 +325,7 @@ def refresh_gitlab_repo(session, host: str, path: str, now: datetime.datetime | 
     row.language = None  # GitLab serves languages from a separate endpoint; not worth a second request
     license_info = data.get("license") or {}
     row.license = license_info.get("nickname") or license_info.get("key")
+    row.homepage = None  # a GitLab project has no separate website field
     row.topics = [topic for topic in (data.get("topics") or []) if isinstance(topic, str)]
     row.archived = bool(data.get("archived"))
     row.repo_created_at = _parse_time(data.get("created_at"))
@@ -334,6 +350,7 @@ def to_dict(row: GithubRepoStats) -> dict:
         "language": row.language,
         "license": row.license,
         "description": row.description,
+        "homepage": getattr(row, "homepage", None),
         "topics": list(row.topics or []),
         "archived": row.archived,
         "pushed_at": row.pushed_at.isoformat() if row.pushed_at else None,
@@ -385,6 +402,7 @@ def _combine(repositories: list[dict]) -> dict:
         "language": next((r["language"] for r in repositories if r["language"]), None),
         "license": next((r["license"] for r in repositories if r["license"]), None),
         "description": next((r["description"] for r in repositories if r["description"]), None),
+        "homepage": next((r["homepage"] for r in repositories if r["homepage"]), None),
         "topics": topics,
         "archived": all(r["archived"] for r in repositories),
         "pushed_at": max(pushed) if pushed else None,

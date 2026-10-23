@@ -260,6 +260,17 @@ export default function ToolRecommendations() {
   };
   const saveTags = (item: Recommendation, tags: string[]) => patchItem(item, { tags }, "Nie udało się zapisać tagów");
   const saveLinks = (item: Recommendation, links: Array<{ url: string; label: string }>) => patchItem(item, { links }, "Nie udało się zapisać linków");
+  // The repository's own website becomes the tool's page; the old address stays as a link when it is a repository,
+  // because the statistics are counted from the homepage and the links.
+  const useRepositoryWebsite = (item: Recommendation, url: string) => {
+    const links = item.links ?? [];
+    const keepOld = item.homepage_url && isRepositoryUrl(item.homepage_url) && !links.some(link => link.url === item.homepage_url);
+    return patchItem(item, {
+      homepage_url: url, links: keepOld ? [...links, { url: item.homepage_url, label: "Repozytorium" }] : links,
+    }, "Nie udało się zapisać strony narzędzia");
+  };
+  const addLink = (item: Recommendation, url: string, label: string) =>
+    patchItem(item, { links: [...(item.links ?? []), { url, label }] }, "Nie udało się zapisać linku");
   const saveDescription = (item: Recommendation, description: string) => patchItem(item, { description }, "Nie udało się zapisać opisu");
 
   // Forced refresh of ONE entry's repository, ignoring the 24 h freshness rule of the bulk button.
@@ -439,6 +450,8 @@ export default function ToolRecommendations() {
       title="Pobiera liczby, opis i tematy repozytoriów tego wpisu (GitHub i GitLab) od razu, także gdy dane są młodsze niż 24 godziny. Każde repozytorium z GitHuba zużywa 1 z 60 zapytań na godzinę.">
       {busy === item.id ? "Pobieram…" : "↻ Odśwież z GitHuba / GitLaba"}</button>}
     {item.github && <GithubAbout stats={item.github} ownDescription={item.description} tags={item.tags ?? []} disabled={busy === item.id}
+      homepageUrl={item.homepage_url} links={item.links ?? []}
+      onUseHomepage={url => void useRepositoryWebsite(item, url)} onAddLink={url => void addLink(item, url, "Strona projektu")}
       onUseDescription={text => void saveDescription(item, text)}
       onAddTags={topics => void saveTags(item, [...(item.tags ?? []), ...topics.filter(topic => !(item.tags ?? []).includes(topic))])} />}
     {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}

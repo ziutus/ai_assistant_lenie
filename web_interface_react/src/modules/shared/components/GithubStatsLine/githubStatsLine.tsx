@@ -5,6 +5,8 @@ export type GithubStats = {
   pushed_at: string | null; fetched_at: string | null;
   /** The repository's own About text and topics; absent in responses of older backends. */
   description?: string | null; topics?: string[];
+  /** The repository's "Website" field (GitHub only), offered as a hint for the entry's own homepage. */
+  homepage?: string | null;
   /** Where the numbers come from; absent in responses of older backends (then GitHub). */
   provider?: "github" | "gitlab"; host?: string; url?: string;
   /** Per-repository numbers when the entry has several repositories: the fields above are their sum. */
