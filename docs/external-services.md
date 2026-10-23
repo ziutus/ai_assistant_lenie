@@ -21,5 +21,8 @@ syntetycznych ani płatnych probe'ach.
 | AWS Comprehend | Wykrywanie języka tekstu | `library/api/aws/text_detect_language_aws.py` | Nie — brak dedykowanego rejestru wywołań |
 | MinIO / S3 | Magazyn obiektów | `library/storage.py` | Kontenerowe healthchecki, poza panelem |
 
+Kierunki integracji, zasady dla nowych usług i integracje odłożone:
+[integrations/README.md](integrations/README.md).
+
 Serwisy lokalne (PostgreSQL, NER, Vault) nie są usługami zewnętrznymi. NER ma
 już własne `/healthz`; statusy kontenerów pozostają w Docker Compose.
