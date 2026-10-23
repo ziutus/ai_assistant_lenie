@@ -643,13 +643,52 @@ def suggest_tags(recommendation_id):
     model = model or tool_tag_suggester.default_model(session)
     if not model:
         abort(503, "no model available")
+    github = github_repo_stats.combined_stats_for_entries(session, {item.id: _repository_urls(item)}).get(item.id)
+    return jsonify(tool_tag_suggester.suggest_tags(item, _tag_vocabulary(session), model, github))
+
+
+def _tag_vocabulary(session) -> list[str]:
+    """Every tag in use on the radar, most used first."""
     counts: dict[str, int] = {}
     for tag_list in session.execute(select(ToolRecommendation.tags)).scalars().all():
         for tag in tag_list or []:
             counts[tag] = counts.get(tag, 0) + 1
-    vocabulary = [tag for tag, _ in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))]
+    return [tag for tag, _ in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))]
+
+
+@bp.post("/tool_recommendations/<int:recommendation_id>/suggest_profile")
+def suggest_profile(recommendation_id):
+    """Ask a model ONCE for a description, a category and tags of one entry (``{"model"?}``). Nothing is stored.
+
+    The model is the one chosen for tag suggestions. The prompt carries the entry's public facts, the categories
+    and tags already in use (so existing ones are reused and a broad one such as ``AI`` is narrowed) and asks the
+    model to use what it knows about the tool. The UI saves what the user accepts through
+    ``PATCH /tool_recommendations/<id>``.
+    """
+    _user()
+    from library import tool_profile_suggester, tool_tag_suggester
+    from library.llm_model_registry import is_selectable
+
+    body = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    item = session.get(ToolRecommendation, recommendation_id)
+    if item is None:
+        abort(404, "tool recommendation not found")
+    model = body.get("model")
+    if model is not None and (not isinstance(model, str) or not is_selectable(model, tool_tag_suggester.TASK)):
+        abort(400, "unknown model")
+    model = model or tool_tag_suggester.default_model(session)
+    if not model:
+        abort(503, "no model available")
+    rows = session.execute(
+        select(ToolRecommendation.category, func.count())
+        .where(ToolRecommendation.category.is_not(None))
+        .group_by(ToolRecommendation.category)
+        .order_by(func.count().desc(), ToolRecommendation.category)
+    ).all()
+    categories = [(label, count) for label, count in rows if label]
     github = github_repo_stats.combined_stats_for_entries(session, {item.id: _repository_urls(item)}).get(item.id)
-    return jsonify(tool_tag_suggester.suggest_tags(item, vocabulary, model, github))
+    return jsonify(tool_profile_suggester.suggest_profile(item, github, categories, _tag_vocabulary(session), model))
 
 
 @bp.post("/tool_recommendations/<int:recommendation_id>/status")
