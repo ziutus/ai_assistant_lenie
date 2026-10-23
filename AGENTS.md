@@ -21,6 +21,12 @@
   odpowiada" przez SSH i nie proś o włączanie lub wyłączanie VPN. Wyjątek tylko
   na wyraźne polecenie użytkownika w danej sesji.
 
+- **Domyślnie zakładaj, że użytkownik jest w domu.** O pracy przez VPN (poza
+  domem) użytkownik informuje jawnie w sesji. Dopóki takiej informacji nie ma,
+  wdrażaj na NAS zgodnie z konwencją; nie dopytuj o lokalizację i nie sprawdzaj
+  jej przez `ssh`/`ping`. Informacja o VPN obowiązuje do wyraźnego komunikatu,
+  że użytkownik wrócił do domu.
+
 - Gdy użytkownik pracuje przez VPN (jest poza domem), **nie wdrażaj na NAS**:
   wdrożenie przez VPN jest wolne i zawodne (zrywa SSH i push do rejestru).
   Skończ pracę do commita/PR, zgłoś, że wdrożenie czeka, i wróć do niego, gdy
