@@ -6,7 +6,7 @@ import datetime
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, select, update
 
-from library import github_repo_stats, knowledge_sources, tool_note_parser, tool_provenance, tool_relations_service
+from library import github_repo_stats, knowledge_sources, tool_links, tool_note_parser, tool_provenance, tool_relations_service
 from library.db.engine import get_scoped_session
 from library.db.models import DiscoverySource, ObsidianNoteVersion, Tool, ToolRecommendation
 from library.obsidian_vault import (
@@ -32,11 +32,9 @@ def _user():
         abort(403, "user or service API key required")
 
 
-def _github_url(tool: Tool) -> str | None:
-    """The repository the GitHub numbers are looked up for: the explicit link, else a GitHub homepage."""
-    if tool.github_url:
-        return tool.github_url
-    return tool.homepage_url if github_repo_stats.parse_repo_url(tool.homepage_url) else None
+def _repository_urls(tool: Tool) -> list[str]:
+    """Every URL of the tool that may be a GitHub/GitLab repository: the explicit link, the homepage, further links."""
+    return github_repo_stats.repository_urls(tool.github_url, tool.homepage_url, tool.links)
 
 
 def _target_name(session, tool: Tool) -> str | None:
@@ -95,14 +93,14 @@ def get_tools():
     names = dict(session.execute(select(Tool.id, Tool.name)).all())  # migration targets may fall outside the tag filter
     tools = session.execute(query).scalars().all()
     relations = tool_relations_service.relations_for_tools(session, tools)
-    github = github_repo_stats.stats_for_urls(session, [url for url in map(_github_url, tools) if url])
+    github = github_repo_stats.combined_stats_for_entries(session, {tool.id: _repository_urls(tool) for tool in tools})
     tool_ids = [tool.id for tool in tools]
     sources = knowledge_sources.sources_for_tools(session, tool_ids)
     radar = tool_provenance.radar_for_tools(session, tool_ids)
     return jsonify({
         "tools": [
             _tool_dict(
-                tool, relations.get(tool.id), github.get(_github_url(tool)), names.get(tool.migration_target_tool_id),
+                tool, relations.get(tool.id), github.get(tool.id), names.get(tool.migration_target_tool_id),
                 sources.get(tool.id), radar.get(tool.id),
             )
             for tool in tools
@@ -124,7 +122,8 @@ def refresh_github_stats():
         abort(400, f"limit must be between 1 and {github_repo_stats.MAX_REFRESH_LIMIT}")
     session = get_scoped_session()
     tools = session.execute(select(Tool)).scalars().all()
-    summary = github_repo_stats.refresh_stale(session, [url for url in map(_github_url, tools) if url], limit=limit)
+    urls = github_repo_stats.repository_urls(*(_repository_urls(tool) for tool in tools))
+    summary = github_repo_stats.refresh_stale(session, urls, limit=limit)
     session.commit()
     return jsonify(summary)
 
@@ -223,27 +222,7 @@ def _text_field(body: dict, field: str) -> tuple[bool, str | None]:
     return True, text if text and text.strip() else None
 
 
-def _clean_links(raw) -> list[dict]:
-    """Validate ``links``: a list of ``{url, label?}`` (or bare URL strings) with http(s) URLs, duplicates dropped."""
-    if not isinstance(raw, list) or len(raw) > tool_note_parser.MAX_LINKS:
-        abort(400, f"links must be a list of at most {tool_note_parser.MAX_LINKS} items")
-    result: list[dict] = []
-    seen: set[str] = set()
-    for item in raw:
-        if isinstance(item, str):
-            item = {"url": item}
-        if not isinstance(item, dict):
-            abort(400, "every link must be {url, label}")
-        url = str(item.get("url") or "").strip()
-        label = item.get("label")
-        if not url.lower().startswith(("http://", "https://")):
-            abort(400, f"link url must start with http:// or https://: {url or '(empty)'}")
-        if label is not None and not isinstance(label, str):
-            abort(400, "link label must be a string")
-        if url not in seen:
-            seen.add(url)
-            result.append({"url": url, "label": (label or "").strip()[:100]})
-    return result
+_clean_links = tool_links.clean_links
 
 
 def _apply_fields(tool: Tool, body: dict) -> None:

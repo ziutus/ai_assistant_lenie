@@ -18,7 +18,7 @@ def _make_tool(**overrides):
         source_document_id=None, source_candidate_id=None, status="accepted", obsidian_note_path=None,
         github_url=None, wikipedia_url=None, pricing_url=None, pricing_type=None, app_type=None,
         key_points=[], important_commands=None, migrating_away=False, migration_note=None,
-        migration_target_tool_id=None,
+        migration_target_tool_id=None, purpose=None, works_on=None, links=[],
         created_at=dt.datetime(2026, 8, 10, 12, 0, tzinfo=dt.timezone.utc), updated_at=None,
     )
     defaults.update(overrides)
@@ -128,20 +128,23 @@ class TestGithubNumbers:
         session.execute.return_value.scalars.return_value.all.return_value = [explicit, by_homepage, plain]
         monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
         monkeypatch.setattr("library.tool_routes.tool_relations_service.relations_for_tools", lambda *_a: {})
+        monkeypatch.setattr("library.tool_routes.knowledge_sources.sources_for_tools", lambda *_a: {})
+        monkeypatch.setattr("library.tool_routes.tool_provenance.radar_for_tools", lambda *_a: {})
         asked = {}
 
-        def fake_stats(_session, urls):
-            asked["urls"] = list(urls)
-            return {url: {"full_name": url, "stars": 7} for url in urls}
+        def fake_stats(_session, entries):
+            asked["entries"] = {key: list(urls) for key, urls in entries.items()}
+            return {key: {"full_name": urls[0], "stars": 7} for key, urls in entries.items() if urls}
 
-        monkeypatch.setattr("library.tool_routes.github_repo_stats.stats_for_urls", fake_stats)
+        monkeypatch.setattr("library.tool_routes.github_repo_stats.combined_stats_for_entries", fake_stats)
 
         with Flask(__name__).test_request_context("/tools"):
             g.auth = SimpleNamespace(kind="user", user_id=1)
             tools = get_tools().json["tools"]
 
-        assert asked["urls"] == ["https://github.com/hashicorp/terraform", "https://github.com/obsidianmd/obsidian-releases"]
-        assert [tool["github"] is not None for tool in tools] == [True, True, False]
+        assert asked["entries"][1] == ["https://github.com/hashicorp/terraform", "https://terraform.io"]
+        assert asked["entries"][2] == ["https://github.com/obsidianmd/obsidian-releases"]
+        assert [tool["github"] is not None for tool in tools] == [True, True, True]
 
     def test_refresh_bounds_limit_and_commits(self, monkeypatch):
         from werkzeug.exceptions import BadRequest, Forbidden
@@ -160,7 +163,7 @@ class TestGithubNumbers:
         with app.test_request_context("/tools/github_stats/refresh", method="POST", json={"limit": 5}):
             g.auth = SimpleNamespace(kind="user", user_id=1)
             assert refresh_github_stats().json == {"refreshed": 1}
-        assert seen == {"urls": ["https://github.com/a/b"], "limit": 5}
+        assert seen == {"urls": ["https://github.com/a/b", "https://terraform.io"], "limit": 5}  # non-repositories are ignored later
         session.commit.assert_called_once()
 
         with app.test_request_context("/tools/github_stats/refresh", method="POST", json={"limit": 0}):
@@ -168,7 +171,7 @@ class TestGithubNumbers:
             with pytest.raises(BadRequest):
                 refresh_github_stats()
         with app.test_request_context("/tools/github_stats/refresh", method="POST", json={}):
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="anonymous", user_id=None)  # a service key may write, like a user key
             with pytest.raises(Forbidden):
                 refresh_github_stats()
 
@@ -197,7 +200,8 @@ class TestCreateAndAdopt:
         session.execute.return_value.scalars.return_value.first.return_value = None
         item = SimpleNamespace(
             name="Zed", homepage_url="https://github.com/zed-industries/zed", category="editors",
-            personal_note=None, source_document_id=None, source_candidate_id=None,
+            personal_note=None, source_document_id=None, source_candidate_id=None, tags=[], links=[],
+            obsidian_note_path=None, description=None,
         )
 
         tool, created = _ensure_tool(session, item)

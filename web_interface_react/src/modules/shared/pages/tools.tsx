@@ -6,7 +6,7 @@ import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine
 import MarkdownView from "../components/MarkdownView/markdownView";
 import MarkdownEditor from "../components/MarkdownView/markdownEditor";
 import {
-  Chip, DocumentLink, Section, ToolFacts, ToolLinks, shortDate, toolLinks,
+  Chip, DocumentLink, Section, ToolFacts, ToolLinks, linksToText, shortDate, textToLinks, toolLinks,
 } from "../components/ToolCard/toolCardParts";
 
 type Tool = {
@@ -77,12 +77,6 @@ type DetailsDraft = {
   links: string; // one per line: "https://…" or "Label | https://…"
   migrating_away: boolean; migration_note: string; migration_target_tool_id: string;
 };
-const linksToText = (links: Array<{ url: string; label: string }> | undefined) =>
-  (links ?? []).map(link => link.label ? `${link.label} | ${link.url}` : link.url).join("\n");
-const textToLinks = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
-  const cut = line.lastIndexOf("|");
-  return cut >= 0 ? { label: line.slice(0, cut).trim(), url: line.slice(cut + 1).trim() } : { label: "", url: line };
-});
 const draftFromTool = (tool: Tool): DetailsDraft => ({
   app_type: tool.app_type ?? "", purpose: tool.purpose ?? "", works_on: tool.works_on ?? "",
   license: tool.license ?? "", homepage_url: tool.homepage_url ?? "",

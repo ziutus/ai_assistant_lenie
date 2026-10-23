@@ -26,6 +26,28 @@ export const toolLinks = (tool: LinkSource): ToolLinkItem[] => {
   return [...named, ...extra];
 };
 
+// The "extra links" box: one link per line, `address` or `Label | address`.
+export const linksToText = (links: Array<{ url: string; label: string }> | undefined) =>
+  (links ?? []).map(link => link.label ? `${link.label} | ${link.url}` : link.url).join("\n");
+export const textToLinks = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
+  const cut = line.lastIndexOf("|");
+  return cut >= 0 ? { label: line.slice(0, cut).trim(), url: line.slice(cut + 1).trim() } : { label: "", url: line };
+});
+
+// Same rule as the server's `parse_repository_url`: a GitHub repository or a GitLab project (gitlab.com / gitlab.<domain>).
+export const isRepositoryUrl = (url: string | null | undefined): boolean => {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url.includes("://") ? url : `https://${url}`);
+    const host = parsed.hostname.toLowerCase();
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (host === "github.com" || host === "www.github.com") return parts.length >= 2;
+    const labels = host.split(".");
+    const isGitlab = host === "gitlab.com" || (labels.length >= 3 && labels[0] === "gitlab");
+    return isGitlab && parts.length >= 2 && !["-", "explore", "users", "groups", "dashboard", "help", "admin", "api"].includes(parts[0].toLowerCase());
+  } catch { return false; }
+};
+
 export const hostOf = (url: string): string => {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 };
