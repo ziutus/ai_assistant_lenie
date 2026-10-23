@@ -6,6 +6,7 @@ import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
 import GithubAbout from "../components/GithubAbout/githubAbout";
 import ToolLinksEditor from "../components/ToolLinksEditor/toolLinksEditor";
+import ToolProfileSuggest, { type ProfileSuggestion } from "../components/ToolProfileSuggest/toolProfileSuggest";
 import { isRepositoryUrl } from "../components/ToolCard/toolCardParts";
 import GithubRate, { type GithubRateInfo } from "../components/GithubRate/githubRate";
 import { modelOptionText, type ModelOption } from "../utils/modelDetails";
@@ -115,7 +116,7 @@ function TagEditor({ tags, onFilter, onSave, onSuggest, disabled }: {
       onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void add(); } }}
       onBlur={() => void add()} style={{ width: 150, fontSize: ".8rem" }} />
     <button type="button" onClick={() => void ask()} disabled={asking || disabled}
-      title="Model zaproponuje tagi na podstawie nazwy, strony i opisu. Nic nie zapisze się bez Twojego kliknięcia. Model wybierzesz w sekcji „Model do podpowiadania tagów” nad listą.">
+      title="Model zaproponuje tagi na podstawie nazwy, strony i opisu. Nic nie zapisze się bez Twojego kliknięcia. Model wybierzesz w sekcji „Model do podpowiadania” nad listą.">
       {asking ? "Myślę…" : "✨ Podpowiedz tagi"}</button>
     {suggestError && <span role="alert" className="errorText" style={{ fontSize: ".8rem" }}>{suggestError}</span>}
     {suggestion && <div style={{ flexBasis: "100%", padding: "6px 8px", background: "#f0fdf4", border: "1px dashed #86efac", borderRadius: 6 }}>
@@ -299,6 +300,17 @@ export default function ToolRecommendations() {
     return data as TagSuggestion;
   };
 
+  // One request: description, category and tags together (the chosen model is the one for tag suggestions).
+  const suggestProfile = async (item: Recommendation): Promise<ProfileSuggestion> => {
+    const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/suggest_profile`, {
+      method: "POST", headers, body: JSON.stringify(tagModel ? { model: tagModel } : {}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać podpowiedzi"));
+    return data as ProfileSuggestion;
+  };
+  const saveCategory = (item: Recommendation, category: string) => patchItem(item, { category }, "Nie udało się zapisać kategorii");
+
   const saveDefaultTagModel = async (model: string | null) => {
     setTagModelMessage("");
     try {
@@ -440,6 +452,10 @@ export default function ToolRecommendations() {
     {item.category && <span style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{item.category}</span>}
     <TagEditor tags={item.tags ?? []} onFilter={tag => setSelectedTags(current => current.includes(tag) ? current : [...current, tag])}
       onSave={tags => saveTags(item, tags)} onSuggest={() => suggestTags(item)} disabled={busy === item.id} />
+    <ToolProfileSuggest description={item.description} category={item.category} tags={item.tags ?? []} disabled={busy === item.id}
+      onSuggest={() => suggestProfile(item)} onUseDescription={text => saveDescription(item, text)}
+      onUseCategory={category => saveCategory(item, category)}
+      onAddTags={added => saveTags(item, [...(item.tags ?? []), ...added.filter(tag => !(item.tags ?? []).includes(tag))])} />
     {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
     {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
     <ToolLinksEditor homepageUrl={item.homepage_url} links={item.links ?? []} disabled={busy === item.id}
@@ -517,9 +533,9 @@ export default function ToolRecommendations() {
       {selectedTags.length > 0 && <button type="button" onClick={() => setSelectedTags([])}>Wyczyść tagi</button>}
     </div>}
     {tagModels.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
-      <summary style={{ cursor: "help" }} title="Wybór modelu językowego, który podpowiada tagi po kliknięciu „✨ Podpowiedz tagi” na karcie narzędzia.">Model do podpowiadania tagów: <strong>{tagModels.find(option => option.id === tagModel)?.label ?? (tagModel || "domyślny")}</strong></summary>
+      <summary style={{ cursor: "help" }} title="Wybór modelu językowego, który podpowiada tagi po kliknięciu „✨ Podpowiedz tagi” albo „✨ Podpowiedz opis, kategorię i tagi” na karcie narzędzia.">Model do podpowiadania: <strong>{tagModels.find(option => option.id === tagModel)?.label ?? (tagModel || "domyślny")}</strong></summary>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-        <select value={tagModel} onChange={event => setTagModel(event.target.value)} aria-label="Model do podpowiadania tagów">
+        <select value={tagModel} onChange={event => setTagModel(event.target.value)} aria-label="Model do podpowiadania">
           {tagModels.map(option => <option key={option.id} value={option.id}>{modelOptionText(option)}{option.id === defaultTagModel ? " — domyślny" : ""}</option>)}
         </select>
         <button type="button" disabled={!tagModel || tagModel === defaultTagModel} onClick={() => void saveDefaultTagModel(tagModel)}
