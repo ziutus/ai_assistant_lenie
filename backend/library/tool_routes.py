@@ -6,13 +6,14 @@ import datetime
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, select, update
 
-from library import github_repo_stats, tool_relations_service
+from library import github_repo_stats, knowledge_sources, tool_note_parser, tool_provenance, tool_relations_service
 from library.db.engine import get_scoped_session
-from library.db.models import ObsidianNoteVersion, Tool, ToolRecommendation
+from library.db.models import DiscoverySource, ObsidianNoteVersion, Tool, ToolRecommendation
 from library.obsidian_vault import (
     VaultPathInvalidError,
     ensure_within_vault,
     is_vault_mount_available,
+    read_note,
     retry_write_note,
     write_note_with_version,
 )
@@ -26,8 +27,9 @@ def _reader():
 
 
 def _user():
-    if getattr(g, "auth", None) is None or g.auth.kind != "user":
-        abort(403, "user API key required")
+    # Single-owner project: a service key (scripts, skills) may write to the catalog like a user key.
+    if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
+        abort(403, "user or service API key required")
 
 
 def _github_url(tool: Tool) -> str | None:
@@ -45,10 +47,13 @@ def _target_name(session, tool: Tool) -> str | None:
 
 def _tool_dict(
     tool: Tool, relations: list | None = None, github: dict | None = None, target_name: str | None = None,
+    sources: list | None = None, radar: list | None = None,
 ) -> dict:
     return {
         "relations": relations or [],
         "github": github,
+        "sources": sources or [],
+        "radar": radar or [],
         "id": tool.id,
         "uuid": tool.uuid,
         "name": tool.name,
@@ -61,6 +66,9 @@ def _tool_dict(
         "pricing_url": tool.pricing_url,
         "pricing_type": tool.pricing_type,
         "app_type": tool.app_type,
+        "purpose": tool.purpose,
+        "works_on": tool.works_on,
+        "links": tool.links or [],
         "key_points": tool.key_points or [],
         "important_commands": tool.important_commands,
         "migrating_away": bool(tool.migrating_away),
@@ -88,9 +96,15 @@ def get_tools():
     tools = session.execute(query).scalars().all()
     relations = tool_relations_service.relations_for_tools(session, tools)
     github = github_repo_stats.stats_for_urls(session, [url for url in map(_github_url, tools) if url])
+    tool_ids = [tool.id for tool in tools]
+    sources = knowledge_sources.sources_for_tools(session, tool_ids)
+    radar = tool_provenance.radar_for_tools(session, tool_ids)
     return jsonify({
         "tools": [
-            _tool_dict(tool, relations.get(tool.id), github.get(_github_url(tool)), names.get(tool.migration_target_tool_id))
+            _tool_dict(
+                tool, relations.get(tool.id), github.get(_github_url(tool)), names.get(tool.migration_target_tool_id),
+                sources.get(tool.id), radar.get(tool.id),
+            )
             for tool in tools
         ],
         "filters": {"tag": tag},
@@ -194,8 +208,8 @@ MAX_KEY_POINTS = 50
 MAX_KEY_POINT_LENGTH = 500
 PRICING_TYPES = {"free", "freemium", "paid", "subscription", "usage_based", "open_core"}
 # Fields kept verbatim (markdown / commands); the other text fields are trimmed. An empty value clears.
-MULTILINE_FIELDS = ("personal_notes", "important_commands", "migration_note")
-SHORT_TEXT_FIELDS = ("license", "pricing", "app_type")
+MULTILINE_FIELDS = ("personal_notes", "important_commands", "migration_note", "purpose")
+SHORT_TEXT_FIELDS = ("license", "pricing", "app_type", "works_on")
 URL_FIELDS = ("homepage_url", "github_url", "wikipedia_url", "pricing_url")
 
 
@@ -207,6 +221,29 @@ def _text_field(body: dict, field: str) -> tuple[bool, str | None]:
         abort(400, f"{field} must be a string or null")
     text = value if field in MULTILINE_FIELDS else (value or "").strip()
     return True, text if text and text.strip() else None
+
+
+def _clean_links(raw) -> list[dict]:
+    """Validate ``links``: a list of ``{url, label?}`` (or bare URL strings) with http(s) URLs, duplicates dropped."""
+    if not isinstance(raw, list) or len(raw) > tool_note_parser.MAX_LINKS:
+        abort(400, f"links must be a list of at most {tool_note_parser.MAX_LINKS} items")
+    result: list[dict] = []
+    seen: set[str] = set()
+    for item in raw:
+        if isinstance(item, str):
+            item = {"url": item}
+        if not isinstance(item, dict):
+            abort(400, "every link must be {url, label}")
+        url = str(item.get("url") or "").strip()
+        label = item.get("label")
+        if not url.lower().startswith(("http://", "https://")):
+            abort(400, f"link url must start with http:// or https://: {url or '(empty)'}")
+        if label is not None and not isinstance(label, str):
+            abort(400, "link label must be a string")
+        if url not in seen:
+            seen.add(url)
+            result.append({"url": url, "label": (label or "").strip()[:100]})
+    return result
 
 
 def _apply_fields(tool: Tool, body: dict) -> None:
@@ -234,6 +271,8 @@ def _apply_fields(tool: Tool, body: dict) -> None:
         if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags) or len(tags) > MAX_TAGS:
             abort(400, "category_tags must be a list of strings")
         tool.category_tags = list(dict.fromkeys(tag.strip()[:MAX_TAG_LENGTH] for tag in tags if tag.strip()))
+    if "links" in body:
+        tool.links = _clean_links(body["links"])
     if "key_points" in body:
         points = body["key_points"]
         if not isinstance(points, list) or not all(isinstance(point, str) for point in points) or len(points) > MAX_KEY_POINTS:
@@ -271,6 +310,100 @@ def update_tool(tool_id):
     tool.updated_at = datetime.datetime.now(datetime.timezone.utc)
     session.commit()
     return jsonify({"tool": _tool_dict(tool, target_name=_target_name(session, tool))})
+
+
+@bp.post("/tools/<int:tool_id>/import_note")
+def import_note(tool_id):
+    """Fill the tool's empty catalog fields from its Obsidian note (the "application description" template).
+
+    Body (optional): ``note_path`` (default: the tool's own ``obsidian_note_path``, which is then saved when
+    it was empty) and ``overwrite`` (replace fields that already have a value; default false).
+    """
+    _user()
+    body = request.get_json(silent=True) or {}
+    overwrite = body.get("overwrite", False)
+    if not isinstance(overwrite, bool):
+        abort(400, "overwrite must be a boolean")
+    session = get_scoped_session()
+    tool = session.get(Tool, tool_id)
+    if tool is None:
+        abort(404, "tool not found")
+    note_path = (body.get("note_path") or tool.obsidian_note_path or "").strip()
+    if not note_path:
+        abort(400, "the tool has no obsidian_note_path; send note_path")
+    try:
+        ensure_within_vault(note_path)
+    except VaultPathInvalidError:
+        abort(400, "note_path escapes vault root")
+    text = read_note(note_path)
+    if text is None:
+        abort(404, "note not found in the vault")
+    parsed = tool_note_parser.parse_tool_note(text)
+    changed = tool_note_parser.apply_note_to_tool(tool, parsed, overwrite=overwrite)
+    if not tool.obsidian_note_path:
+        tool.obsidian_note_path = note_path
+        changed.append("obsidian_note_path")
+    source_result = None
+    if parsed.get("sources"):
+        source_result = knowledge_sources.link_note_sources(session, tool, parsed["sources"])
+        if source_result["linked"] or source_result["created"]:
+            changed.append("sources")
+    if changed:
+        tool.updated_at = datetime.datetime.now(datetime.timezone.utc)
+        session.commit()
+    sources = knowledge_sources.sources_for_tools(session, [tool.id]).get(tool.id)
+    return jsonify({
+        "tool": _tool_dict(tool, target_name=_target_name(session, tool), sources=sources),
+        "imported": changed, "found": sorted(parsed), "sources": source_result,
+    })
+
+
+@bp.post("/tools/<int:tool_id>/sources")
+def add_tool_source(tool_id):
+    """Record where the user learned about the tool: an existing source (``source_id``) or a name (found or created).
+
+    Body: ``{source_id | name, context?, kind?}``; ``context`` is a lesson / link / remark inside that source.
+    """
+    _user()
+    body = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    tool = session.get(Tool, tool_id)
+    if tool is None:
+        abort(404, "tool not found")
+    context = body.get("context")
+    if context is not None and not isinstance(context, str):
+        abort(400, "context must be a string")
+    try:
+        fields = knowledge_sources.validate_fields({key: body[key] for key in ("kind",) if key in body})
+    except ValueError as exc:
+        abort(400, str(exc))
+    if body.get("source_id") is not None:
+        source = session.get(DiscoverySource, body["source_id"]) if isinstance(body["source_id"], int) else None
+        if source is None:
+            abort(404, "source not found")
+        created = False
+    else:
+        name = body.get("name")
+        if not isinstance(name, str) or not name.strip():
+            abort(400, "source_id or name is required")
+        source, created = knowledge_sources.get_or_create_source(session, name, kind=fields.get("kind"))
+    link, linked = knowledge_sources.link_tool(session, tool, source, context=(context or "").strip() or None)
+    if not linked and context is not None:
+        link.context = context.strip() or None
+    session.commit()
+    sources = knowledge_sources.sources_for_tools(session, [tool.id]).get(tool.id)
+    return jsonify({"sources": sources, "source_created": created, "linked": linked}), 201 if linked else 200
+
+
+@bp.delete("/tools/<int:tool_id>/sources/<int:source_id>")
+def remove_tool_source(tool_id, source_id):
+    """Detach a source from the tool (the source itself stays)."""
+    _user()
+    session = get_scoped_session()
+    if not knowledge_sources.unlink_tool(session, tool_id, source_id):
+        abort(404, "the tool is not linked to this source")
+    session.commit()
+    return jsonify({"sources": knowledge_sources.sources_for_tools(session, [tool_id]).get(tool_id, [])})
 
 
 @bp.post("/tools/<int:tool_id>/retry_obsidian_write")

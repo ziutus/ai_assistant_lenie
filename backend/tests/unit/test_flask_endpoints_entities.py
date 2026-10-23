@@ -1188,7 +1188,7 @@ class TestPersonUpdate:
         session.commit.assert_not_called()
 
     def test_updates_descriptions_and_links(self, client):
-        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid="Q37181")
+        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid="Q37181", kind=None, role=None, obsidian_note_path=None)
         session = MagicMock()
         session.get.return_value = person
         body = {
@@ -1199,7 +1199,8 @@ class TestPersonUpdate:
                 "https://pl.wikipedia.org/wiki/Luiz_In%C3%A1cio_Lula_da_Silva",
             ],
         }
-        with patch("server.get_scoped_session", return_value=session):
+        with patch("server.get_scoped_session", return_value=session), \
+                patch("library.knowledge_sources.sources_for_persons", return_value={}):
             resp = client.patch("/persons/5", json=body, headers=API_HEADERS)
 
         assert resp.status_code == 200
@@ -1211,13 +1212,29 @@ class TestPersonUpdate:
         session.commit.assert_called_once()
 
     def test_empty_string_clears_description(self, client):
-        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid=None, description=None, links=[])
+        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid=None, description=None, links=[],
+                           kind=None, role=None, obsidian_note_path=None)
         session = MagicMock()
         session.get.return_value = person
-        with patch("server.get_scoped_session", return_value=session):
+        with patch("server.get_scoped_session", return_value=session), \
+                patch("library.knowledge_sources.sources_for_persons", return_value={}):
             resp = client.patch("/persons/5", json={"long_description": "  "}, headers=API_HEADERS)
         assert resp.status_code == 200
         assert person.long_description is None
+
+    def test_public_person_fields_are_saved_and_validated(self, client):
+        person = MagicMock(id=5, canonical_name="Szewko", wikidata_qid=None, links=[], kind=None, role=None,
+                           obsidian_note_path=None, description=None, long_description=None, aliases=[])
+        session = MagicMock()
+        session.get.return_value = person
+        with patch("server.get_scoped_session", return_value=session), \
+                patch("library.knowledge_sources.sources_for_persons", return_value={5: [{"id": 26, "name": "Kanał", "role": "host"}]}):
+            ok = client.patch("/persons/5", json={"kind": "public", "role": " prowadzący kanał "}, headers=API_HEADERS)
+            bad = client.patch("/persons/5", json={"kind": "vip"}, headers=API_HEADERS)
+
+        assert ok.status_code == 200 and person.kind == "public" and person.role == "prowadzący kanał"
+        assert ok.get_json()["person"]["sources"][0]["role"] == "host"
+        assert bad.status_code == 400
 
 
 class TestPlacesMergeGeocodesTarget:

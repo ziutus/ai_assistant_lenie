@@ -20,8 +20,9 @@ def _reader():
 
 
 def _user():
-    if getattr(g, "auth", None) is None or g.auth.kind != "user":
-        abort(403, "user API key required")
+    # Single-owner project: a service key (scripts, skills) may review candidates like a user key.
+    if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
+        abort(403, "user or service API key required")
 
 
 def _get_candidate_with_document(session, candidate_id: int):

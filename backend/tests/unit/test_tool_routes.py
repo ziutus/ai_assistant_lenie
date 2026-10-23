@@ -9,6 +9,13 @@ pytest.importorskip("sqlalchemy")
 from flask import Flask, g
 
 
+@pytest.fixture(autouse=True)
+def _no_source_queries(monkeypatch):
+    """These tests feed one canned result set to every query; the source/provenance lookups are covered elsewhere."""
+    monkeypatch.setattr("library.tool_routes.knowledge_sources.sources_for_tools", lambda *_args: {})
+    monkeypatch.setattr("library.tool_routes.tool_provenance.radar_for_tools", lambda *_args: {})
+
+
 def _compiled(query) -> str:
     return str(query.compile(compile_kwargs={"literal_binds": True}))
 
@@ -27,7 +34,7 @@ def _make_tool(**overrides):
         source_document_id=9381, source_candidate_id=5, status="accepted",
         obsidian_note_path="Narzedzia/Terraform.md",
         github_url=None, wikipedia_url=None, pricing_url=None, pricing_type=None, app_type=None,
-        key_points=[], important_commands=None, migrating_away=False, migration_note=None,
+        purpose=None, works_on=None, links=[], key_points=[], important_commands=None, migrating_away=False, migration_note=None,
         migration_target_tool_id=None,
         created_at=dt.datetime(2026, 8, 10, 12, 0, tzinfo=dt.timezone.utc),
         updated_at=dt.datetime(2026, 8, 11, 9, 0, tzinfo=dt.timezone.utc),
@@ -104,6 +111,8 @@ class TestResponseShape:
         assert response.json["tools"] == [{
             "relations": [],
             "github": None,
+            "sources": [],
+            "radar": [],
             "id": 1,
             "uuid": "11111111-1111-1111-1111-111111111111",
             "name": "Terraform",
@@ -116,6 +125,9 @@ class TestResponseShape:
             "pricing_url": None,
             "pricing_type": None,
             "app_type": None,
+            "purpose": None,
+            "works_on": None,
+            "links": [],
             "key_points": [],
             "important_commands": None,
             "migrating_away": False,
@@ -243,7 +255,7 @@ VALID_BODY = {
 
 
 class TestCreateToolServiceKeyForbidden:
-    def test_service_key_403_before_any_mutation(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_routes import create_tool
 
         get_scoped_session_mock = MagicMock()
@@ -251,7 +263,7 @@ class TestCreateToolServiceKeyForbidden:
         app = Flask(__name__)
 
         with app.test_request_context("/tools", method="POST", json=VALID_BODY), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             create_tool()
 
         assert exc_info.value.code == 403
@@ -455,7 +467,7 @@ class TestCreateToolAcceptedStatus:
 
 
 class TestRetryObsidianWriteAuthForbidden:
-    def test_service_key_403_before_any_mutation(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_routes import retry_obsidian_write
 
         get_scoped_session_mock = MagicMock()
@@ -463,7 +475,7 @@ class TestRetryObsidianWriteAuthForbidden:
         app = Flask(__name__)
 
         with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             retry_obsidian_write(42)
 
         assert exc_info.value.code == 403
@@ -706,3 +718,72 @@ class TestLenieNativeNotes:
             g.auth = SimpleNamespace(kind="user", user_id=1)
             with pytest.raises(BadRequest):
                 create_tool()
+
+
+NOTE_TEMPLATE = """**Purpose:** testowanie serwerów WWW
+**Licence**:GPL
+works on: Linux, Macos (brew)
+### Key Points:
+
+- point1
+- Mierzy czas odpowiedzi
+"""
+
+
+class TestImportNote:
+    def _tool(self, **fields):
+        base = dict(id=52, uuid="u", name="httping", category_tags=[], homepage_url=None, license=None, pricing=None,
+                    personal_notes=None, source_document_id=None, source_candidate_id=None,
+                    obsidian_note_path="02-wiedza/Informatyka/narzedzia_cli/httping.md", created_at=None, updated_at=None)
+        base.update(fields)
+        return _make_tool(**base)
+
+    def _call(self, monkeypatch, tool, body=None, note=NOTE_TEMPLATE, kind="service"):
+        from library.tool_routes import import_note
+
+        session = MagicMock()
+        session.get.return_value = tool
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.read_note", lambda _path: note)
+        monkeypatch.setattr("library.tool_routes.ensure_within_vault", lambda _path: None)
+        app = Flask(__name__)
+        with app.test_request_context("/tools/52/import_note", method="POST", json=body or {}):
+            g.auth = SimpleNamespace(kind=kind, user_id=None)
+            return import_note(52), session
+
+    def test_fills_empty_fields_from_the_note(self, monkeypatch):
+        tool = self._tool()
+
+        response, session = self._call(monkeypatch, tool)
+
+        assert tool.purpose == "testowanie serwerów WWW"
+        assert tool.license == "GPL"
+        assert tool.works_on == "Linux, Macos (brew)"
+        assert tool.key_points == ["Mierzy czas odpowiedzi"]
+        assert set(response.json["imported"]) == {"purpose", "license", "works_on", "key_points"}
+        assert response.json["tool"]["works_on"] == "Linux, Macos (brew)"
+        session.commit.assert_called_once()
+
+    def test_existing_values_survive_unless_overwrite(self, monkeypatch):
+        tool = self._tool(license="MIT")
+        self._call(monkeypatch, tool)
+        assert tool.license == "MIT"
+
+        self._call(monkeypatch, tool, body={"overwrite": True})
+        assert tool.license == "GPL"
+
+    def test_note_path_is_saved_when_the_tool_had_none(self, monkeypatch):
+        tool = self._tool(obsidian_note_path=None)
+
+        response, _session = self._call(monkeypatch, tool, body={"note_path": "02-wiedza/x/httping.md"})
+
+        assert tool.obsidian_note_path == "02-wiedza/x/httping.md"
+        assert "obsidian_note_path" in response.json["imported"]
+
+    def test_missing_path_or_note_is_an_error(self, monkeypatch):
+        from werkzeug.exceptions import BadRequest, NotFound
+
+        with pytest.raises(BadRequest):
+            self._call(monkeypatch, self._tool(obsidian_note_path=None))
+        with pytest.raises(NotFound):
+            self._call(monkeypatch, self._tool(), note=None)
