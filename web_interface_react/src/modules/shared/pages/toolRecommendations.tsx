@@ -12,7 +12,7 @@ type Recommendation = {
   github: GithubStats | null;
   relations: ToolRelation[]; stack_matches: string[];
   feed_mentions: { count: number; samples: Array<{ id: number; title: string; url: string }> };
-  category: string | null; status: RecommendationStatus; personal_note: string | null; obsidian_note_path?: string | null;
+  category: string | null; tags: string[]; status: RecommendationStatus; personal_note: string | null; obsidian_note_path?: string | null;
   origin: "ai_detected" | "curated";
   source_url: string | null; source_context: string | null;
   source_document: { title: string | null; url: string | null; discovery_source: string | null } | null;
@@ -64,6 +64,34 @@ const tabHelp: Record<RecommendationStatus | "all", string> = {
   all: "Wszystkie: wpisy ze wszystkich etapów radaru naraz.",
 };
 
+const chipStyle: React.CSSProperties = { background: "#dbeafe", color: "#1e3a8a", borderRadius: 999, padding: "2px 8px", fontSize: ".75rem", border: "none", cursor: "pointer" };
+
+// Tags of one entry: click a tag to filter by it, × removes it, the input adds new ones (Enter or comma).
+function TagEditor({ tags, onFilter, onSave, disabled }: {
+  tags: string[]; onFilter: (tag: string) => void; onSave: (tags: string[]) => Promise<void>; disabled: boolean;
+}) {
+  const [draft, setDraft] = React.useState("");
+  const add = async () => {
+    const added = draft.split(",").map(value => value.trim()).filter(Boolean);
+    if (!added.length) return;
+    setDraft("");
+    await onSave([...tags, ...added]);
+  };
+  return <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "8px 0" }}>
+    {tags.map(tag => <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+      <button type="button" style={chipStyle} title="Pokaż tylko wpisy z tym tagiem" onClick={() => onFilter(tag)}>#{tag}</button>
+      <button type="button" aria-label={`Usuń tag ${tag}`} title="Usuń tag" disabled={disabled}
+        style={{ all: "unset", cursor: "pointer", color: "#64748b", padding: "0 3px" }}
+        onClick={() => void onSave(tags.filter(value => value !== tag))}>×</button>
+    </span>)}
+    <input value={draft} placeholder="+ tag (np. docker)" aria-label="Dodaj tag" disabled={disabled}
+      title="Wpisz tag i naciśnij Enter; kilka tagów rozdziel przecinkami. Tagi pomagają szukać po zastosowaniu (docker, kubernetes, sbom…)."
+      onChange={event => setDraft(event.target.value)}
+      onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void add(); } }}
+      onBlur={() => void add()} style={{ width: 150, fontSize: ".8rem" }} />
+  </div>;
+}
+
 function Help({ text }: { text: string }) {
   return <span role="img" tabIndex={0} title={text} aria-label={text}
     style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, marginLeft: 4, borderRadius: "50%", background: "#e2e8f0", color: "#334155", fontSize: ".7rem", fontWeight: 700, cursor: "help", flex: "none" }}>?</span>;
@@ -78,6 +106,10 @@ export default function ToolRecommendations() {
     searchParams.get("origin") === "ai_detected" ? "ai_detected" : "all",
   );
   const [categories, setCategories] = React.useState<string[]>([]);
+  const [allTags, setAllTags] = React.useState<Array<{ tag: string; count: number }>>([]);
+  const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
+  const [queryInput, setQueryInput] = React.useState("");
+  const [query, setQuery] = React.useState("");
   const [items, setItems] = React.useState<Recommendation[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
@@ -105,17 +137,24 @@ export default function ToolRecommendations() {
       const params = new URLSearchParams({ status });
       if (category) params.set("category", category);
       if (origin !== "all") params.set("origin", origin);
+      selectedTags.forEach(tag => params.append("tag", tag));
+      if (query) params.set("q", query);
       const response = await fetch(`${apiUrl}/tool_recommendations?${params.toString()}`, { headers });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać radaru narzędzi"));
       setItems(Array.isArray(data.tool_recommendations) ? data.tool_recommendations as Recommendation[] : []);
+      setAllTags(Array.isArray(data.all_tags) ? data.all_tags as Array<{ tag: string; count: number }> : []);
       setCategories(Array.isArray(data.categories) ? data.categories.filter((value: unknown): value is string => typeof value === "string") : []);
     } catch (cause) {
       setError(cause instanceof TypeError ? `Nie można połączyć się z API ${apiUrl}.` : cause instanceof Error ? cause.message : "Nie udało się pobrać radaru.");
     } finally { setLoading(false); }
-  }, [apiUrl, category, headers, origin, status]);
+  }, [apiUrl, category, headers, origin, query, selectedTags, status]);
 
   React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(queryInput.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
   React.useEffect(() => { setSelectedIds(new Set()); }, [status, category]);
   React.useEffect(() => { if (!selectedIds.size) setShowSelected(false); }, [selectedIds]);
 
@@ -134,6 +173,19 @@ export default function ToolRecommendations() {
       await load();
       return true;
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); return false; }
+    finally { setBusy(null); }
+  };
+
+  const toggleTag = (tag: string) => setSelectedTags(current => current.includes(tag) ? current.filter(value => value !== tag) : [...current, tag]);
+
+  const saveTags = async (item: Recommendation, tags: string[]) => {
+    setBusy(item.id); setError("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}`, { method: "PATCH", headers, body: JSON.stringify({ tags }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się zapisać tagów"));
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Zapis tagów nie powiódł się"); }
     finally { setBusy(null); }
   };
 
@@ -264,6 +316,8 @@ export default function ToolRecommendations() {
 
   const cardDetails = (item: Recommendation) => <>
     {item.category && <span style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{item.category}</span>}
+    <TagEditor tags={item.tags ?? []} onFilter={tag => setSelectedTags(current => current.includes(tag) ? current : [...current, tag])}
+      onSave={tags => saveTags(item, tags)} disabled={busy === item.id} />
     {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
     {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
     {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
@@ -317,10 +371,19 @@ export default function ToolRecommendations() {
         <option value="all">Wszystkie</option><option value="curated">Katalogi i ręczne</option><option value="ai_detected">Wykryte przez AI</option>
       </select>
     </label>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px 12px" }}>Szukaj:<Help text="Szuka w nazwie, opisie, kategorii i tagach (np. „docker”, „sbom”)." />
+      <input type="search" value={queryInput} onChange={event => setQueryInput(event.target.value)} placeholder="nazwa, opis lub tag" style={{ width: 200 }} />
+    </label>
     <label style={{ display: "inline-flex", alignItems: "center", gap: 6, margin: "0 0 18px 12px" }}>
       <input type="checkbox" checked={stackOnly} onChange={event => setStackOnly(event.target.checked)} />Tylko pasujące do mojego stacku
       <Help text="Pokazuje wpisy powiązane z narzędziami, które masz w etapie „Używam” (np. AWS, GCP, Terraform). Powiązania wykrywa przycisk „Wykryj powiązania”." />
     </label>
+    {allTags.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "0 0 18px" }}>
+      <span style={{ display: "inline-flex", alignItems: "center" }}>Tagi:<Help text="Wybierz jeden lub kilka tagów — pokażą się wpisy mające wszystkie wybrane. Tagi dodasz na karcie narzędzia, pole „+ tag”." /></span>
+      {allTags.map(({ tag, count }) => <button key={tag} type="button" aria-pressed={selectedTags.includes(tag)} onClick={() => toggleTag(tag)}
+        style={{ ...chipStyle, ...(selectedTags.includes(tag) ? { background: "#1d4ed8", color: "#fff" } : {}) }}>#{tag} ({count})</button>)}
+      {selectedTags.length > 0 && <button type="button" onClick={() => setSelectedTags([])}>Wyczyść tagi</button>}
+    </div>}
     <details style={{ margin: "0 0 18px", color: "#475569" }}>
       <summary style={{ cursor: "help" }}>Co znaczą etapy radaru?</summary>
       <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>

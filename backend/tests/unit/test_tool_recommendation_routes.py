@@ -12,7 +12,7 @@ from flask import Flask, g
 def _item(status="watchlist"):
     return SimpleNamespace(
         id=17, name="LinkStack", homepage_url="https://github.com/LinkStackOrg/linkstack",
-        description="Współdzielona strona z linkami", category="bookmarking", status=status,
+        description="Współdzielona strona z linkami", category="bookmarking", tags=["links"], status=status,
         personal_note=None, obsidian_note_path=None, source_url="https://example.com/awesome", source_context="Awesome Homelab",
         source_document_id=None, source_candidate_id=None, source_document=None, tool_id=None,
         created_at=dt.datetime(2026, 8, 23, tzinfo=dt.timezone.utc),
@@ -251,3 +251,37 @@ class TestToolRecommendationRoutes:
             with pytest.raises(Exception) as exc_info:
                 update_tool_recommendation(17)
         assert exc_info.value.code == 400
+
+
+class TestTags:
+    def test_normalize_lowercases_dedupes_and_joins_words(self):
+        from library.tool_recommendation_routes import normalize_tags
+
+        assert normalize_tags([" Docker ", "docker", "Container Images", "", "SBOM"]) == [
+            "docker", "container-images", "sbom",
+        ]
+        assert normalize_tags(None) == []
+
+    def test_normalize_rejects_non_list_and_long_tags(self):
+        from werkzeug.exceptions import BadRequest
+
+        from library.tool_recommendation_routes import normalize_tags
+
+        with pytest.raises(BadRequest):
+            normalize_tags("docker")
+        with pytest.raises(BadRequest):
+            normalize_tags(["x" * 41])
+        with pytest.raises(BadRequest):
+            normalize_tags([f"t{i}" for i in range(21)])
+
+    def test_catalog_tags_put_category_first_without_repeats(self):
+        from library.tool_recommendation_routes import _catalog_tags
+
+        item = SimpleNamespace(category="security", tags=["docker", "security", "sbom"])
+        assert _catalog_tags(item) == ["security", "docker", "sbom"]
+        assert _catalog_tags(SimpleNamespace(category=None, tags=None)) == []
+
+    def test_dict_exposes_tags(self):
+        from library.tool_recommendation_routes import _dict
+
+        assert _dict(_item())["tags"] == ["links"]

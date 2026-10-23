@@ -3260,6 +3260,8 @@ class ToolRecommendation(Base):
     obsidian_note_path: Mapped[str | None] = mapped_column(Text)
     # The catalog tool (Spis narzędzi) this radar entry became or is described by; set when the entry is adopted.
     tool_id: Mapped[int | None] = mapped_column(ForeignKey("tools.id", ondelete="SET NULL"))
+    # Lowercase free-form tags (docker, kubernetes, sbom); ``category`` stays the one catalog section.
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

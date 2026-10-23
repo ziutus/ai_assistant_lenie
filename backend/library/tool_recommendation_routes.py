@@ -5,7 +5,7 @@ import logging
 from urllib.parse import urlparse
 
 from flask import Blueprint, abort, g, jsonify, request
-from sqlalchemy import func, or_, select
+from sqlalchemy import Text, func, or_, select
 from sqlalchemy.orm import joinedload, selectinload
 
 from library import github_repo_stats
@@ -19,6 +19,37 @@ bp = Blueprint("tool_recommendations", __name__)
 logger = logging.getLogger(__name__)
 
 STATUSES = {"watchlist", "compare", "testing", "test_future", "adopted", "phasing_out", "rejected", "archived"}
+MAX_TAGS = 20
+MAX_TAG_LENGTH = 40
+
+
+def normalize_tags(raw) -> list[str]:
+    """Lowercase, trim, collapse inner spaces to ``-`` and de-duplicate, keeping the given order."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        abort(400, "tags must be a list of strings")
+    tags: list[str] = []
+    for value in raw:
+        if not isinstance(value, str):
+            abort(400, "tags must be a list of strings")
+        tag = "-".join(value.strip().lower().split())
+        if not tag:
+            continue
+        if len(tag) > MAX_TAG_LENGTH:
+            abort(400, f"a tag is at most {MAX_TAG_LENGTH} characters")
+        if tag not in tags:
+            tags.append(tag)
+    if len(tags) > MAX_TAGS:
+        abort(400, f"at most {MAX_TAGS} tags per entry")
+    return tags
+
+
+def _catalog_tags(item: ToolRecommendation) -> list[str]:
+    """Tags for the catalog tool: the category first, then the radar tags, without repeats."""
+    merged = [item.category] if item.category else []
+    merged.extend(tag for tag in (item.tags or []) if tag not in merged)
+    return merged
 
 
 def _existing_tool(session, name: str, homepage_url: str | None = None) -> Tool | None:
@@ -37,7 +68,7 @@ def _ensure_tool(session, item: ToolRecommendation) -> tuple[Tool, bool]:
         name=item.name,
         homepage_url=item.homepage_url,
         github_url=item.homepage_url if github_repo_stats.parse_repo_url(item.homepage_url) else None,
-        category_tags=[item.category] if item.category else [],
+        category_tags=_catalog_tags(item),
         personal_notes=item.personal_note,
         obsidian_note_path=item.obsidian_note_path,
         source_document_id=item.source_document_id,
@@ -119,6 +150,7 @@ def _dict(item: ToolRecommendation, github: dict | None = None, relations: list 
         "homepage_url": item.homepage_url,
         "description": item.description,
         "category": item.category,
+        "tags": list(item.tags or []),
         "status": item.status,
         "personal_note": item.personal_note,
         "obsidian_note_path": item.obsidian_note_path,
@@ -158,6 +190,8 @@ def get_tool_recommendations():
     if status not in STATUSES and status != "all":
         abort(400, "unsupported status")
     category = request.args.get("category")
+    tags = normalize_tags(request.args.getlist("tag"))  # repeated ?tag= narrows: an entry needs all of them
+    text = (request.args.get("q") or "").strip()
     origin = request.args.get("origin", "all")
     if origin not in {"all", "ai_detected", "curated"}:
         abort(400, "unsupported origin")
@@ -175,6 +209,14 @@ def get_tool_recommendations():
         query = query.where(ToolRecommendation.status == status)
     if category:
         query = query.where(ToolRecommendation.category == category)
+    for tag in tags:
+        query = query.where(ToolRecommendation.tags.contains([tag]))
+    if text:
+        like = f"%{text}%"
+        query = query.where(or_(
+            ToolRecommendation.name.ilike(like), ToolRecommendation.description.ilike(like),
+            ToolRecommendation.category.ilike(like), func.cast(ToolRecommendation.tags, Text).ilike(like),
+        ))
     if origin == "ai_detected":
         query = query.where(ToolRecommendation.source_candidate_id.is_not(None))
     if origin == "curated":
@@ -186,6 +228,10 @@ def get_tool_recommendations():
         .distinct()
         .order_by(ToolRecommendation.category)
     ).scalars().all()
+    tag_counts: dict[str, int] = {}
+    for tag_list in session.execute(select(ToolRecommendation.tags)).scalars().all():
+        for tag in tag_list or []:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
     github = github_repo_stats.stats_for_urls(session, [item.homepage_url for item in items])
     relations = tool_relations_service.relations_for(session, [item.id for item in items])
     mentions = feed_mentions.mentions_for(session, {item.id: item.name for item in items})
@@ -194,7 +240,8 @@ def get_tool_recommendations():
             _dict(item, github.get(item.homepage_url), relations.get(item.id), mentions.get(item.id)) for item in items
         ],
         "categories": categories,
-        "filters": {"status": status, "category": category, "origin": origin},
+        "all_tags": [{"tag": tag, "count": count} for tag, count in sorted(tag_counts.items())],
+        "filters": {"status": status, "category": category, "origin": origin, "tags": tags, "q": text},
     })
 
 
@@ -298,7 +345,8 @@ def create_tool_recommendation():
         return jsonify({"existing_tool_recommendation": {"id": existing_item.id, "name": existing_item.name}}), 200
     item = ToolRecommendation(
         name=name[:255], homepage_url=body.get("homepage_url"), description=body.get("description"),
-        category=body.get("category"), status=status, personal_note=body.get("personal_note"),
+        category=body.get("category"), tags=normalize_tags(body.get("tags")), status=status,
+        personal_note=body.get("personal_note"),
         obsidian_note_path=(str(body.get("obsidian_note_path") or "").strip() or None),
         source_url=body.get("source_url"), source_context=body.get("source_context"),
         source_document_id=body.get("source_document_id"), source_candidate_id=body.get("source_candidate_id"),
@@ -486,6 +534,8 @@ def update_tool_recommendation(recommendation_id):
     item = session.get(ToolRecommendation, recommendation_id)
     if item is None:
         abort(404, "tool recommendation not found")
+    if "tags" in body:
+        item.tags = normalize_tags(body["tags"])
     for field in ("homepage_url", "description", "category", "personal_note", "obsidian_note_path"):
         if field in body:
             value = body[field]
