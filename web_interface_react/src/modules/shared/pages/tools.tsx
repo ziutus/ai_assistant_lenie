@@ -62,7 +62,7 @@ const radarStatusLabel: Record<string, string> = {
 };
 
 type ToolsResponse = { tools?: unknown; filters?: { tag?: string | null } };
-type GithubRefreshResult = { refreshed?: number; failed?: number; rate_limited?: boolean; pending?: number };
+type GithubRefreshResult = { refreshed?: number; failed?: number; rate_limited?: boolean; quota_reserved?: boolean; rate_limit_remaining?: number | null; pending?: number };
 
 const pricingTypes: Array<[string, string]> = [
   ["free", "darmowe"], ["freemium", "freemium"], ["paid", "płatne jednorazowo"],
@@ -263,7 +263,7 @@ export default function Tools() {
       const data = await response.json().catch(() => ({})) as GithubRefreshResult & Record<string, unknown>;
       if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać danych z GitHuba"));
       const pending = data.pending ?? 0;
-      setGithubMessage(`GitHub: pobrano ${data.refreshed ?? 0}${data.failed ? `, błędy: ${data.failed}` : ""}${data.rate_limited ? ". Limit zapytań GitHuba wyczerpany — spróbuj za godzinę" : pending ? `. Zostało do pobrania: ${pending} — kliknij ponownie` : ". Wszystko aktualne"}.`);
+      setGithubMessage(`GitHub: pobrano ${data.refreshed ?? 0}${data.failed ? `, błędy: ${data.failed}` : ""}${data.quota_reserved ? `. Pobieranie wstrzymane, aby zachować rezerwę godzinnego limitu GitHuba. Pozostałe repozytoria (${pending}) można pobrać później` : data.rate_limited ? ". Limit zapytań GitHuba wyczerpany — spróbuj za godzinę" : pending ? `. Zostało do pobrania: ${pending} — kliknij ponownie` : ". Wszystko aktualne"}.${data.rate_limit_remaining != null ? ` Pozostały limit GitHuba: ${data.rate_limit_remaining} zapytań.` : ""}`);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
     finally { setGithubBusy(false); }
@@ -328,7 +328,7 @@ export default function Tools() {
         </span>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla narzędzi z linkiem do repozytorium (do 30 na raz). Dane są wspólne z Radarem narzędzi.">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
+        <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla narzędzi z linkiem do repozytorium (do kilkuset repozytoriów na raz, zależnie od limitu GitHuba). Dane są wspólne z Radarem narzędzi.">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
         <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
       </div>
     </div>

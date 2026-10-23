@@ -201,7 +201,7 @@ class TestRefreshStale:
         summary = svc.refresh_stale(self._session(existing), urls, limit=10, now=NOW)
 
         assert calls == ["a/new", "a/older", "a/old"]
-        assert summary == {"repositories": 4, "refreshed": 3, "failed": 0, "rate_limited": False, "pending": 0}
+        assert summary == {"repositories": 4, "refreshed": 3, "failed": 0, "rate_limited": False, "quota_reserved": False, "rate_limit_remaining": None, "pending": 0}
 
     def test_force_refreshes_a_fresh_row_too(self, monkeypatch):
         calls = []
@@ -236,7 +236,7 @@ class TestRefreshStale:
 
         summary = svc.refresh_stale(self._session([]), urls, limit=10, now=NOW)
 
-        assert summary == {"repositories": 4, "refreshed": 1, "failed": 1, "rate_limited": True, "pending": 2}
+        assert summary == {"repositories": 4, "refreshed": 1, "failed": 1, "rate_limited": True, "quota_reserved": False, "rate_limit_remaining": None, "pending": 2}
 
     def test_no_github_urls_means_no_query(self):
         session = MagicMock()
@@ -281,7 +281,7 @@ class TestRefreshEndpoint:
 
         def fake_refresh(sess, urls, limit):
             seen.update(urls=list(urls), limit=limit)
-            return {"repositories": 1, "refreshed": 1, "failed": 0, "rate_limited": False, "pending": 0}
+            return {"repositories": 1, "refreshed": 1, "failed": 0, "rate_limited": False, "quota_reserved": False, "rate_limit_remaining": None, "pending": 0}
 
         monkeypatch.setattr(svc, "refresh_stale", fake_refresh)
         app = Flask(__name__)
@@ -298,7 +298,7 @@ class TestRefreshEndpoint:
 
     def test_defaults(self, monkeypatch):
         _, seen, _ = self._call(monkeypatch, {})
-        assert seen["limit"] == svc.DEFAULT_REFRESH_LIMIT
+        assert seen["limit"] == svc.default_refresh_limit()
 
     @pytest.mark.parametrize("body", [{"limit": 0}, {"limit": 1000}, {"limit": "x"}, {"status": "nope"}])
     def test_rejects_bad_input(self, monkeypatch, body):
@@ -317,7 +317,7 @@ class TestRefreshEndpoint:
 
         def fake_refresh(sess, urls, limit, force=False):
             seen.update(urls=list(urls), limit=limit, force=force)
-            return {"repositories": 1, "refreshed": 1, "failed": 0, "rate_limited": False, "pending": 0}
+            return {"repositories": 1, "refreshed": 1, "failed": 0, "rate_limited": False, "quota_reserved": False, "rate_limit_remaining": None, "pending": 0}
 
         monkeypatch.setattr(svc, "refresh_stale", fake_refresh)
         with Flask(__name__).test_request_context("/x", method="POST", json=body):
@@ -637,3 +637,92 @@ class TestHomepage:
 
         assert svc.refresh_repo(session, "tt-rss", "tt-rss", now=NOW).homepage is None
         assert svc.refresh_gitlab_repo(session, "gitlab.com", "a/b", now=NOW).homepage is None
+
+
+@pytest.mark.parametrize("token, default, maximum", [(None, 30, 60), ("token", 250, 500)])
+def test_dynamic_refresh_limits(monkeypatch, token, default, maximum):
+    monkeypatch.setattr(svc, "_token", lambda: token)
+    assert svc.default_refresh_limit() == default
+    assert svc.max_refresh_limit() == maximum
+    monkeypatch.setattr(svc, "refresh_repo", lambda *args, **kwargs: None)
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    urls = [f"https://github.com/a/r{i}" for i in range(300)]
+    summary = svc.refresh_stale(session, urls, now=NOW)
+    assert summary["refreshed"] == default
+    assert summary["pending"] == 300 - default
+
+
+@pytest.mark.parametrize("module", ["tool_routes", "tool_recommendation_routes"])
+@pytest.mark.parametrize("token, maximum", [(None, 60), ("token", 500)])
+def test_routes_reject_above_dynamic_max(monkeypatch, module, token, maximum):
+    from importlib import import_module
+    from werkzeug.exceptions import BadRequest
+
+    route = import_module(f"library.{module}")
+    monkeypatch.setattr(svc, "_token", lambda: token)
+    app = Flask(__name__)
+    with app.test_request_context("/", method="POST", json={"limit": maximum + 1}):
+        g.auth = SimpleNamespace(kind="user", user_id=1)
+        with pytest.raises(BadRequest, match=f"between 1 and {maximum}"):
+            route.refresh_github_stats()
+
+
+@pytest.mark.parametrize("status", [200, 404])
+def test_reserve_stops_with_accurate_pending(monkeypatch, status):
+    monkeypatch.setattr(svc, "_token", lambda: "token")
+    responses = iter([
+        SimpleNamespace(status_code=status, ok=status == 200,
+                        headers={"X-RateLimit-Remaining": str(remaining)}, json=lambda: GITHUB_JSON)
+        for remaining in [200, 199]
+    ])
+    fetch = MagicMock(side_effect=lambda **kwargs: next(responses))
+    monkeypatch.setattr(svc, "observed_request", fetch)
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.execute.return_value.scalars.return_value.first.return_value = None
+    summary = svc.refresh_stale(session, [f"https://github.com/a/r{i}" for i in range(5)], now=NOW)
+    assert fetch.call_count == 2  # Exactly 200 still permits a fetch; 199 stops the next one.
+    assert summary == {"repositories": 5, "refreshed": 2, "failed": 0, "pending": 3,
+                       "rate_limited": False, "quota_reserved": True, "rate_limit_remaining": 199}
+    # A new batch must not reuse a previous request's quota observation.
+    empty = svc.refresh_stale(session, [], now=NOW)
+    assert empty["rate_limit_remaining"] is None and empty["quota_reserved"] is False
+
+
+def test_anonymous_quota_holds_no_reserve(monkeypatch):
+    monkeypatch.setattr(svc, "_token", lambda: None)
+    fetch = MagicMock(side_effect=lambda **kwargs: SimpleNamespace(
+        status_code=200, ok=True, headers={"X-RateLimit-Remaining": "58"}, json=lambda: GITHUB_JSON))
+    monkeypatch.setattr(svc, "observed_request", fetch)
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.execute.return_value.scalars.return_value.first.return_value = None
+    summary = svc.refresh_stale(session, [f"https://github.com/a/r{i}" for i in range(3)], now=NOW)
+    assert fetch.call_count == 3 and summary["quota_reserved"] is False and summary["pending"] == 0
+
+
+@pytest.mark.parametrize("header", [None, "invalid"])
+def test_missing_or_invalid_quota_does_not_fail_refresh(monkeypatch, header):
+    response = SimpleNamespace(status_code=200, ok=True,
+                               headers={"X-RateLimit-Remaining": header}, json=lambda: GITHUB_JSON)
+    monkeypatch.setattr(svc, "observed_request", lambda **kwargs: response)
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.execute.return_value.scalars.return_value.first.return_value = None
+    summary = svc.refresh_stale(session, ["https://github.com/a/b"], now=NOW)
+    assert summary["refreshed"] == 1 and summary["rate_limit_remaining"] is None
+    assert summary["quota_reserved"] is False
+
+
+def test_gitlab_headers_do_not_affect_github_quota(monkeypatch):
+    monkeypatch.setattr(svc, "_assert_public_host", lambda host: None)
+    response = SimpleNamespace(status_code=200, ok=True,
+                               headers={"X-RateLimit-Remaining": "1"}, json=lambda: GITLAB_JSON)
+    monkeypatch.setattr(svc, "observed_request", lambda **kwargs: response)
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.execute.return_value.scalars.return_value.first.return_value = None
+    summary = svc.refresh_stale(session, ["https://gitlab.com/a/b", "https://gitlab.com/a/c"], now=NOW)
+    assert summary["refreshed"] == 2 and summary["pending"] == 0
+    assert summary["rate_limit_remaining"] is None and summary["quota_reserved"] is False

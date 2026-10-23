@@ -12,7 +12,7 @@ import GithubRate, { type GithubRateInfo } from "../components/GithubRate/github
 import { modelOptionText, type ModelOption } from "../utils/modelDetails";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "test_future" | "adopted" | "phasing_out" | "rejected" | "archived";
-type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?: number; rate_limited?: boolean; pending?: number };
+type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?: number; rate_limited?: boolean; quota_reserved?: boolean; rate_limit_remaining?: number | null; pending?: number };
 type Recommendation = {
   id: number; name: string; homepage_url: string | null; description: string | null;
   links?: Array<{ url: string; label: string }>;
@@ -283,9 +283,12 @@ export default function ToolRecommendations() {
       });
       const data = await response.json().catch(() => ({})) as GithubRefreshResult & Record<string, unknown>;
       if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać danych z GitHuba"));
-      setGithubMessage(data.rate_limited
+      setGithubMessage((data.quota_reserved
+        ? `GitHub: pobieranie wstrzymane, aby zachować rezerwę godzinnego limitu. Pozostałe repozytoria (${data.pending ?? 0}) można pobrać później.`
+        : data.rate_limited
         ? "GitHub: limit zapytań wyczerpany — spróbuj za godzinę (albo dodaj token GITHUB_TOKEN w konfiguracji)."
-        : data.failed ? `GitHub: nie udało się pobrać danych dla ${item.name}.` : `GitHub: odświeżono dane dla ${item.name}.`);
+        : data.failed ? `GitHub: nie udało się pobrać danych dla ${item.name}.` : `GitHub: odświeżono dane dla ${item.name}.`)
+        + (data.rate_limit_remaining != null ? ` Pozostały limit GitHuba: ${data.rate_limit_remaining} zapytań.` : ""));
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
     finally { setBusy(null); void loadGithubRate(); }
@@ -416,7 +419,7 @@ export default function ToolRecommendations() {
       const data = await response.json().catch(() => ({})) as GithubRefreshResult & Record<string, unknown>;
       if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać danych z GitHuba"));
       const pending = data.pending ?? 0;
-      setGithubMessage(`GitHub: pobrano ${data.refreshed ?? 0}${data.failed ? `, błędy: ${data.failed}` : ""}${data.rate_limited ? ". Limit zapytań GitHuba wyczerpany — spróbuj za godzinę" : pending ? `. Zostało do pobrania: ${pending} — kliknij ponownie` : ". Wszystko aktualne"}.`);
+      setGithubMessage(`GitHub: pobrano ${data.refreshed ?? 0}${data.failed ? `, błędy: ${data.failed}` : ""}${data.quota_reserved ? `. Pobieranie wstrzymane, aby zachować rezerwę godzinnego limitu GitHuba. Pozostałe repozytoria (${pending}) można pobrać później` : data.rate_limited ? ". Limit zapytań GitHuba wyczerpany — spróbuj za godzinę" : pending ? `. Zostało do pobrania: ${pending} — kliknij ponownie` : ". Wszystko aktualne"}.${data.rate_limit_remaining != null ? ` Pozostały limit GitHuba: ${data.rate_limit_remaining} zapytań.` : ""}`);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
     finally { setGithubBusy(false); void loadGithubRate(); }
@@ -497,7 +500,7 @@ export default function ToolRecommendations() {
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
       <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi</h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do 30 repozytoriów na raz)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
+        <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do kilkuset repozytoriów na raz, zależnie od limitu GitHuba)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
         <button type="button" onClick={() => void detectRelations()} disabled={relationsBusy || loading} title="Szuka w tekście źródłowym każdego wpisu nazw narzędzi, które już są w radarze (np. AWS, GCP, Terraform), i proponuje powiązania do potwierdzenia. Narzędzia oznaczone jako „Używam” tworzą Twój stack.">{relationsBusy ? "Szukam powiązań…" : "Wykryj powiązania"}</button>
         <button type="button" onClick={() => setFocus(focusId !== null ? null : visibleItems[0]?.id ?? null)} disabled={loading || (focusId === null && !visibleItems.length)} title="Pokazuje narzędzia z bieżącej zakładki i filtrów pojedynczo, razem z innymi narzędziami z tej samej kategorii (także tym, którego już używasz), żeby ocenić jedno po drugim.">{focusId !== null ? "Wróć do listy" : "Oceniaj po kolei"}</button>        <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
       </div>
