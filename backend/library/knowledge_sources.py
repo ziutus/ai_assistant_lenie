@@ -15,8 +15,11 @@ import unicodedata
 
 from sqlalchemy import select
 
-from library.db.models import DiscoverySource, Document, Tool, ToolSource
+from library.db.models import DiscoverySource, Document, Person, PersonAlias, SourcePerson, Tool, ToolSource
 
+PERSON_KINDS = ("public",)
+PERSON_SOURCE_ROLES = ("author", "host", "instructor", "guest", "other")
+MAX_PERSON_ROLE = 100
 KINDS = ("course", "training", "newsletter", "channel", "book", "person", "community", "website", "other")
 STATUSES = ("planned", "in_progress", "finished", "dropped")
 MAX_REVIEW_NOTE = 4000
@@ -251,3 +254,99 @@ def link_note_sources(session, tool: Tool, entries: list[dict]) -> dict:
         else:
             skipped.append(url)
     return {"linked": linked, "created": created, "skipped_urls": skipped}
+
+
+# --- public persons: the people behind a source (host of a channel, author of a course) -----------------------
+
+
+def validate_person_fields(data: dict) -> dict:
+    """The public-person fields present in ``data`` (``kind``, ``role``, ``obsidian_note_path``), cleaned.
+
+    Same convention as ``validate_fields``: absent = unchanged, empty / null clears. Raises ``ValueError``.
+    """
+    cleaned: dict = {}
+    present, kind = _optional_text(data, "kind")
+    if present:
+        if kind is not None and kind not in PERSON_KINDS:
+            raise ValueError(f"kind must be one of: {', '.join(PERSON_KINDS)}")
+        cleaned["kind"] = kind
+    present, role = _optional_text(data, "role", MAX_PERSON_ROLE)
+    if present:
+        cleaned["role"] = role
+    present, path = _optional_text(data, "obsidian_note_path")
+    if present:
+        cleaned["obsidian_note_path"] = path
+    return cleaned
+
+
+def person_fields(person: Person) -> dict:
+    return {"kind": person.kind, "role": person.role, "obsidian_note_path": person.obsidian_note_path}
+
+
+def find_person(session, name: str) -> Person | None:
+    """The registry person whose canonical name or alias equals ``name`` ignoring case, diacritics and punctuation."""
+    wanted = normalize_name(name)
+    if not wanted:
+        return None
+    for person in session.execute(select(Person)).scalars():
+        if normalize_name(person.canonical_name) == wanted:
+            return person
+    for alias, person in session.execute(select(PersonAlias.alias, Person).join(Person, Person.id == PersonAlias.person_id)):
+        if normalize_name(alias) == wanted:
+            return person
+    return None
+
+
+def link_person(session, source: DiscoverySource, person: Person, role: str = "author") -> tuple[SourcePerson, bool]:
+    """Attach ``person`` to ``source`` (idempotent; an existing link takes the new role)."""
+    if role not in PERSON_SOURCE_ROLES:
+        raise ValueError(f"role must be one of: {', '.join(PERSON_SOURCE_ROLES)}")
+    link = session.execute(
+        select(SourcePerson).where(SourcePerson.source_id == source.id, SourcePerson.person_id == person.id)
+    ).scalar_one_or_none()
+    if link is not None:
+        link.role = role
+        return link, False
+    link = SourcePerson(source_id=source.id, person_id=person.id, role=role)
+    session.add(link)
+    session.flush()
+    return link, True
+
+
+def unlink_person(session, source_id: int, person_id: int) -> bool:
+    link = session.execute(
+        select(SourcePerson).where(SourcePerson.source_id == source_id, SourcePerson.person_id == person_id)
+    ).scalar_one_or_none()
+    if link is None:
+        return False
+    session.delete(link)
+    return True
+
+
+def persons_for_sources(session) -> dict[int, list[dict]]:
+    """``{source_id: [{id, name, role}...]}`` - the people behind each source."""
+    rows = session.execute(
+        select(SourcePerson.source_id, Person.id, Person.canonical_name, SourcePerson.role)
+        .join(Person, Person.id == SourcePerson.person_id)
+        .order_by(Person.canonical_name)
+    ).all()
+    result: dict[int, list[dict]] = {}
+    for source_id, person_id, name, role in rows:
+        result.setdefault(source_id, []).append({"id": person_id, "name": name, "role": role})
+    return result
+
+
+def sources_for_persons(session, person_ids: list[int]) -> dict[int, list[dict]]:
+    """``{person_id: [{id, name, kind, role}...]}`` - the sources each person stands behind."""
+    if not person_ids:
+        return {}
+    rows = session.execute(
+        select(SourcePerson.person_id, DiscoverySource.id, DiscoverySource.name, DiscoverySource.kind, SourcePerson.role)
+        .join(DiscoverySource, DiscoverySource.id == SourcePerson.source_id)
+        .where(SourcePerson.person_id.in_(person_ids))
+        .order_by(DiscoverySource.name)
+    ).all()
+    result: dict[int, list[dict]] = {}
+    for person_id, source_id, name, kind, role in rows:
+        result.setdefault(person_id, []).append({"id": source_id, "name": name, "kind": kind, "role": role})
+    return result

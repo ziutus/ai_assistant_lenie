@@ -40,10 +40,12 @@ it("shows the catalog fields, GitHub numbers and the migrating-away flag", async
   renderTools();
 
   expect(await screen.findByText("Terraform")).toBeTruthy();
-  expect(screen.getByText("Typ: CLI")).toBeTruthy();
+  expect(screen.getAllByText("Typ").length).toBe(2); // one facts grid per tool
+  expect(screen.getByText("CLI")).toBeTruthy();
   expect(screen.getByLabelText("gwiazdki").textContent).toContain("40");
   expect(screen.getByText("plan/apply")).toBeTruthy();
-  expect(screen.getByText("Model: open core")).toBeTruthy();
+  expect(screen.getAllByText("Model cenowy").length).toBe(2);
+  expect(screen.getByText("open core")).toBeTruthy();
   expect(screen.getByText("odchodzę")).toBeTruthy();
   expect(screen.getByText("przechodzę na Lenie")).toBeTruthy();
 });
@@ -88,9 +90,9 @@ it("shows one tool with its links and steps between tools with previous/next", a
   vi.stubGlobal("scrollTo", vi.fn());
   renderTools("/tools?tool=1");
 
-  expect(await screen.findByText("Linki i źródła")).toBeTruthy();
+  expect(await screen.findByText("Linki")).toBeTruthy();
   expect(screen.getByText("1 / 2")).toBeTruthy();
-  expect(screen.getByText("Repozytorium GitHub:")).toBeTruthy();
+  expect(screen.getByText("GitHub:")).toBeTruthy();
   expect(screen.queryByText("Obsidian")).toBeNull();
   expect((screen.getByRole("button", { name: "← Poprzednie" }) as HTMLButtonElement).disabled).toBe(true);
 
@@ -136,6 +138,30 @@ const withOrigin = {
     evidence_count: 1, evidences: [],
   }],
 };
+
+it("lists the extra links next to the named ones and saves them as {url, label}", async () => {
+  const withLinks = {
+    ...baseTool, github: null,
+    links: [{ url: "https://hub.docker.com/r/x/terraform", label: "Docker Hub" }, { url: "https://terraform.io", label: "duplikat" }],
+  };
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(jsonResponse({ tools: [withLinks] }))
+    .mockResolvedValueOnce(jsonResponse({ tool: withLinks }));
+  vi.stubGlobal("fetch", fetchMock);
+  renderTools();
+
+  const dockerHub = await screen.findByRole("link", { name: "Docker Hub" });
+  expect((dockerHub as HTMLAnchorElement).href).toBe("https://hub.docker.com/r/x/terraform");
+  expect(screen.queryByRole("link", { name: "duplikat" })).toBeNull(); // the homepage already has that address
+
+  fireEvent.click(screen.getByRole("button", { name: "Edytuj dane" }));
+  fireEvent.change(screen.getByLabelText(/Dodatkowe linki/), { target: { value: "Docs | https://docs.example.com\nhttps://bare.example.com" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz dane" }));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  const body = JSON.parse(String((fetchMock.mock.calls[1] as [string, RequestInit])[1].body));
+  expect(body.links).toEqual([{ label: "Docs", url: "https://docs.example.com" }, { label: "", url: "https://bare.example.com" }]);
+});
 
 it("shows where the tool is known from and why it was on the radar", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ tools: [withOrigin] })));

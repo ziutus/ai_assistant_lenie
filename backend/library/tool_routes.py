@@ -68,6 +68,7 @@ def _tool_dict(
         "app_type": tool.app_type,
         "purpose": tool.purpose,
         "works_on": tool.works_on,
+        "links": tool.links or [],
         "key_points": tool.key_points or [],
         "important_commands": tool.important_commands,
         "migrating_away": bool(tool.migrating_away),
@@ -222,6 +223,29 @@ def _text_field(body: dict, field: str) -> tuple[bool, str | None]:
     return True, text if text and text.strip() else None
 
 
+def _clean_links(raw) -> list[dict]:
+    """Validate ``links``: a list of ``{url, label?}`` (or bare URL strings) with http(s) URLs, duplicates dropped."""
+    if not isinstance(raw, list) or len(raw) > tool_note_parser.MAX_LINKS:
+        abort(400, f"links must be a list of at most {tool_note_parser.MAX_LINKS} items")
+    result: list[dict] = []
+    seen: set[str] = set()
+    for item in raw:
+        if isinstance(item, str):
+            item = {"url": item}
+        if not isinstance(item, dict):
+            abort(400, "every link must be {url, label}")
+        url = str(item.get("url") or "").strip()
+        label = item.get("label")
+        if not url.lower().startswith(("http://", "https://")):
+            abort(400, f"link url must start with http:// or https://: {url or '(empty)'}")
+        if label is not None and not isinstance(label, str):
+            abort(400, "link label must be a string")
+        if url not in seen:
+            seen.add(url)
+            result.append({"url": url, "label": (label or "").strip()[:100]})
+    return result
+
+
 def _apply_fields(tool: Tool, body: dict) -> None:
     """Copy the editable catalog fields present in ``body`` onto ``tool``; aborts 400 on a bad value."""
     for field in (*MULTILINE_FIELDS, *SHORT_TEXT_FIELDS):
@@ -247,6 +271,8 @@ def _apply_fields(tool: Tool, body: dict) -> None:
         if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags) or len(tags) > MAX_TAGS:
             abort(400, "category_tags must be a list of strings")
         tool.category_tags = list(dict.fromkeys(tag.strip()[:MAX_TAG_LENGTH] for tag in tags if tag.strip()))
+    if "links" in body:
+        tool.links = _clean_links(body["links"])
     if "key_points" in body:
         points = body["key_points"]
         if not isinstance(points, list) or not all(isinstance(point, str) for point in points) or len(points) > MAX_KEY_POINTS:

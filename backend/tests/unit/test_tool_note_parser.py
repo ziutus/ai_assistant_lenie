@@ -151,6 +151,60 @@ class TestParseToolNote:
         assert "license" not in parsed
 
 
+VAULT_NOTE = """## Hashicorp Vault
+
+**Purpose:** Keeping secrets
+**Type of application**: Saas, docker image
+**Licence**: comercial / opensource
+**homepage**: https://hub.docker.com/r/hashicorp/vault/tags
+**Pricing type**: free tier / per usage / dedicated hardwer(sortware)
+**pricing page**: https://www.hashicorp.com/en/pricing, https://portal.cloud.hashicorp.com/billing/pricing?org_id=d622
+Creating account by: github
+### Key Points:
+
+- you can have a cloud version
+"""
+
+
+class TestLinksAndUnknownHeaderLines:
+    def test_second_url_of_a_field_and_unknown_lines_are_kept(self):
+        parsed = parse_tool_note(VAULT_NOTE)
+
+        assert parsed["homepage_url"] == "https://hub.docker.com/r/hashicorp/vault/tags"
+        assert parsed["pricing_url"] == "https://www.hashicorp.com/en/pricing"
+        assert parsed["links"] == [{"url": "https://portal.cloud.hashicorp.com/billing/pricing?org_id=d622", "label": "Cennik"}]
+        assert parsed["personal_notes"] == "Creating account by: github"
+
+    def test_unknown_lines_precede_the_additional_notes(self):
+        parsed = parse_tool_note(VAULT_NOTE + "### Additional Notes:\n\nuse raft\n")
+
+        assert parsed["personal_notes"] == "Creating account by: github\n\nuse raft"
+
+    def test_a_filled_field_keeps_its_value_and_the_notes_page_becomes_a_link(self):
+        tool = SimpleNamespace(
+            homepage_url="https://www.vaultproject.io", github_url=None, wikipedia_url=None,
+            pricing_url="https://www.hashicorp.com/en/pricing", links=[], purpose=None,
+        )
+
+        changed = apply_note_to_tool(tool, parse_tool_note(VAULT_NOTE))
+
+        assert tool.homepage_url == "https://www.vaultproject.io"
+        assert {"url": "https://hub.docker.com/r/hashicorp/vault/tags", "label": "Strona"} in tool.links
+        assert any(link["label"] == "Cennik" for link in tool.links)
+        assert all(link["url"] != "https://www.hashicorp.com/en/pricing" for link in tool.links)  # already its pricing_url
+        assert "links" in changed and "purpose" in changed
+
+    def test_links_are_not_duplicated_on_a_second_import(self):
+        tool = SimpleNamespace(homepage_url="https://x.io", github_url=None, wikipedia_url=None, pricing_url=None, links=[])
+        parsed = parse_tool_note(VAULT_NOTE)
+
+        apply_note_to_tool(tool, parsed)
+        before = list(tool.links)
+        second = apply_note_to_tool(tool, parsed)
+
+        assert tool.links == before and "links" not in second
+
+
 class TestPricingType:
     def test_maps_free_text_to_closed_list(self):
         assert pricing_type_from_text("free") == "free"

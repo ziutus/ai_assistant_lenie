@@ -2312,6 +2312,12 @@ class Person(Base):
     long_description: Mapped[str | None] = mapped_column(Text)
     # external pages about the person: [{"url": "https://…", "label": "Wikipedia"}]
     links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    # 'public' = a public figure the user follows (a course author, a channel host...); NULL = an ordinary NER person.
+    kind: Mapped[str | None] = mapped_column(String(20))
+    # What the person is known for ("autor kursu", "podcaster", "pisarz"); free text.
+    role: Mapped[str | None] = mapped_column(String(100))
+    # Vault-relative path of the Obsidian note about the person.
+    obsidian_note_path: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -3407,6 +3413,8 @@ class Tool(Base):
     # What the tool is for (the note template's "Purpose") and where it runs ("Works on", e.g. "Linux, macOS (brew)").
     purpose: Mapped[str | None] = mapped_column(Text)
     works_on: Mapped[str | None] = mapped_column(Text)
+    # Further pages about the tool that have no field of their own: [{"url": "https://…", "label": "Docker Hub"}].
+    links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     key_points: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     important_commands: Mapped[str | None] = mapped_column(Text)
     # The tool is still in use but being phased out (e.g. Obsidian); migration_note says where to / why.
@@ -3440,6 +3448,26 @@ class ToolSource(Base):
     __table_args__ = (
         UniqueConstraint("tool_id", "source_id", name="uq_tool_sources_tool_source"),
         Index("idx_tool_sources_source", "source_id"),
+    )
+
+
+class SourcePerson(Base):
+    """Who stands behind a knowledge source (the host of a channel, the author of a course): source <-> person, M:N."""
+
+    __tablename__ = "source_persons"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("discovery_sources.id", ondelete="CASCADE"), nullable=False)
+    person_id: Mapped[int] = mapped_column(ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
+    # author | host | instructor | guest | other
+    role: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'author'"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    person: Mapped["Person"] = relationship("Person")
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "person_id", name="uq_source_persons_source_person"),
+        Index("idx_source_persons_person", "person_id"),
     )
 
 

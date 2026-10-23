@@ -38,7 +38,12 @@ _LABELS = {
 NON_COLUMN_FIELDS = ("sources",)
 _WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
 _DATE_LINE = re.compile(r"^(creation|modification) date\b", re.IGNORECASE)
-_PLACEHOLDER_POINT =re.compile(r"^poin?t?\d+$", re.IGNORECASE)  # "point1" / the template's typo "poin2"
+_PLACEHOLDER_POINT = re.compile(r"^poin?t?\d+$", re.IGNORECASE)  # "point1" / the template's typo "poin2"
+# How a link field is called on the card; a link that cannot go into its own field is kept under this label.
+LINK_FIELD_LABELS = {
+    "homepage_url": "Strona", "wikipedia_url": "Wikipedia", "github_url": "GitHub", "pricing_url": "Cennik",
+}
+MAX_LINKS = 20
 _URL = re.compile(r"https?://[^\s)>\]]+")
 _HEADING = re.compile(r"^(#{1,6})\s*(.*?)\s*:?\s*$")
 _SECTION_TITLES = {
@@ -62,6 +67,10 @@ def _clean(value: str) -> str:
 def _first_url(value: str) -> str | None:
     match = _URL.search(value)
     return match.group(0).rstrip(".,;") if match else None
+
+
+def _all_urls(value: str) -> list[str]:
+    return [match.rstrip(".,;") for match in _URL.findall(value)]
 
 
 def pricing_type_from_text(text: str) -> str | None:
@@ -138,19 +147,29 @@ def _split_header_and_sections(text: str) -> tuple[list[str], dict[str, list[str
     return header, sections
 
 
-def _labels(header: list[str]) -> dict[str, str]:
+def _labels(header: list[str]) -> tuple[dict[str, str], list[str]]:
+    """The recognised ``Label: value`` lines by catalog field, plus the other ``Label: value`` lines verbatim.
+
+    The extras ("Creating account by: github") carry facts the template has no field for; they are kept
+    in the notes instead of being lost.
+    """
     found: dict[str, str] = {}
+    extras: list[str] = []
     for line in header:
         stripped = line.strip()
-        if ":" not in stripped:
+        if ":" not in stripped or stripped.startswith(("#", "<%", "---")) or _DATE_LINE.match(stripped):
             continue
         label, _, value = stripped.partition(":")
         key = _clean(label).lower()
         field = _LABELS.get(key)
-        if field is None or field in found:
+        if field is None:
+            if _clean(value) and len(key) <= 40 and not value.strip().startswith("//"):
+                extras.append(_clean(stripped))
+            continue
+        if field in found:
             continue
         found[field] = value.strip().lstrip("*").strip()
-    return found
+    return found, extras
 
 
 def _key_points(lines: list[str]) -> list[str]:
@@ -179,6 +198,18 @@ def _commands(lines: list[str]) -> str | None:
 def _notes(lines: list[str]) -> str | None:
     text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
     return text or None
+
+
+def _merge_links(existing: list[dict], extra: list[dict], skip_urls: list | tuple = ()) -> list[dict]:
+    """``existing`` plus the ``extra`` links whose URL is new (and not in ``skip_urls``), capped at ``MAX_LINKS``."""
+    seen = {item["url"] for item in existing} | {url for url in skip_urls if url}
+    merged = list(existing)
+    for item in extra:
+        url = item.get("url")
+        if url and url not in seen and len(merged) < MAX_LINKS:
+            seen.add(url)
+            merged.append({"url": url, "label": (item.get("label") or "")[:100]})
+    return merged
 
 
 def _sources(lines: list[str]) -> list[dict]:
@@ -217,14 +248,20 @@ def parse_tool_note(text: str) -> dict:
     """Catalog fields found in a template note. Missing / placeholder values are simply absent."""
     header, sections = _split_header_and_sections(text)
     parsed: dict = {}
-    for field, raw in _labels(header).items():
-        if field in ("homepage_url", "wikipedia_url", "github_url", "pricing_url"):
-            url = _first_url(raw)
+    labels, header_extras = _labels(header)
+    extra_links: list[dict] = []
+    for field, raw in labels.items():
+        if field in LINK_FIELD_LABELS:
+            urls = _all_urls(raw)
+            url = urls[0] if urls else None
             if url and field == "github_url" and github_repo_stats.parse_repo_url(url) is None:
+                extra_links.append({"url": url, "label": LINK_FIELD_LABELS[field]})  # a GitHub-ish link that is not a repo
                 url = None
             if url:
                 parsed[field] = url
-            if field == "pricing_url" and raw and not url:
+            # Further URLs on the same line (two pricing pages) have no field of their own.
+            extra_links.extend({"url": other, "label": LINK_FIELD_LABELS[field]} for other in urls[1:])
+            if field == "pricing_url" and raw and not urls:
                 parsed["pricing"] = _clean(raw)
             continue
         if field == "pricing_type":
@@ -248,8 +285,12 @@ def parse_tool_note(text: str) -> dict:
     if commands:
         parsed["important_commands"] = commands
     notes = _notes(sections.get("additional_notes", []))
+    if header_extras:
+        notes = "\n".join([*header_extras, *([""] if notes else []), *([notes] if notes else [])])
     if notes:
         parsed["personal_notes"] = notes
+    if extra_links:
+        parsed["links"] = _merge_links([], extra_links)
     sources = _sources(sections.get("source_of_note", []))
     if sources:
         parsed["sources"] = sources
@@ -262,10 +303,26 @@ def apply_note_to_tool(tool, parsed: dict, overwrite: bool = False) -> list[str]
     Without ``overwrite`` only empty fields are filled (empty string, ``None`` or ``[]``).
     """
     changed = []
+    own_urls = [getattr(tool, field, None) for field in LINK_FIELD_LABELS]  # pages the tool already has a field for
+
+    def add_links(new_links: list[dict]) -> None:
+        current_links = list(getattr(tool, "links", None) or [])
+        merged = _merge_links(current_links, new_links, skip_urls=own_urls)
+        if merged != current_links:
+            tool.links = merged
+            if "links" not in changed:
+                changed.append("links")
+
     for field, value in parsed.items():
         if field in NON_COLUMN_FIELDS:
             continue
+        if field == "links":
+            add_links(value)
+            continue
         current = getattr(tool, field, None)
+        if field in LINK_FIELD_LABELS and current not in (None, "", []) and current != value and not overwrite:
+            add_links([{"url": value, "label": LINK_FIELD_LABELS[field]}])  # the note names another page: keep it
+            continue
         if current not in (None, "", []) and not overwrite:
             continue
         if current == value:
