@@ -1,5 +1,15 @@
 # AGENTS.md — reguły operacyjne Lenie NAS
 
+## Początek pracy: najnowszy remote
+
+Na początku każdej pracy (przed pierwszą zmianą w kodzie, zakładaniem brancha
+lub worktree) pobierz najnowszy stan zdalnego repozytorium: `git fetch origin`
+i sprawdź `git log HEAD..origin/main`. Nową gałąź zakładaj z aktualnego
+`origin/main`, a istniejącą gałąź przed wdrożeniem scal z `origin/main`.
+Powód: NAS bywa wdrożony z nowszego `main` niż lokalny worktree, a wtedy
+migracja Alembica kończy się błędem `Can't locate revision` (stan z
+2026-10-24, rewizja `a9c4e7d1b362`).
+
 ## Dostęp do NAS i wdrożenia
 
 - SSH do NAS: zawsze użytkownik `admin` (`ssh admin@192.168.200.7`). Gołe
