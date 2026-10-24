@@ -75,6 +75,37 @@ const tabHelp: Record<RecommendationStatus | "all", string> = {
 
 const chipStyle: React.CSSProperties = { background: "#dbeafe", color: "#1e3a8a", borderRadius: 999, padding: "2px 8px", fontSize: ".75rem", border: "none", cursor: "pointer" };
 
+const TAG_SUGGESTION_LIMIT = 15;
+
+// Tag filter: a search box (no full tag list — there can be thousands); matching tags appear only while typing.
+function TagFilter({ allTags, selected, onToggle, onClear }: {
+  allTags: Array<{ tag: string; count: number }>; selected: string[]; onToggle: (tag: string) => void; onClear: () => void;
+}) {
+  const [text, setText] = React.useState("");
+  const needle = text.trim().replace(/^#/, "").toLowerCase();
+  const matches = needle
+    ? allTags.filter(({ tag }) => !selected.includes(tag) && tag.toLowerCase().includes(needle))
+        .sort((a, b) => Number(b.tag.toLowerCase().startsWith(needle)) - Number(a.tag.toLowerCase().startsWith(needle)) || b.count - a.count)
+    : [];
+  const pick = (tag: string) => { onToggle(tag); setText(""); };
+  return <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "0 0 18px" }}>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>Tagi:
+      <Help text={`Wpisz fragment tagu (jest ich ${allTags.length}) i wybierz z podpowiedzi — pokażą się wpisy mające wszystkie wybrane tagi. Tagi dodasz na karcie narzędzia, pole „+ tag”.`} />
+      <input type="search" value={text} onChange={event => setText(event.target.value)} placeholder="szukaj tagu, np. docker" style={{ width: 200 }}
+        onKeyDown={event => { if (event.key === "Enter" && matches.length > 0) { event.preventDefault(); pick(matches[0].tag); } }} />
+    </label>
+    {selected.map(tag => <button key={tag} type="button" aria-pressed="true" title="Usuń z filtra" onClick={() => onToggle(tag)}
+      style={{ ...chipStyle, background: "#1d4ed8", color: "#fff" }}>#{tag} ×</button>)}
+    {selected.length > 0 && <button type="button" onClick={onClear}>Wyczyść tagi</button>}
+    {needle && (matches.length === 0
+      ? <span style={{ color: "#64748b", fontSize: ".85rem" }}>Brak pasujących tagów.</span>
+      : <div style={{ flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {matches.slice(0, TAG_SUGGESTION_LIMIT).map(({ tag, count }) => <button key={tag} type="button" style={chipStyle} onClick={() => pick(tag)}>#{tag} ({count})</button>)}
+          {matches.length > TAG_SUGGESTION_LIMIT && <span style={{ color: "#64748b", fontSize: ".85rem" }}>…i {matches.length - TAG_SUGGESTION_LIMIT} więcej — doprecyzuj frazę.</span>}
+        </div>)}
+  </div>;
+}
+
 // Tags of one entry: click a tag to filter by it, × removes it, the input adds new ones (Enter or comma).
 function TagEditor({ tags, onFilter, onSave, onSuggest, disabled }: {
   tags: string[]; onFilter: (tag: string) => void; onSave: (tags: string[]) => Promise<void>;
@@ -534,12 +565,7 @@ export default function ToolRecommendations() {
       <input type="checkbox" checked={stackOnly} onChange={event => setStackOnly(event.target.checked)} />Tylko pasujące do mojego stacku
       <Help text="Pokazuje wpisy powiązane z narzędziami, które masz w etapie „Używam” (np. AWS, GCP, Terraform). Powiązania wykrywa przycisk „Wykryj powiązania”." />
     </label>
-    {allTags.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "0 0 18px" }}>
-      <span style={{ display: "inline-flex", alignItems: "center" }}>Tagi:<Help text="Wybierz jeden lub kilka tagów — pokażą się wpisy mające wszystkie wybrane. Tagi dodasz na karcie narzędzia, pole „+ tag”." /></span>
-      {allTags.map(({ tag, count }) => <button key={tag} type="button" aria-pressed={selectedTags.includes(tag)} onClick={() => toggleTag(tag)}
-        style={{ ...chipStyle, ...(selectedTags.includes(tag) ? { background: "#1d4ed8", color: "#fff" } : {}) }}>#{tag} ({count})</button>)}
-      {selectedTags.length > 0 && <button type="button" onClick={() => setSelectedTags([])}>Wyczyść tagi</button>}
-    </div>}
+    {allTags.length > 0 && <TagFilter allTags={allTags} selected={selectedTags} onToggle={toggleTag} onClear={() => setSelectedTags([])} />}
     {tagModels.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
       <summary style={{ cursor: "help" }} title="Wybór modelu językowego, który podpowiada tagi po kliknięciu „✨ Podpowiedz tagi” albo „✨ Podpowiedz opis, kategorię i tagi” na karcie narzędzia.">Model do podpowiadania: <strong>{tagModels.find(option => option.id === tagModel)?.label ?? (tagModel || "domyślny")}</strong></summary>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
