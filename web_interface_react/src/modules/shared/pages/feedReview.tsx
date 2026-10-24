@@ -123,7 +123,9 @@ export default function FeedReview() {
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [importedTypes, setImportedTypes] = React.useState<Record<number, string>>({});
 
-  const storedFilters = React.useMemo(() => loadFeedReviewFilters(), []);
+  // Read on every render: choosing "Nowe" / "Wszystkie źródła" drops the URL param and falls back to the value
+  // just saved by updateParams(); a copy frozen at mount kept the old tab (the "Nowe" button did nothing).
+  const storedFilters = loadFeedReviewFilters();
   const selectedSource = searchParams.has("feed_source_id")
     ? searchParams.get("feed_source_id") || ""
     : storedFilters.feedSourceId;

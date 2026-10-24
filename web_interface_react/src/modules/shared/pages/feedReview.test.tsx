@@ -208,6 +208,15 @@ it("shows a copyable link to the displayed item and keeps ?item= in the address"
   await waitFor(() => expect(screen.getByTestId("loc").textContent).toContain("item=7"));
 });
 
+it("switches back to Nowe when the remembered tab is the later one", async () => {
+  localStorage.setItem("lenie_feedReviewFilters", JSON.stringify({ feedSourceId: "", view: "later", mode: "single" }));
+  render(<MemoryRouter><FeedReview /></MemoryRouter>);
+  const nowe = await screen.findByRole("tab", { name: "Nowe" });
+  expect(nowe.getAttribute("aria-selected")).toBe("false");
+  fireEvent.click(nowe);
+  await waitFor(() => expect(screen.getByRole("tab", { name: "Nowe" }).getAttribute("aria-selected")).toBe("true"));
+});
+
 it("opens an item named in the link even when it is outside the loaded list", async () => {
   const outside = { ...feedItem, id: 99, title: "Wpis spoza listy", status: "saved_for_later" };
   const base = vi.mocked(fetch).getMockImplementation()!;
