@@ -91,6 +91,11 @@ export default function FeedReview() {
   const pageSize = 50;
   const pageRef = React.useRef(1);
   const [index, setIndex] = React.useState(0);
+  // A shared link (?item=<id>) can point at an item outside the loaded page/tab: it is fetched on its own and pinned.
+  const initialItemRef = React.useRef(searchParams.get("item"));
+  const [itemResolved, setItemResolved] = React.useState(!initialItemRef.current);
+  const [pinned, setPinned] = React.useState<FeedItem | null>(null);
+  const [linkMessage, setLinkMessage] = React.useState("");
   const [models, setModels] = React.useState<ModelOption[]>([]);
   const [suggestModel, setSuggestModel] = React.useState("");
   const [defaultModel, setDefaultModel] = React.useState("");
@@ -211,6 +216,47 @@ export default function FeedReview() {
 
   React.useEffect(() => { void load(); }, [load]);
 
+  // Open the item named in the address once the first page has loaded: in the list, else fetched on its own.
+  React.useEffect(() => {
+    if (itemResolved || loading) return;
+    const id = Number(initialItemRef.current);
+    const position = items.findIndex(item => item.id === id);
+    if (position >= 0) { setIndex(position); setItemResolved(true); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetchWithTimeout(`${apiUrl}/feed_items/${id}`, { headers }, ACTION_TIMEOUT_MS);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || `Nie znaleziono wpisu #${id} (${response.status})`);
+        if (!cancelled) setPinned((data.feed_item ?? data) as FeedItem);
+      } catch (cause) {
+        if (!cancelled) setError(describeActionError(cause, apiUrl, "Nie udało się otworzyć wpisu z linku"));
+      } finally { if (!cancelled) setItemResolved(true); }
+    })();
+    return () => { cancelled = true; };
+  }, [apiUrl, headers, items, itemResolved, loading]);
+
+  const displayedItem: FeedItem | undefined = mode === "single" && !loading ? pinned ?? items[index] : undefined;
+
+  // Keep the address on the displayed item so the browser URL is always the link to copy.
+  React.useEffect(() => {
+    if (!itemResolved) return;
+    const current = searchParams.get("item");
+    const wanted = mode === "single" && displayedItem ? String(displayedItem.id) : null;
+    if (current === wanted || (mode === "single" && !displayedItem)) return;
+    const next = new URLSearchParams(searchParams);
+    if (wanted) next.set("item", wanted); else next.delete("item");
+    setSearchParams(next, { replace: true });
+  }, [displayedItem, itemResolved, mode, searchParams, setSearchParams]);
+
+  const shareUrl = displayedItem
+    ? `${window.location.origin}${window.location.pathname}?${new URLSearchParams({ item: String(displayedItem.id), ...(displayedItem.status === "saved_for_later" ? { view: "later" } : {}) }).toString()}`
+    : "";
+  const copyShareUrl = async () => {
+    try { await navigator.clipboard.writeText(shareUrl); setLinkMessage("Skopiowano link."); }
+    catch { setLinkMessage("Nie udało się skopiować — zaznacz link i skopiuj ręcznie."); }
+  };
+
   const loadHistory = React.useCallback(async () => {
     setHistoryLoading(true);
     try {
@@ -238,6 +284,8 @@ export default function FeedReview() {
       : view;
     saveFeedReviewFilters({ feedSourceId: nextSource, view: nextView, mode: changes.mode === undefined ? mode : changes.mode === "all" ? "all" : "single" });
     if (Object.keys(changes).every(key => key === "mode")) { setSearchParams(next); return; }
+    next.delete("item");
+    setPinned(null);
     pageRef.current = 1;
     setIndex(0);
     setPage(1);
@@ -259,6 +307,7 @@ export default function FeedReview() {
       setIgnorePattern("");
       setSkipItemId(null);
       setRadarItemId(null);
+      setPinned(current => current?.id === id ? null : current);
       if (action === "to_radar") {
         const related = Array.isArray(data.proposed_relations) ? data.proposed_relations as string[] : [];
         const name = data.recommendation?.name ?? data.existing_tool?.name ?? "narzędzie";
@@ -457,16 +506,28 @@ export default function FeedReview() {
       <OpenRouterBalance refreshKey={modelCalls} />
     </details>}
     {mode === "all" && pagination}
-    {mode === "single" && items.length > 0 && <nav aria-label="Nawigacja wpisów" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
+    {displayedItem && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "0 0 12px" }}>
+      <label htmlFor="feed-item-link">Link do tego wpisu:</label>
+      <input id="feed-item-link" readOnly value={shareUrl} onFocus={event => event.currentTarget.select()} style={{ flex: "1 1 360px", minWidth: 0 }} />
+      <button type="button" onClick={() => void copyShareUrl()}>Kopiuj link</button>
+      {linkMessage && <span role="status" style={{ color: "#166534" }}>{linkMessage}</span>}
+    </div>}
+    {mode === "single" && pinned && <p role="note" style={{ color: "#92400e" }}>
+      Wpis otwarty z linku — spoza bieżącej listy ({pinned.status === "saved_for_later" ? "do przeczytania" : pinned.status}).{" "}
+      <button type="button" onClick={() => { setPinned(null); setLinkMessage(""); }}>Wróć do listy</button>
+    </p>}
+    {mode === "single" && !pinned && items.length > 0 && <nav aria-label="Nawigacja wpisów" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
       <button disabled={loading || busyItemId !== null || (page === 1 && index === 0)} onClick={() => {
+        setLinkMessage("");
         if (index > 0) setIndex(index - 1); else void load(page - 1, "last");
       }}>← Poprzedni</button>
       <span>Wpis {(page - 1) * pageSize + index + 1} z {total}</span>
       <button disabled={loading || busyItemId !== null || (page - 1) * pageSize + index + 1 >= total} onClick={() => {
+        setLinkMessage("");
         if (index + 1 < items.length) setIndex(index + 1); else void load(page + 1, "first");
       }}>Następny →</button>
     </nav>}
-    {(mode === "all" ? items : !loading ? items.slice(index, index + 1) : []).map(renderItem)}
+    {mode === "all" ? items.map(renderItem) : displayedItem ? renderItem(displayedItem) : null}
     {mode === "all" && pagination}
 
   </section>;

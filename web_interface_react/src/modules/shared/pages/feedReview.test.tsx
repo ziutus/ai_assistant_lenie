@@ -198,3 +198,26 @@ it("switches modes in the URL, remembers all mode, and suggests every list item"
   await screen.findByText("Second");
   expect(screen.getAllByRole("article")).toHaveLength(2);
 });
+
+it("shows a copyable link to the displayed item and keeps ?item= in the address", async () => {
+  function Location() { return <output data-testid="loc">{useLocation().search}</output>; }
+  render(<MemoryRouter initialEntries={["/feed-review"]}><FeedReview /><Location /></MemoryRouter>);
+  await screen.findByText("Artykuł testowy");
+  const link = (await screen.findByLabelText("Link do tego wpisu:")) as HTMLInputElement;
+  expect(link.value).toContain("?item=7");
+  await waitFor(() => expect(screen.getByTestId("loc").textContent).toContain("item=7"));
+});
+
+it("opens an item named in the link even when it is outside the loaded list", async () => {
+  const outside = { ...feedItem, id: 99, title: "Wpis spoza listy", status: "saved_for_later" };
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation((url, init) => {
+    if (String(url).endsWith("/feed_items/99")) return Promise.resolve(jsonResponse(outside));
+    return base(url, init);
+  });
+  render(<MemoryRouter initialEntries={["/feed-review?item=99"]}><FeedReview /></MemoryRouter>);
+  expect(await screen.findByText("Wpis spoza listy")).toBeTruthy();
+  expect(screen.getByText(/spoza bieżącej listy/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Wróć do listy" }));
+  expect(await screen.findByText("Artykuł testowy")).toBeTruthy();
+});
