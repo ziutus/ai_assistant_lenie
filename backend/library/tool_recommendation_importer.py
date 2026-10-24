@@ -7,6 +7,8 @@ from urllib.parse import quote, urlparse
 
 import requests
 
+from library.tool_categories import canonical_category
+
 # Bounded quantifiers keep matching linear on adversarial input (CodeQL py/polynomial-redos).
 _HEADING = re.compile(r"^#{2,6}[ \t]+(\S.{0,500})$")
 _LINK = re.compile(r"\[([^\]\[]{1,300})\]\((https?://[^)\s]{1,2000})\)")
@@ -47,7 +49,7 @@ def parse_markdown_recommendations(markdown: str) -> list[dict[str, str | None]]
         line = raw_line.strip()
         heading = _HEADING.match(line)
         if heading:
-            category = heading.group(1).strip()
+            category = canonical_category(heading.group(1))
             continue
         if not line.startswith("|") or "---" in line:
             continue
