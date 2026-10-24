@@ -1,6 +1,6 @@
 import React from "react";
 import { Pagination } from "../components/Pagination/pagination";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
 import { loadFeedReviewFilters, saveFeedReviewFilters } from "../services/storage";
@@ -352,12 +352,27 @@ export default function FeedReview() {
   const maybeLaterGroup = contentGroups.find(group => group.kind === "priority" && group.priority_rank === 100);
   const formatDate = (value: string | null) => value ? new Date(value).toLocaleString("pl-PL") : null;
 
+  // A plain click switches to single-item mode in place (the ?item= address is only read at mount);
+  // ctrl/middle-click keeps the link's own behaviour, so it opens in a new tab.
+  const openSingle = (event: React.MouseEvent, item: FeedItem) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    const position = items.findIndex(candidate => candidate.id === item.id);
+    setPinned(null);
+    setIndex(Math.max(0, position));
+    updateParams({ mode: "single" });
+  };
+
   const renderItem = (item: FeedItem) => {
       const busy = busyItemId === item.id;
       const importedType = importedTypes[item.id];
       return <article key={item.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
         <div style={{ color: "#64748b", fontSize: ".85rem", marginBottom: 6 }}>{sourceName(item.feed_source_id)}</div>
         <h3>{item.title}</h3>
+        {mode === "all" && <div style={{ marginBottom: 6 }}>
+          <Link to={{ search: `?${new URLSearchParams({ mode: "single", item: String(item.id), ...(view === "later" ? { view: "later" } : {}) }).toString()}` }}
+            onClick={event => openSingle(event, item)}>🔗 Pracuj nad tym wpisem</Link>
+        </div>}
         {item.published_at && <div>Opublikowano: {formatDate(item.published_at)}</div>}
         {view === "later" && item.saved_at && <div>Zapisano: {formatDate(item.saved_at)}</div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>

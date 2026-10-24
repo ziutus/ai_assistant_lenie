@@ -199,6 +199,25 @@ it("switches modes in the URL, remembers all mode, and suggests every list item"
   expect(screen.getAllByRole("article")).toHaveLength(2);
 });
 
+it("links every entry in the full list to its own single-item view", async () => {
+  vi.mocked(fetch).mockImplementation(async (url) => {
+    const u = String(url);
+    if (u.includes("/feed_items?")) return jsonResponse({ feed_items: [feedItem, { ...feedItem, id: 8, title: "Second" }], total: 2 });
+    if (u.endsWith("/content_group_model")) return jsonResponse({ default_model: "gpt-4o-mini", models: [] });
+    return jsonResponse({ groups: [], feed_sources: [], content_groups: [] });
+  });
+  render(<MemoryRouter initialEntries={["/feed-review?mode=all"]}><FeedReview /><Location /></MemoryRouter>);
+  await screen.findByText("Second");
+  const links = screen.getAllByText("🔗 Pracuj nad tym wpisem");
+  expect(links).toHaveLength(2);
+  expect(links[1].getAttribute("href")).toBe("/feed-review?mode=single&item=8");
+  fireEvent.click(links[1]);
+  await waitFor(() => expect(screen.getByTestId("location").textContent).toContain("item=8"));
+  expect(screen.getByTestId("location").textContent).toContain("mode=single");
+  expect(screen.getAllByRole("article")).toHaveLength(1);
+  expect(screen.getByText("Second")).toBeTruthy();
+});
+
 it("shows a copyable link to the displayed item and keeps ?item= in the address", async () => {
   function Location() { return <output data-testid="loc">{useLocation().search}</output>; }
   render(<MemoryRouter initialEntries={["/feed-review"]}><FeedReview /><Location /></MemoryRouter>);
