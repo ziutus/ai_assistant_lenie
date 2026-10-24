@@ -21,6 +21,22 @@ migracja Alembica kończy się błędem `Can't locate revision` (stan z
   (nie `.ps1` przez PowerShell — `docker build` pisze na stderr). Użytkownik,
   host i ścieżka Dockera są na górze skryptu; szczegóły w
   [NAS_Deployment.md](docs/CICD/NAS_Deployment.md).
+- **Deploy tylko z domowej sieci LAN, nigdy przez VPN.** NAS (`192.168.200.7`)
+  wdrażamy wyłącznie wtedy, gdy użytkownik jest w domu, w tej samej sieci co
+  NAS. Gdy jest poza domem (VPN włączony albo nie), nie wdrażaj na NAS
+  (`nas-deploy.sh`, `ssh`/`docker` na NAS). Samo rozłączenie VPN nie pomaga:
+  poza domem NAS jest po prostu nieosiągalny. Zrób kod, testy i commit
+  lokalnie, a w raporcie napisz, że wdrożenie czeka na powrót użytkownika do
+  domu (nie „na rozłączenie VPN"). Nie próbuj też „sprawdzać, czy NAS
+  odpowiada" przez SSH i nie proś o włączanie lub wyłączanie VPN. Wyjątek tylko
+  na wyraźne polecenie użytkownika w danej sesji.
+- Gdy użytkownik pracuje przez VPN (jest poza domem), **nie wdrażaj na NAS**:
+  wdrożenie przez VPN jest wolne i zawodne (zrywa SSH i push do rejestru).
+  Skończ pracę do commita/PR, zgłoś, że wdrożenie czeka, i wróć do niego, gdy
+  użytkownik napisze, że jest w domu. Nie ponawiaj `nas-deploy.sh`, dopóki
+  NAS nie odpowiada na `ssh admin@192.168.200.7` bez VPN-a, albo użytkownik
+  wyraźnie nie poleci wdrożyć mimo VPN-a.
+
 ## Masowe operacje na Obsidianie
 
 Nie uruchamiaj pełnego `obsidian_reimport` jako jednorazowej migracji na NAS-ie.
