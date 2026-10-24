@@ -29,6 +29,11 @@ from library.db.models import (  # noqa: E402
 )
 
 
+@pytest.fixture(autouse=True)
+def stub_config(monkeypatch):
+    monkeypatch.setattr(svc, "load_config", lambda: {})
+
+
 class FakeSession:
     """Fakes exactly the calls execute_suggestion_job()/_auto_apply_suggestion() make."""
 

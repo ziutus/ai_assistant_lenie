@@ -4,7 +4,8 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
 import { loadFeedReviewFilters, saveFeedReviewFilters } from "../services/storage";
 import type { ContentGroup } from "../../../types";
-import { Pagination } from "../components/Pagination/pagination";
+import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
+import { modelOptionText, type ModelOption } from "../utils/modelDetails";
 
 type FeedSource = { id: number; name: string; type: string; disabled: boolean };
 type FeedItem = {
@@ -87,6 +88,15 @@ export default function FeedReview() {
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
   const pageSize = 50;
+  const pageRef = React.useRef(1);
+  const [index, setIndex] = React.useState(0);
+  const [models, setModels] = React.useState<ModelOption[]>([]);
+  const [suggestModel, setSuggestModel] = React.useState("");
+  const [defaultModel, setDefaultModel] = React.useState("");
+  const [modelsLoaded, setModelsLoaded] = React.useState(false);
+  const [modelMessage, setModelMessage] = React.useState("");
+  const [modelCalls, setModelCalls] = React.useState(0);
+  const onModelCall = React.useCallback(() => setModelCalls(value => value + 1), []);
   const [sources, setSources] = React.useState<FeedSource[]>([]);
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -117,7 +127,37 @@ export default function FeedReview() {
   const status = view === "later" ? "saved_for_later" : "new";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
 
-  const load = React.useCallback(async (nextPage = page) => {
+  React.useEffect(() => {
+    let cancelled = false;
+    setModelsLoaded(false);
+    void fetchWithTimeout(`${apiUrl}/feed_items/content_group_model`, { headers }, ACTION_TIMEOUT_MS)
+      .then(async response => {
+        if (!response.ok) throw new Error("model list unavailable");
+        const data = await response.json();
+        if (cancelled) return;
+        setModels(Array.isArray(data.models) ? data.models : []);
+        setSuggestModel(String(data.default_model || ""));
+        setDefaultModel(String(data.default_model || ""));
+      }).catch(() => { if (!cancelled) { setModels([]); setSuggestModel(""); } })
+      .finally(() => { if (!cancelled) setModelsLoaded(true); });
+    return () => { cancelled = true; };
+  }, [apiUrl, headers]);
+
+  const saveDefaultModel = async (model: string | null) => {
+    setModelMessage("");
+    try {
+      const response = await fetchWithTimeout(`${apiUrl}/feed_items/content_group_model`, {
+        method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ model }),
+      }, ACTION_TIMEOUT_MS);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Nie udało się zapisać modelu");
+      setDefaultModel(String(data.default_model || ""));
+      if (model === null) setSuggestModel(String(data.default_model || ""));
+      setModelMessage(model === null ? "Przywrócono model domyślny serwera." : "Zapisano jako domyślny model podpowiedzi tematów.");
+    } catch (cause) { setError(describeActionError(cause, apiUrl, "Nie udało się zapisać modelu")); }
+  };
+
+  const load = React.useCallback(async function loadPage(nextPage = pageRef.current, landing?: "first" | "last") {
     setLoading(true);
     setError("");
     try {
@@ -148,7 +188,12 @@ export default function FeedReview() {
           : String(sourcesData.message || "Nie udało się pobrać źródeł");
         throw new Error(`${detail} (HTTP ${sourcesResponse.status}, ${apiUrl}/feed_sources)`);
       }
-      setItems(Array.isArray(itemsData.feed_items) ? itemsData.feed_items as FeedItem[] : []);
+      const nextItems = Array.isArray(itemsData.feed_items) ? itemsData.feed_items as FeedItem[] : [];
+      const lastPage = Math.max(1, Math.ceil(Number(itemsData.total ?? 0) / pageSize));
+      if (nextPage > lastPage) { await loadPage(lastPage, "last"); return; }
+      setItems(nextItems);
+      setIndex(current => landing === "first" ? 0 : landing === "last" ? Math.max(0, nextItems.length - 1) : Math.min(current, Math.max(0, nextItems.length - 1)));
+      pageRef.current = nextPage;
       setTotal(Number(itemsData.total ?? 0));
       setPage(nextPage);
       setSources(Array.isArray(sourcesData.feed_sources) ? sourcesData.feed_sources as FeedSource[] : []);
@@ -160,7 +205,7 @@ export default function FeedReview() {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, headers, page, selectedSource, status]);
+  }, [apiUrl, headers, selectedSource, status]);
 
   React.useEffect(() => { void load(); }, [load]);
 
@@ -190,6 +235,8 @@ export default function FeedReview() {
       ? changes.view === "later" ? "later" : "new"
       : view;
     saveFeedReviewFilters({ feedSourceId: nextSource, view: nextView });
+    pageRef.current = 1;
+    setIndex(0);
     setPage(1);
     setSearchParams(next);
   };
@@ -216,19 +263,16 @@ export default function FeedReview() {
           : `${data.created ? "Dodano do radaru" : "Dopisano wzmiankę do wpisu w radarze"}: ${name}.${related.length ? ` Zaproponowane powiązania: ${related.join(", ")}.` : ""}`);
         await load();
       } else if (action === "import") {
-        const feedItem = data.feed_item as FeedItem | undefined;
-        if (feedItem) setItems(current => current.map(item => item.id === id ? { ...item, ...feedItem } : item));
         const requestedType = body && "document_type" in body
           ? String((body as { document_type?: string }).document_type) : "link";
         // Trust the server's resolved type: "webpage" requested on a URL already
         // stored as a bare link falls back to "link" when the page is paywalled.
         const documentType = String(data.document_type ?? requestedType);
         setImportedTypes(current => ({ ...current, [id]: documentType }));
+        await load();
         if (requestedType === "webpage" && documentType === "link") {
           setError("Zaimportowano jako link — nie można pobrać treści (paywall lub wymagane logowanie).");
         }
-      } else if (action === "save-for-later" && view === "new") {
-        setItems(current => current.map(item => item.id === id ? { ...item, ...data, status: "saved_for_later" } : item));
       } else {
         await load();
       }
@@ -303,10 +347,31 @@ export default function FeedReview() {
       <button type="button" aria-label="Zamknij komunikat" onClick={() => setError("")}>✕</button>
     </div>}
     {radarMessage && <p role="status" style={{ color: "#166534" }}>{radarMessage} <a href="/tool-recommendations">Otwórz radar</a></p>}
-    <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wpisów feedu"
-      onPageChange={nextPage => { void load(nextPage); }} />
+
     {!loading && !error && !items.length && <p>{view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
-    {items.map(item => {
+    {models.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
+      <summary style={{ cursor: "help" }}>Model do podpowiadania tematów: <strong>{models.find(option => option.id === suggestModel)?.label ?? suggestModel}</strong></summary>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <select value={suggestModel} onChange={event => setSuggestModel(event.target.value)} aria-label="Model do podpowiadania tematów">
+          {models.map(option => <option key={option.id} value={option.id}>{modelOptionText(option)}{option.id === defaultModel ? " — domyślny" : ""}</option>)}
+        </select>
+        <button type="button" disabled={!suggestModel || suggestModel === defaultModel} onClick={() => void saveDefaultModel(suggestModel)}>Zapisz jako domyślny</button>
+        <button type="button" onClick={() => void saveDefaultModel(null)}>Przywróć domyślny serwera</button>
+        {models.find(option => option.id === suggestModel)?.external && <span role="note" style={{ color: "#92400e" }}>⚠ Tytuł i podsumowanie wpisu trafią do zewnętrznego dostawcy.</span>}
+        {modelMessage && <span role="status" style={{ color: "#166534" }}>{modelMessage}</span>}
+      </div>
+      <OpenRouterBalance refreshKey={modelCalls} />
+    </details>}
+    {items.length > 0 && <nav aria-label="Nawigacja wpisów" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
+      <button disabled={loading || busyItemId !== null || (page === 1 && index === 0)} onClick={() => {
+        if (index > 0) setIndex(index - 1); else void load(page - 1, "last");
+      }}>← Poprzedni</button>
+      <span>Wpis {(page - 1) * pageSize + index + 1} z {total}</span>
+      <button disabled={loading || busyItemId !== null || (page - 1) * pageSize + index + 1 >= total} onClick={() => {
+        if (index + 1 < items.length) setIndex(index + 1); else void load(page + 1, "first");
+      }}>Następny →</button>
+    </nav>}
+    {!loading && items.slice(index, index + 1).map(item => {
       const busy = busyItemId === item.id;
       const importedType = importedTypes[item.id];
       return <article key={item.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
@@ -316,7 +381,7 @@ export default function FeedReview() {
         {view === "later" && item.saved_at && <div>Zapisano: {formatDate(item.saved_at)}</div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
         {item.summary && <p>{item.summary}</p>}
-        <ContentGroupsPanel feedItemId={item.id} initialGroups={item.groups} autoSuggest />
+        {modelsLoaded && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} onModelCall={onModelCall} />}
         <div>
           {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : item.status === "saved_for_later" ? <>
             <span style={{ color: "#166534", fontWeight: 600 }}>Zachowano tylko link do oceny</span>{" "}
@@ -387,7 +452,6 @@ export default function FeedReview() {
         </form>}
       </article>;
     })}
-    <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wpisów feedu"
-      onPageChange={nextPage => { void load(nextPage); }} />
+
   </section>;
 }

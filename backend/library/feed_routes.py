@@ -417,7 +417,7 @@ def _suggestions_response(session, target_type, target_id):
     run = session.scalar(select(ContentGroupSuggestionRun).where(target_column == target_id).order_by(ContentGroupSuggestionRun.id.desc()))
     if run is None:
         return {"run": None, "suggestions": []}
-    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions]}
+    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "model": run.model, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions]}
 
 
 @bp.get("/feed_items/<int:item_id>/group-suggestions")
@@ -440,8 +440,10 @@ def get_document_suggestions(document_id):
 
 def _request_suggestions(target_type, target_id, user_id):
     session = get_scoped_session()
+    body = request.get_json(silent=True) or {}
+    kwargs = {"model": body.get("model")} if target_type == "feed_item" else {}
     try:
-        job, run = request_suggestions(session, target_type, target_id, user_id=user_id, force=bool((request.get_json(silent=True) or {}).get("force")))
+        job, run = request_suggestions(session, target_type, target_id, user_id=user_id, force=bool(body.get("force")), **kwargs)
     except LookupError as exc:
         abort(404, str(exc))
     except ValueError as exc:
@@ -452,6 +454,35 @@ def _request_suggestions(target_type, target_id, user_id):
 @bp.post("/feed_items/<int:item_id>/group-suggestions")
 def request_feed_suggestions(item_id):
     return _request_suggestions("feed_item", item_id, _user())
+
+
+@bp.get("/feed_items/content_group_model")
+def get_content_group_model():
+    _user_or_service()
+    from library import app_settings, content_group_suggestion_service as suggester
+    from library.llm_model_registry import selectable_models
+
+    session = get_scoped_session()
+    saved = app_settings.get_setting(session, suggester.SETTING_KEY)
+    return jsonify({"default_model": suggester.default_model(session), "saved": isinstance(saved, str),
+                    "models": selectable_models(suggester.TASK)})
+
+
+@bp.put("/feed_items/content_group_model")
+def put_content_group_model():
+    _user()
+    from library import app_settings, content_group_suggestion_service as suggester
+    from library.llm_model_registry import is_selectable
+
+    body = request.get_json(silent=True) or {}
+    if "model" not in body:
+        abort(400, "model is required")
+    model = body["model"]
+    if model is not None and (not isinstance(model, str) or not is_selectable(model, suggester.TASK)):
+        abort(400, "unknown model")
+    session = get_scoped_session()
+    app_settings.set_setting(session, suggester.SETTING_KEY, model)
+    return jsonify({"default_model": suggester.default_model(session), "saved": model is not None})
 
 
 @bp.post("/document/<int:document_id>/group-suggestions")

@@ -3,6 +3,8 @@
 Only models that ``library.ai.ai_ask`` can dispatch are listed; the endpoint rejects any other id, so a
 client can never route a document to an arbitrary provider. OpenRouter models are listed only while the
 ``OPENROUTER_ENABLED`` flag is on, because they send the document text to an external intermediary.
+The content_group_suggestion task sends public feed titles/summaries to that provider;
+document topic suggestions retain their existing Bielik model.
 
 Limits and prices are not hard-coded: an OpenRouter model takes them from the live public catalog
 (``library.api.openrouter.openrouter_catalog``), every other model from its active ``llm_pricing`` row.
@@ -26,7 +28,9 @@ _ORGANIZATION_DESCRIPTION_MODELS: tuple[tuple[str, str, str, bool, bool], ...] =
 )
 
 # Tasks that share the list above. ``tool_tags`` sends only public tool metadata (name, URL, description).
-_TASKS = {"organization_description", "tool_tags"}
+# Content-group suggestions send public feed titles/summaries to an external provider
+# when an OpenRouter model is selected; document classification stays on Bielik.
+_TASKS = {"organization_description", "tool_tags", "content_group_suggestion"}
 
 _OPENROUTER_PREFIX = "openrouter/"
 PRICE_SOURCE_OPENROUTER = "openrouter_api"

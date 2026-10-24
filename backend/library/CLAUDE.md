@@ -6,6 +6,16 @@ Core library for Project Lenie providing document processing, LLM abstraction, e
 
 ### Feed review
 
+The UI reviews one feed item at a time and requests topic suggestions only for
+that item. `GET/PUT /feed_items/content_group_model` exposes the allowlisted
+models and household default (`app_settings.content_group_suggestion_model`).
+The built-in default is `openrouter/google/gemini-2.5-flash-lite` when OpenRouter
+is enabled, otherwise the existing Bielik suggestion model. `POST
+/feed_items/<id>/group-suggestions` accepts optional `model` and `force`;
+completed runs are reused only for matching input and model, while active runs
+are returned unchanged. GET suggestions includes `run.model`. Document
+suggestions and their auto-apply behavior continue to use the existing model.
+
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
 `saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the
