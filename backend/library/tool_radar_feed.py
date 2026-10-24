@@ -12,6 +12,7 @@ import re
 from sqlalchemy import func, or_, select
 
 from library import tool_relations_service
+from library.tool_categories import canonical_category
 from library.db.models import FeedItem, FeedSource, Tool, ToolRecommendation, ToolRecommendationEvidence
 from library.feed_monitor_service import transition_item
 
@@ -65,7 +66,7 @@ def send_to_radar(session, item_id: int, user_id: int | None, name: str | None =
     if created:
         recommendation = ToolRecommendation(
             name=name, homepage_url=homepage_url, description=item.summary or item.title,
-            category=(category or "").strip() or None, status="watchlist", source_url=item.url,
+            category=canonical_category(category), status="watchlist", source_url=item.url,
             source_context=f"Feed: {feed_name}" if feed_name else "Feed",
             source_document_id=item.document_id,
         )

@@ -10,7 +10,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from library import github_repo_stats, tool_links
 from library.db.engine import get_scoped_session
-from library import feed_mentions, tool_note_parser, tool_radar_feed, tool_relations_service
+from library import feed_mentions, tool_categories, tool_note_parser, tool_radar_feed, tool_relations_service
 from library.db.models import Document, Tool, ToolRecommendation, ToolRecommendationEvidence, ToolRelation
 from library.obsidian_vault import read_note
 from library.tool_recommendation_importer import fetch_markdown, parse_markdown_recommendations
@@ -254,7 +254,7 @@ def get_tool_recommendations():
 
 def _category_key(value: str | None) -> str:
     """Fold spellings such as ``DecisionModels`` and ``decision-models`` into one key."""
-    return "".join(char for char in (value or "").lower() if char.isalnum())
+    return tool_categories.fold_category(value)
 
 
 @bp.get("/tool_recommendations/<int:recommendation_id>/peers")
@@ -384,7 +384,7 @@ def create_tool_recommendation():
     item = ToolRecommendation(
         name=name[:255], homepage_url=body.get("homepage_url"), description=body.get("description"),
         links=tool_links.clean_links(body["links"]) if "links" in body else [],
-        category=body.get("category"), tags=normalize_tags(body.get("tags")), status=status,
+        category=tool_categories.canonical_category(body.get("category")), tags=normalize_tags(body.get("tags")), status=status,
         personal_note=body.get("personal_note"),
         obsidian_note_path=(str(body.get("obsidian_note_path") or "").strip() or None),
         source_url=body.get("source_url"), source_context=body.get("source_context"),
@@ -582,7 +582,8 @@ def update_tool_recommendation(recommendation_id):
             value = body[field]
             if value is not None and not isinstance(value, str):
                 abort(400, f"{field} must be a string")
-            setattr(item, field, (value or "").strip() or None)
+            cleaned = tool_categories.canonical_category(value) if field == "category" else (value or "").strip() or None
+            setattr(item, field, cleaned)
     item.updated_at = datetime.datetime.now(datetime.timezone.utc)
     session.commit()
     return jsonify({"tool_recommendation": _dict(item)})
