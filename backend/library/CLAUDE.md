@@ -6,8 +6,12 @@ Core library for Project Lenie providing document processing, LLM abstraction, e
 
 ### Feed review
 
-The UI reviews one feed item at a time and requests topic suggestions only for
-that item. `GET/PUT /feed_items/content_group_model` exposes the allowlisted
+The UI switches between single-item review (default) and a paginated list,
+remembering the mode in the URL and local storage. Each visible item requests
+suggestions again when the chosen model differs from its completed run.
+Feed prompt v2 also proposes up to three new topics, sanitized and filtered
+against the current catalog; only explicit acceptance creates a topic and membership.
+Documents retain prompt v1 and their existing auto-apply path. `GET/PUT /feed_items/content_group_model` exposes the allowlisted
 models and household default (`app_settings.content_group_suggestion_model`).
 The built-in default is `openrouter/google/gemini-2.5-flash-lite` when OpenRouter
 is enabled, otherwise the existing Bielik suggestion model. `POST

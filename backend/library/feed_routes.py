@@ -20,7 +20,7 @@ from library.content_group_service import (
     replace_feed_item_groups,
     update_group,
 )
-from library.content_group_suggestion_service import decide_suggestion, request_suggestions
+from library.content_group_suggestion_service import active_topic_catalog, decide_suggestion, request_suggestions, sanitize_new_topics
 from library.db.models import ContentGroupSuggestionRun
 from library.feed_source_service import list_feeds, feed_to_dict, resolve_references
 from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id
@@ -416,8 +416,8 @@ def _suggestions_response(session, target_type, target_id):
     target_column = ContentGroupSuggestionRun.feed_item_id if target_type == "feed_item" else ContentGroupSuggestionRun.document_id
     run = session.scalar(select(ContentGroupSuggestionRun).where(target_column == target_id).order_by(ContentGroupSuggestionRun.id.desc()))
     if run is None:
-        return {"run": None, "suggestions": []}
-    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "model": run.model, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions]}
+        return {"run": None, "suggestions": [], "new_topics": []}
+    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "model": run.model, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions], "new_topics": sanitize_new_topics((run.raw_result or {}).get("new_topics"), active_topic_catalog(session)) if target_type == "feed_item" else []}
 
 
 @bp.get("/feed_items/<int:item_id>/group-suggestions")

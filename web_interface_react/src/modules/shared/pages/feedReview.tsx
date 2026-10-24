@@ -1,4 +1,5 @@
 import React from "react";
+import { Pagination } from "../components/Pagination/pagination";
 import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
@@ -124,6 +125,7 @@ export default function FeedReview() {
   const view = searchParams.has("view")
     ? searchParams.get("view") === "later" ? "later" : "new"
     : storedFilters.view;
+  const mode = searchParams.has("mode") ? (searchParams.get("mode") === "all" ? "all" : "single") : storedFilters.mode || "single";
   const status = view === "later" ? "saved_for_later" : "new";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
 
@@ -234,7 +236,8 @@ export default function FeedReview() {
     const nextView = Object.prototype.hasOwnProperty.call(changes, "view")
       ? changes.view === "later" ? "later" : "new"
       : view;
-    saveFeedReviewFilters({ feedSourceId: nextSource, view: nextView });
+    saveFeedReviewFilters({ feedSourceId: nextSource, view: nextView, mode: changes.mode === undefined ? mode : changes.mode === "all" ? "all" : "single" });
+    if (Object.keys(changes).every(key => key === "mode")) { setSearchParams(next); return; }
     pageRef.current = 1;
     setIndex(0);
     setPage(1);
@@ -269,10 +272,13 @@ export default function FeedReview() {
         // stored as a bare link falls back to "link" when the page is paywalled.
         const documentType = String(data.document_type ?? requestedType);
         setImportedTypes(current => ({ ...current, [id]: documentType }));
-        await load();
+        if (mode === "all") setItems(current => current.map(item => item.id === id ? { ...item, ...data.feed_item } : item));
+        else await load();
         if (requestedType === "webpage" && documentType === "link") {
           setError("Zaimportowano jako link — nie można pobrać treści (paywall lub wymagane logowanie).");
         }
+      } else if (mode === "all" && action === "save-for-later" && view === "new") {
+        setItems(current => current.map(item => item.id === id ? { ...item, ...data, status: "saved_for_later" } : item));
       } else {
         await load();
       }
@@ -295,83 +301,7 @@ export default function FeedReview() {
   const maybeLaterGroup = contentGroups.find(group => group.kind === "priority" && group.priority_rank === 100);
   const formatDate = (value: string | null) => value ? new Date(value).toLocaleString("pl-PL") : null;
 
-  return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-      <h1 style={{ color: "#0c2f4a" }}>Kuracja feedów</h1>
-      <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
-    </div>
-    <div role="tablist" aria-label="Widok feedu" style={{ display: "flex", gap: 8, margin: "8px 0 16px" }}>
-      <button role="tab" aria-selected={view === "new"} className={view === "new" ? "button" : ""} onClick={() => updateParams({ view: null })}>Nowe</button>
-      <button role="tab" aria-selected={view === "later"} className={view === "later" ? "button" : ""} onClick={() => updateParams({ view: "later" })}>Do przeczytania / obejrzenia</button>
-      <button type="button" className={showHistory ? "button" : ""} onClick={() => setShowHistory(value => !value)}>Historia decyzji</button>
-    </div>
-    {showHistory && <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 14, marginBottom: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 style={{ margin: 0 }}>Historia decyzji</h2>
-        <button type="button" onClick={() => void loadHistory()} disabled={historyLoading}>Odśwież historię</button>
-      </div>
-      {!historyLoading && !decisions.length && <p>Brak zapisanych decyzji dla tego źródła.</p>}
-      {decisions.map(decision => <div key={decision.id} style={{ borderTop: "1px solid #e2e8f0", padding: "10px 0", marginTop: 10 }}>
-        <strong>{decision.title}</strong><br />
-        <small>{decision.action}: {decision.previous_status} → {decision.new_status} · {formatDate(decision.created_at)} · batch {decision.batch_id}</small>{" "}
-        <button type="button" onClick={async () => {
-          setError("");
-          try {
-            const response = await fetchWithTimeout(`${apiUrl}/feed_review_decisions/${decision.id}/undo`, { method: "POST", headers }, ACTION_TIMEOUT_MS);
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok) { setError(data.message || `Nie udało się cofnąć decyzji (${response.status})`); return; }
-          } catch (cause) {
-            setError(describeActionError(cause, apiUrl, "Nie udało się cofnąć decyzji"));
-            return;
-          }
-          await loadHistory(); await load();
-        }}>Cofnij</button>
-      </div>)}
-    </div>}
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "8px 0 20px" }}>
-      Źródło:
-      <select value={selectedSource} onChange={event => updateParams({ feed_source_id: event.target.value || null })} disabled={loading && sources.length === 0}>
-        <option value="">Wszystkie źródła</option>
-        {sources.map(source => <option key={source.id} value={source.id}>{source.name}{source.disabled ? " (wyłączony)" : ""}</option>)}
-      </select>
-    </label>
-    {/* Fixed to the viewport, not the top of the page: the user clicks pagination
-        and actions far below the header, where an inline message goes unseen. */}
-    {error && <div role="alert" style={{
-      position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 1000,
-      maxWidth: "min(720px, calc(100vw - 32px))", display: "flex", alignItems: "flex-start", gap: 12,
-      background: "#fef2f2", color: "#991b1b", border: "1px solid #fca5a5", borderRadius: 10,
-      padding: "12px 16px", boxShadow: "0 6px 24px rgba(0,0,0,.2)",
-    }}>
-      <span style={{ flex: 1 }}>{error}</span>
-      <button type="button" aria-label="Zamknij komunikat" onClick={() => setError("")}>✕</button>
-    </div>}
-    {radarMessage && <p role="status" style={{ color: "#166534" }}>{radarMessage} <a href="/tool-recommendations">Otwórz radar</a></p>}
-
-    {!loading && !error && !items.length && <p>{view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
-    {models.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
-      <summary style={{ cursor: "help" }}>Model do podpowiadania tematów: <strong>{models.find(option => option.id === suggestModel)?.label ?? suggestModel}</strong></summary>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-        <select value={suggestModel} onChange={event => setSuggestModel(event.target.value)} aria-label="Model do podpowiadania tematów">
-          {models.map(option => <option key={option.id} value={option.id}>{modelOptionText(option)}{option.id === defaultModel ? " — domyślny" : ""}</option>)}
-        </select>
-        <button type="button" disabled={!suggestModel || suggestModel === defaultModel} onClick={() => void saveDefaultModel(suggestModel)}>Zapisz jako domyślny</button>
-        <button type="button" onClick={() => void saveDefaultModel(null)}>Przywróć domyślny serwera</button>
-        {models.find(option => option.id === suggestModel)?.external && <span role="note" style={{ color: "#92400e" }}>⚠ Tytuł i podsumowanie wpisu trafią do zewnętrznego dostawcy.</span>}
-        {modelMessage && <span role="status" style={{ color: "#166534" }}>{modelMessage}</span>}
-      </div>
-      <OpenRouterBalance refreshKey={modelCalls} />
-    </details>}
-    {items.length > 0 && <nav aria-label="Nawigacja wpisów" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-      <button disabled={loading || busyItemId !== null || (page === 1 && index === 0)} onClick={() => {
-        if (index > 0) setIndex(index - 1); else void load(page - 1, "last");
-      }}>← Poprzedni</button>
-      <span>Wpis {(page - 1) * pageSize + index + 1} z {total}</span>
-      <button disabled={loading || busyItemId !== null || (page - 1) * pageSize + index + 1 >= total} onClick={() => {
-        if (index + 1 < items.length) setIndex(index + 1); else void load(page + 1, "first");
-      }}>Następny →</button>
-    </nav>}
-    {!loading && items.slice(index, index + 1).map(item => {
+  const renderItem = (item: FeedItem) => {
       const busy = busyItemId === item.id;
       const importedType = importedTypes[item.id];
       return <article key={item.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
@@ -451,7 +381,93 @@ export default function FeedReview() {
           <button type="button" onClick={() => setSkipItemId(null)} disabled={busy}>Anuluj</button>
         </form>}
       </article>;
-    })}
+  };
+
+  const pagination = <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wpisów feedu" onPageChange={nextPage => { void load(nextPage); }} />;
+
+  return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+      <h1 style={{ color: "#0c2f4a" }}>Kuracja feedów</h1>
+      <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
+    </div>
+    <div role="tablist" aria-label="Widok feedu" style={{ display: "flex", gap: 8, margin: "8px 0 16px" }}>
+      <button role="tab" aria-selected={view === "new"} className={view === "new" ? "button" : ""} onClick={() => updateParams({ view: null })}>Nowe</button>
+      <button role="tab" aria-selected={view === "later"} className={view === "later" ? "button" : ""} onClick={() => updateParams({ view: "later" })}>Do przeczytania / obejrzenia</button>
+      <button type="button" className={showHistory ? "button" : ""} onClick={() => setShowHistory(value => !value)}>Historia decyzji</button>
+    </div>
+    <div role="group" aria-label="Tryb przeglądu">
+      <button aria-pressed={mode === "single"} onClick={() => updateParams({ mode: "single" })}>Po jednym wpisie</button>{" "}
+      <button aria-pressed={mode === "all"} onClick={() => updateParams({ mode: "all" })}>Wszystkie na liście</button>
+    </div>
+    {showHistory && <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 14, marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>Historia decyzji</h2>
+        <button type="button" onClick={() => void loadHistory()} disabled={historyLoading}>Odśwież historię</button>
+      </div>
+      {!historyLoading && !decisions.length && <p>Brak zapisanych decyzji dla tego źródła.</p>}
+      {decisions.map(decision => <div key={decision.id} style={{ borderTop: "1px solid #e2e8f0", padding: "10px 0", marginTop: 10 }}>
+        <strong>{decision.title}</strong><br />
+        <small>{decision.action}: {decision.previous_status} → {decision.new_status} · {formatDate(decision.created_at)} · batch {decision.batch_id}</small>{" "}
+        <button type="button" onClick={async () => {
+          setError("");
+          try {
+            const response = await fetchWithTimeout(`${apiUrl}/feed_review_decisions/${decision.id}/undo`, { method: "POST", headers }, ACTION_TIMEOUT_MS);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) { setError(data.message || `Nie udało się cofnąć decyzji (${response.status})`); return; }
+          } catch (cause) {
+            setError(describeActionError(cause, apiUrl, "Nie udało się cofnąć decyzji"));
+            return;
+          }
+          await loadHistory(); await load();
+        }}>Cofnij</button>
+      </div>)}
+    </div>}
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "8px 0 20px" }}>
+      Źródło:
+      <select value={selectedSource} onChange={event => updateParams({ feed_source_id: event.target.value || null })} disabled={loading && sources.length === 0}>
+        <option value="">Wszystkie źródła</option>
+        {sources.map(source => <option key={source.id} value={source.id}>{source.name}{source.disabled ? " (wyłączony)" : ""}</option>)}
+      </select>
+    </label>
+    {/* Fixed to the viewport, not the top of the page: the user clicks pagination
+        and actions far below the header, where an inline message goes unseen. */}
+    {error && <div role="alert" style={{
+      position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 1000,
+      maxWidth: "min(720px, calc(100vw - 32px))", display: "flex", alignItems: "flex-start", gap: 12,
+      background: "#fef2f2", color: "#991b1b", border: "1px solid #fca5a5", borderRadius: 10,
+      padding: "12px 16px", boxShadow: "0 6px 24px rgba(0,0,0,.2)",
+    }}>
+      <span style={{ flex: 1 }}>{error}</span>
+      <button type="button" aria-label="Zamknij komunikat" onClick={() => setError("")}>✕</button>
+    </div>}
+    {radarMessage && <p role="status" style={{ color: "#166534" }}>{radarMessage} <a href="/tool-recommendations">Otwórz radar</a></p>}
+
+    {!loading && !error && !items.length && <p>{view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
+    {models.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
+      <summary style={{ cursor: "help" }}>Model do podpowiadania tematów: <strong>{models.find(option => option.id === suggestModel)?.label ?? suggestModel}</strong></summary>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <select value={suggestModel} onChange={event => setSuggestModel(event.target.value)} aria-label="Model do podpowiadania tematów">
+          {models.map(option => <option key={option.id} value={option.id}>{modelOptionText(option)}{option.id === defaultModel ? " — domyślny" : ""}</option>)}
+        </select>
+        <button type="button" disabled={!suggestModel || suggestModel === defaultModel} onClick={() => void saveDefaultModel(suggestModel)}>Zapisz jako domyślny</button>
+        <button type="button" onClick={() => void saveDefaultModel(null)}>Przywróć domyślny serwera</button>
+        {models.find(option => option.id === suggestModel)?.external && <span role="note" style={{ color: "#92400e" }}>⚠ Tytuł i podsumowanie wpisu trafią do zewnętrznego dostawcy.</span>}
+        {modelMessage && <span role="status" style={{ color: "#166534" }}>{modelMessage}</span>}
+      </div>
+      <OpenRouterBalance refreshKey={modelCalls} />
+    </details>}
+    {mode === "all" && pagination}
+    {mode === "single" && items.length > 0 && <nav aria-label="Nawigacja wpisów" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
+      <button disabled={loading || busyItemId !== null || (page === 1 && index === 0)} onClick={() => {
+        if (index > 0) setIndex(index - 1); else void load(page - 1, "last");
+      }}>← Poprzedni</button>
+      <span>Wpis {(page - 1) * pageSize + index + 1} z {total}</span>
+      <button disabled={loading || busyItemId !== null || (page - 1) * pageSize + index + 1 >= total} onClick={() => {
+        if (index + 1 < items.length) setIndex(index + 1); else void load(page + 1, "first");
+      }}>Następny →</button>
+    </nav>}
+    {(mode === "all" ? items : !loading ? items.slice(index, index + 1) : []).map(renderItem)}
+    {mode === "all" && pagination}
 
   </section>;
 }

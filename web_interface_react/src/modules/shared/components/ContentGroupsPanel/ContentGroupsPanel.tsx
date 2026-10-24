@@ -9,7 +9,10 @@ const FAVORITE_GROUP_NAME = "Ulubione";
 const SUGGESTION_POLL_MS = 4000;
 const SUGGESTION_POLL_MAX = 15;
 
-// autoSuggest: ask the backend to classify the target when it has no suggestion run yet (feed review).
+// Feed review requests missing runs and replaces completed runs from a different model.
+type NewTopic = { name: string; confidence: number; reason: string };
+const foldName = (name: string) => name.trim().toLocaleLowerCase("pl").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ł/g, "l");
+
 type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; autoSuggest?: boolean; suggestModel?: string; onModelCall?: () => void; onSaved?: (groups: ContentGroup[]) => void };
 
 export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, autoSuggest, suggestModel, onModelCall, onSaved }: Props) {
@@ -17,6 +20,9 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [catalog, setCatalog] = React.useState<ContentGroup[]>([]);
   const [groups, setGroups] = React.useState<ContentGroup[]>(initialGroups || []);
   const [suggestions, setSuggestions] = React.useState<ContentGroupSuggestion[]>([]);
+  const [newTopics, setNewTopics] = React.useState<NewTopic[]>([]);
+  const [dismissedTopics, setDismissedTopics] = React.useState<string[]>([]);
+  const [creatingTopic, setCreatingTopic] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [topicIds, setTopicIds] = React.useState<number[]>([]);
   const [priorityId, setPriorityId] = React.useState<number | "">("");
@@ -24,7 +30,8 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [runModel, setRunModel] = React.useState("");
   const [pendingRun, setPendingRun] = React.useState(false);
   const [newTopicName, setNewTopicName] = React.useState("");
-  const requestedRef = React.useRef(false);
+  const requestedRef = React.useRef(new Set<string>());
+  const awaitingModelRef = React.useRef<string | null>(null);
   const mountedRef = React.useRef(false);
   const pollsRef = React.useRef(0);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
@@ -49,17 +56,26 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       if (!suggestionResponse.ok) throw new Error(`group-suggestions: HTTP ${suggestionResponse.status}`);
       const suggestionData = await suggestionResponse.json();
       setRunModel(suggestionData.run?.model || "");
-      setSuggestions(Array.isArray(suggestionData.suggestions) ? suggestionData.suggestions : []);
       const runStatus: string | undefined = suggestionData.run?.status;
-      if (mountedRef.current && autoSuggest && !suggestionData.run && !requestedRef.current && groupData.content_groups?.some((group: ContentGroup) => group.kind === "topic")) {
-        requestedRef.current = true;
+      const running = runStatus === "queued" || runStatus === "running";
+      const wrongModel = !!suggestModel && suggestionData.run?.model !== suggestModel;
+      const requestKey = `${target}:${suggestModel || "default"}`;
+      if (awaitingModelRef.current && suggestionData.run?.model === awaitingModelRef.current) awaitingModelRef.current = null;
+      const stale = wrongModel && (autoSuggest || !!awaitingModelRef.current);
+      setSuggestions((Array.isArray(suggestionData.suggestions) ? suggestionData.suggestions : []).filter((item: ContentGroupSuggestion) => !stale || item.status !== "pending"));
+      setNewTopics(!stale && !running && Array.isArray(suggestionData.new_topics) ? suggestionData.new_topics : []);
+      if (mountedRef.current && autoSuggest && (!suggestionData.run || (wrongModel && !running)) && !requestedRef.current.has(requestKey) && (feedItemId !== undefined || groupData.content_groups?.some((group: ContentGroup) => group.kind === "topic"))) {
+        requestedRef.current.add(requestKey);
+        pollsRef.current = 0;
+        awaitingModelRef.current = suggestModel || null;
         const requestResponse = await fetch(`${apiUrl}/${target}/group-suggestions`, { method: "POST", headers, body: JSON.stringify(suggestModel ? { model: suggestModel } : {}) });
-        if (requestResponse.ok) { setPendingRun(true); onModelCall?.(); }
+        if (!requestResponse.ok) throw new Error(`group-suggestions: HTTP ${requestResponse.status}`);
+        setPendingRun(true); onModelCall?.();
       } else {
-        setPendingRun(runStatus === "queued" || runStatus === "running");
+        setPendingRun(running || !!awaitingModelRef.current);
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać grup"); }
-  }, [apiUrl, headers, target, autoSuggest, suggestModel, onModelCall]);
+  }, [apiUrl, headers, target, autoSuggest, suggestModel, onModelCall, feedItemId]);
 
   React.useEffect(() => { mountedRef.current = true; void load(); return () => { mountedRef.current = false; }; }, [load]);
 
@@ -72,7 +88,10 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
 
   const suggestAgain = async () => {
     setError("");
-    requestedRef.current = true;
+    requestedRef.current.add(`${target}:${suggestModel || "default"}`);
+    awaitingModelRef.current = suggestModel || null;
+    setSuggestions(items => items.filter(item => item.status !== "pending"));
+    setNewTopics([]);
     pollsRef.current = 0;
     setPendingRun(false);
     try {
@@ -106,6 +125,40 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     setCatalog(items => [...items, data]);
     setTopicIds(ids => [...ids, data.id]);
     setNewTopicName("");
+  };
+
+  const acceptNewTopic = async (proposal: NewTopic) => {
+    setCreatingTopic(true);
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name: proposal.name, kind: "topic" }) });
+      let group: ContentGroup;
+      if (response.status === 409) {
+        const refreshed = await fetch(`${apiUrl}/content_groups`, { headers });
+        if (!refreshed.ok) throw new Error(`content_groups: HTTP ${refreshed.status}`);
+        const data = await refreshed.json();
+        const refreshedCatalog: ContentGroup[] = data.content_groups || [];
+        setCatalog(refreshedCatalog);
+        const existing = refreshedCatalog.find(item => item.kind === "topic" && !item.archived_at && foldName(item.name) === foldName(proposal.name));
+        if (!existing) throw new Error("Nie znaleziono istniejącego tematu");
+        group = existing;
+      } else {
+        if (!response.ok) throw new Error(`content_groups: HTTP ${response.status}`);
+        group = await response.json();
+        setCatalog(items => [...items.filter(item => item.id !== group.id), group]);
+      }
+      const ids = [...new Set([...topicIds, group.id])];
+      const saved = await fetch(`${apiUrl}/${target}/groups`, { method: "PATCH", headers, body: JSON.stringify({ group_ids: [...ids, ...(priorityId === "" ? [] : [priorityId])] }) });
+      const data = await saved.json();
+      if (!saved.ok) throw new Error(data.message || data.error || "Nie udało się zapisać grup");
+      const next: ContentGroup[] = data.groups || data.feed_item?.groups || [];
+      setGroups(next);
+      setTopicIds(next.filter(item => item.kind === "topic").map(item => item.id));
+      setPriorityId(next.find(item => item.kind === "priority")?.id || "");
+      setDismissedTopics(names => [...names, proposal.name]);
+      onSaved?.(next);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się dodać tematu"); }
+    finally { setCreatingTopic(false); }
   };
 
   const favoriteGroup = catalog.find(group => group.kind === "priority" && group.name === FAVORITE_GROUP_NAME);
@@ -155,6 +208,11 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     {suggestModel && runModel && <small style={{ display: "block", color: "#64748b" }}>model: {runModel.replace(/^openrouter\//, "")}</small>}
     {pendingRun && <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>🤖 Szukam kategorii…</div>}
     {suggestions.filter(item => item.status === "pending").map(item => <div key={item.id} style={{ marginTop: 8, border: "1px dashed #64748b", padding: 6 }}><span>Sugestia: {catalog.find(group => group.id === item.group_id)?.name || item.group_id} ({Math.round(item.confidence * 100)}%)</span>{" "}<button type="button" onClick={() => void decide(item.id, "accept")}>Akceptuj</button>{" "}<button type="button" onClick={() => void decide(item.id, "dismiss")}>Odrzuć</button></div>)}
+    {feedItemId !== undefined && !pendingRun && newTopics.filter(item => !dismissedTopics.includes(item.name)).map(item => <div key={item.name} style={{ marginTop: 8 }}>
+      <span>Nowy temat: {item.name} ({Math.round(item.confidence * 100)}%) — {item.reason}</span>{" "}
+      <button type="button" disabled={creatingTopic} onClick={() => void acceptNewTopic(item)}>Utwórz i dodaj</button>{" "}
+      <button type="button" onClick={() => setDismissedTopics(names => [...names, item.name])}>Odrzuć</button>
+    </div>)}
     {suggestions.filter(item => item.status === "accepted").map(item => <div key={item.id} style={{ marginTop: 8, fontSize: "0.85em", color: "#475569" }}>
       <span>{item.decided_by_user_id ? "👤" : "🤖"} {catalog.find(group => group.id === item.group_id)?.name || item.group_id} — {Math.round(item.confidence * 100)}%{item.reason ? `: ${item.reason}` : ""}</span>{" "}
       <button type="button" onClick={() => void decide(item.id, "revert")}>Cofnij</button>

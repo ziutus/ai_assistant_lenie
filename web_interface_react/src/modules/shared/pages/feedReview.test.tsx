@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import FeedReview from "./feedReview";
 
@@ -19,6 +19,7 @@ function jsonResponse(body: object) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("fetch", vi.fn((url: string) => {
     if (url.includes("/feed_items?")) return Promise.resolve(jsonResponse({ feed_items: [feedItem], total: 1 }));
     if (url.endsWith("/feed_sources")) return Promise.resolve(jsonResponse({ feed_sources: [{ id: 1, name: "Blog", type: "rss", disabled: false }] }));
@@ -83,8 +84,9 @@ it("shows a fixed, dismissible error when changing page fails", async () => {
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-it("reviews only the displayed item with the selected model and supports rerunning", async () => {
+it("defaults to single mode and requests suggestions when the selected model changes", async () => {
   const model = "openrouter/google/gemini-2.5-flash-lite";
+  localStorage.setItem("lenie_feedReviewFilters", JSON.stringify({ feedSourceId: "", view: "new" }));
   const second = { ...feedItem, id: 8, title: "Drugi wpis" };
   vi.mocked(fetch).mockImplementation(async (url, init) => {
     const u = String(url);
@@ -109,13 +111,9 @@ it("reviews only the displayed item with the selected model and supports rerunni
   await waitFor(() => expect(posts()).toHaveLength(2));
   expect(screen.queryByText("Artykuł testowy")).toBeNull();
   fireEvent.change(screen.getByLabelText("Model do podpowiadania tematów"), { target: { value: "gpt-4o-mini" } });
-  await waitFor(() => expect(screen.getByText("Podpowiedz ponownie")).toHaveProperty("disabled", false));
-  fireEvent.click(screen.getByText("Podpowiedz ponownie"));
   await waitFor(() => expect(posts()).toHaveLength(3));
-  expect(posts()[2][1]?.body).toBe(JSON.stringify({ model: "gpt-4o-mini", force: true }));
-  fireEvent.click(screen.getByRole("button", { name: "← Poprzedni" }));
-  await screen.findByText("Artykuł testowy");
-  expect(screen.getByText("Wpis 1 z 2")).toBeTruthy();
+  expect(posts()[2][1]?.body).toBe(JSON.stringify({ model: "gpt-4o-mini" }));
+
 });
 
 it("crosses page boundaries and lands on the previous page's last item", async () => {
@@ -159,4 +157,44 @@ it("advances after saving an item and shows the empty queue after the last actio
   fireEvent.click(screen.getByRole("button", { name: "Do przeczytania" }));
   await screen.findByText("Brak nowych wpisów dla wybranego źródła.");
   expect(screen.queryByRole("article")).toBeNull();
+});
+
+
+function Location() { return <output data-testid="location">{useLocation().search}</output>; }
+
+it("switches modes in the URL, remembers all mode, and suggests every list item", async () => {
+  const model = "gpt-4o-mini";
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    const u = String(url);
+    if (u.includes("/feed_items?")) return jsonResponse({ feed_items: [feedItem, { ...feedItem, id: 8, title: "Second" }], total: 51 });
+    if (u.endsWith("/content_group_model")) return jsonResponse({ default_model: model, models: [{ id: model, label: "GPT" }] });
+    if (u.endsWith("/save-for-later")) return jsonResponse({ status: "saved_for_later" });
+    if (u.endsWith("/content_groups")) return jsonResponse({ content_groups: [{ id: 1, name: "AI", kind: "topic" }] });
+    if (u.endsWith("/group-suggestions")) return jsonResponse({ run: init?.method === "POST" ? { status: "queued" } : null, suggestions: [] });
+    return jsonResponse({ groups: [], feed_sources: [] });
+  });
+  render(<MemoryRouter initialEntries={["/feed-review?mode=all"]}><FeedReview /><Location /></MemoryRouter>);
+  await screen.findByText("Second");
+  expect(screen.getAllByRole("article")).toHaveLength(2);
+  expect(screen.getAllByLabelText("Stronicowanie wpisów feedu")).toHaveLength(2);
+  expect(screen.queryByLabelText("Nawigacja wpisów")).toBeNull();
+  const posts = () => vi.mocked(fetch).mock.calls.filter(([url, init]) => String(url).endsWith("/group-suggestions") && init?.method === "POST");
+  await waitFor(() => expect(posts()).toHaveLength(2));
+  expect(posts().map(([, init]) => init?.body)).toEqual([JSON.stringify({ model }), JSON.stringify({ model })]);
+  const loads = () => vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("/feed_items?")).length;
+  const before = loads();
+  fireEvent.click(screen.getAllByText("Do przeczytania")[0]);
+  await screen.findByText("Zachowano tylko link do oceny");
+  expect(loads()).toBe(before);
+  expect(screen.getAllByRole("article")).toHaveLength(2);
+  fireEvent.click(screen.getByText("Po jednym wpisie"));
+  expect(screen.getByTestId("location").textContent).toContain("mode=single");
+  expect(screen.getAllByRole("article")).toHaveLength(1);
+  fireEvent.click(screen.getByText("Wszystkie na liście"));
+  expect(screen.getByTestId("location").textContent).toContain("mode=all");
+  expect(JSON.parse(localStorage.getItem("lenie_feedReviewFilters") || "{}").mode).toBe("all");
+  cleanup();
+  render(<MemoryRouter><FeedReview /></MemoryRouter>);
+  await screen.findByText("Second");
+  expect(screen.getAllByRole("article")).toHaveLength(2);
 });
