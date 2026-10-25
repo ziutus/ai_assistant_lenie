@@ -82,6 +82,19 @@ it("reviews discussion across text statuses, saves a result and advances to the 
   expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.body === JSON.stringify({ status: null }))).toBe(true);
 });
 
+it("lets an item in the discussion queue be filed under topics too", async () => {
+  const fallback = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    if (String(url).includes("/feed_items?")) return jsonResponse({ feed_items: [{ ...feedItem, status: "skipped", llm_discussion_status: "open" }], total: 1 });
+    return fallback(url, init);
+  });
+  render(<MemoryRouter initialEntries={["/feed-review?mode=single&view=discuss&item=7"]}><FeedReview /></MemoryRouter>);
+  const article = (await screen.findByText(feedItem.title)).closest("article") as HTMLElement;
+  expect(within(article).getByText("Status tekstu: Pominięty")).toBeTruthy();
+  await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith("/feed_items/7/groups"))).toBe(true));
+  expect(within(article).getByRole("button", { name: /Edytuj|Zmień|kategori|temat/i })).toBeTruthy();
+});
+
 it("opens the done queue and reopens an item with its saved result", async () => {
   let done = true;
   const fallback = vi.mocked(fetch).getMockImplementation()!;
