@@ -8,6 +8,7 @@ closing the editor or a slow external service cannot make the user repeat it.
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
@@ -17,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from library.db.models import Document, Job
+from library.entity_text import document_ner_text
 from library.job_queue import enqueue, heartbeat
 
 ENTITY_ENRICHMENT = "entity_enrichment"
@@ -53,7 +55,8 @@ class EntityEnrichmentCriticalError(RuntimeError):
 
 def _text_digest(document: Document) -> str:
     text = document.text_md or document.text or ""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    payload = json.dumps([text, document.chapter_types], ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def ensure_entity_enrichment_job(session: Session, document: Document, user_id: int | None = None) -> Job:
@@ -104,7 +107,9 @@ def execute_entity_enrichment(session: Session, job: Job) -> dict:
     if job.parameters.get("text_digest") != _text_digest(doc):
         return {"document_id": document_id, "skipped": "document text changed"}
 
-    text = doc.text_md or doc.text or ""
+    text = document_ner_text(doc)
+    if not text.strip():
+        return {"document_id": document_id, "skipped": "no NER text"}
     result: dict = {"document_id": document_id, "place_tags": [], "persons_linked": 0, "pipelines": [], "warnings": []}
     progress_lock = Lock()
     stages: dict[str, dict] = {}

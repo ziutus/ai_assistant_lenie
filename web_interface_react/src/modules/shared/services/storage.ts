@@ -125,11 +125,13 @@ export function saveReaderObsidianPanelVisible(visible: boolean): void {
 }
 
 export interface FeedReviewFilters {
+  mode?: "single" | "all";
   feedSourceId: string;
-  view: "new" | "later";
+  view: "new" | "later" | "discuss";
 }
 
 const DEFAULT_FEED_REVIEW_FILTERS: FeedReviewFilters = {
+  mode: "single",
   feedSourceId: "",
   view: "new",
 };
@@ -141,7 +143,8 @@ export function loadFeedReviewFilters(): FeedReviewFilters {
     const stored = JSON.parse(raw) as Partial<FeedReviewFilters>;
     return {
       feedSourceId: typeof stored.feedSourceId === "string" ? stored.feedSourceId : "",
-      view: stored.view === "later" ? "later" : "new",
+      view: stored.view === "later" || stored.view === "discuss" ? stored.view : "new",
+      mode: stored.mode === "all" ? "all" : "single",
     };
   } catch {
     return { ...DEFAULT_FEED_REVIEW_FILTERS };

@@ -18,7 +18,8 @@ while "Port Sudanu"/"Port Sudanem" leaked the genitive/instrumental case into
 entity_text the same way).
 
 This is a small, closed list of cities that recur in the geopolitics-focused
-reporting Lenie ingests (currently: Sudan civil war coverage) — not an
+reporting Lenie ingests (currently: Sudan civil war and Riyadh/Saudi airport
+coverage) — not an
 exhaustive gazetteer (compare country_gazetteer.py's ~190-country list).
 Matching mirrors geo_feature_gazetteer.py: word-stem regex against a
 diacritic-stripped, lowercased mention, requiring the ENTIRE surface to
@@ -26,11 +27,16 @@ match — safe to call unconditionally on every geogName/placeName mention
 without a prior "is this a known city" filter.
 """
 
+import logging
 import re
+import threading
 from dataclasses import dataclass
-from functools import lru_cache
 
 from unidecode import unidecode
+
+from library import ner_gazetteer_store
+
+logger = logging.getLogger(__name__)
 
 # name_pl, variants: same token-pattern convention as geo_feature_gazetteer.py
 # — a token ending in "*" matches as a word stem (\bTOKEN\w*), tokens
@@ -47,6 +53,23 @@ _CITY_DATA: list[tuple[str, tuple[str, ...]]] = [
     # variants since the DSL only supports one trailing "*" per token.
     ("Al-Ubajjid", ("al ubajjid*", "al ubajid*")),
     ("Port Sudan", ("port sudan*",)),
+    # doc #10770: spaCy keeps the locative in "w Rijadzie" as its lemma.
+    # doc #10872: the transcript spells the capital "Riad", and spaCy keeps
+    # the locative "Riadzie" as its lemma: "Ambasada Indii w Riadzie potwierdziła
+    # tożsamość pilota i w oświadczeniu poinformowała, że znajduje się on
+    # w szpitalu w Tabuk". The geocoder received "Riadzie" and found nothing
+    # (geocode_cache.resolved=false).
+    ("Rijad", ("rijad*", "riad*")),
+    # doc #10872: the transcript spells the US state "Luisiana", and spaCy
+    # keeps the locative "Luisianie" as its lemma. The geocoder received
+    # "Luisianie" and found nothing (geocode_cache 1279, resolved=false).
+    ("Luizjana", ("luizjan*", "luisian*")),
+    # doc #10872: the Polish name of the city; a capitalized "Królewiec" that spaCy
+    # finds folds into Kaliningrad (the lowercase "królewca" is place_mention_gazetteer's job).
+    ("Kaliningrad", ("krolewiec", "krolewc*")),
+    # doc #10872: "do Tela Avivwu" (transcript spelling + genitive) was tagged orgName by spaCy;
+    # aggregate_entities_detailed() relabels an orgName that names a gazetteer city as a place.
+    ("Tel Awiw", ("tel aviv*", "tela aviv*", "tel awiw*", "tela awiw*")),
 ]
 
 
@@ -84,9 +107,40 @@ def _compile_variant(variant: str) -> CityPattern:
     )
 
 
-@lru_cache(maxsize=1)
+compile_variant = _compile_variant
+
+_compiled_state: tuple[int, tuple[tuple[str, tuple[CityPattern, ...]], ...]] | None = None
+_compiled_lock = threading.Lock()
+
+
 def _compiled_cities() -> tuple[tuple[str, tuple[CityPattern, ...]], ...]:
-    return tuple((name_pl, tuple(_compile_variant(v) for v in variants)) for name_pl, variants in _CITY_DATA)
+    """Seed list from code plus database entries (ADR-029), recompiled when the store refreshes.
+
+    A database entry can only add patterns (to an existing name or as a new name) — it never
+    removes or overrides a seed entry. An invalid database pattern is skipped with a warning.
+    """
+    global _compiled_state
+    version = ner_gazetteer_store.cache_version()
+    state = _compiled_state
+    if state is not None and state[0] == version:
+        return state[1]
+    with _compiled_lock:
+        merged: dict[str, list[str]] = {name_pl: list(variants) for name_pl, variants in _CITY_DATA}
+        by_folded = {name_pl.casefold(): name_pl for name_pl in merged}
+        for entry in ner_gazetteer_store.get_entries(ner_gazetteer_store.KIND_CITY):
+            name_pl = by_folded.setdefault(entry.name_pl.casefold(), entry.name_pl)
+            merged.setdefault(name_pl, []).extend(entry.patterns)
+        compiled = []
+        for name_pl, variants in merged.items():
+            patterns = []
+            for variant in variants:
+                try:
+                    patterns.append(_compile_variant(variant))
+                except re.error:
+                    logger.warning("Invalid city gazetteer pattern %r for %r skipped", variant, name_pl)
+            compiled.append((name_pl, tuple(patterns)))
+        _compiled_state = (version, tuple(compiled))
+        return _compiled_state[1]
 
 
 def canonical_city_name(mention: str) -> str | None:

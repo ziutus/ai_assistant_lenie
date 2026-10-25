@@ -77,6 +77,15 @@ const Webpage = () => {
     formik, selectedDocumentType, selectedDocumentState
   });
 
+  // Saving the text can drop images whose [imgN] marker was deleted (backend
+  // prunes document_images) — reload the "Ilustracje" panel when a load/save ends.
+  const [imagesRefresh, setImagesRefresh] = React.useState(0);
+  const wasLoading = React.useRef(false);
+  React.useEffect(() => {
+    if (wasLoading.current && !isLoading) setImagesRefresh((n) => n + 1);
+    wasLoading.current = isLoading;
+  }, [isLoading]);
+
   const formatIngestedAt = (value: string | null | undefined) => {
     if (!value) return "brak danych";
     const parsed = new Date(value.includes("T") ? value : value.replace(" ", "T"));
@@ -235,7 +244,7 @@ const Webpage = () => {
         )}
         </fieldset>
       </form>
-      {id && <DocumentImagesPanel docId={id} />}
+      {id && <DocumentImagesPanel docId={id} refreshKey={imagesRefresh} />}
       {id && <DocumentLinksPanel docId={id} />}
     </div>
   );

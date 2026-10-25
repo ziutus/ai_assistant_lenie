@@ -35,6 +35,14 @@ class TestSplitAuthorNames:
     def test_dedup_is_case_insensitive(self):
         assert split_author_names("Jan Kowalski, jan kowalski") == ["Jan Kowalski"]
 
+    def test_role_suffix_after_dash_is_dropped(self):
+        # Disinfo Digest footer: the role belongs to the first author only
+        raw = "Wojciech Pokora – Redaktor naczelny Disinfo Digest, Katarzyna Wojda"
+        assert split_author_names(raw) == ["Wojciech Pokora", "Katarzyna Wojda"]
+
+    def test_hyphenated_surname_is_not_cut(self):
+        assert split_author_names("Anna Nowak-Kowalska") == ["Anna Nowak-Kowalska"]
+
     def test_empty_input(self):
         assert split_author_names("") == []
         assert split_author_names("  ,  ") == []

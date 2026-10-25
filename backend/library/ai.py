@@ -26,10 +26,10 @@ SHERLOCK_VISION_MODELS = ("google/gemma-4-31B-it", "mistralai/Mistral-Small-4-11
 GOOGLE_MODELS = ("gemini-2.0-flash-lite-001",)
 
 # Providers whose API accepts a separate system-role message.
-_SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs")
+_SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs", "openrouter")
 # Providers accepting response_format; Sherlock enforces json_schema
 # (verified live 2026-07-18) but rejects json_object with HTTP 400.
-_RESPONSE_FORMAT_PROVIDERS = ("cloudferro",)
+_RESPONSE_FORMAT_PROVIDERS = ("cloudferro", "openrouter")
 
 
 def _unified_tokens(response) -> tuple[int | None, int | None, int | None]:
@@ -94,8 +94,11 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         def call(resolved_model=model):
             import library.api.openai.openai_my
 
-            response = library.api.openai.openai_my.OpenAIClient.get_completion(query, resolved_model)
+            response, tokens = library.api.openai.openai_my.OpenAIClient.get_completion_with_usage(query, resolved_model)
             ai_response = AiResponse(query=query, model=resolved_model)
+            ai_response.prompt_tokens = tokens.get("prompt_tokens")
+            ai_response.completion_tokens = tokens.get("completion_tokens")
+            ai_response.total_tokens = tokens.get("total_tokens")
             if isinstance(response, bytes):
                 response = response.decode('utf-8')
             ai_response.response_text = response
@@ -130,6 +133,18 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
             return arklabs_get_completion(query, model=actual_model, temperature=temperature,
                                           max_tokens=max_token_count, system_prompt=system_prompt,
                                           stateful=arklabs_stateful)
+
+    elif model.startswith("openrouter/"):
+        provider = "openrouter"
+        # Only the first prefix is ours: "openrouter/openai/gpt-4o-mini" -> OpenRouter id "openai/gpt-4o-mini".
+        actual_model = model.removeprefix("openrouter/")
+
+        def call():
+            from library.api.openrouter.openrouter_completion import openrouter_get_completion
+
+            return openrouter_get_completion(query, model=actual_model, temperature=temperature,
+                                             max_tokens=max_token_count, system_prompt=system_prompt,
+                                             response_format=response_format)
 
     elif model in GOOGLE_MODELS:
         provider = "google-vertexai"
@@ -168,7 +183,13 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
 
     latency_ms = int((time.monotonic() - started) * 1000)
     prompt_tokens, completion_tokens, total_tokens = _unified_tokens(ai_response)
+    reported = {}
+    if provider == "openrouter":
+        cost = ai_response.__dict__.pop("_openrouter_reported_cost", None)
+        if cost is not None:
+            reported = {"reported_cost": cost, "reported_cost_currency": "USD"}
     ai_response.usage = _record_usage(
+        **reported,
         operation=operation,
         provider=provider,
         model=model,

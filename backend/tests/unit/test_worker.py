@@ -43,6 +43,34 @@ def test_tool_candidate_detect_job_is_dispatched_to_service(monkeypatch):
     execute_tool_candidate_detect.assert_called_once_with(session, job)
 
 
+def test_manual_feed_check_also_auto_imports_that_feed(monkeypatch):
+    run_check = MagicMock(return_value={"checked": 1, "new_items": 1, "feeds": []})
+    run_auto_import = MagicMock(return_value={"imported": 1, "errors": []})
+    monkeypatch.setattr(worker, "run_check", run_check)
+    monkeypatch.setattr(worker, "heartbeat", MagicMock())
+    monkeypatch.setattr("library.feed_monitor_service.run_auto_import", run_auto_import)
+
+    job = MagicMock(type="feed_check", parameters={"feed_source_id": 2})
+    result = worker.execute(MagicMock(), job)
+
+    run_check.assert_called_once_with(2)
+    run_auto_import.assert_called_once_with(2)
+    assert result == {"checked": 1, "new_items": 1, "feeds": [], "import": {"imported": 1, "errors": []}}
+
+
+def test_manual_feed_check_all_auto_imports_every_feed(monkeypatch):
+    run_check = MagicMock(return_value={"checked": 3, "new_items": 0, "feeds": []})
+    run_auto_import = MagicMock(return_value={"imported": 0, "errors": []})
+    monkeypatch.setattr(worker, "run_check", run_check)
+    monkeypatch.setattr(worker, "heartbeat", MagicMock())
+    monkeypatch.setattr("library.feed_monitor_service.run_auto_import", run_auto_import)
+
+    worker.execute(MagicMock(), MagicMock(type="feed_check_all", parameters={}))
+
+    run_check.assert_called_once_with(None)
+    run_auto_import.assert_called_once_with(None)
+
+
 def test_retryable_failure_is_marked_failed_before_retry(monkeypatch):
     session = MagicMock()
     job = MagicMock(attempt=1, max_attempts=3)

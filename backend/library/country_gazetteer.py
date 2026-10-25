@@ -309,6 +309,12 @@ def slug_to_name(slug: str) -> str | None:
     return _slug_to_name_map().get(slug)
 
 
+def country_tag_for(mention: str) -> str | None:
+    """The ``kraj-<slug>`` document tag for a mention that is a country in full, else None."""
+    name = canonical_country_name(mention)
+    return f"kraj-{_slug(name)}" if name else None
+
+
 def canonical_country_name(mention: str) -> str | None:
     """Return the canonical Polish country name when one mention matches in full.
 
@@ -366,6 +372,39 @@ def strip_country_edge(text: str) -> tuple[str, str] | None:
             if remainder:
                 return remainder, country
     return None
+
+
+def mention_snippets(
+    text: str, entries: list[CountryEntry], *, start: int = 0, per_country: int = 2, width: int = 160,
+) -> dict[str, list[str]]:
+    """{name_pl: up to `per_country` text fragments around mentions at or after offset `start`}.
+
+    Lets a caller that shows an LLM only the beginning of a long text also show the context of countries
+    first mentioned further on. Matching runs on a length-preserving folded copy (like
+    place_mention_gazetteer), so match offsets map straight back to the original text.
+    """
+    wanted = {entry.slug for entry in entries}
+    folded = "".join((unidecode(char) or char)[:1] for char in text.lower())
+    found: dict[str, list[str]] = {}
+    for entry, patterns in _compiled_countries():
+        if entry.slug not in wanted:
+            continue
+        spans = sorted(
+            span for pattern in patterns for match in pattern.regex.finditer(folded, start)
+            if pattern.fullmatch_with_suffix_limit(match.group()) for span in [match.span()]
+        )
+        snippets: list[str] = []
+        last_end = -1
+        for begin, end in spans:
+            if begin < last_end:
+                continue
+            snippets.append(" ".join(text[max(0, begin - width):end + width].split()))
+            last_end = end + width
+            if len(snippets) >= per_country:
+                break
+        if snippets:
+            found[entry.name_pl] = snippets
+    return found
 
 
 def detect_countries(text: str) -> list[CountryEntry]:

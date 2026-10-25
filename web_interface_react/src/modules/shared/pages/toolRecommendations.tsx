@@ -1,12 +1,29 @@
 import React from "react";
+import SkillHint from "../components/SkillHint";
 import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
+import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
+import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
+import GithubAbout from "../components/GithubAbout/githubAbout";
+import ToolLinksEditor from "../components/ToolLinksEditor/toolLinksEditor";
+import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
+import ToolProfileSuggest, { type ProfileSuggestion } from "../components/ToolProfileSuggest/toolProfileSuggest";
+import { isRepositoryUrl } from "../components/ToolCard/toolCardParts";
+import GithubRate, { type GithubRateInfo } from "../components/GithubRate/githubRate";
+import { modelOptionText, type ModelOption } from "../utils/modelDetails";
 
-type RecommendationStatus = "watchlist" | "compare" | "testing" | "adopted" | "rejected" | "archived";
+type RecommendationStatus = "watchlist" | "compare" | "testing" | "test_future" | "adopted" | "phasing_out" | "rejected" | "archived";
+type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?: number; rate_limited?: boolean; quota_reserved?: boolean; rate_limit_remaining?: number | null; pending?: number };
 type Recommendation = {
   id: number; name: string; homepage_url: string | null; description: string | null;
-  category: string | null; status: RecommendationStatus; personal_note: string | null;
+  links?: Array<{ url: string; label: string }>;
+  github: GithubStats | null;
+  relations: ToolRelation[]; stack_matches: string[];
+  feed_mentions: { count: number; samples: Array<{ id: number; title: string; url: string }> };
+  category: string | null; tags: string[]; status: RecommendationStatus; personal_note: string | null; obsidian_note_path?: string | null;
   origin: "ai_detected" | "curated";
+  source_candidate_id?: number | null;
   source_url: string | null; source_context: string | null;
   source_document: { title: string | null; url: string | null; discovery_source: string | null } | null;
   evidences: Array<{
@@ -14,34 +31,167 @@ type Recommendation = {
     recommender_document: { id: number; title: string | null; url: string | null; discovery_source: string | null } | null;
   }>;
 };
+type TagSuggestion = { status: "ok" | "error"; tags: string[]; model: string; error_code?: string; tokens: number | null; cost: string | null; currency: string | null };
 type ImportResult = { created?: number; skipped?: number; tools_skipped?: number; linked_existing?: number; evidence_created?: number; evidence_upgraded?: number; skipped_items?: Array<{ name?: string; reason?: string }>; resolved_source_document?: { id: number; title: string | null; discovery_source: string | null } | null };
 
 const tabs: Array<[RecommendationStatus | "all", string]> = [
-  ["watchlist", "Nieocenione"], ["compare", "Do porównania"], ["testing", "Testowane"],
-  ["adopted", "Używane"], ["rejected", "Odrzucone"], ["archived", "Archiwum"], ["all", "Wszystkie"],
+  ["watchlist", "Obserwuję"], ["compare", "Porównuję"], ["testing", "Testuję"],
+  ["test_future", "Przetestuję w przyszłości"],
+  ["adopted", "Używam"], ["phasing_out", "Wygaszam"], ["rejected", "Odrzuciłem"], ["archived", "Archiwum"], ["all", "Wszystkie"],
 ];
 const nextStatuses: Array<[RecommendationStatus, string]> = [
   ["watchlist", "Obserwuj"], ["compare", "Porównaj"], ["testing", "Testuj"],
-  ["adopted", "Używam"], ["rejected", "Odrzuć"], ["archived", "Archiwizuj"],
+  ["test_future", "Testuj w przyszłości"],
+  ["adopted", "Używam"], ["phasing_out", "Wygaszaj"], ["rejected", "Odrzuć"], ["archived", "Archiwizuj"],
 ];
-const statusHelp: Record<RecommendationStatus, string> = {
-  watchlist: "Zachowaj jako ciekawą rekomendację na przyszłość — bez pracy teraz.",
-  compare: "Zbierz alternatywy i porównaj je z obecnym rozwiązaniem, gdy pojawi się konkretny problem.",
-  testing: "Uruchom lub sprawdź narzędzie w praktyce; wynik testu zdecyduje, czy trafi do używanych.",
-  adopted: "Narzędzie jest już świadomie wybrane do użycia. Zostanie dodane do Spisu narzędzi, jeśli nie ma go tam jeszcze.",
-  rejected: "Nie pasuje do Twoich potrzeb albo został zastąpiony innym rozwiązaniem.",
-  archived: "Zachowaj historycznie, ale ukryj z bieżącego radaru.",
+// Per-tool buttons state the decision in first person ("Odrzucam"); the bulk selector keeps the imperative labels above.
+const decisionLabels: Record<RecommendationStatus, string> = {
+  watchlist: "Obserwuję", compare: "Porównam", testing: "Przetestuję",
+  test_future: "Przetestuję w przyszłości", adopted: "Używam", phasing_out: "Wygaszam", rejected: "Odrzucam", archived: "Archiwizuję",
 };
+const statusHelp: Record<RecommendationStatus, string> = {
+  watchlist: "Zachowuję jako ciekawą rekomendację na przyszłość — bez pracy teraz.",
+  compare: "Zbieram alternatywy i porównuję je z obecnym rozwiązaniem, gdy pojawi się konkretny problem.",
+  testing: "Uruchomię lub sprawdzę narzędzie w praktyce; wynik testu zdecyduje, czy trafi do używanych.",
+  test_future: "Na pewno chcę to przetestować, ale dopiero gdy spełnię warunek (np. kupię komputer do lokalnych modeli). Warunek wpisz w notatce.",
+  adopted: "Narzędzie jest już świadomie wybrane do użycia. Zostanie dodane do Spisu narzędzi, jeśli nie ma go tam jeszcze.",
+  phasing_out: "Nadal z tego korzystam, ale odchodzę od narzędzia (np. nie odnowię licencji). Wpis zostaje w stosie, dopóki nie przejdę na coś innego.",
+  rejected: "Nie pasuje do moich potrzeb albo zastąpiło je inne rozwiązanie.",
+  archived: "Zachowuję wpis historycznie, ale chowam go z bieżącego radaru.",
+};
+
+const decisionsHelp = (Object.keys(decisionLabels) as RecommendationStatus[])
+  .map(value => `${decisionLabels[value]} — ${statusHelp[value]}`).join("\n");
+
+const tabHelp: Record<RecommendationStatus | "all", string> = {
+  watchlist: "Obserwuję: nowe rekomendacje, którym jeszcze nie nadano etapu. " + statusHelp.watchlist,
+  compare: "Porównuję: " + statusHelp.compare,
+  testing: "Testuję: " + statusHelp.testing,
+  test_future: "Przetestuję w przyszłości: " + statusHelp.test_future,
+  adopted: "Używam: " + statusHelp.adopted,
+  phasing_out: "Wygaszam: " + statusHelp.phasing_out,
+  rejected: "Odrzuciłem: " + statusHelp.rejected,
+  archived: "Archiwum: " + statusHelp.archived,
+  all: "Wszystkie: wpisy ze wszystkich etapów radaru naraz.",
+};
+
+const chipStyle: React.CSSProperties = { background: "#dbeafe", color: "#1e3a8a", borderRadius: 999, padding: "2px 8px", fontSize: ".75rem", border: "none", cursor: "pointer" };
+
+const TAG_SUGGESTION_LIMIT = 15;
+
+// Tag filter: a search box (no full tag list — there can be thousands); matching tags appear only while typing.
+function TagFilter({ allTags, selected, onToggle, onClear }: {
+  allTags: Array<{ tag: string; count: number }>; selected: string[]; onToggle: (tag: string) => void; onClear: () => void;
+}) {
+  const [text, setText] = React.useState("");
+  const needle = text.trim().replace(/^#/, "").toLowerCase();
+  const matches = needle
+    ? allTags.filter(({ tag }) => !selected.includes(tag) && tag.toLowerCase().includes(needle))
+        .sort((a, b) => Number(b.tag.toLowerCase().startsWith(needle)) - Number(a.tag.toLowerCase().startsWith(needle)) || b.count - a.count)
+    : [];
+  const pick = (tag: string) => { onToggle(tag); setText(""); };
+  return <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "0 0 18px" }}>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>Tagi:
+      <Help text={`Wpisz fragment tagu (jest ich ${allTags.length}) i wybierz z podpowiedzi — pokażą się wpisy mające wszystkie wybrane tagi. Tagi dodasz na karcie narzędzia, pole „+ tag”.`} />
+      <input type="search" value={text} onChange={event => setText(event.target.value)} placeholder="szukaj tagu, np. docker" style={{ width: 200 }}
+        onKeyDown={event => { if (event.key === "Enter" && matches.length > 0) { event.preventDefault(); pick(matches[0].tag); } }} />
+    </label>
+    {selected.map(tag => <button key={tag} type="button" aria-pressed="true" title="Usuń z filtra" onClick={() => onToggle(tag)}
+      style={{ ...chipStyle, background: "#1d4ed8", color: "#fff" }}>#{tag} ×</button>)}
+    {selected.length > 0 && <button type="button" onClick={onClear}>Wyczyść tagi</button>}
+    {needle && (matches.length === 0
+      ? <span style={{ color: "#64748b", fontSize: ".85rem" }}>Brak pasujących tagów.</span>
+      : <div style={{ flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {matches.slice(0, TAG_SUGGESTION_LIMIT).map(({ tag, count }) => <button key={tag} type="button" style={chipStyle} onClick={() => pick(tag)}>#{tag} ({count})</button>)}
+          {matches.length > TAG_SUGGESTION_LIMIT && <span style={{ color: "#64748b", fontSize: ".85rem" }}>…i {matches.length - TAG_SUGGESTION_LIMIT} więcej — doprecyzuj frazę.</span>}
+        </div>)}
+  </div>;
+}
+
+// Tags of one entry: click a tag to filter by it, × removes it, the input adds new ones (Enter or comma).
+function TagEditor({ tags, onFilter, onSave, onSuggest, disabled }: {
+  tags: string[]; onFilter: (tag: string) => void; onSave: (tags: string[]) => Promise<void>;
+  onSuggest: () => Promise<TagSuggestion>; disabled: boolean;
+}) {
+  const [draft, setDraft] = React.useState("");
+  const [asking, setAsking] = React.useState(false);
+  const [suggestion, setSuggestion] = React.useState<TagSuggestion | null>(null);
+  const [suggestError, setSuggestError] = React.useState("");
+  const ask = async () => {
+    setAsking(true); setSuggestError(""); setSuggestion(null);
+    try {
+      const result = await onSuggest();
+      if (result.status === "error") setSuggestError(`Model ${result.model} nie zwrócił użytecznej odpowiedzi (${result.error_code ?? "błąd"}). Spróbuj innego modelu.`);
+      else setSuggestion(result);
+    } catch (cause) { setSuggestError(cause instanceof Error ? cause.message : "Nie udało się pobrać podpowiedzi"); }
+    finally { setAsking(false); }
+  };
+  const accept = async (accepted: string[]) => {
+    if (!accepted.length) return;
+    setSuggestion(current => current && { ...current, tags: current.tags.filter(tag => !accepted.includes(tag)) });
+    await onSave([...tags, ...accepted]);
+  };
+  const add = async () => {
+    const added = draft.split(",").map(value => value.trim()).filter(Boolean);
+    if (!added.length) return;
+    setDraft("");
+    await onSave([...tags, ...added]);
+  };
+  return <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, margin: "8px 0" }}>
+    {tags.map(tag => <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+      <button type="button" style={chipStyle} title="Pokaż tylko wpisy z tym tagiem" onClick={() => onFilter(tag)}>#{tag}</button>
+      <button type="button" aria-label={`Usuń tag ${tag}`} title="Usuń tag" disabled={disabled}
+        style={{ all: "unset", cursor: "pointer", color: "#64748b", padding: "0 3px" }}
+        onClick={() => void onSave(tags.filter(value => value !== tag))}>×</button>
+    </span>)}
+    <input value={draft} placeholder="+ tag (np. docker)" aria-label="Dodaj tag" disabled={disabled}
+      title="Wpisz tag i naciśnij Enter; kilka tagów rozdziel przecinkami. Tagi pomagają szukać po zastosowaniu (docker, kubernetes, sbom…)."
+      onChange={event => setDraft(event.target.value)}
+      onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void add(); } }}
+      onBlur={() => void add()} style={{ width: 150, fontSize: ".8rem" }} />
+    <button type="button" onClick={() => void ask()} disabled={asking || disabled}
+      title="Model zaproponuje tagi na podstawie nazwy, strony i opisu. Nic nie zapisze się bez Twojego kliknięcia. Model wybierzesz w sekcji „Model do podpowiadania” nad listą.">
+      {asking ? "Myślę…" : "✨ Podpowiedz tagi"}</button>
+    {suggestError && <span role="alert" className="errorText" style={{ fontSize: ".8rem" }}>{suggestError}</span>}
+    {suggestion && <div style={{ flexBasis: "100%", padding: "6px 8px", background: "#f0fdf4", border: "1px dashed #86efac", borderRadius: 6 }}>
+      {suggestion.tags.length === 0
+        ? <span style={{ color: "#475569", fontSize: ".85rem" }}>Model nie ma nowych tagów do zaproponowania ({suggestion.model}).</span>
+        : <>
+          <span style={{ fontSize: ".8rem", color: "#166534" }}>Propozycje ({suggestion.model}) — kliknij, żeby dodać:</span>{" "}
+          {suggestion.tags.map(tag => <button key={tag} type="button" disabled={disabled} onClick={() => void accept([tag])}
+            style={{ ...chipStyle, background: "#dcfce7", color: "#166534", border: "1px dashed #16a34a", marginRight: 4 }}>+ #{tag}</button>)}
+          <button type="button" disabled={disabled} onClick={() => void accept(suggestion.tags)}>Dodaj wszystkie</button>
+        </>}
+      <button type="button" onClick={() => setSuggestion(null)} style={{ marginLeft: 6 }}>Zamknij</button>
+      {suggestion.cost && <span style={{ marginLeft: 8, color: "#64748b", fontSize: ".75rem" }}>koszt: {suggestion.cost} {suggestion.currency ?? ""}</span>}
+    </div>}
+  </div>;
+}
+
+function Help({ text }: { text: string }) {
+  return <span role="img" tabIndex={0} title={text} aria-label={text}
+    style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, marginLeft: 4, borderRadius: "50%", background: "#e2e8f0", color: "#334155", fontSize: ".7rem", fontWeight: 700, cursor: "help", flex: "none" }}>?</span>;
+}
 
 export default function ToolRecommendations() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = React.useState<RecommendationStatus | "all">("watchlist");
   const [category, setCategory] = React.useState("");
   const [origin, setOrigin] = React.useState<"all" | "ai_detected" | "curated">(
     searchParams.get("origin") === "ai_detected" ? "ai_detected" : "all",
   );
   const [categories, setCategories] = React.useState<string[]>([]);
+  const [allTags, setAllTags] = React.useState<Array<{ tag: string; count: number }>>([]);
+  const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
+  // undefined = not asked yet, null = GitHub did not answer
+  const [githubRate, setGithubRate] = React.useState<GithubRateInfo | null | undefined>(undefined);
+  const [tagModels, setTagModels] = React.useState<ModelOption[]>([]);
+  const [tagModel, setTagModel] = React.useState("");
+  const [defaultTagModel, setDefaultTagModel] = React.useState("");
+  const [tagModelMessage, setTagModelMessage] = React.useState("");
+  const [queryInput, setQueryInput] = React.useState("");
+  const [query, setQuery] = React.useState("");
   const [items, setItems] = React.useState<Recommendation[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
@@ -53,7 +203,15 @@ export default function ToolRecommendations() {
   const [importUrl, setImportUrl] = React.useState("");
   const [recommendationSource, setRecommendationSource] = React.useState("");
   const [importMessage, setImportMessage] = React.useState("");
+  const [githubBusy, setGithubBusy] = React.useState(false);
+  const [modelCalls, setModelCalls] = React.useState(0); // bumped after each model request so the OpenRouter balance reloads
+  const [githubMessage, setGithubMessage] = React.useState("");
   const [skippedItems, setSkippedItems] = React.useState<Array<{ name: string; reason?: string }>>([]);
+  const [stackOnly, setStackOnly] = React.useState(false);
+  const [relationsBusy, setRelationsBusy] = React.useState(false);
+  // The tool under review lives in the URL (?tool=ID), so the card can be shared and reloaded.
+  const focusId = Number(searchParams.get("tool")) || null;
+  const [outsideItem, setOutsideItem] = React.useState<Recommendation | null>(null);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
 
   const load = React.useCallback(async () => {
@@ -62,25 +220,55 @@ export default function ToolRecommendations() {
       const params = new URLSearchParams({ status });
       if (category) params.set("category", category);
       if (origin !== "all") params.set("origin", origin);
+      selectedTags.forEach(tag => params.append("tag", tag));
+      if (query) params.set("q", query);
       const response = await fetch(`${apiUrl}/tool_recommendations?${params.toString()}`, { headers });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać radaru narzędzi"));
       setItems(Array.isArray(data.tool_recommendations) ? data.tool_recommendations as Recommendation[] : []);
+      setAllTags(Array.isArray(data.all_tags) ? data.all_tags as Array<{ tag: string; count: number }> : []);
       setCategories(Array.isArray(data.categories) ? data.categories.filter((value: unknown): value is string => typeof value === "string") : []);
     } catch (cause) {
       setError(cause instanceof TypeError ? `Nie można połączyć się z API ${apiUrl}.` : cause instanceof Error ? cause.message : "Nie udało się pobrać radaru.");
     } finally { setLoading(false); }
-  }, [apiUrl, category, headers, origin, status]);
+  }, [apiUrl, category, headers, origin, query, selectedTags, status]);
 
   React.useEffect(() => { void load(); }, [load]);
+
+  const loadGithubRate = React.useCallback(async () => {
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/github_rate`, { headers });
+      const data = await response.json().catch(() => ({}));
+      setGithubRate(response.ok ? (data.rate as GithubRateInfo | null) ?? null : null);
+    } catch { setGithubRate(null); }
+  }, [apiUrl, headers]);
+  React.useEffect(() => { void loadGithubRate(); }, [loadGithubRate]);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`${apiUrl}/tool_recommendations/tag_model`, { headers });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || cancelled) return;
+        setTagModels(Array.isArray(data.models) ? data.models as ModelOption[] : []);
+        setDefaultTagModel(String(data.default_model ?? ""));
+        setTagModel(String(data.default_model ?? ""));
+      } catch { /* the picker stays empty; suggesting tags then uses the server default */ }
+    })();
+    return () => { cancelled = true; };
+  }, [apiUrl, headers]);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(queryInput.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [queryInput]);
   React.useEffect(() => { setSelectedIds(new Set()); }, [status, category]);
   React.useEffect(() => { if (!selectedIds.size) setShowSelected(false); }, [selectedIds]);
 
-  const move = async (item: Recommendation, nextStatus: RecommendationStatus) => {
+  const move = async (item: Recommendation, nextStatus: RecommendationStatus, note: string | null = null): Promise<boolean> => {
     setBusy(item.id); setError("");
     try {
       const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/status`, {
-        method: "POST", headers, body: JSON.stringify({ status: nextStatus }),
+        method: "POST", headers, body: JSON.stringify({ status: nextStatus, ...(note !== null ? { personal_note: note } : {}) }),
       });
       if (!response.ok) throw new Error("Nie udało się zmienić statusu rekomendacji");
       setSelectedIds(current => {
@@ -89,8 +277,90 @@ export default function ToolRecommendations() {
         return next;
       });
       await load();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); }
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); return false; }
     finally { setBusy(null); }
+  };
+
+  const toggleTag = (tag: string) => setSelectedTags(current => current.includes(tag) ? current.filter(value => value !== tag) : [...current, tag]);
+
+  const patchItem = async (item: Recommendation, body: Record<string, unknown>, failure: string) => {
+    setBusy(item.id); setError("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}`, { method: "PATCH", headers, body: JSON.stringify(body) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(data.message || failure));
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : failure); }
+    finally { setBusy(null); }
+  };
+  const saveTags = (item: Recommendation, tags: string[]) => patchItem(item, { tags }, "Nie udało się zapisać tagów");
+  const saveLinks = (item: Recommendation, links: Array<{ url: string; label: string }>) => patchItem(item, { links }, "Nie udało się zapisać linków");
+  // The repository's own website becomes the tool's page; the old address stays as a link when it is a repository,
+  // because the statistics are counted from the homepage and the links.
+  const useRepositoryWebsite = (item: Recommendation, url: string) => {
+    const links = item.links ?? [];
+    const keepOld = item.homepage_url && isRepositoryUrl(item.homepage_url) && !links.some(link => link.url === item.homepage_url);
+    return patchItem(item, {
+      homepage_url: url, links: keepOld ? [...links, { url: item.homepage_url, label: "Repozytorium" }] : links,
+    }, "Nie udało się zapisać strony narzędzia");
+  };
+  const addLink = (item: Recommendation, url: string, label: string) =>
+    patchItem(item, { links: [...(item.links ?? []), { url, label }] }, "Nie udało się zapisać linku");
+  const saveDescription = (item: Recommendation, description: string) => patchItem(item, { description }, "Nie udało się zapisać opisu");
+
+  // Forced refresh of ONE entry's repository, ignoring the 24 h freshness rule of the bulk button.
+  const refreshOneGithub = async (item: Recommendation) => {
+    setBusy(item.id); setError(""); setGithubMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/github_stats/refresh`, {
+        method: "POST", headers, body: JSON.stringify({ id: item.id, force: true }),
+      });
+      const data = await response.json().catch(() => ({})) as GithubRefreshResult & Record<string, unknown>;
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać danych z GitHuba"));
+      setGithubMessage((data.quota_reserved
+        ? `GitHub: pobieranie wstrzymane, aby zachować rezerwę godzinnego limitu. Pozostałe repozytoria (${data.pending ?? 0}) można pobrać później.`
+        : data.rate_limited
+        ? "GitHub: limit zapytań wyczerpany — spróbuj za godzinę (albo dodaj token GITHUB_TOKEN w konfiguracji)."
+        : data.failed ? `GitHub: nie udało się pobrać danych dla ${item.name}.` : `GitHub: odświeżono dane dla ${item.name}.`)
+        + (data.rate_limit_remaining != null ? ` Pozostały limit GitHuba: ${data.rate_limit_remaining} zapytań.` : ""));
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
+    finally { setBusy(null); void loadGithubRate(); }
+  };
+
+  const suggestTags = async (item: Recommendation): Promise<TagSuggestion> => {
+    const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/suggest_tags`, {
+      method: "POST", headers, body: JSON.stringify(tagModel ? { model: tagModel } : {}),
+    });
+    setModelCalls(count => count + 1);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać podpowiedzi tagów"));
+    return data as TagSuggestion;
+  };
+
+  // One request: description, category and tags together (the chosen model is the one for tag suggestions).
+  const suggestProfile = async (item: Recommendation): Promise<ProfileSuggestion> => {
+    const response = await fetch(`${apiUrl}/tool_recommendations/${item.id}/suggest_profile`, {
+      method: "POST", headers, body: JSON.stringify(tagModel ? { model: tagModel } : {}),
+    });
+    setModelCalls(count => count + 1);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać podpowiedzi"));
+    return data as ProfileSuggestion;
+  };
+  const saveCategory = (item: Recommendation, category: string) => patchItem(item, { category }, "Nie udało się zapisać kategorii");
+
+  const saveDefaultTagModel = async (model: string | null) => {
+    setTagModelMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/tag_model`, { method: "PUT", headers, body: JSON.stringify({ model }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się zapisać domyślnego modelu"));
+      setDefaultTagModel(String(data.default_model ?? ""));
+      if (model === null) setTagModel(String(data.default_model ?? ""));
+      setTagModelMessage(model === null ? "Przywrócono model domyślny serwera." : "Zapisano jako domyślny model podpowiedzi tagów.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Zapis modelu nie powiódł się"); }
   };
 
   const toggle = (id: number) => setSelectedIds(current => {
@@ -99,7 +369,67 @@ export default function ToolRecommendations() {
     return next;
   });
 
-  const visibleItems = showSelected ? items.filter(item => selectedIds.has(item.id)) : items;
+  const detectRelations = async () => {
+    setRelationsBusy(true); setError(""); setGithubMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/relations/detect`, {
+        method: "POST", headers, body: JSON.stringify({ status }),
+      });
+      const data = await response.json().catch(() => ({})) as { checked?: number; proposed?: Array<{ related: string[] }>; message?: string };
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się wykryć powiązań"));
+      const total = (data.proposed ?? []).reduce((sum, entry) => sum + entry.related.length, 0);
+      setGithubMessage(`Powiązania: sprawdzono ${data.checked ?? 0} wpisów, nowych propozycji: ${total}.`);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Wykrywanie powiązań nie powiodło się"); }
+    finally { setRelationsBusy(false); }
+  };
+
+  const reviewRelation = async (id: number, relationStatus: "confirmed" | "rejected") => {
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_relations/${id}`, { method: "PATCH", headers, body: JSON.stringify({ status: relationStatus }) });
+      if (!response.ok) throw new Error("Nie udało się zapisać decyzji o powiązaniu");
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się"); }
+  };
+
+  const stackFiltered = stackOnly ? items.filter(item => item.stack_matches.length > 0) : items;
+  const visibleItems = showSelected ? stackFiltered.filter(item => selectedIds.has(item.id)) : stackFiltered;
+  const setFocus = (id: number | null) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (id === null) next.delete("tool"); else next.set("tool", String(id));
+      return next;
+    });
+    if (id !== null) window.scrollTo({ top: 0 });
+  };
+  const focusIdx = focusId === null ? -1 : visibleItems.findIndex(item => item.id === focusId);
+  const focusItem = focusId === null ? undefined
+    : focusIdx >= 0 ? visibleItems[focusIdx] : outsideItem?.id === focusId ? outsideItem : undefined;
+
+  // A shared link may point at a tool that is not in the current tab or filters: fetch it on its own.
+  React.useEffect(() => {
+    if (focusId === null || loading || items.some(item => item.id === focusId)) { setOutsideItem(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`${apiUrl}/tool_recommendations?status=all&id=${focusId}`, { headers });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać narzędzia"));
+        const found = Array.isArray(data.tool_recommendations) ? data.tool_recommendations[0] as Recommendation | undefined : undefined;
+        if (!cancelled) { setOutsideItem(found ?? null); if (!found) setError("Nie znaleziono takiego narzędzia w radarze."); }
+      } catch (cause) { if (!cancelled) setError(cause instanceof Error ? cause.message : "Nie udało się pobrać narzędzia"); }
+    })();
+    return () => { cancelled = true; };
+  }, [apiUrl, focusId, headers, items, loading]);
+
+  const decideFocused = async (nextStatus: RecommendationStatus, note: string | null) => {
+    if (!focusItem) return;
+    // Decide first which tool comes next: after the move the decided entry may leave this tab's list.
+    const nextId = focusIdx >= 0 ? (visibleItems[focusIdx + 1]?.id ?? visibleItems[focusIdx - 1]?.id ?? null) : focusItem.id;
+    const moved = await move(focusItem, nextStatus, note);
+    if (moved) setFocus(nextId);
+  };
   const selectVisible = () => setSelectedIds(new Set(visibleItems.map(item => item.id)));
 
   const applyBulkStatus = async () => {
@@ -115,6 +445,21 @@ export default function ToolRecommendations() {
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Masowa akcja nie powiodła się"); }
     finally { setBulkBusy(false); }
+  };
+
+  const refreshGithub = async () => {
+    setGithubBusy(true); setError(""); setGithubMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations/github_stats/refresh`, {
+        method: "POST", headers, body: JSON.stringify({ status }),
+      });
+      const data = await response.json().catch(() => ({})) as GithubRefreshResult & Record<string, unknown>;
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się pobrać danych z GitHuba"));
+      const pending = data.pending ?? 0;
+      setGithubMessage(`GitHub: pobrano ${data.refreshed ?? 0}${data.failed ? `, błędy: ${data.failed}` : ""}${data.quota_reserved ? `. Pobieranie wstrzymane, aby zachować rezerwę godzinnego limitu GitHuba. Pozostałe repozytoria (${pending}) można pobrać później` : data.rate_limited ? ". Limit zapytań GitHuba wyczerpany — spróbuj za godzinę" : pending ? `. Zostało do pobrania: ${pending} — kliknij ponownie` : ". Wszystko aktualne"}.${data.rate_limit_remaining != null ? ` Pozostały limit GitHuba: ${data.rate_limit_remaining} zapytań.` : ""}`);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Pobieranie danych z GitHuba nie powiodło się"); }
+    finally { setGithubBusy(false); void loadGithubRate(); }
   };
 
   const importMarkdown = async () => {
@@ -143,39 +488,118 @@ export default function ToolRecommendations() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Import nie powiódł się"); }
   };
 
+  const cardDetails = (item: Recommendation) => <>
+    {item.category && <span style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{item.category}</span>}
+    <TagEditor tags={item.tags ?? []} onFilter={tag => setSelectedTags(current => current.includes(tag) ? current : [...current, tag])}
+      onSave={tags => saveTags(item, tags)} onSuggest={() => suggestTags(item)} disabled={busy === item.id} />
+    <ToolProfileSuggest description={item.description} category={item.category} tags={item.tags ?? []} disabled={busy === item.id}
+      onSuggest={() => suggestProfile(item)} onUseDescription={text => saveDescription(item, text)}
+      onUseCategory={category => saveCategory(item, category)}
+      onAddTags={added => saveTags(item, [...(item.tags ?? []), ...added.filter(tag => !(item.tags ?? []).includes(tag))])} />
+    {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
+    {item.source_candidate_id != null && (
+      <SkillHint skill="/lenie-tool-draft" command={`/lenie-tool-draft ${item.source_candidate_id}`}>
+        Pełny opis tego narzędzia (wzorem szablonu z Obsidiana) wygeneruje skill z kandydata #{item.source_candidate_id}; działa tylko dla zaakceptowanych kandydatów.
+      </SkillHint>
+    )}
+    {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
+    <ToolLinksEditor homepageUrl={item.homepage_url} links={item.links ?? []} disabled={busy === item.id}
+      onSave={links => saveLinks(item, links)} />
+    {item.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".8rem" }}>Notatka w Obsidianie: {item.obsidian_note_path}</div>}
+    {item.github && <GithubStatsLine stats={item.github} />}
+    {[item.homepage_url, ...(item.links ?? []).map(link => link.url)].some(isRepositoryUrl) && <button type="button" disabled={busy === item.id} onClick={() => void refreshOneGithub(item)}
+      title="Pobiera liczby, opis i tematy repozytoriów tego wpisu (GitHub i GitLab) od razu, także gdy dane są młodsze niż 24 godziny. Każde repozytorium z GitHuba zużywa 1 z 60 zapytań na godzinę.">
+      {busy === item.id ? "Pobieram…" : "↻ Odśwież z GitHuba / GitLaba"}</button>}
+    {item.github && <GithubAbout stats={item.github} ownDescription={item.description} tags={item.tags ?? []} disabled={busy === item.id}
+      homepageUrl={item.homepage_url} links={item.links ?? []}
+      onUseHomepage={url => void useRepositoryWebsite(item, url)} onAddLink={url => void addLink(item, url, "Strona projektu")}
+      onUseDescription={text => void saveDescription(item, text)}
+      onAddTags={topics => void saveTags(item, [...(item.tags ?? []), ...topics.filter(topic => !(item.tags ?? []).includes(topic))])} />}
+    {item.feed_mentions.count > 0 && <div style={{ margin: "6px 0", color: "#475569", fontSize: ".85rem" }}
+      title={item.feed_mentions.samples.map(sample => sample.title).join(", ")}>
+      📰 {item.feed_mentions.count} {item.feed_mentions.count === 1 ? "wzmianka" : "wzmianek"} w feedach
+      <Help text="Tyle wpisów w obserwowanych feedach (tytuł lub streszczenie) wspomina to narzędzie — sygnał, jak głośno o nim jest. Najedź na wiersz, żeby zobaczyć kilka tytułów." />
+    </div>}
+    {item.stack_matches.length > 0 && <div style={{ margin: "6px 0", color: "#166534", fontSize: ".85rem" }}>Dotyczy Twojego stacku: <strong>{item.stack_matches.join(", ")}</strong></div>}
+    <ToolRelations relations={item.relations} onReview={(id, relationStatus) => void reviewRelation(id, relationStatus)} />
+    {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>
+      <summary style={{ cursor: "help" }} title="Katalogi lub dokumenty, w których to narzędzie wystąpiło, wraz z kontekstem.">Dlaczego jest w radarze? ({item.evidences.length})</summary>
+      <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+        {item.evidences.map(evidence => <li key={evidence.id}>
+          {evidence.relation_type === "mentioned_in" ? "Wspomniane w: " : "Znajduje się w katalogu: "}
+          {evidence.catalog_url ? <a href={evidence.catalog_url} target="_blank" rel="noreferrer">{evidence.catalog_label || evidence.catalog_url}</a> : evidence.catalog_label || "nieznane źródło"}
+          {evidence.context && ` · ${evidence.context}`}
+          {evidence.recommender_document && <div style={{ marginTop: 3 }}>↳ katalog polecony przez: {evidence.recommender_document.discovery_source || evidence.recommender_document.title || "link Lenie"}{evidence.recommender_document.title && evidence.recommender_document.discovery_source ? ` · ${evidence.recommender_document.title}` : ""}{evidence.recommender_document.url && <> · <a href={evidence.recommender_document.url} target="_blank" rel="noreferrer">otwórz</a></>}</div>}
+        </li>)}
+      </ul>
+    </details> : (item.source_document || item.source_url) && <div style={{ color: "#64748b", fontSize: ".85rem", margin: "8px 0" }}>
+      {item.source_document && <div>Polecone przez: {item.source_document.discovery_source || item.source_document.title || "link Lenie"}{item.source_document.title && item.source_document.discovery_source ? ` · ${item.source_document.title}` : ""}{item.source_document.url && <> · <a href={item.source_document.url} target="_blank" rel="noreferrer">otwórz rekomendację</a></>}</div>}
+      {item.source_url && <div>{item.source_document ? "Katalog: " : "Katalog źródłowy: "}<a href={item.source_url} target="_blank" rel="noreferrer">{item.source_url}</a>{item.source_context ? ` · ${item.source_context}` : ""}</div>}
+    </div>}
+  </>;
+
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-      <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi</h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
-      <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
+      <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi<SkillHint skill="/lenie-tool-draft" command="/lenie-tool-draft <id kandydata>">Pełny opis zaakceptowanego narzędzia (wzorem szablonu z Obsidiana) wygeneruje skill; podaj id zaakceptowanego kandydata.</SkillHint></h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do kilkuset repozytoriów na raz, zależnie od limitu GitHuba)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
+        <button type="button" onClick={() => void detectRelations()} disabled={relationsBusy || loading} title="Szuka w tekście źródłowym każdego wpisu nazw narzędzi, które już są w radarze (np. AWS, GCP, Terraform), i proponuje powiązania do potwierdzenia. Narzędzia oznaczone jako „Używam” tworzą Twój stack.">{relationsBusy ? "Szukam powiązań…" : "Wykryj powiązania"}</button>
+        <button type="button" onClick={() => setFocus(focusId !== null ? null : visibleItems[0]?.id ?? null)} disabled={loading || (focusId === null && !visibleItems.length)} title="Pokazuje narzędzia z bieżącej zakładki i filtrów pojedynczo, razem z innymi narzędziami z tej samej kategorii (także tym, którego już używasz), żeby ocenić jedno po drugim.">{focusId !== null ? "Wróć do listy" : "Oceniaj po kolei"}</button>        <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
+      </div>
     </div>
+    <div style={{ margin: "8px 0 0" }}><GithubRate rate={githubRate} /></div>
+    <div style={{ margin: "4px 0 0" }}><OpenRouterBalance refreshKey={modelCalls} /></div>
+    {githubMessage && <p role="status" style={{ color: "#166534", margin: "8px 0 0" }}>{githubMessage}</p>}
     <div role="tablist" aria-label="Status rekomendacji" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "18px 0" }}>
-      {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}
+      {tabs.map(([value, label]) => <button key={value} role="tab" aria-selected={status === value} title={tabHelp[value]} className={status === value ? "button" : ""} onClick={() => setStatus(value)}>{label}</button>)}
+      <Help text="Etapy radaru: rekomendacja przechodzi od „Obserwuję” przez „Porównuję” i „Testuję” do „Używam” (albo „Odrzuciłem” / Archiwum). Najedź na „?” przy zakładce lub przycisku, żeby zobaczyć, co oznacza." />
     </div>
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px" }}>Kategoria:
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px" }}>Kategoria:<Help text="Filtruje po kategorii narzędzia (np. monitoring, backup) nadanej przy imporcie katalogu lub wykryciu przez AI." />
       <select value={category} onChange={event => setCategory(event.target.value)}>
         <option value="">Wszystkie kategorie</option>
         {categories.map(value => <option key={value} value={value}>{value}</option>)}
       </select>
     </label>
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px 12px" }}>Wejście:
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px 12px" }}>Wejście:<Help text="Skąd wpis trafił do radaru: „Katalogi i ręczne” — zaimportowane z katalogu GitHub lub dodane ręcznie; „Wykryte przez AI” — Bielik wykrył narzędzie w tekście dokumentu." />
       <select value={origin} onChange={event => setOrigin(event.target.value as "all" | "ai_detected" | "curated")}>
         <option value="all">Wszystkie</option><option value="curated">Katalogi i ręczne</option><option value="ai_detected">Wykryte przez AI</option>
       </select>
     </label>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "0 0 18px 12px" }}>Szukaj:<Help text="Szuka w nazwie, opisie, kategorii i tagach (np. „docker”, „sbom”)." />
+      <input type="search" value={queryInput} onChange={event => setQueryInput(event.target.value)} placeholder="nazwa, opis lub tag" style={{ width: 200 }} />
+    </label>
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, margin: "0 0 18px 12px" }}>
+      <input type="checkbox" checked={stackOnly} onChange={event => setStackOnly(event.target.checked)} />Tylko pasujące do mojego stacku
+      <Help text="Pokazuje wpisy powiązane z narzędziami, które masz w etapie „Używam” (np. AWS, GCP, Terraform). Powiązania wykrywa przycisk „Wykryj powiązania”." />
+    </label>
+    {allTags.length > 0 && <TagFilter allTags={allTags} selected={selectedTags} onToggle={toggleTag} onClear={() => setSelectedTags([])} />}
+    {tagModels.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
+      <summary style={{ cursor: "help" }} title="Wybór modelu językowego, który podpowiada tagi po kliknięciu „✨ Podpowiedz tagi” albo „✨ Podpowiedz opis, kategorię i tagi” na karcie narzędzia.">Model do podpowiadania: <strong>{tagModels.find(option => option.id === tagModel)?.label ?? (tagModel || "domyślny")}</strong></summary>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        <select value={tagModel} onChange={event => setTagModel(event.target.value)} aria-label="Model do podpowiadania">
+          {tagModels.map(option => <option key={option.id} value={option.id}>{modelOptionText(option)}{option.id === defaultTagModel ? " — domyślny" : ""}</option>)}
+        </select>
+        <button type="button" disabled={!tagModel || tagModel === defaultTagModel} onClick={() => void saveDefaultTagModel(tagModel)}
+          title="Zapisuje wybór na serwerze — będzie obowiązywał wszystkich domowników.">Ustaw jako domyślny</button>
+        <button type="button" onClick={() => void saveDefaultTagModel(null)} title="Usuwa zapisany wybór; działa wbudowany domyślny (gpt-4o-mini, a bez niego pierwszy model inny niż Bielik).">Przywróć domyślny serwera</button>
+        {tagModels.find(option => option.id === tagModel)?.external && <span role="note" style={{ color: "#92400e" }}>⚠ Nazwa, adres i opis narzędzia trafią do zewnętrznego dostawcy.</span>}
+        {tagModelMessage && <span role="status" style={{ color: "#166534" }}>{tagModelMessage}</span>}
+      </div>
+    </details>}
     <details style={{ margin: "0 0 18px", color: "#475569" }}>
       <summary style={{ cursor: "help" }}>Co znaczą etapy radaru?</summary>
       <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-        <li><strong>Obserwuj</strong> — zachowaj rekomendację na później, bez rozpoczynania researchu lub testów.</li>
-        <li><strong>Porównaj</strong> — zbierz alternatywy i sprawdź, czy coś rozwiąże obecny problem lepiej.</li>
-        <li><strong>Testuj</strong> — uruchom narzędzie w praktyce, zanim uznasz je za używane.</li>
+        <li><strong>Obserwuję</strong> — zachowuję rekomendację na później, bez rozpoczynania researchu lub testów.</li>
+        <li><strong>Porównam</strong> — zbieram alternatywy i sprawdzam, czy coś rozwiąże obecny problem lepiej.</li>
+        <li><strong>Przetestuję</strong> — uruchomię narzędzie w praktyce, zanim uznam je za używane.</li>
         <li><strong>Używam</strong> — narzędzie zostało świadomie wybrane i trafia do Spisu narzędzi (bez duplikowania istniejącego rekordu).</li>
-        <li><strong>Odrzuć</strong> — narzędzie nie pasuje do potrzeb albo lepszym wyborem jest alternatywa.</li>
-        <li><strong>Archiwizuj</strong> — zachowaj wpis i jego źródła historycznie, ale ukryj go z bieżącego radaru.</li>
+        <li><strong>Odrzucam</strong> — narzędzie nie pasuje do moich potrzeb albo lepszym wyborem jest alternatywa.</li>
+        <li><strong>Archiwizuję</strong> — zachowuję wpis i jego źródła historycznie, ale chowam go z bieżącego radaru.</li>
       </ul>
     </details>
     <div style={{ display: "flex", alignItems: "end", gap: 8, flexWrap: "wrap", padding: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 18 }}>
-      <label style={{ flex: "2 1 420px" }}>Importuj katalog GitHub (README Markdown)<input value={importUrl} onChange={event => setImportUrl(event.target.value)} placeholder="https://github.com/AwesomeHomelab/awesome-homelab" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
-      <label style={{ flex: "1 1 220px" }}>Nadpisz źródło linkiem Lenie (opcjonalnie)<input value={recommendationSource} onChange={event => setRecommendationSource(event.target.value)} placeholder="Zwykle wykrywane automatycznie" title="Importer najpierw szuka adresu katalogu w Lenie. Podaj ID lub link tylko, gdy chcesz wskazać inne źródło." style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
+      <label style={{ flex: "2 1 420px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Importuj katalog GitHub (README Markdown)<Help text="Wklej adres repozytorium GitHub z listą narzędzi (np. awesome-list). Lenie pobierze README i doda każdą pozycję jako rekomendację; narzędzia już obecne w radarze lub Spisie narzędzi są pomijane." /></span><input value={importUrl} onChange={event => setImportUrl(event.target.value)} placeholder="https://github.com/AwesomeHomelab/awesome-homelab" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
+      <label style={{ flex: "1 1 220px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Nadpisz źródło linkiem Lenie (opcjonalnie)<Help text="Dokument w Lenie (ID lub /link/10333), który poleca ten katalog — zapisze się jako „polecone przez”. Zwykle wykrywane automatycznie z adresu katalogu." /></span><input value={recommendationSource} onChange={event => setRecommendationSource(event.target.value)} placeholder="Zwykle wykrywane automatycznie" title="Importer najpierw szuka adresu katalogu w Lenie. Podaj ID lub link tylko, gdy chcesz wskazać inne źródło." style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
       <button className="button" disabled={!importUrl.trim()} onClick={() => void importMarkdown()}>Importuj</button>
       {importMessage && <span role="status" style={{ color: "#166534" }}>{importMessage}</span>}
     </div>
@@ -183,43 +607,35 @@ export default function ToolRecommendations() {
       <summary>Pomijane pozycje ({skippedItems.length})</summary>
       <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>{skippedItems.map(item => <li key={item.name}>{item.name} — {item.reason === "already_in_tools" ? "jest już w Spisie narzędzi" : "jest już w Radarze"}</li>)}</ul>
     </details>}
-    {!loading && items.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 16px", padding: "10px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8 }}>
+    {!loading && focusId === null && items.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 16px", padding: "10px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8 }}>
       <button type="button" onClick={selectVisible}>Zaznacz wszystkie widoczne ({visibleItems.length})</button>
       <button type="button" onClick={() => setSelectedIds(new Set())} disabled={!selectedIds.size}>Wyczyść zaznaczenie</button>
       <strong>{selectedIds.size} zaznaczonych</strong>
+      <Help text="Zaznacz wpisy polami wyboru przy nazwach, żeby przenieść wiele rekomendacji do jednego etapu naraz. „Pokaż tylko zaznaczone” zawęża listę do wybranych." />
       <button type="button" disabled={!selectedIds.size} onClick={() => setShowSelected(current => !current)}>{showSelected ? "Pokaż wszystkie" : "Pokaż tylko zaznaczone"}</button>
       <label>Przenieś do:
         <select value={bulkStatus} onChange={event => setBulkStatus(event.target.value as RecommendationStatus)} style={{ marginLeft: 6 }}>
           {nextStatuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
-      <button className="button" type="button" disabled={!selectedIds.size || bulkBusy} title={statusHelp[bulkStatus]} onClick={() => void applyBulkStatus}>Zastosuj do zaznaczonych</button>
+      <button className="button" type="button" disabled={!selectedIds.size || bulkBusy} title={statusHelp[bulkStatus]} onClick={() => void applyBulkStatus()}>Zastosuj do zaznaczonych</button>
     </div>}
     {error && <p className="errorText" role="alert">{error}</p>}
     {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
-    {!loading && !error && !items.length && <p>Brak rekomendacji w tym widoku. Zaimportuj katalog albo poczekaj na wykrycie narzędzi przez AI.</p>}
-    {!loading && !error && items.length > 0 && !visibleItems.length && <p>Żaden z zaznaczonych wpisów nie pasuje do bieżących filtrów.</p>}
-    {visibleItems.map(item => <article key={item.id} style={{ border: selectedIds.has(item.id) ? "2px solid #2563eb" : "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggle(item.id)} aria-label={`Zaznacz ${item.name}`} /><h3 style={{ margin: 0 }}>{item.name}</h3></div>
-      {item.category && <span style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{item.category}</span>}
-      {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI</span>}
-      {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
-      {item.homepage_url && <div><a href={item.homepage_url} target="_blank" rel="noreferrer">Strona narzędzia</a></div>}
-      {item.evidences.length > 0 ? <details style={{ color: "#64748b", fontSize: ".85rem", margin: "10px 0" }}>
-        <summary style={{ cursor: "help" }}>Dlaczego jest w radarze? ({item.evidences.length})</summary>
-        <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-          {item.evidences.map(evidence => <li key={evidence.id}>
-            {evidence.relation_type === "mentioned_in" ? "Wspomniane w: " : "Znajduje się w katalogu: "}
-            {evidence.catalog_url ? <a href={evidence.catalog_url} target="_blank" rel="noreferrer">{evidence.catalog_label || evidence.catalog_url}</a> : evidence.catalog_label || "nieznane źródło"}
-            {evidence.context && ` · ${evidence.context}`}
-            {evidence.recommender_document && <div style={{ marginTop: 3 }}>↳ katalog polecony przez: {evidence.recommender_document.discovery_source || evidence.recommender_document.title || "link Lenie"}{evidence.recommender_document.title && evidence.recommender_document.discovery_source ? ` · ${evidence.recommender_document.title}` : ""}{evidence.recommender_document.url && <> · <a href={evidence.recommender_document.url} target="_blank" rel="noreferrer">otwórz</a></>}</div>}
-          </li>)}
-        </ul>
-      </details> : (item.source_document || item.source_url) && <div style={{ color: "#64748b", fontSize: ".85rem", margin: "8px 0" }}>
-        {item.source_document && <div>Polecone przez: {item.source_document.discovery_source || item.source_document.title || "link Lenie"}{item.source_document.title && item.source_document.discovery_source ? ` · ${item.source_document.title}` : ""}{item.source_document.url && <> · <a href={item.source_document.url} target="_blank" rel="noreferrer">otwórz rekomendację</a></>}</div>}
-        {item.source_url && <div>{item.source_document ? "Katalog: " : "Katalog źródłowy: "}<a href={item.source_url} target="_blank" rel="noreferrer">{item.source_url}</a>{item.source_context ? ` · ${item.source_context}` : ""}</div>}
-      </div>}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>{nextStatuses.filter(([value]) => value !== item.status).map(([value, label]) => <button key={value} title={statusHelp[value]} aria-label={`${label}: ${statusHelp[value]}`} disabled={busy === item.id} onClick={() => void move(item, value)}>{label}</button>)}</div>
+    {!loading && !error && focusId === null && !items.length && <p>Brak rekomendacji w tym widoku. Zaimportuj katalog albo poczekaj na wykrycie narzędzi przez AI.</p>}
+    {!loading && !error && focusId === null && items.length > 0 && !visibleItems.length && <p>Żaden z zaznaczonych wpisów nie pasuje do bieżących filtrów.</p>}
+    {focusItem && <ToolFocusReview key={focusItem.id} apiUrl={apiUrl} headers={headers} itemId={focusItem.id} itemName={focusItem.name}
+      initialNote={focusItem.personal_note} position={focusIdx + 1} total={visibleItems.length} busy={busy !== null}
+      actions={nextStatuses.map(([value]) => [value, decisionLabels[value], statusHelp[value]])} currentStatus={focusItem.status} helpText={decisionsHelp}
+      details={cardDetails(focusItem)} onDecide={(next, note) => void decideFocused(next, note)}
+      onOpenPeer={id => setFocus(id)} onChanged={() => void load()}
+      onPrev={() => setFocus(visibleItems[Math.max(focusIdx - 1, 0)]?.id ?? null)}
+      onNext={() => setFocus(visibleItems[Math.min(focusIdx + 1, visibleItems.length - 1)]?.id ?? null)}
+      onClose={() => setFocus(null)} />}
+    {focusId === null && visibleItems.map(item => <article key={item.id} style={{ border: selectedIds.has(item.id) ? "2px solid #2563eb" : "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggle(item.id)} aria-label={`Zaznacz ${item.name}`} /><h3 style={{ margin: 0 }}><button type="button" onClick={() => setFocus(item.id)} title="Otwórz to narzędzie do oceny: opis, źródła i inne narzędzia z tej kategorii" style={{ all: "unset", cursor: "pointer", color: "#1d4ed8", textDecoration: "underline" }}>{item.name}</button></h3><button type="button" onClick={() => setFocus(item.id)} title="Otwórz to narzędzie do oceny: opis, źródła i inne narzędzia z tej kategorii">Oceń</button></div>
+      {cardDetails(item)}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 12 }}>{nextStatuses.filter(([value]) => value !== item.status).map(([value]) => <button key={value} title={statusHelp[value]} aria-label={`${decisionLabels[value]}: ${statusHelp[value]}`} disabled={busy === item.id} onClick={() => void move(item, value)}>{decisionLabels[value]}</button>)}<Help text={decisionsHelp} /></div>
     </article>)}
   </section>;
 }

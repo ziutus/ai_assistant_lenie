@@ -14,10 +14,17 @@ import List from "./modules/shared/pages/list";
 import UploadFile from "./modules/shared/pages/file";
 import Connect from "./modules/shared/pages/connect";
 import Chunks from "./modules/shared/pages/chunks";
+import NerChapters from "./modules/shared/pages/nerChapters";
+import Places from "./modules/shared/pages/places";
+import WorldEvents from "./modules/shared/pages/worldEvents";
+import Products from "./modules/shared/pages/products";
+import ProductDetail from "./modules/shared/pages/productDetail";
 import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
 import NerCorrections from "./modules/shared/pages/nerCorrections";
+import NerGazetteer from "./modules/shared/pages/nerGazetteer";
+import NerChannelGlossary from "./modules/shared/pages/nerChannelGlossary";
 import NerDecisions from "./modules/shared/pages/nerDecisions";
 import Organizations from "./modules/shared/pages/organizations";
 import ToolRecommendations from "./modules/shared/pages/toolRecommendations";
@@ -31,6 +38,8 @@ import Contact from "./modules/shared/pages/contact";
 import ContactCategories from "./modules/shared/pages/contactCategories";
 import ProjectCards from "./modules/shared/pages/projectCards";
 import ProjectCard from "./modules/shared/pages/projectCard";
+import Recipes from "./modules/shared/pages/recipes";
+import Recipe from "./modules/shared/pages/recipe";
 import ContactGroups from "./modules/shared/pages/contactGroups";
 import ContactGroupDetail from "./modules/shared/pages/contactGroupDetail";
 import ContactEventDetail from "./modules/shared/pages/contactEventDetail";
@@ -42,6 +51,8 @@ import ServiceStatus from "./modules/shared/pages/serviceStatus";
 import Stats from "./modules/shared/pages/stats";
 import Feeds from "./modules/shared/pages/feeds";
 import FeedReview from "./modules/shared/pages/feedReview";
+import PromptTemplates from "./modules/shared/pages/promptTemplates";
+import ContentGroups from "./modules/shared/pages/contentGroups";
 import LlmAnalysis from "./modules/shared/pages/llmAnalysis";
 import Jobs from "./modules/shared/pages/jobs";
 import Scheduler from "./modules/shared/pages/scheduler";
@@ -87,6 +98,8 @@ function App() {
                   <Route path="/youtube/:id?" element={<DocumentEditorWithGroups><Youtube /></DocumentEditorWithGroups>} />
                   <Route path="/email/:id?" element={<DocumentEditorWithGroups><Email /></DocumentEditorWithGroups>} />
                   <Route path="/social_media_post/:id?" element={<DocumentEditorWithGroups><SocialMediaPost /></DocumentEditorWithGroups>} />
+                  <Route path="/ner/:id" element={<NerChapters />} />
+                  <Route path="/ner/:id/:chapter" element={<NerChapters />} />
                   <Route path="/chunks/:id" element={<Chunks />} />
                   <Route path="/read/:id" element={<Read />} />
                   <Route path="/entities/:id" element={<Entities />} />
@@ -94,8 +107,14 @@ function App() {
                   <Route path="/persons/:id?" element={<Persons />} />
                   <Route path="/persons-review" element={<PersonsReview />} />
                   <Route path="/ner-corrections" element={<NerCorrections />} />
+                  <Route path="/ner-gazetteer" element={<NerGazetteer />} />
+                  <Route path="/ner-glossary" element={<NerChannelGlossary />} />
                   <Route path="/ner-decisions" element={<NerDecisions />} />
                   <Route path="/organizations/:id?" element={<Organizations />} />
+                  <Route path="/places" element={<Places />} />
+                  <Route path="/world-events" element={<WorldEvents />} />
+                  <Route path="/products" element={<Products />} />
+                  <Route path="/products/:name" element={<ProductDetail />} />
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/contacts" element={<Contacts />} />
                   <Route path="/topics" element={<Topics />} />
@@ -109,6 +128,8 @@ function App() {
                   <Route path="/contact-categories" element={<ContactCategories />} />
                   <Route path="/project-cards" element={<ProjectCards />} />
                   <Route path="/project-cards/:id" element={<ProjectCard />} />
+                  <Route path="/recipes" element={<Recipes />} />
+                  <Route path="/recipes/:id" element={<Recipe />} />
                   <Route path="/contact-groups" element={<ContactGroups />} />
                   <Route path="/contact_groups/:id" element={<ContactGroupDetail />} />
                   <Route path="/information-sources" element={<InformationSources />} />
@@ -117,6 +138,8 @@ function App() {
                   <Route path="/stats" element={<Stats />} />
                   <Route path="/feeds" element={<Feeds />} />
                   <Route path="/feed-review" element={<FeedReview />} />
+                  <Route path="/prompt-templates" element={<PromptTemplates />} />
+                  <Route path="/content-groups" element={<ContentGroups />} />
                   <Route path="/tool-candidates-review" element={<Navigate to="/tool-recommendations?origin=ai_detected" replace />} />
                   <Route path="/tool-recommendations" element={<ToolRecommendations />} />
                   <Route path="/tools" element={<Tools />} />

@@ -2,50 +2,11 @@
 
 Standalone CLI scripts that add or manage documents in the Lenie database, bypassing the REST API. Covers single-item ad-hoc tools, bulk import pipelines, and a few standalone helper tools that do not touch the database at all.
 
-## Directory Structure
-
-```
-imports/
-├── book_import_pdf_twierdza_linux.py  # Import "Twierdza Linux" PDF into a Document — one script per book, see below
-├── book_extract_images.py    # Backfill: extract images for a book PDF already imported (no text_md rewrite)
-├── backfill_obsidian_content_groups.py  # One-off: enqueue Bielik content-group (Tematy) classification for already-imported obsidian_note documents
-├── check_pdf_text_layer.py   # Check if a PDF has a usable text layer or needs OCR (no DB)
-├── project_cards_parse.py    # Parse a directory of project-card PDFs ("Robotyka – 100 projektów") into cards.json + review.csv (no DB)
-├── project_cards_family_parse.py  # Parse one card-book PDF (science experiments / toddler crafts / logic puzzles) into cards.json + review.csv (no DB)
-├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
-├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
-├── select_control_questions.py # Cheap-LLM (Bielik) router: which control questions a document actually answers
-├── dynamodb_sync.py          # Sync documents from DynamoDB + S3 to local PostgreSQL
-├── extract_references.py     # Extract book footnotes from text_md into document_references
-├── extract_time_periods.py   # Classify the historical period a document is about (per chapter for books)
-├── extract_tones.py          # Classify emotional tone + language register per chapter
-├── detect_document_links.py  # Backfill: propose `references` document_links from verbatim URL mentions (dry-run by default, --apply, --id)
-├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
-├── reattribute_facebook_facts.py # One-off: re-label Facebook facts stored as user_manual (PATCH) back to source "facebook", release the pin
-├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
-├── strip_webpage_images_backfill.py  # One-off: strip raw inline images (incl. base64) out of text_md for webpage/link documents
-├── strip_onet_google_promo_backfill.py  # One-off: remove Onet's "Dodaj w Google" promo block (logo marker + button) from stored text_md
-├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
-├── organization_descriptions_backfill.py  # One-off: LLM-generated short descriptions for organizations missing one (reader tooltip)
-├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
-├── whatsapp_neighbor_profiles.py  # Build/update per-neighbor social-memory-aid profiles on Contact.whatsapp_profile from a WhatsApp chat export
-├── whatsapp_neighbor_profiles_migrate_to_contacts.py  # One-off: migrate the old Document-based neighbor profiles onto Contact + delete the Documents
-├── whatsapp_chat_import.py   # Full message log + attachment import into chat_conversations/chat_messages (raw archive, not the LLM-distilled Contact profile)
-├── whatsapp_chat_backfill_contacts.py  # One-off: re-resolve contact_id for already-imported chat_messages rows missed before sender-suffix stripping existed
-├── google_contacts_import.py # One-off: full import of a Google Contacts CSV export into the private contact book
-├── court_case_contacts_import.py  # One-off: match/import a KRZ court-case creditor list against the private contact book
-├── backfill_krz_tuwima_group.py  # One-off: backfill contact_groups membership for KRZ creditors missed by google_contacts_import.py's name match
-├── fix_filip_gr4_false_name_matches.py  # One-off: undo a bare-first-name false merge from the Filip gr4 import
-├── backfill_filip_gr4_contact_photos.py  # One-off: upload Filip gr4 group members' profile photos
-├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
-├── youtube_backfill_author.py # One-off: fetch channel name for existing videos missing 'byline'
-└── youtube_batch_analyze.py  # Bielik LLM chunk analysis of an existing document (by ID)
-```
-
 ## Scripts
 
 | Script | Purpose | DB Access |
 |--------|---------|-----------|
+| `backfill_llm_costs.py` | Price historical unknown LLM costs using prices valid on the call date; optional provider/model filters and batched updates | ORM (SQLAlchemy); dry-run by default, writes only with `--apply` |
 | `rebuild_image_catalog_from_extracted.py` | One-document pilot: reconstruct missing URL image catalog from original `text_extracted` | ORM (SQLAlchemy); reads in dry-run, writes only with `--apply` |
 
 ### `outline_chunk_preview.py`
@@ -160,6 +121,16 @@ python imports/book_import_pdf_twierdza_linux.py other.pdf --title "..." --bylin
 - `--apply` — write to the database (default: dry-run only)
 
 After import, run [`extract_references.py`](#extract_referencespy) for book footnotes, then the usual per-chapter analyses (`extract_time_periods.py`, `extract_tones.py`, `select_control_questions.py`) and chunk review via `/chunks/:id`.
+
+### `book_import_recipes_insulinoopornosc.py`
+
+Cookbook counterpart to `book_import_pdf_<slug>.py`: instead of one `Document` per book it parses a cookbook PDF ("Insulinooporność. Szybkie dania", ebookpoint) into **one recipe per entry** via `library/recipe_book_parser.py` (pure functions: title → `•` ingredient block → method paragraph; meal-plan titles `obiad: … – 2 porcje` and plain titles; labelled sub-blocks such as "spód"; dishes repeated across the 3-month meal plan are merged by normalised title and every serving slot is kept in `occurrences`). The ebookpoint licence watermark (buyer name/e-mail/id) is stripped from every page. The book's own constants (recipe page ranges, week start pages, the printed "Indeks przepisów" pages used as a completeness check) live in the script; a different cookbook needs its own wrapper. Currently **dry-run only** — prints counts, a comparison with the book's index and, with `--show N` / `--dump FILE`, the recipes rendered as markdown; nothing is written to the database.
+
+```bash
+cd backend
+PYTHONPATH=. python -X utf8 imports/book_import_recipes_insulinoopornosc.py book.pdf
+PYTHONPATH=. python -X utf8 imports/book_import_recipes_insulinoopornosc.py book.pdf --show 3 --dump tmp/recipes.md
+```
 
 ### `book_extract_images.py`
 
@@ -554,6 +525,40 @@ Creates or promotes one registry organization per country of `library/country_ga
 cd backend
 python imports/create_country_organizations.py            # dry-run (default): counts + PROMOTE / CONFLICT / NOTE lines
 python imports/create_country_organizations.py --apply
+```
+
+### `narrative_trial.py`
+
+Read-only trial of narrative detection (`library/narrative_service.py`): picks public `webpage` documents (explicit `--ids`, newest Russia/Ukraine-related pages, random unrelated controls), scores each against a narrative set seed (`--seed`, default `data/narratives/ru_viedm_2026_10.json`) through Fabryka Basal and writes a JSON report (`--out`). Never writes to the database and never selects private document types (the free Fabryka tier may retain content). ~4 Fabryka calls per 1800-char piece, `--max-pieces` (default 4) pieces per document.
+
+```bash
+cd backend
+PYTHONPATH=. python -X utf8 imports/narrative_trial.py --out tmp/narr_trial.json --related 20 --control 6 --ids 10774
+```
+
+### `tools_import_from_notes.py`
+
+Fills the tool catalog (`tools`) from the Obsidian "application description" notes: Purpose, Type of application, Licence, homepage / GitHub / Wikipedia / pricing links, Pricing type, **Works on**, Key Points, Important Commands and Additional Notes (parsed by `library/tool_note_parser.py`, template placeholders ignored). Only still-empty fields are filled (`--overwrite` replaces existing ones). A tool without `obsidian_note_path` is matched to a vault note by file name (`jq` → `jq.md`, `Trivy` → `Trivy - Security scan….md`); an ambiguous or missing match is reported and skipped, a matched path is saved. Reads the vault from `--vault` (default `OBSIDIAN_VAULT_PATH` or the local vault). The NAS equivalent for one tool is `POST /tools/<id>/import_note` (the "Wczytaj z notatki" button on `/tools`).
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, writes only with `--apply`.
+
+```bash
+cd backend
+python -X utf8 imports/tools_import_from_notes.py            # dry-run (default): one line per tool
+python -X utf8 imports/tools_import_from_notes.py --apply
+python -X utf8 imports/tools_import_from_notes.py --id 52 --apply
+```
+
+### `public_people_import.py`
+
+Imports the vault notes about public people (`02-wiedza/people i firmy/public/**`) into the person registry as `kind='public'` persons (not contacts): description from the first prose line, links from the note's URLs (labelled by their text or host), the note path, aliases (a nickname in "Claudowski - Tomasz Cholewa"), and links to knowledge sources — `[[wikilinks]]` to courses and the sources named in an `--overrides` JSON (e.g. a channel the person hosts). Fills only empty fields; an existing registry person is promoted to public. File names the script cannot read as a person ("talkpython", surname-first "Górczyk Przemek") are listed and skipped until an override gives the name. See the script's docstring for the overrides format.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, writes only with `--apply`.
+
+```bash
+cd backend
+python -X utf8 imports/public_people_import.py --overrides ../tmp/people.json            # dry-run (default)
+python -X utf8 imports/public_people_import.py --overrides ../tmp/people.json --apply
 ```
 
 ### `youtube_batch_analyze.py`

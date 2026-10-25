@@ -7,7 +7,7 @@ import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 import assemblyai as aai
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 
 from library.config_loader import load_config
 
@@ -39,6 +39,25 @@ def parse_chapters_from_description(description: str) -> str | None:
     return '\n'.join(lines) if len(lines) >= 2 else None
 
 
+def _captions_error_code(exc: Exception) -> str:
+    # YouTube answers a flagged IP with a redirect to google.com/sorry; the exception class is
+    # then a generic ConnectionError, so name the cause explicitly.
+    return "GoogleSorryBlock" if "/sorry" in str(exc) else type(exc).__name__
+
+
+def _record_captions_event(*, via_proxy: bool, started: float, success: bool, error_code: str | None = None) -> None:
+    """One row in external_service_events per captions attempt (shown on /service-status).
+
+    Lets the owner judge from real numbers whether the Webshare proxy is worth paying for.
+    """
+    from library.external_service_events import record_external_service_event
+
+    record_external_service_event(
+        service="youtube_captions", operation="via_webshare_proxy" if via_proxy else "direct",
+        success=success, error_code=error_code, latency_ms=int((time.monotonic() - started) * 1000),
+    )
+
+
 def clean_youtube_url(url: str) -> str:
     """Remove extra query parameters from YouTube URL, keeping only 'v'."""
     parsed = urlparse(url)
@@ -47,6 +66,15 @@ def clean_youtube_url(url: str) -> str:
         clean_query = urlencode({'v': params['v'][0]})
         return urlunparse(parsed._replace(query=clean_query))
     return url
+
+
+def _store_transcript_text(doc, text):
+    """Correct newly received captions/STT before any consumer reads the document."""
+    from library.transcript_corrections import apply_transcript_corrections
+
+    doc.text, _ = apply_transcript_corrections(text, author=doc.byline)
+    if doc.text_md:
+        doc.text_md, _ = apply_transcript_corrections(doc.text_md, author=doc.byline)
 
 
 def process_youtube_url(
@@ -170,6 +198,7 @@ def process_youtube_url(
     if web_document.processing_status == StalkerDocumentStatus.NEED_TRANSCRIPTION.name:
         t0 = time.time()
         logger.info("Trying to use captions from YouTube")
+        fetch_started, via_proxy, fetch_recorded = time.monotonic(), False, False
         try:
             yt_language = web_document.language
             if yt_language == 'pl-PL':
@@ -185,6 +214,7 @@ def process_youtube_url(
                         proxy_password=creds[1],
                     )
                     ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
+                    via_proxy = True
                     logger.info("Using Webshare rotating residential proxy")
                 else:
                     ytt_api = YouTubeTranscriptApi()
@@ -199,6 +229,8 @@ def process_youtube_url(
                 yt_language = 'en'
 
             srt = ytt_api.fetch(youtube_file.video_id, languages=[yt_language])
+            _record_captions_event(via_proxy=via_proxy, started=fetch_started, success=True)
+            fetch_recorded = True
             transcript_text = json.dumps(srt.to_raw_data())
             logger.info(f"Successfully retrieved transcript in language: {yt_language}")
 
@@ -219,7 +251,7 @@ def process_youtube_url(
                         f"Language detected >{language_detected}< differs from expected >{web_document.language}<, "
                         f"captions language mismatch"
                     )
-                    web_document.text = youtube_titles_to_text(transcript_text)
+                    _store_transcript_text(web_document, youtube_titles_to_text(transcript_text))
                     web_document.text_raw = transcript_text
                     web_document.language = language_detected
                     web_document.processing_status = StalkerDocumentStatus.ERROR.name
@@ -231,11 +263,11 @@ def process_youtube_url(
                         string_all = youtube_titles_split_with_chapters(
                             transcript_text, web_document.chapter_list
                         )
-                        web_document.text = string_all
+                        _store_transcript_text(web_document, string_all)
                         web_document.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                         session.commit()
                     elif transcript_text:
-                        web_document.text = youtube_titles_to_text(transcript_text)
+                        _store_transcript_text(web_document, youtube_titles_to_text(transcript_text))
                         web_document.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                         session.commit()
 
@@ -245,13 +277,24 @@ def process_youtube_url(
                 web_document.text_raw = transcript_text
                 session.commit()
 
-        except TranscriptsDisabled:
-            logger.info(f"The video at {web_document.url} has its transcripts disabled.")
+        except (TranscriptsDisabled, NoTranscriptFound) as e:
+            # Permanent: no captions, or none in the document language or English (e.g. only
+            # Korean). Not a TEMPORARY_ERROR, which the caption loop would retry forever; the
+            # NEED_TRANSCRIPTION branch below ends in NO_CAPTIONS_AVAILABLE unless paid
+            # transcription was authorized.
+            logger.info(f"The video at {web_document.url} has no usable captions ({type(e).__name__}).")
+            # YouTube answered, so the proxy did its job: a success, with the reason noted.
+            _record_captions_event(via_proxy=via_proxy, started=fetch_started, success=True,
+                                   error_code=type(e).__name__)
+            fetch_recorded = True
             web_document.youtube_captions = False
             session.commit()
 
         except Exception as e:
             logger.error(f"An unexpected error occurred while fetching captions: {e}")
+            if not fetch_recorded:  # a later step (language check, DB) failing is not a proxy failure
+                _record_captions_event(via_proxy=via_proxy, started=fetch_started, success=False,
+                                       error_code=_captions_error_code(e))
             session.rollback()
             web_document.processing_status = StalkerDocumentStatus.TEMPORARY_ERROR.name
             web_document.processing_error_code = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
@@ -324,7 +367,7 @@ def process_youtube_url(
 
             logger.debug(text_raw)
             web_document.text_raw = transcript.text
-            web_document.text = text_raw
+            _store_transcript_text(web_document, text_raw)
             web_document.processing_status = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
             # Transcription succeeded — clear any stale error from an earlier failed
             # captions/transcription attempt (see ADR-010 state-error convention).

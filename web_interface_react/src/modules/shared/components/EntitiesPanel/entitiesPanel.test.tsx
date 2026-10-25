@@ -1,5 +1,5 @@
 import axios from "axios";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type React from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -27,7 +27,7 @@ it("shows the full proposal and confirms it without edit mode", async () => {
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null } : { entities: { persName: [], orgName: [], geogName: [proposed], placeName: [] } } }));
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect(await screen.findByText(/Wymaga potwierdzenia/)).toBeTruthy();
   expect(screen.getByText("Propozycja lokalizacji: Huti, obwód lwowski, Ukraina")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Zatwierdź tę lokalizację" }));
@@ -42,7 +42,7 @@ it("rejects a location proposal without editing the name", async () => {
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null } : { entities: { persName: [], orgName: [], geogName: [proposed], placeName: [] } } }));
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   fireEvent.click(await screen.findByRole("button", { name: "Odrzuć propozycję" }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/7/reject_place",
     {}, { headers: expect.any(Object) }));
@@ -51,7 +51,7 @@ it("rejects a location proposal without editing the name", async () => {
 
 it("changes a place into an organization from the menu", async () => {
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", organization_name: "Huti" } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na organizację" }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/7/to_organization",
@@ -60,9 +60,9 @@ it("changes a place into an organization from the menu", async () => {
 });
 
 it("renames a place without edit mode and refetches entities", async () => {
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(5);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(14);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -74,6 +74,20 @@ it("renames a place without edit mode and refetches entities", async () => {
   expect(axios.get).toHaveBeenCalledTimes(3);
 });
 
+it("draws chapter-scoped groups through the panel's own menus in chapter mode", async () => {
+  render(<MemoryRouter><EntitiesPanel docId={10753} chapterRenderer={(renderGroups) => (
+    <div data-testid="chapter">{renderGroups({ placeName: [{ id: 8, text: "Aden", count: 1 }] })}</div>
+  )} /></MemoryRouter>);
+  const chapter = await screen.findByTestId("chapter");
+  await act(async () => {});
+  expect(within(chapter).getByRole("button", { name: "Aden" })).toBeTruthy();
+  // The document-level groups are replaced, so the other place of the document is not drawn.
+  expect(screen.queryByRole("button", { name: place.text })).toBeNull();
+  fireEvent.click(within(chapter).getByRole("button", { name: "Aden" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  expect((screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }) as HTMLInputElement).value).toBe("Aden");
+});
+
 it.each([false, true])("offers merge after rename (conflict: %s)", async (conflict) => {
   const target = { id: 8, text: "Aden", entity_type: "placeName" };
   if (conflict) {
@@ -82,7 +96,7 @@ it.each([false, true])("offers merge after rename (conflict: %s)", async (confli
     vi.mocked(axios.patch).mockResolvedValue({ data: { geocoded: true, same_place_entity: target } });
   }
   vi.mocked(axios.post).mockResolvedValue({ data: {} });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }), { target: { value: "Aden" } });
@@ -100,7 +114,7 @@ it.each([false, true])("offers merge after rename (conflict: %s)", async (confli
 
 it("shows a backend conflict and keeps the form open", async () => {
   vi.mocked(axios.patch).mockRejectedValue({ response: { status: 409, data: { message: "Wybierz „Połącz z innym miejscem”." } } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
@@ -110,7 +124,7 @@ it("shows a backend conflict and keeps the form open", async () => {
 
 it("reloads the list and closes the form when the renamed entity no longer exists", async () => {
   vi.mocked(axios.patch).mockRejectedValue({ response: { status: 404, data: { message: "Nie znaleziono encji." } } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
@@ -121,7 +135,7 @@ it("reloads the list and closes the form when the renamed entity no longer exist
 
 it.each(["× Usuń encję", "🚫 Usuń i nie wykrywaj więcej", "Połącz z innym miejscem"])(
   "opens the existing %s flow without edit mode", async (action) => {
-    render(<EntitiesPanel docId={10753} />);
+    render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
     await openMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: action }));
     expect(screen.queryByRole("menu")).toBeNull();
@@ -132,7 +146,7 @@ it.each(["× Usuń encję", "🚫 Usuń i nie wykrywaj więcej", "Połącz z inn
 );
 
 it("closes on outside pointerdown and Escape, and clears rename on document change", async () => {
-  const view = render(<EntitiesPanel docId={10753} />);
+  const view = render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.pointerDown(document.body);
   expect(screen.queryByRole("menu")).toBeNull();
@@ -141,12 +155,12 @@ it("closes on outside pointerdown and Escape, and clears rename on document chan
   expect(screen.queryByRole("menu")).toBeNull();
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
-  view.rerender(<EntitiesPanel docId={10754} />);
+  view.rerender(<MemoryRouter><EntitiesPanel docId={10754} /></MemoryRouter>);
   expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
 });
 
 it("refetches and clears open forms when refreshKey changes for the same document", async () => {
-  const view = render(<EntitiesPanel docId={10753} refreshKey={0} />);
+  const view = render(<MemoryRouter><EntitiesPanel docId={10753} refreshKey={0} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   expect(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeTruthy();
@@ -154,7 +168,7 @@ it("refetches and clears open forms when refreshKey changes for the same documen
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null }
     : { entities: { persName: [], orgName: [], geogName: [], placeName: [] } } }));
-  view.rerender(<EntitiesPanel docId={10753} refreshKey={1} />);
+  view.rerender(<MemoryRouter><EntitiesPanel docId={10753} refreshKey={1} /></MemoryRouter>);
   await waitFor(() => expect(vi.mocked(axios.get).mock.calls.length).toBe(callsBefore + 2));
   expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
   expect(screen.queryByRole("button", { name: place.text })).toBeNull();
@@ -166,7 +180,7 @@ it("does not announce completion for a stale finished job it never saw running",
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: { id: "old", status: "done", progress: null } }
     : { entities: emptyEntities } }));
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
   await act(async () => {});
   expect(screen.queryByText(/Pełna weryfikacja encji zakończona/)).toBeNull();
@@ -179,7 +193,7 @@ it("announces completion after watching a job go from running to done", async ()
     jobCalls += 1;
     return { data: { job: { id: "j", status: jobCalls === 1 ? "running" : "done", progress: null } } };
   });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect(await screen.findByText("Pełna weryfikacja encji zakończona.", {}, { timeout: 6000 })).toBeTruthy();
 }, 10000);
 
@@ -188,7 +202,7 @@ it("shows read-only place tags under Miejsca only when the document has them", a
     ? { job: null }
     : { entities: { persName: [], orgName: [], geogName: [place], placeName: [] },
       place_tags: ["miejsce-aden", "miejsce-rijad"] } }));
-  const view = render(<EntitiesPanel docId={10753} />);
+  const view = render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   expect(await screen.findByText("Tagi miejsc: miejsce-aden, miejsce-rijad")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Czym są tagi miejsc" }));
   expect(screen.getByRole("note").textContent).toContain("nie ma osobnego filtra po tagach");
@@ -197,7 +211,7 @@ it("shows read-only place tags under Miejsca only when the document has them", a
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null }
     : { entities: { persName: [], orgName: [], geogName: [place], placeName: [] } } }));
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await screen.findByRole("button", { name: place.text });
   expect(screen.queryByText(/Tagi miejsc:/)).toBeNull();
 });
@@ -226,8 +240,9 @@ it("offers the organization menu on a cited source, including a link to the sour
   await openOrgMenu();
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
-    "Połącz z inną organizacją", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
+    "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
+    "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
     .toBe("/information-sources?id=200");
@@ -407,11 +422,133 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
   await openOrgMenu("ONZ");
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
-    "Połącz z inną organizacją", "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
+    "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
+    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
+    "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
   expect(screen.getByText(/Krótki opis dla:/)).toBeTruthy();
+});
+
+it("changes a mis-tagged organization into a place with an editable name", async () => {
+  mockOrgEntities({ id: 16615, text: "Tela Avivwu", count: 1, organization_id: 1140 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", place_name: "Tel Awiw" } });
+  renderInRouter(<EntitiesPanel docId={10872} />);
+  await openOrgMenu("Tela Avivwu");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na miejsce" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Tel Awiw" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zmień na miejsce" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/16615/to_place",
+    { text: "Tel Awiw" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na miejsce: Tel Awiw/)).toBeTruthy();
+});
+
+const renderManualChips = (props: Record<string, unknown> = {}) => {
+  mockOrgEntities();
+  renderInRouter(<EntitiesPanel docId={11143} {...props} chapterRenderer={(renderGroups) => <>{renderGroups({
+    productName: [{ id: 78, text: "Starlink", count: 3 }],
+    eventName: [{ id: 77, text: "Szczyt NATO", count: 1, description: null }],
+  })}</>} />);
+};
+
+it("gives product chips the shared dropdown menu with retype, merge, highlight and delete", async () => {
+  const onMergeProducts = vi.fn();
+  const onShowInText = vi.fn();
+  renderManualChips({ onMergeProducts, onShowInText });
+  await openOrgMenu("Starlink");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "🔎 Podświetl w tekście", "Otwórz stronę produktu", "Scal z innymi zapisami…", "Zmień na osobę", "Zmień na organizację",
+    "Zmień na miejsce", "Zmień na wydarzenie", "× Usuń encję",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Scal z innymi zapisami…" }));
+  expect(onMergeProducts).toHaveBeenCalledWith(expect.objectContaining({ id: 78 }));
+  await openOrgMenu("Starlink");
+  fireEvent.click(screen.getByRole("menuitem", { name: "🔎 Podświetl w tekście" }));
+  expect(onShowInText).toHaveBeenCalledWith(expect.objectContaining({ id: 78 }), "product");
+});
+
+it("turns a product back into a place from its menu", async () => {
+  renderManualChips();
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await openOrgMenu("Starlink");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na miejsce" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/78/from_product",
+    { entity_type: "placeName" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na miejsce/)).toBeTruthy();
+});
+
+it("gives event chips the shared menu: description, retype to product, delete", async () => {
+  const onDescribeEvent = vi.fn();
+  renderManualChips({ onDescribeEvent });
+  await openOrgMenu("Szczyt NATO");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "Dodaj opis wydarzenia…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
+    "Zmień na produkt / system", "× Usuń encję",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj opis wydarzenia…" }));
+  expect(onDescribeEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 77 }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await openOrgMenu("Szczyt NATO");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na produkt / system" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/77/from_product",
+    { entity_type: "productName" }, { headers: expect.any(Object) }));
+});
+
+it("changes an organization into a named event", async () => {
+  mockOrgEntities({ id: 31, text: "Szczyt", count: 2, organization_id: 8 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", product_name: "Szczyt" } });
+  renderInRouter(<EntitiesPanel docId={10872} />);
+  await openOrgMenu("Szczyt");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na wydarzenie" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/31/to_product",
+    { entity_type: "eventName" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na wydarzenie: Szczyt/)).toBeTruthy();
+});
+
+it("changes an organization into a person and reports the registry match", async () => {
+  mockOrgEntities({ id: 31, text: "Rawit Ruja", count: 2, organization_id: 8 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", linked: ["Rawit Ruja"] } });
+  renderInRouter(<EntitiesPanel docId={10872} />);
+  await openOrgMenu("Rawit Ruja");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na osobę" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/31/to_person", {},
+    { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na osobę: Rawit Ruja/)).toBeTruthy();
+});
+
+it("changes a mis-tagged organization into a product / system", async () => {
+  mockOrgEntities({ id: 41, text: "Starshield", count: 6, organization_id: 9 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", product_name: "Starshield" } });
+  renderInRouter(<EntitiesPanel docId={11137} />);
+  await openOrgMenu("Starshield");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na produkt / system" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/41/to_product", {},
+    { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na produkt \/ system: Starshield/)).toBeTruthy();
+});
+
+it("offers 'Podświetl w tekście' in the person, organization and place menus when the host asks for it", async () => {
+  const person = { id: 11, text: "Hegseth", count: 3 };
+  const organization = { id: 12, text: "ONZ", count: 3, organization_id: 5 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [organization], geogName: [place], placeName: [] } } }));
+  const show = vi.fn();
+  render(<MemoryRouter><EntitiesPanel docId={10872} onShowInText={show} /></MemoryRouter>);
+  for (const [name, kind, item] of [["Hegseth", "persName", person], ["ONZ", "orgName", organization],
+    [place.text, "place", place]] as const) {
+    await screen.findByRole("button", { name });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "🔎 Podświetl w tekście" }));
+    expect(show).toHaveBeenLastCalledWith(expect.objectContaining({ id: item.id, text: item.text }), kind);
+  }
+});
+
+it("does not add 'Podświetl w tekście' without a host callback", async () => {
+  mockOrgEntities({ id: 12, text: "ONZ", count: 3, organization_id: 5 });
+  renderInRouter(<EntitiesPanel docId={10753} />);
+  await openOrgMenu("ONZ");
+  expect(screen.queryByRole("menuitem", { name: /Podświetl/ })).toBeNull();
 });
 
 it("preserves reader highlight behavior when menuActions is absent", () => {
@@ -424,7 +561,7 @@ it("preserves reader highlight behavior when menuActions is absent", () => {
 
 it("submits rename with Enter without submitting the document form", async () => {
   const submitDocument = vi.fn((event) => event.preventDefault());
-  render(<form onSubmit={submitDocument}><EntitiesPanel docId={10753} /></form>);
+  render(<form onSubmit={submitDocument}><MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter></form>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }), { key: "Enter" });
@@ -436,7 +573,7 @@ it("omits merge when there is no other place and keeps edit delete working", asy
   vi.mocked(axios.get).mockResolvedValue({ data: {
     job: null, entities: { persName: [], orgName: [], geogName: [place], placeName: [] },
   } });
-  render(<EntitiesPanel docId={10753} />);
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   expect(screen.queryByRole("menuitem", { name: "Połącz z innym miejscem" })).toBeNull();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
@@ -446,4 +583,335 @@ it("omits merge when there is no other place and keeps edit delete working", asy
   expect(screen.getByRole("combobox")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Zakończ edycję" }));
   expect(screen.queryByRole("combobox")).toBeNull();
+});
+
+// Copying is available only through existing chip action menus.
+const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+const execCommandDescriptor = Object.getOwnPropertyDescriptor(document, "execCommand");
+afterEach(() => {
+  if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+  else Reflect.deleteProperty(navigator, "clipboard");
+  if (execCommandDescriptor) Object.defineProperty(document, "execCommand", execCommandDescriptor);
+  else Reflect.deleteProperty(document, "execCommand");
+});
+const mockClipboard = (writeText = vi.fn().mockResolvedValue(undefined)) => {
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  return writeText;
+};
+
+it("copies the exact place name from the first menu entry and closes the menu", async () => {
+  const writeText = mockClipboard();
+  const { container } = render(<EntityChips label="Miejsca"
+    items={[{ text: "Rijadzie", count: 2, entity_type: "placeName" }]}
+    menuActions={() => [{ label: "Edytuj", action: vi.fn() }]} />);
+  expect(container.querySelector('[aria-label^="Kopiuj nazwę:"]')).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Rijadzie" }));
+  expect(screen.getAllByRole("menuitem")[0].textContent).toBe("Kopiuj nazwę");
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Kopiuj nazwę" }));
+  });
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("Rijadzie");
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(container.querySelector('[aria-label^="Kopiuj nazwę:"]')).toBeNull();
+});
+
+it("does not add a menu (or copying) to a chip when menuActions is absent", () => {
+  const { container } = renderInRouter(<EntityChips label="Osoby" linkPersons
+    items={[{ text: "Paweł Kowalski", count: 1, person_id: 42, entity_type: "persName" }]} />);
+  expect(screen.getByRole("link", { name: "Paweł Kowalski ✓" }).getAttribute("href")).toBe("/persons/42");
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.queryByText("Kopiuj nazwę")).toBeNull();
+  expect(container.querySelector('[aria-label^="Kopiuj nazwę:"]')).toBeNull();
+});
+
+it("offers copying on a person chip whose menu has no other entries", async () => {
+  const writeText = mockClipboard();
+  render(<EntityChips label="Osoby" menuActions={() => []}
+    items={[{ text: "Paweł Kowalski", count: 1, person_id: 42, entity_type: "persName" }]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Paweł Kowalski" }));
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Kopiuj nazwę"]);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Kopiuj nazwę" }));
+  });
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("Paweł Kowalski");
+});
+
+it.each(["missing", "rejected", "failed fallback"])("handles %s clipboard access safely from the menu", async (mode) => {
+  if (mode === "missing") Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+  else mockClipboard(vi.fn().mockRejectedValue(new Error("Clipboard unavailable")));
+  const execCommand = vi.fn(() => {
+    expect(document.querySelector("textarea")?.value).toBe("Rijadzie");
+    if (mode === "failed fallback") throw new Error("Copy unavailable");
+    return true;
+  });
+  Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+  render(<EntityChips label="Miejsca" items={[{ text: "Rijadzie", count: 1 }]}
+    menuActions={() => [{ label: "Edytuj", action: vi.fn() }]} />);
+  const trigger = screen.getByRole("button", { name: "Rijadzie" });
+  trigger.focus();
+  fireEvent.click(trigger);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Kopiuj nazwę" }));
+  });
+  expect(execCommand).toHaveBeenCalledWith("copy");
+  expect(document.querySelector("textarea")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+
+it("shows document countries from GET in the editor", async () => {
+  vi.mocked(axios.get).mockResolvedValue({ data: {
+    job: null, entities: {}, countries: [{ slug: "polska", name_pl: "Polska" }],
+  } });
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  expect(await screen.findByText("Polska")).toBeTruthy();
+  expect(screen.getByText("Państwa:")).toBeTruthy();
+});
+
+it.each([
+  { countries: [] as { slug: string; name_pl: string }[] },
+  { countries: [{ slug: "niemcy", name_pl: "Niemcy" }] },
+])("reader countries override GET, including an empty list: $countries", async ({ countries }) => {
+  vi.mocked(axios.get).mockResolvedValue({ data: {
+    job: null, entities: {}, countries: [{ slug: "polska", name_pl: "Polska" }],
+  } });
+  render(<EntitiesPanel docId={10753} countries={countries} />);
+  await act(async () => {});
+  expect(screen.queryByText("Polska")).toBeNull();
+  if (countries.length) expect(screen.getByText("Niemcy")).toBeTruthy();
+  else expect(screen.queryByText("Państwa:")).toBeNull();
+});
+
+it("detects countries, updates chips and reports busy state", async () => {
+  let finish!: (value: any) => void;
+  vi.mocked(axios.post).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const onBusyChange = vi.fn();
+  const onEntitiesChanged = vi.fn();
+  render(<EntitiesPanel docId={10753} onBusyChange={onBusyChange} onEntitiesChanged={onEntitiesChanged} />);
+  await screen.findByRole("button", { name: place.text });
+  onEntitiesChanged.mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Wykryj państwa" }));
+  expect(axios.post).toHaveBeenCalledWith("/document/10753/countries/detect", {},
+    { headers: expect.objectContaining({ "Content-Type": "application/json", "x-api-key": expect.any(String) }) });
+  expect((screen.getByRole("button", { name: "Wykrywam państwa..." }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Wykryj osoby, miejsca i obiekty" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(onBusyChange).toHaveBeenLastCalledWith(true);
+  await act(async () => finish({ data: {
+    countries: [{ slug: "polska", name_pl: "Polska" }], added: ["polska"],
+  } }));
+  expect(screen.getByText("Polska")).toBeTruthy();
+  expect(screen.getByText("Dodano państw: 1.")).toBeTruthy();
+  expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  expect(onEntitiesChanged).toHaveBeenCalledOnce();
+  expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it.each([false, true])("reports no new countries or a detection error: %s", async (fails) => {
+  if (fails) vi.mocked(axios.post).mockRejectedValue({ response: { data: { message: "Database unavailable" } } });
+  else vi.mocked(axios.post).mockResolvedValue({ data: { countries: [], added: [] } });
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  await screen.findByRole("button", { name: place.text });
+  fireEvent.click(screen.getByRole("button", { name: "Wykryj państwa" }));
+  expect(await screen.findByText(fails
+    ? "Nie udało się wykryć państw: Database unavailable" : "Nie wykryto nowych państw.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it.each(["external", "enrichment"])("disables detection while %s work is active", async (busy) => {
+  if (busy === "enrichment") vi.mocked(axios.get).mockResolvedValue({ data: {
+    job: { status: "running" }, entities: {},
+  } });
+  render(<EntitiesPanel docId={10753} externalDisabled={busy === "external"} />);
+  await act(async () => {});
+  expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it.each([false, true])("keeps the place action menu fully opaque (verified: %s)", (verified) => {
+  const { container } = render(<EntityChips label="Miejsca"
+    items={[{ text: "Arabia", count: 1, entity_type: "placeName", verified }]}
+    menuActions={() => [{ label: "Edytuj", action: vi.fn() }]} />);
+  const chip = container.querySelector<HTMLElement>('span[style*="position: relative"]');
+  expect(chip).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Arabia" }));
+  let element: HTMLElement | null = screen.getByRole("menu");
+  expect(chip?.contains(element)).toBe(true);
+  while (element) {
+    expect(["", "1"]).toContain(element.style.opacity);
+    if (element === chip) break;
+    element = element.parentElement;
+  }
+  expect(element).toBe(chip);
+});
+
+it("offers to split a list of countries and posts the confirmed parts", async () => {
+  const compound = { id: 9, text: "Pakistanem Afganistanem", count: 1, split_suggestion: ["Pakistan", "Afganistan"] };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [], geogName: [], placeName: [compound] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", parts: ["Pakistan", "Afganistan"] } });
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  await screen.findByRole("button", { name: compound.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: compound.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Podziel na: Pakistan, Afganistan" }));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("Pakistan, Afganistan");
+  fireEvent.click(screen.getByRole("button", { name: "Podziel" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/9/split_place",
+    { parts: ["Pakistan", "Afganistan"] }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/podzielone na: Pakistan, Afganistan/)).toBeTruthy();
+});
+
+it("offers to split glued organization mentions and posts to split_organization", async () => {
+  // doc #10872: "W liście do NATO Moskwa wyraźnie wspomina..." became one orgName span.
+  const glued = { id: 15887, text: "NATO Moskwa", count: 2, organization_id: 1136 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [glued], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", parts: ["NATO", "Moskwa"] } });
+  render(<MemoryRouter><EntitiesPanel docId={10872} /></MemoryRouter>);
+  await screen.findByRole("button", { name: glued.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: glued.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Podziel na: NATO, Moskwa" }));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("NATO, Moskwa");
+  expect(screen.getByText(/osobna organizacja z rejestru/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Podziel" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/15887/split_organization",
+    { parts: ["NATO", "Moskwa"] }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/podzielone na: NATO, Moskwa/)).toBeTruthy();
+});
+
+it("offers a plain organization split for names without an obvious two-word shape", async () => {
+  const long = { id: 31, text: "Rada Bezpieczeństwa ONZ", count: 1, organization_id: 7 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [long], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockRejectedValue({ response: { data: { message: "Podaj od 2 do 6 różnych, niepustych nazw." } } });
+  render(<MemoryRouter><EntitiesPanel docId={10872} /></MemoryRouter>);
+  await screen.findByRole("button", { name: long.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: long.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Podziel na kilka organizacji…" }));
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(long.text);
+  expect((screen.getByRole("button", { name: "Podziel" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Rada Bezpieczeństwa, ONZ" } });
+  fireEvent.click(screen.getByRole("button", { name: "Podziel" }));
+  expect(await screen.findByText(/Nie udało się podzielić organizacji: Podaj od 2 do 6/)).toBeTruthy();
+});
+
+it("changes a person into a place with an editable name", async () => {
+  const person = { id: 11, text: "Kandaharem", count: 1 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", place_name: "Kandahar" } });
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  await screen.findByRole("button", { name: person.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: person.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na miejsce" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Kandahar" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zmień na miejsce" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/11/to_place",
+    { text: "Kandahar" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na miejsce: Kandahar/)).toBeTruthy();
+});
+
+it("excludes a mis-heard person (\"To nie jest osoba\") globally with the reason preselected", async () => {
+  const person = { id: 21, text: "Egekwo", count: 1 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  vi.mocked(axios.delete).mockResolvedValue({ data: { status: "success" } });
+  render(<MemoryRouter><EntitiesPanel docId={10872} /></MemoryRouter>);
+  await screen.findByRole("button", { name: person.text });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: person.text }));
+  expect(screen.getByRole("menuitem", { name: "× Usuń encję" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("menuitem", { name: "🚫 To nie jest osoba" }));
+  expect((screen.getByLabelText(/Powód/) as HTMLSelectElement).value).toBe("not_a_person");
+  fireEvent.click(screen.getByRole("button", { name: "Globalnie" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/ner_exclusions",
+    { entity_text: "Egekwo", entity_type: "persName", scope: "global", document_id: 10872 },
+    { headers: expect.any(Object) }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith("/website_entities/21",
+    expect.objectContaining({ data: expect.objectContaining({ reason_code: "not_a_person" }) })));
+});
+
+it("saves a Wikipedia article for a place and shows the 📖 link", async () => {
+  const withWiki = { ...place, wikipedia_url: "https://en.wikipedia.org/wiki/Aden" };
+  vi.mocked(axios.put).mockResolvedValue({ data: { status: "success" } });
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  await openMenu();
+  expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze miejsc" }).getAttribute("href"))
+    .toBe("/places?name=Jemenu%20P%C3%B3%C5%82nocnego");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj stronę Wikipedii" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: " https://en.wikipedia.org/wiki/Aden " } });
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+  await waitFor(() => expect(axios.put).toHaveBeenCalledWith("/places/profile",
+    { name: place.text, wikipedia_url: "https://en.wikipedia.org/wiki/Aden" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/Zapisano artykuł Wikipedii/)).toBeTruthy();
+  cleanup();
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [], orgName: [], geogName: [withWiki], placeName: [] } } }));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  expect((await screen.findByRole("link", { name: `Wikipedia: ${place.text}` })).getAttribute("href"))
+    .toBe("https://en.wikipedia.org/wiki/Aden");
+});
+
+const relevanceLabel = { related: "Pośrednio", figurative: "Przenośnie" } as const;
+
+it.each(["related", "figurative"] as const)("sets person and place relevance to %s from the chip menu", async (relevance) => {
+  const person = { id: 11, text: "Trump", count: 1 };
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: [person], orgName: [], geogName: [place], placeName: [] } } }));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  for (const item of [person, place]) {
+    fireEvent.click(await screen.findByRole("button", { name: item.text }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ }));
+    expect(screen.getByRole("menuitem", { name: "✓ Główny temat" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: `○ ${relevanceLabel[relevance]}` }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(`/website_entities/${item.id}/relevance`,
+      { relevance }, { headers: expect.objectContaining({ "Content-Type": "application/json" }) }));
+  }
+});
+
+it("reports an error and keeps the previous relevance when saving fails", async () => {
+  vi.mocked(axios.patch).mockRejectedValue(new Error("offline"));
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: place.text }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "○ Przenośnie" }));
+  expect(await screen.findByText("Nie udało się zapisać związku encji z tematem.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: place.text }));
+  expect(screen.getByRole("menuitem", { name: /Związek z tematem: Główny temat/ })).toBeTruthy();
+});
+
+it.each(["related", "figurative"] as const)("styles %s chips and explains their relevance", (relevance) => {
+  render(<EntityChips label="Miejsca" items={[{ ...place, relevance }]} />);
+  const chip = screen.getByText(place.text).closest(".entity-chip");
+  expect(chip?.classList.contains(`entity-chip--${relevance}`)).toBe(true);
+  expect(chip?.getAttribute("title")).toContain(relevance === "related" ? "Pośredni związek" : "Wzmianka przenośna");
+});
+
+it("folds several persons into one target from a single merge dialog", async () => {
+  const persons = [
+    { id: 1, text: "Luka Nikulesku", count: 7 },
+    { id: 2, text: "Nikuleswsku", count: 1 },
+    { id: 3, text: "Ninkulesko", count: 1 },
+  ];
+  vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
+    ? { job: null } : { entities: { persName: persons, orgName: [], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  render(<MemoryRouter><EntitiesPanel docId={11139} /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: /Nikuleswsku/ }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Połącz z inną osobą w dokumencie…" }));
+  // Also take the third spelling along, then merge both into the full name.
+  const ninkulesko = screen.getByText("Ninkulesko", { selector: "strong" }).parentElement as HTMLElement;
+  fireEvent.click(within(ninkulesko).getByRole("checkbox", { name: "dołącz" }));
+  const target = screen.getByText("Luka Nikulesku", { selector: "strong" }).parentElement as HTMLElement;
+  fireEvent.click(within(target).getByRole("button", { name: "scal 2 do tej osoby" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+  expect(axios.post).toHaveBeenNthCalledWith(1, "/document/11139/persons/merge",
+    { source_entity_id: 2, target_entity_id: 1 }, { headers: expect.any(Object) });
+  expect(axios.post).toHaveBeenNthCalledWith(2, "/document/11139/persons/merge",
+    { source_entity_id: 3, target_entity_id: 1 }, { headers: expect.any(Object) });
+  expect(await screen.findByText(/Połączono 2 osoby/)).toBeTruthy();
 });

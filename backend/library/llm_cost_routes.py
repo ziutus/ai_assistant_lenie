@@ -22,6 +22,18 @@ def _money(value):
     return str(value) if value is not None else None
 
 
+@bp.get("/openrouter_balance")
+def openrouter_balance():
+    """What is left of the OpenRouter key's spending limit (``/key``), for the cost page and the tool radar header.
+
+    ``balance.status`` is ``ok`` (with ``has_limit``, ``limit_usd``, ``remaining_usd``, ``usage_usd``, ``reset``,
+    ``low``, ``exhausted``), ``not_configured`` or ``unavailable``. Cached for a minute; reads only the key's own data.
+    """
+    from library.api.openrouter.openrouter_key import fetch_key_status
+
+    return jsonify({"balance": fetch_key_status()})
+
+
 @bp.get("/llm_costs")
 def llm_costs():
     today = date.today()
@@ -54,6 +66,18 @@ def llm_costs():
             func.sum(LlmUsageLog.cost_amount).label("cost"),
             func.count().filter(LlmUsageLog.cost_status == "unknown").label("unknown_calls"),
         ).where(*filters).group_by(LlmUsageLog.cost_currency)
+    ).all()
+    providers = session.execute(
+        select(
+            LlmUsageLog.provider,
+            LlmUsageLog.cost_currency,
+            func.count().label("calls"),
+            func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).label("tokens"),
+            func.sum(LlmUsageLog.cost_amount).label("cost"),
+            func.count().filter(LlmUsageLog.cost_status == "unknown").label("unknown_calls"),
+            func.count().filter(LlmUsageLog.success.is_(False)).label("failed_calls"),
+        ).where(*filters).group_by(LlmUsageLog.provider, LlmUsageLog.cost_currency)
+        .order_by(func.sum(LlmUsageLog.cost_amount).desc().nullslast(), func.count().desc())
     ).all()
     day = func.date(LlmUsageLog.called_at).label("day")
     daily = session.execute(
@@ -106,6 +130,9 @@ def llm_costs():
         "document_id": document_id,
         "totals": [{"currency": r.cost_currency, "calls": r.calls, "tokens": r.tokens,
                     "cost": _money(r.cost), "unknown_calls": r.unknown_calls} for r in totals],
+        "providers": [{"provider": r.provider, "currency": r.cost_currency, "calls": r.calls, "tokens": r.tokens,
+                       "cost": _money(r.cost), "unknown_calls": r.unknown_calls, "failed_calls": r.failed_calls}
+                      for r in providers],
         "daily": [{"day": str(r.day), "currency": r.cost_currency, "calls": r.calls,
                    "tokens": r.tokens, "cost": _money(r.cost)} for r in daily],
         "operations": [{"operation": r.operation, "model": r.model, "currency": r.cost_currency,

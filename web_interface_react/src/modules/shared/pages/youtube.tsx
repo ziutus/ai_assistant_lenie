@@ -1,4 +1,7 @@
 import React from "react";
+import TranscriptChaptersSuggest from "../components/TranscriptChaptersSuggest/transcriptChaptersSuggest";
+import SkillCommand from "../components/SkillCommand";
+import ChapterBoundariesPanel from "../components/ChapterBoundariesPanel/chapterBoundariesPanel";
 import { renderMarkdown } from "./read";
 import axios from "axios";
 import { useFormik } from "formik";
@@ -7,6 +10,7 @@ import SharedInputs from "../components/SharedInputs/sharedInputs";
 import InputsForAllExceptLink from "../components/SharedInputs/InputsForAllExceptLink";
 import { NavLink, useParams } from "react-router-dom";
 import FormButtons from "../components/FormButtons/formButtons";
+import ChannelBadge from "../components/ChannelBadge";
 import { AuthorizationContext } from '../context/authorizationContext';
 import { markCaptionsFetching, isCaptionsFetching } from "../utils/youtubeCaptionsFetchStatus";
 
@@ -60,15 +64,29 @@ const Youtube = () => {
     formik, selectedDocumentType, selectedDocumentState
   });
 
+  const descriptionLength = String(formik.values.video_description || "").trim().length;
+  const hasDescription = descriptionLength > 0;
+  const chapterCount = String(formik.values.chapter_list || "").split(/\r?\n/).filter((line) => line.trim()).length;
   const transcriptMissing = !String(formik.values.text || "").trim();
   // Paragraphization is deliberately constrained to imported Markdown
   // chapters, so the model can only add whitespace within a known section.
-  const hasMarkdownChapters = /^#{1,2} .+/m.test(String(formik.values.text || ""));
+  const hasMarkdownChapters = /^## .+/m.test(String(formik.values.text || ""));
+  // A chapter that still has its imported single-block body yields one heading
+  // block and one body block; paragraphization adds more blocks per chapter.
+  const textBlocks = String(formik.values.text || "").split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const headingBlocks = textBlocks.filter((block) => /^#{1,2} /.test(block)).length;
+  const paragraphBlocks = textBlocks.length - headingBlocks;
+  const alreadyParagraphized = hasMarkdownChapters && paragraphBlocks > headingBlocks;
   const canFetchCaptions = Boolean(id) && transcriptMissing
     && ["URL_ADDED", "NEED_TRANSCRIPTION", "TEMPORARY_ERROR"].includes(formik.values.processing_status);
+  const showChapterEditor = Boolean(id) && hasMarkdownChapters && /^## /m.test(String(formik.values.text || ""));
+  const [chapterEditorBusy, setChapterEditorBusy] = React.useState(false);
   const [captionMessage, setCaptionMessage] = React.useState("");
   const [paragraphizing, setParagraphizing] = React.useState(false);
   const [paragraphMessage, setParagraphMessage] = React.useState("");
+  const [applyingOutline, setApplyingOutline] = React.useState(false);
+  const [outlineChaptersMessage, setOutlineChaptersMessage] = React.useState("");
+  const hasOutline = Boolean(String(formik.values.outline_md || "").trim());
   const [refetchingDescription, setRefetchingDescription] = React.useState(false);
   const [descriptionMessage, setDescriptionMessage] = React.useState("");
   // Covers the case where the fetch was triggered from /list (or another tab)
@@ -162,19 +180,49 @@ const Youtube = () => {
     }
   };
 
+  const applyOutlineChapters = async () => {
+    if (!id || hasMarkdownChapters) return;
+    if (!window.confirm("Zastosować spis treści jako rozdziały? Do transkrypcji zostaną dodane nagłówki, tekst się nie zmieni.")) return;
+    setApplyingOutline(true);
+    setOutlineChaptersMessage("");
+    try {
+      const response = await axios.post(
+        `${apiUrl}/document/${id}/apply_outline_chapters`,
+        {},
+        { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` }, timeout: 60000 },
+      );
+      await handleGetLinkByID(id);
+      const dropped = response.data.dropped?.length ? `, pominięto: ${response.data.dropped.join(", ")}` : "";
+      const stale = response.data.has_analysis_runs ? ". Istniejące analizy chunków dotyczą starego podziału" : "";
+      setOutlineChaptersMessage(`Gotowe: ${response.data.chapter_count} rozdziałów${dropped}${stale}.`);
+    } catch (error: any) {
+      const detail = error.response?.data?.message || error.message;
+      setOutlineChaptersMessage(`Nie udało się dodać rozdziałów: ${detail}`);
+    } finally {
+      setApplyingOutline(false);
+    }
+  };
+
   return (
     <div>
-      <h2 style={{ marginBottom: "10px" }}>Youtube</h2>
+      <h2 style={{ marginBottom: "10px" }}>
+        Youtube<ChannelBadge channel={formik.values.byline} style={{ marginLeft: 8, verticalAlign: "middle" }} />
+      </h2>
       {id && <NavLink to={`/llm-costs?document_id=${id}`} style={{ display: "inline-block", marginBottom: 10, fontSize: "0.9em", color: "#0369a1" }}>💰 Koszty i etapy LLM</NavLink>}
       <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
         {id && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
             <strong>Opis filmu</strong>
             <div style={{ marginTop: 6, color: "#475569" }}>
-              Pobiera aktualny opis z YouTube i wyciąga z niego spis rozdziałów (linie w formacie „0:00 Tytuł”). Nadpisuje pole „Chapter list” poniżej, jeśli znajdzie co najmniej dwa znaczniki czasu.
+              Pobiera aktualny opis z YouTube i wyciąga z niego spis rozdziałów (linie w formacie „0:00 Tytuł”). Nadpisuje pole „Chapter list” poniżej, jeśli znajdzie co najmniej dwa znaczniki czasu{hasDescription ? " — ponowne pobranie zastąpi obecną listę rozdziałów" : ""}.
             </div>
+            {hasDescription && (
+              <div style={{ marginTop: 6, color: "#166534" }}>
+                ✓ Opis zapisany ({descriptionLength} znaków), {chapterCount > 0 ? `rozdziałów: ${chapterCount}` : "brak spisu rozdziałów"}
+              </div>
+            )}
             <button type="button" className="button" style={{ marginTop: 10 }} onClick={refetchDescription} disabled={refetchingDescription || isLoading}>
-              {refetchingDescription ? "Pobieram opis…" : "Pobierz opis (spis rozdziałów) z YouTube"}
+              {refetchingDescription ? "Pobieram opis…" : hasDescription ? "Pobierz opis ponownie (odśwież z YouTube)" : "Pobierz opis z YouTube"}
             </button>
             {descriptionMessage && <div style={{ marginTop: 8 }}>{descriptionMessage}</div>}
           </section>
@@ -184,6 +232,14 @@ const Youtube = () => {
             <summary style={{ cursor: "pointer" }}>Spis treści (AI)</summary>
             {renderMarkdown(formik.values.outline_md, [])}
           </details>
+        )}
+        {id && !transcriptMissing && !formik.values.outline_md?.trim() && (
+          <div style={{ marginBottom: 14, color: "#667" }}>
+            Brak spisu treści (AI).
+            <SkillCommand command={`/lenie-youtube-outline ${id}`}>
+              Skill wygeneruje spis treści tematów i zapisze go po Twojej akceptacji.
+            </SkillCommand>
+          </div>
         )}
         {id && transcriptMissing && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
@@ -206,22 +262,47 @@ const Youtube = () => {
             {captionMessage && <div style={{ marginTop: 8 }}>{captionMessage}</div>}
           </section>
         )}
+        {id && !transcriptMissing && !hasMarkdownChapters && (
+          <TranscriptChaptersSuggest key={id} docId={id} disabled={isLoading}
+            onBusyChange={setChapterEditorBusy} onSaved={async () => {
+            await handleGetLinkByID(id);
+            setParagraphMessage("Zapisano rozdziały.");
+          }} />
+        )}
         {id && !transcriptMissing && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
             <strong>Formatowanie transkrypcji</strong>
             <div style={{ marginTop: 6, color: "#475569" }}>
-              Bielik wskaże granice akapitów w obrębie istniejących rozdziałów. Zmieni wyłącznie odstępy między zdaniami.
+              Bielik wskaże granice akapitów w obrębie istniejących rozdziałów. Zmieni wyłącznie odstępy między zdaniami{alreadyParagraphized ? ". Ponowne uruchomienie jest zwykle zbędne i zużywa wywołania modelu" : ""}.
             </div>
-            {!hasMarkdownChapters && (
-              <div role="status" style={{ marginTop: 8, color: "#92400e" }}>
-                Nie można jeszcze podzielić transkrypcji na akapity: nie ma w niej rozdziałów. Rozdziały są importowane z ręcznie podanej listy czasowej albo z co najmniej dwóch znaczników czasu w opisie filmu YouTube. Ten film nie dostarcza żadnego z tych źródeł.
+            {alreadyParagraphized && (
+              <div style={{ marginTop: 6, color: "#166534" }}>
+                ✓ Transkrypcja jest już podzielona na akapity ({paragraphBlocks} akapitów w {headingBlocks} rozdziałach)
               </div>
             )}
+            {!hasMarkdownChapters && (
+              <div role="status" style={{ marginTop: 8, color: "#92400e" }}>
+                Nie można jeszcze podzielić transkrypcji na akapity: nie ma w niej rozdziałów. Użyj sekcji „Podział na rozdziały (AI)” powyżej albo zaimportuj rozdziały z ręcznie podanej listy czasowej, z co najmniej dwóch znaczników czasu w opisie filmu YouTube albo ze spisu treści (AI) z zatwierdzonymi kotwicami (skill <code>/lenie-youtube-outline</code>).
+              </div>
+            )}
+            {!hasMarkdownChapters && hasOutline && (
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className="button" onClick={applyOutlineChapters} disabled={applyingOutline || isLoading}>
+                  {applyingOutline ? "Dodaję rozdziały…" : "Zastosuj spis treści jako rozdziały"}
+                </button>
+              </div>
+            )}
+            {outlineChaptersMessage && <div style={{ marginTop: 8 }}>{outlineChaptersMessage}</div>}
             <button type="button" className="button" style={{ marginTop: 10 }} onClick={paragraphizeTranscript} disabled={!hasMarkdownChapters || paragraphizing || isLoading}>
-              {paragraphizing ? "Dzielę na akapity…" : "Podziel transkrypcję na akapity (Bielik)"}
+              {paragraphizing ? "Dzielę na akapity…" : alreadyParagraphized ? "Podziel na akapity ponownie (Bielik)" : "Podziel transkrypcję na akapity (Bielik)"}
             </button>
             {paragraphMessage && <div style={{ marginTop: 8 }}>{paragraphMessage}</div>}
           </section>
+        )}
+        {id && showChapterEditor && (
+          <ChapterBoundariesPanel key={id} docId={id} defaultOpen disabled={isLoading || paragraphizing}
+            onBusyChange={setChapterEditorBusy}
+            onSaved={() => handleGetLinkByID(id)} />
         )}
         <SharedInputs
           formik={formik}
@@ -231,6 +312,7 @@ const Youtube = () => {
           handleGetPageByUrl={handleGetPageByUrl}
         />
         <InputsForAllExceptLink
+          hideText={showChapterEditor}
           formik={formik}
           isLoading={isLoading}
           handleRemoveNotNeededText={handleRemoveNotNeededText}
@@ -239,7 +321,7 @@ const Youtube = () => {
           message={message}
           formik={formik}
           isError={isError}
-          isLoading={isLoading}
+          isLoading={isLoading || chapterEditorBusy}
           handleSaveWebsiteNext={handleSaveWebsiteNext}
           handleSaveWebsiteToCorrect={handleSaveWebsiteToCorrect}
         />

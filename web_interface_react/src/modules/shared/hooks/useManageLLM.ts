@@ -194,7 +194,9 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
     }
   };
 
-  const handleSaveWebsiteNext = async (website: any) => {
+  // `destination` only matters for YouTube: "ner" (default) continues to the per-chapter
+  // NER review, "chunks" skips it and goes straight to the chunk analysis.
+  const handleSaveWebsiteNext = async (website: any, destination: "ner" | "chunks" = "ner") => {
     setIsLoading(true);
     setAutoFlowComplete(false);
 
@@ -300,8 +302,8 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
         setMessage(response.data.message);
         setIsLoading(false);
         setIsError(false);
-        // Entity review is embedded in the transcript editor; continue to chunks.
-        navigate(`/chunks/${website.id}`);
+        // NER review is per chapter: land on the first content chapter (position 1), not the whole document.
+        navigate(destination === "chunks" ? `/chunks/${website.id}` : `/ner/${website.id}/1`);
         return;
       }
 

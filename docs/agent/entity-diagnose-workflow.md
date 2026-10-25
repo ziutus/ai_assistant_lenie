@@ -66,6 +66,20 @@ Połącz się z bazą NAS przez psql (`docs/CICD/NAS_Deployment.md`,
    `library/entity_service.py`). Obie tabele mają REST API: `GET/POST
    /ner_exclusions`, `GET/POST /ner_corrections`.
 
+   Zanim uznasz, że dla błędu STT brakuje mechanizmu, sprawdź jeszcze
+   `ner_channel_glossary` (aliasy i warianty fonetyczne nazw per kanał,
+   stosowane tylko na kopii tekstu przed NER — nie zmieniają tekstu w czytniku)
+   i `transcript_corrections` (literalne zamiany całych fraz stosowane przy
+   zapisie transkrypcji, czyli poprawiają tekst widoczny w czytniku i w NER):
+
+   ```sql
+   SELECT * FROM transcript_corrections WHERE pattern ILIKE '%fragment%';
+   ```
+
+   Wybór: zła nazwa własna/wariant fonetyczny kanału → glosariusz; zła
+   forma gramatyczna lub pisownia frazy w tekście → `transcript_corrections`;
+   fałszywa encja → `ner_exclusions`.
+
 Na tym etapie powinieneś już wiedzieć: czy encja w ogóle istnieje, jak
 wygląda zdanie źródłowe, i czy to nowy przypadek, czy coś, co powinna była
 złapać istniejąca reguła (a nie złapała — to osobny bug do zdiagnozowania).
@@ -88,12 +102,13 @@ Typowe kategorie i gdzie naprawiać:
 
 | Objaw | Przyczyna | Gdzie naprawić |
 |---|---|---|
-| Etnonim oznaczony jako miejsce, np. „Izraelczyków” / „Amerykanów”, odrzucany jako `not_place` | Odmieniona nazwa mieszkańców powinna liczyć się jako metonimiczna wzmianka kraju | `demonym_patterns` w `backend/data/ner_normalization.json` mapuje ją na kraj przed weryfikacją miejsc; rozszerzaj tę listę wyłącznie o rdzeń i zamknięty zestaw końcówek (liczba pojedyncza/mnoga, obie płcie, wszystkie przypadki), nigdy otwarte `.*` ani `\w*`. Dopasowanie pełnej formy po `unidecode().casefold()`; „Polkowice” nie może pasować do „Polka”. Testuj sam matcher oraz scalanie liczników i wariantów w `ner_client`; zachowaj filtry POS/małej litery i dokładną listę `demonyms` |
+| Kraj o nazwie dwuwyrazowej (np. „Sri Lanki”) znika, bo root spaCy ma `POS=X` | Filtr POS odrzuca wzmiankę przed kanonikalizacją kraju, mimo trafienia w zamkniętym gazetteerze | Filtr POS w `ner_client.aggregate_entities_detailed` zwalnia wyłącznie `POS=X` dla krajów z gazetteera (`COUNTRY_CHECK_TYPES` + `canonical_country_for_surface(surface)`); inne POS (np. ADJ „Polski”) i filtr małej litery pozostają bez zmian (T30, E043) |
+| Etnonim oznaczony jako miejsce, np. „Izraelczyków” / „Amerykanów”, odrzucany jako `not_place` | Odmieniona nazwa mieszkańców powinna liczyć się jako metonimiczna wzmianka kraju | `demonym_patterns` w `backend/library/ner_normalization_rules.json` mapuje ją na kraj przed weryfikacją miejsc; rozszerzaj tę listę wyłącznie o rdzeń i zamknięty zestaw końcówek (liczba pojedyncza/mnoga, obie płcie, wszystkie przypadki), nigdy otwarte `.*` ani `\w*`. Dopasowanie pełnej formy po `unidecode().casefold()`; „Polkowice” nie może pasować do „Polka”. Testuj sam matcher oraz scalanie liczników i wariantów w `ner_client`; zachowaj filtry POS/małej litery i dokładną listę `demonyms`. Etnonim kontynentalny nie oznacza kraju: zamknięta lista `non_place_demonym_patterns` obejmuje wyłącznie rodzinę „Europejczyk”/„Europejka” i odrzuca ją dla `PLACE_TYPES` przed normalizacją kraju; „Europa” pozostaje miejscem (T16, E029) |
 | Generyczna nazwa „Huty” / „Huti” / „Huta” / „Południe” ma propozycję geokodera, ale status `needs_review` | Cała nazwa lub wariant pasuje do `generic_place_names`; trafienie geokodera nie dowodzi znaczenia wzmianki | W panelu sprawdź pełną propozycję i wybierz „Zatwierdź tę lokalizację” (`POST /website_entities/<id>/confirm_place`); odrzucenie przez istniejące DELETE. Liczba wzmianek i LLM nie zdejmują blokady. Rekonsyliacja starych tagów: `imports/reconcile_generic_place_tags.py`, domyślnie dry-run |
-| `geocode_cache.resolved=false`, `entity_text` wygląda jak dwa zlepione zdania (brak przecinka/kropki w źródle) | NER połączył miejsce z sąsiednią wzmianką kraju w jeden span | Już obsługiwane przez `country_gazetteer.strip_country_edge()` + `place_verification._retry_after_stripping_country()` (PR #535) — sprawdź, czy backend na NAS ma tę wersję kodu (`git log -1 -- backend/library/place_verification.py`), a nie że trzeba pisać nową regułę |
-| `entity_text` to rzadka odmiana obcojęzycznego miasta/cieśniny/zatoki, geokoder nie widzi w niej mianownika | spaCy nie zlemmatyzowało nazwy, brak wpisu w gazetteerze | Dopisz wariant do `library/city_gazetteer.py` (miasta) albo `library/geo_feature_gazetteer.py` (morza/cieśniny/zatoki/kanały) |
-| `geocode_cache.raw` pokazuje trafienie w zupełnie inne miejsce, albo `resolved=false` mimo poprawnej polskiej pisowni | LocationIQ/OSM indeksuje miejsce pod inną transliteracją (patrz `library/geocode_aliases.py` — case Al-Faszir/El Fasher) | Dopisz wpis do `library/geocode_aliases.py`; zweryfikuj ręcznie `geocode()`/`is_plausible_match()` przed dopisaniem (patrz docstring modułu — próg 0.75) |
-| Miejsce geokoduje się poprawnie, ale nie dostaje tagu `miejsce-*` | `NerContextClassification` odrzuciło je jako nie-miejsce (homonim, np. system uzbrojenia "Wisła-Narew-Pilica"), albo LLM (`article_tagging.confirm_places_with_llm`) uznał wzmiankę za nieistotną | Sprawdź `context_excerpt`/`rationale` w `ner_context_classifications`; werdykt `not_place` z wysoką pewnością ustawia też `place_verification_status='rejected'` i `place_review_reason='context_not_place'` na encji (także bez rozwiązanego geokodowania), z wyjątkiem `confirmed`/`source='manual'`. Jeśli klasyfikacja jest błędna, to bug w `library/place_context_classifier.py`, nie w geokodowaniu |
+| `geocode_cache.resolved=false`, `entity_text` wygląda jak dwa zlepione zdania (brak przecinka/kropki w źródle) | NER połączył miejsce z sąsiednią wzmianką kraju w jeden span | Już obsługiwane przez `country_gazetteer.strip_country_edge()` + `place_verification._retry_after_stripping_country()` (PR #535) — sprawdź, czy backend na NAS ma tę wersję kodu (`git log -1 -- backend/library/place_verification.py`), a nie że trzeba pisać nową regułę. Ucięte „Arabię/Arabii” przed „Saudyjsk*” rozszerza `ner_client.py` na podstawie offsetów w bieżącym oknie, przed kanonikalizacją kraju (E026). |
+| `entity_text` to rzadka odmiana obcojęzycznego miasta/cieśniny/zatoki, geokoder nie widzi w niej mianownika | spaCy nie zlemmatyzowało nazwy, brak wpisu w gazetteerze | Miasto/stan: dopisz wpis `kind=city` przez `POST /ner_gazetteer` (klucz `service`, **bez deployu**, [ADR-029](../adr/adr-029-ner-gazetteer-db-backed.md); wzorce `stem*`, np. `{"kind":"city","name_pl":"Luizjana","patterns":["luizjan*","luisian*"],"source_document_id":10872}`, działa po ≤60 s). Morza/cieśniny/zatoki/kanały nadal w `library/geo_feature_gazetteer.py` (kod + PR). Wpis w dzienniku przypadków nadal wymagany (E031). |
+| `geocode_cache.raw` pokazuje trafienie w zupełnie inne miejsce, albo `resolved=false` mimo poprawnej polskiej pisowni | LocationIQ/OSM indeksuje miejsce pod inną transliteracją (patrz `library/geocode_aliases.py` — case Al-Faszir/El Fasher, Kaliningrad → Królewiec (doc #10872)) | Dopisz alias przez `POST /ner_gazetteer` (`kind=geocode_alias`, `name_pl`, `geocode_alias`; bez deployu, ADR-029) — seed w `library/geocode_aliases.py` ma pierwszeństwo; zweryfikuj ręcznie `geocode()`/`is_plausible_match()` przed dopisaniem (patrz docstring modułu — próg 0.75) |
+| Miejsce geokoduje się poprawnie, ale nie dostaje tagu `miejsce-*` | `NerContextClassification` odrzuciło je jako nie-miejsce (homonim, np. system uzbrojenia "Wisła-Narew-Pilica"), albo LLM (`article_tagging.confirm_places_with_llm`) uznał wzmiankę za nieistotną | Sprawdź `context_excerpt`/`rationale` w `ner_context_classifications`; werdykt `not_place` z wysoką pewnością ustawia też `place_verification_status='rejected'` i `place_review_reason='context_not_place'` na encji (także bez rozwiązanego geokodowania), z wyjątkiem `confirmed`/`source='manual'`. Jeśli klasyfikacja jest błędna, to bug w `library/place_context_classifier.py`, nie w geokodowaniu. **Brak wiersza dla encji w `ner_context_classifications`** i wpis „Contextual place verification failed for document <id>; retaining batch” w logach `lenie-worker` = ucięta odpowiedź paczki; od E042 paczka ma 8 kandydatów i przy błędzie JSON jest dzielona na połowy (`_classify_with_split()`), więc to stare dane z przebiegu sprzed wdrożenia — odśwież NER dokumentu. Nazwa miejsca użyta we frazeologizmie/eufemizmie („odsyła do Jerozolimy” = zabija) dostaje `not_place` z reguły w prompcie |
 | „Zachód/Zachodzie” pisane wielką literą oznaczone jako miejsce | Klasyfikator kontekstu myli blok polityczno-kulturowy z kierunkiem geograficznym | Prompt w `library/place_context_classifier.py` klasyfikuje blok jako `organization`; aliasy organizacji „Państwa Zachodu” (org 106) rozwiązują wzmiankę w rejestrze. Aliasy i kraje bloku są danymi rejestru organizacji, nie listą w kodzie; kierunek i fragment nazwy „Polskie Siły Zbrojne na Zachodzie” pozostają `not_place` |
 | Ten sam realny obiekt widoczny dwa razy pod różną pisownią/typem (`geogName` vs `placeName`) | `_canonicalize_and_merge_places()` nie scaliło — geokoder zwrócił różne `display_name` dla obu wariantów | Sprawdź `canonical_place_name()` w `library/locationiq_client.py`; zwykle wystarczy, że oba wiersze mają ten sam `geocode_id` |
 | Miejsce faktycznie nie istnieje w LocationIQ (nie tylko po polsku) | Limit danych geokodera, nie bug | Zostaw jako `verified=false`; nie twórz reguły na siłę |
@@ -119,7 +134,9 @@ SELECT * FROM person_aliases WHERE alias ILIKE '%fragment%';
 | Encja w ogóle nie trafiła do `document_persons` | Filtr jednowyrazowych wzmianek bez trafienia w Wikidata (`person_registry.py`) potraktował ją jako szum | Sprawdź czy to faktycznie osoba; jeśli tak, ale mało znana/lokalna — to oczekiwane, wpis i tak trafi do rejestru bez QID przy kolejnym wystąpieniu z pełniejszym kontekstem |
 | `confidence='manual_review'`, ktoś inny niż powinien | LLM (`confirm_person_with_llm`) źle rozstrzygnął ujednoznacznienie (kilku kandydatów w Wikidata o tym samym nazwisku) | To do ręcznej decyzji w `GET/PATCH /persons_review`, nie automatyczna reguła |
 | Ta sama osoba pod dwiema pisowniami/odmianami jako różne wpisy w `persons` | Brak aliasu łączącego formy | `POST /persons/<id>/aliases`, albo `merge_review_link()` jeśli to już przeszło przez `manual_review` |
+| Błąd STT w samej frazie źródłowej (np. doc #10872: "pięto Achillesa" zamiast "pięta Achillesa") | Błąd pisowni lub odmiany w transkrypcji; to poprawka tekstu, nie encji | `POST /transcript_corrections` — literalna zamiana całej frazy (opcjonalnie `scope=author`); podgląd i backfill jednego dokumentu: `POST /transcript_corrections/apply` (domyślnie `dry_run`). `ner_exclusions` służy do fałszywie pozytywnej encji, nie do naprawy tekstu źródłowego |
 | Coś ewidentnie nie-osobowego rozpoznane jako `persName` (artefakt STT, homograf) | Fałszywy pozytyw spaCy | `POST /ner_exclusions` (`entity_type='persName'`, ew. `scope='author'` dla artefaktów jednego kanału/podcastu) |
+| Nazwa produktu/usługi/systemu (np. „Starshielda” — wojskowa wersja Starlinka) rozpoznana jako `persName` | spaCy nie ma typu „produkt”, obca nazwa w odmianie wygląda jak osoba (E040) | `POST /ner_exclusions` dla wszystkich form (`Starshield`, `Starshielda`), a nazwę, jeśli jest ważna dla tekstu, dodaj ręcznie jako „🛰️ Produkt / system” z menu zaznaczenia na `/ner/:id` (`productName`, `POST /document/<id>/entities/add_mention`) |
 
 ### Organizacje (`orgName`)
 
@@ -139,10 +156,14 @@ SELECT * FROM organization_ambiguous_aliases WHERE alias ILIKE '%fragment%';
 
 | Objaw | Przyczyna | Gdzie naprawić |
 |---|---|---|
+| Dwie nazwy w jednym spanie, np. „Departamentu Obrony na Departament Wojny” | spaCy skleja opis zmiany nazwy przez „na” | Wąski podział przed agregacją w `ner_client._split_rename_org_spans`: jedno małe „ na ”, wielkie litery obu części i całe krótsze pierwsze słowo jako prefiks dłuższego (min. 6 znaków); T18/E030 |
 | Pierwsze wystąpienie nowej organizacji, brak opisu | Oczekiwane — rejestr rośnie z każdym nowym dokumentem | `PATCH /organizations/<id>` żeby dopisać opis, nie bug |
 | Ten sam skrót oznacza różne organizacje w różnych dokumentach (np. "SAF") | Skrót niejednoznaczny kontekstowo | `organization_ambiguous_aliases` + `select_ambiguous_alias_candidate_with_llm()` — sprawdź czy skrót ma tam wpis, jeśli nie, to feature do dodania, nie fix |
 | Kraj rozpoznany jako `orgName` zamiast `geogName`/`placeName` (spaCy gubi się na imiesłowach, np. "Zjednoczone Emiraty Arabskie") | `COUNTRY_CHECK_TYPES` w `ner_client.py` powinno to złapać przez `country_gazetteer` — ale do PR #550 (2026-08-23) było znane, świadomie zaakceptowane ograniczenie: jeśli *wszystkie* wzmianki danego kraju w dokumencie spaCy oznaczyło jako `orgName` (ani razu `geogName`/`placeName`), głosowanie etykiet w `aggregate_entities_detailed()` nie miało kandydata do wygrania i zostawiało `orgName` (przypadek doc #9394, "Arabia Saudyjska" — sprawdź `git log -1 -- backend/library/ner_client.py` po tekście "is_country" żeby potwierdzić, że backend na NAS ma tę wersję) | Jeśli backend na NAS **nie ma** PR #550 — to nadal żywy bug, wdróż. Jeśli **ma** PR #550, a mimo to kraj wciąż jest `orgName` — sprawdź najpierw, czy nazwa w ogóle ma wpis w `country_gazetteer.py` (to już inny, osobny bug — brakujący gazetteer, nie fallback głosowania) |
+| Dwie sąsiednie wzmianki zlepione w jeden span `orgName` bez łącznika, np. „NATO Moskwa” (przy łączniku „A na B” działa reguła T18) | spaCy skleja kolejne nazwy własne bez przecinka; granicy nie da się ustalić regułą | W panelu encji menu chipa → „Podziel na kilka organizacji…” (`POST /website_entities/<id>/split_organization`): części przechodzą przez rejestr, decyzja jest audytowana i odtwarzana po odświeżeniu NER (T19, E032) |
 | Dwie różne pisownie tej samej organizacji jako osobne wpisy | Brak aliasu | `POST /organizations/<id>/aliases`, albo `POST /organizations/<id>/merge` |
+| Stolica w znaczeniu rządu w narzędniku („między Kijowem i Waszyngtonem”) jako osobne `placeName` obok `orgName` „Kijów” | spaCy nie sprowadza narzędnika do mianownika; mianownik jest organizacją w rejestrze (E041) | `POST /organizations/<id>/aliases` (`alias_kind=inflection`) dla odmiany, potem `POST /website_entities/<id>/to_organization` na wierszu miejsca — dołącza do istniejącej organizacji |
+| Nazwisko („Trump”) jako `orgName` obok `persName` i organizacja w rejestrze z aliasami odmian | rejestr sprowadza odmienione formy aliasami do „Trump” już po wykluczeniu, więc samo wykluczenie „Trump” nie wystarcza (E041) | `ner_exclusions` `orgName` dla każdej formy (Trump, Trumpa, Trumpowi, …); dokumenty bez embeddingów odśwież (`POST /website_entities`), w tych z embeddingami usuń sam wiersz (`DELETE /website_entities/<id>`, nigdy „reopen”, który kasuje chunki i embeddingi); organizację usuń przez `DELETE /organizations/<id>` dopiero gdy nic do niej nie linkuje, **także źródło informacji** (`information_sources.organization_id`) — odpięcie jest tylko w SQL |
 | `canonical_name` to bezsensowna, małymi literami, niezgramatyczna fraza (np. "europejski rada sprawa zagraniczny" dla "Europejskiej Rady Spraw Zagranicznych") | Surowy, mangled lemat spaCy (`Span.lemma_` konkatenuje lematy per-token i gubi odmianę przymiotnika) trafił wprost do `canonical_name` przy tworzeniu organizacji | Sprawdź NAJPIERW Etap 2b — `NOMINATIVE_PREFERENCE_TYPES` w `ner_client.py` (Faza 1/5, PR #517) już to naprawia dla nowych/odświeżanych wpisów; jeśli organizacja jest starsza niż wdrożenie tej poprawki, to stara dana, nie żywy bug — napraw przez `PATCH /organizations/<id>` (ustawia nową `canonical_name`, stara zostaje aliasem) + `POST /website_entities` (żeby przepisać `document_entities.entity_text`, bo to on jest wyświetlany w `/read`, nie `organizations.canonical_name`) |
 
 ## Etap 2b: to żywy bug, czy stare dane pod już naprawionym mechanizmem?
@@ -329,6 +350,23 @@ rozpoznawanie miejsc/osób/organizacji" oraz jako pełny ślad audytowy.
 4. Commituj wpis w tym samym PR co kod/dokumentacja (jak Etap 6); dla
    przypadków czysto danowych bez własnego PR — jako osobny mały PR
    dokumentacyjny.
+
+## Pułapki środowiska (Windows, sesja w worktree)
+
+- `psql -c` z Basha psuje polskie znaki w argumencie (`invalid byte sequence`).
+  Używaj wzorców bez diakrytyków (`%chilles%`) albo narzędzia PowerShell z
+  `$env:PGCLIENTENCODING='UTF8'`. Odczyty REST z polskim JSON-em wysyłaj jako
+  bajty UTF-8.
+- Sesja izolowana w worktree odrzuca złożone polecenia Basha (`cd … &&`,
+  prefiksy zmiennych, przekierowania). Uruchamiaj proste, osobne polecenia.
+  Po zmianie katalogu sprawdź bieżący (`backend/` zmienia ścieżki do
+  `infra/docker/nas-deploy.sh` i do `git add`; używaj `git add -A ':/backend'`).
+- Wywołania REST na NAS wymagają klucza serwisowego (`LENIE_API_KEY` w profilu
+  użytkownika); `POST` bez niego zwraca 401.
+- Jeśli Codex padł w połowie (np. limit użycia), nie zakładaj ani sukcesu, ani
+  porażki: obejrzyj `git status`/`git diff` w worktree, uruchom testy i `ruff`
+  sam i dokończ lub zleć resztę po resecie limitu — powiedz to wprost
+  użytkownikowi.
 
 ## Kryterium ukończenia
 

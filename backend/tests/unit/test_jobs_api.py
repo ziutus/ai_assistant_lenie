@@ -72,7 +72,9 @@ def test_user_can_manually_run_feed_daily(monkeypatch):
         captured.update(job_type=job_type, parameters=parameters, **kwargs)
         return SimpleNamespace(id="user-feed-daily-job", status="queued")
 
-    monkeypatch.setattr("library.feed_routes.get_scoped_session", lambda: MagicMock())
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = None  # no queued/running feed_daily
+    monkeypatch.setattr("library.feed_routes.get_scoped_session", lambda: session)
     monkeypatch.setattr("library.feed_routes.enqueue", fake_enqueue)
     app = Flask(__name__)
 
@@ -84,6 +86,27 @@ def test_user_can_manually_run_feed_daily(monkeypatch):
     assert response[0].json == {"id": "user-feed-daily-job", "status": "queued"}
     assert captured["job_type"] == "feed_daily"
     assert captured["user_id"] == 42
+    # No day-based key: a finished feed_daily from earlier today must not swallow a manual rerun.
+    assert captured["idempotency_key"] is None
+
+
+def test_manual_feed_daily_reuses_an_active_job(monkeypatch):
+    from library.feed_routes import create_job
+
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = SimpleNamespace(id="running-job", status="running")
+    enqueue = MagicMock()
+    monkeypatch.setattr("library.feed_routes.get_scoped_session", lambda: session)
+    monkeypatch.setattr("library.feed_routes.enqueue", enqueue)
+    app = Flask(__name__)
+
+    with app.test_request_context("/jobs", method="POST", json={"type": "feed_daily"}):
+        g.auth = SimpleNamespace(kind="user", user_id=42)
+        response = create_job()
+
+    assert response[1] == 202
+    assert response[0].json == {"id": "running-job", "status": "running"}
+    enqueue.assert_not_called()
 
 
 def test_user_cannot_create_other_job_types(monkeypatch):

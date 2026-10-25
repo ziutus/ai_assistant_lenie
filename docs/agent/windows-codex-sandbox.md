@@ -124,6 +124,8 @@ Następnie zweryfikować działanie sandboxa. Kryteria są funkcjonalne:
 
 Sandboxowy PowerShell może utworzyć artefakt `Microsoft/Windows/PowerShell/ModuleAnalysisCache`. Nie należy go commitować. Jeśli pojawia się cyklicznie, należy dodać odpowiednią regułę ignorowania lub skorygować lokalizację cache w konfiguracji środowiska.
 
+Uruchomiony w sandboxie `pytest` tworzy `.pytest_cache` z ACL, którego zwykły użytkownik nie może usunąć (`Odmowa dostępu`). Worktree z takim katalogiem zostaje po `git worktree remove` i wymaga powłoki administratora (`takeown`/`icacls`, patrz `scripts/worktree-clean.ps1`). Dlatego `backend/pyproject.toml` i `ner_service/pyproject.toml` ustawiają `addopts = ["-p", "no:cacheprovider"]` — cache nie powstaje. Wywołując `pytest` spoza tych katalogów (inny `rootdir`), dodaj `-p no:cacheprovider` ręcznie.
+
 ## Cofnięcie zmian
 
 Przed cofnięciem należy ponownie wyświetlić ACL i upewnić się, że usuwany wpis dotyczy właściwej ścieżki.

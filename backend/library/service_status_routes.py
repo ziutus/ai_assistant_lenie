@@ -16,7 +16,7 @@ from library.db.models import ExternalServiceEvent, LlmUsageLog
 bp = Blueprint("service_status", __name__)
 
 DEFAULT_WINDOW_MINUTES = 15
-MAX_WINDOW_MINUTES = 24 * 60
+MAX_WINDOW_MINUTES = 30 * 24 * 60
 
 
 def _window_minutes() -> int:
@@ -66,23 +66,27 @@ def _llm_service(session, since, *, provider: str, service_id: str, name: str) -
     }
 
 
-def _external_service(session, since, *, service: str, name: str) -> dict:
+def _external_service(session, since, *, service: str, name: str, operation: str | None = None,
+                      service_id: str | None = None) -> dict:
+    conditions = [ExternalServiceEvent.service == service, ExternalServiceEvent.occurred_at >= since]
+    if operation:
+        conditions.append(ExternalServiceEvent.operation == operation)
     totals = session.execute(
         select(
             func.count().filter(ExternalServiceEvent.success.is_(True)).label("successes"),
             func.count().filter(ExternalServiceEvent.success.is_(False)).label("failures"),
             func.max(ExternalServiceEvent.occurred_at).filter(ExternalServiceEvent.success.is_(True)).label("last_success_at"),
             func.max(ExternalServiceEvent.occurred_at).filter(ExternalServiceEvent.success.is_(False)).label("last_failure_at"),
-        ).where(ExternalServiceEvent.service == service, ExternalServiceEvent.occurred_at >= since)
+        ).where(*conditions)
     ).one()
     last = session.execute(
         select(ExternalServiceEvent.operation, ExternalServiceEvent.error_code)
-        .where(ExternalServiceEvent.service == service, ExternalServiceEvent.occurred_at >= since)
+        .where(*conditions)
         .order_by(ExternalServiceEvent.occurred_at.desc()).limit(1)
     ).one_or_none()
     successes, failures = int(totals.successes or 0), int(totals.failures or 0)
     return {
-        "id": service, "name": name, "status": _status(successes, failures), "observed_only": True,
+        "id": service_id or service, "name": name, "status": _status(successes, failures), "observed_only": True,
         "successes": successes, "failures": failures,
         "last_success_at": _utc_iso(totals.last_success_at),
         "last_failure_at": _utc_iso(totals.last_failure_at),
@@ -121,5 +125,11 @@ def service_status():
             _external_service(session, since, service="locationiq", name="LocationIQ geocoding"),
             _external_service(session, since, service="wikidata", name="Wikidata API"),
             _external_service(session, since, service="overpass", name="Overpass / OpenStreetMap"),
+            # Real caption fetches (not Webshare's management API above): the numbers that show
+            # whether the paid rotating proxy actually gets YouTube captions through.
+            _external_service(session, since, service="youtube_captions", operation="via_webshare_proxy",
+                              service_id="youtube_captions_proxy", name="YouTube napisy — przez proxy Webshare"),
+            _external_service(session, since, service="youtube_captions", operation="direct",
+                              service_id="youtube_captions_direct", name="YouTube napisy — bezpośrednio (bez proxy)"),
         ],
     })

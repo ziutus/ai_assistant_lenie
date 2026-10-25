@@ -14,14 +14,13 @@ class OpenAIClient:
 
     @staticmethod
     def _call_chat(content, model: str, max_tokens: Optional[int] = None) -> str:
-        """
-        Common helper for calling OpenAI Chat Completions API.
+        return OpenAIClient._call_chat_with_usage(content, model, max_tokens)[0]
 
-        :param content: Content for the user message (str or list of content parts).
-        :param model: OpenAI model to use.
-        :param max_tokens: Optional max tokens for the response.
-        :return: Raw response content string.
-        """
+    @staticmethod
+    def _call_chat_with_usage(
+        content: str | list[dict], model: str, max_tokens: Optional[int] = None,
+    ) -> tuple[str, dict[str, int | None]]:
+        """Share one request path so text-only callers retain their existing behavior."""
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
         kwargs = {
@@ -33,11 +32,21 @@ class OpenAIClient:
 
         try:
             response = client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content
+            usage = getattr(response, "usage", None)
+            tokens = {
+                name: getattr(usage, name, None)
+                for name in ("prompt_tokens", "completion_tokens", "total_tokens")
+            }
+            return response.choices[0].message.content, tokens
         except Exception as e:
             raise Exception(f"An error occurred: {e}")
 
     # @observe()
+    @staticmethod
+    def get_completion_with_usage(prompt: str, model: str = "gpt-4") -> tuple[str, dict[str, int | None]]:
+        """Preserve provider token counts for usage accounting."""
+        return OpenAIClient._call_chat_with_usage(prompt, model)
+
     @staticmethod
     def get_completion(prompt: str, model: str = "gpt-4") -> str:
         """

@@ -45,6 +45,7 @@ def test_nonempty_list_reads_privacy_from_selected_columns(monkeypatch, is_priva
                 obsidian_note_paths JSON, text_md TEXT, is_private BOOLEAN
             )
         """))
+        connection.execute(text("CREATE TABLE document_chunks (id INTEGER PRIMARY KEY, document_id INTEGER, type TEXT)"))
         connection.execute(text("""
             INSERT INTO documents (id, document_type, ingested_at, is_private)
             VALUES (1, 'webpage', '2026-09-13 12:00:00', :is_private)

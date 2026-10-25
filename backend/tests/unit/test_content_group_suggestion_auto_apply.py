@@ -29,6 +29,11 @@ from library.db.models import (  # noqa: E402
 )
 
 
+@pytest.fixture(autouse=True)
+def stub_config(monkeypatch):
+    monkeypatch.setattr(svc, "load_config", lambda: {})
+
+
 class FakeSession:
     """Fakes exactly the calls execute_suggestion_job()/_auto_apply_suggestion() make."""
 
@@ -44,6 +49,9 @@ class FakeSession:
 
     def scalar(self, _stmt):
         return self._scalar_results.pop(0) if self._scalar_results else None
+
+    def scalars(self, _stmt):
+        return SimpleNamespace(all=lambda: [])
 
     def add(self, obj):
         self.added.append(obj)

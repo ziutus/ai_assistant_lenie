@@ -1,4 +1,5 @@
 import { listNavigationParams } from "../utils/listNavigationParams";
+import SkillHint from "../components/SkillHint";
 import React from "react";
 import { useParams, useSearchParams, NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
@@ -9,6 +10,7 @@ import {
 import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
 import EntitiesPanel, { EntityItem } from "../components/EntitiesPanel/entitiesPanel";
+import ChannelBadge from "../components/ChannelBadge";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
@@ -1045,6 +1047,7 @@ const Read: React.FC = () => {
   const [readerCompact, setReaderCompact] = React.useState(false);
   const [documentType, setDocumentType] = React.useState<string | null>(null);
   const [docTitle, setDocTitle] = React.useState<string | null>(null);
+  const [docChannel, setDocChannel] = React.useState<string | null>(null);
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
   const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
   const [personItems, setPersonItems] = React.useState<EntityItem[]>([]);
@@ -1184,6 +1187,7 @@ const Read: React.FC = () => {
     setChapters([]);
     setDocumentType(null);
     setDocTitle(null);
+    setDocChannel(null);
     setCountries([]);
     setThematicTags([]);
     setSynthesis(null);
@@ -1210,6 +1214,7 @@ const Read: React.FC = () => {
         }
         setDocumentType(data.document_type ?? null);
         setDocTitle(data.title ?? null);
+        setDocChannel(data.byline ?? null);
         setCountries(data.countries ?? []);
         setThematicTags(data.thematic_tags ?? []);
         setSynthesis(data.synthesis ?? null);
@@ -1286,8 +1291,8 @@ const Read: React.FC = () => {
       setEntitiesCheckedAt(data.entities_checked_at ?? null);
       setPlaces(
         items
-          .filter((it: any) => it.verified === true && it.place_verification_status !== "needs_review" && it.lat != null && it.lon != null)
-          .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
+          .filter((it: any) => it.relevance !== "figurative" && it.verified === true && it.place_verification_status !== "needs_review" && it.lat != null && it.lon != null)
+          .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon, relevance: it.relevance })),
       );
     } catch {
       // encje są ozdobnikiem widoku — brak nie blokuje czytnika
@@ -1330,8 +1335,8 @@ const Read: React.FC = () => {
           placeItems: items,
           facilities: data.entities?.facility ?? [],
           markers: items
-            .filter((it: any) => it.verified === true && it.place_verification_status !== "needs_review" && it.lat != null && it.lon != null)
-            .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
+            .filter((it: any) => it.relevance !== "figurative" && it.verified === true && it.place_verification_status !== "needs_review" && it.lat != null && it.lon != null)
+            .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon, relevance: it.relevance })),
           countries: data.countries ?? [],
         });
       } catch {
@@ -1789,7 +1794,7 @@ const Read: React.FC = () => {
     [shownPersons, shownOrganizations, shownFacilities],
   );
   const shownPlaceItems = (scoped ? scoped.placeItems : placeItems)
-    .filter(item => item.place_verification_status !== "rejected");
+    .filter(item => item.relevance !== "figurative" && item.place_verification_status !== "rejected");
   const shownMarkers = scoped ? scoped.markers : places;
   const shownCountries = scoped ? scoped.countries : countries;
   // pipeline routes (Overpass/OSM) among the in-scope place entities
@@ -1850,6 +1855,7 @@ const Read: React.FC = () => {
         <h2 style={{ margin: 0 }} title={docTitle ?? undefined}>
           {docTitle ? docTitle : `Czytelnik — dokument #${id}`}
         </h2>
+        <ChannelBadge channel={docChannel} />
         {docQuality && (
           <span
             title={qualityTooltip(docQuality)}
@@ -2334,6 +2340,12 @@ const Read: React.FC = () => {
                   ]).size})
                 </summary>
                 <div style={{ fontSize: "0.8em", marginTop: 8 }}>
+                  <div style={{ marginBottom: 6, color: "#667" }}>
+                    Chcesz dodać lub rozbudować notatkę?
+                    <SkillHint skill="/lenie-obsidian-note" command={`/lenie-obsidian-note ${id}`}>
+                      Notatkę Obsidian z tego dokumentu przygotuje skill i zapisze jej ścieżkę w bazie.
+                    </SkillHint>
+                  </div>
                   {docObsidianNotePaths.length > 0 && (
                     <div>
                       Notatka dokumentu:{" "}

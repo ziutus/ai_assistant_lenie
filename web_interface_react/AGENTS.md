@@ -42,3 +42,33 @@ State rules for multi-value filters:
 
 When the same selection pattern is needed in a second view, extract or reuse a
 shared component instead of duplicating it.
+
+## Voice of status labels (who decided)
+
+A label that records a decision is worded by who made it. When the user decided
+(a status they set, a stage they moved an item to), use the first person:
+`Obserwuję`, `Porównuję`, `Testuję`, `Używam`, `Odrzuciłem`. When an LLM or the
+system decided (an automatic classification, a rejected suggestion, a detected
+duplicate), use the third person: `System odrzucił`, `Model zaproponował`. Do
+not mix the two voices in one set of labels. Action buttons stay imperative
+(`Odrzuć`, `Testuj`). Keep this in sync with `CLAUDE.md` (UX conventions).
+
+## Entity chips (NER: persons, organizations, places, events, products)
+
+Every entity chip, whatever its type, is drawn by `EntityChips` in
+`src/modules/shared/components/EntitiesPanel/entitiesPanel.tsx` and gets its
+actions from that file's `MenuEntry` dropdown (`personMenuActions`,
+`organizationMenuActions`, `placeMenuActions`, `eventMenuActions`,
+`productMenuActions`). A page never draws its own chip row with inline buttons
+(`×`, `⇄`, icon buttons) — that is how the product chip ended up different from
+the others. A new entity type means: chip menu in `EntitiesPanel` first, page
+code second.
+
+- Page-owned dialogs (an event's description, the product merge form) are
+  opened from the menu through a callback prop (`onDescribeEvent`,
+  `onMergeProducts`, like `onShowInText`), not by a second set of buttons.
+- Every type's menu has the entries listed in the matrix in
+  [CLAUDE.md](CLAUDE.md) ("Entity chip menus"): copy name, highlight in text,
+  change type to every other type, delete. When you add an entity type or a
+  retype endpoint, update that matrix and the tests in `entitiesPanel.test.tsx`
+  (they assert the exact menu lists).

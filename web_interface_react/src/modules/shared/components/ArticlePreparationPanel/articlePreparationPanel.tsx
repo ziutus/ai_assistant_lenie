@@ -1,5 +1,6 @@
 import React from "react";
 import axios from "axios";
+import SkillHint from "../SkillHint";
 import { AuthorizationContext } from "../../context/authorizationContext";
 
 interface CleanupPreview {
@@ -172,6 +173,9 @@ const ArticlePreparationPanel = ({ formik }: { formik: any }) => {
         <div style={{ fontSize: "0.9em", marginBottom: 8 }}>
           Źródło: <code>{preview.source_field}</code> · portal: {preview.portal ?? "nierozpoznany"} · {preview.before_length} → {preview.after_length} znaków
           {changed ? ` · do usunięcia: ${preview.removed_line_count} linii` : " · bez zmian"}
+          <SkillHint skill="/lenie-review-removed-lines" command="/lenie-review-removed-lines">
+            Powtarzające się śmieci z jednego portalu zamienisz na regułę cleanera skillem, który przegląda kandydatów z document_removed_lines.
+          </SkillHint>
           {preview.removed_lines_preview.length > 0 && (
             <details><summary>Przykładowe usuwane elementy</summary>
               <pre style={{ whiteSpace: "pre-wrap" }}>{preview.removed_lines_preview.join("\n")}</pre>

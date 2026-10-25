@@ -27,10 +27,15 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
 
         return {"browse_events": delete_expired_browse_events(),
                 "interpretations": delete_expired_interpretations()}
-    if job.type == "feed_check":
-        return run_check(job.parameters.get("feed_source_id"))
-    if job.type == "feed_check_all":
-        return run_check()
+    if job.type in {"feed_check", "feed_check_all"}:
+        # A manual check imports new items of auto_import feeds right away instead of waiting for feed_daily;
+        # captions stay in feed_daily (one fetch takes ~45 s).
+        from library.feed_monitor_service import run_auto_import
+
+        feed_source_id = job.parameters.get("feed_source_id") if job.type == "feed_check" else None
+        check = run_check(feed_source_id)
+        heartbeat(session, job.id, {"phase": "check", **check})
+        return {**check, "import": run_auto_import(feed_source_id)}
     if job.type == "feed_auto_import":
         from library.feed_monitor_service import run_auto_import
 
@@ -38,9 +43,17 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
     if job.type == "feed_daily":
         check = run_check()
         heartbeat(session, job.id, {"phase": "check", **check})
-        from library.feed_monitor_service import run_auto_import
+        from library.feed_monitor_service import run_auto_import, run_caption_fetch
 
-        return {"check": check, "import": run_auto_import()}
+        imported = run_auto_import()
+        heartbeat(session, job.id, {"phase": "import", **imported})
+        from library.feed_retention import expire_saved_items
+
+        # Before the (long) caption fetch: "Może kiedyś" items past their retention period go to skipped.
+        expired = expire_saved_items(session)
+        heartbeat(session, job.id, {"phase": "expire", "expired": expired["expired"]})
+        captions = run_caption_fetch(on_progress=lambda progress: heartbeat(session, job.id, progress))
+        return {"check": check, "import": imported, "expired": expired, "captions": captions}
     if job.type == "content_group_suggest":
         from library.content_group_suggestion_service import execute_suggestion_job
 

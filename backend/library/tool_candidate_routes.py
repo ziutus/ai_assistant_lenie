@@ -20,8 +20,9 @@ def _reader():
 
 
 def _user():
-    if getattr(g, "auth", None) is None or g.auth.kind != "user":
-        abort(403, "user API key required")
+    # Single-owner project: a service key (scripts, skills) may review candidates like a user key.
+    if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
+        abort(403, "user or service API key required")
 
 
 def _get_candidate_with_document(session, candidate_id: int):
@@ -164,17 +165,23 @@ def add_candidate_to_radar(candidate_id):
     if existing is not None:
         return jsonify({"tool_recommendation": {"id": existing.id}, "created": False})
 
-    recommendation = ToolRecommendation(
-        name=candidate.name,
-        description=candidate.context_snippet,
-        source_url=document.url,
-        source_context=document.title,
-        source_document_id=document.id,
-        source_candidate_id=candidate.id,
-        status="watchlist",
-    )
-    session.add(recommendation)
-    session.flush()
+    # Same tool already on the radar under another candidate: attach this mention as evidence.
+    recommendation = session.execute(
+        select(ToolRecommendation).where(func.lower(ToolRecommendation.name) == candidate.name.lower()).limit(1)
+    ).scalars().first()
+    created = recommendation is None
+    if created:
+        recommendation = ToolRecommendation(
+            name=candidate.name,
+            description=candidate.context_snippet,
+            source_url=document.url,
+            source_context=document.title,
+            source_document_id=document.id,
+            source_candidate_id=candidate.id,
+            status="watchlist",
+        )
+        session.add(recommendation)
+        session.flush()
     session.add(ToolRecommendationEvidence(
         tool_recommendation_id=recommendation.id,
         relation_type="mentioned_in",
@@ -186,4 +193,4 @@ def add_candidate_to_radar(candidate_id):
     candidate.status = "accepted"
     candidate.reviewed_at = datetime.datetime.now(datetime.timezone.utc)
     session.commit()
-    return jsonify({"tool_recommendation": {"id": recommendation.id}, "created": True}), 201
+    return jsonify({"tool_recommendation": {"id": recommendation.id}, "created": created}), 201 if created else 200

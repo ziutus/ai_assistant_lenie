@@ -118,6 +118,12 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         >
           NER Corrections
         </NavLink>
+        <NavLink to="/ner-gazetteer" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          NER Gazetteer
+        </NavLink>
+        <NavLink to="/ner-glossary" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          NER Słownik kanału
+        </NavLink>
         <NavLink to="/ner-decisions" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           NER Decisions
         </NavLink>
@@ -128,6 +134,15 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           }
         >
           Organizations
+        </NavLink>
+        <NavLink to="/places" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          Miejsca
+        </NavLink>
+        <NavLink to="/world-events" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          Wydarzenia w tekstach
+        </NavLink>
+        <NavLink to="/products" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          Produkty i systemy
         </NavLink>
         <NavLink
           to="/contacts"
@@ -148,6 +163,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         <NavLink to="/chats" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Rozmowy</NavLink>
         <NavLink to="/topics" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Tematy</NavLink>
         <NavLink to="/project-cards" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Karty projektów</NavLink>
+        <NavLink to="/recipes" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Przepisy</NavLink>
         <NavLink
           to="/contact-events"
           className={({ isActive }) => isActive ? classes.activeLink : classes.link}
@@ -206,7 +222,9 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         </NavLink>
         <NavLink to="/feeds" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Feedy</NavLink>
         <NavLink to="/chapter-groups" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kategorie fragmentów</NavLink>
+        <NavLink to="/content-groups" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Tematy (zarządzanie)</NavLink>
         <NavLink to="/feed-review" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kuracja feedów</NavLink>
+        <NavLink to="/prompt-templates" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Prompty LLM</NavLink>
         <NavLink to="/tool-recommendations" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Radar narzędzi</NavLink>
         <NavLink to="/tools" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Spis narzędzi</NavLink>
         <NavLink to="/llm-analysis" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Analizy LLM</NavLink>

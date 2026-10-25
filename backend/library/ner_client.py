@@ -13,6 +13,7 @@ import re
 from collections import Counter
 
 import requests
+from unidecode import unidecode
 
 from library.city_gazetteer import canonical_city_name
 from library.geo_feature_gazetteer import canonical_geo_feature_name
@@ -21,6 +22,7 @@ from library.historical_state_gazetteer import canonical_historical_state_name
 from library.region_gazetteer import canonical_region_name
 from library.ner_normalization import (
     canonical_country_for_surface,
+    is_non_place_demonym,
     is_rejected_surface_lemma_pair,
     normalize_ner_text,
     strip_content_markers,
@@ -52,6 +54,30 @@ MAX_TEXT_TOTAL = 2_000_000
 # When cutting a window, back up to the nearest whitespace within this many
 # chars so a name straddling the boundary isn't split in half.
 WINDOW_BOUNDARY_BACKTRACK = 200
+
+
+# Closed list of truncated country spans recoverable from the next source word.
+_COUNTRY_SPAN_EXTENSIONS = (
+    (re.compile(r"arabi[aeio]"), re.compile(r"saudyjsk[a-z]*"), "Arabia Saudyjska"),
+)
+
+
+def _extend_country_span(entity: dict, window: str) -> dict:
+    """Repair known cuts using offsets relative to the exact text sent to NER."""
+    if entity.get("label") not in COUNTRY_CHECK_TYPES:
+        return entity
+    start, end = entity.get("start"), entity.get("end")
+    if not isinstance(start, int) or not isinstance(end, int) or not 0 <= start < end <= len(window):
+        return entity
+    surface = entity.get("text") or ""
+    for bare_pattern, next_pattern, lemma in _COUNTRY_SPAN_EXTENSIONS:
+        if not bare_pattern.fullmatch(unidecode(surface).lower()):
+            continue
+        following = re.match(r"\s+([^\W\d_]+)", window[end:])
+        if following and next_pattern.fullmatch(unidecode(following.group(1)).lower()):
+            return {**entity, "text": surface + following.group(0),
+                    "lemma": lemma, "end": end + following.end()}
+    return entity
 
 
 def _service_url() -> str:
@@ -132,7 +158,7 @@ def _extract_entities(text: str, *, strict: bool) -> list[dict]:
             entities = resp.json().get("entities", [])
             if not isinstance(entities, list):
                 raise ValueError("NER service returned unexpected payload shape")
-            collected.extend(entities)
+            collected.extend(_extend_country_span(entity, window) for entity in entities)
         except (requests.RequestException, ValueError) as exc:
             message = f"NER extraction failed in window {window_index}: {exc}"
             if strict:
@@ -170,6 +196,22 @@ def warmup_async() -> None:
             logger.debug("NER warmup probe failed (ignored)")
 
     threading.Thread(target=_probe, name="ner-warmup", daemon=True).start()
+
+
+_ADJECTIVAL_SURNAME_RE = re.compile(
+    r"[^\W\d_]+(?:ow|ew|sk|ck|dzk)(?:a|ą|ej|iej|i|y|iego|iemu|im|ym)", re.IGNORECASE,
+)
+
+
+def _is_adjectival_surname(surface: str) -> bool:
+    """One capitalized word shaped like a Slavic surname that declines like an adjective.
+
+    spaCy tags these POS=ADJ (Zacharowa, Pawłowa, Kowalskiej, Nowackiego), so the
+    POS filter in aggregate_entities_detailed() would drop every mention of such a
+    person. Only the shape is checked; a common adjective that spaCy mislabels as
+    persName is caught later by person_context_classifier's single-word review.
+    """
+    return len(surface.split()) == 1 and _ADJECTIVAL_SURNAME_RE.fullmatch(surface) is not None
 
 
 def _is_initials_only(surface: str) -> bool:
@@ -236,6 +278,36 @@ NOMINATIVE_PREFERENCE_TYPES = {"geogName", "placeName", "orgName"}
 COUNTRY_CHECK_TYPES = {"geogName", "placeName", "orgName"}
 
 
+def _split_rename_org_spans(entities: list[dict]) -> tuple[list[dict], set[str]]:
+    """Split closed-form organization renames and return their exact surfaces."""
+    mentions: list[dict] = []
+    split_surfaces: set[str] = set()
+    for ent in entities:
+        surface = normalize_ner_text(strip_wrapping_quotes(ent.get("text") or ""))
+        if ent.get("label") != "orgName" or surface.count(" na ") != 1:
+            mentions.append(ent)
+            continue
+        parts = [part.strip() for part in surface.split(" na ")]
+        if not all(part and part[0].isupper() for part in parts):
+            mentions.append(ent)
+            continue
+        first, second = (unidecode(part.split()[0]).casefold() for part in parts)
+        shorter, longer = sorted((first, second), key=len)
+        # The entire shorter first word must be a prefix of the longer one,
+        # with at least six characters: Departamentu/Departament qualifies.
+        if len(shorter) < 6 or not longer.startswith(shorter):
+            mentions.append(ent)
+            continue
+        for part in parts:
+            mention = {"text": part, "lemma": part, "label": "orgName"}
+            if "pos" in ent:
+                mention["pos"] = ent["pos"]
+            # Neither root morphology nor original offsets describe a part.
+            mentions.append(mention)
+            split_surfaces.add(part)
+    return mentions, split_surfaces
+
+
 def aggregate_entities_detailed(
     entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES,
 ) -> dict[tuple[str, str], dict]:
@@ -264,6 +336,7 @@ def aggregate_entities_detailed(
     raw_lemmas is internal metadata used to preserve ner_exclusions behavior
     after canonicalization; it is not persisted or returned by the API.
     """
+    entities, split_org_surfaces = _split_rename_org_spans(entities)
     preliminary: dict[tuple[str, str], dict] = {}
     for ent in entities:
         label = ent.get("label")
@@ -280,15 +353,31 @@ def aggregate_entities_detailed(
 
         pos = normalize_ner_text(ent.get("pos") or "").upper() or None
         multiword_person = label == "persName" and len(surface.split()) >= 2
-        if pos is not None and pos not in {"NOUN", "PROPN"}:
-            if not multiword_person:
+        # Doc #11137: the root of a country span such as "Sri Lanki" can be "Sri" (POS=X);
+        # only that POS is forgiven, and only for a closed-gazetteer country.
+        known_country_root_x = (
+            pos == "X" and label in COUNTRY_CHECK_TYPES and canonical_country_for_surface(surface) is not None
+        )
+        if pos is not None and pos not in {"NOUN", "PROPN"} and not known_country_root_x:
+            adjectival_surname = label == "persName" and _is_adjectival_surname(surface)
+            if not multiword_person and not adjectival_surname:
                 continue
             # spaCy's root token can be a Polish homograph instead of the
             # foreign surname: "Kim Jong Sik" -> lemma "kto Jong Sik",
             # POS=ADJ. The complete multiword surface is safer than that
             # corrupted lemma and still goes through person resolution.
-            lemma = surface
+            # A lone adjectival surname ("Zacharowa", "Kowalskiej") is tagged
+            # ADJ the same way; its lemma is kept only when spaCy capitalized
+            # it ("Zacharowa"), otherwise ("kowalski") the surface is used.
+            if multiword_person or not lemma[0].isupper():
+                lemma = surface
         if is_rejected_surface_lemma_pair(surface, lemma, pos):
+            continue
+        # spaCy sometimes tags a city as an organization ("do Tela Avivwu"); a closed-list city
+        # name is a place whatever the label says (same idea as the country check below).
+        if label == "orgName" and canonical_city_name(surface) is not None:
+            label = "placeName"
+        if label in PLACE_TYPES and is_non_place_demonym(surface):
             continue
 
         country = canonical_country_for_surface(surface) if label in COUNTRY_CHECK_TYPES else None
@@ -335,6 +424,10 @@ def aggregate_entities_detailed(
             else None
         )
         base = country or geo_feature or city or region or geo_region or historical or lemma
+        # Only exact surfaces recovered from a rename in this batch override
+        # standalone lemmas, so both mentions share an identity regardless of order.
+        if label == "orgName" and surface in split_org_surfaces:
+            base = surface
         key = (label, base.casefold())
         group = preliminary.setdefault(
             key,

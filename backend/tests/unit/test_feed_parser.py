@@ -76,6 +76,18 @@ def _response(body=b"<rss><channel/></rss>", status=200, headers=None):
     return response
 
 
+def test_json_feed_larger_than_default_page_limit_is_accepted(network):
+    _, _, pool, _ = network
+    item = b'{"title": "T", "url": "https://example.com/a", "date": "2026-01-01", "summary": "' + b"x" * 1024 + b'"}'
+    chunk = item + b","
+    count = (safe_http.MAX_RESPONSE_BYTES // len(chunk)) + 10
+    body = b"[" + chunk * count + item + b"]"
+    assert len(body) > safe_http.MAX_RESPONSE_BYTES
+    pool.urlopen.return_value = _response(body)
+    entries = fetch_entries({"type": "json_api", "url": "https://example.com/archiwum.json"})
+    assert len(entries) == count + 1
+
+
 @pytest.mark.parametrize("ip", ["127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254",
                                    "100.64.0.1", "0.0.0.0", "240.0.0.1", "::1", "fc00::1", "fe80::1",
                                    "::ffff:8.8.8.8", "ff02::1"])
@@ -133,6 +145,38 @@ def test_public_feeds_parse_with_preserved_timeouts(network, feed, body, title):
     assert factory.call_args.args[2] == (3, 7)
     assert pool.urlopen.call_args.kwargs == {"redirect": False, "retries": False, "preload_content": False}
     response.close.assert_called_once()
+
+
+_YT = {"type": "youtube_channel", "channel_id": "UCabc"}
+_YT_BODY = b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Atom</title></entry></feed>'
+
+
+def test_youtube_feed_retries_transient_404(network, monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("library.feed_parser.time.sleep", sleeps.append)
+    pool = network[2]
+    pool.urlopen.side_effect = [_response(status=404), _response(status=404), _response(_YT_BODY)]
+    assert fetch_entries(_YT)[0]["title"] == "Atom"
+    assert pool.urlopen.call_count == 3
+    assert sleeps == [2, 5]
+
+
+def test_youtube_feed_retries_connection_error_then_gives_up_on_404(network, monkeypatch):
+    monkeypatch.setattr("library.feed_parser.time.sleep", lambda _: None)
+    pool = network[2]
+    pool.urlopen.side_effect = [urllib3.exceptions.HTTPError("x"), _response(status=404), _response(status=404)]
+    with pytest.raises(requests.HTTPError):
+        fetch_entries(_YT)
+    assert pool.urlopen.call_count == 3
+
+
+def test_non_youtube_feed_is_not_retried(network, monkeypatch):
+    monkeypatch.setattr("library.feed_parser.time.sleep", lambda _: pytest.fail("must not sleep"))
+    pool = network[2]
+    pool.urlopen.return_value = _response(status=404)
+    with pytest.raises(requests.HTTPError):
+        fetch_entries({"type": "rss", "url": "https://example.com/rss"})
+    assert pool.urlopen.call_count == 1
 
 
 def test_relative_redirect_and_limit(network):

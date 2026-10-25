@@ -177,6 +177,15 @@ class DiscoverySource(Base):
     description: Mapped[str | None] = mapped_column(Text)
     url: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    # Knowledge-source fields (library/knowledge_sources.py): what kind of place the knowledge came from
+    # (a course, a newsletter, a channel...), how far the user got with it and what they think of it.
+    kind: Mapped[str | None] = mapped_column(String(30))
+    status: Mapped[str | None] = mapped_column(String(20))
+    started_on: Mapped[datetime.date | None] = mapped_column(Date)
+    finished_on: Mapped[datetime.date | None] = mapped_column(Date)
+    rating: Mapped[int | None] = mapped_column(SmallInteger)
+    review_note: Mapped[str | None] = mapped_column(Text)
+    obsidian_note_path: Mapped[str | None] = mapped_column(Text)
 
     @classmethod
     def ensure(cls, session: Session, name: str) -> "DiscoverySource | None":
@@ -303,11 +312,16 @@ class ContentGroup(Base):
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     priority_rank: Mapped[int | None] = mapped_column(Integer)
+    # Months a feed item saved under "Może kiedyś" stays valid when it has this topic; NULL = the household default.
+    retention_months: Mapped[int | None] = mapped_column(Integer)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("content_groups.id", ondelete="SET NULL"), index=True)
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     __table_args__ = (
         CheckConstraint("kind IN ('topic', 'priority')", name="ck_content_groups_kind"),
+        CheckConstraint("parent_id IS NULL OR (kind='topic' AND parent_id <> id)", name="ck_content_groups_parent_kind"),
+        CheckConstraint("retention_months IS NULL OR (kind = 'topic' AND retention_months BETWEEN 1 AND 120)", name="ck_content_groups_retention_months"),
         CheckConstraint(
             "(kind = 'topic' AND priority_rank IS NULL) OR (kind = 'priority' AND priority_rank BETWEEN 1 AND 100)",
             name="ck_content_groups_priority_rank",
@@ -360,6 +374,10 @@ class FeedItem(Base):
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     review_note: Mapped[str | None] = mapped_column(Text)
     review_reason: Mapped[str | None] = mapped_column(String(40))
+    llm_discussion_status: Mapped[str | None] = mapped_column(String(10))
+    llm_discussion_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    llm_discussion_done_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    llm_discussion_result: Mapped[str | None] = mapped_column(Text)
     ignored_pattern: Mapped[str | None] = mapped_column(Text)
     last_error: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (
@@ -369,12 +387,18 @@ class FeedItem(Base):
             name="ck_feed_items_status",
         ),
         CheckConstraint(
-            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other')",
+            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other','sent_to_radar','expired')",
             name="ck_feed_items_review_reason",
         ),
         Index("idx_feed_items_source_status", "feed_source_id", "status"),
         Index("idx_feed_items_status_first_seen", "status", "first_seen_at"),
         Index("idx_feed_items_status_saved_at", "status", "saved_at"),
+        CheckConstraint(
+            "llm_discussion_status IS NULL OR llm_discussion_status IN ('open','done')",
+            name="ck_feed_items_llm_discussion_status",
+        ),
+        Index("idx_feed_items_llm_discussion", "llm_discussion_status", "llm_discussion_at",
+              postgresql_where=sa_text("llm_discussion_status IS NOT NULL")),
     )
     group_memberships: Mapped[list["FeedItemGroupMembership"]] = relationship(
         back_populates="feed_item", cascade="all, delete-orphan", overlaps="groups",
@@ -479,6 +503,32 @@ class DocumentGroupMembership(Base):
     )
 
 
+class PromptTemplate(Base):
+    """One immutable version of an LLM prompt, edited from the UI.
+
+    Editing never changes a row: it inserts the next ``version`` of the same
+    ``(task, variant)``. At most one version per pair is ``is_active``; runs
+    remember the template they used so models and wordings can be compared.
+    """
+
+    __tablename__ = "prompt_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task: Mapped[str] = mapped_column(String(50), nullable=False)
+    variant: Mapped[str] = mapped_column(String(30), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    system_template: Mapped[str | None] = mapped_column(Text)
+    user_template: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(300))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    __table_args__ = (
+        UniqueConstraint("task", "variant", "version", name="uq_prompt_templates_version"),
+        Index("uq_prompt_templates_active", "task", "variant", unique=True, postgresql_where=sa_text("is_active")),
+    )
+
+
 class ContentGroupSuggestionRun(Base):
     __tablename__ = "content_group_suggestion_runs"
 
@@ -489,10 +539,17 @@ class ContentGroupSuggestionRun(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    prompt_template_id: Mapped[int | None] = mapped_column(ForeignKey("prompt_templates.id", ondelete="SET NULL"))
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     catalog_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
     raw_result: Mapped[dict | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_amount: Mapped[decimal.Decimal | None] = mapped_column(Numeric(18, 10))
+    cost_currency: Mapped[str | None] = mapped_column(String(3))
+    cost_status: Mapped[str | None] = mapped_column(String(20))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     suggestions: Mapped[list["ContentGroupSuggestion"]] = relationship(back_populates="run", cascade="all, delete-orphan")
@@ -709,6 +766,7 @@ class Document(Base):
     search_terms: Mapped[str | None] = mapped_column(Text)
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
+    chapter_types: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     outline_md: Mapped[str | None] = mapped_column(Text)
     outline_anchors: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     video_description: Mapped[str | None] = mapped_column(Text)
@@ -1391,6 +1449,37 @@ class DocumentRemovedLine(Base):
         return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
 
 
+class TranscriptCorrection(Base):
+    """Human-curated literal phrase corrections applied when STT text arrives."""
+
+    __tablename__ = "transcript_corrections"
+    __table_args__ = (
+        CheckConstraint("scope IN ('global', 'author')", name="ck_transcript_corrections_scope"),
+        CheckConstraint(
+            "(scope = 'global' AND author IS NULL) OR "
+            "(scope = 'author' AND author IS NOT NULL AND trim(author) <> '')",
+            name="ck_transcript_corrections_author",
+        ),
+        Index("uq_transcript_corrections_pattern_scope_author",
+              sa_text("lower(pattern)"), "scope", sa_text("coalesce(author, '')"), unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pattern: Mapped[str] = mapped_column(Text, nullable=False)
+    replacement: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'global'"))
+    author: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now(),
+    )
+    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    last_hit_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+
 class CleanupRule(Base):
     """Reguła usuwania linii z artykułu wraz z pochodzeniem i licznikiem trafień."""
 
@@ -1911,6 +2000,26 @@ class Facility(Base):
     geocode: Mapped["GeocodeCache | None"] = relationship(foreign_keys=[geocode_id])
 
 
+class PlaceProfile(Base):
+    """Curated, cross-document profile of a place: its Wikipedia article and alternative names.
+
+    Places themselves stay per-document ``document_entities`` rows; a profile is looked up by the
+    case-folded ``name_key`` of the entity text (or one of ``aliases``), so one entry covers every
+    document that mentions the place under that name. See library/place_registry.py.
+    """
+
+    __tablename__ = "place_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    name_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    wikipedia_url: Mapped[str | None] = mapped_column(Text)
+    aliases: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class DocumentFacility(Base):
     """A rule-detected facility mention in one document.
 
@@ -1971,6 +2080,10 @@ class DocumentEntity(Base):
     # source: 'ner' (default, refresh_document_entities() may replace) | 'manual'
     # (survives refresh — set by merge_document_entities())
     source: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'ner'"))
+    # relevance: manual relation to the document topic (central | related | figurative)
+    relevance: Mapped[str] = mapped_column(String(12), nullable=False, server_default=sa_text("'central'"))
+    # description: reviewer-approved text (only eventName entities use it so far)
+    description: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -2091,6 +2204,71 @@ class NerExclusion(Base):
         )
 
 
+class NerGazetteerEntry(Base):
+    """Database-backed addition to a curated NER gazetteer list (ADR-029).
+
+    The lists in code (city_gazetteer._CITY_DATA, geocode_aliases.GEOCODE_ALIASES) stay the
+    seed; rows here only extend them, so adding "Luizjana" needs no code change or deploy.
+    kind='city' carries ``patterns`` (stem DSL of city_gazetteer); kind='geocode_alias'
+    carries ``geocode_alias`` (the English/OSM query retried for ``name_pl``). Read through
+    library/ner_gazetteer_store.py (short TTL cache, DB failures never break NER).
+    """
+
+    __tablename__ = "ner_gazetteer_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    name_pl: Mapped[str] = mapped_column(Text, nullable=False)
+    patterns: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    geocode_alias: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    source_document_id: Mapped[int | None] = mapped_column()
+    created_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"NerGazetteerEntry(id={self.id!r}, kind={self.kind!r}, name_pl={self.name_pl!r})"
+
+
+class NerChannelGlossaryEntry(Base):
+    """Names expected on one channel, used to repair speech-to-text slips before NER.
+
+    Applied at entity-refresh time (library/ner_channel_glossary.py) to a COPY of the text
+    handed to the NER service; the stored transcript is never changed. ``author`` is matched
+    against Document.byline. ``aliases`` are exact phrases replaced by ``canonical_name``
+    ("He H" -> "Pete Hegseth"); with ``fuzzy`` a capitalized word that sounds like the last word of
+    ``canonical_name`` ("Hekset", "Hexeta") is replaced by that word.
+    """
+
+    __tablename__ = "ner_channel_glossary"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author: Mapped[str] = mapped_column(Text, nullable=False)
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    fuzzy: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"NerChannelGlossaryEntry(id={self.id!r}, author={self.author!r}, canonical_name={self.canonical_name!r})"
+
+
+class NerGlossaryApplication(Base):
+    """Audit row: a glossary replacement that fired while refreshing one document's entities."""
+
+    __tablename__ = "ner_glossary_applications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    glossary_id: Mapped[int | None] = mapped_column(ForeignKey("ner_channel_glossary.id", ondelete="SET NULL"))
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    replacement_text: Mapped[str] = mapped_column(Text, nullable=False)
+    occurrences: Mapped[int] = mapped_column(nullable=False, server_default=sa_text("1"))
+    applied_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class NerCorrection(Base):
     """Human-curated NER correction dictionary (Faza 6, tmp/plan-ner-multiword-place-display-names.md).
 
@@ -2176,7 +2354,18 @@ class Person(Base):
     )
     canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
     wikidata_qid: Mapped[str | None] = mapped_column(String(20), unique=True)
+    # short description: tooltip on every mention in the reader
     description: Mapped[str | None] = mapped_column(Text)
+    # long description: shown only on the person page (/persons/:id)
+    long_description: Mapped[str | None] = mapped_column(Text)
+    # external pages about the person: [{"url": "https://…", "label": "Wikipedia"}]
+    links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    # 'public' = a public figure the user follows (a course author, a channel host...); NULL = an ordinary NER person.
+    kind: Mapped[str | None] = mapped_column(String(20))
+    # What the person is known for ("autor kursu", "podcaster", "pisarz"); free text.
+    role: Mapped[str | None] = mapped_column(String(100))
+    # Vault-relative path of the Obsidian note about the person.
+    obsidian_note_path: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -3115,16 +3304,28 @@ class ToolRecommendation(Base):
     source_context: Mapped[str | None] = mapped_column(Text)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     source_candidate_id: Mapped[int | None] = mapped_column(ForeignKey("tool_candidates.id", ondelete="SET NULL"))
+    # Vault-relative path of the Obsidian note that already describes this tool (may predate the radar entry).
+    obsidian_note_path: Mapped[str | None] = mapped_column(Text)
+    # The catalog tool (Spis narzędzi) this radar entry became or is described by; set when the entry is adopted.
+    tool_id: Mapped[int | None] = mapped_column(ForeignKey("tools.id", ondelete="SET NULL"))
+    # Lowercase free-form tags (docker, kubernetes, sbom); ``category`` stays the one catalog section.
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    # Further pages about the tool next to ``homepage_url``: [{"url": "https://…", "label": "Docs"}]. Repository
+    # links (GitHub/GitLab) here are counted in the radar's repository statistics together with the homepage.
+    links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('watchlist', 'compare', 'testing', 'adopted', 'rejected', 'archived')",
+            "status IN ('watchlist', 'compare', 'testing', 'test_future', 'adopted', 'phasing_out', 'rejected', 'archived')",
             name="ck_tool_recommendations_status",
         ),
         Index("idx_tool_recommendations_status_created", "status", "created_at"),
         Index("idx_tool_recommendations_source_candidate", "source_candidate_id"),
+        Index("idx_tool_recommendations_tool", "tool_id"),
+        # One radar entry per tool name; a new mention of a known tool adds evidence instead of a row.
+        Index("uq_tool_recommendations_name_lower", sa_text("lower(name)"), unique=True),
     )
 
     source_document: Mapped["Document | None"] = relationship(foreign_keys=[source_document_id])
@@ -3132,6 +3333,16 @@ class ToolRecommendation(Base):
     evidences: Mapped[list["ToolRecommendationEvidence"]] = relationship(
         back_populates="tool_recommendation", cascade="all, delete-orphan",
     )
+
+
+class AppSetting(Base):
+    """One UI-chosen setting (for example ``tool_tags_model``); the value is any JSON."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[object] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class ToolRecommendationEvidence(Base):
@@ -3170,6 +3381,79 @@ class ToolRecommendationEvidence(Base):
     recommender_document: Mapped["Document | None"] = relationship(foreign_keys=[recommender_document_id])
 
 
+class ToolRelation(Base):
+    """A directed relation between two radar entries (e.g. Floci ``works_with`` AWS).
+
+    Proposed automatically from the text of the document that introduced a tool
+    (``detected_by='name_match'``) and confirmed or rejected by a human, like
+    ``document_links`` (ADR-026). A rejected edge is never revived by detection.
+    """
+
+    __tablename__ = "tool_relations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_tool_id: Mapped[int] = mapped_column(ForeignKey("tool_recommendations.id", ondelete="CASCADE"), nullable=False)
+    to_tool_id: Mapped[int] = mapped_column(ForeignKey("tool_recommendations.id", ondelete="CASCADE"), nullable=False)
+    relation: Mapped[str] = mapped_column(String(30), nullable=False, server_default=sa_text("'works_with'"))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'proposed'"))
+    detected_by: Mapped[str] = mapped_column(String(30), nullable=False, server_default=sa_text("'name_match'"))
+    context: Mapped[str | None] = mapped_column(Text)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("relation IN ('works_with', 'emulates', 'alternative_to')", name="ck_tool_relations_relation"),
+        CheckConstraint("status IN ('proposed', 'confirmed', 'rejected')", name="ck_tool_relations_status"),
+        CheckConstraint("from_tool_id <> to_tool_id", name="ck_tool_relations_not_self"),
+        UniqueConstraint("from_tool_id", "to_tool_id", "relation", name="uq_tool_relations_edge"),
+        Index("idx_tool_relations_to", "to_tool_id"),
+    )
+
+
+class GithubRepoStats(Base):
+    """Latest public GitHub or GitLab numbers for one repository (stars, forks, activity).
+
+    Keyed by the lower-cased ``owner/repo`` so every surface that shows a
+    repository — the tool radar, the tool catalog, a saved link — shares one
+    row and one API call. This is a snapshot, not a history: a refresh
+    overwrites the numbers. ``status`` is ``not_found`` when GitHub answered
+    404 (the last known numbers are kept).
+    """
+
+    __tablename__ = "github_repo_stats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    full_name_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    # github: key is ``owner/repo``; gitlab: key is ``host/group/.../project`` (the dot in the host keeps keys apart).
+    provider: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'github'"))
+    host: Mapped[str] = mapped_column(String(255), nullable=False, server_default=sa_text("'github.com'"))
+    owner: Mapped[str] = mapped_column(String(255), nullable=False)
+    repo: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    stars: Mapped[int | None] = mapped_column()
+    forks: Mapped[int | None] = mapped_column()
+    watchers: Mapped[int | None] = mapped_column()
+    open_issues: Mapped[int | None] = mapped_column()
+    language: Mapped[str | None] = mapped_column(String(100))
+    license: Mapped[str | None] = mapped_column(String(100))
+    # The repository's "Website" field (GitHub only): a hint for the entry's own homepage, never applied by itself.
+    homepage: Mapped[str | None] = mapped_column(Text)
+    # The repository's own topics (the "About" chips), as GitHub spells them.
+    topics: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    repo_created_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    pushed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'ok'"))
+    fetched_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('ok', 'not_found')", name="ck_github_repo_stats_status"),
+        CheckConstraint("provider IN ('github', 'gitlab')", name="ck_github_repo_stats_provider"),
+    )
+
+
 class Tool(Base):
     """Human-approved tool/technology entity, written to Obsidian (Epic 46/47).
 
@@ -3192,6 +3476,23 @@ class Tool(Base):
     homepage_url: Mapped[str | None] = mapped_column(Text)
     license: Mapped[str | None] = mapped_column(String(100))
     pricing: Mapped[str | None] = mapped_column(Text)
+    github_url: Mapped[str | None] = mapped_column(Text)
+    wikipedia_url: Mapped[str | None] = mapped_column(Text)
+    pricing_url: Mapped[str | None] = mapped_column(Text)
+    pricing_type: Mapped[str | None] = mapped_column(String(30))
+    app_type: Mapped[str | None] = mapped_column(String(100))
+    # What the tool is for (the note template's "Purpose") and where it runs ("Works on", e.g. "Linux, macOS (brew)").
+    purpose: Mapped[str | None] = mapped_column(Text)
+    works_on: Mapped[str | None] = mapped_column(Text)
+    # Further pages about the tool that have no field of their own: [{"url": "https://…", "label": "Docker Hub"}].
+    links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    key_points: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    important_commands: Mapped[str | None] = mapped_column(Text)
+    # The tool is still in use but being phased out (e.g. Obsidian); migration_note says where to / why.
+    migrating_away: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    migration_note: Mapped[str | None] = mapped_column(Text)
+    # The catalog tool being moved to (optional; set only while migrating_away).
+    migration_target_tool_id: Mapped[int | None] = mapped_column(ForeignKey("tools.id", ondelete="SET NULL"))
     personal_notes: Mapped[str | None] = mapped_column(Text)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     source_candidate_id: Mapped[int | None] = mapped_column(ForeignKey("tool_candidates.id", ondelete="SET NULL"))
@@ -3199,6 +3500,46 @@ class Tool(Base):
     obsidian_note_path: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ToolSource(Base):
+    """Where the user learned about a catalog tool (a course, a newsletter...): tool <-> knowledge source, M:N."""
+
+    __tablename__ = "tool_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tool_id: Mapped[int] = mapped_column(ForeignKey("tools.id", ondelete="CASCADE"), nullable=False)
+    source_id: Mapped[int] = mapped_column(ForeignKey("discovery_sources.id", ondelete="CASCADE"), nullable=False)
+    # A lesson link, a quote, "odcinek 5" - whatever tells where inside the source the tool appeared.
+    context: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    source: Mapped["DiscoverySource"] = relationship("DiscoverySource")
+
+    __table_args__ = (
+        UniqueConstraint("tool_id", "source_id", name="uq_tool_sources_tool_source"),
+        Index("idx_tool_sources_source", "source_id"),
+    )
+
+
+class SourcePerson(Base):
+    """Who stands behind a knowledge source (the host of a channel, the author of a course): source <-> person, M:N."""
+
+    __tablename__ = "source_persons"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("discovery_sources.id", ondelete="CASCADE"), nullable=False)
+    person_id: Mapped[int] = mapped_column(ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
+    # author | host | instructor | guest | other
+    role: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'author'"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    person: Mapped["Person"] = relationship("Person")
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "person_id", name="uq_source_persons_source_person"),
+        Index("idx_source_persons_person", "person_id"),
+    )
 
 
 class ObsidianNoteVersion(Base):
@@ -4020,3 +4361,66 @@ class ChatMessage(Base):
             f"ChatMessage(id={self.id!r}, conversation_id={self.conversation_id!r}, "
             f"sender_name_raw={self.sender_name_raw!r}, sent_at={self.sent_at!r})"
         )
+
+
+class NarrativeSet(Base):
+    """A documented set of narratives pushed by one actor (state, company, movement).
+
+    kind: state_propaganda | disinformation | lobbying | marketing. ``source_url``
+    must point to the independent analysis the narratives were taken from; a set
+    without a documented source is not comparable with the others.
+    """
+
+    __tablename__ = "narrative_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str] = mapped_column(String(200), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    source_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    narratives: Mapped[list["Narrative"]] = relationship(
+        back_populates="narrative_set", cascade="all, delete-orphan", order_by="Narrative.code",
+    )
+
+
+class Narrative(Base):
+    """One narrative (thesis). ``description`` is sent to the classifier as the question."""
+
+    __tablename__ = "narratives"
+    __table_args__ = (UniqueConstraint("set_id", "code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    set_id: Mapped[int] = mapped_column(ForeignKey("narrative_sets.id", ondelete="CASCADE"), nullable=False)
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    narrative_set: Mapped["NarrativeSet"] = relationship(back_populates="narratives")
+
+
+class DocumentNarrativeScore(Base):
+    """Classifier match of a document (or one of its chunks) with a narrative.
+
+    ``probability`` is a model score for "the text touches this thesis", not a
+    verdict on intent; ``review`` records the human call: promotes (repeats the
+    thesis) | describes (analyses or debunks it) | unrelated.
+    """
+
+    __tablename__ = "document_narrative_scores"
+    __table_args__ = (
+        UniqueConstraint("document_id", "narrative_id", "model"),
+        Index("idx_document_narrative_scores_narrative", "narrative_id", "probability"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    narrative_id: Mapped[int] = mapped_column(ForeignKey("narratives.id", ondelete="CASCADE"), nullable=False)
+    model: Mapped[str] = mapped_column(String(60), nullable=False)
+    probability: Mapped[decimal.Decimal] = mapped_column(Numeric(4, 3), nullable=False)
+    confidence: Mapped[decimal.Decimal | None] = mapped_column(Numeric(4, 3))
+    review: Mapped[str | None] = mapped_column(String(20))
+    scored_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())

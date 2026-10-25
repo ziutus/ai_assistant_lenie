@@ -3,6 +3,7 @@
 import datetime as dt
 import logging
 import re
+import time
 import uuid
 import regex as safe_regex
 from sqlalchemy import select, update, text
@@ -14,7 +15,8 @@ from library.url_normalization import canonicalize_url
 from library.content_group_service import replace_feed_item_groups
 
 logger = logging.getLogger(__name__)
-REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other"}
+NEW_ENTRIES_LISTED = 10  # per feed in a run_check() result; a first import of a feed can bring hundreds
+REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other", "sent_to_radar", "expired"}
 ACTIVE_TRANSITIONS = {
     "new": {"llm_analysis_requested", "saved_for_later", "imported", "skipped", "ignored", "error"},
     "llm_analysis_requested": {"saved_for_later", "imported", "skipped", "ignored", "error"},
@@ -92,22 +94,33 @@ def _upsert(session, feed: FeedSource, entry: dict, status: str = "new") -> Feed
 def run_check(feed_source_id: int | None = None, session=None) -> dict:
     own = session is None
     session = session or get_session()
-    result = {"checked": 0, "items": 0, "errors": []}
+    result = {"checked": 0, "items": 0, "new_items": 0, "feeds": [], "errors": []}
     try:
         query = select(FeedSource).where(FeedSource.disabled.is_(False))
         if feed_source_id is not None:
             query = query.where(FeedSource.id == feed_source_id)
         for feed in session.scalars(query.order_by(FeedSource.id)).all():
+            fresh = []
             try:
                 entries = fetch_entries(_feed_config(feed))
                 kept, ignored = apply_skip_filters(entries, _feed_config(feed))
+                # An unflushed (pending) FeedItem is one _upsert just created.
+                new_items = 0
                 for entry in kept:
-                    _upsert(session, feed, entry)
+                    item = _upsert(session, feed, entry)
+                    if item in session.new:
+                        new_items += 1
+                        fresh.append(item)
                 for entry in ignored:
-                    _upsert(session, feed, entry, "ignored")
+                    new_items += _upsert(session, feed, entry, "ignored") in session.new
                 feed.last_checked_at, feed.last_error = dt.datetime.now(dt.timezone.utc), None
                 result["items"] += len(entries)
+                result["new_items"] += new_items
                 result["checked"] += 1
+                feed_result = {
+                    "feed_source_id": feed.id, "feed_name": feed.name, "items": len(entries), "new_items": new_items,
+                }
+                result["feeds"].append(feed_result)
             except Exception as exc:
                 feed.last_checked_at, feed.last_error_at, feed.last_error = (
                     dt.datetime.now(dt.timezone.utc),
@@ -124,6 +137,104 @@ def run_check(feed_source_id: int | None = None, session=None) -> dict:
                     }
                 )
             session.commit()
+            if fresh:
+                # Ids exist only after the commit; ignored entries are counted in new_items but not listed.
+                feed_result["new_entries"] = [
+                    {"feed_item_id": item.id, "title": item.title, "url": item.url, "status": item.status}
+                    for item in fresh[:NEW_ENTRIES_LISTED]
+                ]
+                feed_result["new_entries_truncated"] = max(0, len(fresh) - NEW_ENTRIES_LISTED)
+        return result
+    finally:
+        if own:
+            session.close()
+
+
+CAPTIONS_PER_RUN = 100
+CAPTIONS_DELAY_SECONDS = 5
+CAPTIONS_RETRY_DELAY_SECONDS = 60
+CAPTIONS_MAX_CONSECUTIVE_FAILURES = 3
+
+
+def run_caption_fetch(
+    session=None, limit: int = CAPTIONS_PER_RUN, delay_seconds: float = CAPTIONS_DELAY_SECONDS,
+    on_progress=None, retry_delay_seconds: float = CAPTIONS_RETRY_DELAY_SECONDS,
+) -> dict:
+    """Fetch YouTube captions, one document at a time, for auto-imported feed videos.
+
+    Takes documents still waiting for captions (URL_ADDED, or TEMPORARY_ERROR from an earlier
+    attempt) that came from an ``auto_import`` feed, newest first. Sequential with a pause so
+    YouTube/Webshare are not hammered; a run stops after a few failures in a row (typically an
+    IP block) and leaves the rest for the next run. A fetch that ends as TEMPORARY_ERROR (the
+    rotating proxy's exit IP flagged by Google) is retried once after ``retry_delay_seconds``,
+    which usually lands on another IP; only the outcome of the retry counts as a failure.
+    """
+    from library.config_loader import load_config
+    from library.models.stalker_document_status import StalkerDocumentStatus
+    from library.youtube_processing import process_youtube_url
+
+    own = session is None
+    session = session or get_session()
+    result = {"fetched": 0, "failed": 0, "retried": 0, "recovered": 0, "remaining": 0, "stopped_early": False,
+              "errors": []}
+    waiting = [StalkerDocumentStatus.URL_ADDED.name, StalkerDocumentStatus.TEMPORARY_ERROR.name]
+    # Statuses a document can still have after a fetch that did not produce captions.
+    not_fetched = {*waiting, StalkerDocumentStatus.NEED_TRANSCRIPTION.name, StalkerDocumentStatus.ERROR.name}
+    try:
+        webshare_api_key = load_config().get("WEBSHARE_API_KEY")
+        query = (
+            select(Document)
+            .join(FeedItem, FeedItem.document_id == Document.id)
+            .join(FeedSource, FeedSource.id == FeedItem.feed_source_id)
+            .where(
+                Document.document_type == "youtube",
+                Document.processing_status.in_(waiting),
+                FeedSource.auto_import.is_(True),
+            )
+            .order_by(FeedItem.published_at.desc().nulls_last(), Document.id.desc())
+        )
+        doc_ids = [doc.id for doc in session.scalars(query).unique().all()]
+        result["remaining"] = max(0, len(doc_ids) - limit)
+        consecutive_failures = 0
+        for position, doc_id in enumerate(doc_ids[:limit]):
+            if consecutive_failures >= CAPTIONS_MAX_CONSECUTIVE_FAILURES:
+                result["stopped_early"] = True
+                result["remaining"] += len(doc_ids[:limit]) - position
+                break
+            if position and delay_seconds:
+                time.sleep(delay_seconds)
+            # One fetch takes ~45 s and the worker treats 120 s without a heartbeat as a dead job.
+            if on_progress:
+                on_progress({"phase": "captions", "fetched": result["fetched"], "failed": result["failed"],
+                             "position": position + 1, "total": min(limit, len(doc_ids))})
+            doc = session.get(Document, doc_id)
+
+            def fetch_once():
+                return process_youtube_url(
+                    session=session, youtube_url=doc.url, language=doc.language,
+                    chapter_list=doc.chapter_list, note=doc.note, source=doc.discovery_source_name,
+                    webshare_api_key=webshare_api_key,
+                )
+
+            try:
+                updated = fetch_once()
+                if updated.processing_status == StalkerDocumentStatus.TEMPORARY_ERROR.name:
+                    result["retried"] += 1
+                    if on_progress:  # keep the heartbeat inside the worker's 120 s stale limit during the pause
+                        on_progress({"phase": "captions", "retrying": doc_id})
+                    if retry_delay_seconds:
+                        time.sleep(retry_delay_seconds)
+                    updated = fetch_once()
+                    result["recovered"] += updated.processing_status not in not_fetched
+                failed = updated.processing_status in not_fetched
+            except Exception as exc:
+                session.rollback()
+                failed = True
+                result["errors"].append({"document_id": doc_id, "error": str(exc)[:300]})
+            consecutive_failures = consecutive_failures + 1 if failed else 0
+            result["failed" if failed else "fetched"] += 1
+            if on_progress:
+                on_progress({"phase": "captions", **{k: result[k] for k in ("fetched", "failed", "retried", "recovered")}})
         return result
     finally:
         if own:
@@ -271,6 +382,36 @@ def import_feed_item(
     finally:
         if own:
             session.close()
+
+
+def set_llm_discussion(session, item_id, status, result=None) -> FeedItem:
+    if status not in (None, "open", "done"):
+        raise ValueError("invalid discussion status")
+    item = session.get(FeedItem, item_id)
+    if item is None:
+        raise ValueError("feed item not found")
+    now = dt.datetime.now(dt.timezone.utc)
+    if status == "done":
+        if item.llm_discussion_status != "open":
+            raise RuntimeError("item is not open for discussion")
+        if result is not None and not isinstance(result, str):
+            raise ValueError("result must be a string")
+        result = result.strip() or None if result is not None else None
+        if result is not None and len(result) > 1000:
+            raise ValueError("result is limited to 1000 characters")
+        item.llm_discussion_done_at = now
+        item.llm_discussion_result = result
+    else:
+        if status is None:
+            item.llm_discussion_at = None
+        elif item.llm_discussion_status != "open":
+            item.llm_discussion_at = now
+        item.llm_discussion_done_at = None
+        item.llm_discussion_result = None
+    item.llm_discussion_status = status
+    item.updated_at = now
+    session.commit()
+    return item
 
 
 def transition_item(

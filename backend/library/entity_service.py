@@ -10,6 +10,7 @@ source='manual' (set by merge_document_entities()), which survive a refresh.
 import datetime
 import logging
 import re
+from collections import Counter
 
 from sqlalchemy import delete, func, select, update
 
@@ -17,12 +18,16 @@ from library.db.models import (
     Document,
     DocumentEntity,
     DocumentOrganization,
+    NerChannelGlossaryEntry,
     NerContextClassification,
     NerExclusion,
+    NerGlossaryApplication,
     NerTemporalCandidate,
 )
+from library.ner_channel_glossary import GlossaryEntry, apply_glossary, restore_original_variants
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
-from library.ner_normalization import normalize_ner_text
+from library.ner_normalization import normalize_ner_text, strip_content_markers, strip_markdown_emphasis
+from library.org_compound_names import merge_compound_org_names
 from library.organization_registry import (
     CONFIDENCE_CONTEXT_LLM_MATCHED,
     ambiguous_alias_candidates,
@@ -136,6 +141,105 @@ def is_excluded(exclusions: list[NerExclusion], entity_type: str, entity_text: s
     return False
 
 
+def _apply_channel_glossary(session, document_id: int, text: str) -> tuple[str, Counter | None]:
+    """The text with the document channel's glossary applied, plus the replacements made.
+
+    The replacements are None when the document has no channel (byline), i.e. no glossary applies."""
+    doc = session.get(Document, document_id)
+    author = getattr(doc, "byline", None)
+    if not isinstance(author, str) or not author.strip():
+        return text, None
+    rows = session.execute(
+        select(NerChannelGlossaryEntry).where(func.lower(NerChannelGlossaryEntry.author) == author.strip().lower())
+    ).scalars().all()
+    entries = [
+        GlossaryEntry(row.id, row.canonical_name, tuple(row.aliases or ()), bool(row.fuzzy))
+        for row in rows if isinstance(row, NerChannelGlossaryEntry)
+    ]
+    if not entries:
+        return text, Counter()
+    result = apply_glossary(text, entries)
+    if result.replacements:
+        logger.info("NER channel glossary: %d replacements for doc %s (%s)", sum(result.replacements.values()),
+                    document_id, ", ".join(f"{o}->{r}" for (_i, o, r) in list(result.replacements)[:10]))
+    return result.text, result.replacements
+
+
+def apply_channel_glossary_text(session, document_id: int, text: str) -> str:
+    """The text with the document channel's glossary applied, for non-NER consumers (country detection).
+
+    Same copy-only semantics as the NER refresh: the stored transcript never changes. Never raises —
+    a glossary problem must not break tagging, the unmodified text is returned instead."""
+    try:
+        return _apply_channel_glossary(session, document_id, text)[0]
+    except Exception:
+        logger.warning("Channel glossary could not be applied for doc %s", document_id, exc_info=True)
+        return text
+
+
+def _record_glossary_replacements(session, document_id: int, groups: dict, replacements: Counter) -> None:
+    """Audit the glossary replacements (replace semantics per document) and restore original variants."""
+    if replacements is None:  # the document has no channel, so no glossary was ever consulted
+        return
+    session.execute(delete(NerGlossaryApplication).where(NerGlossaryApplication.document_id == document_id))
+    if not replacements:
+        return
+    restore_original_variants(groups, replacements)
+    session.add_all([
+        NerGlossaryApplication(document_id=document_id, glossary_id=entry_id, original_text=original,
+                               replacement_text=replacement, occurrences=count)
+        for (entry_id, original, replacement), count in replacements.items()
+    ])
+
+
+def _add_place_mentions(groups: dict[tuple[str, str], dict], text: str, raw: list[dict]) -> None:
+    """Fold gazetteer-detected place mentions (place_mention_gazetteer) into `groups` in place."""
+    from library.place_mention_gazetteer import detect_place_mentions
+
+    for name, surfaces in detect_place_mentions(text, raw).items():
+        count = sum(surfaces.values())
+        existing_key = next(
+            (key for key in groups if key[0] in {"placeName", "geogName"} and key[1].casefold() == name.casefold()),
+            None,
+        )
+        if existing_key is None:
+            groups[("placeName", name)] = {"count": count, "variants": list(surfaces), "raw_lemmas": [name]}
+            continue
+        group = groups[existing_key]
+        group["count"] += count
+        for surface in surfaces:
+            if surface not in group["variants"] and surface.casefold() != existing_key[1].casefold():
+                group["variants"].append(surface)
+
+
+def _apply_country_abbreviations(
+    groups: dict[tuple[str, str], dict], text: str, title: str, document_id: int,
+) -> None:
+    """Turn abbreviations the LLM confirmed as a country ("DRK" = Kongo) into that country's place group.
+
+    spaCy types such an abbreviation as an organization or person (or misses it); here the group
+    of that spelling is dropped and its mentions counted from the text go to a `placeName` group
+    named after the country, the abbreviation staying as a surface form. Fails open.
+    """
+    from library.country_abbreviations import confirmed_country_abbreviations
+
+    for abbreviation, info in confirmed_country_abbreviations(text, title, document_id).items():
+        for key in [key for key in groups if key[1].casefold() == abbreviation.casefold()]:
+            del groups[key]
+        country = info["country"]
+        existing_key = next(
+            (key for key in groups if key[0] in {"placeName", "geogName"} and key[1].casefold() == country.casefold()),
+            None,
+        )
+        if existing_key is None:
+            groups[("placeName", country)] = {"count": info["count"], "variants": [abbreviation], "raw_lemmas": [country]}
+            continue
+        group = groups[existing_key]
+        group["count"] += info["count"]
+        if abbreviation not in group["variants"]:
+            group["variants"].append(abbreviation)
+
+
 def refresh_document_entities(session, document_id: int, text: str) -> list[DocumentEntity]:
     """Run NER on text and replace the document's rows in document_entities.
 
@@ -164,6 +268,10 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     # or rollback, matching this function's existing transaction contract.
     session.execute(select(func.pg_advisory_xact_lock(22_004, document_id)))
 
+    # Channel glossary: repair known speech-to-text slips in a COPY of the text (the stored
+    # transcript is untouched); every later step works on the repaired copy so offsets agree.
+    text, glossary_replacements = _apply_channel_glossary(session, document_id, text)
+
     raw = extract_entities(text)
     if not raw:
         if is_available():
@@ -182,6 +290,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         doc.entities_checked_at = datetime.datetime.now()
 
     groups = aggregate_entities_detailed(raw)
+    _record_glossary_replacements(session, document_id, groups, glossary_replacements)
 
     # spaCy can miss outlet names containing digits (for example "France24").
     # Promote only known reporting sources that occur in an explicit grounded
@@ -196,6 +305,20 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             existing["count"] += 1
             if source["raw_mention"] not in existing["variants"]:
                 existing["variants"].append(source["raw_mention"])
+
+    # Places spaCy never reports (lowercase "królewca", the adjective-only
+    # "obwód kaliningradzki", "przesmyk suwalski"): a closed, text-grounded list.
+    _add_place_mentions(groups, text, raw)
+
+    # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
+    # country only when a contextual LLM check confirms it.
+    _apply_country_abbreviations(groups, text, getattr(doc, "title", None) or "", document_id)
+
+    merged_orgs = merge_compound_org_names(
+        strip_content_markers(strip_markdown_emphasis(text)), groups,
+    )
+    if merged_orgs:
+        logger.info("NER compound organization names merged %d groups for doc %s", len(merged_orgs), document_id)
 
     # Date/time mentions are not ordinary sidebar entities. Keep them as
     # grounded hints for the later timeline LLM stage.
@@ -438,9 +561,16 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     # human renames/merges/deletions recorded in entity_review_decisions so those
     # corrections of the automation are not lost with the derived data.
     session.flush()
-    from library.entity_overrides import replay_manual_place_decisions
+    from library.entity_overrides import (
+        replay_manual_added_entities, replay_manual_organization_decisions, replay_manual_place_decisions,
+        replay_entity_relevance_decisions, replay_product_merges,
+    )
 
     replay_manual_place_decisions(session, document_id, doc)
+    replay_manual_organization_decisions(session, document_id)
+    replay_manual_added_entities(session, document_id, doc)
+    replay_product_merges(session, document_id)
+    replay_entity_relevance_decisions(session, document_id, doc)
     # Named facilities are semantic entities assembled from a recognised object
     # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra
     # spaCy label.  Flush first so their links can safely refer to new place rows.
@@ -509,6 +639,9 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         DocumentFacility.document_id == document_id,
     )).all()
 
+    from library.place_registry import name_key, profile_index
+
+    place_profiles = profile_index(session)
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
     pipelines_by_query: dict[str, InfraGeometry] = {}
@@ -521,17 +654,25 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         pipelines_by_query = {r.query: r for r in infra_rows}
 
     grouped: dict[str, list[dict]] = {
-        "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [],
+        "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
+        "productName": [],
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
-                      "variants": row.variants or []}
+                      "variants": row.variants or [], "relevance": row.relevance or "central"}
         if row.entity_type in {*place_types, "orgName"}:
             item["is_country"] = canonical_country_name(row.entity_text) is not None
         status = row.place_verification_status
         if row.entity_type in place_types:
             item["place_verification_status"] = status
+            place_profile = next((place_profiles[k] for k in (name_key(row.entity_text),
+                                                              *(name_key(v) for v in (row.variants or [])))
+                                  if k in place_profiles), None)
+            if place_profile is not None and place_profile.wikipedia_url:
+                item["wikipedia_url"] = place_profile.wikipedia_url
             item["place_review_reason"] = row.place_review_reason
+            if not item["is_country"] and (split := suggest_place_split(row.entity_text, row.variants)):
+                item["split_suggestion"] = split
             if status in ("needs_review", "rejected"):
                 item["verified"] = False
         if row.geocode is not None:
@@ -556,6 +697,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 "name": infra.name,
                 "geojson": infra.geojson,
             }
+        if row.entity_type == "eventName":
+            item["description"] = row.description
         if row.entity_type == "persName" and row.entity_text in persons_by_mention:
             link = persons_by_mention[row.entity_text]
             item["link_id"] = link["link_id"]
@@ -588,6 +731,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         facility = link.facility
         grouped["facility"].append({
             "id": link.id,
+            "relevance": "central",
             "text": facility.canonical_name,
             "count": link.mention_count,
             # Preserve the surface form from this document.  It lets chapter
@@ -607,6 +751,26 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             "confidence": link.confidence,
         })
     return grouped
+
+
+_INFLECTION_TYPES = ("geogName", "placeName", "orgName")
+
+
+def inflected_phrases(name: str, text: str) -> list[str]:
+    """Inflected forms of a multi-word name found in ``text`` ("Stanach Zjednoczonych" for "Stany Zjednoczone").
+
+    Every word of the name is reduced to a stem (its length minus a 3-letter ending, at least 4 letters) and
+    the words must follow each other in the text. A form is returned as written, capitalised like the name.
+    """
+    words = name.split()
+    if not 2 <= len(words) <= 4 or any(len(re.sub(r"\W", "", word)) < 4 for word in words):
+        return []
+    stems = [re.escape(word[:max(4, len(word) - 3)]) for word in words]
+    pattern = re.compile(r"(?<!\w)" + r"\s+".join(f"{stem}\\w*" for stem in stems) + r"(?!\w)", re.IGNORECASE)
+    return list(dict.fromkeys(
+        match.group(0) for match in pattern.finditer(text)
+        if all(w[0].isupper() == m[0].isupper() for w, m in zip(words, match.group(0).split(), strict=False))
+    ))
 
 
 def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[str, list[dict]]:
@@ -632,7 +796,11 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
         kept = []
         for item in items:
             variants = item.get("variants") or []
-            raw_needles = variants or [item["text"]]
+            # The canonical name is a needle too: a manual row can list only some forms ("Stany") and
+            # would otherwise never match the full name; inflected multi-word forms are found by stem.
+            raw_needles = [*variants, item["text"]]
+            if entity_type in _INFLECTION_TYPES:
+                raw_needles.extend(inflected_phrases(item["text"], text))
             needles_by_key: dict[str, str] = {}
             for raw_needle in raw_needles:
                 needle = raw_needle.strip()
@@ -668,6 +836,46 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
 
 
 PLACE_TYPES = ("geogName", "placeName")
+_SPLIT_CONJUNCTIONS = {"i", "oraz", "a", "z", "and"}
+_SPLIT_TOKEN = re.compile(r"[^\s,;/]+")
+
+
+def split_place_tokens(text: str) -> list[str]:
+    """Words of a place mention without list separators ("Pakistanem i Afganistanem" -> 2 tokens)."""
+    return [t for t in _SPLIT_TOKEN.findall(text or "") if t.casefold() not in _SPLIT_CONJUNCTIONS and t != "-"]
+
+
+def suggest_place_split(text: str, variants: list[str] | None = None) -> list[str] | None:
+    """Canonical country names when a place mention is only a list of countries.
+
+    "Pakistanem Afganistanem" -> ["Pakistan", "Afganistan"]. Greedy longest match so a
+    two-word country ("Korea Południowa") is never cut in half; every token must belong
+    to a country and at least two distinct countries must come out, otherwise None.
+    Only a suggestion: the reviewer confirms (and may edit) the parts.
+    """
+    from library.country_gazetteer import canonical_country_name
+
+    for form in [text, *(variants or [])]:
+        tokens = split_place_tokens(form)
+        if len(tokens) < 2:
+            continue
+        parts: list[str] = []
+        index = 0
+        while index < len(tokens):
+            for end in range(len(tokens), index, -1):
+                name = canonical_country_name(" ".join(tokens[index:end]))
+                if name is not None:
+                    parts.append(name)
+                    index = end
+                    break
+            else:
+                parts = []
+                break
+        if len(set(parts)) >= 2:
+            return list(dict.fromkeys(parts))
+    return None
+
+
 # orgName is accepted as a merge *source* (not target) to cover NER
 # misclassifications where the same real-world place was tagged orgName in
 # one mention and geogName/placeName in another within the same document
@@ -675,7 +883,9 @@ PLACE_TYPES = ("geogName", "placeName")
 MERGEABLE_PLACE_SOURCE_TYPES = (*PLACE_TYPES, "orgName")
 
 
-def merge_document_entities(source: DocumentEntity, target: DocumentEntity, *, target_source: str = "manual") -> None:
+def merge_document_entities(
+    source: DocumentEntity, target: DocumentEntity, *, target_source: str = "manual", add_count: bool = True,
+) -> None:
     """Fold source into target: sum mention_count, union variants, adopt a
     missing geocode_id from source. Caller deletes source from the session and
     owns the transaction/validation (document/type checks) — see
@@ -694,7 +904,8 @@ def merge_document_entities(source: DocumentEntity, target: DocumentEntity, *, t
         if value.casefold() != target.entity_text.casefold():
             combined_variants.setdefault(value)
     target.variants = list(combined_variants)
-    target.mention_count += source.mention_count
+    if add_count:  # False when replaying onto a manual row that already carries this count
+        target.mention_count += source.mention_count
     if target.geocode_id is None and source.geocode_id is not None:
         target.geocode_id = source.geocode_id
     target.source = target_source

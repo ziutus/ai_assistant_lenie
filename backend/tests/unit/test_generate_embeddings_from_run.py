@@ -101,6 +101,7 @@ class TestGenerateEmbeddingsFromRun:
             _chunk(2, "TEMAT", "pending", original_text="Nie powinno się embedować."),
             _chunk(3, "REKLAMA", "approved", original_text="Reklama, pomijana mimo approved."),
             _chunk(4, "SZUM", "approved", original_text="Szum, pomijany mimo approved."),
+            _chunk(5, "ZRODLA", "approved", original_text="Źródła, pomijane mimo approved."),
         ]
         session.scalars.return_value.all.return_value = chunks
 

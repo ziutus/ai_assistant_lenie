@@ -11,6 +11,7 @@ case: "Al-Faszir" (Polish "sz" for the Arabic sound) returned a random alley
 in Cairo, because OSM knows the city as "El Fasher"/"Al Fashir" ("sh"/"f") —
 see geocode_cache row for doc 9394 in
 tmp/ner-place-org-display-names-summary.md.
+Doc #10872: "Kaliningrad" needs the Polish exonym "Królewiec" indexed by OSM.
 
 place_verification._get_or_create_geocode() tries the alias only after the
 primary (Polish) query's hit has failed is_plausible_match() — this is a
@@ -24,6 +25,8 @@ Small, closed list — extend only for a specific place confirmed broken
 against LocationIQ, not as a general transliteration table.
 """
 
+from library import ner_gazetteer_store
+
 GEOCODE_ALIASES: dict[str, str] = {
     # Live-verified against LocationIQ 2026-08-22: a country-qualified alias
     # ("El Fasher, Sudan") drags is_plausible_match()'s ratio below its 0.75
@@ -32,12 +35,31 @@ GEOCODE_ALIASES: dict[str, str] = {
     # score from 0.89 to 0.64). The bare city name alone scores 0.89 and
     # still resolves the correct node (OSM place_id 43364335, Sudan).
     "Al-Faszir": "El Fasher",
+    # Doc #10872: correct LocationIQ/OSM node is named Królewiec;
+    # Kaliningrad scores only 0.30 against it (threshold 0.75).
+    "Kaliningrad": "Królewiec",
+    # Doc #10872: OSM names the region "Kaliningrad Oblast".
+    "Tel Awiw": "Tel Aviv",
+    "Obwód Kaliningradzki": "Kaliningrad Oblast",
+    # Doc #10872: the corridor is known as the "Suwałki Gap"; may stay unresolved in OSM.
+    "Przesmyk Suwalski": "Suwałki Gap",
 }
 
 
 def geocode_alias(canonical_name: str) -> str | None:
-    """The English/OSM query to retry when `canonical_name` failed to geocode."""
-    return GEOCODE_ALIASES.get(canonical_name)
+    """The English/OSM query to retry when `canonical_name` failed to geocode.
+
+    The seed list in code wins; rows of kind ``geocode_alias`` in ner_gazetteer_entries
+    (ADR-029) extend it without a deploy.
+    """
+    alias = GEOCODE_ALIASES.get(canonical_name)
+    if alias is not None:
+        return alias
+    folded = canonical_name.casefold()
+    for entry in ner_gazetteer_store.get_entries(ner_gazetteer_store.KIND_GEOCODE_ALIAS):
+        if entry.name_pl.casefold() == folded:
+            return entry.geocode_alias
+    return None
 
 
 # ISO 3166-1 alpha-2 country-bias hints for names whose *spelling* is already

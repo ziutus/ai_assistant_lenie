@@ -16,11 +16,26 @@ const statusStyle: Record<string, React.CSSProperties> = {
   done: { background: "#dcfce7", color: "#15803d" }, failed: { background: "#fee2e2", color: "#b91c1c" },
   cancel_requested: { background: "#fef3c7", color: "#92400e" }, cancelled: { background: "#e2e8f0", color: "#475569" },
 };
+type NewEntry = { feed_item_id: number; title?: string; url?: string; status?: string };
+type FeedResult = { feed_name?: string; new_entries?: NewEntry[]; new_entries_truncated?: number };
 const formatResult = (result: unknown) => {
   if (!result || typeof result !== "object" || Array.isArray(result)) return "—";
-  const counters = ["found", "added", "skipped", "refreshed", "errors"].filter((key) => key in result)
-    .map((key) => `${key}: ${String((result as Record<string, unknown>)[key])}`);
-  return counters.length ? counters.join(" · ") : "zobacz szczegóły";
+  const values = result as Record<string, unknown>;
+  const feeds = Array.isArray(values.feeds) ? values.feeds as FeedResult[] : [];
+  const source = feeds.length === 1 ? [`źródło: ${feeds[0].feed_name || "?"}`] : feeds.length > 1 ? [`źródeł: ${feeds.length}`] : [];
+  const counters = ["found", "added", "new_items", "items", "skipped", "refreshed", "errors"].filter((key) => key in values)
+    .map((key) => `${key}: ${Array.isArray(values[key]) ? (values[key] as unknown[]).length : String(values[key])}`);
+  const imported = values.import && typeof values.import === "object" ? (values.import as { imported?: number }).imported : undefined;
+  const parts = [...source, ...counters, ...(typeof imported === "number" ? [`zaimportowano: ${imported}`] : [])];
+  return parts.length ? parts.join(" · ") : "zobacz szczegóły";
+};
+// New feed candidates found by the check, as links to the review queue (the title is what the user recognises).
+const newEntriesOf = (result: unknown): { feed: string; entries: NewEntry[]; more: number }[] => {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return [];
+  const feeds = (result as { feeds?: unknown }).feeds;
+  if (!Array.isArray(feeds)) return [];
+  return (feeds as FeedResult[]).filter((feed) => feed.new_entries?.length)
+    .map((feed) => ({ feed: feed.feed_name || "?", entries: feed.new_entries || [], more: feed.new_entries_truncated || 0 }));
 };
 
 export default function Jobs() {
@@ -83,7 +98,7 @@ export default function Jobs() {
           const selected = selectedJobId === job.id;
           const hovered = hoveredJobId === job.id;
           return <tr key={job.id} onClick={() => setSelectedJobId(job.id)} onMouseEnter={() => setHoveredJobId(job.id)} onMouseLeave={() => setHoveredJobId(null)} style={{ borderBottom: "1px solid rgb(179, 179, 179)", background: selected ? "#dbeafe" : hovered ? "#f1f5f9" : undefined, cursor: "pointer" }}>
-          <td style={{ padding: "10px 8px" }}>{job.type}</td><td style={{ padding: "10px 8px" }}><span style={{ ...statusStyle[job.status], borderRadius: 10, padding: "2px 7px", fontSize: ".85em", fontWeight: 500 }}>{job.status}</span></td><td style={{ padding: "10px 8px" }}>{job.attempt}/{job.max_attempts}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{formatTime(job.created_at)}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{formatTime(job.started_at)}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{formatTime(job.finished_at)}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{job.watermark || "—"}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{formatResult(job.result)}</td><td style={{ padding: "10px 8px" }}><details><summary>JSON</summary><pre>{JSON.stringify(job.error || job.result || job.progress || job.parameters || "—", null, 2)}</pre></details></td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{canManage && job.status === "failed" && job.attempt < job.max_attempts && <button type="button" className="button" onClick={() => void manage(`/jobs/${job.id}/retry`, "Zlecono retry")}>Retry</button>}{canManage && (job.status === "queued" || job.status === "running") && <button type="button" className="button" onClick={() => void manage(`/jobs/${job.id}/cancel`, "Zlecono anulowanie")}>Anuluj</button>}</td>
+          <td style={{ padding: "10px 8px" }}>{job.type}</td><td style={{ padding: "10px 8px" }}><span style={{ ...statusStyle[job.status], borderRadius: 10, padding: "2px 7px", fontSize: ".85em", fontWeight: 500 }}>{job.status}</span></td><td style={{ padding: "10px 8px" }}>{job.attempt}/{job.max_attempts}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{formatTime(job.created_at)}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{formatTime(job.started_at)}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{formatTime(job.finished_at)}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{job.watermark || "—"}</td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{formatResult(job.result)}{newEntriesOf(job.result).map(({ feed, entries, more }) => <ul key={feed} aria-label={`Nowe pozycje: ${feed}`} style={{ margin: "4px 0 0", paddingLeft: 18, whiteSpace: "normal", maxWidth: 420 }}>{entries.map((entry) => <li key={entry.feed_item_id}>{entry.url ? <a href={entry.url} target="_blank" rel="noopener noreferrer">{entry.title || entry.url}</a> : entry.title}</li>)}{more > 0 && <li>…i {more} więcej</li>}</ul>)}</td><td style={{ padding: "10px 8px" }}><details><summary>JSON</summary><pre>{JSON.stringify(job.error || job.result || job.progress || job.parameters || "—", null, 2)}</pre></details></td><td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{canManage && job.status === "failed" && job.attempt < job.max_attempts && <button type="button" className="button" onClick={() => void manage(`/jobs/${job.id}/retry`, "Zlecono retry")}>Retry</button>}{canManage && (job.status === "queued" || job.status === "running") && <button type="button" className="button" onClick={() => void manage(`/jobs/${job.id}/cancel`, "Zlecono anulowanie")}>Anuluj</button>}</td>
         </tr>;
         })}{!rows.length && <tr><td colSpan={10} style={{ padding: "10px 8px" }}>Brak jobów</td></tr>}</tbody>
       </table>

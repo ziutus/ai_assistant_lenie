@@ -26,6 +26,50 @@ class TestCanonicalCityName:
 
     @pytest.mark.parametrize(
         "mention",
+        ["Rijad", "Rijadzie", "Rijadu", "Rijadem", "Rijadowi"],
+    )
+    def test_matches_every_inflected_form_of_rijad(self, mention):
+        # doc #10770: "Władze Arabii Saudyjskiej do soboty przedłużyły zamknięcie
+        # międzynarodowego lotniska im. króla Chalida w Rijadzie - poinformował Reuters."
+        assert city_gazetteer.canonical_city_name(mention) == "Rijad"
+
+    def test_riad_transcription_variant_doc_10872(self):
+        # doc #10872: "Ambasada Indii w Riadzie potwierdziła tożsamość pilota i w"
+        # "oświadczeniu poinformowała, że znajduje się on w szpitalu w Tabuk".
+        assert city_gazetteer.canonical_city_name("Riadzie") == "Rijad"
+        assert city_gazetteer.canonical_city_name("Riad") == "Rijad"
+        assert city_gazetteer.canonical_city_name("Rijadzie") == "Rijad"
+        # An unrelated token exceeds the four-character stem suffix limit.
+        assert city_gazetteer.canonical_city_name("Riadabcdefghijkl") is None
+
+    @pytest.mark.parametrize(
+        "mention",
+        ["Luizjana", "Luizjany", "Luizjanie", "Luizjanę", "Luizjaną", "Luizjano",
+         "Luisiana", "Luisianie", "Luisiany", "Luisianę"],
+    )
+    def test_luisiana_transcription_variant_doc_10872(self, mention):
+        # doc #10872: "Obejmie nowe rozszerzone szkolenia na w Luisianie, Mississippi, Task i Hillsdale."
+        assert city_gazetteer.canonical_city_name(mention) == "Luizjana"
+
+    @pytest.mark.parametrize("mention", ["Luizjanabcde", "Luisianabcde", "w Luisianie"])
+    def test_luizjana_requires_full_match_with_limited_suffix(self, mention):
+        # Five-character suffixes exceed the limit; a phrase is not a complete name.
+        assert city_gazetteer.canonical_city_name(mention) is None
+
+    @pytest.mark.parametrize("mention", ["Królewiec", "Królewca", "Królewcu", "Królewcem"])
+    def test_krolewiec_is_kaliningrad_doc_10872(self, mention):
+        # doc #10872: "Rosja grozi wojną o Królewiec", "naszego królewca".
+        assert city_gazetteer.canonical_city_name(mention) == "Kaliningrad"
+
+    @pytest.mark.parametrize("mention", ["Królewskie", "królewskimody.pl", "Królewska"])
+    def test_royal_adjectives_are_not_kaliningrad(self, mention):
+        assert city_gazetteer.canonical_city_name(mention) is None
+
+    def test_rijad_stem_does_not_match_riga(self):
+        assert city_gazetteer.canonical_city_name("Riga") is None
+
+    @pytest.mark.parametrize(
+        "mention",
         ["Al-Faszir", "Al-Fasziru", "Al-Faszirze", "Al-Faszirem", "Al Faszirze"],
     )
     def test_matches_hyphenated_and_spaced_al_faszir(self, mention):

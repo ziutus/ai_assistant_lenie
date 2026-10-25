@@ -13,7 +13,9 @@ from library.country_gazetteer import canonical_country_name
 
 logger = logging.getLogger(__name__)
 
-RULES_PATH = Path(__file__).resolve().parents[1] / "data" / "ner_normalization.json"
+# Lives next to the code, not in data/: on the NAS /app/data is a named Docker volume that
+# shadows the image's data/ with a stale copy (doc #11137: demonym_patterns never took effect).
+RULES_PATH = Path(__file__).resolve().parent / "ner_normalization_rules.json"
 
 # Bold/italic markdown markers (**, __) glue onto an adjacent entity when the
 # source text has no whitespace before them (e.g. "Aktywów Państwowych.**-Tymczasem"),
@@ -189,6 +191,24 @@ def canonical_country_for_demonym_pattern(surface: str | None) -> str | None:
         if pattern.fullmatch(folded):
             return country
     return None
+
+
+@lru_cache(maxsize=1)
+def load_non_place_demonym_patterns() -> tuple[re.Pattern[str], ...]:
+    """Compile closed non-place demonym patterns once; skip malformed regexes."""
+    compiled = []
+    for pattern in load_ner_normalization_rules().get("non_place_demonym_patterns", []):
+        try:
+            compiled.append(re.compile(pattern))
+        except re.error as exc:
+            logger.warning("Invalid non-place demonym pattern: %r (%s)", pattern, exc)
+    return tuple(compiled)
+
+
+def is_non_place_demonym(surface: str | None) -> bool:
+    """Match curated non-place demonyms on the same folded surface as country demonyms."""
+    folded = unidecode(surface or "").casefold()
+    return any(pattern.fullmatch(folded) for pattern in load_non_place_demonym_patterns())
 
 
 def canonical_country_for_surface(surface: str) -> str | None:

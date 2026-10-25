@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 
 from library.document_analysis_service import _extract_text
+from library.entity_text import document_ner_text
 
 logger = logging.getLogger(__name__)
 
@@ -70,23 +71,28 @@ def refresh_document_enrichment(
                     setattr(doc, field, stripped_text)
                     session.commit()
 
+        # Typed transcript chapters (reklama/szum/źródła) are left out of NER; when none
+        # are excluded the text chosen above stays exactly as before.
+        filtered_text = document_ner_text(doc)
+        if filtered_text != (doc.text_md or doc.text or ""):
+            entity_text = filtered_text
         run_stage(
             "entities", "Wykrywanie osób i miejsc…",
             lambda: {"count": len(__import__(
                 "library.entity_service", fromlist=["refresh_document_entities"],
-            ).refresh_document_entities(session, doc.id, entity_text))},
+            ).refresh_document_entities(session, doc.id, entity_text)) if entity_text.strip() else 0},
         )
         run_stage(
             "places", "Weryfikacja miejsc…",
             lambda: __import__(
                 "library.place_verification", fromlist=["verify_document_places"],
-            ).verify_document_places(session, doc, entity_text),
+            ).verify_document_places(session, doc, entity_text) if entity_text.strip() else {},
         )
         run_stage(
             "persons", "Łączenie osób z rejestrem…",
             lambda: __import__(
                 "library.person_registry", fromlist=["resolve_document_persons"],
-            ).resolve_document_persons(session, doc, entity_text),
+            ).resolve_document_persons(session, doc, entity_text) if entity_text.strip() else {},
         )
         if author_bio:
             run_stage(

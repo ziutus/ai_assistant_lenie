@@ -11,6 +11,7 @@ import requests  # noqa: E402
 from library.ner_client import (  # noqa: E402
     ENTITY_TYPES,
     MAX_TEXT_CHARS,
+    _split_rename_org_spans,
     aggregate_entities,
     aggregate_entities_detailed,
     extract_entities,
@@ -152,6 +153,84 @@ class TestExtractEntities:
                     extract_entities_strict("x" * (MAX_TEXT_CHARS + 500))
 
 
+class TestTruncatedCountrySpan:
+    def test_afp_sentence_merges_saudi_arabia_mentions(self):
+        text = (
+            'Agencja AFP podkreśliła, że było to "najkrwawsze uderzenie" '
+            'na Arabię Saudyjską od ponad dekady. Arabia Saudyjska.'
+        )
+        start = text.index("Arabię")
+        full_start = text.index("Arabia Saudyjska")
+        entities = [
+            {"text": "Arabię", "lemma": "Arabia", "label": "placeName",
+             "start": start, "end": start + len("Arabię"), "pos": "PROPN"},
+            {"text": "Arabia Saudyjska", "lemma": "Arabia Saudyjska", "label": "placeName",
+             "start": full_start, "end": full_start + len("Arabia Saudyjska"), "pos": "PROPN"},
+        ]
+        with patch("library.ner_client.requests.post", return_value=_response(entities)):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                result = extract_entities(text)
+        assert result[0]["end"] == start + len("Arabię Saudyjską")
+        groups = aggregate_entities_detailed(result)
+        assert ("placeName", "Arabia") not in groups
+        assert groups[("placeName", "Arabia Saudyjska")]["count"] == 2
+        assert "Arabię Saudyjską" in groups[("placeName", "Arabia Saudyjska")]["variants"]
+
+    @pytest.mark.parametrize("label", ["placeName", "geogName", "orgName"])
+    @pytest.mark.parametrize("surface,next_word", [
+        ("Arabia", "Saudyjska"), ("Arabię", "Saudyjską"), ("Arabii", "Saudyjskiej"),
+        ("Arabią", "SAUDYJSKĄ"), ("Arabio", "Saudyjskie"), ("ARABIE", "saudyjska"),
+    ])
+    def test_extends_in_later_window(self, label, surface, next_word):
+        window = " " + surface + "\n" + next_word + "."
+        entity = {"text": surface, "lemma": "Arabia", "label": label,
+                  "start": 1, "end": 1 + len(surface)}
+        with patch("library.ner_client.requests.post", side_effect=[_response([]), _response([entity])]) as post:
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                result = extract_entities("x" * MAX_TEXT_CHARS + window)
+        assert post.call_args.kwargs["json"]["text"] == window
+        assert result == [{**entity, "text": surface + "\n" + next_word,
+                           "lemma": "Arabia Saudyjska", "end": len(window) - 1}]
+
+    @pytest.mark.parametrize("text,surface,label", [
+        ("Arabia jest półwyspem.", "Arabia", "placeName"),
+        ("na Półwyspie Arabskim", "Półwyspie Arabskim", "geogName"),
+        ("Arabia, Saudyjska", "Arabia", "placeName"),
+        ("Arabian Saudyjska", "Arabian", "placeName"),
+        ("Arabia Saudyjska", "Arabia", "persName"),
+        ("Arabia", "Arabia", "placeName"),
+        ("Arabia   ", "Arabia", "placeName"),
+    ])
+    def test_leaves_unmatched_mentions_untouched(self, text, surface, label):
+        start = text.index(surface)
+        entity = {"text": surface, "lemma": surface, "label": label,
+                  "start": start, "end": start + len(surface)}
+        expected = dict(entity)
+        with patch("library.ner_client.requests.post", return_value=_response([entity])):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert extract_entities(text) == [expected]
+
+    @pytest.mark.parametrize("offsets", [{}, {"start": 0}, {"end": 6}])
+    def test_leaves_legacy_payload_untouched(self, offsets):
+        entity = {"text": "Arabię", "lemma": "Arabia", "label": "placeName", **offsets}
+        expected = dict(entity)
+        with patch("library.ner_client.requests.post", return_value=_response([entity])):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert extract_entities("Arabię Saudyjską") == [expected]
+
+    def test_does_not_extend_across_window_boundary(self):
+        prefix = "x" * (MAX_TEXT_CHARS - len(" Arabię") - 1)
+        entity = {"text": "Arabię", "lemma": "Arabia", "label": "placeName",
+                  "start": len(prefix) + 1, "end": MAX_TEXT_CHARS - 1}
+        expected = dict(entity)
+        # Backtracking cuts at the space after Arabię, leaving the adjective in the next window.
+        text = prefix + " Arabię Saudyjską"
+        with patch("library.ner_client.requests.post", side_effect=[_response([entity]), _response([])]) as post:
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert extract_entities(text) == [expected]
+        assert post.call_args_list[0].kwargs["json"]["text"].endswith("Arabię")
+
+
 class TestWarmupAsync:
     def test_fires_probe_in_background(self):
         import threading
@@ -236,6 +315,58 @@ class TestAggregateEntities:
         assert aggregate_entities(entities) == {("geogName", "kotlina Kłodzki"): 1}
 
 
+class TestCityTaggedAsOrganization:
+    """Doc #10872: spaCy tagged "do Tela Avivwu" (transcript spelling + genitive) as an organization."""
+
+    def test_org_name_that_is_a_gazetteer_city_becomes_a_place(self):
+        entities = [{"text": "Tela Avivwu", "label": "orgName", "lemma": "Tela Avivwu", "pos": "PROPN"}]
+        groups = aggregate_entities_detailed(entities)
+        assert ("orgName", "Tela Avivwu") not in groups
+        assert groups[("placeName", "Tel Awiw")]["variants"] == ["Tela Avivwu"]
+
+    @pytest.mark.parametrize("surface", ["Tel Aviv", "Tel Avivu", "Tela Avivwu", "Tel Awiwu"])
+    def test_every_form_of_tel_aviv_folds_into_one_place(self, surface):
+        groups = aggregate_entities_detailed([{"text": surface, "label": "placeName", "lemma": surface, "pos": "PROPN"}])
+        assert list(groups) == [("placeName", "Tel Awiw")]
+
+    def test_ordinary_organizations_keep_their_label(self):
+        entities = [{"text": "Fly Dubai", "label": "orgName", "lemma": "Fly Dubai", "pos": "PROPN"}]
+        assert ("orgName", "Fly Dubai") in aggregate_entities_detailed(entities)
+
+
+class TestAdjectivalSurnames:
+    """spaCy tags Slavic surnames that decline like adjectives POS=ADJ (doc #10872: Zacharowa)."""
+
+    def test_single_word_adjectival_surname_is_kept(self):
+        entities = [
+            {"text": "Zacharowa", "label": "persName", "lemma": "Zacharowa", "pos": "ADJ"},
+            {"text": "Zacharowej", "label": "persName", "lemma": "Zacharowa", "pos": "ADJ"},
+        ]
+        groups = aggregate_entities_detailed(entities)
+        assert groups[("persName", "Zacharowa")]["count"] == 2
+        assert groups[("persName", "Zacharowa")]["variants"] == ["Zacharowa", "Zacharowej"]
+
+    def test_lowercase_lemma_falls_back_to_the_surface(self):
+        entities = [{"text": "Kowalskiej", "label": "persName", "lemma": "kowalski", "pos": "ADJ"}]
+        assert list(aggregate_entities_detailed(entities)) == [("persName", "Kowalskiej")]
+
+    @pytest.mark.parametrize("surface", ["Duży", "Szybka", "Zachodzie", "Zielony", "Wielka"])
+    def test_adjectives_without_a_surname_ending_stay_dropped(self, surface):
+        # A capitalized adjective that does end like a surname ("Polski") is left to
+        # person_context_classifier's single-word review; spaCy labels those placeName anyway.
+        assert aggregate_entities_detailed(
+            [{"text": surface, "label": "persName", "lemma": surface, "pos": "ADJ"}],
+        ) == {}
+
+    def test_place_labelled_adjective_is_still_dropped(self):
+        entities = [{"text": "Kaliningradzkiego", "label": "placeName", "lemma": "kaliningradzki", "pos": "ADJ"}]
+        assert aggregate_entities_detailed(entities) == {}
+
+    def test_noun_surname_without_pos_is_unchanged(self):
+        entities = [{"text": "Zacharowa", "label": "persName", "lemma": "Zacharowa"}]
+        assert ("persName", "Zacharowa") in aggregate_entities_detailed(entities)
+
+
 class TestAggregateEntitiesDetailed:
     def test_collects_distinct_surface_variants_in_seen_order(self):
         entities = [
@@ -262,6 +393,99 @@ class TestAggregateEntitiesDetailed:
 
 
 class TestAggregateNormalization:
+    @pytest.mark.parametrize("surface,parts", [
+        ("  „Departamentu  Obrony na Departament Wojny”  ", ["Departamentu Obrony", "Departament Wojny"]),
+        ("Żandarmerii Obrony na Zandarmerii Wojny", ["Żandarmerii Obrony", "Zandarmerii Wojny"]),
+        ("Departament Wojny na Departamentu Obrony", ["Departament Wojny", "Departamentu Obrony"]),
+    ])
+    def test_org_rename_split_normalizes_surface_and_drops_morph(self, surface, parts):
+        entity = {"text": surface, "label": "orgName", "lemma": "unused", "pos": "PROPN",
+                  "morph": "Case=Gen", "start": 10, "end": 80}
+        original = entity.copy()
+        mentions, surfaces = _split_rename_org_spans([entity])
+        assert mentions == [{"text": part, "lemma": part, "label": "orgName", "pos": "PROPN"} for part in parts]
+        assert surfaces == set(parts)
+        assert entity == original
+
+    def test_org_rename_split_keeps_unmatched_entity_unchanged(self):
+        entity = {"text": "Departament Obrony", "label": "orgName", "lemma": "Departament Obrona",
+                  "pos": "NOUN", "morph": "Case=Nom"}
+        mentions, surfaces = _split_rename_org_spans([entity])
+        assert mentions == [entity]
+        assert mentions[0] is entity
+        assert surfaces == set()
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_doc_10872_org_rename_span_is_split(self, reverse):
+        # Real source excerpt from doc #10872; raw spaCy entities below.
+        sentence = (
+            "...koszulki z napisem To jest wojna, które mają właśnie podkreślać zmianę "
+            "Departamentu Obrony na Departament Wojny. No tak, Kongres nie zatwierdził "
+            "jeszcze zmiany nazwy..."
+        )
+        entities = [
+            {"text": "Departamentu Obrony na Departament Wojny", "label": "orgName",
+             "lemma": "Departament Obrona na Departament Wojna", "pos": "NOUN"},
+            {"text": "Departament Wojny", "label": "orgName", "lemma": "Departament Wojna", "pos": "NOUN"},
+        ]
+        assert all(entity["text"] in sentence for entity in entities)
+        if reverse:
+            entities.reverse()
+        result = aggregate_entities_detailed(entities)
+        assert set(result) == {("orgName", "Departamentu Obrony"), ("orgName", "Departament Wojny")}
+        assert result[("orgName", "Departamentu Obrony")]["count"] == 1
+        assert result[("orgName", "Departament Wojny")]["count"] == 2
+        assert result[("orgName", "Departament Wojny")]["variants"] == ["Departament Wojny"]
+
+    @pytest.mark.parametrize("surface", [
+        "Polskie Siły Zbrojne na Zachodzie",
+        "Delegatury rząd na Kraj",
+        "Uniwersytet Medyczny na Pradze",
+        "Departament Obrony",
+        "Departamentu Obrony Na Departament Wojny",
+        "Departamentu Obrony na departament Wojny",
+        "Departament Obrony na Departament Wojny na Departament Pokoju",
+        "Departament na",
+        "Rada Obrony na Rada Wojny",
+        "Departament Obrony na Departura Wojny",
+    ])
+    def test_org_rename_span_leaves_other_names_unchanged(self, surface):
+        entity = {"text": surface, "label": "orgName", "lemma": surface, "pos": "NOUN"}
+        assert aggregate_entities([entity]) == {("orgName", surface): 1}
+
+    @pytest.mark.parametrize("label", ["persName", "placeName", "geogName", "date"])
+    def test_org_rename_span_leaves_other_labels_unchanged(self, label):
+        surface = "Departamentu Obrony na Departament Wojny"
+        entity = {"text": surface, "label": label, "lemma": surface, "pos": "NOUN"}
+        assert aggregate_entities([entity], types=(label,)) == {(label, surface): 1}
+
+    def test_doc_10872_continental_demonym_is_not_a_place(self):
+        # Real sentence from doc #10872, chapter 2; raw spaCy entity below.
+        sentence = (
+            "Zwyczajni Europejczycy są zastraszani apokaliptycznymi scenariuszami, to prawda, "
+            "i hybrydowym zagrożeniem rzekomo pochodzącym z naszego kraju."
+        )
+        entities = [
+            {"text": "Europejczycy", "label": "geogName", "lemma": "Europejczyk", "pos": "NOUN"},
+        ]
+        assert all(entity["text"] in sentence for entity in entities)
+        entities += [
+            {"text": "Rosji", "label": "placeName", "lemma": "Rosja", "pos": "PROPN"},
+            {"text": "Europa", "label": "geogName", "lemma": "Europa", "pos": "PROPN"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Rosja"): {"count": 1, "variants": ["Rosji"], "raw_lemmas": ["Rosja"]},
+            ("geogName", "Europa"): {"count": 1, "variants": ["Europa"], "raw_lemmas": ["Europa"]},
+        }
+        assert aggregate_entities(entities) == {("placeName", "Rosja"): 1, ("geogName", "Europa"): 1}
+
+    @pytest.mark.parametrize("label", ["geogName", "placeName", "orgName", "persName"])
+    @pytest.mark.parametrize("pos", ["NOUN", "PROPN", None])
+    def test_non_place_demonym_rejection_only_applies_to_place_labels(self, label, pos):
+        entities = [{"text": "Europejki", "label": label, "lemma": "Europejka", "pos": pos}]
+        expected = {} if label in {"geogName", "placeName"} else {(label, "Europejka"): 1}
+        assert aggregate_entities(entities) == expected
+
     def test_doc_10756_demonyms_merge_with_country_mentions(self):
         # Real sentence from doc #10756; raw NER retained the inflected lemmas.
         sentence = (
@@ -292,6 +516,21 @@ class TestAggregateNormalization:
                 "variants": ["Izraelczyków", "Izrael"],
                 "raw_lemmas": ["Izraelczyków", "Izrael"],
             },
+        }
+
+    def test_doc_11137_nationalities_are_not_separate_places(self):
+        # Real sentences from doc #11137 (youtube transcript): "Także kiedyś dominowali Algierczycy
+        # dawno temu, teraz już tam Algierczycy są marginesem." / "Zresztą nawet Polacy przecież,
+        # którzy tam mieszkają wiedzą o czymś..." — spaCy lemmatized them to "Algierczyk"/"Polak".
+        entities = [
+            {"text": "Algierczycy", "label": "geogName", "lemma": "Algierczyk", "pos": "NOUN"},
+            {"text": "Algierczycy", "label": "geogName", "lemma": "Algierczyk", "pos": "NOUN"},
+            {"text": "Polacy", "label": "placeName", "lemma": "Polak", "pos": "NOUN"},
+            {"text": "Polsce", "label": "placeName", "lemma": "Polska", "pos": "PROPN"},
+        ]
+        assert aggregate_entities(entities) == {
+            ("geogName", "Algieria"): 2,
+            ("placeName", "Polska"): 2,
         }
 
     @pytest.mark.parametrize("label,expected_label", [
@@ -388,6 +627,19 @@ class TestAggregateNormalization:
     def test_dana_is_kept_without_pos_for_legacy_service(self):
         entities = [{"text": "Dana", "label": "persName", "lemma": "Dan"}]
         assert aggregate_entities(entities) == {("persName", "Dan"): 1}
+
+    def test_doc_11137_sri_lanki_survives_unknown_root_pos(self):
+        # Doc #11137: "siły te składają się obecnie z ponad 2000 żołnierzy z Czadu,
+        # Salwadoru, Gwatemalii, Jamajki, Mongolii i Sri Lanki."
+        entities = [{"label": "placeName", "text": "Sri Lanki", "lemma": "Sri Lanka", "pos": "X"}]
+        groups = aggregate_entities_detailed(entities)
+        assert ("placeName", "Sri Lanka") in groups
+        assert groups[("placeName", "Sri Lanka")]["variants"] == ["Sri Lanki"]
+
+    @pytest.mark.parametrize("surface", ["Warszawa", "warszawa", "sri lanki"])
+    def test_unknown_root_pos_does_not_bypass_non_country_or_lowercase_filters(self, surface):
+        entities = [{"label": "placeName", "text": surface, "lemma": "Sri Lanka", "pos": "X"}]
+        assert aggregate_entities_detailed(entities) == {}
 
     def test_non_nominal_root_is_rejected(self):
         entities = [{"text": "Polski", "label": "placeName", "lemma": "polski", "pos": "ADJ"}]
@@ -600,6 +852,17 @@ class TestCityGazetteerOverride:
                 "raw_lemmas": ["Omdurmanie"],
             },
         }
+
+    def test_luisiana_transcription_variant_doc_10872(self):
+        entities = [{"text": "Luisianie", "label": "placeName", "lemma": "Luisianie", "pos": "NOUN"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Luizjana"): {
+                "count": 1,
+                "variants": ["Luisianie"],
+                "raw_lemmas": ["Luisianie"],
+            },
+        }
+        assert aggregate_entities(entities) == {("placeName", "Luizjana"): 1}
 
     def test_gaza_accusative_resolves_to_canonical_name(self):
         """doc #9394: the only mention is accusative ``Gazę``."""

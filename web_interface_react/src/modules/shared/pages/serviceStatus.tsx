@@ -24,6 +24,11 @@ const STATUS_STYLE: Record<Dependency["status"], { label: string; color: string;
   unknown: { label: "Brak obserwacji", color: "#475569", background: "#e2e8f0" },
 };
 
+const WINDOWS: { minutes: number; label: string }[] = [
+  { minutes: 15, label: "15 minut" }, { minutes: 60, label: "1 godzina" }, { minutes: 24 * 60, label: "24 godziny" },
+  { minutes: 7 * 24 * 60, label: "7 dni" }, { minutes: 30 * 24 * 60, label: "30 dni" },
+];
+
 const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 // dateStyle/timeStyle cannot be combined with timeZoneName (or any other
 // component option) -- Intl.DateTimeFormat throws a TypeError at
@@ -41,18 +46,20 @@ const ServiceStatus = () => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [report, setReport] = React.useState<Report | null>(null);
   const [error, setError] = React.useState("");
+  const [windowMinutes, setWindowMinutes] = React.useState(15);
 
   const load = React.useCallback(async () => {
     try {
       const response = await axios.get(`${apiUrl}/service_status`, {
         headers: { "x-api-key": apiKey ?? "" },
+        params: { window_minutes: windowMinutes },
       });
       setReport(response.data);
       setError("");
     } catch (cause: any) {
       setError(cause.response?.data?.message ?? "Nie udało się pobrać statusu usług");
     }
-  }, [apiKey, apiUrl]);
+  }, [apiKey, apiUrl, windowMinutes]);
 
   React.useEffect(() => {
     void load();
@@ -63,9 +70,12 @@ const ServiceStatus = () => {
   return <div>
     <h2>Status usług zewnętrznych</h2>
     <p style={{ color: "#475569" }}>
-      Status bazuje na rzeczywistych wywołaniach LLM i embeddingów z ostatnich 15 minut; nie wykonuje płatnych zapytań kontrolnych. Czasy są lokalne ({localTimezone}).
+      Status bazuje na rzeczywistych wywołaniach usług (LLM, embeddingi, Webshare, napisy YouTube) z wybranego okna; nie wykonuje płatnych zapytań kontrolnych. Czasy są lokalne ({localTimezone}).
     </p>
-    <button className="button" onClick={() => void load()}>Odśwież</button>
+    <label>Okno <select value={windowMinutes} onChange={(event) => setWindowMinutes(Number(event.target.value))}>
+      {WINDOWS.map((option) => <option key={option.minutes} value={option.minutes}>{option.label}</option>)}
+    </select></label>
+    <button className="button" style={{ marginLeft: 12 }} onClick={() => void load()}>Odśwież</button>
     {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
     {report?.services.map(service => {
       const style = STATUS_STYLE[service.status];
@@ -74,7 +84,7 @@ const ServiceStatus = () => {
           <strong>{service.name}</strong>
           <span style={{ padding: "4px 8px", borderRadius: 999, color: style.color, background: style.background }}>{style.label}</span>
         </div>
-        <p>{service.successes} udanych / {service.failures} nieudanych wywołań w ostatnich {report.window_minutes} min.</p>
+        <p>{service.successes} udanych / {service.failures} nieudanych wywołań w ostatnich {WINDOWS.find((option) => option.minutes === report.window_minutes)?.label ?? `${report.window_minutes} min`}.</p>
         <div style={{ color: "#475569", fontSize: "0.9em" }}>
           Ostatni sukces: {stamp(service.last_success_at)}<br/>
           Ostatni błąd: {stamp(service.last_failure_at)}{service.last_error_code ? ` (${service.last_error_code})` : ""}

@@ -1,4 +1,5 @@
 import React from "react";
+import SkillHint from "../components/SkillHint";
 import { AuthorizationContext } from "../context/authorizationContext";
 import type { ContentGroup } from "../../../types";
 
@@ -112,7 +113,7 @@ export default function Feeds() {
 
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-      <div><h1 style={{ marginBottom: 6, color: "#0c2f4a" }}>Feedy</h1><p style={{ color: "#64748b" }}>Źródła artykułów i automatycznego importu.</p></div>
+      <div><h1 style={{ marginBottom: 6, color: "#0c2f4a" }}>Feedy<SkillHint skill="/lenie-feed-review" command="/lenie-feed-review">Nowych kandydatów z feedów przejrzysz też w sesji z Claude'em, pojedynczo, z decyzją po Twojej stronie.</SkillHint></h1><p style={{ color: "#64748b" }}>Źródła artykułów i automatycznego importu.</p></div>
       <button className="button" type="button" onClick={() => void load()}>Odśwież</button>
     </div>
     {message && <p className={error ? "errorText" : undefined} style={error ? undefined : { color: "#2e7d43", margin: "14px 0" }}>{message}</p>}

@@ -269,7 +269,7 @@ class TestAcceptEndpoint:
         assert candidate.status == "accepted"
         assert "Terraform" in response.json["warning"]
 
-    def test_service_key_forbidden(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_candidate_routes import accept_candidate
 
         candidate = _make_candidate()
@@ -279,7 +279,7 @@ class TestAcceptEndpoint:
         app = Flask(__name__)
 
         with app.test_request_context("/tool_candidates/1/accept", method="POST"), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             accept_candidate(1)
 
         assert exc_info.value.code == 403
@@ -317,7 +317,7 @@ class TestRejectEndpoint:
         assert candidate.reviewed_at is not None
         assert session.execute.call_count == 1
 
-    def test_service_key_forbidden(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_candidate_routes import reject_candidate
 
         candidate = _make_candidate()
@@ -327,7 +327,7 @@ class TestRejectEndpoint:
         app = Flask(__name__)
 
         with app.test_request_context("/tool_candidates/1/reject", method="POST"), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             reject_candidate(1)
 
         assert exc_info.value.code == 403
@@ -349,7 +349,7 @@ class TestDeferEndpoint:
 
         assert candidate.status == "deferred"
 
-    def test_service_key_forbidden(self, monkeypatch):
+    def test_unsupported_key_kind_forbidden(self, monkeypatch):
         from library.tool_candidate_routes import defer_candidate
 
         candidate = _make_candidate()
@@ -359,7 +359,7 @@ class TestDeferEndpoint:
         app = Flask(__name__)
 
         with app.test_request_context("/tool_candidates/1/defer", method="POST"), pytest.raises(Exception) as exc_info:
-            g.auth = SimpleNamespace(kind="service", user_id=None)
+            g.auth = SimpleNamespace(kind="other", user_id=None)
             defer_candidate(1)
 
         assert exc_info.value.code == 403
@@ -494,3 +494,35 @@ class TestFindSimilarToolName:
 
         compiled_query = _compiled(session.execute.call_args[0][0])
         assert "0.5" in compiled_query
+
+
+class TestAddToRadarSameName:
+    def test_existing_radar_entry_gets_evidence_not_a_second_row(self, monkeypatch):
+        from library.tool_candidate_routes import add_candidate_to_radar
+
+        candidate = _make_candidate()
+        document = _make_document()
+        radar_entry = SimpleNamespace(id=42, name="Terraform")
+        session = MagicMock()
+        lookup = MagicMock()
+        lookup.first.return_value = (candidate, document)
+        no_tool = MagicMock()
+        no_tool.scalars.return_value.first.return_value = None
+        no_candidate_link = MagicMock()
+        no_candidate_link.scalars.return_value.first.return_value = None
+        same_name = MagicMock()
+        same_name.scalars.return_value.first.return_value = radar_entry
+        session.execute.side_effect = [lookup, no_tool, no_candidate_link, same_name]
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1/add_to_radar", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response, status = add_candidate_to_radar(1)
+
+        assert status == 200
+        assert response.json == {"tool_recommendation": {"id": 42}, "created": False}
+        added = [call.args[0] for call in session.add.call_args_list]
+        assert len(added) == 1
+        assert added[0].tool_recommendation_id == 42
+        assert candidate.status == "accepted"

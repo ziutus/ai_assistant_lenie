@@ -49,6 +49,13 @@ def mock_session():
     return session
 
 
+@pytest.fixture(autouse=True)
+def captions_events():
+    """Captions attempts are logged to external_service_events; never touch a database here."""
+    with patch("library.external_service_events.record_external_service_event") as record:
+        yield record
+
+
 @pytest.fixture
 def mock_web_document():
     """A mock Document ORM instance."""
@@ -333,3 +340,165 @@ class TestDocumentStateErrorClearedOnSuccess:
 
         assert doc.processing_error_code == StalkerDocumentStatusError.NONE.name
         assert doc.processing_status == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+
+
+# ---------------------------------------------------------------------------
+# Test: a video without usable captions is a permanent state, a network block is not
+# ---------------------------------------------------------------------------
+
+class TestCaptionsUnavailableVersusBlocked:
+    """A video whose only captions are in another language (e.g. Korean) used to end as
+    TEMPORARY_ERROR and was retried by every feed_daily run forever."""
+
+    def _run(self, MockWebDocument, MockYoutubeFile, mock_session, fetch_error):
+        from library.youtube_processing import process_youtube_url
+        from library.models.stalker_document_status import StalkerDocumentStatus
+
+        doc = MagicMock()
+        doc.id = 1
+        doc.url = "https://www.youtube.com/watch?v=abc"
+        doc.processing_status = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
+        doc.language = "pl"
+        doc.chapter_list = None
+        doc.transcript_job_id = None
+        doc.transcript_needed = False
+        MockWebDocument.get_by_url.return_value = doc
+
+        yt_file = MagicMock()
+        yt_file.valid = True
+        yt_file.metadata_available = False
+        yt_file.video_id = "abc123"
+        MockYoutubeFile.return_value = yt_file
+
+        with patch("library.youtube_processing.YouTubeTranscriptApi") as MockYTT:
+            korean = MagicMock()
+            korean.language_code = "ko"
+            MockYTT.return_value.list.return_value = [korean]
+            MockYTT.return_value.fetch.side_effect = fetch_error
+            process_youtube_url(session=mock_session, youtube_url=doc.url)
+        return doc
+
+    @patch("library.youtube_processing.StalkerYoutubeFile")
+    @patch("library.youtube_processing.Document")
+    def test_no_transcript_in_requested_languages_is_permanent(
+        self, MockWebDocument, MockYoutubeFile, mock_session, captions_events
+    ):
+        from youtube_transcript_api import NoTranscriptFound
+        from library.models.stalker_document_status import StalkerDocumentStatus
+        from library.models.stalker_document_status_error import StalkerDocumentStatusError
+
+        doc = self._run(MockWebDocument, MockYoutubeFile, mock_session,
+                        NoTranscriptFound("abc123", ["en"], MagicMock()))
+
+        assert doc.processing_status == StalkerDocumentStatus.ERROR.name
+        assert doc.processing_error_code == StalkerDocumentStatusError.NO_CAPTIONS_AVAILABLE.name
+        assert doc.youtube_captions is False
+        # YouTube answered, so it is logged as a successful request carrying the reason
+        event = captions_events.call_args.kwargs
+        assert (event["service"], event["operation"], event["success"], event["error_code"]) == (
+            "youtube_captions", "direct", True, "NoTranscriptFound")
+
+    @patch("library.youtube_processing.StalkerYoutubeFile")
+    @patch("library.youtube_processing.Document")
+    def test_network_block_stays_temporary_and_is_logged(
+        self, MockWebDocument, MockYoutubeFile, mock_session, captions_events
+    ):
+        from library.models.stalker_document_status import StalkerDocumentStatus
+        from library.models.stalker_document_status_error import StalkerDocumentStatusError
+
+        doc = self._run(MockWebDocument, MockYoutubeFile, mock_session,
+                        ConnectionError("Max retries exceeded with url: /sorry/index?continue=youtube"))
+
+        assert doc.processing_status == StalkerDocumentStatus.TEMPORARY_ERROR.name
+        assert doc.processing_error_code == StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
+        event = captions_events.call_args.kwargs
+        assert (event["success"], event["error_code"]) == (False, "GoogleSorryBlock")
+
+    @patch("library.youtube_processing.StalkerYoutubeFile")
+    @patch("library.youtube_processing.Document")
+    def test_other_failures_are_logged_under_their_exception_name(
+        self, MockWebDocument, MockYoutubeFile, mock_session, captions_events
+    ):
+        self._run(MockWebDocument, MockYoutubeFile, mock_session, TimeoutError("slow"))
+        assert captions_events.call_args.kwargs["error_code"] == "TimeoutError"
+        assert captions_events.call_count == 1
+
+    @patch("library.youtube_processing.StalkerYoutubeFile")
+    @patch("library.youtube_processing.Document")
+    def test_proxy_attempts_are_labelled_as_such(self, MockWebDocument, MockYoutubeFile, mock_session, captions_events):
+        from library.youtube_processing import process_youtube_url
+
+        doc = MagicMock(id=1, url="https://www.youtube.com/watch?v=abc", language="pl", chapter_list=None,
+                        transcript_job_id=None, transcript_needed=False)
+        doc.processing_status = "NEED_TRANSCRIPTION"
+        MockWebDocument.get_by_url.return_value = doc
+        MockYoutubeFile.return_value = MagicMock(valid=True, metadata_available=False, video_id="abc123")
+
+        with patch("library.youtube_processing.YouTubeTranscriptApi") as MockYTT, \
+                patch("library.webshare_ip_auth.get_proxy_credentials", return_value=("u", "p")), \
+                patch("youtube_transcript_api.proxies.WebshareProxyConfig"):
+            MockYTT.return_value.list.return_value = [MagicMock(language_code="pl")]
+            MockYTT.return_value.fetch.side_effect = ConnectionError("boom")
+            process_youtube_url(session=mock_session, youtube_url=doc.url, webshare_api_key="key")
+
+        assert captions_events.call_args.kwargs["operation"] == "via_webshare_proxy"
+
+
+@pytest.fixture(autouse=True)
+def correction_rules_without_database(monkeypatch, tmp_path):
+    from library import transcript_corrections
+    from library import youtube_processing
+
+    monkeypatch.setattr(youtube_processing, "load_config", lambda: {"CACHE_DIR": str(tmp_path)})
+    monkeypatch.setattr(transcript_corrections, "load_active_rules", lambda **kwargs: [])
+    monkeypatch.setattr(transcript_corrections, "_bump_hit_counts", MagicMock())
+
+
+@pytest.mark.parametrize("provider", ["captions", "chapters", "language_mismatch", "assemblyai"])
+def test_transcript_corrected_at_ingestion(monkeypatch, tmp_path, mock_session, provider):
+    from types import SimpleNamespace
+
+    from library import transcript_corrections as rules
+    from library import youtube_processing as yt
+    from library.db.models import Document
+    from library.entity_text import document_ner_text
+
+    pattern = "pi\u0119to Achillesa"
+    replacement = "pi\u0119ta Achillesa"
+    doc = Document(id=10872, url="https://www.youtube.com/watch?v=abc", document_type="youtube",
+                   processing_status="NEED_TRANSCRIPTION", language="pl", byline="channel",
+                   transcript_needed=True, transcript_job_id="job", text_md="## " + pattern)
+    if provider == "chapters":
+        doc.chapter_list = "0:00 Intro\n1:00 Topic"
+    monkeypatch.setattr(Document, "get_by_url", lambda session, url: doc)
+    monkeypatch.setattr(yt, "StalkerYoutubeFile", lambda **kwargs: SimpleNamespace(
+        valid=True, metadata_available=False, video_id="abc", length_seconds=120, length_minutes=2,
+        description="", path="unused",
+    ))
+    ytt = MagicMock()
+    ytt.list.return_value = [SimpleNamespace(language_code="pl")]
+    ytt.fetch.return_value.to_raw_data.return_value = [{"text": pattern, "start": 0, "duration": 1}]
+    if provider == "assemblyai":
+        ytt.list.side_effect = yt.TranscriptsDisabled("abc")
+        transcript = SimpleNamespace(status="completed", text=pattern, audio_duration=120,
+                                     speech_model_used=None, get_paragraphs=lambda: [SimpleNamespace(text=pattern)])
+        monkeypatch.setattr(yt.aai.Transcript, "get_by_id", lambda job_id: transcript)
+    monkeypatch.setattr(yt, "YouTubeTranscriptApi", lambda: ytt)
+    monkeypatch.setattr(yt, "text_language_detect", lambda text: "pl")
+    monkeypatch.setattr(yt, "compare_language", lambda *args: provider != "language_mismatch")
+    monkeypatch.setattr(yt, "youtube_titles_to_text", lambda text: pattern)
+    monkeypatch.setattr(yt, "youtube_titles_split_with_chapters", lambda *args: "## Intro\n" + pattern)
+    monkeypatch.setattr(rules, "load_active_rules", lambda **kwargs: [
+        rules.TranscriptCorrectionRow(42, "author", "CHANNEL", pattern, replacement),
+    ])
+    seen_at_commit = []
+    mock_session.commit.side_effect = lambda: seen_at_commit.append(doc.text)
+    result = yt.process_youtube_url(mock_session, doc.url, cache_dir=str(tmp_path))
+    assert replacement in result.text and pattern not in result.text
+    assert result.text_md == "## " + replacement
+    assert replacement in document_ner_text(result)
+    assert pattern not in document_ner_text(result)
+    assert replacement in seen_at_commit[-1]
+    assert pattern in result.text_raw or "Achillesa" in result.text_raw
+    # One correction pass per canonical field, never a second analysis-time pass.
+    assert rules._bump_hit_counts.call_count == 2
