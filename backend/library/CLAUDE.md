@@ -65,6 +65,20 @@ re-pointed (a run that already suggested the target keeps that one and the sourc
 twin is dismissed) and the source is archived; topics only, both active. Response: `moved`
 counts plus both groups. Tests: `tests/unit/test_content_group_merge.py`.
 
+**Expiry of "Może kiedyś" items** (`feed_retention.py`, migration `c7a2e5d9b148`). A feed item
+that is `saved_for_later` AND carries the priority group with `priority_rank` 100 (the same rule
+the UI uses for its "Może kiedyś" button) expires `retention` months after `saved_at`: the
+`feed_daily` job (04:00, before the long caption fetch) calls `expire_saved_items()`, which moves
+it to `skipped` through `transition_item()` with the new review reason `expired` — so every move
+is in `feed_review_decisions` and can be undone in the review history. Other saved items never
+expire. The period is `content_groups.retention_months` (topics only, 1–120, NULL = default); an
+item with several topics keeps the LONGEST one, archived topics do not count, the household default
+is `app_settings` key `feed_maybe_later_retention_months` (built-in 6). REST: `PATCH
+/content_groups/<id>` takes `retention_months`; `GET/PUT /feed_items/retention` (`{default_months}`,
+null restores the built-in); `POST /feed_items/expire_saved` (`{"dry_run": true}` lists what is due,
+without it runs the sweep now); `GET /feed_items` and the single-item responses add `expires_at` and
+`retention_months` to saved "Może kiedyś" items. Tests: `tests/unit/test_feed_retention.py`.
+
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
 `saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the

@@ -76,6 +76,16 @@ def create_group(session, name: object, kind: object, priority_rank: object = No
     return row
 
 
+def validate_retention_months(value: object, kind: str) -> int | None:
+    if value is None:
+        return None
+    if kind != "topic":
+        raise ValueError("only topics have a retention period")
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 120:
+        raise ValueError("retention_months must be an integer from 1 to 120")
+    return value
+
+
 def update_group(session, group: ContentGroup, **changes) -> ContentGroup:
     if group.archived_at is not None:
         raise RuntimeError("archived group cannot be edited")
@@ -85,7 +95,8 @@ def update_group(session, group: ContentGroup, **changes) -> ContentGroup:
         "priority_rank": changes.get("priority_rank", group.priority_rank),
     }
     name, kind, priority_rank = validate_group_values(**values)
-    group.name, group.kind, group.priority_rank = name, kind, priority_rank
+    retention = validate_retention_months(changes.get("retention_months", group.retention_months), kind)
+    group.name, group.kind, group.priority_rank, group.retention_months = name, kind, priority_rank, retention
     group.updated_at = dt.datetime.now(dt.timezone.utc)
     session.flush()
     return group
@@ -240,6 +251,7 @@ def group_to_dict(group: ContentGroup, session=None) -> dict:
         "name": group.name,
         "kind": group.kind,
         "priority_rank": group.priority_rank,
+        "retention_months": group.retention_months,
         "archived_at": group.archived_at.isoformat() if group.archived_at else None,
     }
     if session is not None:

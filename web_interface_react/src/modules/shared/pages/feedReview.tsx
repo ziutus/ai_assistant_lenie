@@ -19,6 +19,8 @@ type FeedItem = {
   status: string;
   saved_at: string | null;
   saved_by_user_id: number | null;
+  expires_at?: string | null;
+  retention_months?: number | null;
   groups?: ContentGroup[];
 };
 
@@ -391,6 +393,9 @@ export default function FeedReview() {
         </div>}
         {item.published_at && <div>Opublikowano: {formatDate(item.published_at)}</div>}
         {view === "later" && item.saved_at && <div>Zapisano: {formatDate(item.saved_at)}</div>}
+        {view === "later" && item.expires_at && <div title="Po tym terminie wpis „Może kiedyś” sam przejdzie do „Pomiń”. Ważność ustawisz w Tematy (zarządzanie).">
+          Ważne do: {formatDate(item.expires_at)} ({item.retention_months} mies.)
+        </div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
         {item.summary && <p>{item.summary}</p>}
         {modelsLoaded && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} templateId={templateId === "" ? undefined : templateId} onModelCall={onModelCall} />}

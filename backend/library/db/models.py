@@ -312,11 +312,14 @@ class ContentGroup(Base):
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     priority_rank: Mapped[int | None] = mapped_column(Integer)
+    # Months a feed item saved under "Może kiedyś" stays valid when it has this topic; NULL = the household default.
+    retention_months: Mapped[int | None] = mapped_column(Integer)
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     __table_args__ = (
         CheckConstraint("kind IN ('topic', 'priority')", name="ck_content_groups_kind"),
+        CheckConstraint("retention_months IS NULL OR (kind = 'topic' AND retention_months BETWEEN 1 AND 120)", name="ck_content_groups_retention_months"),
         CheckConstraint(
             "(kind = 'topic' AND priority_rank IS NULL) OR (kind = 'priority' AND priority_rank BETWEEN 1 AND 100)",
             name="ck_content_groups_priority_rank",
@@ -378,7 +381,7 @@ class FeedItem(Base):
             name="ck_feed_items_status",
         ),
         CheckConstraint(
-            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other','sent_to_radar')",
+            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other','sent_to_radar','expired')",
             name="ck_feed_items_review_reason",
         ),
         Index("idx_feed_items_source_status", "feed_source_id", "status"),

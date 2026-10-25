@@ -16,7 +16,7 @@ from library.content_group_service import replace_feed_item_groups
 
 logger = logging.getLogger(__name__)
 NEW_ENTRIES_LISTED = 10  # per feed in a run_check() result; a first import of a feed can bring hundreds
-REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other", "sent_to_radar"}
+REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other", "sent_to_radar", "expired"}
 ACTIVE_TRANSITIONS = {
     "new": {"llm_analysis_requested", "saved_for_later", "imported", "skipped", "ignored", "error"},
     "llm_analysis_requested": {"saved_for_later", "imported", "skipped", "ignored", "error"},

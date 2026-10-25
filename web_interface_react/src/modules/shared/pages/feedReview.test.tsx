@@ -249,3 +249,19 @@ it("opens an item named in the link even when it is outside the loaded list", as
   fireEvent.click(screen.getByRole("button", { name: "Wróć do listy" }));
   expect(await screen.findByText("Artykuł testowy")).toBeTruthy();
 });
+
+it("tells when a saved \"Może kiedyś\" entry expires, only on the later tab", async () => {
+  const saved = { ...feedItem, status: "saved_for_later", saved_at: "2026-07-27T10:00:00+00:00", expires_at: "2027-07-27T10:00:00+00:00", retention_months: 12 };
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation((url, init) => {
+    if (String(url).includes("/feed_items?")) return Promise.resolve(jsonResponse({ feed_items: [saved], total: 1 }));
+    return base(url, init);
+  });
+  render(<MemoryRouter initialEntries={["/feed-review?view=later"]}><FeedReview /></MemoryRouter>);
+  const note = await screen.findByText(/Ważne do:/);
+  expect(note.textContent).toContain("(12 mies.)");
+  cleanup();
+  render(<MemoryRouter initialEntries={["/feed-review?view=new"]}><FeedReview /></MemoryRouter>);
+  await screen.findByText("Artykuł testowy");
+  expect(screen.queryByText(/Ważne do:/)).toBeNull();
+});

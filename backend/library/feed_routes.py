@@ -26,6 +26,7 @@ from library.db.models import ContentGroupSuggestionRun
 from library.feed_source_service import list_feeds, feed_to_dict, resolve_references
 from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id
 from library.job_queue import JOB_TYPES, enqueue, retry, cancel
+from library import app_settings, feed_retention
 
 bp = Blueprint("feeds", __name__)
 
@@ -114,7 +115,7 @@ def _validate_schedule(timezone_name: str, times: list) -> list[str]:
     return normalized
 
 
-def _item_dict(item):
+def _item_dict(item, retention_default: int | None = None):
     groups = sorted(
         [
             {
@@ -128,7 +129,11 @@ def _item_dict(item):
         ],
         key=lambda group: (group["kind"] != "priority", group["priority_rank"] if group["priority_rank"] is not None else 10**9, group["name"].casefold()),
     )
+    if retention_default is None and item.status == "saved_for_later":  # single-item responses; lists pass it in
+        retention_default = feed_retention.default_months(get_scoped_session())
+    expiry = feed_retention.expiry_fields(item, retention_default) if retention_default is not None else {}
     return {
+        **expiry,
         "id": item.id,
         "feed_source_id": item.feed_source_id,
         "url": item.url,
@@ -183,7 +188,7 @@ def patch_content_group(group_id):
         abort(404)
     body = request.get_json(silent=True) or {}
     try:
-        row = update_group(session, row, **{key: body[key] for key in {"name", "kind", "priority_rank"} if key in body})
+        row = update_group(session, row, **{key: body[key] for key in {"name", "kind", "priority_rank", "retention_months"} if key in body})
         session.commit()
     except ValueError as exc:
         session.rollback()
@@ -648,6 +653,38 @@ def check_feed(feed_id):
     return jsonify({"job": {"id": job.id, "type": job.type, "status": job.status}}), 202
 
 
+@bp.get("/feed_items/retention")
+def get_saved_retention():
+    """Household default retention (months) for items saved under "Może kiedyś"; a topic may override it."""
+    _user_or_service()
+    session = get_scoped_session()
+    saved = app_settings.get_setting(session, feed_retention.SETTING_KEY)
+    return jsonify({"default_months": feed_retention.default_months(session), "saved": feed_retention.valid_months(saved),
+                    "built_in_months": feed_retention.DEFAULT_MONTHS, "min": feed_retention.MIN_MONTHS, "max": feed_retention.MAX_MONTHS})
+
+
+@bp.put("/feed_items/retention")
+def put_saved_retention():
+    _user_or_service()
+    body = request.get_json(silent=True) or {}
+    if "default_months" not in body:
+        abort(400, "default_months is required")
+    months = body["default_months"]
+    if months is not None and not feed_retention.valid_months(months):
+        abort(400, f"default_months must be an integer from {feed_retention.MIN_MONTHS} to {feed_retention.MAX_MONTHS}")
+    session = get_scoped_session()
+    app_settings.set_setting(session, feed_retention.SETTING_KEY, months)
+    return jsonify({"default_months": feed_retention.default_months(session), "saved": months is not None})
+
+
+@bp.post("/feed_items/expire_saved")
+def expire_saved_items_now():
+    """Run the "Może kiedyś" expiry now (the daily job does the same); ``{"dry_run": true}`` only lists what is due."""
+    _user_or_service()
+    body = request.get_json(silent=True) or {}
+    return jsonify(feed_retention.expire_saved_items(get_scoped_session(), dry_run=bool(body.get("dry_run"))))
+
+
 @bp.get("/feed_items")
 def get_items():
     _user()
@@ -701,9 +738,10 @@ def get_items():
     limit = min(max(int(request.args.get("limit", 50)), 1), 200)
     offset = max(int(request.args.get("offset", 0)), 0)
     total = session.scalar(select(func.count()).select_from(query.subquery()))
+    retention_default = feed_retention.default_months(session)
     return jsonify(
         {
-            "feed_items": [_item_dict(x) for x in session.scalars(query.offset(offset).limit(limit)).all()],
+            "feed_items": [_item_dict(x, retention_default) for x in session.scalars(query.offset(offset).limit(limit)).all()],
             "limit": limit,
             "offset": offset,
             "total": total,

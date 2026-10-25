@@ -2,10 +2,13 @@ import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
 
 type Topic = {
-  id: number; name: string; kind: string;
+  id: number; name: string; kind: string; retention_months: number | null;
   saved_item_count: number; document_count: number; chunk_count: number; provenance_item_count: number;
 };
 type Pending = { kind: "delete" | "merge"; id: number };
+type Retention = { default_months: number; saved: boolean; built_in_months: number; min: number; max: number };
+type DueItem = { id: number; title: string; saved_at: string; expires_at: string; months: number };
+type Due = { dry_run: boolean; due: number; expired: number; items: DueItem[] };
 
 const TIMEOUT_MS = 20_000;
 const fold = (text: string) => text.toLocaleLowerCase("pl").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ł/g, "l");
@@ -47,6 +50,10 @@ export default function ContentGroups() {
   const [loaded, setLoaded] = React.useState(false);
   const [error, setError] = React.useState("");
   const [message, setMessage] = React.useState("");
+  const [retention, setRetention] = React.useState<Retention | null>(null);
+  const [defaultDraft, setDefaultDraft] = React.useState("");
+  const [retentionDraft, setRetentionDraft] = React.useState<Record<number, string>>({});
+  const [due, setDue] = React.useState<Due | null>(null);
 
   const load = React.useCallback(async () => {
     try {
@@ -54,6 +61,12 @@ export default function ContentGroups() {
       if (status !== 200) throw new Error(failure(status, data, "Nie udało się pobrać tematów"));
       const list = (Array.isArray(data.content_groups) ? data.content_groups : []) as Topic[];
       setTopics(list.filter(group => group.kind === "topic"));
+      const settings = await request(`${apiUrl}/feed_items/retention`, { headers });
+      if (settings.status === 200 && typeof settings.data.default_months === "number") {
+        const loadedRetention = settings.data as unknown as Retention;
+        setRetention(loadedRetention);
+        setDefaultDraft(current => current || String(loadedRetention.default_months));
+      }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać tematów"); }
     finally { setLoaded(true); }
   }, [apiUrl, headers]);
@@ -100,6 +113,31 @@ export default function ContentGroups() {
     return `Scalono „${topic.name}” z „${target.name}”: przeniesiono ${moved.documents ?? 0} dok., ${moved.chunks ?? 0} fragm., ${moved.feed_items ?? 0} wpisów feedu. Temat „${topic.name}” zarchiwizowano.`;
   });
 
+  const saveDefaultRetention = (months: number | null) => run(async () => {
+    const { status, data } = await request(`${apiUrl}/feed_items/retention`, { method: "PUT", headers, body: JSON.stringify({ default_months: months }) });
+    if (status !== 200) throw new Error(failure(status, data, "Nie udało się zapisać domyślnej ważności"));
+    setDefaultDraft(String(data.default_months));
+    return months === null ? `Przywrócono domyślną ważność: ${data.default_months} mies.` : `Domyślna ważność wpisów „Może kiedyś”: ${data.default_months} mies.`;
+  });
+
+  const saveTopicRetention = (topic: Topic) => run(async () => {
+    const draft = (retentionDraft[topic.id] ?? "").trim();
+    const months = draft === "" ? null : Number(draft);
+    const { status, data } = await request(`${apiUrl}/content_groups/${topic.id}`, { method: "PATCH", headers, body: JSON.stringify({ retention_months: months }) });
+    if (status !== 200) throw new Error(failure(status, data, "Nie udało się zapisać ważności"));
+    setRetentionDraft(state => { const next = { ...state }; delete next[topic.id]; return next; });
+    return months === null ? `Temat „${topic.name}” używa ważności domyślnej.` : `Temat „${topic.name}”: wpisy „Może kiedyś” ważne ${months} mies.`;
+  });
+
+  const checkExpiry = (dryRun: boolean) => run(async () => {
+    const { status, data } = await request(`${apiUrl}/feed_items/expire_saved`, { method: "POST", headers, body: JSON.stringify({ dry_run: dryRun }) });
+    if (status !== 200) throw new Error(failure(status, data, "Nie udało się sprawdzić ważności wpisów"));
+    const result = data as unknown as Due;
+    setDue(dryRun ? result : null);
+    if (dryRun) return result.due ? `Do przesunięcia do „Pomiń”: ${result.due}.` : "Żaden wpis „Może kiedyś” nie przekroczył terminu ważności.";
+    return `Przesunięto do „Pomiń”: ${result.expired} z ${result.due} wpisów.`;
+  });
+
   const visible = topics.filter(topic => !filter.trim() || fold(topic.name).includes(fold(filter)));
 
   return <div style={{ padding: "0 16px 32px", maxWidth: 1000 }}>
@@ -112,6 +150,25 @@ export default function ContentGroups() {
     {error && <p role="alert" style={{ color: "#b91c1c" }}>{error}</p>}
     {message && <p role="status" style={{ color: "#166534" }}>{message}</p>}
 
+    <section aria-label="Ważność wpisów Może kiedyś" style={{ border: "1px solid #e2e8f0", padding: "8px 12px", margin: "12px 0" }}>
+      <strong>Ważność wpisów „Może kiedyś”</strong>
+      <p style={{ margin: "4px 0", color: "#475569" }}>
+        Wpis zapisany przyciskiem „Może kiedyś” po tylu miesiącach od zapisania sam przechodzi do „Pomiń” (powód: wygasł) — sprawdza to codzienne zadanie o 4:00.
+        Dla wpisu z kilkoma tematami liczy się najdłuższa ważność. Temat bez własnej wartości używa domyślnej.
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <label htmlFor="default-retention">Domyślnie (mies.):</label>
+        <input id="default-retention" type="number" min={retention?.min ?? 1} max={retention?.max ?? 120} style={{ width: 70 }} value={defaultDraft}
+          onChange={event => setDefaultDraft(event.target.value)} disabled={busy} />
+        <button type="button" disabled={busy || !defaultDraft || Number(defaultDraft) === retention?.default_months}
+          onClick={() => void saveDefaultRetention(Number(defaultDraft))}>Zapisz domyślną</button>
+        {retention?.saved && <button type="button" disabled={busy} onClick={() => void saveDefaultRetention(null)}>Przywróć {retention.built_in_months} mies.</button>}
+        <button type="button" disabled={busy} onClick={() => void checkExpiry(true)}>Sprawdź, co wygasło</button>
+        {due && due.due > 0 && <button type="button" disabled={busy} onClick={() => void checkExpiry(false)}>Przesuń {due.due} do „Pomiń” teraz</button>}
+      </div>
+      {due && due.items.length > 0 && <ul style={{ margin: "6px 0 0" }}>{due.items.map(entry => <li key={entry.id}>{entry.title} <small style={{ color: "#64748b" }}>(zapisano {entry.saved_at.slice(0, 10)}, ważne było do {entry.expires_at.slice(0, 10)})</small></li>)}</ul>}
+    </section>
+
     <form onSubmit={event => { event.preventDefault(); if (newName.trim()) void add(); }} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "12px 0" }}>
       <label htmlFor="new-topic">Nowy temat:</label>
       <input id="new-topic" value={newName} maxLength={80} onChange={event => setNewName(event.target.value)} placeholder="np. Agenci AI" disabled={busy} />
@@ -123,7 +180,8 @@ export default function ContentGroups() {
     {loaded && !visible.length && <p>{topics.length ? "Żaden temat nie pasuje do wyszukiwania." : "Brak tematów."}</p>}
     {visible.length > 0 && <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
       <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #cbd5e1" }}>
-        <th>Temat</th><th>Dokumenty</th><th>Fragmenty</th><th title="Wpisy feedu zapisane na później">Zapisane wpisy</th><th>Działania</th>
+        <th>Temat</th><th>Dokumenty</th><th>Fragmenty</th><th title="Wpisy feedu zapisane na później">Zapisane wpisy</th>
+        <th title="Po ilu miesiącach wpis „Może kiedyś” z tym tematem przechodzi do „Pomiń”. Puste = domyślnie.">Ważność (mies.)</th><th>Działania</th>
       </tr></thead>
       <tbody>{visible.map(topic => {
         const others = topics.filter(other => other.id !== topic.id);
@@ -140,6 +198,16 @@ export default function ContentGroups() {
             : <strong>{topic.name}</strong>}
           </td>
           <td>{topic.document_count}</td><td>{topic.chunk_count}</td><td>{topic.saved_item_count}</td>
+          <td style={{ whiteSpace: "nowrap" }}>
+            <input type="number" aria-label={`Ważność wpisów „Może kiedyś” dla tematu ${topic.name} (miesiące)`} style={{ width: 64 }}
+              min={retention?.min ?? 1} max={retention?.max ?? 120} placeholder={String(retention?.default_months ?? "")} disabled={busy}
+              value={retentionDraft[topic.id] ?? (topic.retention_months ?? "")}
+              onChange={event => setRetentionDraft(state => ({ ...state, [topic.id]: event.target.value }))} />{" "}
+            {retentionDraft[topic.id] !== undefined && retentionDraft[topic.id] !== String(topic.retention_months ?? "") && <>
+              <button type="button" disabled={busy} onClick={() => void saveTopicRetention(topic)}>Zapisz</button>{" "}
+              <button type="button" onClick={() => setRetentionDraft(state => { const next = { ...state }; delete next[topic.id]; return next; })}>Anuluj</button>
+            </>}
+          </td>
           <td>
             {pending?.id === topic.id && pending.kind === "delete" && <span>
               Usunąć „{topic.name}”? <button type="button" disabled={busy} onClick={() => void remove(topic)}>Tak, usuń</button>{" "}
