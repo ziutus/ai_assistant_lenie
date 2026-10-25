@@ -1,4 +1,5 @@
 import { listNavigationParams } from "../utils/listNavigationParams";
+import SkillHint from "../components/SkillHint";
 import React from "react";
 import { useParams, useSearchParams, NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
@@ -2339,6 +2340,12 @@ const Read: React.FC = () => {
                   ]).size})
                 </summary>
                 <div style={{ fontSize: "0.8em", marginTop: 8 }}>
+                  <div style={{ marginBottom: 6, color: "#667" }}>
+                    Chcesz dodać lub rozbudować notatkę?
+                    <SkillHint skill="/lenie-obsidian-note" command={`/lenie-obsidian-note ${id}`}>
+                      Notatkę Obsidian z tego dokumentu przygotuje skill i zapisze jej ścieżkę w bazie.
+                    </SkillHint>
+                  </div>
                   {docObsidianNotePaths.length > 0 && (
                     <div>
                       Notatka dokumentu:{" "}

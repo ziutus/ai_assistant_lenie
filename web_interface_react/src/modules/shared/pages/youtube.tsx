@@ -1,5 +1,6 @@
 import React from "react";
 import TranscriptChaptersSuggest from "../components/TranscriptChaptersSuggest/transcriptChaptersSuggest";
+import SkillCommand from "../components/SkillCommand";
 import ChapterBoundariesPanel from "../components/ChapterBoundariesPanel/chapterBoundariesPanel";
 import { renderMarkdown } from "./read";
 import axios from "axios";
@@ -205,6 +206,14 @@ const Youtube = () => {
             <summary style={{ cursor: "pointer" }}>Spis treści (AI)</summary>
             {renderMarkdown(formik.values.outline_md, [])}
           </details>
+        )}
+        {id && !transcriptMissing && !formik.values.outline_md?.trim() && (
+          <div style={{ marginBottom: 14, color: "#667" }}>
+            Brak spisu treści (AI).
+            <SkillCommand command={`/lenie-youtube-outline ${id}`}>
+              Skill wygeneruje spis treści tematów i zapisze go po Twojej akceptacji.
+            </SkillCommand>
+          </div>
         )}
         {id && transcriptMissing && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>

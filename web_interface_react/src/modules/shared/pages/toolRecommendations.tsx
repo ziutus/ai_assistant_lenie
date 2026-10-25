@@ -1,4 +1,5 @@
 import React from "react";
+import SkillHint from "../components/SkillHint";
 import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
@@ -22,6 +23,7 @@ type Recommendation = {
   feed_mentions: { count: number; samples: Array<{ id: number; title: string; url: string }> };
   category: string | null; tags: string[]; status: RecommendationStatus; personal_note: string | null; obsidian_note_path?: string | null;
   origin: "ai_detected" | "curated";
+  source_candidate_id?: number | null;
   source_url: string | null; source_context: string | null;
   source_document: { title: string | null; url: string | null; discovery_source: string | null } | null;
   evidences: Array<{
@@ -495,6 +497,11 @@ export default function ToolRecommendations() {
       onUseCategory={category => saveCategory(item, category)}
       onAddTags={added => saveTags(item, [...(item.tags ?? []), ...added.filter(tag => !(item.tags ?? []).includes(tag))])} />
     {item.origin === "ai_detected" && <span style={{ marginLeft: 6, background: "#fef3c7", color: "#92400e", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>wykryte przez AI<Help text="Narzędzie wykrył model Bielik w tekście dokumentu; wymaga Twojej oceny." /></span>}
+    {item.source_candidate_id != null && (
+      <SkillHint skill="/lenie-tool-draft" command={`/lenie-tool-draft ${item.source_candidate_id}`}>
+        Pełny opis tego narzędzia (wzorem szablonu z Obsidiana) wygeneruje skill z kandydata #{item.source_candidate_id}; działa tylko dla zaakceptowanych kandydatów.
+      </SkillHint>
+    )}
     {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
     <ToolLinksEditor homepageUrl={item.homepage_url} links={item.links ?? []} disabled={busy === item.id}
       onSave={links => saveLinks(item, links)} />
@@ -533,7 +540,7 @@ export default function ToolRecommendations() {
 
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-      <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi</h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
+      <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi<SkillHint skill="/lenie-tool-draft" command="/lenie-tool-draft <id kandydata>">Pełny opis zaakceptowanego narzędzia (wzorem szablonu z Obsidiana) wygeneruje skill; podaj id zaakceptowanego kandydata.</SkillHint></h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do kilkuset repozytoriów na raz, zależnie od limitu GitHuba)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
         <button type="button" onClick={() => void detectRelations()} disabled={relationsBusy || loading} title="Szuka w tekście źródłowym każdego wpisu nazw narzędzi, które już są w radarze (np. AWS, GCP, Terraform), i proponuje powiązania do potwierdzenia. Narzędzia oznaczone jako „Używam” tworzą Twój stack.">{relationsBusy ? "Szukam powiązań…" : "Wykryj powiązania"}</button>

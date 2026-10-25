@@ -36,6 +36,16 @@ migracja Alembica kończy się błędem `Can't locate revision` (stan z
   użytkownik napisze, że jest w domu. Nie ponawiaj `nas-deploy.sh`, dopóki
   NAS nie odpowiada na `ssh admin@192.168.200.7` bez VPN-a, albo użytkownik
   wyraźnie nie poleci wdrożyć mimo VPN-a.
+- **Jak sprawdzić, że użytkownik jest w domu:** komputer ma adres IPv4 z sieci
+  `192.168.200.x` na fizycznej karcie (Ethernet / Wi-Fi), a nie na adapterze
+  VPN. To lokalne sprawdzenie, które nie dotyka NAS-a (w odróżnieniu od
+  `ssh`/`ping` na `192.168.200.7`, zabronionych wyżej):
+  `Get-NetIPAddress -AddressFamily IPv4 | Where-Object IPAddress -like '192.168.200.*' | Select-Object InterfaceAlias, IPAddress`
+  (PowerShell). Adres `192.168.200.x` na karcie fizycznej = w domu, można
+  wdrażać (na tym komputerze to `vEthernet (Zewnetrzny1)`, most Hyper-V nad
+  kartą fizyczną, nie VPN). Brak takiego adresu albo wynik tylko na adapterze VPN (WireGuard,
+  OpenVPN, TAP, `tun`) = poza domem. Gdy użytkownik napisze, że jest w domu,
+  a sprawdzenie temu przeczy, zapytaj, zamiast wdrażać.
 
 ## Masowe operacje na Obsidianie
 

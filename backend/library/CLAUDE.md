@@ -20,6 +20,114 @@ completed runs are reused only for matching input and model, while active runs
 are returned unchanged. GET suggestions includes `run.model`. Document
 suggestions and their auto-apply behavior continue to use the existing model.
 
+**Prompt templates (UI-editable, versioned).** The topic-suggestion prompt lives in
+the `prompt_templates` table (`prompt_templates.py`, migration `b4d8f2a6c915`), one
+immutable row per `(task, variant, version)`, `variant` = `feed_item` / `document`;
+the partial unique index allows one `is_active` row per pair. Texts are Jinja2
+rendered in a `SandboxedEnvironment` with `StrictUndefined`; the closed variable
+set is `catalog` (JSON), `material` and `schema` (empty when the model gets the
+schema as `response_format`) — `validate()` renders both `schema` branches, so an
+unknown variable or a syntax error is a 400 at save time, never a failed job. The
+built-in `DEFAULTS` are the fallback when no row is active (fresh DB, tests) and
+reproduce the pre-template prompt byte for byte (`test_prompt_templates.py`). Saving
+inserts the NEXT version (`create_version(..., activate=True)`) — old wording is
+never overwritten. A run records `prompt_template_id`, `prompt_version` (label such
+as `feed_item-v3`, `feed_item-builtin` for the fallback; legacy runs keep
+`content-groups-v1/v2`), tokens, latency and cost (`prompt_tokens`,
+`completion_tokens`, `latency_ms`, `cost_amount/currency/status`, copied from
+`response.usage`), and the input hash includes the label so a new wording is never
+served from the old cache. REST (`prompt_template_routes.py`, user or service key):
+`GET /prompt_templates?variant=` (versions, variables, built-in text), `POST
+/prompt_templates` (`{variant, system_template?, user_template, note?, activate?}`),
+`POST /prompt_templates/<id>/activate`, `POST /prompt_templates/preview` (renders a
+draft against a real `feed_item_id` or sample text, no model call), `GET
+/prompt_templates/comparison?variant=&days=` (completed runs grouped by model +
+prompt version: runs, avg tokens/latency, cost per run and per accepted suggestion,
+accepted/dismissed/pending, no_match runs). `POST /feed_items/<id>/group-suggestions`
+accepts `template_id` to pin one version for that request. The cost per accepted
+suggestion is only as good as the number of decisions made — compare samples of
+similar size. `build_request()` assembles the exact request (prompt, system prompt and
+whether it is sent, `response_format`) for the job and for `POST
+/feed_items/<id>/group-suggestions/preview` (`{model?, template_id?}`, nothing queued or
+sent). The model list for the `content_group_suggestion` task offers only models that
+honour a JSON-schema `response_format` (`llm_model_registry._STRUCTURED_OUTPUT_TASKS`:
+direct providers other than CloudFerro are dropped statically — OpenAI and Vertex
+Gemini no longer appear —, OpenRouter models are dropped when the live catalog says no
+structured outputs; unknown stays). Tests: `tests/unit/test_prompt_templates.py`,
+`test_feed_prompt_preview.py`.
+
+**Managing topics.** `PATCH /content_groups/<id>` renames (409 on a duplicate active name
+or an archived topic), `DELETE` archives only an unused topic (409 + counts otherwise), and
+`POST /content_groups/<id>/merge` (`{target_id}`, `content_group_service.merge_groups()`) is the
+way to retire a topic in use: feed-item, document and reader-chapter memberships move to the
+target (rows the target already has are dropped as duplicates), the source's suggestions are
+re-pointed (a run that already suggested the target keeps that one and the source's pending
+twin is dismissed) and the source is archived; topics only, both active. Response: `moved`
+counts plus both groups. Tests: `tests/unit/test_content_group_merge.py`.
+
+**Expiry of "Może kiedyś" items** (`feed_retention.py`, migration `c7a2e5d9b148`). A feed item
+that is `saved_for_later` AND carries the priority group with `priority_rank` 100 (the same rule
+the UI uses for its "Może kiedyś" button) expires `retention` months after `saved_at`: the
+`feed_daily` job (04:00, before the long caption fetch) calls `expire_saved_items()`, which moves
+it to `skipped` through `transition_item()` with the new review reason `expired` — so every move
+is in `feed_review_decisions` and can be undone in the review history. Other saved items never
+expire. The period is `content_groups.retention_months` (topics only, 1–120, NULL = default); an
+item with several topics keeps the LONGEST one, archived topics do not count, the household default
+is `app_settings` key `feed_maybe_later_retention_months` (built-in 6). REST: `PATCH
+/content_groups/<id>` takes `retention_months`; `GET/PUT /feed_items/retention` (`{default_months}`,
+null restores the built-in); `POST /feed_items/expire_saved` (`{"dry_run": true}` lists what is due,
+without it runs the sweep now); `GET /feed_items` and the single-item responses add `expires_at` and
+`retention_months` to saved "Może kiedyś" items. Tests: `tests/unit/test_feed_retention.py`.
+
+**Topic hierarchy** (`content_groups.parent_id`, migration `d2f8b4a1c693`). A topic may have a parent
+topic (3 levels at most, topics only; `validate_parent()` in `content_group_service.py` rejects a
+cycle, an archived/missing parent, a priority group and a deeper tree with fixed messages the UI maps
+to Polish). `POST/PATCH /content_groups` accept `parent_id`; `group_to_dict` returns it. Archiving a
+topic re-points its children to its own parent; merging re-points the source's children to the target
+(and lifts the target when it was a child of the source). The suggestion catalog items carry
+`parent_id` only when set (a flat catalog keeps the exact old JSON and prompt hash); the prompt gets a
+`catalog_tree` variable (`render_catalog_tree()`, indented "- name (id N)" lines; empty when nothing is
+nested, and the guarded `{% if catalog_tree is defined and catalog_tree %}` block then renders nothing,
+so old templates keep working) telling the model to pick the MOST SPECIFIC topic. The migration also
+inserts prompt version 2 with that wording and activates it for each variant whose active template is
+still the unedited v1. In code, `drop_ancestor_suggestions()` removes a suggested topic that is an
+ancestor of another suggestion of the same answer OR of a topic the target already has — so
+"Informatyka" is not proposed next to "Web development" whatever the model answers; the general topic
+only collects what no more specific topic covers. Existing documents are not re-filed.
+Tests: `tests/unit/test_topic_hierarchy.py`.
+
+**Item comment.** `feed_items.review_note` (existing column, `PATCH /feed_items/<id>/note`, now
+limited to 4000 characters) is the reader's comment for an LLM: what interested them and what to do
+next. `target_text()` appends it to the material of a topic suggestion as "KOMENTARZ UŻYTKOWNIKA …"
+(max 1000 characters, the item text is cut to make room). Tests: `tests/unit/test_feed_comment.py`.
+
+**Discussion queue ("Do omówienia z LLM")** (`feed_items.llm_discussion_status` NULL/`open`/`done`,
+`llm_discussion_at`, `llm_discussion_done_at`, `llm_discussion_result`, migration `e8c3a1f5b794`). A
+SECOND axis, independent of the text decision (`status`: import / save / "Może kiedyś" / skip): an
+item can be skipped, or expire out of "Może kiedyś", and still sit in the discussion queue.
+`feed_monitor_service.set_llm_discussion(session, item_id, status, result=None)` flags (`open`, the
+original timestamp is kept while it stays open), closes (`done` needs an open item, `result` is a link
+or a note up to 1000 characters), reopens (clears the result) or unflags (`None`); it never touches
+`status`, `saved_at`, `review_reason`, group memberships or `feed_review_decisions`. REST:
+`PATCH /feed_items/<id>/discussion` (`{status: null|"open"|"done", result?}`; 400 invalid, 404 unknown
+item, 409 closing an item that is not open), `GET /feed_items?discussion=open|done|any` (the `status`
+filter stays optional, newest flag first), `GET /feed_items/discussion_summary` (`{open, done}`);
+the item dict carries the four fields. The expiry sweep (`feed_retention.py`) leaves the flag alone.
+A skill such as `/lenie-feed-review` can read the queue with `GET /feed_items?discussion=open` and
+use `review_note` as the user's brief. Tests: `tests/unit/test_feed_discussion.py`.
+
+**Seed document from a feed item** (`feed_seed_document.py`, no migration). `POST
+/feed_items/<id>/seed_document` (user key) creates ONE `text` Document per feed item with the
+synthetic URL `lenie://seed/feed-item/<id>` (same pattern as the recipe import's `file:///ksiazki/…`):
+title "Zalążek: <title>", `text`/`text_md` built deterministically (no LLM) by `build_seed_markdown()` —
+the user's comment (`review_note`), source URL/date/topics, the feed summary and a short "Do ustalenia"
+checklist — and the item's active topics copied with `copy_feed_groups_to_document(…, "feed_import")`.
+The feed item itself is not changed (status, `document_id`, discussion flag stay). Idempotent: a second
+call answers 200 with `created: false` and the existing document id (201 on creation, 404 unknown
+item). The item dict carries `seed_document_id`, resolved by ONE `seed_document_ids()` query per list
+page. The seed is a starting point to continue in the normal `text` editor / with ChatGPT or Claude Code.
+Tests: `tests/unit/test_feed_seed_document.py`.
+
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
 `saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the
