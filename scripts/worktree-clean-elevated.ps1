@@ -84,13 +84,18 @@ function Remove-Junctions([string]$Path) {
     }
 }
 
-function Get-Leftovers([string]$Path) {
-    # Anything under $Path that is not junk and not inside a junk directory.
-    Get-ChildItem -LiteralPath $Path -Force -Recurse -ErrorAction SilentlyContinue | Where-Object {
-        $rel = $_.FullName.Substring($Path.Length).TrimStart('\')
-        $top = $rel.Split('\')[0]
-        $junkNames -notcontains $top
+function Test-Junk([string]$Path, [string]$Root) {
+    # Junk = any path component that is a pytest/python cache or a pytest tmp dir (pytest-<n>, pytest-of-<user>).
+    foreach ($part in $Path.Substring($Root.Length).TrimStart('\').Split('\')) {
+        if (($junkNames -contains $part) -or ($part -like 'pytest-*')) { return $true }
     }
+    return $false
+}
+
+function Get-Leftovers([string]$Path) {
+    # Real files only: directories do not count, junk paths do not count.
+    Get-ChildItem -LiteralPath $Path -Force -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { -not (Test-Junk $_.FullName $Path) }
 }
 
 $dirs = @(Get-ChildItem -LiteralPath $wtRoot -Directory -Force)
@@ -103,6 +108,12 @@ foreach ($d in $dirs) {
 
     Remove-Junctions $path
     $reparse = @(Get-ChildItem -LiteralPath $path -Recurse -Force -Directory -Attributes ReparsePoint -ErrorAction SilentlyContinue)
+    # pytest leaves `...current` links inside its tmp dirs; rmdir on a link never touches its target.
+    foreach ($r in @($reparse | Where-Object { Test-Junk $_.FullName $path })) {
+        if (-not $DryRun) { cmd /c rmdir "`"$($r.FullName)`"" 2>$null | Out-Null }
+    }
+    $reparse = @(Get-ChildItem -LiteralPath $path -Recurse -Force -Directory -Attributes ReparsePoint -ErrorAction SilentlyContinue |
+        Where-Object { -not ($DryRun -and (Test-Junk $_.FullName $path)) })
     if ($reparse.Count -gt 0) {
         Write-Host "SKIP $($d.Name) - unexpected reparse point: $($reparse[0].FullName)"; $skipped++; continue
     }
