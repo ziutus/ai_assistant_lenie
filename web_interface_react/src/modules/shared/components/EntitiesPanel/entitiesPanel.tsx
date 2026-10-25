@@ -7,6 +7,7 @@ import { copyText } from "../../utils/copyText";
 import { modelOptionText, type ModelOption } from "../../utils/modelDetails";
 import type { CountryTag } from "../CountryMap/countryMap";
 import InfoTip from "../InfoTip";
+import SkillHint from "../SkillHint";
 import RejectedPlaces from "./rejectedPlaces";
 import OrganizationMergePreview, { type MergePreviewData } from "./organizationMergePreview";
 
@@ -2013,6 +2014,15 @@ const EntitiesPanel = ({
           {editMode && editActions("placeName")(item)}
         </>} />
       <RejectedPlaces key={docId} docId={docId} items={rejectedPlaces} />
+      {docId && (
+        <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}>
+          Encja źle rozpoznana lub bez lokalizacji?
+          <SkillHint skill="/lenie-entity-diagnose" command={`/lenie-entity-diagnose ${docId}`}>
+            Skill sprawdzi, dlaczego encja nie została rozpoznana, zgeokodowana lub połączona, i zaproponuje poprawkę.
+            Podaj dokładny tekst encji lub rozdział.
+          </SkillHint>
+        </div>
+      )}
       {placeTags.length > 0 && (
         <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}>
           Tagi miejsc: {placeTags.join(", ")}
