@@ -22,6 +22,11 @@
 .PARAMETER Name
   Limit the run to these directory names (default: every candidate).
 
+.PARAMETER IncludeUnregisteredCheckouts
+  Also consider old full checkouts that git no longer knows. Such a directory is deleted only when
+  EVERY non-cache file in it has its content (blob) somewhere in the repo's object store; a single
+  file git has never seen keeps the whole directory. The log goes to %TEMP%\worktree-clean-elevated.log.
+
 .PARAMETER DryRun
   Only list what would be done; changes nothing (still asks for elevation).
 #>
@@ -29,7 +34,8 @@
 param(
     [string[]]$Name,
     [switch]$DryRun,
-    [switch]$NoPause
+    [switch]$NoPause,
+    [switch]$IncludeUnregisteredCheckouts
 )
 
 $ErrorActionPreference = 'Continue'
@@ -45,6 +51,7 @@ if (-not (Test-Admin)) {
     $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
     if ($Name) { $argList += @('-Name', ($Name -join ',')) }
     if ($DryRun) { $argList += '-DryRun' }
+    if ($IncludeUnregisteredCheckouts) { $argList += '-IncludeUnregisteredCheckouts' }
     Write-Host 'Requesting Administrator rights (UAC prompt)...'
     try {
         Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -Verb RunAs -ErrorAction Stop
@@ -55,7 +62,11 @@ if (-not (Test-Admin)) {
     exit 0
 }
 
+$logPath = Join-Path $env:TEMP 'worktree-clean-elevated.log'
+try { Start-Transcript -Path $logPath -Force | Out-Null } catch {}
+
 function Pause-Exit([int]$Code) {
+    try { Stop-Transcript | Out-Null } catch {}
     if (-not $NoPause) { Read-Host 'Press Enter to close' | Out-Null }
     exit $Code
 }
@@ -69,7 +80,7 @@ $wtRoot = Join-Path $repoRoot '.claude\worktrees'
 if (-not (Test-Path -LiteralPath $wtRoot)) { Write-Host "No $wtRoot"; Pause-Exit 0 }
 
 $junctionRel = @('backend\.venv', 'backend\.venv_wsl', 'ner_service\.venv', 'web_interface_react\node_modules')
-$junkNames = @('.pytest_cache', '__pycache__', '.git')
+$junkNames = @('.pytest_cache', '__pycache__', '.git', '.ruff_cache', '.uv-cache')
 
 $registered = @(git worktree list --porcelain | Where-Object { $_ -like 'worktree *' } |
     ForEach-Object { ($_.Substring(9) -replace '/', '\').TrimEnd('\').ToLowerInvariant() })
@@ -98,6 +109,26 @@ function Get-Leftovers([string]$Path) {
         Where-Object { -not (Test-Junk $_.FullName $Path) }
 }
 
+function Get-UnsavedFiles([string]$Path) {
+    # Old full checkouts git no longer knows (no `.git` file). A file is "saved" when its content
+    # exists as a blob anywhere in the repo's object store (any branch, tag or past commit).
+    # Returns the files whose content git has never seen - those must not be deleted.
+    $files = @(Get-Leftovers $Path)
+    if ($files.Count -eq 0) { return @() }
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $prev = $OutputEncoding; $OutputEncoding = $utf8
+    try {
+        $hashes = @($files.FullName | git -C $repoRoot hash-object --stdin-paths)
+        if ($hashes.Count -ne $files.Count) { return $files }   # could not hash everything: treat all as unsaved
+        $state = @($hashes | git -C $repoRoot cat-file --batch-check)
+    } finally { $OutputEncoding = $prev }
+    $unsaved = @()
+    for ($i = 0; $i -lt $files.Count; $i++) {
+        if ($state[$i] -like '* missing') { $unsaved += $files[$i] }
+    }
+    return $unsaved
+}
+
 $dirs = @(Get-ChildItem -LiteralPath $wtRoot -Directory -Force)
 if ($Name) { $dirs = @($dirs | Where-Object { $Name -contains $_.Name }) }
 
@@ -124,9 +155,16 @@ foreach ($d in $dirs) {
     takeown /F "$path" /R /A /D Y 2>&1 | Out-Null
     icacls "$path" /grant 'Administrators:F' /T /C /Q 2>&1 | Out-Null
 
-    $left = @(Get-Leftovers $path)
-    if ($left.Count -gt 0) {
-        Write-Host "SKIP $($d.Name) - contains real files (e.g. $($left[0].FullName)), left alone"; $skipped++; continue
+    if ($IncludeUnregisteredCheckouts) {
+        $left = @(Get-UnsavedFiles $path)
+        if ($left.Count -gt 0) {
+            Write-Host "SKIP $($d.Name) - $($left.Count) file(s) git has never seen (e.g. $($left[0].FullName)), left alone"; $skipped++; continue
+        }
+    } else {
+        $left = @(Get-Leftovers $path)
+        if ($left.Count -gt 0) {
+            Write-Host "SKIP $($d.Name) - contains real files (e.g. $($left[0].FullName)); use -IncludeUnregisteredCheckouts to check them against git"; $skipped++; continue
+        }
     }
 
     cmd /c rmdir /s /q "`"$path`"" 2>$null | Out-Null
