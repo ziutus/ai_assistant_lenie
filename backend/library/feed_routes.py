@@ -15,6 +15,7 @@ from library.content_group_service import (
     archive_group,
     create_group,
     group_to_dict,
+    merge_groups,
     replace_chunk_groups,
     replace_document_groups,
     replace_feed_item_groups,
@@ -187,10 +188,33 @@ def patch_content_group(group_id):
     except ValueError as exc:
         session.rollback()
         abort(400, str(exc))
+    except RuntimeError as exc:
+        session.rollback()
+        abort(409, str(exc))
     except IntegrityError:
         session.rollback()
         abort(409, "active group name already exists")
     return jsonify(group_to_dict(row, session))
+
+
+@bp.post("/content_groups/<int:group_id>/merge")
+def merge_content_group(group_id):
+    """Move everything filed under this topic to ``target_id`` and archive this topic (the way to retire a used topic)."""
+    _user_or_service()
+    session = get_scoped_session()
+    body = request.get_json(silent=True) or {}
+    target_id = body.get("target_id")
+    if isinstance(target_id, bool) or not isinstance(target_id, int):
+        abort(400, "target_id must be an integer")
+    source, target = session.get(ContentGroup, group_id), session.get(ContentGroup, target_id)
+    if source is None or target is None:
+        abort(404)
+    try:
+        moved = merge_groups(session, source, target)
+    except ValueError as exc:
+        session.rollback()
+        abort(400, str(exc))
+    return jsonify({"moved": moved, "source": group_to_dict(source, session), "target": group_to_dict(target, session)})
 
 
 @bp.delete("/content_groups/<int:group_id>")

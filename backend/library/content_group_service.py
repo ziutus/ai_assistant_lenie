@@ -2,10 +2,11 @@
 
 import datetime as dt
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 
 from library.db.models import (
     ContentGroup,
+    ContentGroupSuggestion,
     Document,
     DocumentChunk,
     DocumentChunkGroupMembership,
@@ -85,6 +86,7 @@ def update_group(session, group: ContentGroup, **changes) -> ContentGroup:
     }
     name, kind, priority_rank = validate_group_values(**values)
     group.name, group.kind, group.priority_rank = name, kind, priority_rank
+    group.updated_at = dt.datetime.now(dt.timezone.utc)
     session.flush()
     return group
 
@@ -185,6 +187,51 @@ def archive_group(session, group: ContentGroup) -> ContentGroup:
     group.updated_at = group.archived_at
     session.commit()
     return group
+
+
+def merge_groups(session, source: ContentGroup, target: ContentGroup) -> dict[str, int]:
+    """Move everything filed under topic ``source`` to topic ``target`` and archive ``source``. Commits.
+
+    Feed items, documents and reader chapters keep their other topics; one already filed under ``target`` simply
+    loses the duplicate. Suggestions of ``source`` follow the move (a run that already suggested ``target`` keeps
+    that one and its still-pending ``source`` twin is dismissed), so an accepted suggestion still explains why
+    the item is in the topic. Returns how many rows moved or were dropped as duplicates.
+    """
+    if source.id == target.id:
+        raise ValueError("cannot merge a topic into itself")
+    for group in (source, target):
+        if group.archived_at is not None:
+            raise ValueError("archived topics cannot be merged")
+        if group.kind != "topic":
+            raise ValueError("only topics can be merged")
+    result: dict[str, int] = {}
+    for label, model, key in (
+        ("feed_items", FeedItemGroupMembership, "feed_item_id"),
+        ("documents", DocumentGroupMembership, "document_id"),
+        ("chunks", DocumentChunkGroupMembership, "chunk_id"),
+    ):
+        column = getattr(model, key)
+        already_in_target = select(column).where(model.group_id == target.id)
+        result[label] = session.execute(
+            update(model).where(model.group_id == source.id, column.not_in(already_in_target)).values(group_id=target.id)
+        ).rowcount
+        # What is left under the source is filed under the target already.
+        result[f"{label}_duplicates"] = session.execute(delete(model).where(model.group_id == source.id)).rowcount
+    runs_with_target = select(ContentGroupSuggestion.run_id).where(ContentGroupSuggestion.group_id == target.id)
+    result["suggestions"] = session.execute(
+        update(ContentGroupSuggestion)
+        .where(ContentGroupSuggestion.group_id == source.id, ContentGroupSuggestion.run_id.not_in(runs_with_target))
+        .values(group_id=target.id)
+    ).rowcount
+    session.execute(
+        update(ContentGroupSuggestion)
+        .where(ContentGroupSuggestion.group_id == source.id, ContentGroupSuggestion.status == "pending")
+        .values(status="dismissed")
+    )
+    source.archived_at = source.updated_at = dt.datetime.now(dt.timezone.utc)
+    target.updated_at = source.archived_at
+    session.commit()
+    return result
 
 
 def group_to_dict(group: ContentGroup, session=None) -> dict:

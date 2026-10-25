@@ -222,6 +222,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         </NavLink>
         <NavLink to="/feeds" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Feedy</NavLink>
         <NavLink to="/chapter-groups" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kategorie fragmentów</NavLink>
+        <NavLink to="/content-groups" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Tematy (zarządzanie)</NavLink>
         <NavLink to="/feed-review" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kuracja feedów</NavLink>
         <NavLink to="/prompt-templates" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Prompty LLM</NavLink>
         <NavLink to="/tool-recommendations" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Radar narzędzi</NavLink>

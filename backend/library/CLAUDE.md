@@ -56,6 +56,15 @@ Gemini no longer appear —, OpenRouter models are dropped when the live catalog
 structured outputs; unknown stays). Tests: `tests/unit/test_prompt_templates.py`,
 `test_feed_prompt_preview.py`.
 
+**Managing topics.** `PATCH /content_groups/<id>` renames (409 on a duplicate active name
+or an archived topic), `DELETE` archives only an unused topic (409 + counts otherwise), and
+`POST /content_groups/<id>/merge` (`{target_id}`, `content_group_service.merge_groups()`) is the
+way to retire a topic in use: feed-item, document and reader-chapter memberships move to the
+target (rows the target already has are dropped as duplicates), the source's suggestions are
+re-pointed (a run that already suggested the target keeps that one and the source's pending
+twin is dismissed) and the source is archived; topics only, both active. Response: `moved`
+counts plus both groups. Tests: `tests/unit/test_content_group_merge.py`.
+
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
 `saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the
