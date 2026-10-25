@@ -95,3 +95,19 @@ it("does not offer the prompt preview for documents", async () => {
   await screen.findByText("Podpowiedz ponownie");
   expect(screen.queryByText("Podejrzyj prompt")).toBeNull();
 });
+
+it("explains a failed run and an empty result instead of showing nothing", async () => {
+  let run: object = { model: "openrouter/google/gemini-2.5-flash-lite", status: "error", error: "HTTP 429 limit" };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/content_groups")) return json({ content_groups: [{ id: 1, name: "AI", kind: "topic" }] });
+    if (url.endsWith("/groups")) return json({ groups: [] });
+    return json({ run, suggestions: [], new_topics: [] });
+  }));
+  const { unmount } = render(<ContentGroupsPanel feedItemId={7} />);
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Propozycja nie powiodła się (google/gemini-2.5-flash-lite): HTTP 429 limit");
+  unmount();
+  run = { model: "openrouter/google/gemini-2.5-flash-lite", status: "completed" };
+  render(<ContentGroupsPanel feedItemId={7} />);
+  await screen.findByText("🤖 google/gemini-2.5-flash-lite: brak pasującego tematu.");
+  expect(screen.queryByRole("alert")).toBeNull();
+});

@@ -34,6 +34,8 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [error, setError] = React.useState("");
   const [runModel, setRunModel] = React.useState("");
   const [runPrompt, setRunPrompt] = React.useState("");
+  const [runError, setRunError] = React.useState("");
+  const [runDone, setRunDone] = React.useState(false);
   const [promptPreview, setPromptPreview] = React.useState<PromptPreview | null>(null);
   const [previewLoading, setPreviewLoading] = React.useState(false);
   const [pendingRun, setPendingRun] = React.useState(false);
@@ -66,6 +68,8 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       setRunModel(suggestionData.run?.model || "");
       setRunPrompt(suggestionData.run?.prompt_version || "");
       const runStatus: string | undefined = suggestionData.run?.status;
+      setRunDone(runStatus === "completed");
+      setRunError(runStatus === "error" ? String(suggestionData.run?.error || "Klasyfikacja nie powiodła się") : "");
       const running = runStatus === "queued" || runStatus === "running";
       const wrongModel = !!suggestModel && suggestionData.run?.model !== suggestModel;
       const requestKey = `${target}:${suggestModel || "default"}`;
@@ -117,6 +121,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     awaitingModelRef.current = suggestModel || null;
     setSuggestions(items => items.filter(item => item.status !== "pending"));
     setNewTopics([]);
+    setRunError("");
     pollsRef.current = 0;
     setPendingRun(false);
     try {
@@ -250,6 +255,8 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     {suggestModel && runModel && <small style={{ display: "block", color: "#64748b" }}>model: {runModel.replace(/^openrouter\//, "")}</small>}
     {suggestModel && runModel && runPrompt && <small style={{ display: "block", color: "#64748b" }} title="Wersja promptu użyta w tym przebiegu">prompt: {runPrompt}</small>}
     {pendingRun && <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>🤖 Szukam kategorii…</div>}
+    {runError && !pendingRun && <p role="alert" className="errorText">Propozycja nie powiodła się{runModel ? ` (${runModel.replace(/^openrouter\//, "")})` : ""}: {runError}</p>}
+    {feedItemId !== undefined && !pendingRun && runDone && runModel && !groups.some(group => group.kind === "topic") && suggestions.length === 0 && newTopics.length === 0 && <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>🤖 {runModel.replace(/^openrouter\//, "")}: brak pasującego tematu.</div>}
     {suggestions.filter(item => item.status === "pending").map(item => <div key={item.id} style={{ marginTop: 8, border: "1px dashed #64748b", padding: 6 }}><span>Sugestia: {catalog.find(group => group.id === item.group_id)?.name || item.group_id} ({Math.round(item.confidence * 100)}%)</span>{" "}<button type="button" onClick={() => void decide(item.id, "accept")}>Akceptuj</button>{" "}<button type="button" onClick={() => void decide(item.id, "dismiss")}>Odrzuć</button></div>)}
     {feedItemId !== undefined && !pendingRun && newTopics.filter(item => !dismissedTopics.includes(item.name)).map(item => <div key={item.name} style={{ marginTop: 8 }}>
       <span>Nowy temat: {item.name} ({Math.round(item.confidence * 100)}%) — {item.reason}</span>{" "}
