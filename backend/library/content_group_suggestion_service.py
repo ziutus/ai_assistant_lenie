@@ -231,6 +231,30 @@ def _auto_apply_suggestion(session, document_id: int, group_id: int, suggestion:
     suggestion.decided_at = datetime.now(timezone.utc)
 
 
+def build_request(target_type: str, target, model: str, catalog: list[dict], template: "prompt_templates.ResolvedTemplate") -> dict:
+    """Everything sent to the model for one target: the single place both the job and the UI preview use.
+
+    ``system_sent`` is False when the provider path would drop the system message; ``response_format`` is the
+    JSON-schema argument (None for a model that gets the schema inside the prompt text instead).
+    """
+    allow_new_topics = target_type == "feed_item"
+    schema = response_schema(catalog, allow_new_topics=allow_new_topics)
+    structured = target_type == "document" or supports_structured_output(model)
+    variables = {
+        "catalog": json.dumps(catalog, ensure_ascii=False),
+        "material": target_text(target),
+        "schema": "" if structured else json.dumps(schema["json_schema"]["schema"], ensure_ascii=False),
+    }
+    system = prompt_templates.render(template.system, **variables) or None
+    return {
+        "prompt": prompt_templates.render(template.user, **variables),
+        "system_prompt": system,
+        "system_sent": bool(system) and (structured or model.startswith("openrouter/")),
+        "response_format": schema if structured else None,
+        "structured": structured,
+    }
+
+
 def _record_usage(run: ContentGroupSuggestionRun, usage) -> None:
     """Copy tokens, latency and cost of the call onto the run so models and prompts can be compared per run."""
     if usage is None:
@@ -257,18 +281,10 @@ def execute_suggestion_job(session, job: Job) -> dict:
     run.status = "running"
     session.flush()
     allow_new_topics = target_type == "feed_item"
-    schema = response_schema(run.catalog_snapshot, allow_new_topics=allow_new_topics)
     template = prompt_templates.get_by_id(session, run.prompt_template_id, prompt_templates.TASK_CONTENT_GROUPS, target_type)
     try:
-        structured = target_type == "document" or supports_structured_output(run.model)
-        variables = {
-            "catalog": json.dumps(run.catalog_snapshot, ensure_ascii=False),
-            "material": target_text(target),
-            "schema": "" if structured else json.dumps(schema["json_schema"]["schema"], ensure_ascii=False),
-        }
-        prompt = prompt_templates.render(template.user, **variables)
-        system_prompt = prompt_templates.render(template.system, **variables) or None
-        response = ai_ask(prompt, model=run.model, temperature=0, operation="content_group_suggestion", document_id=target.id if target_type == "document" else None, analysis_job_id=job.id, response_format=schema if structured else None, system_prompt=system_prompt if structured or run.model.startswith("openrouter/") else None)
+        built = build_request(target_type, target, run.model, run.catalog_snapshot, template)
+        response = ai_ask(built["prompt"], model=run.model, temperature=0, operation="content_group_suggestion", document_id=target.id if target_type == "document" else None, analysis_job_id=job.id, response_format=built["response_format"], system_prompt=built["system_prompt"] if built["system_sent"] else None)
         _record_usage(run, getattr(response, "usage", None))
         raw = getattr(response, "response_text", "")
         run.raw_result = _parse_result(raw)

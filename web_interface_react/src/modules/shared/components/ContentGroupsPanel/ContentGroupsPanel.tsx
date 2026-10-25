@@ -13,6 +13,11 @@ const SUGGESTION_POLL_MAX = 15;
 type NewTopic = { name: string; confidence: number; reason: string };
 const foldName = (name: string) => name.trim().toLocaleLowerCase("pl").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ł/g, "l");
 
+type PromptPreview = {
+  model: string; prompt_version: string; structured: boolean; system_sent: boolean;
+  system_prompt: string | null; prompt: string; response_format: unknown;
+};
+
 type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; autoSuggest?: boolean; suggestModel?: string; templateId?: number; onModelCall?: () => void; onSaved?: (groups: ContentGroup[]) => void };
 
 export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, autoSuggest, suggestModel, templateId, onModelCall, onSaved }: Props) {
@@ -29,6 +34,8 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [error, setError] = React.useState("");
   const [runModel, setRunModel] = React.useState("");
   const [runPrompt, setRunPrompt] = React.useState("");
+  const [promptPreview, setPromptPreview] = React.useState<PromptPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = React.useState(false);
   const [pendingRun, setPendingRun] = React.useState(false);
   const [newTopicName, setNewTopicName] = React.useState("");
   const requestedRef = React.useRef(new Set<string>());
@@ -87,6 +94,22 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     const timer = window.setTimeout(() => { pollsRef.current += 1; void load(); }, SUGGESTION_POLL_MS);
     return () => window.clearTimeout(timer);
   }, [pendingRun, load, suggestions]);
+
+  // A preview describes one model + prompt version; drop it as soon as either changes.
+  React.useEffect(() => { setPromptPreview(null); }, [suggestModel, templateId]);
+
+  const showPrompt = async () => {
+    setError(""); setPreviewLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/feed_items/${feedItemId}/group-suggestions/preview`, {
+        method: "POST", headers, body: JSON.stringify({ model: suggestModel, ...(templateId ? { template_id: templateId } : {}) }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || data.error || `group-suggestions/preview: HTTP ${response.status}`);
+      setPromptPreview(data as PromptPreview);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać podglądu promptu"); }
+    finally { setPreviewLoading(false); }
+  };
 
   const suggestAgain = async () => {
     setError("");
@@ -207,6 +230,23 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       <button type="button" className="button" onClick={() => void save()}>Zapisz</button>
     </div>}
     {suggestModel && <button type="button" disabled={pendingRun} onClick={() => void suggestAgain()}>Podpowiedz ponownie</button>}
+    {feedItemId !== undefined && suggestModel && <>{" "}<button type="button" disabled={previewLoading} onClick={() => void showPrompt()}>{previewLoading ? "Ładuję…" : "Podejrzyj prompt"}</button></>}
+    {promptPreview && <div role="region" aria-label="Podgląd promptu" style={{ marginTop: 8, border: "1px solid #cbd5e1", padding: 8, fontSize: ".85em" }}>
+      <div style={{ color: "#475569" }}>
+        model: <strong>{promptPreview.model.replace(/^openrouter\//, "")}</strong> · prompt: <strong>{promptPreview.prompt_version}</strong> ·{" "}
+        {promptPreview.structured ? "schemat odpowiedzi idzie osobno (response_format)" : "model bez trybu strukturalnego — schemat jest w treści promptu"}
+        {" "}<button type="button" aria-label="Zamknij podgląd promptu" onClick={() => setPromptPreview(null)}>✕</button>
+      </div>
+      {promptPreview.system_prompt && <>
+        <strong>System{promptPreview.system_sent ? "" : " (nie jest wysyłany dla tego modelu)"}</strong>
+        <pre style={{ whiteSpace: "pre-wrap", background: "#f1f5f9", padding: 6, maxHeight: 160, overflow: "auto" }}>{promptPreview.system_prompt}</pre>
+      </>}
+      <strong>Użytkownik</strong>
+      <pre style={{ whiteSpace: "pre-wrap", background: "#f1f5f9", padding: 6, maxHeight: 360, overflow: "auto" }}>{promptPreview.prompt}</pre>
+      {promptPreview.response_format != null && <details><summary>response_format (schemat JSON)</summary>
+        <pre style={{ whiteSpace: "pre-wrap", background: "#f1f5f9", padding: 6, maxHeight: 240, overflow: "auto" }}>{JSON.stringify(promptPreview.response_format, null, 2)}</pre>
+      </details>}
+    </div>}
     {suggestModel && runModel && <small style={{ display: "block", color: "#64748b" }}>model: {runModel.replace(/^openrouter\//, "")}</small>}
     {suggestModel && runModel && runPrompt && <small style={{ display: "block", color: "#64748b" }} title="Wersja promptu użyta w tym przebiegu">prompt: {runPrompt}</small>}
     {pendingRun && <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>🤖 Szukam kategorii…</div>}

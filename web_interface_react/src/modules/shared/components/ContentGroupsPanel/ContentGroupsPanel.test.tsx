@@ -65,3 +65,33 @@ it("dismisses proposals locally", async () => {
   fireEvent.click(await screen.findByText("Odrzuć"));
   expect(screen.queryByText(/Nowy temat:/)).toBeNull();
 });
+
+it("shows the exact prompt for the chosen model and version, and drops it when the model changes", async () => {
+  const model = "openrouter/google/gemini-2.5-flash-lite";
+  const preview = {
+    model, prompt_version: "feed_item-v3", structured: true, system_sent: true, system_prompt: "SYS-TEXT",
+    prompt: "USER-TEXT z katalogiem", response_format: { type: "json_schema" },
+  };
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith("/group-suggestions/preview")) return json(preview);
+    if (url.endsWith("/content_groups")) return json({ content_groups: [] });
+    if (url.endsWith("/groups")) return json({ groups: [] });
+    return json({ run: { model, status: "completed", prompt_version: "feed_item-v3" }, suggestions: [] });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const { rerender } = render(<ContentGroupsPanel feedItemId={7} suggestModel={model} templateId={4} />);
+  fireEvent.click(await screen.findByText("Podejrzyj prompt"));
+  expect(await screen.findByText("USER-TEXT z katalogiem")).toBeTruthy();
+  expect(screen.getByText("SYS-TEXT")).toBeTruthy();
+  const call = fetcher.mock.calls.find(([url]) => String(url).endsWith("/preview")) as unknown as [string, RequestInit];
+  expect(call[1].body).toBe(JSON.stringify({ model, template_id: 4 }));
+  rerender(<ContentGroupsPanel feedItemId={7} suggestModel="Bielik-11B-v3.0-Instruct" templateId={4} />);
+  await waitFor(() => expect(screen.queryByText("USER-TEXT z katalogiem")).toBeNull());
+});
+
+it("does not offer the prompt preview for documents", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => json({ groups: [], content_groups: [], suggestions: [] })));
+  render(<ContentGroupsPanel documentId={9} suggestModel="Bielik" />);
+  await screen.findByText("Podpowiedz ponownie");
+  expect(screen.queryByText("Podejrzyj prompt")).toBeNull();
+});

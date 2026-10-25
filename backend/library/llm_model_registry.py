@@ -32,6 +32,10 @@ _ORGANIZATION_DESCRIPTION_MODELS: tuple[tuple[str, str, str, bool, bool], ...] =
 # when an OpenRouter model is selected; document classification stays on Bielik.
 _TASKS = {"organization_description", "tool_tags", "content_group_suggestion"}
 
+# Tasks whose answer must be structured JSON: models that cannot honour a JSON-schema ``response_format`` are not
+# offered (and, where it is known without a network call, not accepted) for them.
+_STRUCTURED_OUTPUT_TASKS = {"content_group_suggestion"}
+
 _OPENROUTER_PREFIX = "openrouter/"
 PRICE_SOURCE_OPENROUTER = "openrouter_api"
 PRICE_SOURCE_DATABASE = "llm_pricing"
@@ -50,10 +54,13 @@ def _base_models(task: str) -> list[dict]:
     """The allowlist as ``{id, label, provider, external, verified}`` dicts — no network, no database."""
     if task not in _TASKS:
         return []
+    from library.ai import _RESPONSE_FORMAT_PROVIDERS
+
     show_openrouter = _openrouter_enabled()
+    needs_json = task in _STRUCTURED_OUTPUT_TASKS
     return [{"id": model_id, "label": label, "provider": provider, "external": external, "verified": verified}
             for model_id, label, provider, external, verified in _ORGANIZATION_DESCRIPTION_MODELS
-            if provider != "openrouter" or show_openrouter]
+            if (provider != "openrouter" or show_openrouter) and (not needs_json or provider in _RESPONSE_FORMAT_PROVIDERS)]
 
 
 def _money(value) -> str | None:
@@ -138,6 +145,9 @@ def selectable_models(task: str = "organization_description") -> list[dict]:
         if row is not None and row[0] is not None and row[1] is not None:
             item.update(input_price_per_million=_money(row[0]), output_price_per_million=_money(row[1]),
                         currency=row[2], price_source=PRICE_SOURCE_DATABASE)
+    if task in _STRUCTURED_OUTPUT_TASKS:
+        # False = the live OpenRouter catalog says the model has no structured outputs; None (catalog unreachable) stays.
+        models = [item for item in models if item["supports_structured_outputs"] is not False]
     return models
 
 

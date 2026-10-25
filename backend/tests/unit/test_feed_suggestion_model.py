@@ -16,7 +16,8 @@ def stub_config(monkeypatch):
 
 
 @pytest.mark.parametrize("saved,enabled,expected", [
-    ("gpt-4o-mini", True, "gpt-4o-mini"),
+    ("openrouter/openai/gpt-4o-mini", True, "openrouter/openai/gpt-4o-mini"),
+    ("gpt-4o-mini", True, svc.FEED_DEFAULT_MODEL),  # direct OpenAI has no JSON-schema response_format: no longer offered
     (None, True, svc.FEED_DEFAULT_MODEL),
     ("invalid", True, svc.FEED_DEFAULT_MODEL),
     (svc.FEED_DEFAULT_MODEL, False, "Bielik"),

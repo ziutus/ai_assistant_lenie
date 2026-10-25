@@ -459,6 +459,41 @@ def request_feed_suggestions(item_id):
     return _request_suggestions("feed_item", item_id, _user())
 
 
+@bp.post("/feed_items/<int:item_id>/group-suggestions/preview")
+def preview_feed_suggestion_prompt(item_id):
+    """The exact request a suggestion run would send for this item (model, template, system + user prompt, schema).
+
+    Same inputs as ``POST .../group-suggestions`` (``model``, ``template_id``) and the same builder as the job, but
+    nothing is queued, stored or sent to a model.
+    """
+    _user()
+    from library import content_group_suggestion_service as suggester
+    from library.llm_model_registry import is_selectable
+
+    body = request.get_json(silent=True) or {}
+    template_id = body.get("template_id")
+    if template_id is not None and (isinstance(template_id, bool) or not isinstance(template_id, int)):
+        abort(400, "template_id must be an integer")
+    session = get_scoped_session()
+    item = session.get(FeedItem, item_id)
+    if item is None:
+        abort(404)
+    model = body.get("model")
+    if model is not None and (not isinstance(model, str) or not is_selectable(model, suggester.TASK)):
+        abort(400, "unknown model")
+    model = model or suggester.default_model(session)
+    try:
+        template = suggester.resolve_template(session, "feed_item", template_id)
+    except ValueError as exc:
+        abort(400, str(exc))
+    built = suggester.build_request("feed_item", item, model, active_topic_catalog(session), template)
+    return jsonify({
+        "model": model, "prompt_version": template.label, "prompt_template_id": template.id,
+        "structured": built["structured"], "system_sent": built["system_sent"], "system_prompt": built["system_prompt"],
+        "prompt": built["prompt"], "response_format": built["response_format"],
+    })
+
+
 @bp.get("/feed_items/content_group_model")
 def get_content_group_model():
     _user_or_service()

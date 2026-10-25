@@ -46,7 +46,15 @@ prompt version: runs, avg tokens/latency, cost per run and per accepted suggesti
 accepted/dismissed/pending, no_match runs). `POST /feed_items/<id>/group-suggestions`
 accepts `template_id` to pin one version for that request. The cost per accepted
 suggestion is only as good as the number of decisions made — compare samples of
-similar size. Tests: `tests/unit/test_prompt_templates.py`.
+similar size. `build_request()` assembles the exact request (prompt, system prompt and
+whether it is sent, `response_format`) for the job and for `POST
+/feed_items/<id>/group-suggestions/preview` (`{model?, template_id?}`, nothing queued or
+sent). The model list for the `content_group_suggestion` task offers only models that
+honour a JSON-schema `response_format` (`llm_model_registry._STRUCTURED_OUTPUT_TASKS`:
+direct providers other than CloudFerro are dropped statically — OpenAI and Vertex
+Gemini no longer appear —, OpenRouter models are dropped when the live catalog says no
+structured outputs; unknown stays). Tests: `tests/unit/test_prompt_templates.py`,
+`test_feed_prompt_preview.py`.
 
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
