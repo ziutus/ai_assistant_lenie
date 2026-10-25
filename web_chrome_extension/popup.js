@@ -193,7 +193,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailId = '';
   let detectedEmailPublishedOn = '';
   let detectedEmailImages = [];
-  const debugState = { version: '1.0.60' };
+  const debugState = { version: '1.0.61' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -1059,6 +1059,21 @@ document.addEventListener('DOMContentLoaded', function () {
     sendButton.style.backgroundColor = 'gray';
     sendButton.disabled = true;
     sendButton.textContent = 'Wysyłam...';
+    showSendStatus('', 'info');
+
+    function resetSendButton() {
+      sendButton.style.backgroundColor = '';
+      sendButton.disabled = false;
+      sendButton.textContent = 'Wyślij';
+    }
+
+    function showSendStatus(message, kind) {
+      const box = document.getElementById('sendStatus');
+      if (!box) return;
+      box.textContent = message;
+      box.className = `alert alert-${kind} mt-2`;
+      box.style.display = message ? 'block' : 'none';
+    }
 
     chrome.tabs.query({ currentWindow: true, active: true }, function (tabs) {
       const pageUrl = tabs[0]?.url || '';
@@ -1229,20 +1244,20 @@ document.addEventListener('DOMContentLoaded', function () {
               ? `\nID dokumentu: ${result.document_id}`
               : '\nSerwer nie zwrócił ID dokumentu.';
           }
-          alert(message);
+          resetSendButton();
+          showSendStatus(message, 'success');
           noteInput.value = '';
-          setTimeout(() => window.close(), 500);
+          setTimeout(() => window.close(), 1500);
         })
         .catch(error => {
           updateDebug({ send_error: error.message });
-          alert(`Błąd podczas wysyłania strony: ${error.message}`);
+          // Inline instead of alert(): alert() does not render in the popup on
+          // mobile (Kiwi) and blocked the button reset, leaving "Wysyłam...".
+          resetSendButton();
+          showSendStatus(`Błąd podczas wysyłania strony: ${error.message}`, 'danger');
           console.error('Error:', error);
         })
-        .finally(() => {
-          sendButton.style.backgroundColor = '';
-          sendButton.disabled = false;
-          sendButton.textContent = 'Wyślij';
-        });
+        .finally(resetSendButton);
     });
   });
 });
