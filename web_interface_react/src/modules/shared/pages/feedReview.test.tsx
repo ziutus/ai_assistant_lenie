@@ -286,10 +286,23 @@ it("switches modes in the URL, remembers all mode, and suggests every list item"
   fireEvent.click(screen.getByText("Wszystkie na liście"));
   expect(screen.getByTestId("location").textContent).toContain("mode=all");
   expect(JSON.parse(localStorage.getItem("lenie_feedReviewFilters") || "{}").mode).toBe("all");
+  // The remembered "all" choice no longer decides the default: a bare address opens one item at a time.
   cleanup();
   render(<MemoryRouter><FeedReview /></MemoryRouter>);
-  await screen.findByText("Second");
-  expect(screen.getAllByRole("article")).toHaveLength(2);
+  await screen.findByLabelText("Nawigacja wpisów");
+  expect(screen.getAllByRole("article")).toHaveLength(1);
+  expect(screen.getByText("Artykuł testowy")).toBeTruthy();
+  expect(screen.queryByText("Second")).toBeNull();
+});
+
+it("opens one item at a time by default, whatever mode was used last", async () => {
+  localStorage.setItem("lenie_feedReviewFilters", JSON.stringify({ feedSourceId: "", view: "new", mode: "all" }));
+  render(<MemoryRouter initialEntries={["/feed-review"]}><FeedReview /><Location /></MemoryRouter>);
+  await screen.findByLabelText("Nawigacja wpisów");
+  expect(screen.getAllByRole("article")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Po jednym wpisie" }).getAttribute("aria-pressed")).toBe("true");
+  await waitFor(() => expect(screen.getByTestId("location").textContent).toContain("item=7"));
+  expect(screen.getByTestId("location").textContent).not.toContain("mode=all");
 });
 
 it("links every entry in the full list to its own single-item view", async () => {

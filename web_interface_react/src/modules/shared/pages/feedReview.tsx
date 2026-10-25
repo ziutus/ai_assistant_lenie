@@ -167,7 +167,8 @@ export default function FeedReview() {
   const view = searchParams.has("view")
     ? searchParams.get("view") === "discuss" ? "discuss" : searchParams.get("view") === "later" ? "later" : "new"
     : storedFilters.view;
-  const mode = searchParams.has("mode") ? (searchParams.get("mode") === "all" ? "all" : "single") : storedFilters.mode || "single";
+  // One item at a time is the default: the list opens only for an explicit ?mode=all, never from a remembered choice.
+  const mode = searchParams.get("mode") === "all" ? "all" : "single";
   const status = view === "later" ? "saved_for_later" : "new";
   const discussion = searchParams.get("discussion") === "done" ? "done" : "open";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
