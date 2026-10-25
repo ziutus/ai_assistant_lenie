@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [1.0.61] - 2026-10-13
+### Naprawione
+- Wynik wysyłki (sukces i błąd, np. HTTP 401 „NAS odrzucił autoryzację") jest pokazywany w popupie pod przyciskiem zamiast przez `alert()`. Na telefonie (Kiwi) `alert()` się nie wyświetlał i blokował reset przycisku, przez co wtyczka wisiała na „Wysyłam...". Przycisk wraca do „Wyślij" przed pokazaniem wyniku.
+
 ## [1.0.60] - 2026-09-21
 ### Dodane
 - Lokalne pobieranie listy członków grupy Facebooka (`facebook.com/groups/<id>/members/`): przycisk „Pobierz listę członków grupy" przewija stronę wewnątrz karty (content script, nie sterowanie z zewnątrz — wirtualizowana lista FB nie doładowuje się pod automatyzacją przeglądarki), z licznikiem zebranych osób na żywo. Każdy wiersz członka wymaga własnego linku `/groups/<id>/user/<id>/` — osoby wspomniane tylko jako „wspólny znajomy" w opisie cudzego wiersza nie trafiają na listę. Wynik (nazwa, ID, link do profilu) można skopiować jako JSON albo pobrać jako plik `.json`/`.csv`; dane zostają lokalnie, nic nie jest wysyłane do backendu.

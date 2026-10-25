@@ -1,6 +1,6 @@
 # GCloud Terraform — VPN relay
 
-Terraform configuration provisioning the OpenVPN relay VM from [ADR-023](../../../docs/adr/adr-023-gcloud-vpn-relay-nas-access.md). **Phase 1 + partial Phase 2, deployed and verified end-to-end 2026-08-26** (PR #584): the VPN server + firewall rule, a delegated Cloud DNS zone that keeps the relay's hostname current across restarts, and a start/stop/status Cloud Function. Still not implemented: a public HTTP endpoint for that function (API Gateway equivalent) and the Firebase Hosting frontend from the ADR — deliberately deferred, see "DNS + start/stop" below.
+Terraform configuration provisioning the OpenVPN relay VM from [ADR-023](../../../docs/adr/adr-023-gcloud-vpn-relay-nas-access.md). **Phase 1 + partial Phase 2, deployed and verified end-to-end 2026-08-26** (PR #584): the VPN server + firewall rule, a delegated Cloud DNS zone that keeps the relay's hostname current across restarts, and a start/stop/status Cloud Function. Still not implemented: a public HTTP endpoint for that function (API Gateway equivalent) and the Firebase Hosting frontend from the ADR — deliberately deferred, see "DNS + start/stop" below. The planned replacement for that frontend (API Gateway + an Android control app) is in [`docs/deployment/nas/vpn-relay-mobile-control-plan.md`](../../../docs/deployment/nas/vpn-relay-mobile-control-plan.md).
 
 ## Directory Structure
 
@@ -60,6 +60,42 @@ The startup script (`data/openvpn-install-startup.sh`) installs OpenVPN via [ang
 **Confirmed working** (2026-08-25, live test): NAS dialed out via QVPN Service Center → relay → HTTP request from the relay reached the NAS's Lenie backend (`192.168.200.7:5055`) and got a real application response. ICMP (ping) to the NAS is unreliable through the tunnel — irrelevant to the actual use case, don't use it to judge whether the tunnel is up; use a TCP/HTTP check instead.
 
 **Re-confirmed with the hostname-based setup** (2026-08-26): started via `vpn-relay-control` (Cloud Function), reconnected NAS's QVPN profile (now pointing at `vpn.gcloud.lenie-ai.eu`, not a hardcoded IP), verified the tunnel from both ends — `tun2001` interface up on the NAS (`ip addr` over SSH as `admin@192.168.200.7`) and `curl http://192.168.200.7:5055/` from the relay returned `HTTP 200`. Stopped again afterward via the same Cloud Function.
+
+## VPN clients
+
+One client profile per device. Never share one `.ovpn` between two devices: `duplicate-cn` is off, so two devices using the same certificate keep disconnecting each other. Profiles contain the client's private key, so they're never committed and should be moved to devices over a private channel (USB, a private drive), not email/chat; delete the transfer copy afterwards.
+
+| Client | Created by | Tunnel |
+|---|---|---|
+| `nas` | startup-script | `ccd/nas`: `iroute 192.168.200.0/24` + `push-reset` (NAS keeps its own default gateway) |
+| `demo-laptop` | startup-script | full tunnel (server's default `redirect-gateway` + Cloudflare DNS push) |
+| additional devices (e.g. `android-phone`) | by hand, see below | full tunnel by default; split tunnel via a ccd file, see below |
+
+**Adding a client** (VM must be running). Don't add clients to the startup-script: any `metadata_startup_script` change forces a VM replace, which invalidates every profile, see above. New clients pick up the hostname endpoint and `tls-crypt` mode from the server's `client-template.txt` automatically.
+
+```bash
+make gcloud-vpn-start
+gcloud compute ssh lenie-vpn-relay --zone=europe-central2-a
+sudo /root/openvpn-install.sh client add android-phone --output /root/android-phone.ovpn
+sudo chmod 644 /root/android-phone.ovpn
+exit
+gcloud compute scp lenie-vpn-relay:/root/android-phone.ovpn . --zone=europe-central2-a
+```
+
+**Split tunnel (recommended for phones).** Without it, all of the phone's traffic goes through GCP: billable egress and extra latency, for no benefit when only the NAS is the target. A per-client ccd file replaces the server's default push with just the NAS route. It's read on every connect, so no server restart is needed:
+
+```bash
+sudo tee /etc/openvpn/server/ccd/android-phone <<'EOF'
+push-reset
+push "route 192.168.200.0 255.255.255.0"
+EOF
+```
+
+Like the hand-patched `client-template.txt`, hand-made clients and ccd files live only on the current boot disk and are lost if the instance is ever replaced. List them here when adding one.
+
+**Android:** import the profile into **OpenVPN for Android** (`de.blinkt.openvpn`, recommended: it has an API that the planned control app can use to connect a profile) or **OpenVPN Connect**. Test with `http://192.168.200.7:5055/` in the phone's browser over mobile data (Wi-Fi off), not with ping (ICMP is unreliable through the tunnel, see above). The server listens on `udp/1194` only. If a mobile carrier or public Wi-Fi blocks UDP, there is no TCP/443 fallback yet.
+
+**Starting the relay from a phone:** today only via Google Cloud Console (Compute Engine → `lenie-vpn-relay` → Start/Stop), because the control function has no public endpoint. A public API Gateway endpoint plus an Android control app is planned in [`docs/deployment/nas/vpn-relay-mobile-control-plan.md`](../../../docs/deployment/nas/vpn-relay-mobile-control-plan.md).
 
 ## Usage
 
