@@ -47,8 +47,13 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
 
         imported = run_auto_import()
         heartbeat(session, job.id, {"phase": "import", **imported})
+        from library.feed_retention import expire_saved_items
+
+        # Before the (long) caption fetch: "Może kiedyś" items past their retention period go to skipped.
+        expired = expire_saved_items(session)
+        heartbeat(session, job.id, {"phase": "expire", "expired": expired["expired"]})
         captions = run_caption_fetch(on_progress=lambda progress: heartbeat(session, job.id, progress))
-        return {"check": check, "import": imported, "captions": captions}
+        return {"check": check, "import": imported, "expired": expired, "captions": captions}
     if job.type == "content_group_suggest":
         from library.content_group_suggestion_service import execute_suggestion_job
 

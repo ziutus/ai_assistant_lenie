@@ -312,11 +312,16 @@ class ContentGroup(Base):
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     priority_rank: Mapped[int | None] = mapped_column(Integer)
+    # Months a feed item saved under "Może kiedyś" stays valid when it has this topic; NULL = the household default.
+    retention_months: Mapped[int | None] = mapped_column(Integer)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("content_groups.id", ondelete="SET NULL"), index=True)
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     __table_args__ = (
         CheckConstraint("kind IN ('topic', 'priority')", name="ck_content_groups_kind"),
+        CheckConstraint("parent_id IS NULL OR (kind='topic' AND parent_id <> id)", name="ck_content_groups_parent_kind"),
+        CheckConstraint("retention_months IS NULL OR (kind = 'topic' AND retention_months BETWEEN 1 AND 120)", name="ck_content_groups_retention_months"),
         CheckConstraint(
             "(kind = 'topic' AND priority_rank IS NULL) OR (kind = 'priority' AND priority_rank BETWEEN 1 AND 100)",
             name="ck_content_groups_priority_rank",
@@ -369,6 +374,10 @@ class FeedItem(Base):
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     review_note: Mapped[str | None] = mapped_column(Text)
     review_reason: Mapped[str | None] = mapped_column(String(40))
+    llm_discussion_status: Mapped[str | None] = mapped_column(String(10))
+    llm_discussion_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    llm_discussion_done_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    llm_discussion_result: Mapped[str | None] = mapped_column(Text)
     ignored_pattern: Mapped[str | None] = mapped_column(Text)
     last_error: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (
@@ -378,12 +387,18 @@ class FeedItem(Base):
             name="ck_feed_items_status",
         ),
         CheckConstraint(
-            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other','sent_to_radar')",
+            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other','sent_to_radar','expired')",
             name="ck_feed_items_review_reason",
         ),
         Index("idx_feed_items_source_status", "feed_source_id", "status"),
         Index("idx_feed_items_status_first_seen", "status", "first_seen_at"),
         Index("idx_feed_items_status_saved_at", "status", "saved_at"),
+        CheckConstraint(
+            "llm_discussion_status IS NULL OR llm_discussion_status IN ('open','done')",
+            name="ck_feed_items_llm_discussion_status",
+        ),
+        Index("idx_feed_items_llm_discussion", "llm_discussion_status", "llm_discussion_at",
+              postgresql_where=sa_text("llm_discussion_status IS NOT NULL")),
     )
     group_memberships: Mapped[list["FeedItemGroupMembership"]] = relationship(
         back_populates="feed_item", cascade="all, delete-orphan", overlaps="groups",
@@ -488,6 +503,32 @@ class DocumentGroupMembership(Base):
     )
 
 
+class PromptTemplate(Base):
+    """One immutable version of an LLM prompt, edited from the UI.
+
+    Editing never changes a row: it inserts the next ``version`` of the same
+    ``(task, variant)``. At most one version per pair is ``is_active``; runs
+    remember the template they used so models and wordings can be compared.
+    """
+
+    __tablename__ = "prompt_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task: Mapped[str] = mapped_column(String(50), nullable=False)
+    variant: Mapped[str] = mapped_column(String(30), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    system_template: Mapped[str | None] = mapped_column(Text)
+    user_template: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(300))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    __table_args__ = (
+        UniqueConstraint("task", "variant", "version", name="uq_prompt_templates_version"),
+        Index("uq_prompt_templates_active", "task", "variant", unique=True, postgresql_where=sa_text("is_active")),
+    )
+
+
 class ContentGroupSuggestionRun(Base):
     __tablename__ = "content_group_suggestion_runs"
 
@@ -498,10 +539,17 @@ class ContentGroupSuggestionRun(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    prompt_template_id: Mapped[int | None] = mapped_column(ForeignKey("prompt_templates.id", ondelete="SET NULL"))
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     catalog_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
     raw_result: Mapped[dict | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_amount: Mapped[decimal.Decimal | None] = mapped_column(Numeric(18, 10))
+    cost_currency: Mapped[str | None] = mapped_column(String(3))
+    cost_status: Mapped[str | None] = mapped_column(String(20))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     suggestions: Mapped[list["ContentGroupSuggestion"]] = relationship(back_populates="run", cascade="all, delete-orphan")
