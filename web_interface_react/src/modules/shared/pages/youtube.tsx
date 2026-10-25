@@ -1,4 +1,5 @@
 import React from "react";
+import SkillHint from "../components/SkillHint";
 import ChapterBoundariesPanel from "../components/ChapterBoundariesPanel/chapterBoundariesPanel";
 import { renderMarkdown } from "./read";
 import axios from "axios";
@@ -204,6 +205,14 @@ const Youtube = () => {
             <summary style={{ cursor: "pointer" }}>Spis treści (AI)</summary>
             {renderMarkdown(formik.values.outline_md, [])}
           </details>
+        )}
+        {id && !transcriptMissing && !formik.values.outline_md?.trim() && (
+          <div style={{ marginBottom: 14, color: "#667" }}>
+            Brak spisu treści (AI).
+            <SkillHint skill="/lenie-youtube-outline" command={`/lenie-youtube-outline ${id}`}>
+              Spis treści tematów wygeneruje skill i zapisze go po Twojej akceptacji.
+            </SkillHint>
+          </div>
         )}
         {id && transcriptMissing && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>

@@ -31,6 +31,15 @@ odrzucił`, `Model zaproponował`). Never mix the voices within one label set;
 action buttons stay imperative. The short rule for agents lives in
 [AGENTS.md](AGENTS.md); keep the two in sync.
 
+### Skill hints
+
+Where a task is done by a Claude Code skill rather than by the UI, show
+`components/SkillHint.tsx` (an `InfoTip` with a copyable command such as
+`/lenie-obsidian-note <id>`). The page never runs the skill; the hint only
+points to it. Current places: `EntitiesPanel` (`/lenie-entity-diagnose`),
+`/chunks/:id` and the `/read/:id` Obsidian notes list (`/lenie-obsidian-note`),
+the YouTube editor when `outline_md` is empty (`/lenie-youtube-outline`).
+
 ### Multi-value filters
 
 The short rule agents must follow when choosing a selection control lives in
