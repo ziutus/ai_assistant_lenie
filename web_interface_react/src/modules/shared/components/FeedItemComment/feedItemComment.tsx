@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import { ACTION_TIMEOUT_MS, describeActionError, fetchWithTimeout } from "../../pages/feedReview";
 
@@ -7,10 +8,12 @@ type Props = {
   initialNote: string | null | undefined;
   onSaved: (note: string) => void;
   buildBrief: (comment: string) => string;
+  seedDocumentId?: number | null;
+  onSeedCreated?: (documentId: number) => void;
 };
 
 // The parent keys this editor by item ID, keeping drafts isolated between cards.
-export default function FeedItemComment({ itemId, initialNote, onSaved, buildBrief }: Props) {
+export default function FeedItemComment({ itemId, initialNote, onSaved, buildBrief, seedDocumentId, onSeedCreated }: Props) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [note, setNote] = React.useState(initialNote ?? "");
   const [savedNote, setSavedNote] = React.useState(initialNote ?? "");
@@ -19,6 +22,26 @@ export default function FeedItemComment({ itemId, initialNote, onSaved, buildBri
   const [error, setError] = React.useState("");
   const inputId = React.useId();
   const dirty = note !== savedNote;
+
+  const createSeed = async () => {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await fetchWithTimeout(`${apiUrl}/feed_items/${itemId}/seed_document`, {
+        method: "POST",
+        headers: { "x-api-key": apiKey || "", "Content-Type": "application/json" },
+      }, ACTION_TIMEOUT_MS);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || data.error || `Nie udało się utworzyć zalążka dokumentu (${response.status}).`);
+      onSeedCreated?.(data.document_id);
+      setMessage(data.created ? "Utworzono zalążek dokumentu." : "Zalążek już istniał.");
+    } catch (cause) {
+      setError(cause instanceof TypeError
+        ? "Nie można połączyć się z API - zalążek dokumentu NIE został utworzony."
+        : describeActionError(cause, apiUrl, "Nie udało się utworzyć zalążka dokumentu."));
+    } finally { setSaving(false); }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -78,6 +101,10 @@ export default function FeedItemComment({ itemId, initialNote, onSaved, buildBri
     <div id={`${inputId}-count`}>{note.length}/4000 {dirty && <span>● niezapisane zmiany</span>}</div>
     <button type="button" disabled={!dirty || saving} onClick={() => void save()}>Zapisz komentarz</button>{" "}
     <button type="button" onClick={() => void copy()}>Skopiuj brief dla LLM</button>
+    {" "}{seedDocumentId != null
+      ? <span>Zalążek dokumentu: <Link to={`/text/${seedDocumentId}`}>Otwórz #{seedDocumentId}</Link></span>
+      : <button type="button" disabled={dirty || saving} title={dirty ? "Najpierw zapisz komentarz" : undefined}
+        onClick={() => void createSeed()}>Utwórz zalążek dokumentu</button>}
     {message && <p role="status">{message}</p>}
     {error && <p role="alert">{error}</p>}
   </div>;

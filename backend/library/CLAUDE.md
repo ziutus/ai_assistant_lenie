@@ -116,6 +116,18 @@ the item dict carries the four fields. The expiry sweep (`feed_retention.py`) le
 A skill such as `/lenie-feed-review` can read the queue with `GET /feed_items?discussion=open` and
 use `review_note` as the user's brief. Tests: `tests/unit/test_feed_discussion.py`.
 
+**Seed document from a feed item** (`feed_seed_document.py`, no migration). `POST
+/feed_items/<id>/seed_document` (user key) creates ONE `text` Document per feed item with the
+synthetic URL `lenie://seed/feed-item/<id>` (same pattern as the recipe import's `file:///ksiazki/…`):
+title "Zalążek: <title>", `text`/`text_md` built deterministically (no LLM) by `build_seed_markdown()` —
+the user's comment (`review_note`), source URL/date/topics, the feed summary and a short "Do ustalenia"
+checklist — and the item's active topics copied with `copy_feed_groups_to_document(…, "feed_import")`.
+The feed item itself is not changed (status, `document_id`, discussion flag stay). Idempotent: a second
+call answers 200 with `created: false` and the existing document id (201 on creation, 404 unknown
+item). The item dict carries `seed_document_id`, resolved by ONE `seed_document_ids()` query per list
+page. The seed is a starting point to continue in the normal `text` editor / with ChatGPT or Claude Code.
+Tests: `tests/unit/test_feed_seed_document.py`.
+
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
 `saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the

@@ -2,6 +2,42 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import FeedItemComment from "./feedItemComment";
 import { buildBrief } from "../../pages/feedReview";
+import { MemoryRouter } from "react-router-dom";
+
+it.each([true, false])("creates or reuses a seed with authentication (created=%s)", async created => {
+  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ document_id: 42, created })));
+  const onSeedCreated = vi.fn();
+  render(<FeedItemComment itemId={7} initialNote="Brief" onSaved={vi.fn()} buildBrief={x => x} onSeedCreated={onSeedCreated} />);
+  fireEvent.click(screen.getByRole("button", { name: "Utwórz zalążek dokumentu" }));
+  expect((await screen.findByRole("status")).textContent).toBe(created ? "Utworzono zalążek dokumentu." : "Zalążek już istniał.");
+  expect(onSeedCreated).toHaveBeenCalledWith(42);
+  expect(fetch).toHaveBeenCalledWith("http://nas:5000/feed_items/7/seed_document", expect.objectContaining({
+    method: "POST", headers: { "x-api-key": "test-key", "Content-Type": "application/json" },
+  }));
+});
+
+it("requires saving dirty comments before creating a seed", () => {
+  const { textarea } = editor();
+  fireEvent.change(textarea, { target: { value: "Unsaved" } });
+  const button = screen.getByRole("button", { name: "Utwórz zalążek dokumentu" });
+  expect(button).toHaveProperty("disabled", true);
+  expect(button.getAttribute("title")).toBe("Najpierw zapisz komentarz");
+  fireEvent.click(button);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("reports a seed connection error", async () => {
+  vi.mocked(fetch).mockRejectedValue(new TypeError("Failed to fetch"));
+  editor();
+  fireEvent.click(screen.getByRole("button", { name: "Utwórz zalążek dokumentu" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Nie można połączyć się z API - zalążek dokumentu NIE został utworzony.");
+});
+
+it("links an existing seed to the text editor", () => {
+  render(<MemoryRouter><FeedItemComment itemId={7} initialNote="" onSaved={vi.fn()} buildBrief={x => x} seedDocumentId={42} /></MemoryRouter>);
+  expect(screen.getByRole("link", { name: "Otwórz #42" }).getAttribute("href")).toBe("/text/42");
+  expect(screen.queryByRole("button", { name: "Utwórz zalążek dokumentu" })).toBeNull();
+});
 
 vi.mock("../../context/authorizationContext", async () => {
   const { createContext } = await import("react");
