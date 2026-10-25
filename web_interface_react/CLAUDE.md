@@ -38,7 +38,12 @@ Where a task is done by a Claude Code skill rather than by the UI, show
 `/lenie-obsidian-note <id>`). The page never runs the skill; the hint only
 points to it. Current places: `EntitiesPanel` (`/lenie-entity-diagnose`),
 `/chunks/:id` and the `/read/:id` Obsidian notes list (`/lenie-obsidian-note`),
-the YouTube editor when `outline_md` is empty (`/lenie-youtube-outline`).
+the YouTube editor when `outline_md` is empty (`/lenie-youtube-outline`),
+`/feeds` and `/feed-review` headings (`/lenie-feed-review`), the radar heading
+(`/lenie-tool-draft`), the contact page header (`/lenie-contact-facebook-enrich`,
+`-linkedin-info`, `-photo-split`, `/lenie-person-lookup`) and `ArticlePreparationPanel`
+next to the removed-lines preview (`/lenie-review-removed-lines`).
+`/lenie-shopping-check` has no hint: it runs before a purchase, not from a page.
 
 ### Multi-value filters
 

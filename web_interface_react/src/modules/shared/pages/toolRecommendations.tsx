@@ -1,4 +1,5 @@
 import React from "react";
+import SkillHint from "../components/SkillHint";
 import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ToolRelations, { type ToolRelation } from "../components/ToolRelations/toolRelations";
@@ -533,7 +534,7 @@ export default function ToolRecommendations() {
 
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-      <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi</h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
+      <div><h1 style={{ color: "#0c2f4a", margin: 0 }}>Radar narzędzi<SkillHint skill="/lenie-tool-draft" command="/lenie-tool-draft <id kandydata>">Pełny opis zaakceptowanego narzędzia (wzorem szablonu z Obsidiana) wygeneruje skill; podaj id zaakceptowanego kandydata.</SkillHint></h1><p style={{ color: "#64748b", marginBottom: 0 }}>Ciekawe rekomendacje z zachowaną proweniencją — zanim staną się Twoimi narzędziami.</p></div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={() => void refreshGithub()} disabled={githubBusy || loading} title="Pobiera gwiazdki, forki i aktywność z publicznego API GitHuba dla wpisów z bieżącej zakładki (do kilkuset repozytoriów na raz, zależnie od limitu GitHuba)">{githubBusy ? "Pobieram z GitHuba…" : "Odśwież dane GitHuba"}</button>
         <button type="button" onClick={() => void detectRelations()} disabled={relationsBusy || loading} title="Szuka w tekście źródłowym każdego wpisu nazw narzędzi, które już są w radarze (np. AWS, GCP, Terraform), i proponuje powiązania do potwierdzenia. Narzędzia oznaczone jako „Używam” tworzą Twój stack.">{relationsBusy ? "Szukam powiązań…" : "Wykryj powiązania"}</button>
