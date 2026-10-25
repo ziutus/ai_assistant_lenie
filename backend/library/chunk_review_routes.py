@@ -588,6 +588,84 @@ def analyze_document_chunks(doc_id: int):
     return jsonify({"status": "queued", "job_id": job_id, "doc_id": doc_id})
 
 
+@bp.route("/transcript_chapters/model", methods=["GET", "PUT"])
+def transcript_chapters_model():
+    from library import app_settings, llm_model_registry, transcript_chapter_suggester as suggester
+
+    session = get_scoped_session()
+    if request.method == "PUT":
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or "model" not in body:
+            abort(400, "model is required")
+        model = body["model"]
+        if model is not None and (
+            not isinstance(model, str) or not llm_model_registry.is_selectable(model, suggester.TASK)
+        ):
+            abort(400, "unknown model")
+        app_settings.set_setting(session, suggester.SETTING_KEY, model)
+    return jsonify({"default_model": suggester.default_model(session),
+                    "saved": isinstance(app_settings.get_setting(session, suggester.SETTING_KEY), str),
+                    "models": llm_model_registry.selectable_models(suggester.TASK)})
+
+
+@bp.route("/document/<int:doc_id>/suggest_chapters", methods=["POST"])
+@bp.route("/document/<int:doc_id>/apply_chapters", methods=["POST"])
+def document_ai_chapters(doc_id: int):
+    from library import llm_model_registry, transcript_chapter_suggester as suggester
+    from library.document_editing import document_has_embeddings
+    from library.transcript_chapter_boundaries import parse_sections
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404)
+    if doc.document_type not in ("youtube", "movie") or not (doc.text or "").strip():
+        return jsonify(status="error", message="Wymagana jest transkrypcja filmu."), 400
+    if any(section.heading for section in parse_sections(doc.text)):
+        return jsonify(status="error", message="Transkrypcja ma już nagłówki rozdziałów."), 409
+    if document_has_embeddings(session, doc_id):
+        return jsonify(status="error", message="Najpierw otwórz dokument do edycji (istnieją embeddingi)."), 409
+    active = session.scalar(select(DocumentAnalysisJob.id).where(
+        DocumentAnalysisJob.document_id == doc_id,
+        DocumentAnalysisJob.status.in_(("queued", "running")),
+    ).limit(1))
+    if active is not None:
+        return jsonify(status="error", message="Analiza dokumentu jest w toku."), 409
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(status="error", message="Wymagany jest obiekt JSON."), 400
+    if request.path.endswith("/apply_chapters"):
+        if "expected_text_sha256" in body and body["expected_text_sha256"] != suggester.text_sha256(doc.text):
+            return jsonify(status="error", message="Transkrypcja zmieniła się. Pobierz nowe propozycje."), 409
+        try:
+            updated = suggester.apply_chapters(doc.text, body.get("chapters"))
+        except ValueError as exc:
+            return jsonify(status="error", message=str(exc)), 400
+        count = sum(bool(section.heading) for section in parse_sections(updated))
+        stale_runs = _chapter_boundary_run_count(session, doc_id)
+        doc.text = updated
+        doc.chapter_types = ["TEMAT"] * count
+        session.commit()
+        return jsonify(status="ok", chapter_count=count, stale_analysis_runs=stale_runs)
+    model = body.get("model") or suggester.default_model(session)
+    if not isinstance(model, str) or not llm_model_registry.is_selectable(model, suggester.TASK):
+        return jsonify(status="error", message="Nieznany model."), 400
+    if "dry_run" in body and type(body["dry_run"]) is not bool:
+        return jsonify(status="error", message="dry_run musi być wartością logiczną."), 400
+    if body.get("dry_run"):
+        models = llm_model_registry.selectable_models(suggester.TASK)
+        details = next((item for item in models if item["id"] == model), {})
+        return jsonify(status="ok", candidates=suggester.candidates(doc.text, details), models=[
+            dict(item, candidates=suggester.candidates(doc.text, item)) for item in models
+        ], default_model=suggester.default_model(session), model_context=details)
+    try:
+        result = suggester.suggest_chapters(doc.text, model=model, document_id=doc_id)
+    except Exception:
+        logger.exception("Chapter suggestions failed for %s", doc_id)
+        return jsonify(status="error", error_code="model_call_failed", message="Wywołanie modelu nie powiodło się."), 502
+    return jsonify(result), 200 if result["status"] == "ok" else 502
+
+
 @bp.route("/document/<int:doc_id>/paragraphize_transcript", methods=["POST"])
 def paragraphize_document_transcript(doc_id: int):
     """Add Bielik-selected paragraph spacing to a chaptered video transcript.
