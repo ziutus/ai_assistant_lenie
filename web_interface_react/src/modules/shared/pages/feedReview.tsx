@@ -1,4 +1,5 @@
 import React from "react";
+import FeedItemComment from "../components/FeedItemComment/feedItemComment";
 import SkillHint from "../components/SkillHint";
 import { Pagination } from "../components/Pagination/pagination";
 import { Link, useSearchParams } from "react-router-dom";
@@ -16,12 +17,22 @@ type FeedItem = {
   title: string;
   url: string;
   summary: string | null;
+  review_note?: string | null;
+  seed_document_id?: number | null;
+  llm_discussion_status?: "open" | "done" | null;
+  llm_discussion_at?: string | null;
+  llm_discussion_done_at?: string | null;
+  llm_discussion_result?: string | null;
   published_at: string | null;
   status: string;
   saved_at: string | null;
   saved_by_user_id: number | null;
+  expires_at?: string | null;
+  retention_months?: number | null;
   groups?: ContentGroup[];
 };
+
+type PromptVersion = { id: number; version: number; label: string; note: string | null; is_active: boolean };
 
 type Action = "import" | "skip" | "ignore" | "save-for-later" | "restore" | "to_radar";
 type ReviewDecision = {
@@ -44,12 +55,12 @@ const reviewReasons: Array<[ReviewReason, string]> = [
 const RADAR_HELP = "Do radaru: wpis trafia do Radaru narzędzi (etap „Obserwuję”) z tym materiałem jako źródłem, a stąd znika. Lenie od razu proponuje powiązania z narzędziami, które już masz w radarze (np. AWS, Terraform). Jeśli narzędzie jest już w radarze, materiał zostanie dopisany jako kolejna wzmianka.";
 const RADAR_CATEGORY_HINTS = ["DecisionModels", "Development", "AI", "InfraManagement", "Security"];
 const suggestToolName = (title: string) => (title.split(/\s+[-–—]\s+|\s*:\s+|\s*\|\s*/)[0] || title).trim();
-const ACTION_TIMEOUT_MS = 20_000;
+export const ACTION_TIMEOUT_MS = 20_000;
 const IMPORT_TIMEOUT_MS = 90_000;
 
 class RequestTimeoutError extends Error {}
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -65,7 +76,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
 // fetch() rejects with TypeError ("Failed to fetch") when no connection could
 // be opened — VPN off, Wi-Fi down, wrong API address — as opposed to an HTTP
 // error the backend actually returned.
-function describeActionError(cause: unknown, apiUrl: string | undefined, fallback: string): string {
+export function describeActionError(cause: unknown, apiUrl: string | undefined, fallback: string): string {
   if (cause instanceof RequestTimeoutError) {
     return `Brak odpowiedzi z API ${apiUrl} — zmiana NIE została zapisana. Sprawdź połączenie (VPN) i spróbuj ponownie.`;
   }
@@ -81,6 +92,25 @@ const IGNORE_HELP = "Ignoruj: dodaje regułę do źródła (wzorzec w tytule lub
 function HelpBadge({ text }: { text: string }) {
   return <span title={text} aria-label={text} role="img"
     style={{ cursor: "help", color: "#64748b", fontSize: ".85rem", marginRight: 6 }}>ⓘ</span>;
+}
+
+export function buildBrief(item: FeedItem, sources: FeedSource[], comment: string): string {
+  const source = sources.find(candidate => candidate.id === item.feed_source_id);
+  return `# Zadanie na podstawie wpisu z feedu: ${item.title}
+
+- Źródło: ${source?.name || "nieznane"} (${source?.type || "nieznane"})
+- Opublikowano: ${item.published_at?.slice(0, 10) || "brak daty"}
+- URL: ${item.url}
+- Tematy: ${item.groups?.map(group => group.name).join(", ") || "brak"}
+
+## Co mnie zainteresowało i co dalej
+${comment.trim() || "(brak komentarza)"}
+
+## Streszczenie wpisu
+${item.summary || "(brak streszczenia)"}
+
+## Polecenie
+Na podstawie powyższego zrealizuj to, o co proszę w komentarzu. Jeśli komentarz nie wskazuje działania, zaproponuj trzy możliwe następne kroki i zapytaj, który wybrać. Zajrzyj do adresu URL, jeśli możesz, i zaznacz, co pochodzi ze źródła, a co jest Twoim wnioskiem.`;
 }
 
 export default function FeedReview() {
@@ -103,6 +133,9 @@ export default function FeedReview() {
   const [modelsLoaded, setModelsLoaded] = React.useState(false);
   const [modelMessage, setModelMessage] = React.useState("");
   const [modelCalls, setModelCalls] = React.useState(0);
+  const [promptVersions, setPromptVersions] = React.useState<PromptVersion[]>([]);
+  // "" = the active version; a number pins one version for the next suggestion requests (to compare wordings).
+  const [templateId, setTemplateId] = React.useState<number | "">("");
   const onModelCall = React.useCallback(() => setModelCalls(value => value + 1), []);
   const [sources, setSources] = React.useState<FeedSource[]>([]);
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
@@ -123,6 +156,8 @@ export default function FeedReview() {
   const [decisions, setDecisions] = React.useState<ReviewDecision[]>([]);
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [importedTypes, setImportedTypes] = React.useState<Record<number, string>>({});
+  const [discussionCount, setDiscussionCount] = React.useState(0);
+  const [discussionResults, setDiscussionResults] = React.useState<Record<number, string>>({});
 
   // Read on every render: choosing "Nowe" / "Wszystkie źródła" drops the URL param and falls back to the value
   // just saved by updateParams(); a copy frozen at mount kept the old tab (the "Nowe" button did nothing).
@@ -131,11 +166,22 @@ export default function FeedReview() {
     ? searchParams.get("feed_source_id") || ""
     : storedFilters.feedSourceId;
   const view = searchParams.has("view")
-    ? searchParams.get("view") === "later" ? "later" : "new"
+    ? searchParams.get("view") === "discuss" ? "discuss" : searchParams.get("view") === "later" ? "later" : "new"
     : storedFilters.view;
-  const mode = searchParams.has("mode") ? (searchParams.get("mode") === "all" ? "all" : "single") : storedFilters.mode || "single";
+  // One item at a time is the default: the list opens only for an explicit ?mode=all, never from a remembered choice.
+  const mode = searchParams.get("mode") === "all" ? "all" : "single";
   const status = view === "later" ? "saved_for_later" : "new";
+  const discussion = searchParams.get("discussion") === "done" ? "done" : "open";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
+  const refreshDiscussionCount = React.useCallback(async () => {
+    try {
+      const response = await fetchWithTimeout(`${apiUrl}/feed_items/discussion_summary`, { headers }, ACTION_TIMEOUT_MS);
+      if (!response.ok) throw new Error("Nie udało się pobrać liczby omówień");
+      const data = await response.json();
+      setDiscussionCount(Number(data.open ?? 0));
+    } catch { /* The queue remains usable if its count is temporarily unavailable. */ }
+  }, [apiUrl, headers]);
+  React.useEffect(() => { void refreshDiscussionCount(); }, [refreshDiscussionCount]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -150,6 +196,17 @@ export default function FeedReview() {
         setDefaultModel(String(data.default_model || ""));
       }).catch(() => { if (!cancelled) { setModels([]); setSuggestModel(""); } })
       .finally(() => { if (!cancelled) setModelsLoaded(true); });
+    return () => { cancelled = true; };
+  }, [apiUrl, headers]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetchWithTimeout(`${apiUrl}/prompt_templates?variant=feed_item`, { headers }, ACTION_TIMEOUT_MS)
+      .then(async response => {
+        if (!response.ok) throw new Error("prompt list unavailable");
+        const data = await response.json();
+        if (!cancelled) setPromptVersions(Array.isArray(data.templates) ? data.templates : []);
+      }).catch(() => { if (!cancelled) setPromptVersions([]); });
     return () => { cancelled = true; };
   }, [apiUrl, headers]);
 
@@ -171,7 +228,7 @@ export default function FeedReview() {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ status, limit: String(pageSize), offset: String((nextPage - 1) * pageSize) });
+      const params = new URLSearchParams({ ...(view === "discuss" ? { discussion } : { status }), limit: String(pageSize), offset: String((nextPage - 1) * pageSize) });
       if (selectedSource) params.set("feed_source_id", selectedSource);
       const [itemsResponse, sourcesResponse, groupsResponse] = await Promise.all([
         fetch(`${apiUrl}/feed_items?${params.toString()}`, { headers }),
@@ -215,7 +272,7 @@ export default function FeedReview() {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, headers, selectedSource, status]);
+  }, [apiUrl, headers, selectedSource, status, view, discussion]);
 
   React.useEffect(() => { void load(); }, [load]);
 
@@ -253,7 +310,7 @@ export default function FeedReview() {
   }, [displayedItem, itemResolved, mode, searchParams, setSearchParams]);
 
   const shareUrl = displayedItem
-    ? `${window.location.origin}${window.location.pathname}?${new URLSearchParams({ item: String(displayedItem.id), ...(displayedItem.status === "saved_for_later" ? { view: "later" } : {}) }).toString()}`
+    ? `${window.location.origin}${window.location.pathname}?${new URLSearchParams({ item: String(displayedItem.id), ...(view === "discuss" ? { view, discussion } : displayedItem.status === "saved_for_later" ? { view: "later" } : {}) }).toString()}`
     : "";
   const copyShareUrl = async () => {
     try { await navigator.clipboard.writeText(shareUrl); setLinkMessage("Skopiowano link."); }
@@ -283,12 +340,15 @@ export default function FeedReview() {
       ? changes.feed_source_id || ""
       : selectedSource;
     const nextView = Object.prototype.hasOwnProperty.call(changes, "view")
-      ? changes.view === "later" ? "later" : "new"
+      ? changes.view === "discuss" ? "discuss" : changes.view === "later" ? "later" : "new"
       : view;
     saveFeedReviewFilters({ feedSourceId: nextSource, view: nextView, mode: changes.mode === undefined ? mode : changes.mode === "all" ? "all" : "single" });
     if (Object.keys(changes).every(key => key === "mode")) { setSearchParams(next); return; }
     next.delete("item");
     setPinned(null);
+    setIgnoreItemId(null);
+    setSkipItemId(null);
+    setRadarItemId(null);
     pageRef.current = 1;
     setIndex(0);
     setPage(1);
@@ -345,6 +405,33 @@ export default function FeedReview() {
     }
   };
 
+  const changeDiscussion = async (id: number, nextStatus: "open" | "done" | null, result?: string) => {
+    setBusyItemId(id);
+    setItemError(null);
+    setError("");
+    try {
+      const response = await fetchWithTimeout(`${apiUrl}/feed_items/${id}/discussion`, {
+        method: "PATCH", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus, ...(result === undefined ? {} : { result }) }),
+      }, ACTION_TIMEOUT_MS);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || `Nie udało się zapisać omówienia (${response.status})`);
+      setItems(current => current.map(item => item.id === id ? data as FeedItem : item));
+      setPinned(current => current?.id === id ? data as FeedItem : current);
+      setDiscussionResults(current => { const next = { ...current }; delete next[id]; return next; });
+      if (view === "discuss" && data.llm_discussion_status !== discussion) {
+        setPinned(current => current?.id === id ? null : current);
+        await load();
+      }
+      await refreshDiscussionCount();
+    } catch (cause) {
+      const message = describeActionError(cause, apiUrl, "Nie udało się zapisać omówienia");
+      setError(message);
+      setItemError({ id, message });
+    } finally { setBusyItemId(null); }
+  };
+
+  const textStatusLabels: Record<string, string> = { new: "Nowy", saved_for_later: "Zapisany na później", imported: "Zaimportowany", skipped: "Pominięty", ignored: "Zignorowany" };
   const sourceName = (id: number) => sources.find(source => source.id === id)?.name || `Źródło #${id}`;
   const sourceType = (id: number) => sources.find(source => source.id === id)?.type;
   const isVideo = (item: FeedItem) => sourceType(item.feed_source_id) === "youtube_channel"
@@ -371,15 +458,54 @@ export default function FeedReview() {
         <div style={{ color: "#64748b", fontSize: ".85rem", marginBottom: 6 }}>{sourceName(item.feed_source_id)}</div>
         <h3>{item.title}</h3>
         {mode === "all" && <div style={{ marginBottom: 6 }}>
-          <Link to={{ search: `?${new URLSearchParams({ mode: "single", item: String(item.id), ...(view === "later" ? { view: "later" } : {}) }).toString()}` }}
+          <Link to={{ search: `?${new URLSearchParams({ mode: "single", item: String(item.id), ...(view === "discuss" ? { view, discussion } : view === "later" ? { view: "later" } : {}) }).toString()}` }}
             onClick={event => openSingle(event, item)}>🔗 Pracuj nad tym wpisem</Link>
         </div>}
         {item.published_at && <div>Opublikowano: {formatDate(item.published_at)}</div>}
+        {view === "discuss" && <div>Status tekstu: {textStatusLabels[item.status] || item.status}</div>}
+        {view === "discuss" && item.status === "new" && <p>Wpis czeka też na decyzję w zakładce Nowe.</p>}
+        {item.llm_discussion_status === "open" && <span>💬 Do omówienia</span>}
+        {item.llm_discussion_status === "done" && <span>✅ Omówione</span>}
         {view === "later" && item.saved_at && <div>Zapisano: {formatDate(item.saved_at)}</div>}
+        {view === "later" && item.expires_at && <div title="Po tym terminie wpis „Może kiedyś” sam przejdzie do „Pomiń”. Ważność ustawisz w Tematy (zarządzanie).">
+          Ważne do: {formatDate(item.expires_at)} ({item.retention_months} mies.)
+        </div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
         {item.summary && <p>{item.summary}</p>}
-        {modelsLoaded && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} onModelCall={onModelCall} />}
-        <div>
+        <FeedItemComment key={`comment-${item.id}`} itemId={item.id} initialNote={item.review_note}
+          seedDocumentId={item.seed_document_id}
+          onSeedCreated={documentId => {
+            setItems(current => current.map(candidate => candidate.id === item.id ? { ...candidate, seed_document_id: documentId } : candidate));
+            setPinned(current => current?.id === item.id ? { ...current, seed_document_id: documentId } : current);
+          }}
+          buildBrief={comment => buildBrief(item, sources, comment)}
+          onSaved={note => {
+            setItems(current => current.map(candidate => candidate.id === item.id ? { ...candidate, review_note: note } : candidate));
+            setPinned(current => current?.id === item.id ? { ...current, review_note: note } : current);
+          }} />
+        <label><input type="checkbox" checked={!!item.llm_discussion_status} disabled={busy}
+          onChange={event => void changeDiscussion(item.id, event.target.checked ? "open" : null)} /> Do omówienia z LLM</label>
+        {view === "discuss" && <div>
+          {item.llm_discussion_status === "open" && <>
+            <label>Wynik (link lub krótka notatka, opcjonalnie)
+              <input maxLength={1000} value={discussionResults[item.id] ?? ""} disabled={busy}
+                onChange={event => setDiscussionResults(current => ({ ...current, [item.id]: event.target.value }))} />
+            </label>
+            {item.seed_document_id != null && <button type="button" disabled={busy}
+              onClick={() => setDiscussionResults(current => ({ ...current, [item.id]: `/text/${item.seed_document_id}` }))}>Wstaw link do zalążka</button>}
+            <button disabled={busy} onClick={() => void changeDiscussion(item.id, "done", discussionResults[item.id] ?? "")}>Omówione</button>
+          </>}
+          {item.llm_discussion_status === "done" && <>
+            {item.llm_discussion_result && <p>{/^https?:\/\//i.test(item.llm_discussion_result)
+              ? <a href={item.llm_discussion_result} target="_blank" rel="noreferrer">{item.llm_discussion_result}</a>
+              : item.llm_discussion_result.startsWith("/")
+                ? <Link to={item.llm_discussion_result}>{item.llm_discussion_result}</Link>
+                : item.llm_discussion_result}</p>}
+            <button disabled={busy} onClick={() => void changeDiscussion(item.id, "open")}>Otwórz ponownie</button>
+          </>}
+        </div>}
+        {modelsLoaded && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} templateId={templateId === "" ? undefined : templateId} onModelCall={onModelCall} />}
+        {view !== "discuss" && <div>
           {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : item.status === "saved_for_later" ? <>
             <span style={{ color: "#166534", fontWeight: 600 }}>Zachowano tylko link do oceny</span>{" "}
             <button disabled={busy} onClick={() => void act(item.id, "restore")}>Przywróć do nowych</button>
@@ -416,7 +542,7 @@ export default function FeedReview() {
             <button disabled={busy} onClick={() => { setIgnoreItemId(item.id); setIgnorePattern(""); }}>Ignoruj</button>{" "}
             <button disabled={busy} onClick={() => void act(item.id, "restore")}>Wróć do nowych</button>
           </>}
-        </div>
+        </div>}
         {busy && <div style={{ color: "#64748b", fontSize: ".85rem", marginTop: 6 }}>Zapisywanie…</div>}
         {itemError?.id === item.id && <p className="errorText" role="alert" style={{ marginTop: 6 }}>{itemError.message}</p>}
         {ignoreItemId === item.id && <form onSubmit={event => { event.preventDefault(); void act(item.id, "ignore", { field: ignoreField, pattern: ignorePattern }); }}>
@@ -460,9 +586,14 @@ export default function FeedReview() {
     <div role="tablist" aria-label="Widok feedu" style={{ display: "flex", gap: 8, margin: "8px 0 16px" }}>
       <button role="tab" aria-selected={view === "new"} className={view === "new" ? "button" : ""} onClick={() => updateParams({ view: null })}>Nowe</button>
       <button role="tab" aria-selected={view === "later"} className={view === "later" ? "button" : ""} onClick={() => updateParams({ view: "later" })}>Do przeczytania / obejrzenia</button>
+      <button role="tab" aria-selected={view === "discuss"} className={view === "discuss" ? "button" : ""} onClick={() => updateParams({ view: "discuss" })}>Do omówienia ({discussionCount})</button>
       <button type="button" className={showHistory ? "button" : ""} onClick={() => setShowHistory(value => !value)}>Historia decyzji</button>
     </div>
     <div role="group" aria-label="Tryb przeglądu">
+      {view === "discuss" && <div role="group" aria-label="Status omówienia">
+        <button aria-pressed={discussion === "open"} onClick={() => updateParams({ discussion: "open" })}>Otwarte</button>
+        <button aria-pressed={discussion === "done"} onClick={() => updateParams({ discussion: "done" })}>Omówione</button>
+      </div>}
       <button aria-pressed={mode === "single"} onClick={() => updateParams({ mode: "single" })}>Po jednym wpisie</button>{" "}
       <button aria-pressed={mode === "all"} onClick={() => updateParams({ mode: "all" })}>Wszystkie na liście</button>
     </div>
@@ -509,7 +640,7 @@ export default function FeedReview() {
     </div>}
     {radarMessage && <p role="status" style={{ color: "#166534" }}>{radarMessage} <a href="/tool-recommendations">Otwórz radar</a></p>}
 
-    {!loading && !error && !items.length && <p>{view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
+    {!loading && !error && !items.length && <p>{view === "discuss" ? discussion === "done" ? "Brak omówionych wpisów." : "Brak wpisów do omówienia." : view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
     {models.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
       <summary style={{ cursor: "help" }}>Model do podpowiadania tematów: <strong>{models.find(option => option.id === suggestModel)?.label ?? suggestModel}</strong></summary>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
@@ -521,6 +652,15 @@ export default function FeedReview() {
         {models.find(option => option.id === suggestModel)?.external && <span role="note" style={{ color: "#92400e" }}>⚠ Tytuł i podsumowanie wpisu trafią do zewnętrznego dostawcy.</span>}
         {modelMessage && <span role="status" style={{ color: "#166534" }}>{modelMessage}</span>}
       </div>
+      {promptVersions.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <label htmlFor="feed-prompt-version">Wersja promptu:</label>
+        <select id="feed-prompt-version" value={templateId} onChange={event => setTemplateId(event.target.value ? Number(event.target.value) : "")}>
+          <option value="">Aktywna{promptVersions.find(version => version.is_active) ? ` (${promptVersions.find(version => version.is_active)?.label})` : ""}</option>
+          {promptVersions.map(version => <option key={version.id} value={version.id}>{version.label}{version.is_active ? " — aktywna" : ""}{version.note ? ` — ${version.note}` : ""}</option>)}
+        </select>
+        <small style={{ color: "#64748b" }}>Wybór działa od następnego żądania („Podpowiedz ponownie”).</small>
+        <Link to="/prompt-templates">Edytuj prompt i porównaj modele →</Link>
+      </div>}
       <OpenRouterBalance refreshKey={modelCalls} />
     </details>}
     {mode === "all" && pagination}

@@ -51,6 +51,8 @@ import ServiceStatus from "./modules/shared/pages/serviceStatus";
 import Stats from "./modules/shared/pages/stats";
 import Feeds from "./modules/shared/pages/feeds";
 import FeedReview from "./modules/shared/pages/feedReview";
+import PromptTemplates from "./modules/shared/pages/promptTemplates";
+import ContentGroups from "./modules/shared/pages/contentGroups";
 import LlmAnalysis from "./modules/shared/pages/llmAnalysis";
 import Jobs from "./modules/shared/pages/jobs";
 import Scheduler from "./modules/shared/pages/scheduler";
@@ -136,6 +138,8 @@ function App() {
                   <Route path="/stats" element={<Stats />} />
                   <Route path="/feeds" element={<Feeds />} />
                   <Route path="/feed-review" element={<FeedReview />} />
+                  <Route path="/prompt-templates" element={<PromptTemplates />} />
+                  <Route path="/content-groups" element={<ContentGroups />} />
                   <Route path="/tool-candidates-review" element={<Navigate to="/tool-recommendations?origin=ai_detected" replace />} />
                   <Route path="/tool-recommendations" element={<ToolRecommendations />} />
                   <Route path="/tools" element={<Tools />} />

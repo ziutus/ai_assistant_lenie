@@ -16,7 +16,7 @@ from library.content_group_service import replace_feed_item_groups
 
 logger = logging.getLogger(__name__)
 NEW_ENTRIES_LISTED = 10  # per feed in a run_check() result; a first import of a feed can bring hundreds
-REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other", "sent_to_radar"}
+REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other", "sent_to_radar", "expired"}
 ACTIVE_TRANSITIONS = {
     "new": {"llm_analysis_requested", "saved_for_later", "imported", "skipped", "ignored", "error"},
     "llm_analysis_requested": {"saved_for_later", "imported", "skipped", "ignored", "error"},
@@ -382,6 +382,36 @@ def import_feed_item(
     finally:
         if own:
             session.close()
+
+
+def set_llm_discussion(session, item_id, status, result=None) -> FeedItem:
+    if status not in (None, "open", "done"):
+        raise ValueError("invalid discussion status")
+    item = session.get(FeedItem, item_id)
+    if item is None:
+        raise ValueError("feed item not found")
+    now = dt.datetime.now(dt.timezone.utc)
+    if status == "done":
+        if item.llm_discussion_status != "open":
+            raise RuntimeError("item is not open for discussion")
+        if result is not None and not isinstance(result, str):
+            raise ValueError("result must be a string")
+        result = result.strip() or None if result is not None else None
+        if result is not None and len(result) > 1000:
+            raise ValueError("result is limited to 1000 characters")
+        item.llm_discussion_done_at = now
+        item.llm_discussion_result = result
+    else:
+        if status is None:
+            item.llm_discussion_at = None
+        elif item.llm_discussion_status != "open":
+            item.llm_discussion_at = now
+        item.llm_discussion_done_at = None
+        item.llm_discussion_result = None
+    item.llm_discussion_status = status
+    item.updated_at = now
+    session.commit()
+    return item
 
 
 def transition_item(
