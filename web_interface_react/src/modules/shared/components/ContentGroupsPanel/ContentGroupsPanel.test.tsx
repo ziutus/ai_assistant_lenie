@@ -85,6 +85,16 @@ it("shows the exact prompt for the chosen model and version, and drops it when t
   expect(screen.getByText("SYS-TEXT")).toBeTruthy();
   const call = fetcher.mock.calls.find(([url]) => String(url).endsWith("/preview")) as unknown as [string, RequestInit];
   expect(call[1].body).toBe(JSON.stringify({ model, template_id: 4 }));
+  const writeText = vi.fn(async () => undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  fireEvent.click(screen.getByText("Kopiuj prompt"));
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+  const copied = (writeText.mock.calls[0] as unknown as [string])[0];
+  expect(copied).toContain("# prompt: feed_item-v3");
+  expect(copied).toContain("SYS-TEXT");
+  expect(copied).toContain("USER-TEXT z katalogiem");
+  expect(copied).toContain('"type": "json_schema"');
+  expect(await screen.findByText("Skopiowano ✓")).toBeTruthy();
   rerender(<ContentGroupsPanel feedItemId={7} suggestModel="Bielik-11B-v3.0-Instruct" templateId={4} />);
   await waitFor(() => expect(screen.queryByText("USER-TEXT z katalogiem")).toBeNull());
 });

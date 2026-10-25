@@ -18,6 +18,26 @@ type PromptPreview = {
   system_prompt: string | null; prompt: string; response_format: unknown;
 };
 
+// Plain-text form of a preview, for pasting into a chat or an editor when working out why a prompt gave no answer.
+const NL = String.fromCharCode(10);
+export function promptPreviewText(preview: PromptPreview): string {
+  const parts = [["# model: " + preview.model, "# prompt: " + preview.prompt_version].join(NL)];
+  if (preview.system_prompt) parts.push("## System" + (preview.system_sent ? "" : " (nie jest wysyłany dla tego modelu)") + NL + NL + preview.system_prompt);
+  parts.push("## Użytkownik" + NL + NL + preview.prompt);
+  if (preview.response_format != null) parts.push("## response_format (schemat JSON)" + NL + NL + JSON.stringify(preview.response_format, null, 2));
+  return parts.join(NL + NL);
+}
+
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return; }
+  const textarea = document.createElement("textarea");
+  const focused = document.activeElement;
+  textarea.value = text; textarea.style.position = "fixed"; textarea.style.opacity = "0";
+  document.body.appendChild(textarea); textarea.select();
+  try { if (!document.execCommand("copy")) throw new Error("copy failed"); }
+  finally { document.body.removeChild(textarea); if (focused instanceof HTMLElement) focused.focus(); }
+}
+
 type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; autoSuggest?: boolean; suggestModel?: string; templateId?: number; onModelCall?: () => void; onSaved?: (groups: ContentGroup[]) => void };
 
 export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, autoSuggest, suggestModel, templateId, onModelCall, onSaved }: Props) {
@@ -38,6 +58,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [runDone, setRunDone] = React.useState(false);
   const [promptPreview, setPromptPreview] = React.useState<PromptPreview | null>(null);
   const [previewLoading, setPreviewLoading] = React.useState(false);
+  const [promptCopied, setPromptCopied] = React.useState(false);
   const [pendingRun, setPendingRun] = React.useState(false);
   const [newTopicName, setNewTopicName] = React.useState("");
   const requestedRef = React.useRef(new Set<string>());
@@ -100,7 +121,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   }, [pendingRun, load, suggestions]);
 
   // A preview describes one model + prompt version; drop it as soon as either changes.
-  React.useEffect(() => { setPromptPreview(null); }, [suggestModel, templateId]);
+  React.useEffect(() => { setPromptPreview(null); setPromptCopied(false); }, [suggestModel, templateId]);
 
   const showPrompt = async () => {
     setError(""); setPreviewLoading(true);
@@ -113,6 +134,13 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       setPromptPreview(data as PromptPreview);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać podglądu promptu"); }
     finally { setPreviewLoading(false); }
+  };
+
+  const copyPrompt = async () => {
+    if (!promptPreview) return;
+    setError("");
+    try { await copyText(promptPreviewText(promptPreview)); setPromptCopied(true); window.setTimeout(() => setPromptCopied(false), 2000); }
+    catch { setError("Nie udało się skopiować promptu do schowka"); }
   };
 
   const suggestAgain = async () => {
@@ -240,6 +268,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       <div style={{ color: "#475569" }}>
         model: <strong>{promptPreview.model.replace(/^openrouter\//, "")}</strong> · prompt: <strong>{promptPreview.prompt_version}</strong> ·{" "}
         {promptPreview.structured ? "schemat odpowiedzi idzie osobno (response_format)" : "model bez trybu strukturalnego — schemat jest w treści promptu"}
+        {" "}<button type="button" onClick={() => void copyPrompt()}>{promptCopied ? "Skopiowano ✓" : "Kopiuj prompt"}</button>
         {" "}<button type="button" aria-label="Zamknij podgląd promptu" onClick={() => setPromptPreview(null)}>✕</button>
       </div>
       {promptPreview.system_prompt && <>
