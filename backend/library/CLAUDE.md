@@ -20,6 +20,34 @@ completed runs are reused only for matching input and model, while active runs
 are returned unchanged. GET suggestions includes `run.model`. Document
 suggestions and their auto-apply behavior continue to use the existing model.
 
+**Prompt templates (UI-editable, versioned).** The topic-suggestion prompt lives in
+the `prompt_templates` table (`prompt_templates.py`, migration `b4d8f2a6c915`), one
+immutable row per `(task, variant, version)`, `variant` = `feed_item` / `document`;
+the partial unique index allows one `is_active` row per pair. Texts are Jinja2
+rendered in a `SandboxedEnvironment` with `StrictUndefined`; the closed variable
+set is `catalog` (JSON), `material` and `schema` (empty when the model gets the
+schema as `response_format`) — `validate()` renders both `schema` branches, so an
+unknown variable or a syntax error is a 400 at save time, never a failed job. The
+built-in `DEFAULTS` are the fallback when no row is active (fresh DB, tests) and
+reproduce the pre-template prompt byte for byte (`test_prompt_templates.py`). Saving
+inserts the NEXT version (`create_version(..., activate=True)`) — old wording is
+never overwritten. A run records `prompt_template_id`, `prompt_version` (label such
+as `feed_item-v3`, `feed_item-builtin` for the fallback; legacy runs keep
+`content-groups-v1/v2`), tokens, latency and cost (`prompt_tokens`,
+`completion_tokens`, `latency_ms`, `cost_amount/currency/status`, copied from
+`response.usage`), and the input hash includes the label so a new wording is never
+served from the old cache. REST (`prompt_template_routes.py`, user or service key):
+`GET /prompt_templates?variant=` (versions, variables, built-in text), `POST
+/prompt_templates` (`{variant, system_template?, user_template, note?, activate?}`),
+`POST /prompt_templates/<id>/activate`, `POST /prompt_templates/preview` (renders a
+draft against a real `feed_item_id` or sample text, no model call), `GET
+/prompt_templates/comparison?variant=&days=` (completed runs grouped by model +
+prompt version: runs, avg tokens/latency, cost per run and per accepted suggestion,
+accepted/dismissed/pending, no_match runs). `POST /feed_items/<id>/group-suggestions`
+accepts `template_id` to pin one version for that request. The cost per accepted
+suggestion is only as good as the number of decisions made — compare samples of
+similar size. Tests: `tests/unit/test_prompt_templates.py`.
+
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
 `saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the

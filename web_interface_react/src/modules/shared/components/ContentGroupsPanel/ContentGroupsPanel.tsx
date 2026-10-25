@@ -13,9 +13,9 @@ const SUGGESTION_POLL_MAX = 15;
 type NewTopic = { name: string; confidence: number; reason: string };
 const foldName = (name: string) => name.trim().toLocaleLowerCase("pl").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ł/g, "l");
 
-type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; autoSuggest?: boolean; suggestModel?: string; onModelCall?: () => void; onSaved?: (groups: ContentGroup[]) => void };
+type Props ={ documentId?: number | string; feedItemId?: number; initialGroups?: ContentGroup[]; autoSuggest?: boolean; suggestModel?: string; templateId?: number; onModelCall?: () => void; onSaved?: (groups: ContentGroup[]) => void };
 
-export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, autoSuggest, suggestModel, onModelCall, onSaved }: Props) {
+export default function ContentGroupsPanel({ documentId, feedItemId, initialGroups, autoSuggest, suggestModel, templateId, onModelCall, onSaved }: Props) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [catalog, setCatalog] = React.useState<ContentGroup[]>([]);
   const [groups, setGroups] = React.useState<ContentGroup[]>(initialGroups || []);
@@ -28,6 +28,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
   const [priorityId, setPriorityId] = React.useState<number | "">("");
   const [error, setError] = React.useState("");
   const [runModel, setRunModel] = React.useState("");
+  const [runPrompt, setRunPrompt] = React.useState("");
   const [pendingRun, setPendingRun] = React.useState(false);
   const [newTopicName, setNewTopicName] = React.useState("");
   const requestedRef = React.useRef(new Set<string>());
@@ -56,6 +57,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       if (!suggestionResponse.ok) throw new Error(`group-suggestions: HTTP ${suggestionResponse.status}`);
       const suggestionData = await suggestionResponse.json();
       setRunModel(suggestionData.run?.model || "");
+      setRunPrompt(suggestionData.run?.prompt_version || "");
       const runStatus: string | undefined = suggestionData.run?.status;
       const running = runStatus === "queued" || runStatus === "running";
       const wrongModel = !!suggestModel && suggestionData.run?.model !== suggestModel;
@@ -68,14 +70,14 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
         requestedRef.current.add(requestKey);
         pollsRef.current = 0;
         awaitingModelRef.current = suggestModel || null;
-        const requestResponse = await fetch(`${apiUrl}/${target}/group-suggestions`, { method: "POST", headers, body: JSON.stringify(suggestModel ? { model: suggestModel } : {}) });
+        const requestResponse = await fetch(`${apiUrl}/${target}/group-suggestions`, { method: "POST", headers, body: JSON.stringify({ ...(suggestModel ? { model: suggestModel } : {}), ...(templateId ? { template_id: templateId } : {}) }) });
         if (!requestResponse.ok) throw new Error(`group-suggestions: HTTP ${requestResponse.status}`);
         setPendingRun(true); onModelCall?.();
       } else {
         setPendingRun(running || !!awaitingModelRef.current);
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać grup"); }
-  }, [apiUrl, headers, target, autoSuggest, suggestModel, onModelCall, feedItemId]);
+  }, [apiUrl, headers, target, autoSuggest, suggestModel, templateId, onModelCall, feedItemId]);
 
   React.useEffect(() => { mountedRef.current = true; void load(); return () => { mountedRef.current = false; }; }, [load]);
 
@@ -96,7 +98,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     setPendingRun(false);
     try {
       const response = await fetch(`${apiUrl}/${target}/group-suggestions`, {
-        method: "POST", headers, body: JSON.stringify({ model: suggestModel, force: true }),
+        method: "POST", headers, body: JSON.stringify({ model: suggestModel, force: true, ...(templateId ? { template_id: templateId } : {}) }),
       });
       if (!response.ok) throw new Error(`group-suggestions: HTTP ${response.status}`);
       onModelCall?.();
@@ -206,6 +208,7 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
     </div>}
     {suggestModel && <button type="button" disabled={pendingRun} onClick={() => void suggestAgain()}>Podpowiedz ponownie</button>}
     {suggestModel && runModel && <small style={{ display: "block", color: "#64748b" }}>model: {runModel.replace(/^openrouter\//, "")}</small>}
+    {suggestModel && runModel && runPrompt && <small style={{ display: "block", color: "#64748b" }} title="Wersja promptu użyta w tym przebiegu">prompt: {runPrompt}</small>}
     {pendingRun && <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>🤖 Szukam kategorii…</div>}
     {suggestions.filter(item => item.status === "pending").map(item => <div key={item.id} style={{ marginTop: 8, border: "1px dashed #64748b", padding: 6 }}><span>Sugestia: {catalog.find(group => group.id === item.group_id)?.name || item.group_id} ({Math.round(item.confidence * 100)}%)</span>{" "}<button type="button" onClick={() => void decide(item.id, "accept")}>Akceptuj</button>{" "}<button type="button" onClick={() => void decide(item.id, "dismiss")}>Odrzuć</button></div>)}
     {feedItemId !== undefined && !pendingRun && newTopics.filter(item => !dismissedTopics.includes(item.name)).map(item => <div key={item.name} style={{ marginTop: 8 }}>

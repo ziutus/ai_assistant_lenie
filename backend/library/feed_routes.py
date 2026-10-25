@@ -417,7 +417,7 @@ def _suggestions_response(session, target_type, target_id):
     run = session.scalar(select(ContentGroupSuggestionRun).where(target_column == target_id).order_by(ContentGroupSuggestionRun.id.desc()))
     if run is None:
         return {"run": None, "suggestions": [], "new_topics": []}
-    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "model": run.model, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions], "new_topics": sanitize_new_topics((run.raw_result or {}).get("new_topics"), active_topic_catalog(session)) if target_type == "feed_item" else []}
+    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "model": run.model, "prompt_version": run.prompt_version, "prompt_template_id": run.prompt_template_id, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions], "new_topics": sanitize_new_topics((run.raw_result or {}).get("new_topics"), active_topic_catalog(session)) if target_type == "feed_item" else []}
 
 
 @bp.get("/feed_items/<int:item_id>/group-suggestions")
@@ -441,7 +441,10 @@ def get_document_suggestions(document_id):
 def _request_suggestions(target_type, target_id, user_id):
     session = get_scoped_session()
     body = request.get_json(silent=True) or {}
-    kwargs = {"model": body.get("model")} if target_type == "feed_item" else {}
+    template_id = body.get("template_id")
+    if template_id is not None and (isinstance(template_id, bool) or not isinstance(template_id, int)):
+        abort(400, "template_id must be an integer")
+    kwargs = {"model": body.get("model"), "template_id": template_id} if target_type == "feed_item" else {}
     try:
         job, run = request_suggestions(session, target_type, target_id, user_id=user_id, force=bool(body.get("force")), **kwargs)
     except LookupError as exc:

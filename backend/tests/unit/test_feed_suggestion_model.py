@@ -84,7 +84,7 @@ def test_document_ignores_feed_model(monkeypatch):
     session.scalar.return_value = None
     _, run = svc.request_suggestions(session, "document", 1, model=svc.FEED_DEFAULT_MODEL)
     assert run.model == "Bielik"
-    assert run.prompt_version == svc.PROMPT_VERSION
+    assert run.prompt_version == "document-builtin"
 
 
 def test_active_run_is_returned_even_for_other_model(monkeypatch):
@@ -183,5 +183,5 @@ def test_new_model_job_has_unique_run_key_even_with_same_digest(monkeypatch):
     svc.request_suggestions(session, "feed_item", 1, model="old")
     svc.request_suggestions(session, "feed_item", 1, model="new")
     assert runs[0].input_hash == runs[1].input_hash
-    assert runs[0].prompt_version == svc.FEED_PROMPT_VERSION
+    assert runs[0].prompt_version == "feed_item-builtin"
     assert enqueue.call_args_list[0].kwargs["idempotency_key"] != enqueue.call_args_list[1].kwargs["idempotency_key"]

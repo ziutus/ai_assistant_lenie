@@ -22,6 +22,8 @@ type FeedItem = {
   groups?: ContentGroup[];
 };
 
+type PromptVersion = { id: number; version: number; label: string; note: string | null; is_active: boolean };
+
 type Action = "import" | "skip" | "ignore" | "save-for-later" | "restore" | "to_radar";
 type ReviewDecision = {
   id: number; batch_id: string; job_id: string | null; feed_item_id: number;
@@ -102,6 +104,9 @@ export default function FeedReview() {
   const [modelsLoaded, setModelsLoaded] = React.useState(false);
   const [modelMessage, setModelMessage] = React.useState("");
   const [modelCalls, setModelCalls] = React.useState(0);
+  const [promptVersions, setPromptVersions] = React.useState<PromptVersion[]>([]);
+  // "" = the active version; a number pins one version for the next suggestion requests (to compare wordings).
+  const [templateId, setTemplateId] = React.useState<number | "">("");
   const onModelCall = React.useCallback(() => setModelCalls(value => value + 1), []);
   const [sources, setSources] = React.useState<FeedSource[]>([]);
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
@@ -149,6 +154,17 @@ export default function FeedReview() {
         setDefaultModel(String(data.default_model || ""));
       }).catch(() => { if (!cancelled) { setModels([]); setSuggestModel(""); } })
       .finally(() => { if (!cancelled) setModelsLoaded(true); });
+    return () => { cancelled = true; };
+  }, [apiUrl, headers]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetchWithTimeout(`${apiUrl}/prompt_templates?variant=feed_item`, { headers }, ACTION_TIMEOUT_MS)
+      .then(async response => {
+        if (!response.ok) throw new Error("prompt list unavailable");
+        const data = await response.json();
+        if (!cancelled) setPromptVersions(Array.isArray(data.templates) ? data.templates : []);
+      }).catch(() => { if (!cancelled) setPromptVersions([]); });
     return () => { cancelled = true; };
   }, [apiUrl, headers]);
 
@@ -377,7 +393,7 @@ export default function FeedReview() {
         {view === "later" && item.saved_at && <div>Zapisano: {formatDate(item.saved_at)}</div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
         {item.summary && <p>{item.summary}</p>}
-        {modelsLoaded && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} onModelCall={onModelCall} />}
+        {modelsLoaded && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} templateId={templateId === "" ? undefined : templateId} onModelCall={onModelCall} />}
         <div>
           {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : item.status === "saved_for_later" ? <>
             <span style={{ color: "#166534", fontWeight: 600 }}>Zachowano tylko link do oceny</span>{" "}
@@ -520,6 +536,15 @@ export default function FeedReview() {
         {models.find(option => option.id === suggestModel)?.external && <span role="note" style={{ color: "#92400e" }}>⚠ Tytuł i podsumowanie wpisu trafią do zewnętrznego dostawcy.</span>}
         {modelMessage && <span role="status" style={{ color: "#166534" }}>{modelMessage}</span>}
       </div>
+      {promptVersions.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <label htmlFor="feed-prompt-version">Wersja promptu:</label>
+        <select id="feed-prompt-version" value={templateId} onChange={event => setTemplateId(event.target.value ? Number(event.target.value) : "")}>
+          <option value="">Aktywna{promptVersions.find(version => version.is_active) ? ` (${promptVersions.find(version => version.is_active)?.label})` : ""}</option>
+          {promptVersions.map(version => <option key={version.id} value={version.id}>{version.label}{version.is_active ? " — aktywna" : ""}{version.note ? ` — ${version.note}` : ""}</option>)}
+        </select>
+        <small style={{ color: "#64748b" }}>Wybór działa od następnego żądania („Podpowiedz ponownie”).</small>
+        <Link to="/prompt-templates">Edytuj prompt i porównaj modele →</Link>
+      </div>}
       <OpenRouterBalance refreshKey={modelCalls} />
     </details>}
     {mode === "all" && pagination}
