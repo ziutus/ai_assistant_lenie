@@ -639,6 +639,62 @@ def paragraphize_document_transcript(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/apply_outline_chapters", methods=["POST"])
+def apply_outline_chapters(doc_id: int):
+    """Insert ``##`` chapters into a headerless transcript from its stored outline anchors.
+
+    Uses ``outline_anchors`` approved through ``/lenie-youtube-outline``; no model is
+    called. Body: optional ``{"dry_run": true}`` previews titles without writing.
+    Refused once the transcript has embeddings, a running analysis or any heading.
+    """
+    from library.document_editing import document_has_embeddings
+    from library.outline_boundaries import apply_anchors_as_chapters
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    payload = request.get_json(silent=True)
+    if payload is not None and not isinstance(payload, dict):
+        return jsonify({"status": "error", "message": "Nieprawidłowe pola żądania."}), 400
+    dry_run = (payload or {}).get("dry_run", False)
+    if not isinstance(dry_run, bool):
+        return jsonify({"status": "error", "message": "Pole dry_run musi być wartością logiczną."}), 400
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    if doc.outline_anchors is None or not (doc.outline_md or "").strip():
+        return jsonify({"status": "error",
+                        "message": "Brak zatwierdzonych kotwic spisu treści. Użyj skilla /lenie-youtube-outline."}), 400
+    if re.search(r"^#{1,2} .+", doc.text, re.MULTILINE):
+        return jsonify({"status": "error", "message": "Transkrypcja ma już rozdziały."}), 409
+    if document_has_embeddings(session, doc_id):
+        return jsonify({
+            "status": "error",
+            "message": "Document has embeddings. Reopen it for editing before adding chapters.",
+        }), 409
+    active = session.scalar(
+        select(DocumentAnalysisJob.id).where(
+            DocumentAnalysisJob.document_id == doc_id,
+            DocumentAnalysisJob.status.in_(("queued", "running")),
+        ).limit(1)
+    )
+    if active is not None:
+        return jsonify({"status": "error", "message": "Document analysis is currently running"}), 409
+    try:
+        marked, applied, dropped = apply_anchors_as_chapters(doc.text, doc.outline_md, doc.outline_anchors)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    stale_runs = _chapter_boundary_run_count(session, doc_id)
+    if not dry_run:
+        doc.text = marked
+        session.commit()
+    return jsonify({
+        "status": "success", "doc_id": doc_id, "dry_run": dry_run,
+        "chapter_count": len(applied), "chapters": applied, "dropped": dropped,
+        "has_analysis_runs": bool(stale_runs), "stale_analysis_runs": stale_runs,
+        "text_length": len(marked),
+    })
+
 
 def _requested_chapter_position(descriptions):
     """Validate an optional editor chapter position, including the preamble."""
