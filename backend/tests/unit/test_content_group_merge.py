@@ -29,7 +29,7 @@ def fake_session(rowcounts):
 
 def test_merge_moves_memberships_drops_duplicates_and_archives_the_source():
     source, target = group(1), group(2, "Agenci AI")
-    session = fake_session([5, 1, 3, 0, 2, 0, 4, 0])
+    session = fake_session([5, 1, 3, 0, 2, 0, 4, 0, 0])
     result = service.merge_groups(session, source, target)
     assert result == {
         "feed_items": 5, "feed_items_duplicates": 1, "documents": 3, "documents_duplicates": 0,
@@ -41,6 +41,7 @@ def test_merge_moves_memberships_drops_duplicates_and_archives_the_source():
     assert statements[2].startswith("UPDATE document_group_memberships") and statements[4].startswith("UPDATE document_chunk_group_memberships")
     assert statements[6].startswith("UPDATE content_group_suggestions SET group_id=") and "run_id NOT IN" in statements[6]
     assert statements[7].startswith("UPDATE content_group_suggestions SET status=")
+    assert statements[8].startswith("UPDATE content_groups SET parent_id=")
     assert source.archived_at is not None and target.archived_at is None
     session.commit.assert_called_once()
 

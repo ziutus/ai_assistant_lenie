@@ -1,4 +1,5 @@
 import React from "react";
+import FeedItemComment from "../components/FeedItemComment/feedItemComment";
 import SkillHint from "../components/SkillHint";
 import { Pagination } from "../components/Pagination/pagination";
 import { Link, useSearchParams } from "react-router-dom";
@@ -16,6 +17,7 @@ type FeedItem = {
   title: string;
   url: string;
   summary: string | null;
+  review_note?: string | null;
   published_at: string | null;
   status: string;
   saved_at: string | null;
@@ -48,12 +50,12 @@ const reviewReasons: Array<[ReviewReason, string]> = [
 const RADAR_HELP = "Do radaru: wpis trafia do Radaru narzędzi (etap „Obserwuję”) z tym materiałem jako źródłem, a stąd znika. Lenie od razu proponuje powiązania z narzędziami, które już masz w radarze (np. AWS, Terraform). Jeśli narzędzie jest już w radarze, materiał zostanie dopisany jako kolejna wzmianka.";
 const RADAR_CATEGORY_HINTS = ["DecisionModels", "Development", "AI", "InfraManagement", "Security"];
 const suggestToolName = (title: string) => (title.split(/\s+[-–—]\s+|\s*:\s+|\s*\|\s*/)[0] || title).trim();
-const ACTION_TIMEOUT_MS = 20_000;
+export const ACTION_TIMEOUT_MS = 20_000;
 const IMPORT_TIMEOUT_MS = 90_000;
 
 class RequestTimeoutError extends Error {}
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -69,7 +71,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
 // fetch() rejects with TypeError ("Failed to fetch") when no connection could
 // be opened — VPN off, Wi-Fi down, wrong API address — as opposed to an HTTP
 // error the backend actually returned.
-function describeActionError(cause: unknown, apiUrl: string | undefined, fallback: string): string {
+export function describeActionError(cause: unknown, apiUrl: string | undefined, fallback: string): string {
   if (cause instanceof RequestTimeoutError) {
     return `Brak odpowiedzi z API ${apiUrl} — zmiana NIE została zapisana. Sprawdź połączenie (VPN) i spróbuj ponownie.`;
   }
@@ -85,6 +87,25 @@ const IGNORE_HELP = "Ignoruj: dodaje regułę do źródła (wzorzec w tytule lub
 function HelpBadge({ text }: { text: string }) {
   return <span title={text} aria-label={text} role="img"
     style={{ cursor: "help", color: "#64748b", fontSize: ".85rem", marginRight: 6 }}>ⓘ</span>;
+}
+
+export function buildBrief(item: FeedItem, sources: FeedSource[], comment: string): string {
+  const source = sources.find(candidate => candidate.id === item.feed_source_id);
+  return `# Zadanie na podstawie wpisu z feedu: ${item.title}
+
+- Źródło: ${source?.name || "nieznane"} (${source?.type || "nieznane"})
+- Opublikowano: ${item.published_at?.slice(0, 10) || "brak daty"}
+- URL: ${item.url}
+- Tematy: ${item.groups?.map(group => group.name).join(", ") || "brak"}
+
+## Co mnie zainteresowało i co dalej
+${comment.trim() || "(brak komentarza)"}
+
+## Streszczenie wpisu
+${item.summary || "(brak streszczenia)"}
+
+## Polecenie
+Na podstawie powyższego zrealizuj to, o co proszę w komentarzu. Jeśli komentarz nie wskazuje działania, zaproponuj trzy możliwe następne kroki i zapytaj, który wybrać. Zajrzyj do adresu URL, jeśli możesz, i zaznacz, co pochodzi ze źródła, a co jest Twoim wnioskiem.`;
 }
 
 export default function FeedReview() {
@@ -399,6 +420,12 @@ export default function FeedReview() {
         </div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
         {item.summary && <p>{item.summary}</p>}
+        <FeedItemComment key={`comment-${item.id}`} itemId={item.id} initialNote={item.review_note}
+          buildBrief={comment => buildBrief(item, sources, comment)}
+          onSaved={note => {
+            setItems(current => current.map(candidate => candidate.id === item.id ? { ...candidate, review_note: note } : candidate));
+            setPinned(current => current?.id === item.id ? { ...current, review_note: note } : current);
+          }} />
         {modelsLoaded && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} templateId={templateId === "" ? undefined : templateId} onModelCall={onModelCall} />}
         <div>
           {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : item.status === "saved_for_later" ? <>

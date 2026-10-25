@@ -30,6 +30,8 @@ from library import app_settings, feed_retention
 
 bp = Blueprint("feeds", __name__)
 
+MAX_REVIEW_NOTE_CHARS = 4000  # the comment box on /feed-review allows the same length
+
 
 def _user():
     if getattr(g, "auth", None) is None or g.auth.kind != "user":
@@ -168,7 +170,7 @@ def post_content_group():
     _user_or_service()
     body = request.get_json(silent=True) or {}
     try:
-        row = create_group(get_scoped_session(), body.get("name"), body.get("kind"), body.get("priority_rank"))
+        row = create_group(get_scoped_session(), body.get("name"), body.get("kind"), body.get("priority_rank"), parent_id=body.get("parent_id"))
         get_scoped_session().commit()
     except ValueError as exc:
         get_scoped_session().rollback()
@@ -188,7 +190,7 @@ def patch_content_group(group_id):
         abort(404)
     body = request.get_json(silent=True) or {}
     try:
-        row = update_group(session, row, **{key: body[key] for key in {"name", "kind", "priority_rank", "retention_months"} if key in body})
+        row = update_group(session, row, **{key: body[key] for key in {"name", "kind", "priority_rank", "retention_months", "parent_id"} if key in body})
         session.commit()
     except ValueError as exc:
         session.rollback()
@@ -914,11 +916,16 @@ def ignore_item(item_id):
 @bp.patch("/feed_items/<int:item_id>/note")
 def note_item(item_id):
     _user()
-    return jsonify(
-        _item_dict(
-            save_review_note(get_scoped_session(), item_id, (request.get_json(silent=True) or {}).get("note", ""))
-        )
-    )
+    note = (request.get_json(silent=True) or {}).get("note", "")
+    if not isinstance(note, str):
+        abort(400, "note must be a string")
+    if len(note) > MAX_REVIEW_NOTE_CHARS:
+        abort(400, f"note is limited to {MAX_REVIEW_NOTE_CHARS} characters")
+    try:
+        item = save_review_note(get_scoped_session(), item_id, note)
+    except ValueError as exc:
+        abort(404, str(exc))
+    return jsonify(_item_dict(item))
 
 
 @bp.get("/jobs")

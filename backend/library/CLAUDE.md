@@ -79,6 +79,28 @@ null restores the built-in); `POST /feed_items/expire_saved` (`{"dry_run": true}
 without it runs the sweep now); `GET /feed_items` and the single-item responses add `expires_at` and
 `retention_months` to saved "Może kiedyś" items. Tests: `tests/unit/test_feed_retention.py`.
 
+**Topic hierarchy** (`content_groups.parent_id`, migration `d2f8b4a1c693`). A topic may have a parent
+topic (3 levels at most, topics only; `validate_parent()` in `content_group_service.py` rejects a
+cycle, an archived/missing parent, a priority group and a deeper tree with fixed messages the UI maps
+to Polish). `POST/PATCH /content_groups` accept `parent_id`; `group_to_dict` returns it. Archiving a
+topic re-points its children to its own parent; merging re-points the source's children to the target
+(and lifts the target when it was a child of the source). The suggestion catalog items carry
+`parent_id` only when set (a flat catalog keeps the exact old JSON and prompt hash); the prompt gets a
+`catalog_tree` variable (`render_catalog_tree()`, indented "- name (id N)" lines; empty when nothing is
+nested, and the guarded `{% if catalog_tree is defined and catalog_tree %}` block then renders nothing,
+so old templates keep working) telling the model to pick the MOST SPECIFIC topic. The migration also
+inserts prompt version 2 with that wording and activates it for each variant whose active template is
+still the unedited v1. In code, `drop_ancestor_suggestions()` removes a suggested topic that is an
+ancestor of another suggestion of the same answer OR of a topic the target already has — so
+"Informatyka" is not proposed next to "Web development" whatever the model answers; the general topic
+only collects what no more specific topic covers. Existing documents are not re-filed.
+Tests: `tests/unit/test_topic_hierarchy.py`.
+
+**Item comment.** `feed_items.review_note` (existing column, `PATCH /feed_items/<id>/note`, now
+limited to 4000 characters) is the reader's comment for an LLM: what interested them and what to do
+next. `target_text()` appends it to the material of a topic suggestion as "KOMENTARZ UŻYTKOWNIKA …"
+(max 1000 characters, the item text is cut to make room). Tests: `tests/unit/test_feed_comment.py`.
+
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
 `saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the

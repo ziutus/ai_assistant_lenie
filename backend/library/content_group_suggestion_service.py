@@ -24,12 +24,14 @@ from library.db.models import (
     Job,
     PromptTemplate,
 )
+from library.content_group_service import render_catalog_tree, topic_ancestors
 from library.job_queue import enqueue
 from library import prompt_templates
 
 PROMPT_VERSION = "content-groups-v1"
 FEED_PROMPT_VERSION = "content-groups-v2"
 MAX_INPUT_CHARS = 6000
+MAX_COMMENT_CHARS = 1000  # the reader's own note about a feed item; kept whole, the item text is cut to make room
 MAX_SUGGESTIONS = 5
 TASK = "content_group_suggestion"
 SETTING_KEY = "content_group_suggestion_model"
@@ -55,19 +57,48 @@ def suggestion_model() -> str:
 
 
 def active_topic_catalog(session) -> list[dict]:
+    # parent_id only when set: a flat catalog keeps the exact JSON (and prompt hash) it always had
     return [
-        {"id": group.id, "name": group.name}
+        {"id": group.id, "name": group.name, **({"parent_id": group.parent_id} if group.parent_id is not None else {})}
         for group in session.scalars(
             select(ContentGroup).where(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None)).order_by(ContentGroup.name)
         ).all()
     ]
 
 
+def drop_ancestor_suggestions(candidate_group_ids, existing_group_ids, catalog: list[dict]) -> set[int]:
+    """Candidates that must not be suggested because a more specific topic already covers the material.
+
+    A candidate is dropped when it is an ancestor of another candidate of the same answer or of a topic the target
+    already has ("Informatyka" never gets proposed next to "Web development").
+    """
+    candidates = list(candidate_group_ids)
+    specific = set(candidates) | set(existing_group_ids)
+    return {
+        group_id for group_id in candidates
+        if any(group_id in topic_ancestors(catalog, other) for other in specific if other != group_id)
+    }
+
+
+def _existing_group_ids(session, target_type: str, target_id: int) -> list[int]:
+    membership, key = (FeedItemGroupMembership, "feed_item_id") if target_type == "feed_item" else (DocumentGroupMembership, "document_id")
+    return list(session.scalars(
+        select(membership.group_id)
+        .join(ContentGroup, ContentGroup.id == membership.group_id)
+        .where(getattr(membership, key) == target_id, ContentGroup.archived_at.is_(None))
+    ).all())
+
+
 def target_text(target) -> str:
     if isinstance(target, FeedItem):
         raw = target.raw_payload or {}
         safe_raw = {key: value for key, value in raw.items() if key in {"title", "summary", "description", "content", "author"}}
-        return f"TYTUŁ: {target.title or ''}\n\nSUMMARY: {target.summary or ''}\n\nPAYLOAD:\n{json.dumps(safe_raw, ensure_ascii=False, default=str)}"[:MAX_INPUT_CHARS]
+        text = f"TYTUŁ: {target.title or ''}\n\nSUMMARY: {target.summary or ''}\n\nPAYLOAD:\n{json.dumps(safe_raw, ensure_ascii=False, default=str)}"
+        note = (getattr(target, "review_note", None) or "").strip()[:MAX_COMMENT_CHARS]
+        if not note:
+            return text[:MAX_INPUT_CHARS]
+        block = f"\n\nKOMENTARZ UŻYTKOWNIKA (co go zainteresowało i co dalej): {note}"
+        return text[:MAX_INPUT_CHARS - len(block)] + block
     synthesis = getattr(target, "text_md", None) or getattr(target, "text", None) or ""
     return f"TYTUŁ: {target.title or ''}\n\nSUMMARY: {target.summary or ''}\n\nTREŚĆ:\n{synthesis}"[:MAX_INPUT_CHARS]
 
@@ -244,6 +275,7 @@ def build_request(target_type: str, target, model: str, catalog: list[dict], tem
         "catalog": json.dumps(catalog, ensure_ascii=False),
         "material": target_text(target),
         "schema": "" if structured else json.dumps(schema["json_schema"]["schema"], ensure_ascii=False),
+        "catalog_tree": render_catalog_tree(catalog),
     }
     system = prompt_templates.render(template.system, **variables) or None
     return {
@@ -294,6 +326,7 @@ def execute_suggestion_job(session, job: Job) -> dict:
         threshold = float(_config("CONTENT_GROUP_SUGGESTION_MIN_CONFIDENCE", "0.60"))
         auto_apply_threshold = float(_config("CONTENT_GROUP_AUTO_APPLY_MIN_CONFIDENCE", "0.75"))
         seen = set()
+        valid = []
         for item in ([] if isinstance(run.raw_result, dict) and run.raw_result.get("no_match") else (run.raw_result.get("suggestions", []) if isinstance(run.raw_result, dict) else [])):
             try:
                 group_id, confidence = int(item["group_id"]), float(item["confidence"])
@@ -302,17 +335,20 @@ def execute_suggestion_job(session, job: Job) -> dict:
             if group_id not in allowed or group_id in seen or confidence < threshold or not 0 <= confidence <= 1:
                 continue
             seen.add(group_id)
+            valid.append((group_id, confidence, item))
+        # A general topic is not proposed when a more specific one fits (or the target already has it).
+        dropped = drop_ancestor_suggestions([entry[0] for entry in valid], _existing_group_ids(session, target_type, target.id) if valid else [], run.catalog_snapshot)
+        kept = [entry for entry in valid if entry[0] not in dropped][:MAX_SUGGESTIONS]
+        for group_id, confidence, item in kept:
             suggestion = ContentGroupSuggestion(run_id=run.id, group_id=group_id, confidence=confidence, reason=str(item.get("reason", ""))[:300])
             session.add(suggestion)
             if target_type == "document" and confidence >= auto_apply_threshold:
                 session.flush()
                 _auto_apply_suggestion(session, target.id, group_id, suggestion)
-            if len(seen) >= MAX_SUGGESTIONS:
-                break
         run.status = "completed"
         run.completed_at = datetime.now(timezone.utc)
         session.commit()
-        return {"run_id": run.id, "suggestions": len(seen)}
+        return {"run_id": run.id, "suggestions": len(kept)}
     except Exception as exc:
         run.status, run.error, run.completed_at = "error", str(exc)[:2000], datetime.now(timezone.utc)
         session.commit()

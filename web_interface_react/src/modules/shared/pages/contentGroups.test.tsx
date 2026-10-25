@@ -34,6 +34,82 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 // A topic name also appears as an <option> in every merge select, so match the row's own <strong> label.
 const row = async (name: string) => (await screen.findByText(name, { selector: "strong" })).closest("tr") as HTMLElement;
 
+const hierarchy = () => {
+  respond = (url, init) => url.endsWith("/content_groups") && !init?.method
+    ? json({ content_groups: topics.map(topic => ({ ...topic, parent_id: topic.id === 2 ? 1 : topic.id === 3 ? 2 : null })) })
+    : base(url, init);
+};
+
+it("shows depth-first tree order and keeps indentation when filtering", async () => {
+  hierarchy();
+  render(<ContentGroups />);
+  const child = await row("Agenci AI");
+  expect(screen.getAllByRole("row").slice(1).map(entry => entry.querySelector("strong")?.textContent)).toEqual(["AI", "Agenci AI", "Żółwie"]);
+  expect(child.querySelector("td")?.style.paddingLeft).toBe("20px");
+  expect((await row("Żółwie")).querySelector("td")?.style.paddingLeft).toBe("40px");
+  fireEvent.change(screen.getByLabelText("Szukaj:"), { target: { value: "zolw" } });
+  expect(screen.getAllByRole("row")).toHaveLength(2);
+  expect((await row("Żółwie")).querySelector("td")?.style.paddingLeft).toBe("40px");
+});
+
+it("does not offer self, descendants or level-three topics as parents", async () => {
+  hierarchy();
+  render(<ContentGroups />);
+  await row("AI");
+  expect(within(screen.getByLabelText("Temat nadrzędny dla AI")).getAllByRole("option")).toHaveLength(1);
+  expect(within(screen.getByLabelText("Pod tematem:")).queryByRole("option", { name: "Żółwie" })).toBeNull();
+});
+
+it("saves a parent draft with PATCH", async () => {
+  render(<ContentGroups />);
+  const child = await row("Agenci AI");
+  fireEvent.change(screen.getByLabelText("Temat nadrzędny dla Agenci AI"), { target: { value: "1" } });
+  expect(sent("PATCH")).toBeUndefined();
+  fireEvent.click(within(child).getByRole("button", { name: "Zapisz" }));
+  expect((await screen.findByRole("status")).textContent).toBe("Temat „Agenci AI” jest teraz podtematem „AI”.");
+  expect(sent("PATCH")?.[0]).toBe("http://nas:5000/content_groups/2");
+  expect(JSON.parse(String(sent("PATCH")?.[1]?.body))).toEqual({ parent_id: 1 });
+});
+
+it("clears a parent and can cancel a draft", async () => {
+  hierarchy();
+  render(<ContentGroups />);
+  const child = await row("Agenci AI");
+  const select = screen.getByLabelText("Temat nadrzędny dla Agenci AI") as HTMLSelectElement;
+  fireEvent.change(select, { target: { value: "" } });
+  fireEvent.click(within(child).getByRole("button", { name: "Anuluj" }));
+  expect(select.value).toBe("1");
+  expect(sent("PATCH")).toBeUndefined();
+  fireEvent.change(select, { target: { value: "" } });
+  fireEvent.click(within(child).getByRole("button", { name: "Zapisz" }));
+  expect((await screen.findByRole("status")).textContent).toBe("Temat „Agenci AI” jest tematem głównym.");
+  expect(JSON.parse(String(sent("PATCH")?.[1]?.body))).toEqual({ parent_id: null });
+});
+
+it("creates a sub-topic with parent_id", async () => {
+  respond = (url, init) => init?.method === "POST" ? json({}, 201) : base(url, init);
+  render(<ContentGroups />);
+  await row("AI");
+  fireEvent.change(screen.getByLabelText("Nowy temat:"), { target: { value: "Modele" } });
+  fireEvent.change(screen.getByLabelText("Pod tematem:"), { target: { value: "1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Dodaj temat" }));
+  await screen.findByRole("status");
+  expect(JSON.parse(String(sent("POST")?.[1]?.body))).toEqual({ name: "Modele", kind: "topic", parent_id: 1 });
+});
+
+it.each([
+  ["a topic cannot be its own ancestor", "Temat nie może być swoim własnym przodkiem."],
+  ["topic hierarchy is limited to 3 levels", "Hierarchia może mieć najwyżej 3 poziomy."],
+  ["parent must be an active topic", "Temat nadrzędny musi być aktywnym tematem."],
+])("translates hierarchy error %s", async (message, translated) => {
+  respond = (url, init) => init?.method === "PATCH" ? json({ message }, 400) : base(url, init);
+  render(<ContentGroups />);
+  const child = await row("Agenci AI");
+  fireEvent.change(screen.getByLabelText("Temat nadrzędny dla Agenci AI"), { target: { value: "1" } });
+  fireEvent.click(within(child).getByRole("button", { name: "Zapisz" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(translated);
+});
+
 it("lists only topics with their usage and allows deleting only an unused one", async () => {
   render(<ContentGroups />);
   const ai = await row("AI");

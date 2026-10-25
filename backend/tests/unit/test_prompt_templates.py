@@ -49,6 +49,21 @@ def test_material_that_looks_like_a_template_is_not_rendered_again():
     assert "{{ 7*7 }} {% if x %}" in rendered
 
 
+@pytest.mark.parametrize("variant", ["feed_item", "document"])
+def test_hierarchy_block_is_between_catalog_and_material(variant):
+    template = pt.builtin(TASK, variant)
+    rendered = pt.render(template.user, catalog="[]", material="tekst", schema="", catalog_tree="- A (id 1)\n  - B (id 2)")
+    assert rendered.index("KATALOG:") < rendered.index("HIERARCHIA TEMATÓW") < rendered.index("MATERIAŁ:")
+    assert "  - B (id 2)" in rendered
+    assert "Wybieraj najbardziej szczegółowy pasujący temat." in rendered
+    pt.validate(TASK, variant, template.system, template.user)
+
+
+def test_validation_checks_nonempty_tree_branch():
+    with pytest.raises(pt.TemplateInvalid):
+        pt.validate(TASK, "document", None, "{% if catalog_tree %}{{ unknown }}{% endif %}")
+
+
 @pytest.mark.parametrize("user_template,fragment", [
     ("", "required"),
     ("{{ catalog ", "user_template"),

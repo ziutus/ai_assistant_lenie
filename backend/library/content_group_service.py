@@ -17,6 +17,7 @@ from library.db.models import (
 
 
 GROUP_KINDS = {"topic", "priority"}
+MAX_TOPIC_DEPTH = 3
 MEMBERSHIP_SOURCES = {
     "feed": {"manual", "llm_suggestion"},
     "document": {"manual", "feed_import", "chrome_link", "llm_suggestion"},
@@ -68,9 +69,72 @@ def get_active_groups(session, group_ids: list[int]) -> list[ContentGroup]:
     return ordered
 
 
-def create_group(session, name: object, kind: object, priority_rank: object = None) -> ContentGroup:
+def topic_ancestors(catalog, group_id) -> list[int]:
+    parents = {item["id"]: item.get("parent_id") for item in catalog}
+    result = []
+    seen = {group_id}
+    parent = parents.get(group_id)
+    while parent in parents and parent not in seen:
+        result.append(parent)
+        seen.add(parent)
+        parent = parents[parent]
+    return result
+
+
+def render_catalog_tree(catalog) -> str:
+    ids = {item["id"] for item in catalog}
+    if not any(item.get("parent_id") in ids for item in catalog):
+        return ""
+    children = {}
+    for item in catalog:
+        parent = item.get("parent_id")
+        children.setdefault(parent if parent in ids else None, []).append(item)
+    lines, seen = [], set()
+
+    def visit(items, depth):
+        for item in sorted(items, key=lambda item: item["name"].casefold()):
+            if item["id"] in seen:
+                continue
+            seen.add(item["id"])
+            lines.append("  " * depth + f"- {item['name']} (id {item['id']})")
+            visit(children.get(item["id"], []), depth + 1)
+
+    visit(children.get(None, []), 0)
+    return "\n".join(lines)
+
+
+def validate_parent(session, group_or_none, parent_id, kind) -> int | None:
+    if parent_id is None:
+        return None
+    if isinstance(parent_id, bool) or not isinstance(parent_id, int):
+        raise ValueError("parent_id must be an integer")
+    if kind != "topic":
+        raise ValueError("only topics can have a parent")
+    groups = session.scalars(select(ContentGroup).where(
+        ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None),
+    )).all()
+    catalog = [{"id": row.id, "parent_id": row.parent_id} for row in groups]
+    if parent_id not in {row["id"] for row in catalog}:
+        raise ValueError("parent must be an active topic")
+    ancestors = topic_ancestors(catalog, parent_id)
+    group_id = group_or_none.id if group_or_none is not None else None
+    if group_id is not None and group_id in [parent_id, *ancestors]:
+        raise ValueError("a topic cannot be its own ancestor")
+    subtree_height = 1
+    if group_id is not None:
+        for item in catalog:
+            chain = topic_ancestors(catalog, item["id"])
+            if group_id in chain:
+                subtree_height = max(subtree_height, chain.index(group_id) + 2)
+    if len(ancestors) + 1 + subtree_height > MAX_TOPIC_DEPTH:
+        raise ValueError("topic hierarchy is limited to 3 levels")
+    return parent_id
+
+
+def create_group(session, name: object, kind: object, priority_rank: object = None, parent_id=None) -> ContentGroup:
     name, kind, priority_rank = validate_group_values(name, kind, priority_rank)
-    row = ContentGroup(name=name, kind=kind, priority_rank=priority_rank)
+    parent_id = validate_parent(session, None, parent_id, kind)
+    row = ContentGroup(name=name, kind=kind, priority_rank=priority_rank, parent_id=parent_id)
     session.add(row)
     session.flush()
     return row
@@ -96,6 +160,8 @@ def update_group(session, group: ContentGroup, **changes) -> ContentGroup:
     }
     name, kind, priority_rank = validate_group_values(**values)
     retention = validate_retention_months(changes.get("retention_months", group.retention_months), kind)
+    parent_id = validate_parent(session, group, changes.get("parent_id", group.parent_id), kind)
+    group.parent_id = parent_id
     group.name, group.kind, group.priority_rank, group.retention_months = name, kind, priority_rank, retention
     group.updated_at = dt.datetime.now(dt.timezone.utc)
     session.flush()
@@ -194,6 +260,7 @@ def archive_group(session, group: ContentGroup) -> ContentGroup:
         error = RuntimeError("group is in active use")
         error.counts = counts
         raise error
+    session.execute(update(ContentGroup).where(ContentGroup.parent_id == group.id).values(parent_id=group.parent_id))
     group.archived_at = dt.datetime.now(dt.timezone.utc)
     group.updated_at = group.archived_at
     session.commit()
@@ -239,6 +306,11 @@ def merge_groups(session, source: ContentGroup, target: ContentGroup) -> dict[st
         .where(ContentGroupSuggestion.group_id == source.id, ContentGroupSuggestion.status == "pending")
         .values(status="dismissed")
     )
+    if target.parent_id == source.id:
+        target.parent_id = source.parent_id
+    session.execute(update(ContentGroup).where(
+        ContentGroup.parent_id == source.id, ContentGroup.id != target.id,
+    ).values(parent_id=target.id))
     source.archived_at = source.updated_at = dt.datetime.now(dt.timezone.utc)
     target.updated_at = source.archived_at
     session.commit()
@@ -252,6 +324,7 @@ def group_to_dict(group: ContentGroup, session=None) -> dict:
         "kind": group.kind,
         "priority_rank": group.priority_rank,
         "retention_months": group.retention_months,
+        "parent_id": group.parent_id,
         "archived_at": group.archived_at.isoformat() if group.archived_at else None,
     }
     if session is not None:

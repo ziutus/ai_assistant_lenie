@@ -2,7 +2,7 @@ import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
 
 type Topic = {
-  id: number; name: string; kind: string; retention_months: number | null;
+  id: number; name: string; kind: string; retention_months: number | null; parent_id: number | null;
   saved_item_count: number; document_count: number; chunk_count: number; provenance_item_count: number;
 };
 type Pending = { kind: "delete" | "merge"; id: number };
@@ -13,6 +13,22 @@ type Due = { dry_run: boolean; due: number; expired: number; items: DueItem[] };
 const TIMEOUT_MS = 20_000;
 const fold = (text: string) => text.toLocaleLowerCase("pl").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ł/g, "l");
 const inUse = (topic: Topic) => topic.document_count + topic.chunk_count + topic.saved_item_count > 0;
+
+function topicTree(topics: Topic[]) {
+  const ids = new Set(topics.map(topic => topic.id));
+  const result: { topic: Topic; depth: number; ancestors: number[] }[] = [];
+  const seen = new Set<number>();
+  const visit = (items: Topic[], ancestors: number[]) => {
+    for (const topic of [...items].sort((a, b) => fold(a.name).localeCompare(fold(b.name)))) {
+      if (seen.has(topic.id)) continue;
+      seen.add(topic.id);
+      result.push({ topic, depth: ancestors.length, ancestors });
+      visit(topics.filter(child => child.parent_id === topic.id), [...ancestors, topic.id]);
+    }
+  };
+  visit(topics.filter(topic => topic.parent_id == null || !ids.has(topic.parent_id)), []);
+  return result;
+}
 
 async function request(url: string, init: RequestInit): Promise<{ status: number; data: Record<string, unknown> }> {
   const controller = new AbortController();
@@ -31,6 +47,13 @@ async function request(url: string, init: RequestInit): Promise<{ status: number
 }
 
 const failure = (status: number, data: Record<string, unknown>, fallback: string) => {
+  const hierarchyErrors: Record<string, string> = {
+    "a topic cannot be its own ancestor": "Temat nie może być swoim własnym przodkiem.",
+    "topic hierarchy is limited to 3 levels": "Hierarchia może mieć najwyżej 3 poziomy.",
+    "parent must be an active topic": "Temat nadrzędny musi być aktywnym tematem.",
+  };
+  const hierarchyError = hierarchyErrors[String(data.message || data.error)];
+  if (hierarchyError) return hierarchyError;
   if (status === 409 && /name already exists/.test(String(data.message || data.error))) return "Temat o takiej nazwie już istnieje.";
   if (status === 409 && data.error === "group is in active use") return "Temat jest w użyciu — scal go z innym tematem zamiast usuwać.";
   return String(data.message || data.error || fallback);
@@ -42,6 +65,8 @@ export default function ContentGroups() {
   const [topics, setTopics] = React.useState<Topic[]>([]);
   const [filter, setFilter] = React.useState("");
   const [newName, setNewName] = React.useState("");
+  const [newParent, setNewParent] = React.useState("");
+  const [parentDraft, setParentDraft] = React.useState<Record<number, string>>({});
   const [editId, setEditId] = React.useState<number | null>(null);
   const [editName, setEditName] = React.useState("");
   const [pending, setPending] = React.useState<Pending | null>(null);
@@ -83,9 +108,10 @@ export default function ContentGroups() {
 
   const add = () => run(async () => {
     const name = newName.trim();
-    const { status, data } = await request(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name, kind: "topic" }) });
+    const { status, data } = await request(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name, kind: "topic", ...(newParent ? { parent_id: Number(newParent) } : {}) }) });
     if (status !== 201) throw new Error(failure(status, data, "Nie udało się dodać tematu"));
     setNewName("");
+    setNewParent("");
     return `Dodano temat „${name}”.`;
   });
 
@@ -138,7 +164,17 @@ export default function ContentGroups() {
     return `Przesunięto do „Pomiń”: ${result.expired} z ${result.due} wpisów.`;
   });
 
-  const visible = topics.filter(topic => !filter.trim() || fold(topic.name).includes(fold(filter)));
+  const clearParentDraft = (id: number) => setParentDraft(state => { const next = { ...state }; delete next[id]; return next; });
+  const saveParent = (topic: Topic) => run(async () => {
+    const parent_id = parentDraft[topic.id] ? Number(parentDraft[topic.id]) : null;
+    const { status, data } = await request(`${apiUrl}/content_groups/${topic.id}`, { method: "PATCH", headers, body: JSON.stringify({ parent_id }) });
+    if (status !== 200) throw new Error(failure(status, data, "Nie udało się zapisać tematu nadrzędnego"));
+    clearParentDraft(topic.id);
+    return parent_id === null ? `Temat „${topic.name}” jest tematem głównym.`
+      : `Temat „${topic.name}” jest teraz podtematem „${topics.find(parent => parent.id === parent_id)?.name}”.`;
+  });
+  const tree = topicTree(topics);
+  const visible = tree.filter(({ topic }) => !filter.trim() || fold(topic.name).includes(fold(filter)));
 
   return <div style={{ padding: "0 16px 32px", maxWidth: 1000 }}>
     <h1>Tematy</h1>
@@ -172,6 +208,11 @@ export default function ContentGroups() {
     <form onSubmit={event => { event.preventDefault(); if (newName.trim()) void add(); }} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "12px 0" }}>
       <label htmlFor="new-topic">Nowy temat:</label>
       <input id="new-topic" value={newName} maxLength={80} onChange={event => setNewName(event.target.value)} placeholder="np. Agenci AI" disabled={busy} />
+      <label htmlFor="new-topic-parent">Pod tematem:</label>
+      <select id="new-topic-parent" value={newParent} onChange={event => setNewParent(event.target.value)} disabled={busy}>
+        <option value="">— temat główny —</option>
+        {tree.filter(entry => entry.depth < 2).map(({ topic }) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
+      </select>
       <button type="submit" disabled={busy || !newName.trim()}>Dodaj temat</button>
       <label htmlFor="topic-filter" style={{ marginLeft: 16 }}>Szukaj:</label>
       <input id="topic-filter" value={filter} onChange={event => setFilter(event.target.value)} placeholder="część nazwy" />
@@ -180,15 +221,15 @@ export default function ContentGroups() {
     {loaded && !visible.length && <p>{topics.length ? "Żaden temat nie pasuje do wyszukiwania." : "Brak tematów."}</p>}
     {visible.length > 0 && <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
       <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #cbd5e1" }}>
-        <th>Temat</th><th>Dokumenty</th><th>Fragmenty</th><th title="Wpisy feedu zapisane na później">Zapisane wpisy</th>
+        <th>Temat</th><th>Temat nadrzędny</th><th>Dokumenty</th><th>Fragmenty</th><th title="Wpisy feedu zapisane na później">Zapisane wpisy</th>
         <th title="Po ilu miesiącach wpis „Może kiedyś” z tym tematem przechodzi do „Pomiń”. Puste = domyślnie.">Ważność (mies.)</th><th>Działania</th>
       </tr></thead>
-      <tbody>{visible.map(topic => {
+      <tbody>{visible.map(({ topic, depth }) => {
         const others = topics.filter(other => other.id !== topic.id);
         const target = others.find(other => String(other.id) === mergeTarget[topic.id]);
         const used = inUse(topic);
         return <tr key={topic.id} style={{ borderBottom: "1px solid #e2e8f0", verticalAlign: "top" }}>
-          <td style={{ padding: "6px 8px 6px 0" }}>{editId === topic.id
+          <td style={{ padding: "6px 8px 6px 0", paddingLeft: depth * 20 }}>{depth > 0 && "↳ "}{editId === topic.id
             ? <form onSubmit={event => { event.preventDefault(); if (editName.trim()) void rename(topic); }} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <input aria-label={`Nowa nazwa tematu ${topic.name}`} autoFocus value={editName} maxLength={80} disabled={busy}
                 onChange={event => setEditName(event.target.value)} onKeyDown={event => { if (event.key === "Escape") setEditId(null); }} />
@@ -196,6 +237,19 @@ export default function ContentGroups() {
               <button type="button" onClick={() => setEditId(null)}>Anuluj</button>
             </form>
             : <strong>{topic.name}</strong>}
+          </td>
+          <td>
+            <select aria-label={`Temat nadrzędny dla ${topic.name}`} disabled={busy}
+              value={parentDraft[topic.id] ?? String(topic.parent_id ?? "")}
+              onChange={event => setParentDraft(state => ({ ...state, [topic.id]: event.target.value }))}>
+              <option value="">— temat główny —</option>
+              {tree.filter(entry => entry.topic.id !== topic.id && !entry.ancestors.includes(topic.id) && entry.depth < 2)
+                .map(({ topic: parent }) => <option key={parent.id} value={parent.id}>{parent.name}</option>)}
+            </select>
+            {parentDraft[topic.id] !== undefined && parentDraft[topic.id] !== String(topic.parent_id ?? "") && <>
+              <button type="button" disabled={busy} onClick={() => void saveParent(topic)}>Zapisz</button>{" "}
+              <button type="button" onClick={() => clearParentDraft(topic.id)}>Anuluj</button>
+            </>}
           </td>
           <td>{topic.document_count}</td><td>{topic.chunk_count}</td><td>{topic.saved_item_count}</td>
           <td style={{ whiteSpace: "nowrap" }}>

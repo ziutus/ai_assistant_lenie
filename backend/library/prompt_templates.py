@@ -21,6 +21,7 @@ VARIANTS = {TASK_CONTENT_GROUPS: ("feed_item", "document")}
 VARIABLES = {
     TASK_CONTENT_GROUPS: {
         "catalog": "JSON katalogu aktywnych tematów",
+        "catalog_tree": "Hierarchia aktywnych tematów z wcięciami dla podtematów",
         "material": "tytuł, streszczenie i treść wpisu/dokumentu (obcięte)",
         "schema": "JSON Schema odpowiedzi; pusty, gdy model dostaje schemat jako response_format",
     }
@@ -32,7 +33,12 @@ _COMMON_RULES = (
     "ustaw no_match=true i zwróć pustą tablicę suggestions. Priorytetów nigdy nie sugeruj. "
     "Zwróć wyłącznie JSON zgodny ze schematem."
 )
-_BODY = "\n\nKATALOG:\n{{ catalog }}\n\nMATERIAŁ:\n{{ material }}"
+_BODY = (
+    "\n\nKATALOG:\n{{ catalog }}"
+    "{% if catalog_tree is defined and catalog_tree %}\n\nHIERARCHIA TEMATÓW (wcięcie = podtemat):\n{{ catalog_tree }}\n"
+    "Wybieraj najbardziej szczegółowy pasujący temat. Temat nadrzędny proponuj tylko wtedy, gdy żaden z jego podtematów nie pasuje wyraźnie.{% endif %}"
+    "\n\nMATERIAŁ:\n{{ material }}"
+)
 _SCHEMA_TAIL = "{% if schema %}\n\nJSON SCHEMA:\n{{ schema }}{% endif %}"
 
 _FEED_TAIL = (
@@ -88,8 +94,8 @@ def validate(task: str, variant: str, system_template: str | None, user_template
         if text is not None and len(text) > MAX_TEMPLATE_CHARS:
             raise TemplateInvalid(f"{name} is longer than {MAX_TEMPLATE_CHARS} characters")
     # Both branches of ``{% if schema %}`` must render.
-    for schema in ("", "{}"):
-        sample = {"catalog": "[]", "material": "x", "schema": schema}
+    for schema, catalog_tree in (("", ""), ("{}", ""), ("", "- Temat (id 1)\n  - Podtemat (id 2)"), ("{}", "- Temat (id 1)\n  - Podtemat (id 2)")):
+        sample = {"catalog": "[]", "material": "x", "schema": schema, "catalog_tree": catalog_tree}
         for name, text in (("system_template", system_template), ("user_template", user_template)):
             try:
                 render(text, **sample)

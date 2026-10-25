@@ -12,6 +12,7 @@ vi.mock("../components/OpenRouterBalance/openRouterBalance", () => ({ default: (
 const feedItem = {
   id: 7, feed_source_id: 1, title: "Artykuł testowy", url: "https://example.com/a", summary: null,
   published_at: null, status: "new", saved_at: null, saved_by_user_id: null,
+  review_note: "Interesuje mnie ta inicjatywa.",
 };
 
 function jsonResponse(body: object) {
@@ -20,7 +21,8 @@ function jsonResponse(body: object) {
 
 beforeEach(() => {
   localStorage.clear();
-  vi.stubGlobal("fetch", vi.fn((url: string) => {
+  vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+    if (url.endsWith("/note") && init?.method === "PATCH") return Promise.resolve(jsonResponse({ ...feedItem, review_note: JSON.parse(String(init.body)).note }));
     if (url.includes("/feed_items?")) return Promise.resolve(jsonResponse({ feed_items: [feedItem], total: 1 }));
     if (url.endsWith("/feed_sources")) return Promise.resolve(jsonResponse({ feed_sources: [{ id: 1, name: "Blog", type: "rss", disabled: false }] }));
     if (url.endsWith("/content_groups")) return Promise.resolve(jsonResponse({ content_groups: [] }));
@@ -161,6 +163,26 @@ it("advances after saving an item and shows the empty queue after the last actio
 
 
 function Location() { return <output data-testid="location">{useLocation().search}</output>; }
+
+it("edits item comments in both modes and on the later tab", async () => {
+  render(<MemoryRouter><FeedReview /></MemoryRouter>);
+  const label = "Komentarz dla LLM: co mnie zainteresowało i co z tym zrobić";
+  const textarea = await screen.findByLabelText(label);
+  expect(textarea).toHaveProperty("value", feedItem.review_note);
+  fireEvent.change(textarea, { target: { value: "Stwórz zalążek dokumentu." } });
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz komentarz" }));
+  await screen.findByText("Zapisano komentarz.");
+  expect(textarea).toHaveProperty("value", "Stwórz zalążek dokumentu.");
+  expect(fetch).toHaveBeenCalledWith("http://nas:5000/feed_items/7/note", expect.objectContaining({
+    method: "PATCH", body: JSON.stringify({ note: "Stwórz zalążek dokumentu." }),
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "Wszystkie na liście" }));
+  expect(screen.getByLabelText(label)).toHaveProperty("value", "Stwórz zalążek dokumentu.");
+  fireEvent.click(screen.getByRole("button", { name: "Po jednym wpisie" }));
+  expect(screen.getByLabelText(label)).toHaveProperty("value", "Stwórz zalążek dokumentu.");
+  fireEvent.click(screen.getByRole("tab", { name: "Do przeczytania / obejrzenia" }));
+  await waitFor(() => expect(screen.getByLabelText(label)).toHaveProperty("value", feedItem.review_note));
+});
 
 it("switches modes in the URL, remembers all mode, and suggests every list item", async () => {
   const model = "gpt-4o-mini";
