@@ -11,6 +11,15 @@ It is distinct from `chapter_list`, whose timestamped `m:ss Title` lines drive
 transcript chunking. Stored transcripts have no timestamps: never invent times
 or put AI outlines in `chapter_list`.
 
+`Document.outline_anchors` (hash-bound quotes of the topic starts, saved by the
+`/lenie-youtube-outline` skill after approval) steers outline-based chunking.
+`POST /document/<id>/apply_outline_chapters` (`library/chunk_review_routes.py`,
+`outline_boundaries.apply_anchors_as_chapters()`) turns them into real `##`
+chapters of `Document.text`: no model call, no character removed, optional
+`{"dry_run": true}`; it answers 409 when the transcript already has headings,
+embeddings or a running analysis, and 400 for missing or stale anchors. Without
+chapters the editor's paragraph formatting and chapter review stay unavailable.
+
 ## Directory Structure
 
 ```

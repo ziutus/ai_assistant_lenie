@@ -100,13 +100,21 @@ editing the outline invalidates them. Never edit `chapter_list`.
    The locator makes the first retained topic absorb any introduction at offset 0.
    Use zero-based topic IDs and write UTF-8 JSON into the job/scratch temp directory:
    `{"starts": [{"id": 0, "sentence": "Exact sentence."}, {"id": 1, "sentence": null}]}`.
+   A heading is placed at the start of the transcript line containing the quote, so
+   quote text from the line start and, when a viewer's question opens the topic,
+   quote the question itself rather than the answer after it. The transcript wraps
+   lines mid-sentence; join them with single spaces (matching ignores whitespace
+   differences). A quote must be unique in the transcript: add words if it repeats.
 3. From `backend/`, with `PYTHONPATH=.`, run the REST read-only preview using the
    project's existing Python environment (never install packages):
    `python -X utf8 imports/outline_chunk_preview.py <id> --quotes <temp-quotes.json> --emit-anchors`.
    In a Windows worktree with no local venv, use the main checkout's interpreter
    by relative path, without changing to that checkout. Always pass `--quotes`:
-   omitting it invokes the separate paid-LLM diagnostic mode. Capture stdout as
-   UTF-8 payload JSON; stderr contains the preview. In Windows PowerShell use:
+   omitting it invokes the separate paid-LLM diagnostic mode. Do not use `python -I`
+   (it ignores `PYTHONPATH`, so `library` cannot be imported). Capture stdout as
+   UTF-8 payload JSON; stderr contains the preview. Do not redirect with `1>` in
+   Windows PowerShell 5.1: it prepends a BOM that breaks `json.load`. In Windows
+   PowerShell use:
 
 ```powershell
 # Run from backend/; $python is the existing interpreter, $quotesPath is in scratch.
@@ -141,3 +149,24 @@ Invoke-RestMethod -Method Post -Uri 'http://192.168.200.7:5055/website_save' -He
    approved payload (including array order and every string; object key order
    is irrelevant). Report failures honestly. No direct SQL, transcript updates,
    chunk writes or other document fields are part of this save.
+
+## Apply the anchors as chapters (optional, separate approval)
+
+Saved anchors only steer later chunking. A transcript without `##` headings still
+shows "Nie można jeszcze podzielić transkrypcji na akapity" in the editor's
+"Formatowanie transkrypcji" panel, and the chapter editor and `/ner/:id` chapter
+review stay unavailable. To turn the anchors into real chapters, offer this to the
+user; it changes `Document.text` (headings are added, no character is removed or
+rewritten) and needs its own explicit approval. The user can also press
+"Zastosuj spis treści jako rozdziały" in `/youtube/<id>`.
+
+1. Require saved `outline_anchors` whose hash matches `outline_md`, a transcript
+   without `#`/`##` headings, and no embeddings (otherwise the endpoint answers 409
+   and the document must be reopened for editing first).
+2. Preview: `POST /document/<id>/apply_outline_chapters` with JSON `{"dry_run": true}`
+   and the `x-api-key` header. Show `chapter_count`, `chapters` (titles) and `dropped`
+   in Polish. WAIT for explicit approval.
+3. Apply: the same call without `dry_run`. Then re-GET and confirm the text starts
+   with `## ` headings and that its length grew only by the headings. Mention
+   `stale_analysis_runs` when it is greater than zero (existing chunk analyses refer
+   to the old split). Never touch `chapter_list`.

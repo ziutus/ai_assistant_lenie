@@ -84,6 +84,9 @@ const Youtube = () => {
   const [captionMessage, setCaptionMessage] = React.useState("");
   const [paragraphizing, setParagraphizing] = React.useState(false);
   const [paragraphMessage, setParagraphMessage] = React.useState("");
+  const [applyingOutline, setApplyingOutline] = React.useState(false);
+  const [outlineChaptersMessage, setOutlineChaptersMessage] = React.useState("");
+  const hasOutline = Boolean(String(formik.values.outline_md || "").trim());
   const [refetchingDescription, setRefetchingDescription] = React.useState(false);
   const [descriptionMessage, setDescriptionMessage] = React.useState("");
   // Covers the case where the fetch was triggered from /list (or another tab)
@@ -177,10 +180,33 @@ const Youtube = () => {
     }
   };
 
+  const applyOutlineChapters = async () => {
+    if (!id || hasMarkdownChapters) return;
+    if (!window.confirm("Zastosować spis treści jako rozdziały? Do transkrypcji zostaną dodane nagłówki, tekst się nie zmieni.")) return;
+    setApplyingOutline(true);
+    setOutlineChaptersMessage("");
+    try {
+      const response = await axios.post(
+        `${apiUrl}/document/${id}/apply_outline_chapters`,
+        {},
+        { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` }, timeout: 60000 },
+      );
+      await handleGetLinkByID(id);
+      const dropped = response.data.dropped?.length ? `, pominięto: ${response.data.dropped.join(", ")}` : "";
+      const stale = response.data.has_analysis_runs ? ". Istniejące analizy chunków dotyczą starego podziału" : "";
+      setOutlineChaptersMessage(`Gotowe: ${response.data.chapter_count} rozdziałów${dropped}${stale}.`);
+    } catch (error: any) {
+      const detail = error.response?.data?.message || error.message;
+      setOutlineChaptersMessage(`Nie udało się dodać rozdziałów: ${detail}`);
+    } finally {
+      setApplyingOutline(false);
+    }
+  };
+
   return (
     <div>
       <h2 style={{ marginBottom: "10px" }}>
-        Youtube <ChannelBadge channel={formik.values.byline} style={{ marginLeft: 8, verticalAlign: "middle" }} />
+        Youtube<ChannelBadge channel={formik.values.byline} style={{ marginLeft: 8, verticalAlign: "middle" }} />
       </h2>
       {id && <NavLink to={`/llm-costs?document_id=${id}`} style={{ display: "inline-block", marginBottom: 10, fontSize: "0.9em", color: "#0369a1" }}>💰 Koszty i etapy LLM</NavLink>}
       <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
@@ -256,9 +282,17 @@ const Youtube = () => {
             )}
             {!hasMarkdownChapters && (
               <div role="status" style={{ marginTop: 8, color: "#92400e" }}>
-                Nie można jeszcze podzielić transkrypcji na akapity: nie ma w niej rozdziałów. Użyj sekcji „Podział na rozdziały (AI)” powyżej albo zaimportuj rozdziały z ręcznie podanej listy czasowej lub znaczników czasu w opisie filmu YouTube.
+                Nie można jeszcze podzielić transkrypcji na akapity: nie ma w niej rozdziałów. Użyj sekcji „Podział na rozdziały (AI)” powyżej albo zaimportuj rozdziały z ręcznie podanej listy czasowej, z co najmniej dwóch znaczników czasu w opisie filmu YouTube albo ze spisu treści (AI) z zatwierdzonymi kotwicami (skill <code>/lenie-youtube-outline</code>).
               </div>
             )}
+            {!hasMarkdownChapters && hasOutline && (
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className="button" onClick={applyOutlineChapters} disabled={applyingOutline || isLoading}>
+                  {applyingOutline ? "Dodaję rozdziały…" : "Zastosuj spis treści jako rozdziały"}
+                </button>
+              </div>
+            )}
+            {outlineChaptersMessage && <div style={{ marginTop: 8 }}>{outlineChaptersMessage}</div>}
             <button type="button" className="button" style={{ marginTop: 10 }} onClick={paragraphizeTranscript} disabled={!hasMarkdownChapters || paragraphizing || isLoading}>
               {paragraphizing ? "Dzielę na akapity…" : alreadyParagraphized ? "Podziel na akapity ponownie (Bielik)" : "Podziel transkrypcję na akapity (Bielik)"}
             </button>
