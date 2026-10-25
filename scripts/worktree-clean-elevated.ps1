@@ -27,6 +27,12 @@
   EVERY non-cache file in it has its content (blob) somewhere in the repo's object store; a single
   file git has never seen keeps the whole directory. The log goes to %TEMP%\worktree-clean-elevated.log.
 
+.PARAMETER AcceptUnsaved
+  Directory names (also unregistered ones) to delete EVEN IF they hold files git has never seen.
+  Explicit consent only: the names must be listed one by one, there is no "all". Links under
+  <dir>\backend\tmp\ (test tmp dirs) are unlinked, never followed. Implies -IncludeUnregisteredCheckouts
+  for those names and only applies to them.
+
 .PARAMETER DryRun
   Only list what would be done; changes nothing (still asks for elevation).
 #>
@@ -35,7 +41,8 @@ param(
     [string[]]$Name,
     [switch]$DryRun,
     [switch]$NoPause,
-    [switch]$IncludeUnregisteredCheckouts
+    [switch]$IncludeUnregisteredCheckouts,
+    [string[]]$AcceptUnsaved
 )
 
 $ErrorActionPreference = 'Continue'
@@ -46,12 +53,14 @@ function Test-Admin {
 }
 
 if ($Name) { $Name = @($Name | ForEach-Object { $_ -split ',' } | Where-Object { $_ }) }
+if ($AcceptUnsaved) { $AcceptUnsaved = @($AcceptUnsaved | ForEach-Object { $_ -split ',' } | Where-Object { $_ }) }
 
 if (-not (Test-Admin)) {
     $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"")
     if ($Name) { $argList += @('-Name', ($Name -join ',')) }
     if ($DryRun) { $argList += '-DryRun' }
     if ($IncludeUnregisteredCheckouts) { $argList += '-IncludeUnregisteredCheckouts' }
+    if ($AcceptUnsaved) { $argList += @('-AcceptUnsaved', ($AcceptUnsaved -join ',')) }
     Write-Host 'Requesting Administrator rights (UAC prompt)...'
     try {
         Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -Verb RunAs -ErrorAction Stop
@@ -140,11 +149,14 @@ foreach ($d in $dirs) {
     Remove-Junctions $path
     $reparse = @(Get-ChildItem -LiteralPath $path -Recurse -Force -Directory -Attributes ReparsePoint -ErrorAction SilentlyContinue)
     # pytest leaves `...current` links inside its tmp dirs; rmdir on a link never touches its target.
-    foreach ($r in @($reparse | Where-Object { Test-Junk $_.FullName $path })) {
+    $accepted = $AcceptUnsaved -contains $d.Name
+    $tmpRoot = (Join-Path $path 'backend\tmp') + '\'
+    $removable = { param($r) (Test-Junk $r.FullName $path) -or ($accepted -and $r.FullName.StartsWith($tmpRoot, [StringComparison]::OrdinalIgnoreCase)) }
+    foreach ($r in @($reparse | Where-Object { & $removable $_ })) {
         if (-not $DryRun) { cmd /c rmdir "`"$($r.FullName)`"" 2>$null | Out-Null }
     }
     $reparse = @(Get-ChildItem -LiteralPath $path -Recurse -Force -Directory -Attributes ReparsePoint -ErrorAction SilentlyContinue |
-        Where-Object { -not ($DryRun -and (Test-Junk $_.FullName $path)) })
+        Where-Object { -not ($DryRun -and (& $removable $_)) })
     if ($reparse.Count -gt 0) {
         Write-Host "SKIP $($d.Name) - unexpected reparse point: $($reparse[0].FullName)"; $skipped++; continue
     }
@@ -155,7 +167,10 @@ foreach ($d in $dirs) {
     takeown /F "$path" /R /A /D Y 2>&1 | Out-Null
     icacls "$path" /grant 'Administrators:F' /T /C /Q 2>&1 | Out-Null
 
-    if ($IncludeUnregisteredCheckouts) {
+    if ($accepted) {
+        $n = @(Get-Leftovers $path).Count
+        Write-Host "ACCEPTED $($d.Name) - deleting despite $n non-cache file(s) (explicit -AcceptUnsaved)"
+    } elseif ($IncludeUnregisteredCheckouts) {
         $left = @(Get-UnsavedFiles $path)
         if ($left.Count -gt 0) {
             Write-Host "SKIP $($d.Name) - $($left.Count) file(s) git has never seen (e.g. $($left[0].FullName)), left alone"; $skipped++; continue
