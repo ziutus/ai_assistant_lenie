@@ -15,11 +15,16 @@ ITEMS = {10: SimpleNamespace(title="Polisa na cudze dane"), 11: SimpleNamespace(
 
 
 def test_miss_is_a_run_without_suggestions_that_the_reader_filed_by_hand():
-    runs = [run(5, 10, {"no_match": True, "suggestions": [], "new_topics": [{"name": "Ochrona danych osobowych", "confidence": 0.9}]})]
+    runs = [run(5, 10, {
+        "no_match": True, "suggestions": [], "new_topics": [{"name": "Ochrona danych osobowych", "confidence": 0.9}],
+        "dropped_new_topics": [{"name": "OpSec i ochrona danych", "confidence": 0.8, "dropped_because": "duplicate_of_catalog"}],
+    })]
     result = build_quality(runs, ITEMS, {10: [2]}, TOPICS)
     assert result["missed_by_model"] == [{
         "feed_item_id": 10, "title": "Polisa na cudze dane", "run_id": 5, "model": "m", "prompt_version": "feed_item-v2",
-        "no_match": True, "new_topics": ["Ochrona danych osobowych"], "filed_under": ["OpSec i ochrona danych"],
+        "no_match": True, "new_topics": ["Ochrona danych osobowych"],
+        "dropped_new_topics": [{"name": "OpSec i ochrona danych", "confidence": 0.8, "dropped_because": "duplicate_of_catalog"}],
+        "filed_under": ["OpSec i ochrona danych"],
     }]
 
 

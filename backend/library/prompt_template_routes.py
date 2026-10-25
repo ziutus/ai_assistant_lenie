@@ -208,7 +208,10 @@ def build_quality(runs: list[ContentGroupSuggestionRun], items: dict[int, FeedIt
             misses.append({
                 "feed_item_id": run.feed_item_id, "title": item.title if item else None, "run_id": run.id, "model": run.model,
                 "prompt_version": run.prompt_version, "no_match": bool(raw.get("no_match")),
-                "new_topics": [proposal.get("name") for proposal in raw.get("new_topics") or []], "filed_under": filed,
+                "new_topics": [proposal.get("name") for proposal in raw.get("new_topics") or []],
+                "dropped_new_topics": [{"name": proposal.get("name"), "confidence": proposal.get("confidence"),
+                                        "dropped_because": proposal.get("dropped_because")} for proposal in raw.get("dropped_new_topics") or []],
+                "filed_under": filed,
             })
     return {
         "items_considered": len(latest),

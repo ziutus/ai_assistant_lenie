@@ -27,7 +27,11 @@ $quality = Invoke-RestMethod -Uri "$base/prompt_templates/quality?days=$days" -H
    feed item:
    - `missed_by_model`: runs that returned no suggestion although the reader later
      filed the item under a topic by hand (`filed_under`), with the model's
-     `no_match` flag and its `new_topics`;
+     `no_match` flag, its `new_topics` and its `dropped_new_topics` — proposals the
+     server discarded, each with `dropped_because` (`duplicate_of_catalog` means the
+     model named an existing topic: it wanted that topic but did not suggest it;
+     `low_confidence`, `duplicate_in_answer`, `over_limit`, `bad_confidence`, `invalid`);
+     runs made before 2026-10-25 have no dropped list;
    - `new_topic_proposals`: names the model proposed, grouped ignoring case and
      diacritics (`count`, `avg_confidence`, example `feed_item_ids`);
    - `per_topic`: how often each active topic was suggested, accepted, dismissed

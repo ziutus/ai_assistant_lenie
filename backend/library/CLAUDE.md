@@ -109,7 +109,11 @@ prompt-template version if a model ignores it. Tests: `tests/unit/test_topic_des
 For the latest completed feed-item run of every item: `missed_by_model` (the run suggested nothing although the reader later filed
 the item under a topic by hand — with the `no_match` flag, the model's `new_topics` and `filed_under`), `new_topic_proposals` (names
 grouped ignoring case and diacritics, with `count`, `avg_confidence` and example item ids) and `per_topic` (times suggested /
-accepted / dismissed, never-suggested topics first). Read-only, user or service key; the `/lenie-topic-suggestion-quality` skill
+accepted / dismissed, never-suggested topics first). `execute_suggestion_job` keeps the proposals that `triage_new_topics()` discarded
+as `raw_result.dropped_new_topics` (`name`, `confidence`, `reason`, `dropped_because` = `duplicate_of_catalog` / `duplicate_in_answer` /
+`low_confidence` / `bad_confidence` / `invalid` / `over_limit`; at most 10, key absent when nothing was dropped), because `new_topics`
+holds only the survivors — a model that answers with an existing topic's name as a "new" topic is a miss visible only there; the report
+copies them into `missed_by_model[].dropped_new_topics`. Read-only, user or service key; the `/lenie-topic-suggestion-quality` skill
 reads it together with `/prompt_templates/comparison`. Tests: `tests/unit/test_prompt_quality.py`.
 
 **Item comment.** `feed_items.review_note` (existing column, `PATCH /feed_items/<id>/note`, now
