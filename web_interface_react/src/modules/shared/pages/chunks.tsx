@@ -8,6 +8,7 @@ import {
 import { buildObsidianNoteUrl } from "../utils/obsidian";
 import { toOpenableSourceUrl } from "../utils/sourceUrl";
 import ChannelBadge from "../components/ChannelBadge";
+import SkillHint from "../components/SkillHint";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -3022,6 +3023,9 @@ const Chunks = () => {
             {notelessTematCount > 0 && (
               <span style={{ color: "#7c3aed" }}>
                 📝 <strong>{notelessTematCount}</strong> bez notatki Obsidian
+                <SkillHint skill="/lenie-obsidian-note" command={`/lenie-obsidian-note ${id}`}>
+                  Notatki Obsidian dla tych chunków tworzy skill, nie ta strona.
+                </SkillHint>
               </span>
             )}
           </div>

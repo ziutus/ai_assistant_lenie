@@ -15,6 +15,7 @@ import ContactPhotoPanel from "../components/ContactPhotoPanel";
 import ContactPhotoHistory from "../components/ContactPhotoHistory";
 import ContactFamilyForm from "../components/ContactFamilyForm";
 import InfoTip from "../components/InfoTip";
+import SkillHint from "../components/SkillHint";
 import AddressMapMenu from "../components/AddressMapMenu";
 import { parsePartialDateInput, partialDateToDisplay } from "../services/partialDate";
 
@@ -1521,6 +1522,23 @@ const Contact = () => {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h2 style={{ margin: 0 }}>{isNew ? "Nowy kontakt" : "Kontakt"}</h2>
+          {id && !isNew && (
+            <span style={{ fontSize: "0.85em", color: "#667" }}>
+              Skille:
+              <SkillHint skill="/lenie-contact-facebook-enrich" command={`/lenie-contact-facebook-enrich ${id}`}>
+                Pobierze zdjęcie i fakty (miasto, wykształcenie, zainteresowania) z profilu na Facebooku.
+              </SkillHint>
+              <SkillHint skill="/lenie-contact-linkedin-info" command={`/lenie-contact-linkedin-info ${id}`}>
+                Pobierze fakty (miasto, wykształcenie, zainteresowania) z profilu na LinkedInie.
+              </SkillHint>
+              <SkillHint skill="/lenie-contact-photo-split" command={`/lenie-contact-photo-split ${id}`}>
+                Zdjęcie grupowe tego kontaktu zostanie podzielone na portrety; oryginał da się przywrócić z historii zdjęć.
+              </SkillHint>
+              <SkillHint skill="/lenie-person-lookup" command={`/lenie-person-lookup ${id}`}>
+                Jednorazowe wyszukanie osoby w sieci (CEIDG/KRS); nic nie jest zapisywane bez Twojej zgody.
+              </SkillHint>
+            </span>
+          )}
           {contact?.is_archived && (
             <span style={{ fontSize: "0.8em", color: "#a33", border: "1px solid #e3a", borderRadius: 4, padding: "2px 8px" }}>
               archiwalny

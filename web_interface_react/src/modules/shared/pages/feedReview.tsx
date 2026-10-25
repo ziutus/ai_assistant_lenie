@@ -1,4 +1,5 @@
 import React from "react";
+import SkillHint from "../components/SkillHint";
 import { Pagination } from "../components/Pagination/pagination";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
@@ -453,7 +454,7 @@ export default function FeedReview() {
 
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-      <h1 style={{ color: "#0c2f4a" }}>Kuracja feedów</h1>
+      <h1 style={{ color: "#0c2f4a" }}>Kuracja feedów<SkillHint skill="/lenie-feed-review" command="/lenie-feed-review">Kolejkę kandydatów możesz przejrzeć także w sesji Claude Code: skill pobiera wpisy z API i proponuje decyzje jeden po drugim.</SkillHint></h1>
       <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
     </div>
     <div role="tablist" aria-label="Widok feedu" style={{ display: "flex", gap: 8, margin: "8px 0 16px" }}>
