@@ -1,4 +1,5 @@
 import React from "react";
+import TranscriptChaptersSuggest from "../components/TranscriptChaptersSuggest/transcriptChaptersSuggest";
 import SkillCommand from "../components/SkillCommand";
 import ChapterBoundariesPanel from "../components/ChapterBoundariesPanel/chapterBoundariesPanel";
 import { renderMarkdown } from "./read";
@@ -69,7 +70,7 @@ const Youtube = () => {
   const transcriptMissing = !String(formik.values.text || "").trim();
   // Paragraphization is deliberately constrained to imported Markdown
   // chapters, so the model can only add whitespace within a known section.
-  const hasMarkdownChapters = /^#{1,2} .+/m.test(String(formik.values.text || ""));
+  const hasMarkdownChapters = /^## .+/m.test(String(formik.values.text || ""));
   // A chapter that still has its imported single-block body yields one heading
   // block and one body block; paragraphization adds more blocks per chapter.
   const textBlocks = String(formik.values.text || "").split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
@@ -261,6 +262,13 @@ const Youtube = () => {
             {captionMessage && <div style={{ marginTop: 8 }}>{captionMessage}</div>}
           </section>
         )}
+        {id && !transcriptMissing && !hasMarkdownChapters && (
+          <TranscriptChaptersSuggest key={id} docId={id} disabled={isLoading}
+            onBusyChange={setChapterEditorBusy} onSaved={async () => {
+            await handleGetLinkByID(id);
+            setParagraphMessage("Zapisano rozdziały.");
+          }} />
+        )}
         {id && !transcriptMissing && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
             <strong>Formatowanie transkrypcji</strong>
@@ -274,7 +282,7 @@ const Youtube = () => {
             )}
             {!hasMarkdownChapters && (
               <div role="status" style={{ marginTop: 8, color: "#92400e" }}>
-                Nie można jeszcze podzielić transkrypcji na akapity: nie ma w niej rozdziałów. Rozdziały pochodzą z ręcznie podanej listy czasowej, z co najmniej dwóch znaczników czasu w opisie filmu YouTube albo ze spisu treści (AI) z zatwierdzonymi kotwicami (skill <code>/lenie-youtube-outline</code>).
+                Nie można jeszcze podzielić transkrypcji na akapity: nie ma w niej rozdziałów. Użyj sekcji „Podział na rozdziały (AI)” powyżej albo zaimportuj rozdziały z ręcznie podanej listy czasowej, z co najmniej dwóch znaczników czasu w opisie filmu YouTube albo ze spisu treści (AI) z zatwierdzonymi kotwicami (skill <code>/lenie-youtube-outline</code>).
               </div>
             )}
             {!hasMarkdownChapters && hasOutline && (

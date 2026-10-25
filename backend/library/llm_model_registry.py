@@ -30,7 +30,7 @@ _ORGANIZATION_DESCRIPTION_MODELS: tuple[tuple[str, str, str, bool, bool], ...] =
 # Tasks that share the list above. ``tool_tags`` sends only public tool metadata (name, URL, description).
 # Content-group suggestions send public feed titles/summaries to an external provider
 # when an OpenRouter model is selected; document classification stays on Bielik.
-_TASKS = {"organization_description", "tool_tags", "content_group_suggestion"}
+_TASKS = {"organization_description", "tool_tags", "content_group_suggestion", "transcript_chapters"}
 
 # Tasks whose answer must be structured JSON: models that cannot honour a JSON-schema ``response_format`` are not
 # offered (and, where it is known without a network call, not accepted) for them.

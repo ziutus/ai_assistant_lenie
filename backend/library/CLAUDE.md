@@ -381,3 +381,5 @@ and optional boolean `dry_run` (default true). Previews report counts per rule a
 field plus a short before/after snippet without changing text or statistics.
 Persisting updates text/text_md and statistics only; it does not rebuild existing
 chunks, embeddings or entities. There is no bulk backfill mode.
+
+Headerless YouTube/movie transcripts support AI chapter proposals through POST /document/<id>/suggest_chapters (dry-run model planning without generation) and explicit POST /document/<id>/apply_chapters. Models select sentence indexes and Polish titles only; lossless insertion shares the chapter editor splitter, checks embeddings, active analysis and optional text SHA-256, and initializes chapter types. The transcript_chapters allowlist and /transcript_chapters/model household setting gate providers; unknown context limits block generation. Suggestions record transcript_chapter_suggestion usage and never persist text; chapter application updates Document.text, like manual chapter splits.
