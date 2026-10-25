@@ -24,7 +24,7 @@ from library.content_group_service import (
 from library.content_group_suggestion_service import active_topic_catalog, decide_suggestion, request_suggestions, sanitize_new_topics
 from library.db.models import ContentGroupSuggestionRun
 from library.feed_source_service import list_feeds, feed_to_dict, resolve_references
-from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id
+from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id, set_llm_discussion
 from library.job_queue import JOB_TYPES, enqueue, retry, cancel
 from library import app_settings, feed_retention
 
@@ -148,6 +148,10 @@ def _item_dict(item, retention_default: int | None = None):
         "saved_by_user_id": item.saved_by_user_id,
         "document_id": item.document_id,
         "review_note": item.review_note,
+        "llm_discussion_status": item.llm_discussion_status,
+        "llm_discussion_at": _timestamp(item.llm_discussion_at),
+        "llm_discussion_done_at": _timestamp(item.llm_discussion_done_at),
+        "llm_discussion_result": item.llm_discussion_result,
         "review_reason": item.review_reason,
         "ignored_pattern": item.ignored_pattern,
         "first_seen_at": item.first_seen_at.isoformat() if item.first_seen_at else None,
@@ -692,6 +696,9 @@ def get_items():
     _user()
     session = get_scoped_session()
     status = request.args.get("status")
+    discussion = request.args.get("discussion")
+    if discussion is not None and discussion not in {"open", "done", "any"}:
+        abort(400, "invalid discussion filter")
     order = [FeedItem.published_at.desc().nulls_last(), FeedItem.first_seen_at.desc()]
     if status == "saved_for_later":
         order = [
@@ -699,7 +706,12 @@ def get_items():
             FeedItem.saved_at.desc(),
             FeedItem.first_seen_at.desc(),
         ]
+    if discussion is not None:
+        timestamp = FeedItem.llm_discussion_done_at if discussion == "done" else FeedItem.llm_discussion_at
+        order = [timestamp.desc(), FeedItem.id.desc()]
     query = select(FeedItem).options(selectinload(FeedItem.group_memberships).selectinload(FeedItemGroupMembership.group)).order_by(*order)
+    if discussion is not None:
+        query = query.where(FeedItem.llm_discussion_status.is_not(None) if discussion == "any" else FeedItem.llm_discussion_status == discussion)
     if status:
         query = query.where(FeedItem.status == status)
     if request.args.get("feed_source_id"):
@@ -825,6 +837,36 @@ def _validate_filter_groups(session, topic_ids, priority_id):
     groups = {group.id: group for group in session.scalars(select(ContentGroup).where(ContentGroup.id.in_(ids), ContentGroup.archived_at.is_(None))).all()}
     if len(groups) != len(ids) or any(groups[group_id].kind != "topic" for group_id in topic_ids) or (priority_id and groups[priority_id].kind != "priority"):
         raise ValueError("group filter has wrong kind or inactive group")
+
+
+@bp.get("/feed_items/discussion_summary")
+def discussion_summary():
+    _user()
+    rows = get_scoped_session().execute(
+        select(FeedItem.llm_discussion_status, func.count()).where(FeedItem.llm_discussion_status.is_not(None))
+        .group_by(FeedItem.llm_discussion_status)
+    ).all()
+    return jsonify({"open": 0, "done": 0, **dict(rows)})
+
+
+@bp.patch("/feed_items/<int:item_id>/discussion")
+def patch_discussion(item_id):
+    _user()
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or "status" not in body:
+        abort(400, "status is required")
+    if "result" in body and not isinstance(body["result"], str):
+        abort(400, "result must be a string")
+    session = get_scoped_session()
+    try:
+        item = set_llm_discussion(session, item_id, body["status"], body.get("result"))
+    except ValueError as exc:
+        session.rollback()
+        abort(404 if str(exc) == "feed item not found" else 400, str(exc))
+    except RuntimeError as exc:
+        session.rollback()
+        abort(409, str(exc))
+    return jsonify(_item_dict(item))
 
 
 @bp.get("/feed_items/<int:item_id>")

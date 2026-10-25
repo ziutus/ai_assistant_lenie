@@ -101,6 +101,21 @@ limited to 4000 characters) is the reader's comment for an LLM: what interested 
 next. `target_text()` appends it to the material of a topic suggestion as "KOMENTARZ UŻYTKOWNIKA …"
 (max 1000 characters, the item text is cut to make room). Tests: `tests/unit/test_feed_comment.py`.
 
+**Discussion queue ("Do omówienia z LLM")** (`feed_items.llm_discussion_status` NULL/`open`/`done`,
+`llm_discussion_at`, `llm_discussion_done_at`, `llm_discussion_result`, migration `e8c3a1f5b794`). A
+SECOND axis, independent of the text decision (`status`: import / save / "Może kiedyś" / skip): an
+item can be skipped, or expire out of "Może kiedyś", and still sit in the discussion queue.
+`feed_monitor_service.set_llm_discussion(session, item_id, status, result=None)` flags (`open`, the
+original timestamp is kept while it stays open), closes (`done` needs an open item, `result` is a link
+or a note up to 1000 characters), reopens (clears the result) or unflags (`None`); it never touches
+`status`, `saved_at`, `review_reason`, group memberships or `feed_review_decisions`. REST:
+`PATCH /feed_items/<id>/discussion` (`{status: null|"open"|"done", result?}`; 400 invalid, 404 unknown
+item, 409 closing an item that is not open), `GET /feed_items?discussion=open|done|any` (the `status`
+filter stays optional, newest flag first), `GET /feed_items/discussion_summary` (`{open, done}`);
+the item dict carries the four fields. The expiry sweep (`feed_retention.py`) leaves the flag alone.
+A skill such as `/lenie-feed-review` can read the queue with `GET /feed_items?discussion=open` and
+use `review_note` as the user's brief. Tests: `tests/unit/test_feed_discussion.py`.
+
 `feed_monitor_service.py` keeps feed candidates separate from imported
 documents. The `saved_for_later` state is a shared household queue: it stores
 `saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the

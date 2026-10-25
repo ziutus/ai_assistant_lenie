@@ -384,6 +384,36 @@ def import_feed_item(
             session.close()
 
 
+def set_llm_discussion(session, item_id, status, result=None) -> FeedItem:
+    if status not in (None, "open", "done"):
+        raise ValueError("invalid discussion status")
+    item = session.get(FeedItem, item_id)
+    if item is None:
+        raise ValueError("feed item not found")
+    now = dt.datetime.now(dt.timezone.utc)
+    if status == "done":
+        if item.llm_discussion_status != "open":
+            raise RuntimeError("item is not open for discussion")
+        if result is not None and not isinstance(result, str):
+            raise ValueError("result must be a string")
+        result = result.strip() or None if result is not None else None
+        if result is not None and len(result) > 1000:
+            raise ValueError("result is limited to 1000 characters")
+        item.llm_discussion_done_at = now
+        item.llm_discussion_result = result
+    else:
+        if status is None:
+            item.llm_discussion_at = None
+        elif item.llm_discussion_status != "open":
+            item.llm_discussion_at = now
+        item.llm_discussion_done_at = None
+        item.llm_discussion_result = None
+    item.llm_discussion_status = status
+    item.updated_at = now
+    session.commit()
+    return item
+
+
 def transition_item(
     session, item_id: int, target: str, user_id: int | None = None, review_reason: str | None = None,
     group_ids: list[int] | None = None,

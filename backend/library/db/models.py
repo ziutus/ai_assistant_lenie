@@ -374,6 +374,10 @@ class FeedItem(Base):
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     review_note: Mapped[str | None] = mapped_column(Text)
     review_reason: Mapped[str | None] = mapped_column(String(40))
+    llm_discussion_status: Mapped[str | None] = mapped_column(String(10))
+    llm_discussion_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    llm_discussion_done_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    llm_discussion_result: Mapped[str | None] = mapped_column(Text)
     ignored_pattern: Mapped[str | None] = mapped_column(Text)
     last_error: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (
@@ -389,6 +393,12 @@ class FeedItem(Base):
         Index("idx_feed_items_source_status", "feed_source_id", "status"),
         Index("idx_feed_items_status_first_seen", "status", "first_seen_at"),
         Index("idx_feed_items_status_saved_at", "status", "saved_at"),
+        CheckConstraint(
+            "llm_discussion_status IS NULL OR llm_discussion_status IN ('open','done')",
+            name="ck_feed_items_llm_discussion_status",
+        ),
+        Index("idx_feed_items_llm_discussion", "llm_discussion_status", "llm_discussion_at",
+              postgresql_where=sa_text("llm_discussion_status IS NOT NULL")),
     )
     group_memberships: Mapped[list["FeedItemGroupMembership"]] = relationship(
         back_populates="feed_item", cascade="all, delete-orphan", overlaps="groups",

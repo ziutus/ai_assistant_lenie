@@ -165,6 +165,7 @@ def test_item_dict_carries_the_expiry_only_for_saved_items(monkeypatch):
         id=1, feed_source_id=1, url="u", canonical_url="u", title="t", summary=None, published_at=None, status="saved_for_later",
         saved_at=dt.datetime(2026, 7, 27, tzinfo=UTC), saved_by_user_id=None, document_id=None, review_note=None, review_reason=None,
         ignored_pattern=None, first_seen_at=None,
+        llm_discussion_status=None, llm_discussion_at=None, llm_discussion_done_at=None, llm_discussion_result=None,
         group_memberships=[SimpleNamespace(source="manual", group=SimpleNamespace(id=1, name="Może kiedyś", kind="priority", priority_rank=100, retention_months=None, archived_at=None))],
     )
     for built in (feed_routes._item_dict(full), feed_routes._item_dict(full, 6)):  # default looked up, or passed in
