@@ -96,6 +96,12 @@ ancestor of another suggestion of the same answer OR of a topic the target alrea
 only collects what no more specific topic covers. Existing documents are not re-filed.
 Tests: `tests/unit/test_topic_hierarchy.py`.
 
+**Browse filters.** `GET /feed_items` also takes `media=video|article` (video = the feed source has
+`type='youtube_channel'` OR the URL matches `_VIDEO_URL_PATTERN`, the same rule as the UI's `isVideo`) and
+`maybe_later=only|exclude` (membership of an active priority group with `priority_rank` 100, the rule of
+`feed_retention.is_maybe_later`); anything else is a 400. They feed the read-only "Przeglądaj" tab of
+`/feed-review`. Tests: `tests/unit/test_feed_browse_filters.py`.
+
 **Item comment.** `feed_items.review_note` (existing column, `PATCH /feed_items/<id>/note`, now
 limited to 4000 characters) is the reader's comment for an LLM: what interested them and what to do
 next. `target_text()` appends it to the material of a topic suggestion as "KOMENTARZ UŻYTKOWNIKA …"

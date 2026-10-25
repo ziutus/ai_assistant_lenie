@@ -3,7 +3,7 @@
 import datetime as dt
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, abort, g, jsonify, request
-from sqlalchemy import select, case, func
+from sqlalchemy import select, case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from library.db.engine import get_scoped_session
@@ -710,6 +710,10 @@ def expire_saved_items_now():
     return jsonify(feed_retention.expire_saved_items(get_scoped_session(), dry_run=bool(body.get("dry_run"))))
 
 
+# Same rule as the UI (feedReview.tsx isVideo): a YouTube channel feed or a YouTube video URL.
+_VIDEO_URL_PATTERN = r"(youtube\.com/watch\?|youtu\.be/|youtube\.com/shorts/)"
+
+
 @bp.get("/feed_items")
 def get_items():
     _user()
@@ -735,6 +739,28 @@ def get_items():
         query = query.where(FeedItem.status == status)
     if request.args.get("feed_source_id"):
         query = query.where(FeedItem.feed_source_id == int(request.args["feed_source_id"]))
+    media = request.args.get("media")
+    if media not in {None, "", "video", "article"}:
+        abort(400, "media must be video or article")
+    if media:
+        is_video = or_(
+            FeedItem.feed_source_id.in_(select(FeedSource.id).where(FeedSource.type == "youtube_channel")),
+            FeedItem.url.op("~*")(_VIDEO_URL_PATTERN),
+        )
+        query = query.where(is_video if media == "video" else ~is_video)
+    maybe_later = request.args.get("maybe_later")
+    if maybe_later not in {None, "", "only", "exclude"}:
+        abort(400, "maybe_later must be only or exclude")
+    if maybe_later:
+        in_maybe_later = select(1).select_from(FeedItemGroupMembership).join(
+            ContentGroup, ContentGroup.id == FeedItemGroupMembership.group_id,
+        ).where(
+            FeedItemGroupMembership.feed_item_id == FeedItem.id,
+            ContentGroup.kind == "priority",
+            ContentGroup.priority_rank == feed_retention.MAYBE_LATER_PRIORITY_RANK,
+            ContentGroup.archived_at.is_(None),
+        ).exists()
+        query = query.where(in_maybe_later if maybe_later == "only" else ~in_maybe_later)
     try:
         topic_ids = _parse_group_ids(request.args.get("topic_group_ids"))
         priority_id = int(request.args["priority_group_id"]) if request.args.get("priority_group_id") else None

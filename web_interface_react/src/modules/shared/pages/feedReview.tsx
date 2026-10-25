@@ -94,6 +94,17 @@ function HelpBadge({ text }: { text: string }) {
     style={{ cursor: "help", color: "#64748b", fontSize: ".85rem", marginRight: 6 }}>ⓘ</span>;
 }
 
+type View = "new" | "later" | "discuss" | "browse";
+const parseView = (value: string | null): View => value === "discuss" || value === "later" || value === "browse" ? value : "new";
+
+// Filters of the read-only "Przeglądaj" tab: `media` / `maybe_later` are the GET /feed_items parameters.
+const BROWSE_KINDS: Array<[string, string, Record<string, string>]> = [
+  ["all", "Wszystko", {}],
+  ["read", "Do przeczytania", { media: "article", maybe_later: "exclude" }],
+  ["watch", "Do obejrzenia", { media: "video", maybe_later: "exclude" }],
+  ["maybe", "Może kiedyś", { maybe_later: "only" }],
+];
+
 export function buildBrief(item: FeedItem, sources: FeedSource[], comment: string): string {
   const source = sources.find(candidate => candidate.id === item.feed_source_id);
   return `# Zadanie na podstawie wpisu z feedu: ${item.title}
@@ -166,11 +177,13 @@ export default function FeedReview() {
     ? searchParams.get("feed_source_id") || ""
     : storedFilters.feedSourceId;
   const view = searchParams.has("view")
-    ? searchParams.get("view") === "discuss" ? "discuss" : searchParams.get("view") === "later" ? "later" : "new"
+    ? parseView(searchParams.get("view"))
     : storedFilters.view;
   // One item at a time is the default: the list opens only for an explicit ?mode=all, never from a remembered choice.
-  const mode = searchParams.get("mode") === "all" ? "all" : "single";
-  const status = view === "later" ? "saved_for_later" : "new";
+  // The read-only browse tab is always a list.
+  const mode = view === "browse" || searchParams.get("mode") === "all" ? "all" : "single";
+  const status = view === "later" || view === "browse" ? "saved_for_later" : "new";
+  const browseKind = BROWSE_KINDS.some(([value]) => value === searchParams.get("kind")) ? searchParams.get("kind") as string : "all";
   const discussion = searchParams.get("discussion") === "done" ? "done" : "open";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
   const refreshDiscussionCount = React.useCallback(async () => {
@@ -230,6 +243,7 @@ export default function FeedReview() {
     try {
       const params = new URLSearchParams({ ...(view === "discuss" ? { discussion } : { status }), limit: String(pageSize), offset: String((nextPage - 1) * pageSize) });
       if (selectedSource) params.set("feed_source_id", selectedSource);
+      if (view === "browse") Object.entries(BROWSE_KINDS.find(([value]) => value === browseKind)?.[2] ?? {}).forEach(([key, value]) => params.set(key, value));
       const [itemsResponse, sourcesResponse, groupsResponse] = await Promise.all([
         fetch(`${apiUrl}/feed_items?${params.toString()}`, { headers }),
         fetch(`${apiUrl}/feed_sources`, { headers }),
@@ -272,7 +286,7 @@ export default function FeedReview() {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, headers, selectedSource, status, view, discussion]);
+  }, [apiUrl, headers, selectedSource, status, view, discussion, browseKind]);
 
   React.useEffect(() => { void load(); }, [load]);
 
@@ -340,7 +354,7 @@ export default function FeedReview() {
       ? changes.feed_source_id || ""
       : selectedSource;
     const nextView = Object.prototype.hasOwnProperty.call(changes, "view")
-      ? changes.view === "discuss" ? "discuss" : changes.view === "later" ? "later" : "new"
+      ? parseView(changes.view)
       : view;
     saveFeedReviewFilters({ feedSourceId: nextSource, view: nextView, mode: changes.mode === undefined ? mode : changes.mode === "all" ? "all" : "single" });
     if (Object.keys(changes).every(key => key === "mode")) { setSearchParams(next); return; }
@@ -576,6 +590,29 @@ export default function FeedReview() {
       </article>;
   };
 
+  // Read-only card of the "Przeglądaj" tab: nothing here writes, and it deliberately has no ContentGroupsPanel
+  // (that panel asks the topic-suggestion model for every card it shows).
+  const renderBrowseItem = (item: FeedItem) => {
+    const maybeLater = item.groups?.some(group => group.kind === "priority" && group.priority_rank === 100);
+    return <article key={item.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+      <div style={{ color: "#64748b", fontSize: ".85rem", marginBottom: 6 }}>
+        {isVideo(item) ? "🎬 Film" : "📄 Artykuł"} · {sourceName(item.feed_source_id)}{maybeLater ? " · Może kiedyś" : ""}
+      </div>
+      <h3 style={{ margin: "0 0 6px" }}><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a></h3>
+      <div style={{ color: "#475569", fontSize: ".9rem" }}>
+        {item.published_at && <>Opublikowano: {formatDate(item.published_at)}</>}
+        {item.saved_at && <>{item.published_at ? " · " : ""}Zapisano: {formatDate(item.saved_at)}</>}
+        {item.expires_at && <> · Ważne do: {formatDate(item.expires_at)}</>}
+      </div>
+      {item.summary && <p>{item.summary}</p>}
+      {item.review_note && <p style={{ color: "#475569", fontStyle: "italic" }}>Komentarz: {item.review_note}</p>}
+      {!!item.groups?.length && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+        {item.groups.map(group => <span key={group.id} style={{ background: group.kind === "priority" ? "#dbeafe" : "#f1f5f9", borderRadius: 12, padding: "2px 8px", fontSize: ".85rem" }}>{group.name}</span>)}
+      </div>}
+      <a href={`/feed-review?${new URLSearchParams({ view: "later", mode: "single", item: String(item.id) }).toString()}`}>Edytuj ten wpis (akcje i tematy)</a>
+    </article>;
+  };
+
   const pagination = <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wpisów feedu" onPageChange={nextPage => { void load(nextPage); }} />;
 
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
@@ -586,6 +623,7 @@ export default function FeedReview() {
     <div role="tablist" aria-label="Widok feedu" style={{ display: "flex", gap: 8, margin: "8px 0 16px" }}>
       <button role="tab" aria-selected={view === "new"} className={view === "new" ? "button" : ""} onClick={() => updateParams({ view: null })}>Nowe</button>
       <button role="tab" aria-selected={view === "later"} className={view === "later" ? "button" : ""} onClick={() => updateParams({ view: "later" })}>Do przeczytania / obejrzenia</button>
+      <button role="tab" aria-selected={view === "browse"} className={view === "browse" ? "button" : ""} onClick={() => updateParams({ view: "browse" })}>Przeglądaj (bez edycji)</button>
       <button role="tab" aria-selected={view === "discuss"} className={view === "discuss" ? "button" : ""} onClick={() => updateParams({ view: "discuss" })}>Do omówienia ({discussionCount})</button>
       <button type="button" className={showHistory ? "button" : ""} onClick={() => setShowHistory(value => !value)}>Historia decyzji</button>
     </div>
@@ -594,8 +632,13 @@ export default function FeedReview() {
         <button aria-pressed={discussion === "open"} onClick={() => updateParams({ discussion: "open" })}>Otwarte</button>
         <button aria-pressed={discussion === "done"} onClick={() => updateParams({ discussion: "done" })}>Omówione</button>
       </div>}
-      <button aria-pressed={mode === "single"} onClick={() => updateParams({ mode: "single" })}>Po jednym wpisie</button>{" "}
-      <button aria-pressed={mode === "all"} onClick={() => updateParams({ mode: "all" })}>Wszystkie na liście</button>
+      {view === "browse" ? <div role="group" aria-label="Rodzaj materiału">
+        {BROWSE_KINDS.map(([value, label]) => <button key={value} aria-pressed={browseKind === value} className={browseKind === value ? "button" : ""}
+          onClick={() => updateParams({ kind: value === "all" ? null : value })}>{label}</button>)}
+      </div> : <>
+        <button aria-pressed={mode === "single"} onClick={() => updateParams({ mode: "single" })}>Po jednym wpisie</button>{" "}
+        <button aria-pressed={mode === "all"} onClick={() => updateParams({ mode: "all" })}>Wszystkie na liście</button>
+      </>}
     </div>
     {showHistory && <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 14, marginBottom: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -640,8 +683,8 @@ export default function FeedReview() {
     </div>}
     {radarMessage && <p role="status" style={{ color: "#166534" }}>{radarMessage} <a href="/tool-recommendations">Otwórz radar</a></p>}
 
-    {!loading && !error && !items.length && <p>{view === "discuss" ? discussion === "done" ? "Brak omówionych wpisów." : "Brak wpisów do omówienia." : view === "later" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
-    {models.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
+    {!loading && !error && !items.length && <p>{view === "discuss" ? discussion === "done" ? "Brak omówionych wpisów." : "Brak wpisów do omówienia." : view === "later" || view === "browse" ? "Lista jest pusta." : "Brak nowych wpisów dla wybranego źródła."}</p>}
+    {view !== "browse" && models.length > 0 && <details style={{ margin: "0 0 18px", color: "#475569" }}>
       <summary style={{ cursor: "help" }}>Model do podpowiadania tematów: <strong>{models.find(option => option.id === suggestModel)?.label ?? suggestModel}</strong></summary>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
         <select value={suggestModel} onChange={event => setSuggestModel(event.target.value)} aria-label="Model do podpowiadania tematów">
@@ -685,7 +728,7 @@ export default function FeedReview() {
         if (index + 1 < items.length) setIndex(index + 1); else void load(page + 1, "first");
       }}>Następny →</button>
     </nav>}
-    {mode === "all" ? items.map(renderItem) : displayedItem ? renderItem(displayedItem) : null}
+    {view === "browse" ? items.map(renderBrowseItem) : mode === "all" ? items.map(renderItem) : displayedItem ? renderItem(displayedItem) : null}
     {mode === "all" && pagination}
 
   </section>;
