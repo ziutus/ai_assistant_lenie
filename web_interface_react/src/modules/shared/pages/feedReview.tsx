@@ -18,6 +18,7 @@ type FeedItem = {
   url: string;
   summary: string | null;
   review_note?: string | null;
+  seed_document_id?: number | null;
   llm_discussion_status?: "open" | "done" | null;
   llm_discussion_at?: string | null;
   llm_discussion_done_at?: string | null;
@@ -472,6 +473,11 @@ export default function FeedReview() {
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
         {item.summary && <p>{item.summary}</p>}
         <FeedItemComment key={`comment-${item.id}`} itemId={item.id} initialNote={item.review_note}
+          seedDocumentId={item.seed_document_id}
+          onSeedCreated={documentId => {
+            setItems(current => current.map(candidate => candidate.id === item.id ? { ...candidate, seed_document_id: documentId } : candidate));
+            setPinned(current => current?.id === item.id ? { ...current, seed_document_id: documentId } : current);
+          }}
           buildBrief={comment => buildBrief(item, sources, comment)}
           onSaved={note => {
             setItems(current => current.map(candidate => candidate.id === item.id ? { ...candidate, review_note: note } : candidate));
@@ -485,12 +491,16 @@ export default function FeedReview() {
               <input maxLength={1000} value={discussionResults[item.id] ?? ""} disabled={busy}
                 onChange={event => setDiscussionResults(current => ({ ...current, [item.id]: event.target.value }))} />
             </label>
+            {item.seed_document_id != null && <button type="button" disabled={busy}
+              onClick={() => setDiscussionResults(current => ({ ...current, [item.id]: `/text/${item.seed_document_id}` }))}>Wstaw link do zalążka</button>}
             <button disabled={busy} onClick={() => void changeDiscussion(item.id, "done", discussionResults[item.id] ?? "")}>Omówione</button>
           </>}
           {item.llm_discussion_status === "done" && <>
             {item.llm_discussion_result && <p>{/^https?:\/\//i.test(item.llm_discussion_result)
               ? <a href={item.llm_discussion_result} target="_blank" rel="noreferrer">{item.llm_discussion_result}</a>
-              : item.llm_discussion_result}</p>}
+              : item.llm_discussion_result.startsWith("/")
+                ? <Link to={item.llm_discussion_result}>{item.llm_discussion_result}</Link>
+                : item.llm_discussion_result}</p>}
             <button disabled={busy} onClick={() => void changeDiscussion(item.id, "open")}>Otwórz ponownie</button>
           </>}
         </div>}

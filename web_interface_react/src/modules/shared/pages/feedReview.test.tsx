@@ -19,6 +19,24 @@ function jsonResponse(body: object) {
   return new Response(JSON.stringify(body), { status: 200 });
 }
 
+it("links a seed, inserts its result and renders the stored internal result as a link", async () => {
+  const fallback = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    if (String(url).includes("/feed_items?")) {
+      const done = String(url).includes("discussion=done");
+      return jsonResponse({ feed_items: [{ ...feedItem, seed_document_id: 42,
+        llm_discussion_status: done ? "done" : "open", llm_discussion_result: done ? "/text/42" : null }], total: 1 });
+    }
+    return fallback(url, init);
+  });
+  render(<MemoryRouter initialEntries={["/feed-review?view=discuss&mode=all"]}><FeedReview /></MemoryRouter>);
+  expect((await screen.findByRole("link", { name: "Otwórz #42" })).getAttribute("href")).toBe("/text/42");
+  fireEvent.click(screen.getByRole("button", { name: "Wstaw link do zalążka" }));
+  expect(screen.getByLabelText("Wynik (link lub krótka notatka, opcjonalnie)")).toHaveProperty("value", "/text/42");
+  fireEvent.click(screen.getByRole("button", { name: "Omówione", pressed: false }));
+  expect((await screen.findByRole("link", { name: "/text/42" })).getAttribute("href")).toBe("/text/42");
+});
+
 beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {

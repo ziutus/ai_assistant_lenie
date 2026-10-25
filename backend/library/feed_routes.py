@@ -27,6 +27,7 @@ from library.feed_source_service import list_feeds, feed_to_dict, resolve_refere
 from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id, set_llm_discussion
 from library.job_queue import JOB_TYPES, enqueue, retry, cancel
 from library import app_settings, feed_retention
+from library.feed_seed_document import create_seed_document, seed_document_ids
 
 bp = Blueprint("feeds", __name__)
 
@@ -117,7 +118,9 @@ def _validate_schedule(timezone_name: str, times: list) -> list[str]:
     return normalized
 
 
-def _item_dict(item, retention_default: int | None = None):
+def _item_dict(item, retention_default: int | None = None, seed_ids: dict[int, int] | None = None):
+    if seed_ids is None:
+        seed_ids = seed_document_ids(get_scoped_session(), [item.id])
     groups = sorted(
         [
             {
@@ -147,6 +150,7 @@ def _item_dict(item, retention_default: int | None = None):
         "saved_at": item.saved_at.isoformat() if item.saved_at else None,
         "saved_by_user_id": item.saved_by_user_id,
         "document_id": item.document_id,
+        "seed_document_id": seed_ids.get(item.id),
         "review_note": item.review_note,
         "llm_discussion_status": item.llm_discussion_status,
         "llm_discussion_at": _timestamp(item.llm_discussion_at),
@@ -157,6 +161,21 @@ def _item_dict(item, retention_default: int | None = None):
         "first_seen_at": item.first_seen_at.isoformat() if item.first_seen_at else None,
         "groups": groups,
     }
+
+
+@bp.post("/feed_items/<int:item_id>/seed_document")
+def post_seed_document(item_id):
+    _user()
+    session = get_scoped_session()
+    try:
+        document, created = create_seed_document(session, item_id)
+    except ValueError as exc:
+        abort(404, str(exc))
+    return jsonify({
+        "document_id": document.id,
+        "created": created,
+        "feed_item": _item_dict(session.get(FeedItem, item_id)),
+    }), 201 if created else 200
 
 
 @bp.get("/content_groups")
@@ -753,9 +772,11 @@ def get_items():
     offset = max(int(request.args.get("offset", 0)), 0)
     total = session.scalar(select(func.count()).select_from(query.subquery()))
     retention_default = feed_retention.default_months(session)
+    items = session.scalars(query.offset(offset).limit(limit)).all()
+    seed_ids = seed_document_ids(session, [item.id for item in items])
     return jsonify(
         {
-            "feed_items": [_item_dict(x, retention_default) for x in session.scalars(query.offset(offset).limit(limit)).all()],
+            "feed_items": [_item_dict(x, retention_default, seed_ids) for x in items],
             "limit": limit,
             "offset": offset,
             "total": total,
