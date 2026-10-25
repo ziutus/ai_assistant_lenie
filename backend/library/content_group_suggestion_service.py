@@ -57,9 +57,13 @@ def suggestion_model() -> str:
 
 
 def active_topic_catalog(session) -> list[dict]:
-    # parent_id only when set: a flat catalog keeps the exact JSON (and prompt hash) it always had
+    # parent_id and description only when set: a catalog without them keeps the exact JSON (and prompt hash) it always had
     return [
-        {"id": group.id, "name": group.name, **({"parent_id": group.parent_id} if group.parent_id is not None else {})}
+        {
+            "id": group.id, "name": group.name,
+            **({"parent_id": group.parent_id} if group.parent_id is not None else {}),
+            **({"description": group.description} if group.description else {}),
+        }
         for group in session.scalars(
             select(ContentGroup).where(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None)).order_by(ContentGroup.name)
         ).all()

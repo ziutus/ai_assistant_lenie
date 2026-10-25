@@ -209,6 +209,19 @@ it("clearing a topic's validity sends null so the default applies", async () => 
   expect(JSON.parse(String(sent("PATCH")?.[1]?.body))).toEqual({ retention_months: null });
 });
 
+it("saves a topic description with PATCH only after the draft changes", async () => {
+  respond = (url, init) => init?.method === "PATCH" ? json({ id: 3, description: "Zakres" }) : base(url, init);
+  render(<ContentGroups />);
+  const turtles = await row("Żółwie");
+  expect(within(turtles).queryByRole("button", { name: "Zapisz" })).toBeNull();
+  fireEvent.change(within(turtles).getByLabelText("Opis tematu Żółwie"), { target: { value: " Zakres " } });
+  expect(sent("PATCH")).toBeUndefined();
+  fireEvent.click(within(turtles).getByRole("button", { name: "Zapisz" }));
+  expect((await screen.findByRole("status")).textContent).toContain("Zapisano opis tematu „Żółwie”");
+  expect(sent("PATCH")?.[0]).toBe("http://nas:5000/content_groups/3");
+  expect(JSON.parse(String(sent("PATCH")?.[1]?.body))).toEqual({ description: "Zakres" });
+});
+
 it("saves the household default validity", async () => {
   respond = (url, init) => init?.method === "PUT" ? json({ default_months: 9, saved: true }) : base(url, init);
   render(<ContentGroups />);
