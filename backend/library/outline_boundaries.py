@@ -263,6 +263,26 @@ def insert_topic_headings(text: str, starts: list[int | None], titles: list[str]
     return "".join(pieces)
 
 
+def apply_anchors_as_chapters(text: str, outline_md: str, anchors: object) -> tuple[str, list[str], list[str]]:
+    """Turn stored, hash-matching outline anchors into ``##`` chapters of ``text``.
+
+    Returns ``(marked_text, applied_titles, dropped_titles)``. The text keeps every
+    character; only heading blocks are added. Raises ``ValueError`` when the anchors
+    are invalid, were written for another outline, or fewer than two topics can be
+    located, because a single chapter would add nothing.
+    """
+    payload = validate_anchor_payload(anchors)
+    if payload["outline_sha256"] != hashlib.sha256((outline_md or "").encode("utf-8")).hexdigest():
+        raise ValueError("Kotwice powstały dla innego spisu treści. Wygeneruj je ponownie.")
+    titles = [anchor["title"] for anchor in payload["anchors"]]
+    starts = anchors_to_starts(text, payload["anchors"])
+    applied = [title for title, start in zip(titles, starts) if start is not None]
+    if len(applied) < 2:
+        raise ValueError("Nie udało się wskazać co najmniej dwóch początków tematów w transkrypcji.")
+    marked = insert_topic_headings(text, starts, titles).lstrip("\n")
+    return marked, applied, [title for title, start in zip(titles, starts) if start is None]
+
+
 def merge_small_chunks(chunks: list[str], min_chars: int = 1000, max_chars: int = 5000) -> list[str]:
     """Merge short chunks backwards (for the first chunk, forwards), keeping headings."""
     if min_chars < 0 or max_chars <= 0:
