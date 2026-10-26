@@ -119,7 +119,12 @@ accepted / dismissed, never-suggested topics first). `execute_suggestion_job` ke
 as `raw_result.dropped_new_topics` (`name`, `confidence`, `reason`, `dropped_because` = `duplicate_of_catalog` / `duplicate_in_answer` /
 `low_confidence` / `bad_confidence` / `invalid` / `over_limit`; at most 10, key absent when nothing was dropped), because `new_topics`
 holds only the survivors — a model that answers with an existing topic's name as a "new" topic is a miss visible only there; the report
-copies them into `missed_by_model[].dropped_new_topics`. Read-only, user or service key; the `/lenie-topic-suggestion-quality` skill
+copies them into `missed_by_model[].dropped_new_topics`. A job that failed (HTTP 429 from the provider, a timeout) is retried by the worker on
+the SAME run: the failed attempt leaves its message in `run.error`, and the attempt that finally succeeds clears the column and keeps the
+message as `raw_result.retried_after` plus `raw_result.attempts`, so a run that needed retries is never mistaken for a clean one — the report
+lists them as `retried_runs` and `/prompt_templates/comparison` counts them per model as `retried_runs`. The model call passes no
+`analysis_job_id`: `llm_usage_logs.analysis_job_id` is a foreign key to `document_analysis_jobs`, and a `jobs.id` there made every usage insert
+fail (swallowed by the recorder), so suggestion and tool-candidate calls had no usage row, no cost and no failed-call record. Read-only, user or service key; the `/lenie-topic-suggestion-quality` skill
 reads it together with `/prompt_templates/comparison`. Tests: `tests/unit/test_prompt_quality.py`.
 
 **Item comment.** `feed_items.review_note` (existing column, `PATCH /feed_items/<id>/note`, now

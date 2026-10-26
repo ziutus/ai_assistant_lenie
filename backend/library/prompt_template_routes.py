@@ -143,6 +143,7 @@ def build_comparison(runs: list[ContentGroupSuggestionRun]) -> list[dict]:
             "pending": len(statuses) - decided - statuses.count("reverted"), "reverted": statuses.count("reverted"),
             "accept_rate": round(accepted / decided, 3) if decided else None,
             "no_match_runs": sum(1 for run in items if isinstance(run.raw_result, dict) and run.raw_result.get("no_match")),
+            "retried_runs": sum(1 for run in items if isinstance(run.raw_result, dict) and run.raw_result.get("retried_after")),
             "last_run_at": max((run.created_at for run in items if run.created_at), default=None),
         })
     for row in rows:
@@ -213,8 +214,12 @@ def build_quality(runs: list[ContentGroupSuggestionRun], items: dict[int, FeedIt
                                         "dropped_because": proposal.get("dropped_because")} for proposal in raw.get("dropped_new_topics") or []],
                 "filed_under": filed,
             })
+    retried = [{"run_id": run.id, "feed_item_id": run.feed_item_id, "model": run.model,
+                "attempts": run.raw_result.get("attempts"), "error": run.raw_result["retried_after"][:200]}
+               for run in runs if isinstance(run.raw_result, dict) and run.raw_result.get("retried_after")]
     return {
         "items_considered": len(latest),
+        "retried_runs": retried[:QUALITY_EXAMPLES * 4],
         "missed_by_model": misses,
         "new_topic_proposals": sorted(
             ({"name": e["name"], "count": e["count"], "avg_confidence": round(e["confidence_sum"] / e["count"], 2),
