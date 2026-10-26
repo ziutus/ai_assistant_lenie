@@ -107,6 +107,32 @@ def load_active_rules(*, session=None) -> list[TranscriptCorrectionRow]:
         return list(rows)
 
 
+def validate_one_off(*, pattern, replacement) -> None:
+    """A one-document replacement is never stored as a rule, so a single word is allowed."""
+    if not isinstance(pattern, str) or not pattern.strip():
+        raise TranscriptCorrectionValidationError("pattern nie może być pusty")
+    if not re.findall(r"\w+", pattern):
+        raise TranscriptCorrectionValidationError("pattern musi zawierać słowo")
+    if not isinstance(replacement, str):
+        raise TranscriptCorrectionValidationError("replacement musi być tekstem")
+    if pattern.strip() == replacement:
+        raise TranscriptCorrectionValidationError("pattern i replacement muszą się różnić")
+
+
+def replace_phrase(text: str, pattern: str, replacement: str) -> tuple[str, int]:
+    """Literal, case-insensitive, whole-word replacement; the first letter follows the matched case."""
+    regex = r"(?<!\w)" + r"\s+".join(re.escape(part) for part in pattern.split()) + r"(?!\w)"
+
+    def replace(match):
+        result = replacement
+        first = match.group()[0]
+        if result and first.casefold() == result[0].casefold():
+            result = (result[0].upper() if first.isupper() else result[0].lower()) + result[1:]
+        return result
+
+    return re.subn(regex, replace, text, flags=re.IGNORECASE)
+
+
 def correct_text(text: str, author, rules) -> tuple[str, list[tuple[int, int]]]:
     """Pure preview used by the dry-run endpoint; no statistics or persistence."""
     hits = []
@@ -118,16 +144,7 @@ def correct_text(text: str, author, rules) -> tuple[str, list[tuple[int, int]]]:
             continue
         if rule.scope == "author" and normalize_author(author) != normalize_author(rule.author):
             continue
-        pattern = r"(?<!\w)" + r"\s+".join(re.escape(part) for part in rule.pattern.split()) + r"(?!\w)"
-
-        def replace(match):
-            replacement = rule.replacement
-            first = match.group()[0]
-            if replacement and first.casefold() == replacement[0].casefold():
-                replacement = (replacement[0].upper() if first.isupper() else replacement[0].lower()) + replacement[1:]
-            return replacement
-
-        text, count = re.subn(pattern, replace, text, flags=re.IGNORECASE)
+        text, count = replace_phrase(text, rule.pattern, rule.replacement)
         if count:
             hits.append((rule.id, count))
     return text, hits

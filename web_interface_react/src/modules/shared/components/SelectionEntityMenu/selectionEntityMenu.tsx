@@ -41,6 +41,8 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
   const [fixing, setFixing] = React.useState(false);
   const [replacement, setReplacement] = React.useState(text);
   const [channelOnly, setChannelOnly] = React.useState(false);
+  // Replace in this document only: no stored rule, so even a single word is allowed.
+  const [documentOnly, setDocumentOnly] = React.useState(false);
   const channel = byline?.trim() ?? "";
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -77,21 +79,25 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
     setBusy(true);
     setError("");
     try {
-      try {
-        await axios.post(`${apiUrl}/transcript_corrections`, {
-          pattern: text, replacement: fixed,
-          ...(channelOnly && channel ? { scope: "author", author: channel } : { scope: "global" }),
-        }, { headers });
-      } catch (failure) {
-        // 409: the same rule already exists — still rewrite this document.
-        if (!(axios.isAxiosError(failure) && failure.response?.status === 409)) throw failure;
+      if (!documentOnly) {
+        try {
+          await axios.post(`${apiUrl}/transcript_corrections`, {
+            pattern: text, replacement: fixed,
+            ...(channelOnly && channel ? { scope: "author", author: channel } : { scope: "global" }),
+          }, { headers });
+        } catch (failure) {
+          // 409: the same rule already exists — still rewrite this document.
+          if (!(axios.isAxiosError(failure) && failure.response?.status === 409)) throw failure;
+        }
       }
+      // With a pattern the backend replaces it in this document only, never storing a rule.
       const applied = await axios.post(`${apiUrl}/transcript_corrections/apply`,
-        { document_id: Number(docId), dry_run: false }, { headers });
+        { document_id: Number(docId), dry_run: false, ...(documentOnly ? { pattern: text, replacement: fixed } : {}) },
+        { headers });
       const changed = Object.values(applied.data.fields ?? {}).some((field) => (field as { changed?: boolean }).changed);
       onAdded(changed
         ? `Poprawiono „${text}” → „${fixed}” w transkrypcji. Uruchom ponownie wykrywanie encji, aby odświeżyć chipy.`
-        : `Zapisano regułę „${text}” → „${fixed}”, ale w tym dokumencie nic się nie zmieniło.`);
+        : `${documentOnly ? "Nie zapisano reguły" : "Zapisano regułę"} „${text}” → „${fixed}”, ale w tym dokumencie nic się nie zmieniło.`);
     } catch (failure) {
       const data = axios.isAxiosError(failure) ? failure.response?.data : undefined;
       if (axios.isAxiosError(failure) && failure.response?.status === 403) {
@@ -140,14 +146,20 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
             <input type="text" value={replacement} aria-label="Poprawna wersja" maxLength={200} autoFocus
               onChange={(event) => setReplacement(event.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
           </label>
-          {channel && (
+          <label style={{ display: "block", marginBottom: 8 }}>
+            <input type="checkbox" checked={documentOnly} onChange={(event) => setDocumentOnly(event.target.checked)} />
+            {" "}Tylko ten dokument (bez zapisywania reguły)
+          </label>
+          {channel && !documentOnly && (
             <label style={{ display: "block", marginBottom: 8 }}>
               <input type="checkbox" checked={channelOnly} onChange={(event) => setChannelOnly(event.target.checked)} />
               {" "}Tylko dla kanału „{channel}”
             </label>
           )}
           <p style={{ margin: "0 0 8px", color: "#475569" }}>
-            Reguła obejmie też przyszłe transkrypcje; ten dokument zostanie poprawiony od razu.
+            {documentOnly
+              ? "Zmiana dotyczy tylko tego dokumentu (też pojedyncze słowo); żadna reguła nie zostanie zapisana."
+              : "Reguła obejmie też przyszłe transkrypcje (fraza, nie pojedyncze słowo); ten dokument zostanie poprawiony od razu."}
           </p>
           <div style={{ display: "flex", gap: 6 }}>
             <button type="button" disabled={busy} onClick={() => void fixTranscript()}>✏️ Popraw w transkrypcji</button>

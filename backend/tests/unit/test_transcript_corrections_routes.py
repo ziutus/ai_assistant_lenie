@@ -181,3 +181,28 @@ def test_apply_rejects_invalid_or_bulk_request(api, body):
 
 def test_apply_unknown_document(api):
     assert api[0].post("/transcript_corrections/apply", json={"document_id": 999}).status_code == 404
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_apply_one_off_single_word_without_rule(api, dry_run):
+    client, session, bust, bump = api
+    doc = Document(id=11184, document_type="youtube", byline="channel", text="Hutni mówi. Potem hutni.",
+                   text_md="## Hutni")
+    session.get.return_value = doc
+    body = {"document_id": 11184, "pattern": "Hutni", "replacement": "Huti", "dry_run": dry_run}
+    response = client.post("/transcript_corrections/apply", json=body)
+    assert response.status_code == 200
+    result = response.get_json()
+    assert result["hits"] == [{"rule_id": 0, "count": 3}]
+    assert doc.text == ("Hutni mówi. Potem hutni." if dry_run else "Huti mówi. Potem huti.")
+    assert doc.text_md == ("## Hutni" if dry_run else "## Huti")
+    session.scalars.assert_not_called()  # stored rules are neither loaded nor applied
+    session.add.assert_not_called()  # nothing is stored as a rule
+    bump.assert_not_called()
+
+
+@pytest.mark.parametrize("body", [{"pattern": " ", "replacement": "x"}, {"pattern": "a", "replacement": None},
+                                  {"pattern": "Huti", "replacement": "Huti"}, {"pattern": "...", "replacement": "x"}])
+def test_apply_one_off_validation(api, body):
+    api[1].get.return_value = Document(id=1, text="a", text_md=None)
+    assert api[0].post("/transcript_corrections/apply", json={"document_id": 1} | body).status_code == 400
