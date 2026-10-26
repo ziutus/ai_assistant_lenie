@@ -96,6 +96,26 @@ ancestor of another suggestion of the same answer OR of a topic the target alrea
 only collects what no more specific topic covers. Existing documents are not re-filed.
 Tests: `tests/unit/test_topic_hierarchy.py`.
 
+**Topic description** (`content_groups.description`, `String(300)`, topics only, migration `b5f2c8e1a7d3`). A one-line scope
+of a topic that tells the model what belongs in it when the name alone is ambiguous ("OpSec i ochrona danych": identity theft,
+leaked PESEL, scams as well as IT security). `POST/PATCH /content_groups` accept `description` (whitespace collapsed, blank or
+`null` clears it, absent key = unchanged; 400 above 300 characters or on a priority group); `group_to_dict` returns it. The suggestion
+catalog item carries `description` only when set (like `parent_id`), so it reaches the model inside the `KATALOG` JSON and a catalog
+without descriptions keeps its old prompt hash; changing a description changes the hash, so completed runs are not reused. The
+active prompt text does not mention the field — add a sentence such as "`description` opisuje zakres tematu" through a new
+prompt-template version if a model ignores it. Tests: `tests/unit/test_topic_description.py`.
+
+**Suggestion quality report** (`prompt_template_routes.build_quality()`, `GET /prompt_templates/quality?days=`, default 90, `0` = all).
+For the latest completed feed-item run of every item: `missed_by_model` (the run suggested nothing although the reader later filed
+the item under a topic by hand — with the `no_match` flag, the model's `new_topics` and `filed_under`), `new_topic_proposals` (names
+grouped ignoring case and diacritics, with `count`, `avg_confidence` and example item ids) and `per_topic` (times suggested /
+accepted / dismissed, never-suggested topics first). `execute_suggestion_job` keeps the proposals that `triage_new_topics()` discarded
+as `raw_result.dropped_new_topics` (`name`, `confidence`, `reason`, `dropped_because` = `duplicate_of_catalog` / `duplicate_in_answer` /
+`low_confidence` / `bad_confidence` / `invalid` / `over_limit`; at most 10, key absent when nothing was dropped), because `new_topics`
+holds only the survivors — a model that answers with an existing topic's name as a "new" topic is a miss visible only there; the report
+copies them into `missed_by_model[].dropped_new_topics`. Read-only, user or service key; the `/lenie-topic-suggestion-quality` skill
+reads it together with `/prompt_templates/comparison`. Tests: `tests/unit/test_prompt_quality.py`.
+
 **Item comment.** `feed_items.review_note` (existing column, `PATCH /feed_items/<id>/note`, now
 limited to 4000 characters) is the reader's comment for an LLM: what interested them and what to do
 next. `target_text()` appends it to the material of a topic suggestion as "KOMENTARZ UŻYTKOWNIKA …"

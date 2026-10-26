@@ -2,7 +2,7 @@ import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
 
 type Topic = {
-  id: number; name: string; kind: string; retention_months: number | null; parent_id: number | null;
+  id: number; name: string; kind: string; retention_months: number | null; parent_id: number | null; description?: string | null;
   saved_item_count: number; document_count: number; chunk_count: number; provenance_item_count: number;
 };
 type Pending = { kind: "delete" | "merge"; id: number };
@@ -66,6 +66,8 @@ export default function ContentGroups() {
   const [filter, setFilter] = React.useState("");
   const [newName, setNewName] = React.useState("");
   const [newParent, setNewParent] = React.useState("");
+  const [newDescription, setNewDescription] = React.useState("");
+  const [descriptionDraft, setDescriptionDraft] = React.useState<Record<number, string>>({});
   const [parentDraft, setParentDraft] = React.useState<Record<number, string>>({});
   const [editId, setEditId] = React.useState<number | null>(null);
   const [editName, setEditName] = React.useState("");
@@ -108,9 +110,11 @@ export default function ContentGroups() {
 
   const add = () => run(async () => {
     const name = newName.trim();
-    const { status, data } = await request(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name, kind: "topic", ...(newParent ? { parent_id: Number(newParent) } : {}) }) });
+    const description = newDescription.trim();
+    const { status, data } = await request(`${apiUrl}/content_groups`, { method: "POST", headers, body: JSON.stringify({ name, kind: "topic", ...(newParent ? { parent_id: Number(newParent) } : {}), ...(description ? { description } : {}) }) });
     if (status !== 201) throw new Error(failure(status, data, "Nie udało się dodać tematu"));
     setNewName("");
+    setNewDescription("");
     setNewParent("");
     return `Dodano temat „${name}”.`;
   });
@@ -164,6 +168,15 @@ export default function ContentGroups() {
     return `Przesunięto do „Pomiń”: ${result.expired} z ${result.due} wpisów.`;
   });
 
+  const clearDescriptionDraft = (id: number) => setDescriptionDraft(state => { const next = { ...state }; delete next[id]; return next; });
+  const saveDescription = (topic: Topic) => run(async () => {
+    const description = (descriptionDraft[topic.id] ?? "").trim();
+    const { status, data } = await request(`${apiUrl}/content_groups/${topic.id}`, { method: "PATCH", headers, body: JSON.stringify({ description: description || null }) });
+    if (status !== 200) throw new Error(failure(status, data, "Nie udało się zapisać opisu"));
+    clearDescriptionDraft(topic.id);
+    return description ? `Zapisano opis tematu „${topic.name}”. Model zobaczy go przy następnych podpowiedziach.` : `Usunięto opis tematu „${topic.name}”.`;
+  });
+
   const clearParentDraft = (id: number) => setParentDraft(state => { const next = { ...state }; delete next[id]; return next; });
   const saveParent = (topic: Topic) => run(async () => {
     const parent_id = parentDraft[topic.id] ? Number(parentDraft[topic.id]) : null;
@@ -213,6 +226,9 @@ export default function ContentGroups() {
         <option value="">— temat główny —</option>
         {tree.filter(entry => entry.depth < 2).map(({ topic }) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
       </select>
+      <label htmlFor="new-topic-description">Opis:</label>
+      <input id="new-topic-description" value={newDescription} maxLength={300} style={{ minWidth: 260 }} onChange={event => setNewDescription(event.target.value)}
+        placeholder="zakres tematu, widoczny dla modelu (opcjonalnie)" disabled={busy} />
       <button type="submit" disabled={busy || !newName.trim()}>Dodaj temat</button>
       <label htmlFor="topic-filter" style={{ marginLeft: 16 }}>Szukaj:</label>
       <input id="topic-filter" value={filter} onChange={event => setFilter(event.target.value)} placeholder="część nazwy" />
@@ -221,7 +237,7 @@ export default function ContentGroups() {
     {loaded && !visible.length && <p>{topics.length ? "Żaden temat nie pasuje do wyszukiwania." : "Brak tematów."}</p>}
     {visible.length > 0 && <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
       <thead><tr style={{ textAlign: "left", borderBottom: "2px solid #cbd5e1" }}>
-        <th>Temat</th><th>Temat nadrzędny</th><th>Dokumenty</th><th>Fragmenty</th><th title="Wpisy feedu zapisane na później">Zapisane wpisy</th>
+        <th>Temat</th><th>Temat nadrzędny</th><th title="Zakres tematu wysyłany do modelu razem z nazwą — pomaga w niejednoznacznych nazwach.">Opis dla modelu</th><th>Dokumenty</th><th>Fragmenty</th><th title="Wpisy feedu zapisane na później">Zapisane wpisy</th>
         <th title="Po ilu miesiącach wpis „Może kiedyś” z tym tematem przechodzi do „Pomiń”. Puste = domyślnie.">Ważność (mies.)</th><th>Działania</th>
       </tr></thead>
       <tbody>{visible.map(({ topic, depth }) => {
@@ -249,6 +265,16 @@ export default function ContentGroups() {
             {parentDraft[topic.id] !== undefined && parentDraft[topic.id] !== String(topic.parent_id ?? "") && <>
               <button type="button" disabled={busy} onClick={() => void saveParent(topic)}>Zapisz</button>{" "}
               <button type="button" onClick={() => clearParentDraft(topic.id)}>Anuluj</button>
+            </>}
+          </td>
+          <td>
+            <textarea aria-label={`Opis tematu ${topic.name}`} rows={2} maxLength={300} style={{ width: 240 }} disabled={busy}
+              placeholder="np. kradzież tożsamości, wycieki danych, oszustwa na PESEL"
+              value={descriptionDraft[topic.id] ?? (topic.description ?? "")}
+              onChange={event => setDescriptionDraft(state => ({ ...state, [topic.id]: event.target.value }))} />
+            {descriptionDraft[topic.id] !== undefined && descriptionDraft[topic.id] !== (topic.description ?? "") && <>
+              <button type="button" disabled={busy} onClick={() => void saveDescription(topic)}>Zapisz</button>{" "}
+              <button type="button" onClick={() => clearDescriptionDraft(topic.id)}>Anuluj</button>
             </>}
           </td>
           <td>{topic.document_count}</td><td>{topic.chunk_count}</td><td>{topic.saved_item_count}</td>

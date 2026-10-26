@@ -131,10 +131,27 @@ def validate_parent(session, group_or_none, parent_id, kind) -> int | None:
     return parent_id
 
 
-def create_group(session, name: object, kind: object, priority_rank: object = None, parent_id=None) -> ContentGroup:
+MAX_DESCRIPTION_LENGTH = 300
+
+
+def validate_description(value: object, kind: str) -> str | None:
+    if value is None:
+        return None
+    if kind != "topic":
+        raise ValueError("only topics have a description")
+    if not isinstance(value, str):
+        raise ValueError("description must be a string")
+    text = " ".join(value.split())
+    if len(text) > MAX_DESCRIPTION_LENGTH:
+        raise ValueError(f"description must contain at most {MAX_DESCRIPTION_LENGTH} characters")
+    return text or None
+
+
+def create_group(session, name: object, kind: object, priority_rank: object = None, parent_id=None, description: object = None) -> ContentGroup:
     name, kind, priority_rank = validate_group_values(name, kind, priority_rank)
     parent_id = validate_parent(session, None, parent_id, kind)
-    row = ContentGroup(name=name, kind=kind, priority_rank=priority_rank, parent_id=parent_id)
+    description = validate_description(description, kind)
+    row = ContentGroup(name=name, kind=kind, priority_rank=priority_rank, parent_id=parent_id, description=description)
     session.add(row)
     session.flush()
     return row
@@ -161,6 +178,7 @@ def update_group(session, group: ContentGroup, **changes) -> ContentGroup:
     name, kind, priority_rank = validate_group_values(**values)
     retention = validate_retention_months(changes.get("retention_months", group.retention_months), kind)
     parent_id = validate_parent(session, group, changes.get("parent_id", group.parent_id), kind)
+    group.description = validate_description(changes.get("description", group.description), kind)
     group.parent_id = parent_id
     group.name, group.kind, group.priority_rank, group.retention_months = name, kind, priority_rank, retention
     group.updated_at = dt.datetime.now(dt.timezone.utc)
@@ -325,6 +343,7 @@ def group_to_dict(group: ContentGroup, session=None) -> dict:
         "priority_rank": group.priority_rank,
         "retention_months": group.retention_months,
         "parent_id": group.parent_id,
+        "description": group.description,
         "archived_at": group.archived_at.isoformat() if group.archived_at else None,
     }
     if session is not None:
