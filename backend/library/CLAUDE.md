@@ -180,7 +180,7 @@ and the rest waits for the next run. A fetch ending as `TEMPORARY_ERROR` (usuall
 by Google) is retried once after `CAPTIONS_RETRY_DELAY_SECONDS` (60 s); the result reports `retried`/`recovered`.
 Every attempt is logged in `external_service_events` (`youtube_captions`, operation `via_webshare_proxy` or `direct`,
 `error_code` `GoogleSorryBlock` for the Google block) and shown on `/service-status` — the data for judging whether the
-paid Webshare proxy is worth keeping. `run_check()` reports `new_items` and a `feeds`
+paid Webshare proxy is worth keeping. Every attempt to read a YouTube channel's RSS feed (`feed_parser._get_with_retry`, retries included) is logged the same way as service `youtube_rss`, operation `channel:<channel_id>`, `error_code` `HTTP_<status>` — shown as "YouTube RSS" on `/service-status`; `feed_sources.last_error` alone keeps only the latest error and is cleared by the next good check. `run_check()` reports `new_items` and a `feeds`
 list (id, name, items, new_items) shown on the Jobs page; per feed it also lists up to
 `NEW_ENTRIES_LISTED` new non-ignored entries as `new_entries` (`feed_item_id`, `title`, `url`,
 `status`) plus `new_entries_truncated`, which the Jobs page renders as links. A manual

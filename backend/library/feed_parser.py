@@ -15,6 +15,7 @@ from typing import Any
 import defusedxml.ElementTree as DET
 import regex as safe_regex
 import requests
+from library.external_service_events import observed_request
 from library.safe_http import safe_get
 
 MAX_FEED_BYTES = 32 * 1024 * 1024  # full-archive JSON feeds (e.g. unknow.news archiwum.json) exceed the 5 MB page default
@@ -129,7 +130,11 @@ def _get_with_retry(feed: dict, timeout: tuple[float, float]):
         return safe_get(url, timeout=timeout, max_bytes=MAX_FEED_BYTES)
     for delay in (*YOUTUBE_RETRY_DELAYS, None):
         try:
-            response = safe_get(url, timeout=timeout, max_bytes=MAX_FEED_BYTES)
+            # One audit row per attempt (not per check): shows how often YouTube answers 404 and whether retries help.
+            response = observed_request(
+                service="youtube_rss", operation=f"channel:{feed['channel_id']}",
+                request_fn=lambda: safe_get(url, timeout=timeout, max_bytes=MAX_FEED_BYTES),
+            )
             if response.status_code not in YOUTUBE_RETRY_STATUSES or delay is None:
                 return response
         except requests.ConnectionError:
