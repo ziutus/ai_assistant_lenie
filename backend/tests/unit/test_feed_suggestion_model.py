@@ -226,6 +226,34 @@ def test_feed_stores_proposals_without_creating_groups(monkeypatch, structured):
     assert "Nie tw" not in (ask.call_args.kwargs["system_prompt"] or "")
 
 
+def _pick(results, model):
+    session = MagicMock()
+    session.scalar.side_effect = results
+    run = feed_routes._pick_suggestion_run(session, ContentGroupSuggestionRun.feed_item_id, 1, model)
+    return run, session.scalar.call_args_list
+
+
+def test_pick_run_prefers_an_active_run_whatever_its_model():
+    active, newest = ContentGroupSuggestionRun(id=9, status="running", model="b"), ContentGroupSuggestionRun(id=8, model="a")
+    run, calls = _pick([active, newest], "a")
+    assert run is active and len(calls) == 1
+
+
+def test_pick_run_returns_the_newest_run_of_the_chosen_model_not_the_newest_overall():
+    # item 12222: the newest run is gpt-4o-mini, but the panel is set to Gemini and a finished Gemini run exists
+    gemini = ContentGroupSuggestionRun(id=7, status="completed", model="openrouter/google/gemini-2.5-flash-lite")
+    run, calls = _pick([None, gemini], gemini.model)
+    assert run is gemini
+    assert gemini.model in calls[1].args[0].compile().params.values()
+
+
+def test_pick_run_falls_back_to_the_newest_run_when_the_model_has_none_or_is_not_given():
+    newest = ContentGroupSuggestionRun(id=9, status="completed", model="b")
+    assert _pick([None, None, newest], "a")[0] is newest
+    run, calls = _pick([None, newest], None)
+    assert run is newest and len(calls) == 2
+
+
 def test_read_filters_current_catalog_and_documents(monkeypatch):
     monkeypatch.setattr(feed_routes, "active_topic_catalog", lambda _: [{"id": 1, "name": "Nowy temat"}])
     run = ContentGroupSuggestionRun(id=1, raw_result={"new_topics": [{"name": "NOWY TEMAT", "confidence": 0.9, "reason": ""}]})

@@ -49,7 +49,7 @@ beforeEach(() => {
     if (url.endsWith("/feed_sources")) return Promise.resolve(jsonResponse({ feed_sources: [{ id: 1, name: "Blog", type: "rss", disabled: false }] }));
     if (url.endsWith("/content_groups")) return Promise.resolve(jsonResponse({ content_groups: [] }));
     if (url.endsWith("/content_group_model")) return Promise.resolve(jsonResponse({ default_model: "gpt-4o-mini", models: [] }));
-    if (url.endsWith("/groups") || url.endsWith("/group-suggestions")) return Promise.resolve(jsonResponse({ groups: [], suggestions: [] }));
+    if (url.endsWith("/groups") || url.split("?")[0].endsWith("/group-suggestions")) return Promise.resolve(jsonResponse({ groups: [], suggestions: [] }));
     // Any action: the network is gone (VPN dropped) — fetch rejects with TypeError.
     return Promise.reject(new TypeError("Failed to fetch"));
   }));
@@ -173,7 +173,7 @@ it("shows a fixed, dismissible error when changing page fails", async () => {
   vi.mocked(fetch).mockImplementation((url) => {
     const u = String(url);
     if (u.includes("/feed_items?") && u.includes("offset=0")) return Promise.resolve(jsonResponse({ feed_items: [feedItem], total: 500 }));
-    if (u.endsWith("/groups") || u.endsWith("/group-suggestions")) return Promise.resolve(jsonResponse({ groups: [], suggestions: [] }));
+    if (u.endsWith("/groups") || u.split("?")[0].endsWith("/group-suggestions")) return Promise.resolve(jsonResponse({ groups: [], suggestions: [] }));
     if (u.endsWith("/feed_sources")) return Promise.resolve(jsonResponse({ feed_sources: [] }));
     if (u.endsWith("/content_groups")) return Promise.resolve(jsonResponse({ content_groups: [] }));
     return Promise.reject(new TypeError("Failed to fetch"));
@@ -200,7 +200,7 @@ it("defaults to single mode and requests suggestions when the selected model cha
       { id: model, label: "Gemini", external: true }, { id: "gpt-4o-mini", label: "GPT" },
     ] });
     if (u.endsWith("/content_groups")) return jsonResponse({ content_groups: [{ id: 1, kind: "topic", name: "AI" }] });
-    if (u.endsWith("/group-suggestions")) return jsonResponse(init?.method === "POST" ? { run: { status: "queued" } } : { run: null, suggestions: [] });
+    if (u.split("?")[0].endsWith("/group-suggestions")) return jsonResponse(init?.method === "POST" ? { run: { status: "queued" } } : { run: null, suggestions: [] });
     return jsonResponse({ groups: [] });
   });
   render(<MemoryRouter><FeedReview /></MemoryRouter>);
@@ -294,7 +294,7 @@ it("switches modes in the URL, remembers all mode, and suggests every list item"
     if (u.endsWith("/content_group_model")) return jsonResponse({ default_model: model, models: [{ id: model, label: "GPT" }] });
     if (u.endsWith("/save-for-later")) return jsonResponse({ status: "saved_for_later" });
     if (u.endsWith("/content_groups")) return jsonResponse({ content_groups: [{ id: 1, name: "AI", kind: "topic" }] });
-    if (u.endsWith("/group-suggestions")) return jsonResponse({ run: init?.method === "POST" ? { status: "queued" } : null, suggestions: [] });
+    if (u.split("?")[0].endsWith("/group-suggestions")) return jsonResponse({ run: init?.method === "POST" ? { status: "queued" } : null, suggestions: [] });
     return jsonResponse({ groups: [], feed_sources: [] });
   });
   render(<MemoryRouter initialEntries={["/feed-review?mode=all"]}><FeedReview /><Location /></MemoryRouter>);
