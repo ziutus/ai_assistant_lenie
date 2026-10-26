@@ -17,7 +17,9 @@ The built-in default is `openrouter/google/gemini-2.5-flash-lite` when OpenRoute
 is enabled, otherwise the existing Bielik suggestion model. `POST
 /feed_items/<id>/group-suggestions` accepts optional `model` and `force`;
 completed runs are reused only for matching input and model, while active runs
-are returned unchanged. GET suggestions includes `run.model`. Document
+are returned unchanged. GET suggestions includes `run.model`; `GET /feed_items/<id>/group-suggestions?model=` returns the active
+run if there is one, else the newest run OF THAT MODEL, else the newest run (`feed_routes._pick_suggestion_run()`) — without it a panel set
+to model A never saw its finished run once model B had a newer one, and waited for A forever. Document
 suggestions and their auto-apply behavior continue to use the existing model.
 
 **Prompt templates (UI-editable, versioned).** The topic-suggestion prompt lives in

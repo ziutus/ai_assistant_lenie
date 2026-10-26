@@ -36,6 +36,55 @@ it("replaces an old Bielik run once, hides stale suggestions and does not retry 
   expect(posts()[1][1]?.body).toBe(JSON.stringify({ model, force: true }));
 });
 
+const GEMINI = "openrouter/google/gemini-2.5-flash-lite";
+const GPT = "openrouter/openai/gpt-4o-mini";
+
+it("asks for the run of the chosen model and does not wait when another model has the newest run", async () => {
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/content_groups")) return json({ content_groups: [{ id: 1, name: "AI", kind: "topic" }] });
+    if (url.endsWith("/groups")) return json({ groups: [] });
+    if (init?.method === "POST") return json({ run: { status: "completed" } }, 202);
+    // the server answers with the run of the requested model although a newer run of another model exists
+    const asked = new URL(url).searchParams.get("model");
+    return json({ run: { model: asked || GPT, status: "completed" }, suggestions: [] });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<ContentGroupsPanel feedItemId={7} autoSuggest suggestModel={GEMINI} />);
+  await screen.findByText("model: google/gemini-2.5-flash-lite");
+  expect(screen.queryByText("🤖 Szukam kategorii…")).toBeNull();
+  const suggestionGets = fetcher.mock.calls.filter(([url, init]) => String(url).includes("/group-suggestions") && !init?.method);
+  expect(suggestionGets.every(([url]) => String(url).endsWith(`?model=${encodeURIComponent(GEMINI)}`))).toBe(true);
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+});
+
+it("stops waiting when the request is answered from a finished run", async () => {
+  let posted = false;
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/content_groups")) return json({ content_groups: [{ id: 1, name: "AI", kind: "topic" }] });
+    if (url.endsWith("/groups")) return json({ groups: [] });
+    if (init?.method === "POST") { posted = true; return json({ run: { status: "completed" } }, 202); }
+    return json(posted ? { run: { model: GEMINI, status: "completed" }, suggestions: [] } : { run: null, suggestions: [] });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<ContentGroupsPanel feedItemId={7} autoSuggest suggestModel={GEMINI} />);
+  await screen.findByText("model: google/gemini-2.5-flash-lite");
+  expect(screen.queryByText("🤖 Szukam kategorii…")).toBeNull();
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+});
+
+it("does not ask the model about a feed item that already has a topic", async () => {
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/content_groups")) return json({ content_groups: [{ id: 1, name: "AI", kind: "topic" }] });
+    if (url.endsWith("/groups")) return json({ groups: [{ id: 1, name: "AI", kind: "topic" }] });
+    return json({ run: { model: GPT, status: "completed" }, suggestions: [] });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<ContentGroupsPanel feedItemId={7} autoSuggest suggestModel={GEMINI} />);
+  await waitFor(() => expect(screen.getByText("model: openai/gpt-4o-mini")).toBeTruthy());
+  expect(screen.queryByText("🤖 Szukam kategorii…")).toBeNull();
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+});
+
 it.each([false, true])("accepts a proposed topic and preserves topics and priority (conflict: %s)", async conflict => {
   const topic = { id: 2, name: "Żółwie", kind: "topic" };
   const current = [{ id: 1, name: "AI", kind: "topic" }, { id: 10, name: "Pilne", kind: "priority" }];

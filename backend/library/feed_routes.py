@@ -466,9 +466,22 @@ def _suggestion_dict(suggestion):
     }
 
 
-def _suggestions_response(session, target_type, target_id):
+def _pick_suggestion_run(session, target_column, target_id, model=None):
+    """The run the panel should show: an active one (it is polled), else the newest run of the chosen model, else the newest.
+
+    Without the model step a panel set to model A never saw its own completed run once another model had a newer one:
+    the request for A was answered from the cache, the newest run stayed B's and the panel waited for A forever.
+    """
+    newest_first = select(ContentGroupSuggestionRun).where(target_column == target_id).order_by(ContentGroupSuggestionRun.id.desc())
+    run = session.scalar(newest_first.where(ContentGroupSuggestionRun.status.in_(["queued", "running"])))
+    if run is None and model:
+        run = session.scalar(newest_first.where(ContentGroupSuggestionRun.model == model))
+    return run if run is not None else session.scalar(newest_first)
+
+
+def _suggestions_response(session, target_type, target_id, model=None):
     target_column = ContentGroupSuggestionRun.feed_item_id if target_type == "feed_item" else ContentGroupSuggestionRun.document_id
-    run = session.scalar(select(ContentGroupSuggestionRun).where(target_column == target_id).order_by(ContentGroupSuggestionRun.id.desc()))
+    run = _pick_suggestion_run(session, target_column, target_id, model)
     if run is None:
         return {"run": None, "suggestions": [], "new_topics": []}
     return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "model": run.model, "prompt_version": run.prompt_version, "prompt_template_id": run.prompt_template_id, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions], "new_topics": sanitize_new_topics((run.raw_result or {}).get("new_topics"), active_topic_catalog(session)) if target_type == "feed_item" else []}
@@ -480,7 +493,7 @@ def get_feed_suggestions(item_id):
     session = get_scoped_session()
     if session.get(FeedItem, item_id) is None:
         abort(404)
-    return jsonify(_suggestions_response(session, "feed_item", item_id))
+    return jsonify(_suggestions_response(session, "feed_item", item_id, request.args.get("model") or None))
 
 
 @bp.get("/document/<int:document_id>/group-suggestions")
