@@ -306,10 +306,15 @@ def import_feed_item(
         if existing is None:
             feed = session.get(FeedSource, item.feed_source_id)
             mapped_author = (feed.author_name or "").strip()
+            resolved_type = document_type or ("youtube" if "youtube" in feed.type else "link")
+            # A video has no text until its captions are fetched, so it must start at
+            # URL_ADDED whatever the feed's default_state says (e.g. a newsletter feed
+            # whose links are READY_FOR_EMBEDDING) - otherwise nothing ever fetches them.
+            initial_status = "URL_ADDED" if resolved_type == "youtube" else feed.default_state
             doc, _ = DocumentService(session).import_document(
                 item.canonical_url,
-                document_type or ("youtube" if "youtube" in feed.type else "link"),
-                processing_status=feed.default_state,
+                resolved_type,
+                processing_status=initial_status,
                 title=item.title,
                 summary=item.summary or "",
                 published_on=item.published_at.date() if item.published_at else None,

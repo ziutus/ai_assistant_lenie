@@ -4621,14 +4621,23 @@ def website_youtube_retry_captions():
     if doc.document_type != StalkerDocumentType.youtube.name:
         return {"status": "error", "message": "Retry captions is only available for YouTube documents"}, 400
 
-    if doc.processing_status not in _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES:
+    # A video imported with a "ready" default state (feed default_state) has no
+    # transcript at all; an empty text is what makes a fetch legitimate there.
+    no_transcript_yet = (
+        doc.processing_status == StalkerDocumentStatus.READY_FOR_EMBEDDING.name
+        and not (doc.text or "").strip()
+    )
+    if doc.processing_status not in _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES and not no_transcript_yet:
         return {
             "status": "error",
             "message": f"Document is in state '{doc.processing_status}' — captions retry is only allowed "
-                       f"before a transcript has been captured ({', '.join(sorted(_YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES))})",
+                       f"before a transcript has been captured ({', '.join(sorted(_YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES))}, "
+                       f"or {StalkerDocumentStatus.READY_FOR_EMBEDDING.name} with an empty text)",
         }, 409
 
-    first_attempt = doc.processing_status == StalkerDocumentStatus.URL_ADDED.name
+    first_attempt = doc.processing_status in (
+        StalkerDocumentStatus.URL_ADDED.name, StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
+    )
     webshare_api_key = cfg.get("WEBSHARE_API_KEY")
     updated = process_youtube_url(
         session=session,
