@@ -342,6 +342,25 @@ it("fixes a transcript slip from the selection: stores the rule and rewrites the
   expect(await screen.findByText(/Poprawiono „Wina Burki na Faso” → „Burkina Faso”/)).toBeTruthy();
 });
 
+it("fixes a single word in this document only: no rule is stored", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: { fields: { text: { changed: true } } } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Hutni" } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  const menu = screen.getByRole("menu", { name: "Dodaj encję z zaznaczenia" });
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "✏️ Popraw błąd w transkrypcji" }));
+  fireEvent.change(within(menu).getByLabelText("Poprawna wersja"), { target: { value: "Huti" } });
+  fireEvent.click(within(menu).getByLabelText(/Tylko ten dokument/));
+  fireEvent.click(within(menu).getByRole("button", { name: "✏️ Popraw w transkrypcji" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    "/transcript_corrections/apply",
+    { document_id: 42, dry_run: false, pattern: "Hutni", replacement: "Huti" },
+    { headers: { "x-api-key": "test-key" } },
+  ));
+  expect(axios.post).not.toHaveBeenCalledWith("/transcript_corrections", expect.anything(), expect.anything());
+  expect(await screen.findByText(/Poprawiono „Hutni” → „Huti”/)).toBeTruthy();
+});
+
 it("copies the selected fragment from the context menu", async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });

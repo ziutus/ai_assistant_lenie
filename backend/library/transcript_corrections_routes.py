@@ -11,7 +11,7 @@ from library.db.engine import get_scoped_session
 from library.db.models import Document, TranscriptCorrection
 from library.transcript_corrections import (
     TranscriptCorrectionValidationError, _bump_hit_counts, bust_cache, correct_text,
-    load_active_rules, normalize_author, validate_rule,
+    load_active_rules, normalize_author, replace_phrase, validate_one_off, validate_rule,
 )
 
 bp = Blueprint("transcript_corrections", __name__)
@@ -159,14 +159,27 @@ def apply_rules():
     doc = session.get(Document, document_id)
     if doc is None:
         abort(404, "Nie znaleziono dokumentu")
-    rules = load_active_rules(session=session)
+    # `pattern` + `replacement` = a one-document replacement: no stored rule, no statistics, one word allowed.
+    one_off = "pattern" in data
+    if one_off:
+        try:
+            validate_one_off(pattern=data.get("pattern"), replacement=data.get("replacement"))
+        except TranscriptCorrectionValidationError as exc:
+            abort(400, str(exc))
+        rules = []
+    else:
+        rules = load_active_rules(session=session)
     hits = Counter()
     fields = {}
     for field in ("text", "text_md"):
         before = getattr(doc, field)
         if not before:
             continue
-        after, field_hits = correct_text(before, doc.byline, rules)
+        if one_off:
+            after, count = replace_phrase(before, data["pattern"].strip(), data["replacement"])
+            field_hits = [(0, count)] if count else []
+        else:
+            after, field_hits = correct_text(before, doc.byline, rules)
         hits.update(dict(field_hits))
         fields[field] = {"hits": [{"rule_id": rule_id, "count": count} for rule_id, count in field_hits],
                          "changed": before != after, "snippet": _snippet(before, after) if before != after else None}
@@ -174,6 +187,7 @@ def apply_rules():
             setattr(doc, field, after)
     if not dry_run:
         _commit(session)
-        _bump_hit_counts(list(hits.items()))
+        if not one_off:
+            _bump_hit_counts(list(hits.items()))
     return jsonify({"status": "success", "document_id": document_id, "dry_run": dry_run, "fields": fields,
                     "hits": [{"rule_id": rule_id, "count": count} for rule_id, count in sorted(hits.items())]})
