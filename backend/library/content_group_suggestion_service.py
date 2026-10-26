@@ -57,9 +57,13 @@ def suggestion_model() -> str:
 
 
 def active_topic_catalog(session) -> list[dict]:
-    # parent_id only when set: a flat catalog keeps the exact JSON (and prompt hash) it always had
+    # parent_id and description only when set: a catalog without them keeps the exact JSON (and prompt hash) it always had
     return [
-        {"id": group.id, "name": group.name, **({"parent_id": group.parent_id} if group.parent_id is not None else {})}
+        {
+            "id": group.id, "name": group.name,
+            **({"parent_id": group.parent_id} if group.parent_id is not None else {}),
+            **({"description": group.description} if group.description else {}),
+        }
         for group in session.scalars(
             select(ContentGroup).where(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None)).order_by(ContentGroup.name)
         ).all()
@@ -150,26 +154,50 @@ def response_schema(catalog: list[dict], allow_new_topics: bool = False) -> dict
     return result
 
 
-def sanitize_new_topics(proposals, catalog: list[dict]) -> list[dict]:
-    seen = {unidecode(" ".join(item["name"].split())).casefold() for item in catalog}
+MAX_NEW_TOPICS = 3
+MAX_DROPPED_NEW_TOPICS = 10
+
+
+def triage_new_topics(proposals, catalog: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split the model's new-topic proposals into the kept ones and the dropped ones with the reason for each.
+
+    A dropped proposal carries ``dropped_because``: ``invalid`` (no usable name), ``bad_confidence``, ``low_confidence``
+    (below ``CONTENT_GROUP_SUGGESTION_MIN_CONFIDENCE``), ``duplicate_of_catalog`` (an existing topic has that name),
+    ``duplicate_in_answer`` or ``over_limit`` (more than three kept).
+    """
+    in_catalog = {unidecode(" ".join(item["name"].split())).casefold() for item in catalog}
     threshold = float(_config("CONTENT_GROUP_SUGGESTION_MIN_CONFIDENCE", "0.60"))
-    result = []
+    kept, dropped, kept_folded = [], [], set()
     for item in proposals if isinstance(proposals, list) else []:
         if not isinstance(item, dict) or not isinstance(item.get("name"), str):
             continue
         name = " ".join(item["name"].split())[:60].strip()
         folded = unidecode(name).casefold()
+        entry = {"name": name, "reason": str(item.get("reason", ""))[:200]}
         try:
             confidence = float(item.get("confidence"))
         except (TypeError, ValueError):
+            dropped.append({**entry, "confidence": None, "dropped_because": "bad_confidence"})
             continue
-        if not name or folded in seen or not threshold <= confidence <= 1:
-            continue
-        seen.add(folded)
-        result.append({"name": name, "confidence": confidence, "reason": str(item.get("reason", ""))[:200]})
-        if len(result) == 3:
-            break
-    return result
+        entry["confidence"] = confidence
+        if not name:
+            dropped.append({**entry, "dropped_because": "invalid"})
+        elif folded in in_catalog:
+            dropped.append({**entry, "dropped_because": "duplicate_of_catalog"})
+        elif folded in kept_folded:
+            dropped.append({**entry, "dropped_because": "duplicate_in_answer"})
+        elif not threshold <= confidence <= 1:
+            dropped.append({**entry, "dropped_because": "low_confidence"})
+        elif len(kept) >= MAX_NEW_TOPICS:
+            dropped.append({**entry, "dropped_because": "over_limit"})
+        else:
+            kept_folded.add(folded)
+            kept.append(entry)
+    return kept, dropped[:MAX_DROPPED_NEW_TOPICS]
+
+
+def sanitize_new_topics(proposals, catalog: list[dict]) -> list[dict]:
+    return triage_new_topics(proposals, catalog)[0]
 
 
 def _parse_result(raw: str | None) -> dict:
@@ -321,7 +349,9 @@ def execute_suggestion_job(session, job: Job) -> dict:
         raw = getattr(response, "response_text", "")
         run.raw_result = _parse_result(raw)
         if allow_new_topics:
-            run.raw_result = {**run.raw_result, "new_topics": sanitize_new_topics(run.raw_result.get("new_topics"), active_topic_catalog(session) if run.raw_result.get("new_topics") else [])}
+            kept, dropped = triage_new_topics(run.raw_result.get("new_topics"), active_topic_catalog(session) if run.raw_result.get("new_topics") else [])
+            # the dropped proposals stay on the run (with the reason): the kept list alone hides what the model said
+            run.raw_result = {**run.raw_result, "new_topics": kept, **({"dropped_new_topics": dropped} if dropped else {})}
         allowed = {item["id"] for item in run.catalog_snapshot}
         threshold = float(_config("CONTENT_GROUP_SUGGESTION_MIN_CONFIDENCE", "0.60"))
         auto_apply_threshold = float(_config("CONTENT_GROUP_AUTO_APPLY_MIN_CONFIDENCE", "0.75"))

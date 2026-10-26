@@ -8,11 +8,12 @@ from decimal import Decimal
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from unidecode import unidecode
 
 from library import prompt_templates
 from library.content_group_suggestion_service import active_topic_catalog, target_text
 from library.db.engine import get_scoped_session
-from library.db.models import ContentGroupSuggestionRun, FeedItem
+from library.db.models import ContentGroup, ContentGroupSuggestionRun, FeedItem, FeedItemGroupMembership
 
 bp = Blueprint("prompt_templates", __name__)
 
@@ -164,3 +165,89 @@ def prompt_template_comparison():
         query = query.where(ContentGroupSuggestionRun.created_at >= dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days))
     runs = get_scoped_session().scalars(query).all()
     return jsonify({"variant": variant, "days": days, "rows": build_comparison(list(runs)), "runs_considered": len(runs)})
+
+
+QUALITY_EXAMPLES = 5
+
+
+def _fold(text: str) -> str:
+    return " ".join(unidecode(text or "").casefold().split())
+
+
+def build_quality(runs: list[ContentGroupSuggestionRun], items: dict[int, FeedItem], manual: dict[int, list[int]],
+                  topics: dict[int, str]) -> dict:
+    """What the topic suggestions got wrong, judged by what the reader did afterwards.
+
+    ``runs`` are completed feed-item runs newest first; only the latest run of an item counts. ``manual`` maps a feed item
+    to the topic ids the reader filed it under by hand, ``topics`` the active topic names.
+    """
+    latest: dict[int, ContentGroupSuggestionRun] = {}
+    for run in runs:
+        latest.setdefault(run.feed_item_id, run)
+    misses, proposals = [], {}
+    suggested: dict[int, int] = defaultdict(int)
+    decisions: dict[int, dict[str, int]] = defaultdict(lambda: {"accepted": 0, "dismissed": 0})
+    for run in latest.values():
+        raw = run.raw_result if isinstance(run.raw_result, dict) else {}
+        for suggestion in run.suggestions:
+            suggested[suggestion.group_id] += 1
+            if suggestion.status in {"accepted", "dismissed"}:
+                decisions[suggestion.group_id][suggestion.status] += 1
+        for proposal in raw.get("new_topics") or []:
+            name = " ".join(str(proposal.get("name", "")).split())
+            if not name:
+                continue
+            entry = proposals.setdefault(_fold(name), {"name": name, "count": 0, "confidence_sum": 0.0, "feed_item_ids": []})
+            entry["count"] += 1
+            entry["confidence_sum"] += float(proposal.get("confidence") or 0)
+            if len(entry["feed_item_ids"]) < QUALITY_EXAMPLES:
+                entry["feed_item_ids"].append(run.feed_item_id)
+        filed = [topics[group_id] for group_id in manual.get(run.feed_item_id, []) if group_id in topics]
+        if not run.suggestions and filed:
+            item = items.get(run.feed_item_id)
+            misses.append({
+                "feed_item_id": run.feed_item_id, "title": item.title if item else None, "run_id": run.id, "model": run.model,
+                "prompt_version": run.prompt_version, "no_match": bool(raw.get("no_match")),
+                "new_topics": [proposal.get("name") for proposal in raw.get("new_topics") or []],
+                "dropped_new_topics": [{"name": proposal.get("name"), "confidence": proposal.get("confidence"),
+                                        "dropped_because": proposal.get("dropped_because")} for proposal in raw.get("dropped_new_topics") or []],
+                "filed_under": filed,
+            })
+    return {
+        "items_considered": len(latest),
+        "missed_by_model": misses,
+        "new_topic_proposals": sorted(
+            ({"name": e["name"], "count": e["count"], "avg_confidence": round(e["confidence_sum"] / e["count"], 2),
+              "feed_item_ids": e["feed_item_ids"]} for e in proposals.values()),
+            key=lambda e: (-e["count"], e["name"])),
+        "per_topic": sorted(
+            ({"group_id": group_id, "name": name, "suggested": suggested.get(group_id, 0),
+              "accepted": decisions[group_id]["accepted"], "dismissed": decisions[group_id]["dismissed"]}
+             for group_id, name in topics.items()),
+            key=lambda e: (e["suggested"], e["name"])),
+    }
+
+
+@bp.get("/prompt_templates/quality")
+def prompt_template_quality():
+    """Feed-item topic suggestions against the reader's own filing; ``days`` limits the window (default 90, 0 = all)."""
+    _principal()
+    days = request.args.get("days", default=90, type=int)
+    session = get_scoped_session()
+    query = (select(ContentGroupSuggestionRun)
+             .where(ContentGroupSuggestionRun.status == "completed", ContentGroupSuggestionRun.feed_item_id.is_not(None))
+             .options(selectinload(ContentGroupSuggestionRun.suggestions))
+             .order_by(ContentGroupSuggestionRun.id.desc()).limit(MAX_COMPARISON_RUNS))
+    if days and days > 0:
+        query = query.where(ContentGroupSuggestionRun.created_at >= dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days))
+    runs = list(session.scalars(query).all())
+    item_ids = {run.feed_item_id for run in runs}
+    items = {item.id: item for item in session.scalars(select(FeedItem).where(FeedItem.id.in_(item_ids))).all()} if item_ids else {}
+    manual: dict[int, list[int]] = defaultdict(list)
+    if item_ids:
+        for membership in session.scalars(select(FeedItemGroupMembership).where(
+                FeedItemGroupMembership.feed_item_id.in_(item_ids), FeedItemGroupMembership.source == "manual")).all():
+            manual[membership.feed_item_id].append(membership.group_id)
+    topics = {group.id: group.name for group in session.scalars(select(ContentGroup).where(
+        ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))).all()}
+    return jsonify({"days": days, "runs_considered": len(runs), **build_quality(runs, items, manual, topics)})

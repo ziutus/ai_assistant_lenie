@@ -139,6 +139,35 @@ def test_sanitize_new_topics():
     assert len(svc.sanitize_new_topics([proposal("Łąki"), proposal("laki")], [])) == 1
 
 
+def test_triage_new_topics_names_the_reason_for_every_dropped_proposal():
+    def proposal(name, confidence=0.8):
+        return {"name": name, "confidence": confidence, "reason": "r"}
+    kept, dropped = svc.triage_new_topics([
+        proposal("Opsec i ochrona danych"), proposal("Nowy temat"), proposal("nowy TEMAT"), proposal("Slaby", 0.59),
+        proposal("Zly", "abc"), proposal("Drugi"), proposal("Trzeci"), proposal("Czwarty"),
+    ], [{"id": 1, "name": "Opsec i ochrona danych"}])
+    assert [item["name"] for item in kept] == ["Nowy temat", "Drugi", "Trzeci"]
+    assert [(item["name"], item["dropped_because"]) for item in dropped] == [
+        ("Opsec i ochrona danych", "duplicate_of_catalog"), ("nowy TEMAT", "duplicate_in_answer"),
+        ("Slaby", "low_confidence"), ("Zly", "bad_confidence"), ("Czwarty", "over_limit"),
+    ]
+
+
+def test_feed_keeps_dropped_proposals_on_the_run(monkeypatch):
+    proposals = [{"name": "AI", "confidence": 0.9, "reason": "same as catalog"}, {"name": "Nowy temat", "confidence": 0.9, "reason": "ok"}]
+    ask = MagicMock(return_value=SimpleNamespace(response_text=json.dumps({"suggestions": [], "no_match": True, "new_topics": proposals})))
+    monkeypatch.setattr(svc, "ai_ask", ask)
+    monkeypatch.setattr(svc, "supports_structured_output", lambda _: True)
+    monkeypatch.setattr(svc, "active_topic_catalog", lambda _: [{"id": 1, "name": "AI"}])
+    run = ContentGroupSuggestionRun(id=2, model=svc.FEED_DEFAULT_MODEL, catalog_snapshot=[{"id": 1, "name": "AI"}])
+    session = MagicMock()
+    session.get.side_effect = [FeedItem(id=1), run]
+    svc.execute_suggestion_job(session, Job(id="job", parameters={"feed_item_id": 1, "run_id": 2}))
+    assert [item["name"] for item in run.raw_result["new_topics"]] == ["Nowy temat"]
+    assert run.raw_result["dropped_new_topics"] == [
+        {"name": "AI", "reason": "same as catalog", "confidence": 0.9, "dropped_because": "duplicate_of_catalog"}]
+
+
 @pytest.mark.parametrize("structured", [True, False])
 def test_feed_stores_proposals_without_creating_groups(monkeypatch, structured):
     proposals = [{"name": "Nowy temat", "confidence": 0.9, "reason": "Useful"}]

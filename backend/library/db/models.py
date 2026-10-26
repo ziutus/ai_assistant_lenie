@@ -315,6 +315,8 @@ class ContentGroup(Base):
     # Months a feed item saved under "Może kiedyś" stays valid when it has this topic; NULL = the household default.
     retention_months: Mapped[int | None] = mapped_column(Integer)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("content_groups.id", ondelete="SET NULL"), index=True)
+    # One-line scope of a topic, sent to the suggestion model next to the name; NULL = name only.
+    description: Mapped[str | None] = mapped_column(String(300))
     archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

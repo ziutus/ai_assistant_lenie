@@ -193,7 +193,7 @@ def post_content_group():
     _user_or_service()
     body = request.get_json(silent=True) or {}
     try:
-        row = create_group(get_scoped_session(), body.get("name"), body.get("kind"), body.get("priority_rank"), parent_id=body.get("parent_id"))
+        row = create_group(get_scoped_session(), body.get("name"), body.get("kind"), body.get("priority_rank"), parent_id=body.get("parent_id"), description=body.get("description"))
         get_scoped_session().commit()
     except ValueError as exc:
         get_scoped_session().rollback()
@@ -213,7 +213,7 @@ def patch_content_group(group_id):
         abort(404)
     body = request.get_json(silent=True) or {}
     try:
-        row = update_group(session, row, **{key: body[key] for key in {"name", "kind", "priority_rank", "retention_months", "parent_id"} if key in body})
+        row = update_group(session, row, **{key: body[key] for key in {"name", "kind", "priority_rank", "retention_months", "parent_id", "description"} if key in body})
         session.commit()
     except ValueError as exc:
         session.rollback()
