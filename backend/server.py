@@ -2919,7 +2919,7 @@ def website_entities_delete(entity_id: int):
 
     data = request.get_json(silent=True) or {}
     decision = data.get("decision", "deleted")
-    allowed_decisions = {"deleted", "rejected", "excluded_global", "excluded_author"}
+    allowed_decisions = {"deleted", "rejected", "excluded_global", "excluded_author", "excluded_document"}
     allowed_reasons = {
         "not_a_person", "misread_name", "fictional_or_collective", "organization_as_person",
         "duplicate_person", "wrong_person", "irrelevant", "other",
@@ -4208,7 +4208,7 @@ def languages_list():
 def _exclusion_dict(row):
     return {
         "id": row.id, "entity_text": row.entity_text, "entity_type": row.entity_type,
-        "scope": row.scope, "author": row.author, "note": row.note,
+        "scope": row.scope, "author": row.author, "document_id": row.document_id, "note": row.note,
         "created_at": row.created_at.isoformat() if row.created_at else None,
     }
 
@@ -4230,8 +4230,9 @@ def ner_exclusions_list():
 @app.route('/ner_exclusions', methods=['POST', 'OPTIONS'])
 def ner_exclusions_add():
     """Add an exclusion rule. Body (JSON): {"entity_text": "...", "entity_type": "persName"|...|"*",
-    "scope": "global"|"author", "author": "..."|null, "document_id": <id>, "note": "..."}.
-    For scope=author without an explicit author, the author is taken from document_id."""
+    "scope": "global"|"author"|"document", "author": "..."|null, "document_id": <id>, "note": "..."}.
+    For scope=author without an explicit author, the author is taken from document_id;
+    scope=document requires document_id and applies to that document only."""
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
@@ -4248,11 +4249,18 @@ def ner_exclusions_add():
             "message": "entity_type must be persName, orgName, geogName, placeName or *",
         }, 400
     scope = (data.get('scope') or "global").strip()
-    if scope not in ("global", "author"):
-        return {"status": "error", "message": "scope must be global or author"}, 400
+    if scope not in ("global", "author", "document"):
+        return {"status": "error", "message": "scope must be global, author or document"}, 400
 
     session = get_scoped_session()
     author = (data.get('author') or "").strip() or None
+    exclusion_document_id = None
+    if scope == "document":
+        exclusion_document_id, error = _entities_doc_id(data.get('document_id'))
+        if error:
+            return {"status": "error", "message": "scope=document requires document_id"}, 400
+        if Document.get_by_id(session, exclusion_document_id) is None:
+            return {"status": "error", "message": "Document not found"}, 404
     if scope == "author" and author is None:
         doc_id, error = _entities_doc_id(data.get('document_id'))
         if error:
@@ -4267,6 +4275,7 @@ def ner_exclusions_add():
 
     row = NerExclusion(entity_text=entity_text, entity_type=entity_type, scope=scope,
                        author=author if scope == "author" else None,
+                       document_id=exclusion_document_id,
                        note=(data.get('note') or "").strip() or None)
     session.add(row)
     try:

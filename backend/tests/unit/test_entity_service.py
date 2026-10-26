@@ -461,6 +461,12 @@ class TestIsExcluded:
         rules = [NerExclusion(entity_text="Ukraina", entity_type="geogName", scope="global")]
         assert is_excluded(rules, "placeName", "Ukraina", None) is True
 
+    def test_document_scope_applies_only_to_its_document(self):
+        rules = [NerExclusion(entity_text="Ewa", entity_type="persName", scope="document", document_id=11184)]
+        assert is_excluded(rules, "persName", "Ewa", None, document_id=11184) is True
+        assert is_excluded(rules, "persName", "Ewa", None, document_id=1) is False
+        assert is_excluded(rules, "persName", "Ewa", None) is False
+
     def test_author_scope_needs_author(self):
         rules = [NerExclusion(entity_text="Starlinek", entity_type="persName",
                               scope="author", author="Kanał X")]
