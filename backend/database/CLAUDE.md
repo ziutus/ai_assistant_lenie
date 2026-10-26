@@ -401,7 +401,7 @@ NER false-positive suppression dictionary, applied in `library/entity_service.py
 | `note` | `text` | Optional human note (why excluded) |
 | `created_at` | `timestamp` | Row creation timestamp |
 
-**Indexes:** unique on `(LOWER(entity_text), entity_type, scope, COALESCE(LOWER(author), ''))`.
+**Indexes:** unique on `(LOWER(entity_text), entity_type, scope, COALESCE(LOWER(author), ''), COALESCE(document_id, 0))`.
 
 ### Table: `public.discovery_sources`
 
