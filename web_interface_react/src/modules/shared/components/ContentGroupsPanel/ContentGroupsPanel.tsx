@@ -83,7 +83,9 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       setTopicIds(current.filter((group: ContentGroup) => group.kind === "topic").map((group: ContentGroup) => group.id));
       const priority = current.find((group: ContentGroup) => group.kind === "priority");
       setPriorityId(priority?.id || "");
-      const suggestionResponse = await fetch(`${apiUrl}/${target}/group-suggestions`, { headers });
+      // A feed panel asks for the run of ITS model: the newest run of the item may belong to another model.
+      const modelQuery = feedItemId !== undefined && suggestModel ? `?model=${encodeURIComponent(suggestModel)}` : "";
+      const suggestionResponse = await fetch(`${apiUrl}/${target}/group-suggestions${modelQuery}`, { headers });
       if (!suggestionResponse.ok) throw new Error(`group-suggestions: HTTP ${suggestionResponse.status}`);
       const suggestionData = await suggestionResponse.json();
       setRunModel(suggestionData.run?.model || "");
@@ -98,12 +100,22 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       const stale = wrongModel && (autoSuggest || !!awaitingModelRef.current);
       setSuggestions((Array.isArray(suggestionData.suggestions) ? suggestionData.suggestions : []).filter((item: ContentGroupSuggestion) => !stale || item.status !== "pending"));
       setNewTopics(!stale && !running && Array.isArray(suggestionData.new_topics) ? suggestionData.new_topics : []);
-      if (mountedRef.current && autoSuggest && (!suggestionData.run || (wrongModel && !running)) && !requestedRef.current.has(requestKey) && (feedItemId !== undefined || groupData.content_groups?.some((group: ContentGroup) => group.kind === "topic"))) {
+      // A feed item that already has a topic is not sent to the model again just because the page was opened.
+      const alreadyFiled = feedItemId !== undefined && current.some((group: ContentGroup) => group.kind === "topic");
+      if (mountedRef.current && autoSuggest && !alreadyFiled && (!suggestionData.run || (wrongModel && !running)) && !requestedRef.current.has(requestKey) && (feedItemId !== undefined || groupData.content_groups?.some((group: ContentGroup) => group.kind === "topic"))) {
         requestedRef.current.add(requestKey);
         pollsRef.current = 0;
         awaitingModelRef.current = suggestModel || null;
         const requestResponse = await fetch(`${apiUrl}/${target}/group-suggestions`, { method: "POST", headers, body: JSON.stringify({ ...(suggestModel ? { model: suggestModel } : {}), ...(templateId ? { template_id: templateId } : {}) }) });
         if (!requestResponse.ok) throw new Error(`group-suggestions: HTTP ${requestResponse.status}`);
+        const requested = await requestResponse.json().catch(() => ({}));
+        if (requested?.run?.status === "completed") {
+          // answered from a finished run (same input and model): nothing is queued, so there is nothing to wait for
+          awaitingModelRef.current = null;
+          setPendingRun(false);
+          void load();
+          return;
+        }
         setPendingRun(true); onModelCall?.();
       } else {
         setPendingRun(running || !!awaitingModelRef.current);
