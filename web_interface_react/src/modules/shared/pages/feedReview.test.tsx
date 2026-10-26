@@ -402,3 +402,47 @@ it("tells when a saved \"Może kiedyś\" entry expires, only on the later tab", 
   await screen.findByText("Artykuł testowy");
   expect(screen.queryByText(/Ważne do:/)).toBeNull();
 });
+
+it("browses saved items read-only: filters go to the API and no card can write or call the model", async () => {
+  const saved = [
+    { ...feedItem, id: 21, title: "Film do obejrzenia", url: "https://youtu.be/abc", status: "saved_for_later", saved_at: "2026-10-01T10:00:00Z",
+      groups: [{ id: 5, kind: "priority", name: "Może kiedyś", priority_rank: 100 }] },
+    { ...feedItem, id: 22, title: "Artykuł do przeczytania", status: "saved_for_later", saved_at: "2026-10-02T10:00:00Z", review_note: null },
+  ];
+  vi.mocked(fetch).mockImplementation(async (url) => {
+    const u = String(url);
+    if (u.includes("/feed_items?")) return jsonResponse({ feed_items: saved, total: 2 });
+    if (u.endsWith("/feed_sources")) return jsonResponse({ feed_sources: [{ id: 1, name: "Blog", type: "rss", disabled: false }] });
+    if (u.endsWith("/content_group_model")) return jsonResponse({ default_model: "gpt-4o-mini", models: [{ id: "gpt-4o-mini", label: "GPT" }] });
+    return jsonResponse({ content_groups: [], groups: [], suggestions: [] });
+  });
+  render(<MemoryRouter initialEntries={["/feed-review?view=browse"]}><FeedReview /></MemoryRouter>);
+  await screen.findByText("Film do obejrzenia");
+  expect(screen.getByText(/🎬 Film · Blog · Może kiedyś/)).toBeTruthy();
+  expect(screen.getByText(/📄 Artykuł · Blog/)).toBeTruthy();
+  for (const label of [/Zaimportuj/, /Pomiń/, /Ignoruj/, /Do radaru/, /Przywróć do nowych/, /Podpowiedz ponownie/]) {
+    expect(screen.queryByRole("button", { name: label })).toBeNull();
+  }
+  expect(screen.queryByLabelText(/Do omówienia z LLM/)).toBeNull();
+  expect(screen.getByRole("link", { name: "Film do obejrzenia" }).getAttribute("href")).toBe("https://youtu.be/abc");
+  expect(screen.getAllByRole("link", { name: /Edytuj ten wpis/ })[0].getAttribute("href")).toBe("/feed-review?view=later&mode=single&item=21");
+  const apiCalls = () => vi.mocked(fetch).mock.calls.map(([url, init]) => ({ url: String(url), method: init?.method ?? "GET" }));
+  expect(apiCalls().some(call => call.method !== "GET")).toBe(false);
+  expect(apiCalls().some(call => call.url.includes("/group-suggestions"))).toBe(false);
+  const listCall = () => {
+    const calls = apiCalls().filter(call => call.url.includes("/feed_items?"));
+    return new URL(calls[calls.length - 1].url).searchParams;
+  };
+  expect(listCall().get("status")).toBe("saved_for_later");
+  expect(listCall().has("media")).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Do obejrzenia" }));
+  await waitFor(() => expect(listCall().get("media")).toBe("video"));
+  expect(listCall().get("maybe_later")).toBe("exclude");
+  fireEvent.click(screen.getByRole("button", { name: "Do przeczytania" }));
+  await waitFor(() => expect(listCall().get("media")).toBe("article"));
+  fireEvent.click(screen.getByRole("button", { name: "Może kiedyś" }));
+  await waitFor(() => expect(listCall().get("maybe_later")).toBe("only"));
+  expect(listCall().has("media")).toBe(false);
+  expect(apiCalls().some(call => call.method !== "GET")).toBe(false);
+});

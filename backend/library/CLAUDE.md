@@ -96,6 +96,12 @@ ancestor of another suggestion of the same answer OR of a topic the target alrea
 only collects what no more specific topic covers. Existing documents are not re-filed.
 Tests: `tests/unit/test_topic_hierarchy.py`.
 
+**Browse filters.** `GET /feed_items` also takes `media=video|article` (video = the feed source has
+`type='youtube_channel'` OR the URL matches `_VIDEO_URL_PATTERN`, the same rule as the UI's `isVideo`) and
+`maybe_later=only|exclude` (membership of an active priority group with `priority_rank` 100, the rule of
+`feed_retention.is_maybe_later`); anything else is a 400. They feed the read-only "Przeglądaj" tab of
+`/feed-review`. Tests: `tests/unit/test_feed_browse_filters.py`.
+
 **Topic description** (`content_groups.description`, `String(300)`, topics only, migration `b5f2c8e1a7d3`). A one-line scope
 of a topic that tells the model what belongs in it when the name alone is ambiguous ("OpSec i ochrona danych": identity theft,
 leaked PESEL, scams as well as IT security). `POST/PATCH /content_groups` accept `description` (whitespace collapsed, blank or
