@@ -233,7 +233,9 @@ const Youtube = () => {
             {renderMarkdown(formik.values.outline_md, [])}
           </details>
         )}
-        {id && !transcriptMissing && !formik.values.outline_md?.trim() && (
+        {/* A transcript that already has chapters (from the description's timestamps) is
+            chunked from them; the AI outline matters only when there are none. */}
+        {id && !transcriptMissing && !hasMarkdownChapters && !formik.values.outline_md?.trim() && (
           <div style={{ marginBottom: 14, color: "#667" }}>
             Brak spisu treści (AI).
             <SkillCommand command={`/lenie-youtube-outline ${id}`}>
