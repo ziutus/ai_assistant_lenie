@@ -185,7 +185,6 @@ def _detect_mentions(doc: Document, job: Job, model: str) -> list[dict]:
         response_format=_RESPONSE_SCHEMA,
         operation=TOOL_CANDIDATE_DETECT,
         document_id=doc.id,
-        analysis_job_id=job.id,
     )
     return _parse_mentions(response.response_text)
 

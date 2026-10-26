@@ -168,6 +168,46 @@ def test_feed_keeps_dropped_proposals_on_the_run(monkeypatch):
         {"name": "AI", "reason": "same as catalog", "confidence": 0.9, "dropped_because": "duplicate_of_catalog"}]
 
 
+def test_successful_retry_keeps_the_earlier_error_in_the_result_and_clears_the_error_column(monkeypatch):
+    ask = MagicMock(return_value=SimpleNamespace(response_text='{"suggestions": [], "no_match": true}'))
+    monkeypatch.setattr(svc, "ai_ask", ask)
+    monkeypatch.setattr(svc, "supports_structured_output", lambda _: True)
+    monkeypatch.setattr(svc, "active_topic_catalog", lambda _: [])
+    run = ContentGroupSuggestionRun(id=2, model=svc.FEED_DEFAULT_MODEL, catalog_snapshot=[], status="error",
+                                    error="Error code: 429 - rate-limited upstream")
+    session = MagicMock()
+    session.get.side_effect = [FeedItem(id=1), run]
+    svc.execute_suggestion_job(session, Job(id="job", attempt=3, parameters={"feed_item_id": 1, "run_id": 2}))
+    assert run.status == "completed"
+    assert run.error is None
+    assert run.raw_result["retried_after"] == "Error code: 429 - rate-limited upstream"
+    assert run.raw_result["attempts"] == 3
+
+
+def test_clean_run_has_no_retry_marker(monkeypatch):
+    monkeypatch.setattr(svc, "ai_ask", MagicMock(return_value=SimpleNamespace(response_text='{"suggestions": [], "no_match": true}')))
+    monkeypatch.setattr(svc, "supports_structured_output", lambda _: True)
+    monkeypatch.setattr(svc, "active_topic_catalog", lambda _: [])
+    run = ContentGroupSuggestionRun(id=2, model=svc.FEED_DEFAULT_MODEL, catalog_snapshot=[])
+    session = MagicMock()
+    session.get.side_effect = [FeedItem(id=1), run]
+    svc.execute_suggestion_job(session, Job(id="job", attempt=1, parameters={"feed_item_id": 1, "run_id": 2}))
+    assert "retried_after" not in run.raw_result and "attempts" not in run.raw_result
+
+
+def test_model_call_is_not_tied_to_a_document_analysis_job(monkeypatch):
+    # llm_usage_logs.analysis_job_id is a foreign key to document_analysis_jobs; a jobs.id there made every usage insert fail
+    ask = MagicMock(return_value=SimpleNamespace(response_text='{"suggestions": [], "no_match": true}'))
+    monkeypatch.setattr(svc, "ai_ask", ask)
+    monkeypatch.setattr(svc, "supports_structured_output", lambda _: True)
+    monkeypatch.setattr(svc, "active_topic_catalog", lambda _: [])
+    run = ContentGroupSuggestionRun(id=2, model=svc.FEED_DEFAULT_MODEL, catalog_snapshot=[])
+    session = MagicMock()
+    session.get.side_effect = [FeedItem(id=1), run]
+    svc.execute_suggestion_job(session, Job(id="job", parameters={"feed_item_id": 1, "run_id": 2}))
+    assert "analysis_job_id" not in ask.call_args.kwargs
+
+
 @pytest.mark.parametrize("structured", [True, False])
 def test_feed_stores_proposals_without_creating_groups(monkeypatch, structured):
     proposals = [{"name": "Nowy temat", "confidence": 0.9, "reason": "Useful"}]

@@ -49,6 +49,12 @@ def test_new_topic_proposals_are_grouped_ignoring_case_and_diacritics():
     assert proposals == [{"name": "Ochrona danych", "count": 2, "avg_confidence": 0.8, "feed_item_ids": [10, 11]}]
 
 
+def test_runs_that_succeeded_only_after_a_retry_are_listed_with_the_earlier_error():
+    runs = [run(5, 10, {"suggestions": [], "retried_after": "Error code: 429 " + "x" * 300, "attempts": 3}), run(6, 11, {"suggestions": []})]
+    result = build_quality(runs, ITEMS, {}, TOPICS)
+    assert result["retried_runs"] == [{"run_id": 5, "feed_item_id": 10, "model": "m", "attempts": 3, "error": ("Error code: 429 " + "x" * 300)[:200]}]
+
+
 def test_per_topic_counts_show_topics_that_are_never_suggested_first():
     runs = [run(5, 10, {}, suggestions=[(1, "accepted"), (1, "dismissed")])]
     per_topic = build_quality(runs, ITEMS, {}, TOPICS)["per_topic"]

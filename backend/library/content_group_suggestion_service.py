@@ -338,13 +338,14 @@ def execute_suggestion_job(session, job: Job) -> dict:
     run = session.get(ContentGroupSuggestionRun, parameters.get("run_id"))
     if target is None or run is None:
         raise ValueError("suggestion target or run not found")
+    earlier_error = run.error  # left by a failed attempt of this same job; cleared once an attempt succeeds
     run.status = "running"
     session.flush()
     allow_new_topics = target_type == "feed_item"
     template = prompt_templates.get_by_id(session, run.prompt_template_id, prompt_templates.TASK_CONTENT_GROUPS, target_type)
     try:
         built = build_request(target_type, target, run.model, run.catalog_snapshot, template)
-        response = ai_ask(built["prompt"], model=run.model, temperature=0, operation="content_group_suggestion", document_id=target.id if target_type == "document" else None, analysis_job_id=job.id, response_format=built["response_format"], system_prompt=built["system_prompt"] if built["system_sent"] else None)
+        response = ai_ask(built["prompt"], model=run.model, temperature=0, operation="content_group_suggestion", document_id=target.id if target_type == "document" else None, response_format=built["response_format"], system_prompt=built["system_prompt"] if built["system_sent"] else None)
         _record_usage(run, getattr(response, "usage", None))
         raw = getattr(response, "response_text", "")
         run.raw_result = _parse_result(raw)
@@ -352,6 +353,10 @@ def execute_suggestion_job(session, job: Job) -> dict:
             kept, dropped = triage_new_topics(run.raw_result.get("new_topics"), active_topic_catalog(session) if run.raw_result.get("new_topics") else [])
             # the dropped proposals stay on the run (with the reason): the kept list alone hides what the model said
             run.raw_result = {**run.raw_result, "new_topics": kept, **({"dropped_new_topics": dropped} if dropped else {})}
+        if earlier_error and isinstance(run.raw_result, dict):
+            # a retry that succeeded must not look like a clean run: keep what the failed attempt said (a 429, a timeout)
+            run.raw_result = {**run.raw_result, "retried_after": earlier_error[:500], "attempts": job.attempt}
+        run.error = None
         allowed = {item["id"] for item in run.catalog_snapshot}
         threshold = float(_config("CONTENT_GROUP_SUGGESTION_MIN_CONFIDENCE", "0.60"))
         auto_apply_threshold = float(_config("CONTENT_GROUP_AUTO_APPLY_MIN_CONFIDENCE", "0.75"))

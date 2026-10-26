@@ -32,6 +32,9 @@ $quality = Invoke-RestMethod -Uri "$base/prompt_templates/quality?days=$days" -H
      model named an existing topic: it wanted that topic but did not suggest it;
      `low_confidence`, `duplicate_in_answer`, `over_limit`, `bad_confidence`, `invalid`);
      runs made before 2026-10-25 have no dropped list;
+   - `retried_runs`: runs that succeeded only after a failed attempt (`error` holds
+     the provider message, e.g. a 429 rate limit; `attempts` the try that worked) —
+     a model with many of them is unreliable, which is not the same as being wrong;
    - `new_topic_proposals`: names the model proposed, grouped ignoring case and
      diacritics (`count`, `avg_confidence`, example `feed_item_ids`);
    - `per_topic`: how often each active topic was suggested, accepted, dismissed
