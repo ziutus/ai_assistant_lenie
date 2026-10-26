@@ -429,7 +429,10 @@ it("browses saved items read-only: filters go to the API and no card can write o
   const apiCalls = () => vi.mocked(fetch).mock.calls.map(([url, init]) => ({ url: String(url), method: init?.method ?? "GET" }));
   expect(apiCalls().some(call => call.method !== "GET")).toBe(false);
   expect(apiCalls().some(call => call.url.includes("/group-suggestions"))).toBe(false);
-  const listCall = () => new URL(apiCalls().filter(call => call.url.includes("/feed_items?")).at(-1)!.url).searchParams;
+  const listCall = () => {
+    const calls = apiCalls().filter(call => call.url.includes("/feed_items?"));
+    return new URL(calls[calls.length - 1].url).searchParams;
+  };
   expect(listCall().get("status")).toBe("saved_for_later");
   expect(listCall().has("media")).toBe(false);
 
