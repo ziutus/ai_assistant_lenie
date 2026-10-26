@@ -21,6 +21,7 @@ from library.stalker_youtube_file import StalkerYoutubeFile
 from library.text_detect_language import compare_language, text_language_detect
 from library.text_transcript import youtube_titles_split_with_chapters, youtube_titles_to_text
 from library.transcript import transcript_price, get_assemblyai_price_per_minute
+from library.youtube_oembed import fetch_channel_name
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,15 @@ def process_youtube_url(
                     web_document.chapter_list = parsed_chapters
                     logger.info(f"Auto-parsed {len(parsed_chapters.splitlines())} chapters from description")
         session.commit()
+
+    # A document that skipped the metadata step above (feed import already gave it a
+    # title, or yt-dlp had no metadata) still needs its channel: byline-scoped
+    # transcript corrections and the monologue speaker both depend on it.
+    if not (web_document.byline or "").strip():
+        channel = fetch_channel_name(web_document.url)
+        if channel:
+            web_document.byline = channel
+            session.commit()
 
     logger.info(f"Video ID: {youtube_file.video_id}")
 

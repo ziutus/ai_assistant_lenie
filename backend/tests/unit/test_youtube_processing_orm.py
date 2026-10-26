@@ -56,6 +56,13 @@ def captions_events():
         yield record
 
 
+@pytest.fixture(autouse=True)
+def no_oembed_network():
+    """The channel-name fallback calls YouTube oEmbed; unit tests stay off the network."""
+    with patch("library.youtube_processing.fetch_channel_name", return_value=None) as fetch:
+        yield fetch
+
+
 @pytest.fixture
 def mock_web_document():
     """A mock Document ORM instance."""
