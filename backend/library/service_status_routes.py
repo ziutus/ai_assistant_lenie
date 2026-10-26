@@ -125,6 +125,8 @@ def service_status():
             _external_service(session, since, service="locationiq", name="LocationIQ geocoding"),
             _external_service(session, since, service="wikidata", name="Wikidata API"),
             _external_service(session, since, service="overpass", name="Overpass / OpenStreetMap"),
+            # Every attempt (retries included) to read a YouTube channel's RSS feed for /feeds.
+            _external_service(session, since, service="youtube_rss", name="YouTube RSS (kanały w /feeds)"),
             # Real caption fetches (not Webshare's management API above): the numbers that show
             # whether the paid rotating proxy actually gets YouTube captions through.
             _external_service(session, since, service="youtube_captions", operation="via_webshare_proxy",

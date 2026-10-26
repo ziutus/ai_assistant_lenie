@@ -151,6 +151,30 @@ _YT = {"type": "youtube_channel", "channel_id": "UCabc"}
 _YT_BODY = b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Atom</title></entry></feed>'
 
 
+@pytest.fixture(autouse=True)
+def recorded_events(monkeypatch):
+    events = []
+    monkeypatch.setattr("library.external_service_events.record_external_service_event",
+                        lambda **kw: events.append(kw))
+    return events
+
+
+def test_youtube_feed_records_every_attempt(network, monkeypatch, recorded_events):
+    monkeypatch.setattr("library.feed_parser.time.sleep", lambda _: None)
+    network[2].urlopen.side_effect = [_response(status=404), _response(_YT_BODY)]
+    fetch_entries(_YT)
+    assert [(e["service"], e["operation"], e["success"], e["status_code"]) for e in recorded_events] == [
+        ("youtube_rss", "channel:UCabc", False, 404),
+        ("youtube_rss", "channel:UCabc", True, 200),
+    ]
+
+
+def test_non_youtube_feed_records_nothing(network, recorded_events):
+    network[2].urlopen.return_value = _response(_YT_BODY)
+    fetch_entries({"type": "rss", "url": "https://example.com/rss"})
+    assert recorded_events == []
+
+
 def test_youtube_feed_retries_transient_404(network, monkeypatch):
     sleeps = []
     monkeypatch.setattr("library.feed_parser.time.sleep", sleeps.append)

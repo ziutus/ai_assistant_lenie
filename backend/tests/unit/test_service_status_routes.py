@@ -31,8 +31,8 @@ def _response(*, successes: int, failures: int, error: str | None = None,
         MagicMock(one_or_none=lambda: SimpleNamespace(operation="subscription_plan", error_code="HTTP_503") if webshare_failures else None),
     ]
     # CloudFerro, ARK Labs, OpenAI, Bedrock, Vertex, Webshare, LocationIQ,
-    # Wikidata, Overpass, YouTube captions via proxy / direct — two queries per card.
-    session.execute.side_effect = cloudferro + empty * 4 + webshare + empty * 5
+    # Wikidata, Overpass, YouTube RSS, YouTube captions via proxy / direct — two queries per card.
+    session.execute.side_effect = cloudferro + empty * 4 + webshare + empty * 6
     app = Flask(__name__)
     app.register_blueprint(bp)
     with patch("library.service_status_routes.get_scoped_session", return_value=session):
@@ -63,6 +63,12 @@ def test_youtube_caption_cards_are_listed_separately_for_proxy_and_direct():
     data = _response(successes=0, failures=0)
     ids = [service["id"] for service in data["services"]]
     assert ids[-2:] == ["youtube_captions_proxy", "youtube_captions_direct"]
+
+
+def test_youtube_rss_card_is_listed_before_the_caption_cards():
+    data = _response(successes=0, failures=0)
+    ids = [service["id"] for service in data["services"]]
+    assert ids[-3:] == ["youtube_rss", "youtube_captions_proxy", "youtube_captions_direct"]
 
 
 def test_webshare_status_includes_last_real_operation():
