@@ -14,6 +14,7 @@ from library.person_registry import (  # noqa: E402
     CONFIDENCE_MANUAL_REVIEW,
     CONFIDENCE_WIKIDATA,
     approve_review_link,
+    is_surname_mention,
     label_matches_mention,
     merge_review_link,
     reject_review_link,
@@ -91,6 +92,18 @@ def _person(person_id=7, name="Jimmy Rushton", aliases=()):
         alias_rows.append(row)
     person.aliases = alias_rows
     return person
+
+
+class TestIsSurnameMention:
+    def test_surname_of_multiword_label(self):
+        assert is_surname_mention("Tusk", "Donald Tusk")
+        assert is_surname_mention("Tuska", "Donald Tusk")
+        assert is_surname_mention("Lepen", "Marine Le Pen")
+
+    def test_given_name_or_single_word_label_rejected(self):
+        assert not is_surname_mention("Ewa", "Ewa Kopacz")
+        assert not is_surname_mention("Ewa", "Ewa")
+        assert not is_surname_mention("Ew", "Donald Ew")
 
 
 class TestApproveReviewLink:
@@ -264,6 +277,28 @@ class TestResolveDocumentPersons:
         assert result["linked"] == []
         created = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], Person)]
         assert created == []
+
+    def test_bare_given_name_is_skipped_even_with_wikidata_humans(self):
+        """"Pani Ewa": Wikidata zwraca ludzi o imieniu Ewa, ale samo imię nikogo nie identyfikuje."""
+        candidates = [
+            {"qid": "Q1", "label": "Ewa", "description": "pierwsza kobieta"},
+            {"qid": "Q2", "label": "Ewa Kopacz", "description": "polska polityk"},
+        ]
+        session = _session([_entity("Ewa")])
+        with patch("library.wikidata_client.search_persons", return_value=candidates),                 patch("library.article_tagging.confirm_person_with_llm") as llm:
+            result = resolve_document_persons(session, _doc(), "tekst")
+
+        llm.assert_not_called()
+        assert result["skipped"] == ["Ewa"]
+        assert result["linked"] == []
+
+    def test_lone_surname_still_goes_through_wikidata(self):
+        session = _session([_entity("Tusk")])
+        with patch("library.wikidata_client.search_persons", return_value=TUSK_CANDIDATES),                 patch("library.article_tagging.confirm_person_with_llm", return_value="Q946"):
+            result = resolve_document_persons(session, _doc(), "tekst")
+
+        assert result["skipped"] == []
+        assert result["linked"][0][1] == "Donald Tusk"
 
     def test_llm_rejects_all_candidates_falls_through(self):
         """LLM mówi NONE → nazwa dwuczłonowa trafia do rejestru jako manual_review."""

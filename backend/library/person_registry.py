@@ -57,6 +57,21 @@ def label_matches_mention(mention: str, label: str) -> bool:
     return False
 
 
+def is_surname_mention(mention: str, label: str) -> bool:
+    """A single-word mention counts as a person only when it is the SURNAME of a multi-word label.
+
+    "Tusk"/"Tuska" fits "Donald Tusk"; a bare given name ("Ewa") or a label that is a single word
+    does not — a first name alone does not identify anyone, and Wikidata happily returns a human
+    for almost any first name (doc 11184, "Pani Ewa").
+    """
+    label_tokens = _strip_accents(label.lower()).replace("-", " ").split()
+    mention_key = _strip_accents(mention.lower()).strip()
+    if len(label_tokens) < 2 or len(mention_key) < 3:
+        return False
+    last = label_tokens[-1]
+    return last.startswith(mention_key) or mention_key.startswith(last) or "".join(label_tokens).endswith(mention_key)
+
+
 def find_by_alias(session, name: str) -> Person | None:
     """Exact (case-insensitive) match on canonical name or any alias."""
     lowered = name.strip().lower()
@@ -197,6 +212,9 @@ def resolve_document_persons(
 
         # 2. Wikidata humans + LLM context disambiguation
         candidates = search_persons(name)
+        if len(name.split()) < 2:
+            # A lone word is only usable as a surname (see is_surname_mention).
+            candidates = [c for c in candidates if is_surname_mention(name, c["label"])]
         if candidates:
             from library.article_tagging import confirm_person_with_llm
 
@@ -235,7 +253,8 @@ def resolve_document_persons(
                     linked.append((name, person.canonical_name, CONFIDENCE_WIKIDATA))
                 continue
 
-        # 3. Junk guard: single word without a Wikidata human is spaCy noise
+        # 3. Junk guard: a single word that is not the surname of a Wikidata human
+        # (a bare given name such as "Ewa", spaCy noise like "Hornet") is skipped
         if len(name.split()) < 2:
             skipped.append(name)
             continue

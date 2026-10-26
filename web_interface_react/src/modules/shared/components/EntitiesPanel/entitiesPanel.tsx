@@ -1137,7 +1137,7 @@ const EntitiesPanel = ({
     }
   };
 
-  const handleExclude = async (scope: "global" | "author") => {
+  const handleExclude = async (scope: "global" | "author" | "document") => {
     if (!excludeFor || !reviewReason || (reviewReason === "other" && !reviewComment.trim())) {
       return;
     }
@@ -1157,7 +1157,7 @@ const EntitiesPanel = ({
         await axios.delete(`${apiUrl}/website_entities/${excludeFor.item.id}`, {
           headers: jsonHeaders,
           data: {
-            decision: scope === "global" ? "excluded_global" : "excluded_author",
+            decision: scope === "global" ? "excluded_global" : scope === "document" ? "excluded_document" : "excluded_author",
             reason_code: reviewReason,
             comment: reviewComment.trim() || null,
           },
@@ -1166,7 +1166,7 @@ const EntitiesPanel = ({
       setExcludeFor(null);
       setReviewReason("");
       setReviewComment("");
-      setMessage(`„${excludeFor.item.text}" wykluczono (${scope === "global" ? "globalnie" : "dla autora"}).`);
+      setMessage(`„${excludeFor.item.text}" wykluczono (${scope === "global" ? "globalnie" : scope === "document" ? "w tym dokumencie" : "dla autora"}).`);
       fetchEntities();
     } catch (error: any) {
       console.error("Error excluding entity", error);
@@ -2193,6 +2193,9 @@ const EntitiesPanel = ({
           </button>
           <button className={"button"} type="button" disabled={!reviewFormValid} style={{ marginLeft: 8, marginTop: 8 }} onClick={() => handleExclude("author")}>
             Tylko dla autora tego dokumentu
+          </button>
+          <button className={"button"} type="button" disabled={!reviewFormValid} style={{ marginLeft: 8, marginTop: 8 }} onClick={() => handleExclude("document")}>
+            Tylko w tym dokumencie
           </button>
           <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setExcludeFor(null)}>✕ anuluj</button>
         </div>

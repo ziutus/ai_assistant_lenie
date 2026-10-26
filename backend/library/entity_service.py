@@ -108,13 +108,15 @@ def _record_ner_availability(session, document_id: int, *, unavailable: bool) ->
 
 
 def is_excluded(exclusions: list[NerExclusion], entity_type: str, entity_text: str,
-                author: str | None, raw_terms: list[str] | None = None) -> bool:
+                author: str | None, raw_terms: list[str] | None = None,
+                document_id: int | None = None) -> bool:
     """True when an exclusion rule suppresses this entity.
 
     Matching is case-insensitive on the normalized base form and, when
     provided, its raw lemmas/surface variants. entity_type='*' matches all
     types; geogName/placeName rules remain interchangeable after place-label
-    merging; scope='author' only applies when the document's author matches.
+    merging; scope='author' only applies when the document's author matches and
+    scope='document' only for the rule's own document_id.
     """
     candidate_keys = {
         normalize_ner_text(value).casefold()
@@ -131,6 +133,8 @@ def is_excluded(exclusions: list[NerExclusion], entity_type: str, entity_text: s
         if normalize_ner_text(exc.entity_text).casefold() not in candidate_keys:
             continue
         if exc.scope == "global":
+            return True
+        if exc.scope == "document" and document_id is not None and exc.document_id == document_id:
             return True
         if (
             exc.scope == "author"
@@ -341,6 +345,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                 key[1],
                 author,
                 raw_terms=[*group.get("raw_lemmas", []), *group.get("variants", [])],
+                document_id=document_id,
             )
         ]
         for key in excluded:

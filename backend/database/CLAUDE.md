@@ -395,7 +395,8 @@ NER false-positive suppression dictionary, applied in `library/entity_service.py
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `entity_text` | `text NOT NULL` | Matched case-insensitively against the aggregated entity base form |
 | `entity_type` | `varchar(20) NOT NULL DEFAULT '*'` | `persName` / `geogName` / `placeName` / `*` (all types) |
-| `scope` | `varchar(10) NOT NULL DEFAULT 'global'` | `global` (every document) or `author` (only documents whose `documents.byline` matches) |
+| `scope` | `varchar(10) NOT NULL DEFAULT 'global'` | `global` (every document), `author` (only documents whose `documents.byline` matches) or `document` (only `document_id`) |
+| `document_id` | `integer` | FK → `documents.id` (CASCADE); required when `scope='document'` (migration `d3b8f1a6c924`) |
 | `author` | `text` | Author the rule is limited to (required when `scope='author'`, CHECK constraint) |
 | `note` | `text` | Optional human note (why excluded) |
 | `created_at` | `timestamp` | Row creation timestamp |

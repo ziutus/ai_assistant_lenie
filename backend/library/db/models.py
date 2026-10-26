@@ -2183,7 +2183,8 @@ class NerExclusion(Base):
     dropped before it lands in document_entities (and therefore never reaches
     person resolution or place verification). scope='author' limits the rule
     to documents by one author (e.g. a podcast channel whose STT keeps
-    producing the same artifact); entity_type='*' matches all entity types.
+    producing the same artifact); scope='document' limits it to one document
+    (document_id); entity_type='*' matches all entity types.
     Matching is case-insensitive on the aggregated entity base form.
     """
 
@@ -2194,6 +2195,7 @@ class NerExclusion(Base):
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'*'"))
     scope: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'global'"))
     author: Mapped[str | None] = mapped_column(Text)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),

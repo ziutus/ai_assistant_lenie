@@ -200,7 +200,7 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
     for removal in session.scalars(select(EntityReviewDecision).where(
         EntityReviewDecision.document_id == document_id,
         EntityReviewDecision.decision.in_(
-            ("deleted", "rejected", "excluded_global", "excluded_author", "entity_described", "product_to_entity")),
+            ("deleted", "rejected", "excluded_global", "excluded_author", "excluded_document", "entity_described", "product_to_entity")),
     ).order_by(EntityReviewDecision.id)).all():
         if removal.decision == "entity_described":
             descriptions[removal.entity_text.casefold()] = (removal.details or {}).get("description")
