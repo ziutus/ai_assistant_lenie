@@ -78,7 +78,7 @@ const Youtube = () => {
   const paragraphBlocks = textBlocks.length - headingBlocks;
   const alreadyParagraphized = hasMarkdownChapters && paragraphBlocks > headingBlocks;
   const canFetchCaptions = Boolean(id) && transcriptMissing
-    && ["URL_ADDED", "NEED_TRANSCRIPTION", "TEMPORARY_ERROR"].includes(formik.values.processing_status);
+    && ["URL_ADDED", "NEED_TRANSCRIPTION", "TEMPORARY_ERROR", "READY_FOR_EMBEDDING"].includes(formik.values.processing_status);
   const showChapterEditor = Boolean(id) && hasMarkdownChapters && /^## /m.test(String(formik.values.text || ""));
   const [chapterEditorBusy, setChapterEditorBusy] = React.useState(false);
   const [captionMessage, setCaptionMessage] = React.useState("");

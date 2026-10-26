@@ -919,6 +919,39 @@ class TestWebsiteYoutubeRetryCaptions:
         assert resp.status_code == 409
         mock_process.assert_not_called()
 
+    def test_fetches_when_ready_for_embedding_but_text_is_empty(self, client):
+        """A feed with a READY default state used to import videos with no transcript."""
+        mock_session = MagicMock()
+        mock_doc = self._mock_doc(processing_status="READY_FOR_EMBEDDING")
+        mock_doc.text = ""
+        updated_doc = self._mock_doc(processing_status="NEED_MANUAL_REVIEW")
+        updated_doc.processing_error_code = "NONE"
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+                with patch("server.process_youtube_url", return_value=updated_doc) as mock_process:
+                    resp = client.post("/website_youtube_retry_captions", data={"id": "9163"}, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        mock_process.assert_called_once()
+
+    def test_rejects_ready_for_embedding_when_text_exists(self, client):
+        mock_session = MagicMock()
+        mock_doc = self._mock_doc(processing_status="READY_FOR_EMBEDDING")
+        mock_doc.text = "Istniejąca transkrypcja"
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+                with patch("server.process_youtube_url") as mock_process:
+                    resp = client.post("/website_youtube_retry_captions", data={"id": "9163"}, headers=API_HEADERS)
+
+        assert resp.status_code == 409
+        mock_process.assert_not_called()
+
     def test_not_found_returns_404(self, client):
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):

@@ -92,3 +92,39 @@ def test_existing_document_keeps_its_existing_authors():
 
     assert imported is document
     set_authors.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("feed_type", "document_type", "expected_status"),
+    [
+        ("json_api", None, "READY_FOR_EMBEDDING"),  # no type given: a plain link keeps the feed default
+        ("youtube_channel", None, "URL_ADDED"),
+        ("json_api", "youtube", "URL_ADDED"),
+        ("json_api", "link", "READY_FOR_EMBEDDING"),
+    ],
+)
+def test_youtube_import_ignores_ready_feed_default_state(feed_type, document_type, expected_status):
+    item = SimpleNamespace(
+        id=17, feed_source_id=9, canonical_url="https://www.youtube.com/watch?v=abc",
+        status="new", document_id=None, saved_at=None, saved_by_user_id=None,
+        review_reason=None, ignored_pattern=None, group_memberships=[], last_error=None,
+        updated_at=None, title="Film", summary=None, published_at=None,
+    )
+    feed = SimpleNamespace(
+        id=9, type=feed_type, author_name="", default_state="READY_FOR_EMBEDDING",
+        language="pl", tags=[], name="unknow.news", collection_id=None,
+    )
+    session = MagicMock()
+    session.get.side_effect = lambda model, identifier: item if identifier == 17 else feed
+
+    with (
+        patch("library.feed_monitor_service.Document.get_by_url", return_value=None),
+        patch("library.feed_monitor_service.DocumentService") as document_service,
+        patch("library.feed_monitor_service.copy_feed_groups_to_document"),
+        patch("library.feed_monitor_service.record_review_decision"),
+    ):
+        document_service.return_value.import_document.return_value = (SimpleNamespace(id=123), "added")
+        import_feed_item(17, session=session, document_type=document_type)
+
+    kwargs = document_service.return_value.import_document.call_args.kwargs
+    assert kwargs["processing_status"] == expected_status
