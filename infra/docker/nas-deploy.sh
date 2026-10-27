@@ -50,6 +50,7 @@ declare -A SVC_IMAGE=(
     [document-worker]="lenie-ai-document-worker:latest"
     [db]="lenie-ai-db:latest"
     [ner-service]="lenie-ner-service:latest"
+    [lenie-mcp]="lenie-mcp:latest"
 )
 declare -A SVC_REGISTRY_IMAGE=(
     [frontend]="${REGISTRY}/lenie-ai-frontend:latest"
@@ -60,6 +61,7 @@ declare -A SVC_REGISTRY_IMAGE=(
     [document-worker]="${REGISTRY}/lenie-ai-document-worker:latest"
     [db]="${REGISTRY}/lenie-ai-db:latest"
     [ner-service]="${REGISTRY}/lenie-ner-service:latest"
+    [lenie-mcp]="${REGISTRY}/lenie-mcp:latest"
 )
 declare -A SVC_DOCKERFILE=(
     [frontend]="web_interface_react/Dockerfile"
@@ -68,6 +70,7 @@ declare -A SVC_DOCKERFILE=(
     [document-worker]="backend/Dockerfile"
     [db]="infra/docker/Postgresql/Dockerfile"
     [ner-service]="ner_service/Dockerfile"
+    [lenie-mcp]="lenie_mcp/Dockerfile"
 )
 declare -A SVC_COMPOSE_NAME=(
     [frontend]="lenie-ai-frontend"
@@ -79,6 +82,7 @@ declare -A SVC_COMPOSE_NAME=(
     [db]="lenie-ai-db"
     [minio]="lenie-minio"
     [ner-service]="lenie-ner-service"
+    [lenie-mcp]="lenie-mcp"
     [obsidian-headless-sync]="obsidian-headless-sync"
 )
 
@@ -383,9 +387,9 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, db, minio, ner-service, obsidian-headless-sync, all (default: core services)"
+echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, db, minio, ner-service, lenie-mcp, obsidian-headless-sync, all (default: core services)"
     echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
-    echo "  minio, ner-service and obsidian-headless-sync must be deployed explicitly."
+    echo "  minio, ner-service, lenie-mcp and obsidian-headless-sync must be deployed explicitly."
     echo ""
     echo "Options:"
     echo "  --skip-build      Skip Docker build, push existing local image"
@@ -434,7 +438,7 @@ while [[ $# -gt 0 ]]; do
         --no-implied)    NO_IMPLIED="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|lenie-mcp|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done

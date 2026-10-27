@@ -338,6 +338,36 @@ services:
       retries: 3
       start_period: 15s
 
+  lenie-mcp:
+    # MCP server for Claude Code / Codex (ADR-030 Etap B1): creates Obsidian notes from Lenie documents.
+    # Streamable HTTP on 8765, every request except /healthz needs "Authorization: Bearer $LENIE_MCP_TOKEN".
+    # Talks to the backend over lenie-net and writes notes through its /vault/* gateway (remote vault mode).
+    # Secrets (LENIE_API_KEY, LENIE_MCP_TOKEN) live in lenie_mcp.env, see infra/docker/lenie_mcp.env.example.
+    image: 192.168.200.7:5005/lenie-mcp:latest
+    container_name: lenie-mcp
+    restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 96m
+    cpus: 0.25
+    pids_limit: 128
+    ports:
+      - "8765:8000"
+    env_file:
+      - /share/Container/lenie-env/lenie_mcp.env
+    environment:
+      LENIE_API_URL: http://lenie-ai-server:5000
+      LENIE_VAULT_MODE: remote
+      LENIE_MCP_TRANSPORT: http
+      LENIE_MCP_ALLOWED_HOSTS: "192.168.200.7:*,lenie-mcp:*,localhost:*,127.0.0.1:*"
+    networks:
+      - lenie-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   obsidian-headless-sync:
     # Pinned to 0.0.14 (verified latest stable tag, July 2026) — GHCR tags for
     # this image do NOT use a "v" prefix (unlike the project's git tags on

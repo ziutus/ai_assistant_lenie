@@ -1,14 +1,18 @@
-"""MCP entry point (stdio). Nothing may be printed to stdout except the protocol; logs go to stderr."""
+"""MCP entry point: stdio (default) or streamable HTTP (``LENIE_MCP_TRANSPORT=http``, the NAS container).
+
+In stdio mode nothing may be printed to stdout except the protocol; logs go to stderr."""
 
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from .config import ConfigError, load_settings
+from .http_app import build_http_app, load_http_settings
 from .service import LenieService
 
 READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
@@ -84,12 +88,23 @@ def build_server(service: LenieService) -> MCPServer:
 
 def main() -> None:
     logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+    env = os.environ
     try:
-        settings = load_settings()
+        settings = load_settings(env)
+        transport = env.get("LENIE_MCP_TRANSPORT", "stdio").strip().lower()
+        if transport not in ("stdio", "http"):
+            raise ConfigError("LENIE_MCP_TRANSPORT must be 'stdio' or 'http'")
+        http = load_http_settings(env) if transport == "http" else None
     except ConfigError as exc:
         print(f"lenie-mcp configuration error: {exc}", file=sys.stderr)
         raise SystemExit(2) from None
-    build_server(LenieService(settings)).run("stdio")
+    server = build_server(LenieService(settings))
+    if http is None:
+        server.run("stdio")
+        return
+    import uvicorn
+
+    uvicorn.run(build_http_app(server, http), host=http.host, port=http.port, log_level="info")
 
 
 if __name__ == "__main__":
