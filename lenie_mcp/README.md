@@ -20,7 +20,13 @@ uv run pytest    # 28 testów, bez sieci
 |---|---|
 | `LENIE_API_KEY` | klucz serwisowy (`kind=service`) — ten sam co dla skilla `/lenie-obsidian-note` |
 | `LENIE_API_URL` | domyślnie `http://192.168.200.7:5055` |
-| `LENIE_OBSIDIAN_VAULT` | katalog vaulta; bez niego działają tylko narzędzia `lenie_*` |
+| `LENIE_OBSIDIAN_VAULT` | katalog vaulta na tym komputerze (tryb `local`) |
+| `LENIE_VAULT_MODE` | `local` (dysk) lub `remote` (kopia vaulta na NAS przez bramkę `/vault/*`, ADR-030 Etap A2). Domyślnie `local`, gdy ustawiono `LENIE_OBSIDIAN_VAULT`, w przeciwnym razie `remote` |
+
+**Tryb `remote`** nie wymaga lokalnego vaulta: serwer czyta i zapisuje notatki przez backend na NAS
+(`GET /vault/note`, `GET /vault/find`, `POST /vault/apply`, tylko klucz `service`), a kontener
+`obsidian-headless-sync` rozsyła zmiany na Twoje urządzenia przez Obsidian Sync. Zapis jest wąski:
+tylko `02-wiedza/`, tylko nowe pliki, dopisek wyłącznie do `_index.md` z kontrolą hasha.
 
 ## Rejestracja w Claude Code
 
@@ -53,4 +59,5 @@ Zapis (dwa kroki): `obsidian_propose_package` (nic nie zapisuje, zwraca podgląd
 `obsidian_commit_package` (po jawnej zgodzie; zapis plików, potem `POST /document/<id>/obsidian_notes`).
 Ponowne wywołanie `commit` z tym samym `proposal_id` po błędzie bazy powtarza tylko synchronizację.
 
-Zapis wymaga wdrożonego na NAS endpointu `POST /document/<id>/obsidian_notes` (backend, ten sam PR).
+Zapis wymaga wdrożonych na NAS endpointów `POST /document/<id>/obsidian_notes` oraz (tryb `remote`) `/vault/*`
+(backend, ten sam PR).

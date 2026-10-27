@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import os
 import re
 import secrets
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import PurePosixPath
 
-from .vault import INDEX_PATH, NOTES_ROOT, VaultError, normalize_rel, resolve_in_vault
+from .vault import INDEX_PATH, NOTES_ROOT, VaultError, normalize_rel
+from .vault_backend import VaultBackend
 
 PROPOSAL_TTL_SECONDS = 30 * 60
 MAX_FILES = 10
@@ -59,10 +59,6 @@ def _sha(text: str | None) -> str | None:
     return None if text is None else hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _read_if_exists(path: Path) -> str | None:
-    return path.read_text(encoding="utf-8") if path.is_file() else None
-
-
 def parse_files(raw: list[dict]) -> tuple[FileChange, ...]:
     if not isinstance(raw, list) or not raw or len(raw) > MAX_FILES:
         raise ProposalError(f"files must be a list of 1..{MAX_FILES} items")
@@ -92,18 +88,19 @@ def parse_files(raw: list[dict]) -> tuple[FileChange, ...]:
     return tuple(out)
 
 
-def validate(vault: Path, files: tuple[FileChange, ...], doc_uuid: str) -> tuple[dict[str, str | None], list[str]]:
+def validate(vault: VaultBackend, files: tuple[FileChange, ...], doc_uuid: str) -> tuple[dict[str, str | None], list[str]]:
     """Hard validation (raises ProposalError) + soft editorial warnings. Returns (base_hashes, warnings)."""
     base: dict[str, str | None] = {}
     warnings: list[str] = []
     for f in files:
-        try:
-            abs_path = resolve_in_vault(vault, f.path)
-        except VaultError as exc:
-            raise ProposalError(f"{f.path}: {exc}") from None
         if not f.path.endswith(".md"):
             raise ProposalError(f"{f.path}: only .md files")
-        existing = _read_if_exists(abs_path)
+        if not (f.path == NOTES_ROOT or f.path.startswith(NOTES_ROOT + "/")):
+            raise ProposalError(f"{f.path}: path must be under {NOTES_ROOT}/")
+        try:
+            existing = vault.read(f.path)
+        except VaultError as exc:
+            raise ProposalError(f"{f.path}: {exc}") from None
         base[f.path] = _sha(existing)
         if f.is_index:
             if f.mode != "append" or existing is None:
@@ -115,7 +112,7 @@ def validate(vault: Path, files: tuple[FileChange, ...], doc_uuid: str) -> tuple
             raise ProposalError(f"{f.path}: notes are created, not appended (only {INDEX_PATH} accepts append)")
         if existing is not None:
             raise ProposalError(f"{f.path}: file already exists (overwriting is not supported)")
-        if Path(f.path).name.startswith("_"):
+        if PurePosixPath(f.path).name.startswith("_"):
             raise ProposalError(f"{f.path}: file names starting with '_' are reserved")
         fm = re.match(r"^---\r?\n(.*?)\r?\n---\r?\n", f.content, re.DOTALL)
         if not fm or "wiedza/" not in fm.group(1):
@@ -136,11 +133,11 @@ def validate(vault: Path, files: tuple[FileChange, ...], doc_uuid: str) -> tuple
     return base, warnings
 
 
-def preview(vault: Path, files: tuple[FileChange, ...], limit: int = 6000) -> list[dict]:
+def preview(vault: VaultBackend, files: tuple[FileChange, ...], limit: int = 6000) -> list[dict]:
     out = []
     for f in files:
         if f.mode == "append":
-            existing = _read_if_exists(resolve_in_vault(vault, f.path)) or ""
+            existing = vault.read(f.path) or ""
             diff = "".join(difflib.unified_diff(
                 existing.splitlines(True), (existing.rstrip("\n") + "\n" + f.content.rstrip("\n") + "\n").splitlines(True),
                 fromfile=f.path, tofile=f.path, n=1))
@@ -180,31 +177,19 @@ class ProposalStore:
             del self._items[pid]
 
 
-def write_files(vault: Path, p: Proposal) -> list[str]:
-    """Re-validate and write. All preconditions are checked before the first byte is written."""
+def write_files(vault: VaultBackend, p: Proposal) -> list[str]:
+    """Re-validate against the current vault state, then hand the whole package to the backend."""
     base, _ = validate(vault, p.files, p.doc_uuid)
     if base != p.base_hashes:
         raise ProposalError("vault files changed since the proposal -- propose again")
-    plan = []
-    for f in p.files:
-        abs_path = resolve_in_vault(vault, f.path)
-        if f.mode == "create":
-            plan.append((abs_path, f.content.rstrip("\n") + "\n", "x"))
-        else:
-            existing = abs_path.read_text(encoding="utf-8")
-            plan.append((abs_path, existing.rstrip("\n") + "\n" + f.content.rstrip("\n") + "\n", "replace"))
-    written = []
-    for (abs_path, text, how), f in zip(plan, p.files):
-        abs_path.parent.mkdir(parents=True, exist_ok=True)
-        if how == "x":
-            with open(abs_path, "x", encoding="utf-8", newline="\n") as fh:
-                fh.write(text)
-        else:
-            tmp = abs_path.with_name(abs_path.name + ".lenie-tmp")
-            tmp.write_text(text, encoding="utf-8", newline="\n")
-            os.replace(tmp, abs_path)
-        written.append(f.path)
-    return written
+    ops = [
+        {"path": f.path, "content": f.content, "mode": f.mode, "base_sha256": p.base_hashes[f.path]}
+        for f in p.files
+    ]
+    try:
+        return vault.apply(ops)
+    except VaultError as exc:
+        raise ProposalError(str(exc)) from None
 
 
 def sync_payload(p: Proposal) -> dict:

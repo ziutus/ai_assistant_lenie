@@ -10,6 +10,10 @@ from .config import Settings
 class LenieError(RuntimeError):
     """Short, key-free error message safe to return to the model."""
 
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
 
 class LenieClient:
     def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None):
@@ -32,14 +36,14 @@ class LenieClient:
                 detail = str(body.get("message") or body.get("description") or "")[:200]
             except ValueError:
                 pass
-            raise LenieError(f"Lenie API {method} {path} -> HTTP {resp.status_code} {detail}".strip())
+            raise LenieError(f"Lenie API {method} {path} -> HTTP {resp.status_code} {detail}".strip(), resp.status_code)
         try:
             return resp.json()
         except ValueError:
             raise LenieError(f"Lenie API {method} {path} returned non-JSON") from None
 
-    def get(self, path: str, **params):
-        return self._request("GET", path, params={k: v for k, v in params.items() if v is not None})
+    def get(self, endpoint: str, /, **params):
+        return self._request("GET", endpoint, params={k: v for k, v in params.items() if v is not None})
 
     def post(self, path: str, payload: dict):
         return self._request("POST", path, json=payload)

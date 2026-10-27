@@ -153,6 +153,25 @@ miejscu** — `.agents/skills/lenie-obsidian-note/references/workflow.md`. Serwe
 W Etapie A Claude Code używa skilla + narzędzi MCP. Gdy dojdzie ChatGPT (Etap B), serwer wystawi te same reguły
 jako MCP `prompt`/`resource` czytane z tego pliku, bez drugiej kopii.
 
+### D7. Etap A2: zapis przez kopię vaulta na NAS
+
+NAS ma kontener `obsidian-headless-sync` (demon Obsidian Sync) utrzymujący wolumin `lenie-obsidian-vault-data`,
+który backend już montuje. Zamiast lokalnej ścieżki vaulta serwer MCP może pisać do tej kopii przez wąską bramkę
+w backendzie (`library/obsidian_vault_routes.py`, klucz `service`); Obsidian Sync rozsyła zmiany na urządzenia.
+
+- `GET /vault/note?path=`, `GET /vault/find?q=` (nazwy plików i tagi, bez skanowania treści),
+  `POST /vault/apply` — paczka plików; wszystkie warunki wstępne sprawdzane przed pierwszym bajtem, zapis przez
+  istniejące `obsidian_vault.write_note_with_version` (wiersz wersji + atomowy rename), jeden zapis naraz.
+- Te same ograniczenia co lokalnie, ale egzekwowane na serwerze: tylko `02-wiedza/`, tylko `.md`, `create` nie
+  nadpisuje, `append` tylko do `_index.md` i tylko z `base_sha256` zgodnym z bieżącym plikiem (optymistyczna
+  kontrola konfliktów — odpowiedź tego samego rodzaju co przy lokalnej zmianie pliku od czasu propozycji).
+- Serwer MCP ma interfejs `VaultBackend` z implementacjami `LocalVault` i `RemoteVault`, wybór przez
+  `LENIE_VAULT_MODE` (domyślnie `local`, gdy podano ścieżkę, inaczej `remote`).
+- Znane ryzyko, bez zmian: backend i kontener sync zapisują do tego samego woluminu bez blokady na poziomie
+  systemu plików (uwaga w `compose.nas.yaml`). Nowy plik jest bezpieczny; dopisek do `_index.md` może zderzyć się
+  z edycją w Obsidianie, dlatego jest chroniony hashem i odrzucany przy rozbieżności.
+- Skutek uboczny: nowy plik trafia do reimportu (watcher) i staje się dokumentem `obsidian_note`.
+
 ## Przebieg dla dokumentu 11176 (pierwszy test)
 
 Stan z REST (2026-10-27): `document_type=youtube`, język `pl`, `processing_status=EMBEDDING_EXIST`,
@@ -183,6 +202,7 @@ Docelową ścieżkę pliku i tytuł proponuje model w kroku 5; nie ustalamy ich 
 | 1 | `lenie_mcp/`: narzędzia odczytu Lenie i vaulta, testy jednostkowe (httpx mock), rejestracja w Claude Code | nie (serwer działa lokalnie) |
 | 2 | Backend: `POST /document/<id>/obsidian_notes` + testy | tak, tylko z domowej sieci LAN |
 | 3 | Narzędzia zapisu (`propose`/`commit`) + test end-to-end na dokumencie 11176 | — |
+| A2 | Bramka `/vault/*` w backendzie + `RemoteVault` w `lenie_mcp` (D7) | tak, tylko z domowej sieci LAN |
 | 4 | (osobny ADR) HTTP + OAuth dla ChatGPT | zależnie od decyzji |
 
 ## Konsekwencje
