@@ -63,6 +63,21 @@ sieci Dockera (`lenie-ai-server:5000`) i przyjmuje wyłącznie żądania z nagł
 }
 ```
 
+**Alternatywa: `claude mcp add`** (bez edycji plików; składnia z [dokumentacji Claude Code](https://code.claude.com/docs/en/mcp)):
+
+```powershell
+$t = (ssh admin@192.168.200.7 "grep '^LENIE_MCP_TOKEN=' /share/Container/lenie-env/lenie_mcp.env").Split('=',2)[1]
+claude mcp add --transport http --scope user lenie http://192.168.200.7:8765/mcp --header "Authorization: Bearer $t"
+claude mcp list      # `lenie` powinno być połączone; w sesji: /mcp pokazuje narzędzia
+```
+
+- `--scope user` — wszystkie Twoje projekty (najwygodniejsze); `local` (domyślny) — tylko bieżący projekt;
+  `project` zapisuje do `.mcp.json` w repo, więc **nie wpisuj tam tokenu** — użyj wpisu z `${LENIE_MCP_TOKEN}` powyżej.
+- Ten sposób zapisuje token jawnym tekstem w konfiguracji użytkownika (`~/.claude.json`, poza repo). Po rotacji
+  tokenu: `claude mcp remove lenie --scope user` i dodaj ponownie.
+- Rozwijanie `${VAR}` w nagłówkach dokumentacja potwierdza dla `.mcp.json`; dla wpisu dodanego przez
+  `claude mcp add-json` do `~/.claude.json` nie zostało to sprawdzone.
+
 Token pobierz z NAS do zmiennej użytkownika, bez wypisywania go na ekran (PowerShell):
 
 ```powershell
