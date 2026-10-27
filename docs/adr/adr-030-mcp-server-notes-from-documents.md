@@ -172,6 +172,21 @@ w backendzie (`library/obsidian_vault_routes.py`, klucz `service`); Obsidian Syn
   z edycją w Obsidianie, dlatego jest chroniony hashem i odrzucany przy rozbieżności.
 - Skutek uboczny: nowy plik trafia do reimportu (watcher) i staje się dokumentem `obsidian_note`.
 
+### D8. Etap B1: serwer jako kontener HTTP na NAS
+
+Ten sam rdzeń narzędzi działa też przez streamable HTTP (`LENIE_MCP_TRANSPORT=http`), jako kontener `lenie-mcp`
+w `compose.nas.yaml` (port 8765, tryb `remote`, sieć `lenie-net`). Claude Code obsługuje serwery `type: http` z
+nagłówkami i rozwijaniem `${VAR}` w `url`/`headers` ([dokumentacja](https://code.claude.com/docs/en/mcp)).
+
+- **Uwierzytelnianie:** token Bearer (min. 32 znaki, porównanie w stałym czasie) w osobnej warstwie ASGI; tylko
+  `GET /healthz` jest publiczny. Kontener trzyma własny, dedykowany klucz `service` (`lenie-mcp-nas`).
+- **Ochrona:** sprawdzanie `Host` (DNS rebinding) i `Origin` z konfiguracji; sesje bezstanowe (`stateless_http`),
+  bo propozycje zapisu żyją w serwisie, a restart kontenera nie może osierocać klientów.
+- **Granice:** zwykły HTTP w LAN, bez TLS — dopuszczalne dla tokenu statycznego w sieci domowej; OAuth wymagałby
+  HTTPS (Claude Code wysyła poświadczenia OAuth tylko do endpointu tokenów po HTTPS lub na localhost). Wystawienie
+  poza dom (ChatGPT przez Secure MCP Tunnel) to osobny Etap B2.
+- Propozycje zapisu są w pamięci procesu (TTL 30 min): restart kontenera między `propose` a `commit` je unieważnia.
+
 ## Przebieg dla dokumentu 11176 (pierwszy test)
 
 Stan z REST (2026-10-27): `document_type=youtube`, język `pl`, `processing_status=EMBEDDING_EXIST`,
@@ -203,7 +218,8 @@ Docelową ścieżkę pliku i tytuł proponuje model w kroku 5; nie ustalamy ich 
 | 2 | Backend: `POST /document/<id>/obsidian_notes` + testy | tak, tylko z domowej sieci LAN |
 | 3 | Narzędzia zapisu (`propose`/`commit`) + test end-to-end na dokumencie 11176 | — |
 | A2 | Bramka `/vault/*` w backendzie + `RemoteVault` w `lenie_mcp` (D7) | tak, tylko z domowej sieci LAN |
-| 4 | (osobny ADR) HTTP + OAuth dla ChatGPT | zależnie od decyzji |
+| B1 | Kontener `lenie-mcp` (HTTP + Bearer) na NAS (D8) | tak, tylko z domowej sieci LAN |
+| B2 | (osobny ADR) ChatGPT przez Secure MCP Tunnel / OAuth | zależnie od decyzji |
 
 ## Konsekwencje
 
