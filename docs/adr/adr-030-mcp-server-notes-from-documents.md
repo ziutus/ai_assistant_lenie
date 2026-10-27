@@ -1,7 +1,8 @@
 # ADR-030: Serwer MCP do tworzenia notatek Obsidian z dokumentów Lenie
 
 **Data:** 2026-10-27
-**Status:** Proposed (szkic do przeglądu — Claude + Codex)
+**Status:** Accepted — Etap A zaimplementowany w `lenie_mcp/` (odczyt + propose/commit) i endpoint
+`POST /document/<id>/obsidian_notes` w backendzie; Etap B (ChatGPT przez tunel/HTTP) nie rozpoczęty
 **Decydent:** Ziutus
 
 ## Kontekst
@@ -44,7 +45,10 @@ Ograniczenia klientów (stan wg źródeł zewnętrznych z października 2026, do
    ChatGPT Desktop może używać tego samego serwera stdio jako **wtyczki osobistej** (patrz wyżej) — bez
    publicznego adresu; wymaga tylko spakowania serwera jako wtyczki (`mcp.json` z wpisem `stdio`).
 2. **Etap B (osobna decyzja, później, tylko gdyby wtyczka osobista nie wystarczyła): ten sam kod przez streamable HTTP**
-   dla ChatGPT na webie/telefonie. Wymaga publicznego
+   dla ChatGPT na webie/telefonie. Najbezpieczniejsza droga to **Secure MCP Tunnel** OpenAI: na NAS-ie (lub innej
+   maszynie z dostępem do niego) działa `tunnel-client`, który sam nawiązuje wychodzące połączenie HTTPS z OpenAI —
+   bez otwierania portów i bez publicznego adresu. Wyniki narzędzi i tak trafiają do ChatGPT (OpenAI), więc
+   obowiązuje polityka `is_private` z D5. Wymaga publicznego
    HTTPS + uwierzytelnienia (OAuth), czyli ekspozycji spoza LAN (relay z ADR-023) oraz zapisu do vaulta
    zdalnie — to zmienia model zagrożeń, więc **nie wchodzi w zakres tego ADR**. Kod piszemy tak, by transport
    był jedyną różnicą (rdzeń narzędzi niezależny od stdio/HTTP).
@@ -159,8 +163,7 @@ bez tematów/streszczeń), jest `chapter_list` (16 rozdziałów) i `summary`.
 1. `lenie_get_document(11176)` → metadane, readiness, UUID.
 2. `lenie_list_analysis_runs(11176)` → jeden run 253; `analyzed_count=0` ⇒ pełny tekst, ale ścieżki notatek
    trzeba potem wpisać w chunki `TEMAT` runu 253.
-3. `lenie_get_document_text(11176)` (1–2 strony) — transkrypcja jest po angielsku w treści filmu; notatka po
-   polsku.
+3. `lenie_get_document_text(11176)` (1–2 strony) — transkrypcja w bazie jest po polsku (17 225 znaków).
 4. `obsidian_read_index()` + `obsidian_find_notes("llm sprzęt koszt")` → najwyżej 1–2 pasujące notatki;
    dla YouTube także słownik `02-wiedza/_słownik omówień i błędów STT.md`.
 5. Model przygotowuje notatkę (wątek finansowy jest tu rdzeniem: Mac Studio ~9 499 USD vs serwer ~5 899 USD,
