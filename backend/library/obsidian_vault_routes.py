@@ -55,21 +55,26 @@ def _service_only() -> None:
         abort(403, "service API key required")
 
 
-def normalize_path(path) -> tuple[str | None, str | None]:
-    """Return ``(normalized_path, None)`` or ``(None, error)``. Errors are fixed texts -- never echo the input."""
+def path_problem(path) -> str | None:
+    """Fixed-text reason why ``path`` is not an acceptable vault note path, or None. Never echoes the input."""
     if not isinstance(path, str) or not path.strip() or "\x00" in path:
-        return None, "path must be a non-empty string"
+        return "path must be a non-empty string"
     norm = path.replace("\\", "/").strip()
     if norm.startswith("/") or re.match(r"^[A-Za-z]:", norm):
-        return None, "path must be vault-relative"
+        return "path must be vault-relative"
     parts = norm.split("/")
     if any(p in ("", "..") for p in parts):
-        return None, "path must not contain '..' or empty segments"
+        return "path must not contain '..' or empty segments"
     if parts[0] != NOTES_ROOT:
-        return None, f"path must be under {NOTES_ROOT}/"
+        return f"path must be under {NOTES_ROOT}/"
     if not norm.endswith(".md"):
-        return None, "only .md files"
-    return "/".join(parts), None
+        return "only .md files"
+    return None
+
+
+def normalize_path(path: str) -> str:
+    """Canonical form of a path that already passed :func:`path_problem`."""
+    return "/".join(path.replace("\\", "/").strip().split("/"))
 
 
 def sha256_text(text: str | None) -> str | None:
@@ -93,9 +98,10 @@ def _error(message: str, status: int = 400):
 @bp.route("/vault/note", methods=["GET"])
 def vault_note():
     _service_only()
-    path, problem = normalize_path(request.args.get("path"))
+    problem = path_problem(request.args.get("path"))
     if problem:
         return _error(problem)
+    path = normalize_path(request.args["path"])
     try:
         text = read_note(path)
     except VaultPathInvalidError:
@@ -152,9 +158,10 @@ def _plan(files) -> list[dict] | tuple:
         label = f"files[{index}]"
         if not isinstance(item, dict):
             return _error(f"{label}: must be an object")
-        path, problem = normalize_path(item.get("path"))
+        problem = path_problem(item.get("path"))
         if problem:
             return _error(f"{label}: {problem}")
+        path = normalize_path(item["path"])
         mode, content = item.get("mode", "create"), item.get("content")
         if mode not in ("create", "append"):
             return _error(f"{label}: mode must be 'create' or 'append'")

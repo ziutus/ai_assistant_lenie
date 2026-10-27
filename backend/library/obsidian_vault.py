@@ -64,8 +64,12 @@ def ensure_within_vault(note_path: str) -> Path:
     """
     root = _vault_root()
     candidate = os.path.realpath(os.path.join(root, note_path))
-    if candidate != root and not candidate.startswith(root + os.sep):
-        raise VaultPathInvalidError(f"note_path escapes vault root: {note_path!r}")
+    if candidate == root:
+        return Path(root)
+    # Kept as a separate, simple containment check (not folded into the test above): static analysers
+    # only recognise `startswith` on a normalised path as a guard when it is the whole condition.
+    if not candidate.startswith(root + os.sep):
+        raise VaultPathInvalidError("note_path escapes vault root")
     return Path(candidate)
 
 
