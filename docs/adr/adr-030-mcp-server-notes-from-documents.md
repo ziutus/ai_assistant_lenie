@@ -24,8 +24,16 @@ Co już mamy:
 Ograniczenia klientów (stan wg źródeł zewnętrznych z października 2026, do weryfikacji w dokumentacji OpenAI):
 
 - **Claude Code / Codex** — obsługują serwery **stdio** (proces lokalny) oraz HTTP.
-- **ChatGPT desktop** — według dostępnych opisów łączy się tylko ze zdalnymi serwerami **HTTPS** (tryb
-  deweloperski, Plus/Pro/Business), nie ze stdio.
+- **ChatGPT desktop** — wg oficjalnej pomocy OpenAI ([Plugins in ChatGPT](https://help.openai.com/en/articles/20001256-plugins-in-chatgpt-and-codex))
+  wtyczka może zawierać **lokalne aplikacje MCP uruchamiane na komputerze** i działać w ChatGPT Desktop (nie na
+  webie ani w telefonie). Wtyczki użytkownika są w zakładce **Plugins → Personal** („wtyczki osobiste”),
+  tworzy się je przez `@plugin-creator`; lokalne wtyczki instalują się automatycznie. Publikacja lokalnego MCP
+  w publicznym katalogu jest ograniczona do zatwierdzonych partnerów
+  ([Desktop-only plugins](https://developers.openai.com/plugins/deploy/desktop-only)) — nas to nie dotyczy, bo
+  używamy wtyczki osobistej. **Do zweryfikowania na koncie użytkownika:** czy plan i ustawienia pozwalają na
+  tworzenie wtyczki z lokalnym MCP (w workspace Business/Enterprise jest do tego osobne uprawnienie
+  „Create plugins with MCPs”). Zdalny serwer HTTPS (publiczny adres albo Secure MCP Tunnel) jest drugą,
+  osobną drogą.
 
 ## Decyzja
 
@@ -33,7 +41,10 @@ Ograniczenia klientów (stan wg źródeł zewnętrznych z października 2026, do
 
 1. **Etap A (teraz): lokalny serwer stdio na komputerze użytkownika** — dla Claude Code desktop (i Codex).
    Ma dostęp do vaulta z dysku i do NAS po LAN/VPN. Zero ekspozycji do internetu.
-2. **Etap B (osobna decyzja, później): ten sam kod przez streamable HTTP** dla ChatGPT. Wymaga publicznego
+   ChatGPT Desktop może używać tego samego serwera stdio jako **wtyczki osobistej** (patrz wyżej) — bez
+   publicznego adresu; wymaga tylko spakowania serwera jako wtyczki (`mcp.json` z wpisem `stdio`).
+2. **Etap B (osobna decyzja, później, tylko gdyby wtyczka osobista nie wystarczyła): ten sam kod przez streamable HTTP**
+   dla ChatGPT na webie/telefonie. Wymaga publicznego
    HTTPS + uwierzytelnienia (OAuth), czyli ekspozycji spoza LAN (relay z ADR-023) oraz zapisu do vaulta
    zdalnie — to zmienia model zagrożeń, więc **nie wchodzi w zakres tego ADR**. Kod piszemy tak, by transport
    był jedyną różnicą (rdzeń narzędzi niezależny od stdio/HTTP).
@@ -176,7 +187,7 @@ Docelową ścieżkę pliku i tytuł proponuje model w kroku 5; nie ustalamy ich 
 - **Plus:** jeden mały pakiet bez dostępu do bazy; te same reguły i ta sama autoryzacja co skill; zapis możliwy
   tylko przez dwuetapowy, walidowany przepływ.
 - **Plus:** Etap A nie wystawia niczego do internetu.
-- **Minus:** ChatGPT desktop (wg obecnych informacji) nie zadziała bez Etapu B; to osobny koszt i ryzyko.
+- **Minus:** ChatGPT na webie i w telefonie nie zobaczy lokalnej wtyczki; do tego potrzebny byłby Etap B.
 - **Minus:** dwie ścieżki (skill i MCP) w Etapie A — akceptowalne, bo reguły są w jednym pliku, a skill może
   później zostać cieńszą nakładką na narzędzia MCP.
 - **Ryzyko:** drugi serwer MCP to znów powierzchnia utrzymania — ten sam powód, dla którego prototyp usunięto.
@@ -189,4 +200,5 @@ Docelową ścieżkę pliku i tytuł proponuje model w kroku 5; nie ustalamy ich 
 2. ~~Prefiksy zapisu~~ — rekomendacja: tylko `02-wiedza/`, ze specjalną obsługą `_index.md`.
 3. ~~Los skilla~~ — rekomendacja: skill jako cienka instrukcja korzystająca z narzędzi MCP (jeden mechanizm
    zapisu i synchronizacji w transakcji).
-4. Potwierdzić w dokumentacji OpenAI, czy ChatGPT desktop obsługuje stdio (źródła są trzecie i niespójne).
+4. ~~Czy ChatGPT desktop obsługuje stdio~~ — tak, jako lokalna aplikacja MCP we wtyczce osobistej (pomoc OpenAI,
+   2026-10-27); do sprawdzenia tylko, czy konto użytkownika ma na to uprawnienie.

@@ -18,6 +18,7 @@ Endpoints:
   PATCH /analysis_run/<run_id>               — run workflow status
   PATCH /topic_section/<section_id>          — edit section title
   PATCH /chunk/<chunk_id>                    — update status / type / topic / split_at_seg
+  POST /document/<doc_id>/obsidian_notes     — record vault note paths on the document (+ chunks of a run)
   POST /chunk/<chunk_id>/execute_split
   POST /chunk/<chunk_id>/merge_with_next
   POST /chunk/<chunk_id>/remove_span         — cut one exact substring out of original_text
@@ -3167,6 +3168,128 @@ def mark_run_notes_not_needed(run_id: int):
             return jsonify({"status": "error", "message": "DB error"}), 500
 
     return jsonify({"status": "success", "run_id": run_id, "value": value, "chunks_changed": changed})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /document/<doc_id>/obsidian_notes
+# ---------------------------------------------------------------------------
+
+_MAX_NOTES_PER_SYNC = 50
+
+
+def _valid_vault_relative_path(path) -> bool:
+    if not isinstance(path, str) or not path.strip() or not path.endswith(".md"):
+        return False
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
+        return False
+    return ".." not in normalized.split("/")
+
+
+@bp.route("/document/<int:doc_id>/obsidian_notes", methods=["POST", "OPTIONS"])
+def record_obsidian_notes(doc_id: int):
+    """Record vault notes written from a document, in one transaction.
+
+    Body (JSON): {"notes": [{"path": "<vault-relative .md>", "chunk_positions": [int] | null}],
+                  "run_id": int | null}
+
+    - Appends every path to ``Document.obsidian_note_paths`` (deduplicated) and sets
+      ``reviewed_at`` only when it is still NULL.
+    - With ``run_id`` (must belong to the document and not be ``superseded``), appends
+      a note's path to the TEMAT chunks of that run at its ``chunk_positions`` (deduplicated).
+      ``chunk_positions`` null/absent = document-level only. Unknown or non-TEMAT positions
+      reject the whole request (400); nothing is written. Chunk status is never changed.
+    Idempotent: repeating the same body changes nothing.
+    """
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    notes = data.get("notes")
+    run_id = data.get("run_id")
+    if not isinstance(notes, list) or not notes or len(notes) > _MAX_NOTES_PER_SYNC:
+        return jsonify({"status": "error", "message": f"notes must be a list of 1..{_MAX_NOTES_PER_SYNC} items"}), 400
+    if run_id is not None and (not isinstance(run_id, int) or isinstance(run_id, bool)):
+        return jsonify({"status": "error", "message": "run_id must be an integer or null"}), 400
+
+    parsed: list[tuple[str, list[int] | None]] = []
+    for item in notes:
+        path = item.get("path") if isinstance(item, dict) else None
+        positions = item.get("chunk_positions") if isinstance(item, dict) else None
+        if not _valid_vault_relative_path(path):
+            return jsonify({"status": "error", "message": f"invalid note path: {path!r}"}), 400
+        if positions is not None and (
+            not isinstance(positions, list)
+            or not all(isinstance(p, int) and not isinstance(p, bool) for p in positions)
+        ):
+            return jsonify({"status": "error", "message": "chunk_positions must be a list of integers or null"}), 400
+        if positions and run_id is None:
+            return jsonify({"status": "error", "message": "chunk_positions require run_id"}), 400
+        parsed.append((path.replace("\\", "/"), positions))
+
+    chunks_by_position: dict[int, DocumentChunk] = {}
+    if run_id is not None:
+        run = session.get(DocumentAnalysisRun, run_id)
+        if run is None or run.document_id != doc_id:
+            return jsonify({"status": "error", "message": f"Run {run_id} does not belong to document {doc_id}"}), 400
+        if run.status == "superseded":
+            return jsonify({"status": "error", "message": f"Run {run_id} is superseded"}), 400
+        run_chunks = session.scalars(
+            select(DocumentChunk).where(DocumentChunk.run_id == run_id, DocumentChunk.type == "TEMAT")
+        ).all()
+        chunks_by_position = {c.position: c for c in run_chunks}
+        for path, positions in parsed:
+            unknown = [p for p in (positions or []) if p not in chunks_by_position]
+            if unknown:
+                return jsonify({
+                    "status": "error",
+                    "message": f"positions {unknown} are not TEMAT chunks of run {run_id}",
+                }), 400
+
+    doc_paths = list(doc.obsidian_note_paths or [])
+    chunk_changes: dict[int, list[str]] = {}
+    for path, positions in parsed:
+        if path not in doc_paths:
+            doc_paths.append(path)
+        for position in positions or []:
+            chunk = chunks_by_position[position]
+            current = chunk_changes.get(position, list(chunk.obsidian_note_paths or []))
+            if path not in current:
+                current.append(path)
+            chunk_changes[position] = current
+
+    if doc_paths != list(doc.obsidian_note_paths or []):
+        doc.obsidian_note_paths = doc_paths
+    if doc.reviewed_at is None:
+        doc.reviewed_at = datetime.utcnow()
+    chunks_changed = 0
+    for position, paths in chunk_changes.items():
+        chunk = chunks_by_position[position]
+        if paths != list(chunk.obsidian_note_paths or []):
+            chunk.obsidian_note_paths = paths
+            chunk.updated_at = datetime.utcnow()
+            chunks_changed += 1
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to record obsidian notes for document %d", doc_id)
+        return jsonify({"status": "error", "message": "DB error"}), 500
+
+    return jsonify({
+        "status": "success",
+        "document_id": doc_id,
+        "obsidian_note_paths": list(doc.obsidian_note_paths or []),
+        "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
+        "run_id": run_id,
+        "chunks_changed": chunks_changed,
+    })
 
 
 # ---------------------------------------------------------------------------
