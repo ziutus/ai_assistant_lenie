@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("frontend", "app2", "backend", "worker", "cloud-bridge", "document-worker", "db", "minio", "minio-init", "ner-service", "obsidian-headless-sync", "all")]
+    [ValidateSet("frontend", "app2", "backend", "worker", "cloud-bridge", "document-worker", "db", "minio", "minio-init", "ner-service", "lenie-mcp", "obsidian-headless-sync", "all")]
     [string[]]$Service = @("all"),
     [switch]$SkipBuild,
     [switch]$ComposeOnly,
@@ -35,6 +35,7 @@ $Definitions = @{
     "document-worker" = @{ Image = "lenie-ai-document-worker:latest"; RegistryImage = "$Registry/lenie-ai-document-worker:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-document-worker"; BuildArgs = @("--build-arg", "UV_EXTRA_ARGS=--extra docker --extra markdown") }
     db            = @{ Image = "lenie-ai-db:latest"; RegistryImage = "$Registry/lenie-ai-db:latest"; Dockerfile = "infra/docker/Postgresql/Dockerfile"; Compose = "lenie-ai-db" }
     "ner-service" = @{ Image = "lenie-ner-service:latest"; RegistryImage = "$Registry/lenie-ner-service:latest"; Dockerfile = "ner_service/Dockerfile"; Compose = "lenie-ner-service" }
+    "lenie-mcp"   = @{ Image = "lenie-mcp:latest"; RegistryImage = "$Registry/lenie-mcp:latest"; Dockerfile = "lenie_mcp/Dockerfile"; Compose = "lenie-mcp" }
     minio         = @{ Compose = "lenie-minio" }
     "minio-init"  = @{ Compose = "lenie-minio-init" }
     "obsidian-headless-sync" = @{ Compose = "obsidian-headless-sync" }
