@@ -91,6 +91,15 @@ def _frontmatter_tags(head: str) -> list[str]:
     return re.findall(r"wiedza/[\w\-/ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+", m.group(1)) if m else []
 
 
+class _PlanError(Exception):
+    """A package precondition failed. ``message`` is always a fixed text, never user input."""
+
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+
+
 def _error(message: str, status: int = 400):
     return jsonify({"status": "error", "message": message}), status
 
@@ -145,51 +154,51 @@ def vault_find():
     })
 
 
-def _plan(files) -> list[dict] | tuple:
-    """Validate the whole package against the current vault state. Returns the write plan or an error response.
+def _plan(files) -> list[dict]:
+    """Validate the whole package against the current vault state. Returns the write plan; raises _PlanError.
 
     Error texts are fixed strings labelled with the file's position (``files[1]``); user-supplied paths are
     never echoed back.
     """
     if not isinstance(files, list) or not files or len(files) > MAX_FILES:
-        return _error(f"files must be a list of 1..{MAX_FILES} items")
+        raise _PlanError(f"files must be a list of 1..{MAX_FILES} items")
     plan, seen = [], set()
     for index, item in enumerate(files):
         label = f"files[{index}]"
         if not isinstance(item, dict):
-            return _error(f"{label}: must be an object")
+            raise _PlanError(f"{label}: must be an object")
         problem = path_problem(item.get("path"))
         if problem:
-            return _error(f"{label}: {problem}")
+            raise _PlanError(f"{label}: {problem}")
         path = normalize_path(item["path"])
         mode, content = item.get("mode", "create"), item.get("content")
         if mode not in ("create", "append"):
-            return _error(f"{label}: mode must be 'create' or 'append'")
+            raise _PlanError(f"{label}: mode must be 'create' or 'append'")
         if not isinstance(content, str) or not content.strip() or len(content) > MAX_FILE_CHARS:
-            return _error(f"{label}: content must be a non-empty string up to {MAX_FILE_CHARS} chars")
+            raise _PlanError(f"{label}: content must be a non-empty string up to {MAX_FILE_CHARS} chars")
         if path in seen:
-            return _error(f"{label}: duplicated in package")
+            raise _PlanError(f"{label}: duplicated in package")
         seen.add(path)
         try:
             existing = read_note(path)
         except VaultPathInvalidError:
-            return _error(f"{label}: path escapes the vault")
+            raise _PlanError(f"{label}: path escapes the vault")
         if mode == "create":
             if path == INDEX_PATH or path.rsplit("/", 1)[-1].startswith("_"):
-                return _error(f"{label}: reserved file name")
+                raise _PlanError(f"{label}: reserved file name")
             if existing is not None:
-                return _error(f"{label}: file already exists (overwriting is not supported)", 409)
+                raise _PlanError(f"{label}: file already exists (overwriting is not supported)", 409)
             new_text = content.rstrip("\n") + "\n"
         else:
             if path != INDEX_PATH:
-                return _error(f"{label}: append is accepted for the index only")
+                raise _PlanError(f"{label}: append is accepted for the index only")
             if existing is None:
-                return _error(f"{label}: file does not exist", 404)
+                raise _PlanError(f"{label}: file does not exist", 404)
             if item.get("base_sha256") != sha256_text(existing):
-                return _error(f"{label}: file changed since the proposal (base_sha256 mismatch)", 409)
+                raise _PlanError(f"{label}: file changed since the proposal (base_sha256 mismatch)", 409)
             new_text = existing.rstrip("\n") + "\n" + content.rstrip("\n") + "\n"
         if len(new_text) > MAX_NOTE_CHARS:
-            return _error(f"{label}: resulting file too large")
+            raise _PlanError(f"{label}: resulting file too large")
         plan.append({"index": index, "path": path, "text": new_text})
     return plan
 
@@ -201,9 +210,10 @@ def vault_apply():
     _service_only()
     data = request.get_json(silent=True) or {}
     with _apply_lock:
-        plan = _plan(data.get("files"))
-        if isinstance(plan, tuple):
-            return plan
+        try:
+            plan = _plan(data.get("files"))
+        except _PlanError as exc:
+            return _error(exc.message, exc.status)
         session = get_scoped_session()
         written = []
         try:
