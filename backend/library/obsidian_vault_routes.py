@@ -8,6 +8,7 @@ Endpoints (all need a ``service`` API key):
   GET  /vault/note?path=<vault-relative .md under 02-wiedza>   -- content + sha256 (404 when missing)
   GET  /vault/find?q=<words>&limit=<n>                         -- file-name / frontmatter-tag match, no full-text scan
   POST /vault/apply  {"files": [{"path", "content", "mode": "create"|"append", "base_sha256"}]}
+                                                               -- answers with the INDEX of every written file, never a path
 
 Deliberately narrow: only ``02-wiedza/``, only ``.md``, ``create`` never overwrites, ``append`` is accepted for
 ``02-wiedza/_index.md`` only and needs the sha256 of the file the caller based the addition on. All preconditions
@@ -54,20 +55,21 @@ def _service_only() -> None:
         abort(403, "service API key required")
 
 
-def normalize_path(path) -> str:
+def normalize_path(path) -> tuple[str | None, str | None]:
+    """Return ``(normalized_path, None)`` or ``(None, error)``. Errors are fixed texts -- never echo the input."""
     if not isinstance(path, str) or not path.strip() or "\x00" in path:
-        raise ValueError("path must be a non-empty string")
+        return None, "path must be a non-empty string"
     norm = path.replace("\\", "/").strip()
     if norm.startswith("/") or re.match(r"^[A-Za-z]:", norm):
-        raise ValueError("path must be vault-relative")
+        return None, "path must be vault-relative"
     parts = norm.split("/")
     if any(p in ("", "..") for p in parts):
-        raise ValueError("path must not contain '..' or empty segments")
+        return None, "path must not contain '..' or empty segments"
     if parts[0] != NOTES_ROOT:
-        raise ValueError(f"path must be under {NOTES_ROOT}/")
+        return None, f"path must be under {NOTES_ROOT}/"
     if not norm.endswith(".md"):
-        raise ValueError("only .md files")
-    return "/".join(parts)
+        return None, "only .md files"
+    return "/".join(parts), None
 
 
 def sha256_text(text: str | None) -> str | None:
@@ -91,14 +93,16 @@ def _error(message: str, status: int = 400):
 @bp.route("/vault/note", methods=["GET"])
 def vault_note():
     _service_only()
+    path, problem = normalize_path(request.args.get("path"))
+    if problem:
+        return _error(problem)
     try:
-        path = normalize_path(request.args.get("path"))
         text = read_note(path)
-    except (ValueError, VaultPathInvalidError) as exc:
-        return _error(str(exc))
+    except VaultPathInvalidError:
+        return _error("path escapes the vault")
     if text is None:
         return _error("note not found", 404)
-    return jsonify({"status": "success", "path": path, "text": text, "sha256": sha256_text(text)})
+    return jsonify({"status": "success", "text": text, "sha256": sha256_text(text)})
 
 
 @bp.route("/vault/find", methods=["GET"])
@@ -136,46 +140,50 @@ def vault_find():
 
 
 def _plan(files) -> list[dict] | tuple:
-    """Validate the whole package against the current vault state. Returns the write plan or an error response."""
+    """Validate the whole package against the current vault state. Returns the write plan or an error response.
+
+    Error texts are fixed strings labelled with the file's position (``files[1]``); user-supplied paths are
+    never echoed back.
+    """
     if not isinstance(files, list) or not files or len(files) > MAX_FILES:
         return _error(f"files must be a list of 1..{MAX_FILES} items")
     plan, seen = [], set()
-    for item in files:
+    for index, item in enumerate(files):
+        label = f"files[{index}]"
         if not isinstance(item, dict):
-            return _error("each file must be an object")
-        try:
-            path = normalize_path(item.get("path"))
-        except ValueError as exc:
-            return _error(f"{item.get('path')!r}: {exc}")
+            return _error(f"{label}: must be an object")
+        path, problem = normalize_path(item.get("path"))
+        if problem:
+            return _error(f"{label}: {problem}")
         mode, content = item.get("mode", "create"), item.get("content")
         if mode not in ("create", "append"):
-            return _error(f"{path}: mode must be 'create' or 'append'")
+            return _error(f"{label}: mode must be 'create' or 'append'")
         if not isinstance(content, str) or not content.strip() or len(content) > MAX_FILE_CHARS:
-            return _error(f"{path}: content must be a non-empty string up to {MAX_FILE_CHARS} chars")
+            return _error(f"{label}: content must be a non-empty string up to {MAX_FILE_CHARS} chars")
         if path in seen:
-            return _error(f"{path}: duplicated in package")
+            return _error(f"{label}: duplicated in package")
         seen.add(path)
         try:
             existing = read_note(path)
-        except VaultPathInvalidError as exc:
-            return _error(f"{path}: {exc}")
+        except VaultPathInvalidError:
+            return _error(f"{label}: path escapes the vault")
         if mode == "create":
             if path == INDEX_PATH or path.rsplit("/", 1)[-1].startswith("_"):
-                return _error(f"{path}: reserved file name")
+                return _error(f"{label}: reserved file name")
             if existing is not None:
-                return _error(f"{path}: file already exists (overwriting is not supported)", 409)
+                return _error(f"{label}: file already exists (overwriting is not supported)", 409)
             new_text = content.rstrip("\n") + "\n"
         else:
             if path != INDEX_PATH:
-                return _error(f"{path}: append is accepted for {INDEX_PATH} only")
+                return _error(f"{label}: append is accepted for the index only")
             if existing is None:
-                return _error(f"{path}: file does not exist", 404)
+                return _error(f"{label}: file does not exist", 404)
             if item.get("base_sha256") != sha256_text(existing):
-                return _error(f"{path}: file changed since the proposal (base_sha256 mismatch)", 409)
+                return _error(f"{label}: file changed since the proposal (base_sha256 mismatch)", 409)
             new_text = existing.rstrip("\n") + "\n" + content.rstrip("\n") + "\n"
         if len(new_text) > MAX_NOTE_CHARS:
-            return _error(f"{path}: resulting file too large")
-        plan.append({"path": path, "text": new_text})
+            return _error(f"{label}: resulting file too large")
+        plan.append({"index": index, "path": path, "text": new_text})
     return plan
 
 
@@ -194,7 +202,7 @@ def vault_apply():
         try:
             for step in plan:
                 write_note_with_version(session, step["path"], step["text"], user_prompt=USER_PROMPT)
-                written.append({"path": step["path"], "sha256": sha256_text(step["text"])})
+                written.append({"index": step["index"], "sha256": sha256_text(step["text"])})
         except Exception:
             session.rollback()
             logger.exception("vault apply failed after %d of %d files", len(written), len(plan))

@@ -96,4 +96,4 @@ class RemoteVault:
             resp = self.client.post("/vault/apply", {"files": ops})
         except LenieError as exc:
             raise VaultError(str(exc)) from None
-        return [w["path"] for w in resp.get("written", [])]
+        return [ops[w["index"]]["path"] for w in resp.get("written", [])]

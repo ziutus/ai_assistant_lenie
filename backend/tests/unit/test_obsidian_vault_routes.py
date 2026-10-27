@@ -129,6 +129,18 @@ def test_apply_validates_package_shape(vault):
     assert apply(client, dup).status_code == 400
 
 
+def test_error_messages_never_echo_the_supplied_path(vault):
+    client = make_client()
+    marker = "<script>zzz</script>/..//x.md"
+    for resp in (
+        client.get("/vault/note", query_string={"path": marker}),
+        apply(client, [{"path": marker, "content": BODY, "mode": "create"}]),
+        apply(client, [{"path": "02-wiedza/<b>zzz</b>.txt", "content": BODY, "mode": "create"}]),
+    ):
+        assert resp.status_code == 400
+        assert "zzz" not in resp.get_data(as_text=True)
+
+
 def test_write_failure_reports_partial_state(vault, monkeypatch):
     calls = []
 
@@ -143,4 +155,4 @@ def test_write_failure_reports_partial_state(vault, monkeypatch):
     second = "02-wiedza/Informatyka/Druga.md"
     resp = apply(make_client(), [{"path": NOTE, "content": BODY}, {"path": second, "content": BODY}])
     assert resp.status_code == 500
-    assert [w["path"] for w in resp.get_json()["written"]] == [NOTE]
+    assert [w["index"] for w in resp.get_json()["written"]] == [0]

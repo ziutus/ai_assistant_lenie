@@ -64,7 +64,7 @@ class FakeNas:
                 else:
                     self.files[f["path"]] = self.files[f["path"]].rstrip("\n") + "\n" + f["content"].rstrip("\n") + "\n"
             self.applied.append([f["path"] for f in files])
-            return httpx.Response(200, json={"status": "success", "written": [{"path": f["path"]} for f in files]})
+            return httpx.Response(200, json={"status": "success", "written": [{"index": i} for i, _ in enumerate(files)]})
         return httpx.Response(404, json={"message": "nope"})
 
 
