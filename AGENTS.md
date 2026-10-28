@@ -67,6 +67,35 @@ poprawkę kodu i drugie wdrożenie; wcześniejszy PR oszczędza ten drugi obieg.
   OpenVPN, TAP, `tun`) = poza domem. Gdy użytkownik napisze, że jest w domu,
   a sprawdzenie temu przeczy, zapytaj, zamiast wdrażać.
 
+## Kilku agentów wdraża na jeden NAS
+
+`nas-deploy.sh` prowadzi na NAS rejestr wdrożeń (`lenie-compose/.nas-agents/`,
+jeden wpis na branch) obok blokady `.nas-deploy.lock`. Blokada mówi tylko, że ktoś
+wdraża w tej chwili; rejestr mówi kto, z jakiego brancha, po co i czy wdrożona
+zmiana czeka jeszcze na test użytkownika. Backend, worker i cloud-bridge to jeden
+obraz, więc liczą się jako jeden serwis.
+
+- Każde wdrożenie podaj z powodem: `bash ./infra/docker/nas-deploy.sh backend --reason "krótki powód"`.
+  Bez `--reason` skrypt ostrzega, a inni agenci nie dowiedzą się, po co to wdrożenie.
+- Przed wdrożeniem (lub gdy skrypt zgłasza zajętą blokadę) zobacz, co jest na NAS:
+  `bash ./infra/docker/nas-deploy.sh --list-deploys`. Stany wpisu: `deploying`
+  (trwa), `deployed` (wdrożone, czeka na test użytkownika), `failed`, `done`
+  (użytkownik potwierdził test).
+- Zajęta blokada to nie awaria. Przeczytaj powód ze skryptu, poczekaj i ponów
+  próbę. Nigdy nie używaj `--force-unlock` bez wyraźnego polecenia użytkownika.
+- Jeśli skrypt odmawia, bo inny agent wdrożył ten sam serwis i zmiana czeka na test,
+  **nie nadpisuj jej samowolnie**: zgłoś użytkownikowi, czyją zmianę nadpiszesz i
+  dlaczego, i dopiero po jego zgodzie ponów z `--ack-overwrite`. Wdrożenie innego
+  serwisu (np. `frontend`, gdy tamten wdrożył `backend`) nie jest konfliktem.
+- Po wdrożeniu twój wpis zostaje jako `deployed`, dopóki użytkownik nie potwierdzi
+  testu. Gdy to potwierdzi (albo zmiana trafiła do `main` i jest wdrożona z niego),
+  zamknij wpis: `bash ./infra/docker/nas-deploy.sh --mark-done` (własny branch)
+  lub `--mark-done=NAZWA` (cudzy wpis z `--list-deploys`). Wpisy starsze niż 24 h
+  są ignorowane przy sprawdzaniu konfliktów.
+- Przed wdrożeniem scal najnowszy `origin/main` do swojego brancha (reguła na
+  górze). W raporcie napisz, że wdrożono z brancha spoza `main`, jeśli tak jest;
+  rejestr zapisuje to w polu `in_main`.
+
 ## Masowe operacje na Obsidianie
 
 Nie uruchamiaj pełnego `obsidian_reimport` jako jednorazowej migracji na NAS-ie.

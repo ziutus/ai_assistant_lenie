@@ -439,6 +439,25 @@ $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml pull
 $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
 ```
 
+#### Several agents deploying to one NAS
+
+`nas-deploy.sh` takes a lock on the NAS (`lenie-compose/.nas-deploy.lock`, atomic
+`mkdir`) so two deploys never run at once, and keeps an agent registry in
+`lenie-compose/.nas-agents/<branch>.env` (key=value, one file per branch; the helper
+functions live in `infra/docker/nas-deploy-agents.sh`, tested locally by
+`infra/docker/test-nas-deploy-agents.sh`). An entry records branch, commit, services,
+the `--reason`, host/user, whether the branch is already in `origin/main`, and a state:
+`deploying` → `deployed` (waiting for the user's test) → `done`, or `failed` when the
+script ends with an error.
+
+- `--reason "text"` explains the deploy to other agents; a busy lock prints the entries
+  that are `deploying` with their reasons.
+- A deploy that touches the same service as another branch's `deployed` entry (under 24 h
+  old; `backend`, `worker` and `cloud-bridge` count as one) stops with a message naming that
+  branch. `--ack-overwrite` continues, and is meant to be used only with the user's consent.
+- `--list-deploys` prints the registry; `--mark-done[=NAME]` closes an entry after the user
+  has tested the change.
+
 ## Database Setup
 
 The database container uses a custom image built from `infra/docker/Postgresql/Dockerfile`:
