@@ -2,6 +2,7 @@
 
 import datetime
 import logging
+import re
 from urllib.parse import urlparse
 
 from flask import Blueprint, abort, g, jsonify, request
@@ -562,6 +563,86 @@ def import_markdown_recommendations():
         },
         "parsed": len(parsed),
     }), 201
+
+
+_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
+
+
+def _urls_in_entry(item: ToolRecommendation) -> list[dict]:
+    """URLs written in an entry's own fields, in reading order, without repeats.
+
+    The detector sometimes turns an article (or the company behind it) into a
+    "tool": the real value is then the page linked from the description.
+    """
+    fields = (("description", item.description), ("source_context", item.source_context),
+              ("homepage_url", item.homepage_url), ("source_url", item.source_url))
+    found: dict[str, str] = {}
+    for origin, text in fields:
+        for match in _URL_RE.finditer(text or ""):
+            url = match.group(0).rstrip(".,;:!?")
+            found.setdefault(url, origin)
+    for link in item.links or []:
+        if isinstance(link, dict) and link.get("url"):
+            found.setdefault(str(link["url"]), "links")
+    return [{"url": url, "origin": origin} for url, origin in found.items() if urlparse(url).netloc]
+
+
+@bp.get("/tool_recommendations/<int:recommendation_id>/urls")
+def get_recommendation_urls(recommendation_id):
+    """Links found in a radar entry, each marked with the library document it already is (if any)."""
+    _reader()
+    session = get_scoped_session()
+    item = session.get(ToolRecommendation, recommendation_id)
+    if item is None:
+        abort(404, "tool recommendation not found")
+    urls = []
+    for entry in _urls_in_entry(item):
+        if entry["url"].startswith("gmail://"):
+            continue
+        try:
+            document = Document.get_by_url(session, entry["url"])
+        except ValueError:
+            continue
+        urls.append({**entry, "host": urlparse(entry["url"]).netloc,
+                     "document": None if document is None else {
+                         "id": document.id, "title": document.title, "document_type": document.document_type}})
+    return jsonify({"urls": urls})
+
+
+@bp.post("/tool_recommendations/<int:recommendation_id>/import_url")
+def import_recommendation_url(recommendation_id):
+    """Add one link of the entry to the library as a ``link`` document (idempotent)."""
+    _user()
+    body = request.get_json(silent=True) or {}
+    url = str(body.get("url") or "").strip()
+    session = get_scoped_session()
+    item = session.get(ToolRecommendation, recommendation_id)
+    if item is None:
+        abort(404, "tool recommendation not found")
+    if url not in {entry["url"] for entry in _urls_in_entry(item)}:
+        abort(400, "url is not mentioned in this entry")
+    from library.document_promotion import PromotionError
+    from library.document_service import DocumentService
+
+    # The entry's source_context is the newsletter's title, not this page's: use the URL slug until the page is read.
+    slug = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").replace("_", " ")
+    service = DocumentService(session)
+    document, outcome = service.import_document(
+        url, "link", title=slug or urlparse(url).netloc, source=(item.source_document.discovery_source.name
+        if item.source_document is not None and item.source_document.discovery_source else "own"),
+    )
+    session.commit()
+    created = outcome != "skipped"
+    result = {"document_id": document.id, "created": created, "document_type": document.document_type}
+    # A bare link has no text, so read the page now (same path as the "promote to webpage" button).
+    if body.get("as_webpage", True) and document.document_type == "link":
+        try:
+            promoted = service.promote_link_to_webpage(document.id)
+            result.update(document_type=promoted.document_type, processing_job_id=promoted.processing_job_id)
+        except PromotionError as exc:
+            session.rollback()
+            result["promotion_failed"] = exc.reason
+    return jsonify(result), 201 if created else 200
 
 
 @bp.patch("/tool_recommendations/<int:recommendation_id>")
