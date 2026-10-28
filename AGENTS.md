@@ -10,6 +10,26 @@ Powód: NAS bywa wdrożony z nowszego `main` niż lokalny worktree, a wtedy
 migracja Alembica kończy się błędem `Can't locate revision` (stan z
 2026-10-24, rewizja `a9c4e7d1b362`).
 
+## Koniec pracy: PR i uwagi z GitHuba przed wdrożeniem
+
+Ostatni etap przed zgłoszeniem zmiany jako gotowej i przed wdrożeniem na NAS:
+wypchnij branch, otwórz PR (draft wystarczy) i sprawdź uwagi z GitHuba. Dopiero
+potem wdrażaj i zgłaszaj koniec. Powód: CodeQL i boty (np. alert „Incomplete URL
+substring sanitization" w teście, PR #941) wychwytują rzeczy, które wymuszają
+poprawkę kodu i drugie wdrożenie; wcześniejszy PR oszczędza ten drugi obieg.
+
+- Po `gh pr create` poczekaj na wynik sprawdzeń: `gh pr checks <nr> --watch`
+  (CodeQL trwa kilka minut).
+- Przeczytaj uwagi: `gh api repos/ziutus/ai_assistant_lenie/pulls/<nr>/comments`,
+  `.../pulls/<nr>/reviews` i `.../issues/<nr>/comments`.
+- Każdą uwagę popraw (albo napisz w raporcie, dlaczego nie), ponów testy, wypchnij
+  i dopiero wtedy wdróż. Nie wdrażaj z otwartym alertem, który dotyczy
+  zmienionego kodu.
+- Wyjątek: pilny hotfix na wyraźne polecenie użytkownika. Wtedy wdróż od razu,
+  a uwagi z GitHuba sprawdź zaraz po wdrożeniu i zgłoś.
+- Dotyczy to tylko zmian wdrażanych na NAS; zasady „tylko z domowej sieci LAN"
+  poniżej pozostają bez zmian.
+
 ## Dostęp do NAS i wdrożenia
 
 - SSH do NAS: zawsze użytkownik `admin` (`ssh admin@192.168.200.7`). Gołe

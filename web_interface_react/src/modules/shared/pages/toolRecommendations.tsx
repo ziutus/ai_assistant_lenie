@@ -6,6 +6,7 @@ import ToolRelations, { type ToolRelation } from "../components/ToolRelations/to
 import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
 import GithubAbout from "../components/GithubAbout/githubAbout";
+import EntryUrls from "../components/EntryUrls/entryUrls";
 import ToolLinksEditor from "../components/ToolLinksEditor/toolLinksEditor";
 import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
 import ToolProfileSuggest, { type ProfileSuggestion } from "../components/ToolProfileSuggest/toolProfileSuggest";
@@ -505,6 +506,7 @@ export default function ToolRecommendations() {
     {item.description && <blockquote style={{ margin: "10px 0", color: "#475569", borderLeft: "3px solid #cbd5e1", paddingLeft: 12 }}>{item.description}</blockquote>}
     <ToolLinksEditor homepageUrl={item.homepage_url} links={item.links ?? []} disabled={busy === item.id}
       onSave={links => saveLinks(item, links)} />
+    <EntryUrls recommendationId={item.id} apiUrl={apiUrl} headers={headers} />
     {item.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".8rem" }}>Notatka w Obsidianie: {item.obsidian_note_path}</div>}
     {item.github && <GithubStatsLine stats={item.github} />}
     {[item.homepage_url, ...(item.links ?? []).map(link => link.url)].some(isRepositoryUrl) && <button type="button" disabled={busy === item.id} onClick={() => void refreshOneGithub(item)}
