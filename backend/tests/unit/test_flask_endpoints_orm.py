@@ -1157,3 +1157,37 @@ def test_csv_get_count_uses_same_filter():
     assert DocumentRepository(session).get_count("webpage,link") == 2
     sql = str(session.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
     assert "documents.document_type IN ('webpage', 'link')" in sql
+
+
+def test_feed_fetch_title_returns_title(authenticated_security_client):
+    client, _ = authenticated_security_client
+    with patch("library.feed_routes.validate_public_url"), patch(
+        "library.feed_routes.fetch_feed_title", return_value="Google Cloud - DevOps"
+    ) as fetch:
+        response = client.post("/feed_sources/fetch_title", json={"url": " https://example.com/rss "},
+                               headers={"x-api-key": "user"})
+    assert response.status_code == 200
+    assert response.json == {"title": "Google Cloud - DevOps"}
+    fetch.assert_called_once_with({"type": "rss", "url": "https://example.com/rss"})
+
+
+def test_feed_fetch_title_validates_input_and_url(authenticated_security_client):
+    client, _ = authenticated_security_client
+    headers = {"x-api-key": "user"}
+    assert client.post("/feed_sources/fetch_title", json={}, headers=headers).status_code == 400
+    assert client.post("/feed_sources/fetch_title", json={"type": "youtube_channel"}, headers=headers).status_code == 400
+    assert client.post("/feed_sources/fetch_title", json={"url": "http://127.0.0.1:8200"}, headers=headers).status_code == 400
+
+
+def test_feed_fetch_title_reports_feed_problems(authenticated_security_client):
+    client, _ = authenticated_security_client
+    with patch("library.feed_routes.validate_public_url"), patch(
+        "library.feed_routes.fetch_feed_title", side_effect=ValueError("The feed has no title")
+    ):
+        assert client.post("/feed_sources/fetch_title", json={"url": "https://example.com/x"},
+                           headers={"x-api-key": "user"}).status_code == 400
+    with patch("library.feed_routes.validate_public_url"), patch(
+        "library.feed_routes.fetch_feed_title", side_effect=RuntimeError("boom")
+    ):
+        assert client.post("/feed_sources/fetch_title", json={"url": "https://example.com/x"},
+                           headers={"x-api-key": "user"}).status_code == 502

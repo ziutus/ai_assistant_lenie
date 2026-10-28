@@ -51,6 +51,7 @@ export default function Feeds() {
   const [editName, setEditName] = React.useState("");
   const [form, setForm] = React.useState<Form>(emptyForm);
   const [busy, setBusy] = React.useState<number | null>(null);
+  const [fetchingTitle, setFetchingTitle] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [error, setError] = React.useState(false);
 
@@ -136,6 +137,27 @@ export default function Feeds() {
     const response = await fetch(`${apiUrl}/feed_sources/${id}/check`, { method: "POST", headers });
     setError(!response.ok); setMessage(response.ok ? "Check dodany do kolejki." : "Nie udało się dodać checku.");
   };
+  const fetchTitle = async (setName: (name: string) => void) => {
+    if (!validateForm()) return;
+    setFetchingTitle(true); setError(false); setMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/feed_sources/fetch_title`, {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: form.type, url: (form.url || "").trim(), channel_id: (form.channel_id || "").trim() }),
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.message || "Nie udało się pobrać tytułu");
+      setName(data.title);
+    } catch (e) { setError(true); setMessage(e instanceof Error ? e.message : "Nie udało się pobrać tytułu"); }
+    finally { setFetchingTitle(false); }
+  };
+  const nameField = (value: string, setName: (name: string) => void) => <div style={{ marginBottom: 12 }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+      <label style={{ flex: 1 }}>Nazwa<input required value={value} onChange={e => setName(e.target.value)} style={inputStyle} /></label>
+      <button type="button" disabled={fetchingTitle} onClick={() => void fetchTitle(setName)} style={{ whiteSpace: "nowrap" }}>{fetchingTitle ? "Pobieram…" : "Pobierz tytuł"}</button>
+    </div>
+    <small style={{ color: "#64748b" }}>Tytuł odczytany z samego feedu (po wpisaniu adresu lub ID kanału); możesz go potem zmienić.</small>
+  </div>;
   const update = <K extends keyof Form>(key: K, value: Form[K]) => setForm(current => ({ ...current, [key]: value }));
   const toggleTopic = (groupId: number) => update("default_topic_group_ids", form.default_topic_group_ids.includes(groupId)
     ? form.default_topic_group_ids.filter(id => id !== groupId)
@@ -176,13 +198,13 @@ export default function Feeds() {
     <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
       {adding && <article style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
         <h2 style={{ color: "#0c2f4a", marginBottom: 14 }}>Dodaj feed</h2>
-        <label style={{ display: "block", marginBottom: 12 }}>Nazwa<input required value={newName} onChange={e => setNewName(e.target.value)} style={inputStyle} /></label>
+        {nameField(newName, setNewName)}
         {renderFields()}
         <div style={{ display: "flex", gap: 8, marginTop: 18 }}><button className="button" type="button" disabled={busy !== null} onClick={() => void add()}>Dodaj</button><button type="button" onClick={() => setAdding(false)}>Anuluj</button></div>
       </article>}
       {feeds.map(feed => editing === feed.id ? <article key={feed.id} style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
         <h2 style={{ color: "#0c2f4a", marginBottom: 14 }}>{feed.name}</h2>
-        <label style={{ display: "block", marginBottom: 12 }}>Nazwa<input required value={editName} onChange={e => setEditName(e.target.value)} style={inputStyle} /></label>
+        {nameField(editName, setEditName)}
         {renderFields()}
         <div style={{ display: "flex", gap: 8, marginTop: 18 }}><button className="button" type="button" disabled={busy === feed.id} onClick={() => void save(feed)}>Zapisz</button><button type="button" onClick={() => setEditing(null)}>Anuluj</button></div>
       </article> : <article key={feed.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", background: feed.disabled ? "#f8fafc" : "#fff", opacity: feed.disabled ? .72 : 1 }}>
