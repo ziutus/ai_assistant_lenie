@@ -188,6 +188,8 @@ list (id, name, items, new_items) shown on the Jobs page; per feed it also lists
 returns its result under `import`, so new items of `auto_import` feeds become documents without
 waiting for `feed_daily`; caption fetching stays in `feed_daily`.
 
+`POST /feed_sources` accepts user or service keys, validates and trims names, and returns 409 for duplicate names.
+
 ### Domain Model & Database
 
 - **`db/models.py`** — `Document` SQLAlchemy ORM model: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `get_by_id()`, `get_by_url()`, `populate_neighbors()`. `DocumentEmbedding` model for vector embeddings — optional `chunk_id` FK to `DocumentChunk`, set when the embedding was generated from a reviewed chunk (`generate_embeddings_from_run()`) rather than the fallback whole-document split.

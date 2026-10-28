@@ -34,6 +34,11 @@ bp = Blueprint("feeds", __name__)
 MAX_REVIEW_NOTE_CHARS = 4000  # the comment box on /feed-review allows the same length
 
 
+@bp.errorhandler(409)
+def feed_conflict(error):
+    return jsonify(message=error.description), 409
+
+
 def _user():
     if getattr(g, "auth", None) is None or g.auth.kind != "user":
         abort(403, "user API key required")
@@ -627,18 +632,24 @@ def get_feed(feed_id):
 
 @bp.post("/feed_sources")
 def create_feed():
-    _service()
+    _user_or_service()
     session = get_scoped_session()
+    body = request.get_json(silent=True) or {}
+    name = body.get("name") if isinstance(body, dict) else None
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 255:
+        abort(400, "name must be a non-empty string up to 255 characters")
+    body["name"] = name.strip()
     try:
-        values = resolve_references(session, request.get_json(silent=True) or {})
+        values = resolve_references(session, body)
+        row = FeedSource(**values)
+        session.add(row)
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        abort(409, "feed with this name already exists")
     except ValueError as exc:
         session.rollback()
         abort(400, str(exc))
-    if "name" not in values:
-        abort(400, "name is required")
-    row = FeedSource(**values)
-    session.add(row)
-    session.commit()
     return jsonify(feed_to_dict(row)), 201
 
 
