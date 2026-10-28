@@ -265,3 +265,35 @@ def test_public_ipv6_socket_uses_validated_address(monkeypatch):
         pool._new_conn().request("GET", "/feed")
     sock.connect.assert_called_once_with(address)
     resolver.assert_called_once()
+
+
+_RSS_TITLE = b'<?xml version="1.0"?><rss><channel><title>  Google Cloud \n DevOps &amp; SRE </title><item><title>x</title></item></channel></rss>'
+_ATOM_TITLE = b'<feed xmlns="http://www.w3.org/2005/Atom"><title>Kanal</title><entry><title>Wpis</title></entry></feed>'
+
+
+def test_fetch_feed_title_reads_rss_channel_title(network):
+    from library.feed_parser import fetch_feed_title
+    network[2].urlopen.return_value = _response(_RSS_TITLE)
+    assert fetch_feed_title({"type": "rss", "url": "https://example.com/rss"}) == "Google Cloud DevOps & SRE"
+
+
+def test_fetch_feed_title_reads_atom_feed_title_not_entry_title(network):
+    from library.feed_parser import fetch_feed_title
+    network[2].urlopen.return_value = _response(_ATOM_TITLE)
+    assert fetch_feed_title({"type": "rss", "url": "https://example.com/atom"}) == "Kanal"
+
+
+def test_fetch_feed_title_rejects_non_feed_and_untitled(network):
+    from library.feed_parser import fetch_feed_title
+    network[2].urlopen.return_value = _response(b"<html><body>no</body></html>")
+    with pytest.raises(ValueError):
+        fetch_feed_title({"type": "rss", "url": "https://example.com/page"})
+    network[2].urlopen.return_value = _response(b"<rss><channel><item/></channel></rss>")
+    with pytest.raises(ValueError):
+        fetch_feed_title({"type": "rss", "url": "https://example.com/rss"})
+
+
+def test_fetch_feed_title_refuses_json_feed():
+    from library.feed_parser import fetch_feed_title
+    with pytest.raises(ValueError):
+        fetch_feed_title({"type": "json_api", "url": "https://example.com/a.json"})

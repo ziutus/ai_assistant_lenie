@@ -159,6 +159,30 @@ def fetch_entries(feed: dict, *, connect_timeout: float = 10, read_timeout: floa
     return parse_atom_entries(root) if root.tag == f"{{{ATOM_NS}}}feed" else parse_rss_entries(root)
 
 
+def parse_feed_title(root: ET.Element) -> str:
+    """The feed's own title: Atom ``<feed><title>`` or RSS ``<channel><title>``; empty when absent."""
+    if root.tag == f"{{{ATOM_NS}}}feed":
+        return " ".join(_text(root, f"{{{ATOM_NS}}}title").split())
+    channel = root.find("channel")
+    return " ".join(_text(channel, "title").split()) if channel is not None else ""
+
+
+def fetch_feed_title(feed: dict, *, connect_timeout: float = 10, read_timeout: float = 30) -> str:
+    """Download an XML feed (RSS/Atom/YouTube) and return its title; ValueError when it has none."""
+    if feed["type"] == "json_api":
+        raise ValueError("A JSON feed has no title to read")
+    response = safe_get(build_feed_url(feed), timeout=(connect_timeout, read_timeout), max_bytes=MAX_FEED_BYTES)
+    response.raise_for_status()
+    try:
+        root = DET.fromstring(response.content.lstrip(b"\xef\xbb\xbf \t\r\n"))
+    except ET.ParseError as exc:
+        raise ValueError("The address does not return an RSS/Atom feed") from exc
+    title = parse_feed_title(root)
+    if not title:
+        raise ValueError("The feed has no title")
+    return title
+
+
 def parse_published(value: str | None) -> datetime | None:
     if not value:
         return None
