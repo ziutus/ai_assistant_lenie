@@ -667,7 +667,7 @@ export default function FeedReview() {
       Źródło:
       <select value={selectedSource} onChange={event => updateParams({ feed_source_id: event.target.value || null })} disabled={loading && sources.length === 0}>
         <option value="">Wszystkie źródła</option>
-        {sources.map(source => <option key={source.id} value={source.id}>{source.name}{source.disabled ? " (wyłączony)" : ""}</option>)}
+        {sources.filter(source => !source.disabled || String(source.id) === selectedSource).map(source => <option key={source.id} value={source.id}>{source.name}{source.disabled ? " (wyłączony)" : ""}</option>)}
       </select>
     </label>
     {/* Fixed to the viewport, not the top of the page: the user clicks pagination

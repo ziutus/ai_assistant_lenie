@@ -1,4 +1,5 @@
 import React from "react";
+import { useSearchParams } from "react-router-dom";
 import SkillHint from "../components/SkillHint";
 import { AuthorizationContext } from "../context/authorizationContext";
 import type { ContentGroup } from "../../../types";
@@ -39,10 +40,22 @@ const toLocalInput = (value: string | null) => {
 
 const toIso = (value: string) => value ? new Date(value).toISOString() : null;
 
-const buildPayload = (form: Form) => ({ ...form, url: form.type === "youtube_channel" ? null : (form.url || "").trim(), channel_id: form.type === "youtube_channel" ? form.channel_id?.trim() : null, author_name: form.type === "youtube_channel" ? form.author_name?.trim() || null : null, auto_import_after: toIso(form.auto_import_after || "") });
+const buildPayload = (form: Form) => ({ ...form, tags: [...new Set(form.tags.map(tag => tag.trim()).filter(Boolean))], url: form.type === "youtube_channel" ? null : (form.url || "").trim(), channel_id: form.type === "youtube_channel" ? form.channel_id?.trim() : null, author_name: form.type === "youtube_channel" ? form.author_name?.trim() || null : null, auto_import_after: toIso(form.auto_import_after || "") });
 
 export default function Feeds() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const status = ["active", "disabled", "all"].includes(searchParams.get("status") || "") ? searchParams.get("status")! : "active";
+  const selectedTags = searchParams.getAll("tag");
+  const query = new URLSearchParams();
+  if (status !== "all") query.set("disabled", status === "disabled" ? "1" : "0");
+  selectedTags.forEach(tag => query.append("tag", tag));
+  const queryString = query.toString();
+  const [counts, setCounts] = React.useState({ active: 0, disabled: 0 });
+  const [tags, setTags] = React.useState<{ tag: string; count: number }[]>([]);
+  const [search, setSearch] = React.useState("");
+  const [selected, setSelected] = React.useState<number[]>([]);
+  const [undo, setUndo] = React.useState<{ ids: number[]; disabled: boolean; message: string } | null>(null);
   const [feeds, setFeeds] = React.useState<Feed[]>([]);
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
   const [editing, setEditing] = React.useState<number | null>(null);
@@ -50,6 +63,7 @@ export default function Feeds() {
   const [newName, setNewName] = React.useState("");
   const [editName, setEditName] = React.useState("");
   const [form, setForm] = React.useState<Form>(emptyForm);
+  const [tagsText, setTagsText] = React.useState("");
   const [busy, setBusy] = React.useState<number | null>(null);
   const [message, setMessage] = React.useState("");
   const [error, setError] = React.useState(false);
@@ -62,21 +76,66 @@ export default function Feeds() {
   };
   const load = React.useCallback(async () => {
     const [response, groupsResponse] = await Promise.all([
-      fetch(`${apiUrl}/feed_sources`, { headers }),
+      fetch(`${apiUrl}/feed_sources${queryString ? `?${queryString}` : ""}`, { headers }),
       fetch(`${apiUrl}/content_groups`, { headers }),
     ]);
     const [data, groupsData] = await Promise.all([readJson(response), readJson(groupsResponse)]);
     if (!response.ok || !groupsResponse.ok) throw new Error(data.message || groupsData.message || "Nie udało się pobrać konfiguracji feedów");
     setFeeds(data.feed_sources || []);
+    setCounts(data.counts || { active: 0, disabled: 0 });
+    setTags(data.tags || []);
     setContentGroups((groupsData.content_groups || []).filter((group: ContentGroup) => group.kind === "topic"));
-  }, [apiUrl, headers]);
+  }, [apiUrl, headers, queryString]);
 
   React.useEffect(() => { void load().catch(e => { setError(true); setMessage(e.message); }); }, [load]);
+
+  React.useEffect(() => { setSelected([]); }, [queryString, search]);
+  React.useEffect(() => {
+    if (!undo) return;
+    const timer = window.setTimeout(() => setUndo(null), 15000);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
+
+  const visibleFeeds = feeds.filter(feed => feed.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  const visibleSelected = selected.filter(id => visibleFeeds.some(feed => feed.id === id));
+  const changeFilter = (key: "status" | "tag", value: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (key === "status") next.set(key, value);
+    else {
+      next.delete("tag");
+      (selectedTags.includes(value) ? selectedTags.filter(tag => tag !== value) : [...selectedTags, value]).forEach(tag => next.append("tag", tag));
+    }
+    setSearchParams(next);
+  };
+  const changeDisabled = async (disabled: boolean, target: { feed_ids: number[] } | { tag: string }, single?: Feed, reverting = false) => {
+    setBusy(single?.id ?? 0); setError(false); setMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/feed_sources/${single ? single.id : "bulk-disable"}`, {
+        method: single ? "PATCH" : "POST", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify(single ? { disabled } : { disabled, ...target }),
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.message || "Nie udało się zmienić feedów");
+      const ids: number[] = single ? [single.id] : data.feed_ids;
+      setUndo(reverting ? null : { ids, disabled: !disabled, message: single ? `${disabled ? "Wyłączono" : "Włączono"}: ${single.name}` : `Zmieniono ${data.changed} feedów` });
+      if (reverting) setMessage("Cofnięto zmiany.");
+      setSelected([]);
+      await load();
+    } catch (e) { setError(true); setMessage(e instanceof Error ? e.message : "Nie udało się zmienić feedów"); }
+    finally { setBusy(null); }
+  };
+  const changeTag = (disabled: boolean) => {
+    const count = disabled ? counts.active : counts.disabled;
+    if (window.confirm(`${disabled ? "Wyłączyć" : "Włączyć"} wszystkie feedy z tagiem ${selectedTags[0]} (${count})?`)) {
+      void changeDisabled(disabled, { tag: selectedTags[0] });
+    }
+  };
 
   const startEdit = (feed: Feed) => {
     setAdding(false);
     setEditing(feed.id);
     setEditName(feed.name);
+    setTagsText((feed.tags || []).join(", "));
     setForm({
       type: feed.type,
       url: feed.url || "",
@@ -108,7 +167,7 @@ export default function Feeds() {
       const response = await fetch(`${apiUrl}/feed_sources/${feed.id}`, { method: "PATCH", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await readJson(response);
       if (!response.ok) throw new Error(data.message || "Nie udało się zapisać zmian");
-      setFeeds(current => current.map(item => item.id === feed.id ? data : item));
+      await load();
       setEditing(null); setMessage("Zapisano zmiany.");
     } catch (e) { setError(true); setMessage(e instanceof Error ? e.message : "Nie udało się zapisać zmian"); }
     finally { setBusy(null); }
@@ -148,6 +207,7 @@ export default function Feeds() {
           {form.type === "youtube_channel" ? <label>ID kanału<input value={form.channel_id || ""} onChange={e => update("channel_id", e.target.value)} style={inputStyle} /></label> : <label>URL<input value={form.url || ""} onChange={e => update("url", e.target.value)} style={inputStyle} /></label>}
           {form.type === "youtube_channel" && <label>Autor / kanał<input value={form.author_name || ""} onChange={e => update("author_name", e.target.value)} style={inputStyle} /><small style={{ color: "#64748b" }}>Opcjonalna, jawna nazwa twórcy zapisywana przy imporcie.</small></label>}
           <label>Język<input value={form.language} onChange={e => update("language", e.target.value)} style={inputStyle} /></label>
+          <label>Tagi (po przecinku)<input value={tagsText} onChange={e => { setTagsText(e.target.value); update("tags", e.target.value.split(",")); }} style={inputStyle} /></label>
           <label>Importuj od<input type="datetime-local" value={form.auto_import_after || ""} onChange={e => update("auto_import_after", e.target.value)} style={inputStyle} /><small style={{ color: "#64748b" }}>Czas lokalny przeglądarki; zapis UTC.</small></label>
         </div>
         <label style={{ display: "flex", gap: 8, marginTop: 14 }}><input type="checkbox" checked={form.auto_import} onChange={e => update("auto_import", e.target.checked)} /> Automatyczny import</label>
@@ -167,11 +227,28 @@ export default function Feeds() {
       <div><h1 style={{ marginBottom: 6, color: "#0c2f4a" }}>Feedy<SkillHint skill="/lenie-feed-review" command="/lenie-feed-review">Nowych kandydatów z feedów przejrzysz też w sesji z Claude'em, pojedynczo, z decyzją po Twojej stronie.</SkillHint></h1><p style={{ color: "#64748b" }}>Źródła artykułów i automatycznego importu.</p></div>
       <div style={{ display: "flex", gap: 8 }}>
         <button className="button" type="button" disabled={busy !== null} onClick={() => {
-          setAdding(true); setNewName(""); setForm(emptyForm); setEditing(null); setMessage(""); setError(false);
+          setAdding(true); setNewName(""); setTagsText(""); setForm(emptyForm); setEditing(null); setMessage(""); setError(false);
         }}>Dodaj feed</button>
         <button className="button" type="button" onClick={() => void load()}>Odśwież</button>
       </div>
     </div>
+    <div aria-label="Filtry feedów" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+      {([ ["active", "Aktywne", counts.active], ["disabled", "Wyłączone", counts.disabled], ["all", "Wszystkie", counts.active + counts.disabled] ] as const).map(([value, label, count]) => <button key={value} type="button" aria-pressed={status === value} onClick={() => changeFilter("status", value)}>{label} ({count})</button>)}
+      {tags.map(({ tag, count }) => <button key={tag} type="button" aria-pressed={selectedTags.includes(tag)} onClick={() => changeFilter("tag", tag)} style={{ borderRadius: 999 }}>{tag} ({count})</button>)}
+      <label>Szukaj po nazwie<input value={search} onChange={e => setSearch(e.target.value)} /></label>
+    </div>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+      <label><input type="checkbox" checked={visibleFeeds.length > 0 && visibleSelected.length === visibleFeeds.length} onChange={e => setSelected(e.target.checked ? visibleFeeds.map(feed => feed.id) : [])} /> Zaznacz wszystkie widoczne</label>
+      {visibleSelected.length > 0 && <>
+        <button disabled={busy !== null} onClick={() => void changeDisabled(true, { feed_ids: visibleSelected })}>Wyłącz zaznaczone ({visibleSelected.length})</button>
+        <button disabled={busy !== null} onClick={() => void changeDisabled(false, { feed_ids: visibleSelected })}>Włącz zaznaczone ({visibleSelected.length})</button>
+      </>}
+      {selectedTags.length === 1 && <>
+        <button disabled={busy !== null || counts.active === 0} onClick={() => changeTag(true)}>Wyłącz wszystkie z tagiem {selectedTags[0]} ({counts.active})</button>
+        <button disabled={busy !== null || counts.disabled === 0} onClick={() => changeTag(false)}>Włącz wszystkie z tagiem {selectedTags[0]} ({counts.disabled})</button>
+      </>}
+    </div>
+    {undo && <p role="status">{undo.message} · <button disabled={busy !== null} onClick={() => void changeDisabled(undo.disabled, { feed_ids: undo.ids }, undefined, true)}>Cofnij</button></p>}
     {message && <p className={error ? "errorText" : undefined} style={error ? undefined : { color: "#2e7d43", margin: "14px 0" }}>{message}</p>}
     <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
       {adding && <article style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
@@ -180,12 +257,15 @@ export default function Feeds() {
         {renderFields()}
         <div style={{ display: "flex", gap: 8, marginTop: 18 }}><button className="button" type="button" disabled={busy !== null} onClick={() => void add()}>Dodaj</button><button type="button" onClick={() => setAdding(false)}>Anuluj</button></div>
       </article>}
-      {feeds.map(feed => editing === feed.id ? <article key={feed.id} style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
+      {visibleFeeds.map(feed => editing === feed.id ? <article key={feed.id} style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
         <h2 style={{ color: "#0c2f4a", marginBottom: 14 }}>{feed.name}</h2>
         <label style={{ display: "block", marginBottom: 12 }}>Nazwa<input required value={editName} onChange={e => setEditName(e.target.value)} style={inputStyle} /></label>
         {renderFields()}
         <div style={{ display: "flex", gap: 8, marginTop: 18 }}><button className="button" type="button" disabled={busy === feed.id} onClick={() => void save(feed)}>Zapisz</button><button type="button" onClick={() => setEditing(null)}>Anuluj</button></div>
       </article> : <article key={feed.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", background: feed.disabled ? "#f8fafc" : "#fff", opacity: feed.disabled ? .72 : 1 }}>
+        <label><input type="checkbox" aria-label={`Zaznacz ${feed.name}`} checked={visibleSelected.includes(feed.id)} onChange={e => setSelected(current => e.target.checked ? [...current, feed.id] : current.filter(id => id !== feed.id))} /> Zaznacz</label>
+        <button type="button" disabled={busy !== null} onClick={() => void changeDisabled(!feed.disabled, { feed_ids: [feed.id] }, feed)}>{feed.disabled ? "Wyłączony" : "Aktywny"}</button>
+        <div style={{ display: "flex", gap: 6, margin: "6px 0" }}>{feed.tags?.map(tag => <span key={tag} style={{ borderRadius: 999, background: "#e2e8f0", padding: "3px 9px" }}>{tag}</span>)}</div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><strong style={{ color: "#0f4c81", fontSize: "1.05rem" }}>{feed.name}</strong><span style={{ background: feed.auto_import ? "#dcfce7" : "#f1f5f9", color: feed.auto_import ? "#166534" : "#475569", borderRadius: 999, padding: "3px 9px", fontSize: ".78rem" }}>{feed.auto_import ? "auto import" : "ręcznie"}</span>{feed.disabled && <span style={{ color: "#b45309" }}>wyłączony</span>}<span style={{ marginLeft: "auto", display: "flex", gap: 8 }}><button className="button" type="button" onClick={() => startEdit(feed)}>Edytuj</button><button type="button" onClick={() => void check(feed.id)}>Sprawdź teraz</button></span></div>
         <div style={{ color: "#64748b", fontSize: ".85rem", marginTop: 8 }}>{feed.url || feed.channel_id || "brak adresu"} · próg: {feed.auto_import_after ? new Date(feed.auto_import_after).toLocaleString("pl-PL") : "brak"}</div>
         {feed.author_name && <div style={{ color: "#475569", fontSize: ".85rem", marginTop: 6 }}>Autor / kanał: {feed.author_name}</div>}
@@ -193,6 +273,6 @@ export default function Feeds() {
         {feed.last_error && <div style={{ color: "#b91c1c", marginTop: 8 }}>{feed.last_error}</div>}
       </article>)}
     </div>
-    {!feeds.length && <p style={{ color: "#64748b", marginTop: 20 }}>Brak feedów.</p>}
+    {!visibleFeeds.length && <p style={{ color: "#64748b", marginTop: 20 }}>Brak feedów.</p>}
   </section>;
 }

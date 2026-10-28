@@ -23,7 +23,7 @@ from library.content_group_service import (
 )
 from library.content_group_suggestion_service import active_topic_catalog, decide_suggestion, request_suggestions, sanitize_new_topics
 from library.db.models import ContentGroupSuggestionRun
-from library.feed_source_service import list_feeds, feed_to_dict, resolve_references
+from library.feed_source_service import list_feeds, feed_to_dict, resolve_references, feed_filter_metadata
 from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id, set_llm_discussion
 from library.job_queue import JOB_TYPES, enqueue, retry, cancel
 from library import app_settings, feed_retention
@@ -618,7 +618,55 @@ def decide_content_group_suggestion(suggestion_id, action):
 def get_feeds():
     _user()
     session = get_scoped_session()
-    return jsonify({"feed_sources": [feed_to_dict(f) for f in list_feeds(session)]})
+    disabled = request.args.get("disabled")
+    if disabled not in {None, "0", "1"}:
+        abort(400, "disabled must be 0 or 1")
+    tags = request.args.getlist("tag")
+    return jsonify({
+        "feed_sources": [feed_to_dict(f) for f in list_feeds(
+            session, disabled=None if disabled is None else disabled == "1", tags=tags,
+        )],
+        **feed_filter_metadata(session, tags),
+    })
+
+
+@bp.post("/feed_sources/bulk-disable")
+def bulk_disable_feeds():
+    _user()
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("disabled"), bool):
+        abort(400, "disabled must be boolean")
+    if ("feed_ids" in body) == ("tag" in body):
+        abort(400, "provide exactly one of feed_ids or tag")
+    if "feed_ids" in body:
+        ids = body["feed_ids"]
+        if not isinstance(ids, list) or any(type(value) is not int or value < 1 for value in ids):
+            abort(400, "feed_ids must be a list of positive integers")
+    elif not isinstance(body["tag"], str) or not body["tag"].strip():
+        abort(400, "tag must be a non-empty string")
+    session = get_scoped_session()
+    try:
+        # Lock targets so concurrent bulk requests report only actual changes.
+        query = select(FeedSource).order_by(FeedSource.id).with_for_update()
+        if "feed_ids" in body:
+            query = query.where(FeedSource.id.in_(set(ids)))
+        feeds = session.scalars(query).all()
+        if "feed_ids" in body and {feed.id for feed in feeds} != set(ids):
+            abort(400, "unknown feed ID")
+        if "tag" in body:
+            feeds = [feed for feed in feeds if body["tag"] in (feed.tags or [])]
+        changed = []
+        now = dt.datetime.now(dt.timezone.utc)
+        for feed in feeds:
+            if feed.disabled != body["disabled"]:
+                feed.disabled = body["disabled"]
+                feed.updated_at = now
+                changed.append(feed.id)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return jsonify({"changed": len(changed), "feed_ids": changed})
 
 
 @bp.get("/feed_sources/<int:feed_id>")
@@ -697,8 +745,11 @@ def update_feed(feed_id):
 def check_feed(feed_id):
     user_id = _user()
     session = get_scoped_session()
-    if session.get(FeedSource, feed_id) is None:
+    feed = session.get(FeedSource, feed_id)
+    if feed is None:
         abort(404)
+    if feed.disabled:
+        abort(409, "Feed jest wyłączony")
     active = session.scalars(
         select(Job).where(
             Job.type == "feed_check",
@@ -769,6 +820,10 @@ def get_items():
         query = query.where(FeedItem.llm_discussion_status.is_not(None) if discussion == "any" else FeedItem.llm_discussion_status == discussion)
     if status:
         query = query.where(FeedItem.status == status)
+    if status in {"new", "llm_analysis_requested", "error"} and request.args.get("include_disabled_sources", "0") != "1":
+        query = query.where(FeedItem.feed_source_id.in_(
+            select(FeedSource.id).where(FeedSource.disabled.is_(False))
+        ))
     if request.args.get("feed_source_id"):
         query = query.where(FeedItem.feed_source_id == int(request.args["feed_source_id"]))
     media = request.args.get("media")
