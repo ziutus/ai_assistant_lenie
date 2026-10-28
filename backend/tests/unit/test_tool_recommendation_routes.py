@@ -253,6 +253,51 @@ class TestToolRecommendationRoutes:
         assert exc_info.value.code == 400
 
 
+class TestEntryUrls:
+    def _aisle(self):
+        item = _item()
+        item.id, item.name, item.homepage_url, item.source_url = 712, "Aisle", None, "gmail://abc"
+        item.description = "research Aisle (https://aisle.com/blog/the-model-fixes-code): 30 dolarów, https://aisle.com/blog/the-model-fixes-code."
+        return item
+
+    def test_urls_lists_links_once_and_marks_known_documents(self, monkeypatch):
+        from library.tool_recommendation_routes import get_recommendation_urls
+
+        known = SimpleNamespace(id=9, title="Znany", document_type="link")
+        session = MagicMock()
+        session.get.return_value = self._aisle()
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_recommendation_routes.Document.get_by_url",
+                            lambda _s, url: known if "aisle.com" in url else None)
+        with Flask(__name__).test_request_context("/tool_recommendations/712/urls"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            urls = get_recommendation_urls(712).json["urls"]
+
+        assert [u["url"] for u in urls] == ["https://aisle.com/blog/the-model-fixes-code"]
+        assert urls[0]["origin"] == "description" and urls[0]["document"]["id"] == 9
+
+    def test_import_url_creates_link_document_and_rejects_foreign_url(self, monkeypatch):
+        from library.tool_recommendation_routes import import_recommendation_url
+
+        session = MagicMock()
+        session.get.return_value = self._aisle()
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        created = SimpleNamespace(id=55)
+        monkeypatch.setattr("library.document_service.DocumentService.import_document",
+                            lambda self, url, kind, **meta: (created, "added"))
+        app = Flask(__name__)
+        with app.test_request_context("/x", method="POST", json={"url": "https://aisle.com/blog/the-model-fixes-code"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response, status = import_recommendation_url(712)
+        assert status == 201 and response.json == {"document_id": 55, "created": True}
+
+        with app.test_request_context("/x", method="POST", json={"url": "https://evil.example/x"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(Exception) as exc_info:
+                import_recommendation_url(712)
+        assert exc_info.value.code == 400
+
+
 class TestTags:
     def test_normalize_lowercases_dedupes_and_joins_words(self):
         from library.tool_recommendation_routes import normalize_tags
