@@ -268,7 +268,7 @@ class TestEntryUrls:
         session.get.return_value = self._aisle()
         monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
         monkeypatch.setattr("library.tool_recommendation_routes.Document.get_by_url",
-                            lambda _s, url: known if "aisle.com" in url else None)
+                            lambda _s, url: known if url.startswith("https://aisle.com/") else None)
         with Flask(__name__).test_request_context("/tool_recommendations/712/urls"):
             g.auth = SimpleNamespace(kind="user", user_id=1)
             urls = get_recommendation_urls(712).json["urls"]
