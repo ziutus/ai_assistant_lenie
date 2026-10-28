@@ -1,6 +1,7 @@
 """REST API for feed configuration, curation and explicit jobs."""
 
 import datetime as dt
+import logging
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import select, case, func, or_
@@ -23,6 +24,8 @@ from library.content_group_service import (
 )
 from library.content_group_suggestion_service import active_topic_catalog, decide_suggestion, request_suggestions, sanitize_new_topics
 from library.db.models import ContentGroupSuggestionRun
+from library.feed_parser import fetch_feed_title
+from library.safe_http import validate_public_url
 from library.feed_source_service import list_feeds, feed_to_dict, resolve_references
 from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id, set_llm_discussion
 from library.job_queue import JOB_TYPES, enqueue, retry, cancel
@@ -30,6 +33,7 @@ from library import app_settings, feed_retention
 from library.feed_seed_document import create_seed_document, seed_document_ids
 
 bp = Blueprint("feeds", __name__)
+logger = logging.getLogger(__name__)
 
 MAX_REVIEW_NOTE_CHARS = 4000  # the comment box on /feed-review allows the same length
 
@@ -628,6 +632,32 @@ def get_feed(feed_id):
     if feed is None:
         abort(404)
     return jsonify(feed_to_dict(feed))
+
+
+@bp.post("/feed_sources/fetch_title")
+def fetch_feed_source_title():
+    """Read the title a feed announces about itself, so the form can prefill the name. Nothing is stored."""
+    _user()
+    body = request.get_json(silent=True) or {}
+    feed_type = body.get("type") or "rss"
+    if feed_type == "youtube_channel":
+        channel_id = (body.get("channel_id") or "").strip()
+        if not channel_id:
+            abort(400, "channel_id is required")
+        feed = {"type": feed_type, "channel_id": channel_id}
+    else:
+        url = (body.get("url") or "").strip()
+        if not url:
+            abort(400, "url is required")
+        feed = {"type": feed_type, "url": url}
+    try:
+        validate_public_url(feed.get("url") or "https://www.youtube.com/")
+        return jsonify(title=fetch_feed_title(feed))
+    except ValueError as exc:
+        abort(400, str(exc))
+    except Exception:
+        logger.exception("Feed title fetch failed")
+        abort(502, "Could not download the feed")
 
 
 @bp.post("/feed_sources")

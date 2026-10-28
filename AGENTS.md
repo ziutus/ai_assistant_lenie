@@ -52,20 +52,22 @@ poprawkę kodu i drugie wdrożenie; wcześniejszy PR oszczędza ten drugi obieg.
   na wyraźne polecenie użytkownika w danej sesji.
 - Gdy użytkownik pracuje przez VPN (jest poza domem), **nie wdrażaj na NAS**:
   wdrożenie przez VPN jest wolne i zawodne (zrywa SSH i push do rejestru).
-  Skończ pracę do commita/PR, zgłoś, że wdrożenie czeka, i wróć do niego, gdy
-  użytkownik napisze, że jest w domu. Nie ponawiaj `nas-deploy.sh`, dopóki
-  NAS nie odpowiada na `ssh admin@192.168.200.7` bez VPN-a, albo użytkownik
-  wyraźnie nie poleci wdrożyć mimo VPN-a.
-- **Jak sprawdzić, że użytkownik jest w domu:** komputer ma adres IPv4 z sieci
+  Skończ pracę do commita/PR i zgłoś, że wdrożenie czeka. Nie ponawiaj
+  `nas-deploy.sh` i nie pytaj użytkownika, gdzie jest: sam ponów sprawdzenie
+  sieci z następnego punktu, gdy wrócicie do tematu (nowa wiadomość, „jestem w
+  domu"), albo gdy użytkownik wyraźnie nie poleci wdrożyć mimo VPN-a.
+- **Przed każdym wdrożeniem sam sprawdź, czy użytkownik jest w domu — nie
+  pytaj o to użytkownika.** Warunek: komputer ma adres IPv4 z sieci
   `192.168.200.x` na fizycznej karcie (Ethernet / Wi-Fi), a nie na adapterze
   VPN. To lokalne sprawdzenie, które nie dotyka NAS-a (w odróżnieniu od
   `ssh`/`ping` na `192.168.200.7`, zabronionych wyżej):
   `Get-NetIPAddress -AddressFamily IPv4 | Where-Object IPAddress -like '192.168.200.*' | Select-Object InterfaceAlias, IPAddress`
-  (PowerShell). Adres `192.168.200.x` na karcie fizycznej = w domu, można
-  wdrażać (na tym komputerze to `vEthernet (Zewnetrzny1)`, most Hyper-V nad
-  kartą fizyczną, nie VPN). Brak takiego adresu albo wynik tylko na adapterze VPN (WireGuard,
-  OpenVPN, TAP, `tun`) = poza domem. Gdy użytkownik napisze, że jest w domu,
-  a sprawdzenie temu przeczy, zapytaj, zamiast wdrażać.
+  (PowerShell). Adres `192.168.200.x` na karcie fizycznej = w domu, wdrażaj bez
+  dodatkowego pytania (na tym komputerze to `vEthernet (Zewnetrzny1)`, most
+  Hyper-V nad kartą fizyczną, nie VPN). Brak takiego adresu albo wynik tylko
+  na adapterze VPN (WireGuard, OpenVPN, TAP, `tun`) = poza domem, nie wdrażaj.
+  Gdy użytkownik napisze, że jest w domu, a sprawdzenie temu przeczy, zapytaj,
+  zamiast wdrażać. Wynik sprawdzenia zapisz w raporcie jednym zdaniem.
 
 ## Kilku agentów wdraża na jeden NAS
 

@@ -93,6 +93,27 @@ describe("Feeds", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: "Dodaj" }) as HTMLButtonElement).disabled).toBe(false));
   });
 
+  it("fills the name from the feed's own title and reports a failure", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ feed_sources: [] }))
+      .mockResolvedValueOnce(json({ content_groups: [] }))
+      .mockResolvedValueOnce(json({ title: "Google Cloud DevOps & SRE" }))
+      .mockResolvedValueOnce(json({ message: "The feed has no title" }, 400));
+    vi.stubGlobal("fetch", fetchMock);
+    await openAdd();
+    fireEvent.click(screen.getByRole("button", { name: "Pobierz tytuł" }));
+    expect(screen.getByText("URL feedu jest wymagany.")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fireEvent.change(screen.getByLabelText("URL"), { target: { value: " https://example.com/rss " } });
+    fireEvent.click(screen.getByRole("button", { name: "Pobierz tytuł" }));
+    await waitFor(() => expect((screen.getByLabelText("Nazwa") as HTMLInputElement).value).toBe("Google Cloud DevOps & SRE"));
+    expect(fetchMock.mock.calls[2][0]).toBe("http://api.test/feed_sources/fetch_title");
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ type: "rss", url: "https://example.com/rss", channel_id: "" });
+    fireEvent.click(screen.getByRole("button", { name: "Pobierz tytuł" }));
+    expect(await screen.findByText("The feed has no title")).toBeTruthy();
+    expect((screen.getByLabelText("Nazwa") as HTMLInputElement).value).toBe("Google Cloud DevOps & SRE");
+  });
+
   it("renames a feed from the edit form", async () => {
     const renamed = { ...feed, name: "News 2" };
     const fetchMock = vi.fn()
