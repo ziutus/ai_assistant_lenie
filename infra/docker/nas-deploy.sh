@@ -36,6 +36,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOCAL_COMPOSE_FILE="${SCRIPT_DIR}/compose.nas.yaml"
 LOCAL_SITE_RULES_FILE="${PROJECT_ROOT}/backend/data/site_rules.json"
 
+# Rejestr wdrozen agentow (kto, z jakiego brancha, po co, czy czeka na test).
+# shellcheck source=nas-deploy-agents.sh
+source "${SCRIPT_DIR}/nas-deploy-agents.sh"
+
 # Service definitions: name | local image | registry image | dockerfile
 # worker / cloud-bridge share the backend image (lenie-ai-server:latest) and
 # have no own Dockerfile entry — a backend code change must be deployed as
@@ -211,6 +215,9 @@ acquire_lock() {
         reason="blokada starsza niz ${LOCK_MAX_AGE_S}s"
     fi
     if [ -z "$reason" ]; then
+        echo "Trwajace wdrozenia wedlug rejestru agentow:"
+        agent_scan busy
+        if [ "$AGENT_HITS" -eq 0 ]; then echo "  (brak wpisu w rejestrze - wdrozenie uruchomione starszym skryptem albo recznie)"; fi
         error "Inny deploy trwa: ${holder_user:-?}@${holder_host:-?} (pid ${holder_pid:-?}, od ${age}s). Poczekaj albo, jesli to pozostalosc, uzyj --force-unlock."
     fi
     warn "Przejmuje nieaktualna blokade (${holder_user:-?}@${holder_host:-?}): ${reason}"
@@ -223,6 +230,8 @@ acquire_lock() {
 release_lock() {
     if [ "$LOCK_HELD" = "true" ]; then
         LOCK_HELD="false"
+        # Deploy przerwany bledem/Ctrl+C: wpis nie moze zostac "deploying".
+        if [ "$AGENT_STATE" = "deploying" ]; then agent_write_entry failed >/dev/null 2>&1 || true; fi
         nas_ssh "rm -rf '${DEPLOY_LOCK_DIR}'" >/dev/null 2>&1 || warn "Nie udalo sie zdjac blokady ${DEPLOY_LOCK_DIR} (usun recznie albo --force-unlock)"
     fi
 }
@@ -398,6 +407,11 @@ echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, 
     echo "  --preflight-only  Only run the NAS health preflight (kernel oops, Docker, RAID, data, Vault), then exit"
     echo "  --skip-preflight  Continue even if the preflight reports blockers (at your own risk)"
     echo "  --force-unlock    Take over the deploy lock even if it looks active"
+    echo "  --reason \"text\"   Why this deploy happens; stored in the NAS agent registry and shown to other agents"
+    echo "  --ack-overwrite   Deploy even though another agent's deployed-but-untested change touches the same service"
+    echo "                    (only with the user's consent)"
+    echo "  --list-deploys    Print the NAS agent registry (who deployed what, why, awaiting test) and exit"
+    echo "  --mark-done[=NAME]  Mark this branch's (or NAME's) registry entry as tested by the user, then exit"
     echo "  --no-implied      Deploy exactly the named services. By default 'backend' also recreates"
     echo "                    worker and cloud-bridge, which run the same image (lenie-ai-server)"
     echo "  (a live log is always written to \$TMPDIR/lenie-nas-deploy-<time>.log; only one deploy runs at a time)"
@@ -425,6 +439,10 @@ SKIP_PREFLIGHT="false"
 PREFLIGHT_ONLY="false"
 FORCE_UNLOCK="false"
 NO_IMPLIED="false"
+ACK_OVERWRITE="false"
+LIST_DEPLOYS="false"
+MARK_DONE="false"
+MARK_DONE_NAME=""
 SERVICES=""
 
 while [[ $# -gt 0 ]]; do
@@ -436,12 +454,30 @@ while [[ $# -gt 0 ]]; do
         --preflight-only) PREFLIGHT_ONLY="true"; shift ;;
         --force-unlock)  FORCE_UNLOCK="true"; shift ;;
         --no-implied)    NO_IMPLIED="true"; shift ;;
+        --reason)        if [ $# -lt 2 ]; then error "--reason wymaga tekstu"; fi; AGENT_REASON="$2"; shift 2 ;;
+        --reason=*)      AGENT_REASON="${1#--reason=}"; shift ;;
+        --ack-overwrite) ACK_OVERWRITE="true"; shift ;;
+        --list-deploys)  LIST_DEPLOYS="true"; shift ;;
+        --mark-done)     MARK_DONE="true"; shift ;;
+        --mark-done=*)   MARK_DONE="true"; MARK_DONE_NAME="${1#--mark-done=}"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
         frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|lenie-mcp|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done
+
+if [ "$LIST_DEPLOYS" = "true" ]; then
+    echo "Rejestr wdrozen agentow (${AGENTS_DIR}):"
+    agent_scan list
+    if [ "$AGENT_HITS" -eq 0 ]; then echo "  (pusty)"; fi
+    exit 0
+fi
+if [ "$MARK_DONE" = "true" ]; then
+    agent_init
+    agent_mark_done "${MARK_DONE_NAME:-$AGENT_ENTRY_NAME}"
+    exit 0
+fi
 
 # Default: all services
 if [ -z "$SERVICES" ]; then
@@ -496,9 +532,27 @@ fi
 
 # Jedna instancja naraz (takze z innej maszyny/agenta). Zdejmowana przy wyjsciu,
 # takze po error()/Ctrl+C; po twardym zabiciu zostaje - patrz --force-unlock.
+agent_init
+AGENT_SERVICES="$SERVICES"
 trap release_lock EXIT
 trap 'exit 130' INT TERM
 acquire_lock
+
+# Rejestr agentow: nie nadpisuj po cichu zmiany innego agenta, ktora wdrozono, a
+# uzytkownik jeszcze jej nie przetestowal na NAS (ten sam serwis / ten sam obraz).
+log "Rejestr wdrozen agentow: sprawdzanie konfliktow..."
+agent_scan conflict
+if [ "$AGENT_HITS" -gt 0 ]; then
+    if [ "$ACK_OVERWRITE" = "true" ]; then
+        warn "Nadpisuje zmiany innego agenta (wyzej) - uzyto --ack-overwrite"
+    else
+        error "To wdrozenie nadpisze zmiany innego agenta (wyzej), ktore moga czekac na test uzytkownika. Zapytaj uzytkownika; po jego zgodzie ponow z --ack-overwrite. Wpis zamyka: --mark-done=NAZWA."
+    fi
+fi
+if [ -z "$AGENT_REASON" ]; then
+    warn "Brak --reason: inni agenci nie dowiedza sie, po co to wdrozenie (podaj --reason \"...\")"
+fi
+agent_write_entry deploying
 
 sync_site_rules
 
@@ -536,6 +590,16 @@ else
     deploy_on_nas "$SERVICES"
     show_status
 fi
+
+# Wdrozone, ale nie przetestowane: wpis zostaje, dopoki uzytkownik nie potwierdzi
+# (--mark-done) - kolejny agent wdrazajacy ten sam serwis dostanie ostrzezenie.
+if [[ " $SERVICES " == *" frontend "* ]]; then
+    AGENT_TEST_URL="http://${NAS_HOST}:3000"
+else
+    AGENT_TEST_URL="http://${NAS_HOST}:5055"
+fi
+agent_write_entry deployed
+ok "Wpis w rejestrze: ${AGENT_ENTRY_NAME} (deployed, czeka na test). Po tescie: bash infra/docker/nas-deploy.sh --mark-done"
 
 echo ""
 ok "Deploy zakończony!"
