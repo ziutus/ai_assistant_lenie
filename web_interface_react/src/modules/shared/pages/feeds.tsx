@@ -39,11 +39,16 @@ const toLocalInput = (value: string | null) => {
 
 const toIso = (value: string) => value ? new Date(value).toISOString() : null;
 
+const buildPayload = (form: Form) => ({ ...form, url: form.type === "youtube_channel" ? null : (form.url || "").trim(), channel_id: form.type === "youtube_channel" ? form.channel_id?.trim() : null, author_name: form.type === "youtube_channel" ? form.author_name?.trim() || null : null, auto_import_after: toIso(form.auto_import_after || "") });
+
 export default function Feeds() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [feeds, setFeeds] = React.useState<Feed[]>([]);
   const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
   const [editing, setEditing] = React.useState<number | null>(null);
+  const [adding, setAdding] = React.useState(false);
+  const [newName, setNewName] = React.useState("");
+  const [editName, setEditName] = React.useState("");
   const [form, setForm] = React.useState<Form>(emptyForm);
   const [busy, setBusy] = React.useState<number | null>(null);
   const [message, setMessage] = React.useState("");
@@ -69,7 +74,9 @@ export default function Feeds() {
   React.useEffect(() => { void load().catch(e => { setError(true); setMessage(e.message); }); }, [load]);
 
   const startEdit = (feed: Feed) => {
+    setAdding(false);
     setEditing(feed.id);
+    setEditName(feed.name);
     setForm({
       type: feed.type,
       url: feed.url || "",
@@ -86,18 +93,42 @@ export default function Feeds() {
     setMessage("");
   };
 
+  const validateForm = () => {
+    if (form.type !== "youtube_channel" && !(form.url || "").trim()) { setError(true); setMessage("URL feedu jest wymagany."); return false; }
+    if (form.type === "youtube_channel" && !form.channel_id?.trim()) { setError(true); setMessage("ID kanału YouTube jest wymagane."); return false; }
+    return true;
+  };
+
   const save = async (feed: Feed) => {
-    if (form.type !== "youtube_channel" && !(form.url || "").trim()) { setError(true); setMessage("URL feedu jest wymagany."); return; }
-    if (form.type === "youtube_channel" && !form.channel_id?.trim()) { setError(true); setMessage("ID kanału YouTube jest wymagane."); return; }
+    if (!editName.trim()) { setError(true); setMessage("Nazwa feedu jest wymagana."); return; }
+    if (!validateForm()) return;
     setBusy(feed.id); setError(false); setMessage("");
     try {
-      const payload = { ...form, url: form.type === "youtube_channel" ? null : (form.url || "").trim(), channel_id: form.type === "youtube_channel" ? form.channel_id?.trim() : null, author_name: form.type === "youtube_channel" ? form.author_name?.trim() || null : null, auto_import_after: toIso(form.auto_import_after || "") };
+      const payload = { name: editName.trim(), ...buildPayload(form) };
       const response = await fetch(`${apiUrl}/feed_sources/${feed.id}`, { method: "PATCH", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await readJson(response);
       if (!response.ok) throw new Error(data.message || "Nie udało się zapisać zmian");
       setFeeds(current => current.map(item => item.id === feed.id ? data : item));
       setEditing(null); setMessage("Zapisano zmiany.");
     } catch (e) { setError(true); setMessage(e instanceof Error ? e.message : "Nie udało się zapisać zmian"); }
+    finally { setBusy(null); }
+  };
+
+  const add = async () => {
+    if (!newName.trim()) { setError(true); setMessage("Nazwa feedu jest wymagana."); return; }
+    if (!validateForm()) return;
+    setBusy(0); setError(false); setMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/feed_sources`, {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), ...buildPayload(form) }),
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.message || "Nie udało się dodać feedu");
+      setAdding(false);
+      await load();
+      setMessage("Dodano feed.");
+    } catch (e) { setError(true); setMessage(e instanceof Error ? e.message : "Nie udało się dodać feedu"); }
     finally { setBusy(null); }
   };
 
@@ -111,15 +142,7 @@ export default function Feeds() {
     : [...form.default_topic_group_ids, groupId]);
   const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 10px", border: "1px solid #cbd5e1", borderRadius: 6 };
 
-  return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-      <div><h1 style={{ marginBottom: 6, color: "#0c2f4a" }}>Feedy<SkillHint skill="/lenie-feed-review" command="/lenie-feed-review">Nowych kandydatów z feedów przejrzysz też w sesji z Claude'em, pojedynczo, z decyzją po Twojej stronie.</SkillHint></h1><p style={{ color: "#64748b" }}>Źródła artykułów i automatycznego importu.</p></div>
-      <button className="button" type="button" onClick={() => void load()}>Odśwież</button>
-    </div>
-    {message && <p className={error ? "errorText" : undefined} style={error ? undefined : { color: "#2e7d43", margin: "14px 0" }}>{message}</p>}
-    <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
-      {feeds.map(feed => editing === feed.id ? <article key={feed.id} style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
-        <h2 style={{ color: "#0c2f4a", marginBottom: 14 }}>{feed.name}</h2>
+  const renderFields = () => <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
           <label>Typ<select value={form.type} onChange={e => update("type", e.target.value)} style={inputStyle}><option value="rss">RSS</option><option value="wordpress">WordPress</option><option value="json_api">JSON API</option><option value="youtube_channel">Kanał YouTube</option></select></label>
           {form.type === "youtube_channel" ? <label>ID kanału<input value={form.channel_id || ""} onChange={e => update("channel_id", e.target.value)} style={inputStyle} /></label> : <label>URL<input value={form.url || ""} onChange={e => update("url", e.target.value)} style={inputStyle} /></label>}
@@ -137,6 +160,30 @@ export default function Feeds() {
             {!contentGroups.length && <span style={{ color: "#64748b" }}>Brak zdefiniowanych tematów.</span>}
           </div>
         </fieldset>
+  </>;
+
+  return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+      <div><h1 style={{ marginBottom: 6, color: "#0c2f4a" }}>Feedy<SkillHint skill="/lenie-feed-review" command="/lenie-feed-review">Nowych kandydatów z feedów przejrzysz też w sesji z Claude'em, pojedynczo, z decyzją po Twojej stronie.</SkillHint></h1><p style={{ color: "#64748b" }}>Źródła artykułów i automatycznego importu.</p></div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="button" type="button" disabled={busy !== null} onClick={() => {
+          setAdding(true); setNewName(""); setForm(emptyForm); setEditing(null); setMessage(""); setError(false);
+        }}>Dodaj feed</button>
+        <button className="button" type="button" onClick={() => void load()}>Odśwież</button>
+      </div>
+    </div>
+    {message && <p className={error ? "errorText" : undefined} style={error ? undefined : { color: "#2e7d43", margin: "14px 0" }}>{message}</p>}
+    <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
+      {adding && <article style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
+        <h2 style={{ color: "#0c2f4a", marginBottom: 14 }}>Dodaj feed</h2>
+        <label style={{ display: "block", marginBottom: 12 }}>Nazwa<input required value={newName} onChange={e => setNewName(e.target.value)} style={inputStyle} /></label>
+        {renderFields()}
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}><button className="button" type="button" disabled={busy !== null} onClick={() => void add()}>Dodaj</button><button type="button" onClick={() => setAdding(false)}>Anuluj</button></div>
+      </article>}
+      {feeds.map(feed => editing === feed.id ? <article key={feed.id} style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
+        <h2 style={{ color: "#0c2f4a", marginBottom: 14 }}>{feed.name}</h2>
+        <label style={{ display: "block", marginBottom: 12 }}>Nazwa<input required value={editName} onChange={e => setEditName(e.target.value)} style={inputStyle} /></label>
+        {renderFields()}
         <div style={{ display: "flex", gap: 8, marginTop: 18 }}><button className="button" type="button" disabled={busy === feed.id} onClick={() => void save(feed)}>Zapisz</button><button type="button" onClick={() => setEditing(null)}>Anuluj</button></div>
       </article> : <article key={feed.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", background: feed.disabled ? "#f8fafc" : "#fff", opacity: feed.disabled ? .72 : 1 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><strong style={{ color: "#0f4c81", fontSize: "1.05rem" }}>{feed.name}</strong><span style={{ background: feed.auto_import ? "#dcfce7" : "#f1f5f9", color: feed.auto_import ? "#166534" : "#475569", borderRadius: 999, padding: "3px 9px", fontSize: ".78rem" }}>{feed.auto_import ? "auto import" : "ręcznie"}</span>{feed.disabled && <span style={{ color: "#b45309" }}>wyłączony</span>}<span style={{ marginLeft: "auto", display: "flex", gap: 8 }}><button className="button" type="button" onClick={() => startEdit(feed)}>Edytuj</button><button type="button" onClick={() => void check(feed.id)}>Sprawdź teraz</button></span></div>

@@ -34,6 +34,11 @@ bp = Blueprint("feeds", __name__)
 MAX_REVIEW_NOTE_CHARS = 4000  # the comment box on /feed-review allows the same length
 
 
+@bp.errorhandler(409)
+def feed_conflict(error):
+    return jsonify(message=error.description), 409
+
+
 def _user():
     if getattr(g, "auth", None) is None or g.auth.kind != "user":
         abort(403, "user API key required")
@@ -627,18 +632,24 @@ def get_feed(feed_id):
 
 @bp.post("/feed_sources")
 def create_feed():
-    _service()
+    _user_or_service()
     session = get_scoped_session()
+    body = request.get_json(silent=True) or {}
+    name = body.get("name") if isinstance(body, dict) else None
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 255:
+        abort(400, "name must be a non-empty string up to 255 characters")
+    body["name"] = name.strip()
     try:
-        values = resolve_references(session, request.get_json(silent=True) or {})
+        values = resolve_references(session, body)
+        row = FeedSource(**values)
+        session.add(row)
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        abort(409, "feed with this name already exists")
     except ValueError as exc:
         session.rollback()
         abort(400, str(exc))
-    if "name" not in values:
-        abort(400, "name is required")
-    row = FeedSource(**values)
-    session.add(row)
-    session.commit()
     return jsonify(feed_to_dict(row)), 201
 
 
@@ -651,9 +662,14 @@ def update_feed(feed_id):
     if row is None:
         abort(404)
     body = request.get_json(silent=True) or {}
-    allowed = {"type", "url", "channel_id", "author_name", "language", "tags", "default_topic_group_ids", "auto_import", "disabled", "auto_import_after", "default_state", "field_mapping", "skip_url_patterns", "skip_title_patterns"}
+    allowed = {"name", "type", "url", "channel_id", "author_name", "language", "tags", "default_topic_group_ids", "auto_import", "disabled", "auto_import_after", "default_state", "field_mapping", "skip_url_patterns", "skip_title_patterns"}
     if not isinstance(body, dict) or any(key not in allowed for key in body):
         abort(400, "unsupported feed field")
+    if "name" in body:
+        name = body["name"]
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 255:
+            abort(400, "name must be a non-empty string up to 255 characters")
+        body["name"] = name.strip()
     merged = {key: getattr(row, key) for key in allowed if hasattr(row, key)}
     merged.update(body)
     if isinstance(merged.get("auto_import_after"), str):
@@ -666,11 +682,14 @@ def update_feed(feed_id):
     except ValueError as exc:
         session.rollback()
         abort(400, str(exc))
-    values.pop("name", None)
     for key, value in values.items():
         setattr(row, key, value)
     row.updated_at = dt.datetime.now(dt.timezone.utc)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        abort(409, "feed with this name already exists")
     return jsonify(feed_to_dict(row))
 
 
