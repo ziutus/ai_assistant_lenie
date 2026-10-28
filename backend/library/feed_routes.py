@@ -662,9 +662,14 @@ def update_feed(feed_id):
     if row is None:
         abort(404)
     body = request.get_json(silent=True) or {}
-    allowed = {"type", "url", "channel_id", "author_name", "language", "tags", "default_topic_group_ids", "auto_import", "disabled", "auto_import_after", "default_state", "field_mapping", "skip_url_patterns", "skip_title_patterns"}
+    allowed = {"name", "type", "url", "channel_id", "author_name", "language", "tags", "default_topic_group_ids", "auto_import", "disabled", "auto_import_after", "default_state", "field_mapping", "skip_url_patterns", "skip_title_patterns"}
     if not isinstance(body, dict) or any(key not in allowed for key in body):
         abort(400, "unsupported feed field")
+    if "name" in body:
+        name = body["name"]
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 255:
+            abort(400, "name must be a non-empty string up to 255 characters")
+        body["name"] = name.strip()
     merged = {key: getattr(row, key) for key in allowed if hasattr(row, key)}
     merged.update(body)
     if isinstance(merged.get("auto_import_after"), str):
@@ -677,11 +682,14 @@ def update_feed(feed_id):
     except ValueError as exc:
         session.rollback()
         abort(400, str(exc))
-    values.pop("name", None)
     for key, value in values.items():
         setattr(row, key, value)
     row.updated_at = dt.datetime.now(dt.timezone.utc)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        abort(409, "feed with this name already exists")
     return jsonify(feed_to_dict(row))
 
 

@@ -10,7 +10,7 @@ React 18 single-page application for managing documents and running AI operation
 
 All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. Unauthenticated users redirected to `/connect`.
 
-`/feeds` supports adding and editing feed sources with shared configuration fields.
+`/feeds` supports adding and editing feed sources (including renaming) with shared configuration fields.
 
 ## UX conventions
 

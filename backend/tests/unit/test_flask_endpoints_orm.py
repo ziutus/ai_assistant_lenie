@@ -517,6 +517,70 @@ def test_feed_patch_rejects_internal_url(authenticated_security_client):
     session.rollback.assert_called_once()
 
 
+def _feed_row(name, **extra):
+    """A FeedSource with the column defaults the database would normally fill in."""
+    from library.db.models import FeedSource
+    values = {
+        "type": "rss", "url": "https://example.com/feed", "language": "pl", "tags": [],
+        "default_topic_group_ids": [], "field_mapping": {}, "skip_url_patterns": [], "skip_title_patterns": [],
+        "default_state": "URL_ADDED", "auto_import": False, "disabled": False,
+    }
+    values.update(extra)
+    return FeedSource(name=name, **values)
+
+
+def test_feed_patch_renames_feed(authenticated_security_client):
+    client, session = authenticated_security_client
+    feed = _feed_row("Google Cloud - wszystkie uslugi")
+    session.get.return_value = feed
+    with patch("library.feed_routes.get_scoped_session", return_value=session), patch(
+        "library.feed_source_service.validate_public_url"
+    ):
+        response = client.patch("/feed_sources/1", json={"name": "  Google Cloud - release notes  "},
+                                headers={"x-api-key": "user"})
+    assert response.status_code == 200
+    assert response.json["name"] == "Google Cloud - release notes"
+    assert feed.name == "Google Cloud - release notes"
+    session.commit.assert_called_once()
+
+
+def test_feed_patch_without_name_keeps_name(authenticated_security_client):
+    client, session = authenticated_security_client
+    feed = _feed_row("News")
+    session.get.return_value = feed
+    with patch("library.feed_routes.get_scoped_session", return_value=session), patch(
+        "library.feed_source_service.validate_public_url"
+    ):
+        response = client.patch("/feed_sources/1", json={"language": "en"}, headers={"x-api-key": "user"})
+    assert response.status_code == 200
+    assert feed.name == "News"
+
+
+@pytest.mark.parametrize("name", ["", " \t ", 123, None, "x" * 256])
+def test_feed_patch_rejects_invalid_name(authenticated_security_client, name):
+    client, session = authenticated_security_client
+    feed = _feed_row("News")
+    session.get.return_value = feed
+    with patch("library.feed_routes.get_scoped_session", return_value=session):
+        response = client.patch("/feed_sources/1", json={"name": name}, headers={"x-api-key": "user"})
+    assert response.status_code == 400
+    assert feed.name == "News"
+    session.commit.assert_not_called()
+
+
+def test_feed_patch_duplicate_name_returns_conflict(authenticated_security_client):
+    client, session = authenticated_security_client
+    session.get.return_value = _feed_row("News")
+    session.commit.side_effect = sa.exc.IntegrityError("UPDATE", {}, Exception("duplicate name"))
+    with patch("library.feed_routes.get_scoped_session", return_value=session), patch(
+        "library.feed_source_service.validate_public_url"
+    ):
+        response = client.patch("/feed_sources/1", json={"name": "Other"}, headers={"x-api-key": "user"})
+    assert response.status_code == 409
+    assert response.json["message"] == "feed with this name already exists"
+    session.rollback.assert_called_once()
+
+
 @pytest.mark.parametrize("kind", ["user", "service"])
 def test_feed_create_accepts_user_and_service(authenticated_security_client, kind):
     client, session = authenticated_security_client

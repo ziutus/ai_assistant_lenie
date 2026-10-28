@@ -188,7 +188,7 @@ list (id, name, items, new_items) shown on the Jobs page; per feed it also lists
 returns its result under `import`, so new items of `auto_import` feeds become documents without
 waiting for `feed_daily`; caption fetching stays in `feed_daily`.
 
-`POST /feed_sources` accepts user or service keys, validates and trims names, and returns 409 for duplicate names.
+`POST /feed_sources` accepts user or service keys, validates and trims names, and returns 409 for duplicate names. `PATCH /feed_sources/<id>` also accepts `name` (same validation, 409 on a name another feed already has), so a feed can be renamed from `/feeds`.
 
 ### Domain Model & Database
 

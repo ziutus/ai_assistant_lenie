@@ -92,4 +92,26 @@ describe("Feeds", () => {
     expect(payload).toMatchObject({ channel_id: "UC123", url: null, author_name: null });
     await waitFor(() => expect((screen.getByRole("button", { name: "Dodaj" }) as HTMLButtonElement).disabled).toBe(false));
   });
+
+  it("renames a feed from the edit form", async () => {
+    const renamed = { ...feed, name: "News 2" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ feed_sources: [feed] }))
+      .mockResolvedValueOnce(json({ content_groups: [] }))
+      .mockResolvedValueOnce(json(renamed));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AuthorizationContext.Provider value={auth}><Feeds /></AuthorizationContext.Provider>);
+    fireEvent.click(await screen.findByRole("button", { name: "Edytuj" }));
+    expect((screen.getByLabelText("Nazwa") as HTMLInputElement).value).toBe("News");
+    fireEvent.change(screen.getByLabelText("Nazwa"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+    expect(screen.getByText("Nazwa feedu jest wymagana.")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fireEvent.change(screen.getByLabelText("Nazwa"), { target: { value: " News 2 " } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+    expect(await screen.findByText("Zapisano zmiany.")).toBeTruthy();
+    expect(screen.getByText("News 2")).toBeTruthy();
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toMatchObject({ name: "News 2" });
+    expect(fetchMock.mock.calls[2][0]).toBe("http://api.test/feed_sources/1");
+  });
 });

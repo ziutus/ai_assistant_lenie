@@ -48,6 +48,7 @@ export default function Feeds() {
   const [editing, setEditing] = React.useState<number | null>(null);
   const [adding, setAdding] = React.useState(false);
   const [newName, setNewName] = React.useState("");
+  const [editName, setEditName] = React.useState("");
   const [form, setForm] = React.useState<Form>(emptyForm);
   const [busy, setBusy] = React.useState<number | null>(null);
   const [message, setMessage] = React.useState("");
@@ -75,6 +76,7 @@ export default function Feeds() {
   const startEdit = (feed: Feed) => {
     setAdding(false);
     setEditing(feed.id);
+    setEditName(feed.name);
     setForm({
       type: feed.type,
       url: feed.url || "",
@@ -98,10 +100,11 @@ export default function Feeds() {
   };
 
   const save = async (feed: Feed) => {
+    if (!editName.trim()) { setError(true); setMessage("Nazwa feedu jest wymagana."); return; }
     if (!validateForm()) return;
     setBusy(feed.id); setError(false); setMessage("");
     try {
-      const payload = buildPayload(form);
+      const payload = { name: editName.trim(), ...buildPayload(form) };
       const response = await fetch(`${apiUrl}/feed_sources/${feed.id}`, { method: "PATCH", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await readJson(response);
       if (!response.ok) throw new Error(data.message || "Nie udało się zapisać zmian");
@@ -179,6 +182,7 @@ export default function Feeds() {
       </article>}
       {feeds.map(feed => editing === feed.id ? <article key={feed.id} style={{ border: "1px solid #bae6fd", borderRadius: 10, padding: 18, background: "#f8fafc" }}>
         <h2 style={{ color: "#0c2f4a", marginBottom: 14 }}>{feed.name}</h2>
+        <label style={{ display: "block", marginBottom: 12 }}>Nazwa<input required value={editName} onChange={e => setEditName(e.target.value)} style={inputStyle} /></label>
         {renderFields()}
         <div style={{ display: "flex", gap: 8, marginTop: 18 }}><button className="button" type="button" disabled={busy === feed.id} onClick={() => void save(feed)}>Zapisz</button><button type="button" onClick={() => setEditing(null)}>Anuluj</button></div>
       </article> : <article key={feed.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", background: feed.disabled ? "#f8fafc" : "#fff", opacity: feed.disabled ? .72 : 1 }}>
