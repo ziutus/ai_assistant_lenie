@@ -282,14 +282,31 @@ class TestEntryUrls:
         session = MagicMock()
         session.get.return_value = self._aisle()
         monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
-        created = SimpleNamespace(id=55)
+        created = SimpleNamespace(id=55, document_type="link")
+        titles = []
         monkeypatch.setattr("library.document_service.DocumentService.import_document",
-                            lambda self, url, kind, **meta: (created, "added"))
+                            lambda self, url, kind, **meta: (titles.append(meta["title"]) or created, "added"))
+        promoted = SimpleNamespace(document_type="webpage", processing_job_id="job-1")
+        monkeypatch.setattr("library.document_service.DocumentService.promote_link_to_webpage",
+                            lambda self, doc_id, html="": promoted)
         app = Flask(__name__)
         with app.test_request_context("/x", method="POST", json={"url": "https://aisle.com/blog/the-model-fixes-code"}):
             g.auth = SimpleNamespace(kind="user", user_id=1)
             response, status = import_recommendation_url(712)
-        assert status == 201 and response.json == {"document_id": 55, "created": True}
+        assert status == 201
+        assert response.json == {"document_id": 55, "created": True, "document_type": "webpage",
+                                 "processing_job_id": "job-1"}
+        assert titles == ["the model fixes code"]  # slug, not the newsletter title
+
+        from library.document_promotion import PromotionError
+
+        def blocked(self, doc_id, html=""):
+            raise PromotionError("paywall", "paywalled")
+        monkeypatch.setattr("library.document_service.DocumentService.promote_link_to_webpage", blocked)
+        with app.test_request_context("/x", method="POST", json={"url": "https://aisle.com/blog/the-model-fixes-code"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response, status = import_recommendation_url(712)
+        assert response.json["promotion_failed"] == "paywall" and response.json["document_type"] == "link"
 
         with app.test_request_context("/x", method="POST", json={"url": "https://evil.example/x"}):
             g.auth = SimpleNamespace(kind="user", user_id=1)

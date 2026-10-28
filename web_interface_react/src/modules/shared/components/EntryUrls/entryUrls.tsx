@@ -35,7 +35,9 @@ export default function EntryUrls({ recommendationId, apiUrl, headers, onImporte
         method: "POST", headers, body: JSON.stringify({ url }),
       });
       if (!response.ok) throw new Error("Nie udało się dodać linku do bazy wiedzy");
-      await load();
+      const result = await response.json() as { promotion_failed?: string };
+      if (result.promotion_failed) setError(`Dodano jako link, ale treści nie udało się pobrać (${result.promotion_failed}). Otwórz go i użyj „Zaimportuj jako webpage" z przeglądarki.`);
+      else await load();
       onImported?.();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się dodać linku"); }
     finally { setBusy(null); }
@@ -51,7 +53,7 @@ export default function EntryUrls({ recommendationId, apiUrl, headers, onImporte
         <a href={entry.url} target="_blank" rel="noreferrer">{entry.url}</a>
         <span style={{ color: "#64748b" }}> · {originLabels[entry.origin] ?? entry.origin}</span>{" "}
         {entry.document
-          ? <Link to={`/webpage/${entry.document.id}`}>✓ w bazie wiedzy (#{entry.document.id})</Link>
+          ? <Link to={`/${entry.document.document_type === "link" ? "link" : "webpage"}/${entry.document.id}`}>✓ w bazie wiedzy (#{entry.document.id})</Link>
           : <button type="button" disabled={busy === entry.url} onClick={() => void add(entry.url)}
             title="Dodaje ten adres do biblioteki jako dokument typu link; treść pobierzesz później z jego strony.">
             {busy === entry.url ? "Dodaję…" : "＋ Dodaj do bazy wiedzy"}</button>}

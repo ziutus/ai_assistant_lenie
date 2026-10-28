@@ -621,14 +621,28 @@ def import_recommendation_url(recommendation_id):
         abort(404, "tool recommendation not found")
     if url not in {entry["url"] for entry in _urls_in_entry(item)}:
         abort(400, "url is not mentioned in this entry")
+    from library.document_promotion import PromotionError
     from library.document_service import DocumentService
 
-    document, outcome = DocumentService(session).import_document(
-        url, "link", title=item.source_context or "", source=(item.source_document.discovery_source.name
+    # The entry's source_context is the newsletter's title, not this page's: use the URL slug until the page is read.
+    slug = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").replace("_", " ")
+    service = DocumentService(session)
+    document, outcome = service.import_document(
+        url, "link", title=slug or urlparse(url).netloc, source=(item.source_document.discovery_source.name
         if item.source_document is not None and item.source_document.discovery_source else "own"),
     )
     session.commit()
-    return jsonify({"document_id": document.id, "created": outcome != "skipped"}), 201 if outcome != "skipped" else 200
+    created = outcome != "skipped"
+    result = {"document_id": document.id, "created": created, "document_type": document.document_type}
+    # A bare link has no text, so read the page now (same path as the "promote to webpage" button).
+    if body.get("as_webpage", True) and document.document_type == "link":
+        try:
+            promoted = service.promote_link_to_webpage(document.id)
+            result.update(document_type=promoted.document_type, processing_job_id=promoted.processing_job_id)
+        except PromotionError as exc:
+            session.rollback()
+            result["promotion_failed"] = exc.reason
+    return jsonify(result), 201 if created else 200
 
 
 @bp.patch("/tool_recommendations/<int:recommendation_id>")
