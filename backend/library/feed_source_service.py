@@ -83,8 +83,28 @@ def feed_to_dict(feed: FeedSource) -> dict:
     }
 
 
-def list_feeds(session):
-    return session.scalars(select(FeedSource).order_by(FeedSource.name)).all()
+def list_feeds(session, disabled=None, tags=None):
+    query = select(FeedSource).order_by(FeedSource.name)
+    if disabled is not None:
+        query = query.where(FeedSource.disabled.is_(disabled))
+    feeds = session.scalars(query).all()
+    if tags:
+        feeds = [feed for feed in feeds if set(tags).intersection(feed.tags or [])]
+    return feeds
+
+
+def feed_filter_metadata(session, tags=None):
+    feeds = list_feeds(session)
+    counts = {"active": 0, "disabled": 0}
+    tag_counts = {}
+    for feed in feeds:
+        for tag in set(feed.tags or []):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        if not tags or set(tags).intersection(feed.tags or []):
+            counts["disabled" if feed.disabled else "active"] += 1
+    return {"counts": counts, "tags": [
+        {"tag": tag, "count": count} for tag, count in sorted(tag_counts.items())
+    ]}
 
 
 def resolve_references(session, values: dict) -> dict:
