@@ -204,6 +204,10 @@ export default function ToolRecommendations() {
   const [importUrl, setImportUrl] = React.useState("");
   const [recommendationSource, setRecommendationSource] = React.useState("");
   const [importMessage, setImportMessage] = React.useState("");
+  const [addForm, setAddForm] = React.useState<{ name: string; homepage_url: string; category: string; description: string; status: RecommendationStatus }>(
+    { name: "", homepage_url: "", category: "", description: "", status: "watchlist" });
+  const [addBusy, setAddBusy] = React.useState(false);
+  const [addMessage, setAddMessage] = React.useState("");
   const [githubBusy, setGithubBusy] = React.useState(false);
   const [modelCalls, setModelCalls] = React.useState(0); // bumped after each model request so the OpenRouter balance reloads
   const [githubMessage, setGithubMessage] = React.useState("");
@@ -489,6 +493,40 @@ export default function ToolRecommendations() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Import nie powiódł się"); }
   };
 
+  const addTool = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!addForm.name.trim()) return;
+    setAddBusy(true); setError(""); setAddMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/tool_recommendations`, {
+        method: "POST", headers, body: JSON.stringify({
+          name: addForm.name.trim(), status: addForm.status,
+          ...(addForm.homepage_url.trim() ? { homepage_url: addForm.homepage_url.trim() } : {}),
+          ...(addForm.category.trim() ? { category: addForm.category.trim() } : {}),
+          ...(addForm.description.trim() ? { description: addForm.description.trim() } : {}),
+          source_context: "Dodane ręcznie",
+        }),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        message?: string; tool_recommendation?: Recommendation;
+        existing_tool?: { id: number; name: string }; existing_tool_recommendation?: { id: number; name: string };
+      };
+      if (!response.ok) throw new Error(String(data.message || "Nie udało się dodać narzędzia"));
+      if (data.existing_tool) {
+        setAddMessage(`„${data.existing_tool.name}” jest już w Spisie narzędzi — nie dodano duplikatu.`);
+      } else if (data.existing_tool_recommendation) {
+        setAddMessage(`„${data.existing_tool_recommendation.name}” jest już na radarze — otwieram istniejący wpis.`);
+        setStatus("all"); setFocus(data.existing_tool_recommendation.id);
+      } else if (data.tool_recommendation) {
+        setAddMessage(`Dodano „${data.tool_recommendation.name}” do radaru (${decisionLabels[data.tool_recommendation.status]}).`);
+        setAddForm({ name: "", homepage_url: "", category: "", description: "", status: addForm.status });
+        setStatus("all"); setFocus(data.tool_recommendation.id);
+      }
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Dodawanie nie powiodło się"); }
+    finally { setAddBusy(false); }
+  };
+
   const cardDetails = (item: Recommendation) => <>
     {item.category && <span style={{ background: "#e2e8f0", color: "#334155", borderRadius: 4, padding: "2px 6px", fontSize: ".75rem" }}>{item.category}</span>}
     <TagEditor tags={item.tags ?? []} onFilter={tag => setSelectedTags(current => current.includes(tag) ? current : [...current, tag])}
@@ -599,6 +637,16 @@ export default function ToolRecommendations() {
         <li><strong>Archiwizuję</strong> — zachowuję wpis i jego źródła historycznie, ale chowam go z bieżącego radaru.</li>
       </ul>
     </details>
+    <form onSubmit={event => void addTool(event)} aria-label="Dodaj narzędzie do radaru" style={{ display: "flex", alignItems: "end", gap: 8, flexWrap: "wrap", padding: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 12 }}>
+      <label style={{ flex: "1 1 160px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Dodaj narzędzie: nazwa<Help text="Ręcznie dodaje jedno narzędzie do radaru. Jeśli nazwa jest już na radarze lub w Spisie narzędzi, nie powstanie duplikat. Resztę (opis, kategorię, tagi) możesz uzupełnić na karcie, także podpowiedzią modelu." /></span><input required value={addForm.name} onChange={event => setAddForm(current => ({ ...current, name: event.target.value }))} placeholder="np. herdr" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
+      <label style={{ flex: "2 1 220px" }}>Strona / repozytorium<input value={addForm.homepage_url} onChange={event => setAddForm(current => ({ ...current, homepage_url: event.target.value }))} placeholder="https://herdr.dev/" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
+      <label style={{ flex: "1 1 140px" }}>Kategoria (opcjonalnie)<input value={addForm.category} onChange={event => setAddForm(current => ({ ...current, category: event.target.value }))} style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
+      <label style={{ flex: "1 1 160px" }}>Etap<select value={addForm.status} onChange={event => setAddForm(current => ({ ...current, status: event.target.value as RecommendationStatus }))} style={{ width: "100%", display: "block", marginTop: 4 }}>
+        {nextStatuses.map(([value]) => <option key={value} value={value}>{decisionLabels[value]}</option>)}</select></label>
+      <label style={{ flex: "1 1 100%" }}>Opis (opcjonalnie)<input value={addForm.description} onChange={event => setAddForm(current => ({ ...current, description: event.target.value }))} style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
+      <button className="button" type="submit" disabled={addBusy || !addForm.name.trim()}>{addBusy ? "Dodaję…" : "Dodaj do radaru"}</button>
+      {addMessage && <span role="status" style={{ color: "#166534" }}>{addMessage}</span>}
+    </form>
     <div style={{ display: "flex", alignItems: "end", gap: 8, flexWrap: "wrap", padding: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 18 }}>
       <label style={{ flex: "2 1 420px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Importuj katalog GitHub (README Markdown)<Help text="Wklej adres repozytorium GitHub z listą narzędzi (np. awesome-list). Lenie pobierze README i doda każdą pozycję jako rekomendację; narzędzia już obecne w radarze lub Spisie narzędzi są pomijane." /></span><input value={importUrl} onChange={event => setImportUrl(event.target.value)} placeholder="https://github.com/AwesomeHomelab/awesome-homelab" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
       <label style={{ flex: "1 1 220px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Nadpisz źródło linkiem Lenie (opcjonalnie)<Help text="Dokument w Lenie (ID lub /link/10333), który poleca ten katalog — zapisze się jako „polecone przez”. Zwykle wykrywane automatycznie z adresu katalogu." /></span><input value={recommendationSource} onChange={event => setRecommendationSource(event.target.value)} placeholder="Zwykle wykrywane automatycznie" title="Importer najpierw szuka adresu katalogu w Lenie. Podaj ID lub link tylko, gdy chcesz wskazać inne źródło." style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
