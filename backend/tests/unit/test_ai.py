@@ -267,3 +267,48 @@ def test_openrouter_exact_cost_or_catalog_estimate(value, extra):
     for name in ("cost", "cost_usd", "credits_used"):
         assert not hasattr(response, name)
     assert client.chat.completions.create.call_args.kwargs["extra_body"] == {"usage": {"include": True}}
+
+
+class TestRoutingByAllowlist:
+    """ADR-030: an id without a built-in rule is routed by the provider recorded in llm_models."""
+
+    @staticmethod
+    def _allowlist(monkeypatch, *entries):
+        from library import llm_model_store
+
+        monkeypatch.setattr(llm_model_store, "_fetch_rows", lambda: list(entries))
+        llm_model_store.invalidate_cache()
+
+    def test_new_vertex_model_added_to_the_table_is_routed_to_vertex(self, monkeypatch):
+        from library.llm_model_store import ModelEntry
+
+        self._allowlist(monkeypatch, ModelEntry("gemini-4-flash", "G4", "google-vertexai"))
+        with patch("library.api.google.google_vertexai.connect_to_google_llm_with_role") as vertex, patched_recorder() as rec:
+            vertex.return_value = sherlock_response()
+            ai_ask("q", model="gemini-4-flash", temperature=0.2, max_token_count=300)
+        assert vertex.call_args.args == ("q", "gemini-4-flash")
+        assert vertex.call_args.kwargs["max_output_tokens"] == 300
+        assert rec.call_args.kwargs["provider"] == "google-vertexai"
+
+    def test_new_bielik_model_added_to_the_table_is_routed_to_sherlock(self, monkeypatch):
+        from library.llm_model_store import ModelEntry
+
+        self._allowlist(monkeypatch, ModelEntry("Bielik-11B-v4.0-Instruct", "B4", "cloudferro"))
+        with patched_sherlock() as completion, patched_recorder():
+            ai_ask("q", model="Bielik-11B-v4.0-Instruct")
+        assert completion.call_args.kwargs["model"] == "Bielik-11B-v4.0-Instruct"
+
+    def test_a_retired_or_unlisted_model_is_still_unknown(self, monkeypatch):
+        from library.llm_model_store import ModelEntry
+
+        self._allowlist(monkeypatch, ModelEntry("gemini-old", "Old", "google-vertexai", status="retired"))
+        for model in ("gemini-old", "gemini-nonexistent"):
+            with pytest.raises(Exception, match="Unknown model"):
+                ai_ask("q", model=model)
+
+    def test_built_in_models_do_not_consult_the_table(self, monkeypatch):
+        from library import llm_model_store
+
+        monkeypatch.setattr(llm_model_store, "provider_of", MagicMock(side_effect=AssertionError("table consulted")))
+        with patched_sherlock(), patched_recorder():
+            ai_ask("q", model="Bielik-11B-v3.0-Instruct")

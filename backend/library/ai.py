@@ -32,6 +32,20 @@ _SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs", "openrouter", "google-verte
 _RESPONSE_FORMAT_PROVIDERS = ("cloudferro", "openrouter", "google-vertexai")
 
 
+def _registry_provider(model: str) -> str | None:
+    """Provider of an allowlisted model id that has no built-in routing rule (ADR-030).
+
+    The tuples above are only the built-in rules; a model added through ``POST /llm_models`` (a new Gemini,
+    a new Bielik) is routed by the provider recorded in ``llm_models`` — no code change. Never raises.
+    """
+    known = OPENAI_MODELS + BEDROCK_MODELS + SHERLOCK_MODELS + SHERLOCK_VISION_MODELS + GOOGLE_MODELS
+    if model in known or model.startswith(("arklabs/", "openrouter/")):
+        return None
+    from library import llm_model_store
+
+    return llm_model_store.provider_of(model)
+
+
 def _unified_tokens(response) -> tuple[int | None, int | None, int | None]:
     """Map prompt/input and completion/output naming variants onto one view."""
     prompt = getattr(response, "prompt_tokens", None)
@@ -65,6 +79,8 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
            analysis_job_id: str | None = None, analysis_run_id: int | None = None,
            image_base64: str | None = None, image_media_type: str = "image/jpeg") -> AiResponse:
 
+    registry_provider = _registry_provider(model)
+
     if image_base64 is not None:
         if model not in SHERLOCK_VISION_MODELS:
             raise ValueError("Image descriptions require a supported Sherlock vision model")
@@ -81,7 +97,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
                 image_base64=image_base64, image_media_type=image_media_type,
             )
 
-    elif model in OPENAI_MODELS:
+    elif model in OPENAI_MODELS or registry_provider == "openai":
         provider = "openai"
         if model in ("gpt-3.5-turbo", "gpt-3.5-turbo-16k"):
             if len(query) < 8000:
@@ -113,7 +129,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
             return library.api.aws.bedrock_ask.query_aws_bedrock(query, model, temperature=temperature,
                                                                  max_token_count=max_token_count, top_p=top_p)
 
-    elif model in SHERLOCK_MODELS:
+    elif model in SHERLOCK_MODELS or registry_provider == "cloudferro":
         provider = "cloudferro"
 
         def call():
@@ -146,7 +162,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
                                              max_tokens=max_token_count, system_prompt=system_prompt,
                                              response_format=response_format)
 
-    elif model in GOOGLE_MODELS:
+    elif model in GOOGLE_MODELS or registry_provider == "google-vertexai":
         provider = "google-vertexai"
 
         def call():
