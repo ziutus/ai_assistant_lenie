@@ -53,8 +53,8 @@ whether it is sent, `response_format`) for the job and for `POST
 /feed_items/<id>/group-suggestions/preview` (`{model?, template_id?}`, nothing queued or
 sent). The model list for the `content_group_suggestion` task offers only models that
 honour a JSON-schema `response_format` (`llm_model_registry._STRUCTURED_OUTPUT_TASKS`:
-direct providers other than CloudFerro are dropped statically — OpenAI and Vertex
-Gemini no longer appear —, OpenRouter models are dropped when the live catalog says no
+direct providers other than CloudFerro and Google Vertex are dropped statically — OpenAI no longer
+appears —, OpenRouter models are dropped when the live catalog says no
 structured outputs; unknown stays). Tests: `tests/unit/test_prompt_templates.py`,
 `test_feed_prompt_preview.py`.
 
@@ -235,13 +235,13 @@ Entry point: `ai_ask(query, model, temperature, max_token_count, top_p, *, syste
 Supported models:
 - **OpenAI**: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-mini
 - **AWS Bedrock**: amazon.titan-tg1-large, amazon.nova-micro, amazon.nova-pro
-- **Google Vertex AI**: gemini-2.0-flash-lite-001
+- **Google Vertex AI**: gemini-3.1-flash-lite (cheapest), gemini-3.5-flash-lite
 - **CloudFerro**: Bielik-11B-v2.3-Instruct, Bielik-11B-v3.0-Instruct (Polish)
 - **ARK Labs**: `arklabs/<model>` (stateless/stateful GPU session variant)
 
 Documents and prompts stay in their source language; there is no automatic translation helper or pipeline.
 
-**Stage 3 of the search-rebuild plan (docs/search-rebuild-implementation-plan.md).** `system_prompt` is sent as a real system-role message — never string-concatenated with the user prompt — for providers that support it (`cloudferro`, `arklabs`); passing one for any other provider raises `ValueError`. `response_format` is forwarded to Sherlock only (`cloudferro`); other providers raise `ValueError`. **Verified live against CloudFerro Sherlock (2026-07-18):** `{"type": "json_schema", "json_schema": {...}}` is honored — the schema's required keys are imposed on the model's output — but `{"type": "json_object"}` is rejected with HTTP 400, so structured output requires a full JSON Schema, not the bare "give me JSON" mode. Provider-specific token field names (`prompt_tokens`/`completion_tokens` vs Bedrock's `input_tokens`/`output_tokens`) are unified internally before recording usage. After every call (success or exception) `ai_ask()` writes exactly one `llm_usage_logs` row via `library.llm_usage.recorder.record_llm_usage()` and attaches the resulting `UsageRecord` (tokens, latency, `usage_log_id`, `CostEstimate` with status) to `response.usage`; recorder failures (including `SystemExit` from `config_loader.require()` when DB config is absent) are logged and swallowed so a bad usage write never breaks the LLM call. `AiResponse` intentionally has **no** `cost_usd`/`cost`/`credits_used` attributes — cost lives only in `response.usage.cost`. Stage 3b removed the modules that used to probe for those dead attribute names (`timeline_events._response_usage()`/`_combine_costs()`, privately imported by `tones.py`/`time_periods.py`); all three now build their diagnostic reports via `library/llm_usage/report.py`.
+**Stage 3 of the search-rebuild plan (docs/search-rebuild-implementation-plan.md).** `system_prompt` is sent as a real system-role message — never string-concatenated with the user prompt — for providers that support it (`cloudferro`, `arklabs`, `openrouter`, `google-vertexai` as `system_instruction`); passing one for any other provider raises `ValueError`. `response_format` is forwarded to Sherlock, OpenRouter and Google Vertex (`google-vertexai`: a `json_schema` format becomes `response_mime_type=application/json` + `response_json_schema`, verified live 2026-10-29 with the content_group_suggestion schema on `gemini-3.1-flash-lite` and `gemini-3.5-flash-lite`); other providers raise `ValueError`. **Verified live against CloudFerro Sherlock (2026-07-18):** `{"type": "json_schema", "json_schema": {...}}` is honored — the schema's required keys are imposed on the model's output — but `{"type": "json_object"}` is rejected with HTTP 400, so structured output requires a full JSON Schema, not the bare "give me JSON" mode. Provider-specific token field names (`prompt_tokens`/`completion_tokens` vs Bedrock's `input_tokens`/`output_tokens`) are unified internally before recording usage. After every call (success or exception) `ai_ask()` writes exactly one `llm_usage_logs` row via `library.llm_usage.recorder.record_llm_usage()` and attaches the resulting `UsageRecord` (tokens, latency, `usage_log_id`, `CostEstimate` with status) to `response.usage`; recorder failures (including `SystemExit` from `config_loader.require()` when DB config is absent) are logged and swallowed so a bad usage write never breaks the LLM call. `AiResponse` intentionally has **no** `cost_usd`/`cost`/`credits_used` attributes — cost lives only in `response.usage.cost`. Stage 3b removed the modules that used to probe for those dead attribute names (`timeline_events._response_usage()`/`_combine_costs()`, privately imported by `tones.py`/`time_periods.py`); all three now build their diagnostic reports via `library/llm_usage/report.py`.
 
 **Stage 10 evaluation.** `library/search/evaluation.py` scores the partial expectations in `tests/fixtures/search_query_cases.json`: JSON-safe domain serialization, explicitly pinned fields only, and aggregate JSON validity, field accuracy, latency, tokens and same-currency cost. `imports/evaluate_search_queries.py` runs the real parser sequentially and, unless `--keep-audit` is passed, deletes only the exact audit/usage IDs produced by that run. The first real Bielik baseline is in `docs/search-rebuild-bielik-baseline.md`.
 
@@ -315,7 +315,7 @@ Supported models:
 | `aws/s3_aws.py` | `s3_file_exist()`, `s3_take_file()` | AWS credentials |
 | `aws/text_detect_language_aws.py` | `detect_text_language_aws()` (Comprehend) | AWS credentials |
 | `aws/credentionals.py` | `validate_credentials()` (STS) | AWS credentials |
-| `google/google_vertexai.py` | `connect_to_google_llm_with_role()` | `GCP_PROJECT_ID`, `GCP_LOCATION` |
+| `google/google_vertexai.py` | `connect_to_google_llm_with_role()` (google-genai SDK, `vertexai=True`; tokens incl. reasoning tokens go to `AiResponse`, priced from `llm_pricing`) | `GCP_VERTEX_API_KEY`, or ADC + `GCP_PROJECT_ID` (+ `GCP_LOCATION`, default `global`) |
 | `cloudferro/sherlock/sherlock.py` | `sherlock_get_completion()` | `CLOUDFERRO_SHERLOCK_KEY` |
 | `cloudferro/sherlock/sherlock_embedding.py` | `sherlock_create_embedding()`, `sherlock_create_embeddings()` | `CLOUDFERRO_SHERLOCK_KEY` |
 | `asemblyai/asemblyai_transcript.py` | `transcript_assemblyai()` | `ASSEMBLYAI` |
@@ -365,7 +365,7 @@ POSTGRESQL_SSLMODE  # Optional: set to 'require' for RDS encrypted connections
 # LLM / Embedding providers
 OPENAI_API_KEY, OPENAI_ORGANIZATION
 AWS_REGION
-GCP_PROJECT_ID, GCP_LOCATION
+GCP_PROJECT_ID, GCP_LOCATION, GCP_VERTEX_API_KEY  # Vertex AI: API key, or ADC (GOOGLE_APPLICATION_CREDENTIALS) + project
 CLOUDFERRO_SHERLOCK_KEY
 ASSEMBLYAI
 

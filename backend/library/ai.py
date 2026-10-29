@@ -23,13 +23,13 @@ OPENAI_MODELS = ("gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o", "gpt-4
 BEDROCK_MODELS = ("amazon.titan-tg1-large", "amazon.nova-micro", "amazon.nova-pro", "aws")
 SHERLOCK_MODELS = ("Bielik-11B-v2.3-Instruct", "Bielik-11B-v3.0-Instruct")
 SHERLOCK_VISION_MODELS = ("google/gemma-4-31B-it", "mistralai/Mistral-Small-4-119B-2603")
-GOOGLE_MODELS = ("gemini-2.0-flash-lite-001",)
+GOOGLE_MODELS = ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
 
 # Providers whose API accepts a separate system-role message.
-_SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs", "openrouter")
+_SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs", "openrouter", "google-vertexai")
 # Providers accepting response_format; Sherlock enforces json_schema
 # (verified live 2026-07-18) but rejects json_object with HTTP 400.
-_RESPONSE_FORMAT_PROVIDERS = ("cloudferro", "openrouter")
+_RESPONSE_FORMAT_PROVIDERS = ("cloudferro", "openrouter", "google-vertexai")
 
 
 def _unified_tokens(response) -> tuple[int | None, int | None, int | None]:
@@ -152,7 +152,9 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         def call():
             import library.api.google.google_vertexai as google_vertexai
 
-            return google_vertexai.connect_to_google_llm_with_role(query, model)
+            return google_vertexai.connect_to_google_llm_with_role(
+                query, model, temperature=temperature, max_output_tokens=max_token_count, top_p=top_p,
+                system_prompt=system_prompt, response_format=response_format)
 
     else:
         raise Exception(f"ERROR: Unknown model {model}")

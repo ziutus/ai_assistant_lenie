@@ -98,7 +98,7 @@ class TestSuggestTags:
 
 
 class TestDefaultModel:
-    MODELS = [{"id": "Bielik-11B-v3.0-Instruct"}, {"id": "gpt-4o-mini"}, {"id": "gemini-2.0-flash-lite-001"}]
+    MODELS = [{"id": "Bielik-11B-v3.0-Instruct"}, {"id": "gpt-4o-mini"}, {"id": "gemini-3.5-flash-lite"}]
 
     def _setup(self, monkeypatch, saved, models=None):
         monkeypatch.setattr("library.app_settings.get_setting", lambda session, key, default=None: saved)
@@ -108,16 +108,16 @@ class TestDefaultModel:
                             lambda model, task="x": any(item["id"] == model for item in listed))
 
     def test_saved_choice_wins_when_allowed(self, monkeypatch):
-        self._setup(monkeypatch, "gemini-2.0-flash-lite-001")
-        assert suggester.default_model(MagicMock()) == "gemini-2.0-flash-lite-001"
+        self._setup(monkeypatch, "gemini-3.5-flash-lite")
+        assert suggester.default_model(MagicMock()) == "gemini-3.5-flash-lite"
 
     def test_stale_choice_falls_back_to_gpt_4o_mini_not_bielik(self, monkeypatch):
         self._setup(monkeypatch, "removed-model")
         assert suggester.default_model(MagicMock()) == "gpt-4o-mini"
 
     def test_without_gpt_the_first_non_bielik_model(self, monkeypatch):
-        self._setup(monkeypatch, None, [{"id": "Bielik-11B-v3.0-Instruct"}, {"id": "gemini-2.0-flash-lite-001"}])
-        assert suggester.default_model(MagicMock()) == "gemini-2.0-flash-lite-001"
+        self._setup(monkeypatch, None, [{"id": "Bielik-11B-v3.0-Instruct"}, {"id": "gemini-3.5-flash-lite"}])
+        assert suggester.default_model(MagicMock()) == "gemini-3.5-flash-lite"
 
     def test_only_bielik_is_still_better_than_nothing(self, monkeypatch):
         self._setup(monkeypatch, None, [{"id": "Bielik-11B-v3.0-Instruct"}])
