@@ -64,6 +64,33 @@ def test_generation_settings_are_forwarded(monkeypatch):
     assert (kwargs["config"].temperature, kwargs["config"].max_output_tokens, kwargs["config"].top_p) == (0.2, 512, 0.8)
 
 
+SCHEMA = {"type": "object", "properties": {"topics": {"type": "array", "items": {"type": "string"}}}}
+
+
+def test_json_schema_and_system_prompt_are_forwarded(monkeypatch):
+    _, client = _setup(monkeypatch, {"GCP_PROJECT_ID": "proj"}, _response())
+    gv.connect_to_google_llm_with_role(
+        "pytanie", "gemini-3.1-flash-lite", system_prompt="Jesteś klasyfikatorem.",
+        response_format={"type": "json_schema", "json_schema": {"name": "x", "schema": SCHEMA}})
+    config = client.models.generate_content.call_args.kwargs["config"]
+    assert config.system_instruction == "Jesteś klasyfikatorem."
+    assert config.response_mime_type == "application/json" and config.response_json_schema == SCHEMA
+
+
+def test_plain_call_sends_neither_schema_nor_system_instruction(monkeypatch):
+    _, client = _setup(monkeypatch, {"GCP_PROJECT_ID": "proj"}, _response())
+    gv.connect_to_google_llm_with_role("pytanie", "gemini-3.1-flash-lite")
+    config = client.models.generate_content.call_args.kwargs["config"]
+    assert not hasattr(config, "system_instruction") and not hasattr(config, "response_json_schema")
+
+
+@pytest.mark.parametrize("response_format", [{"type": "json_object"}, {"type": "json_schema"}, {}])
+def test_unusable_response_format_is_rejected(monkeypatch, response_format):
+    _setup(monkeypatch, {"GCP_PROJECT_ID": "proj"}, _response())
+    with pytest.raises(ValueError, match="json_schema"):
+        gv.connect_to_google_llm_with_role("pytanie", "gemini-3.1-flash-lite", response_format=response_format)
+
+
 def test_reasoning_tokens_count_as_output_tokens(monkeypatch):
     _setup(monkeypatch, {"GCP_PROJECT_ID": "proj"}, _response(usage=USAGE))
     result = gv.connect_to_google_llm_with_role("pytanie", "gemini-3.5-flash-lite")

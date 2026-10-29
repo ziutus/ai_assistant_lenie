@@ -42,6 +42,14 @@ def _client(genai):
     return genai.Client(vertexai=True, project=project, location=_setting("GCP_LOCATION") or DEFAULT_LOCATION)
 
 
+def _json_schema(response_format: dict) -> dict:
+    """The JSON Schema inside an OpenAI-style ``{"type": "json_schema", "json_schema": {"schema": ...}}``."""
+    schema = (response_format.get("json_schema") or {}).get("schema") if response_format.get("type") == "json_schema" else None
+    if not isinstance(schema, dict):
+        raise ValueError("response_format must be {'type': 'json_schema', 'json_schema': {'schema': {...}}}")
+    return schema
+
+
 def connect_to_google_llm_with_role(
     prompt: str,
     model_id: str,
@@ -49,15 +57,24 @@ def connect_to_google_llm_with_role(
     temperature: float | None = None,
     max_output_tokens: int | None = None,
     top_p: float | None = None,
+    system_prompt: str | None = None,
+    response_format: dict | None = None,
 ) -> AiResponse:
     if not prompt or not prompt.strip():
         raise ValueError("prompt cannot be empty")
     if not model_id or not model_id.strip():
         raise ValueError("model_id cannot be empty")
 
+    settings = {"temperature": temperature, "max_output_tokens": max_output_tokens, "top_p": top_p}
+    if system_prompt is not None:
+        settings["system_instruction"] = system_prompt
+    if response_format is not None:
+        settings["response_mime_type"] = "application/json"
+        settings["response_json_schema"] = _json_schema(response_format)
+
     genai, types = _genai()
     client = _client(genai)
-    config = types.GenerateContentConfig(temperature=temperature, max_output_tokens=max_output_tokens, top_p=top_p)
+    config = types.GenerateContentConfig(**settings)
 
     try:
         response = client.models.generate_content(model=model_id, contents=prompt, config=config)
