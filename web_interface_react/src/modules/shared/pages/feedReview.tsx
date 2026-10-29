@@ -518,7 +518,7 @@ export default function FeedReview() {
             <button disabled={busy} onClick={() => void changeDiscussion(item.id, "open")}>Otwórz ponownie</button>
           </>}
         </div>}
-        {modelsLoaded && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} templateId={templateId === "" ? undefined : templateId} onModelCall={onModelCall} />}
+        {modelsLoaded && !(view === "new" && item.status === "new") && <ContentGroupsPanel key={item.id} feedItemId={item.id} initialGroups={item.groups} autoSuggest={modelsLoaded} suggestModel={suggestModel || undefined} templateId={templateId === "" ? undefined : templateId} onModelCall={onModelCall} />}
         {view !== "discuss" && <div>
           {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : item.status === "saved_for_later" ? <>
             <span style={{ color: "#166534", fontWeight: 600 }}>Zachowano tylko link do oceny</span>{" "}
