@@ -32,6 +32,24 @@ type FeedItem = {
   groups?: ContentGroup[];
 };
 
+// Some feeds put the whole article into the summary (item 12449: ~15 600 characters),
+// which pushed the decision buttons far below the fold.
+export const SUMMARY_COLLAPSE_AT = 1200;
+const SUMMARY_PREVIEW_CHARS = 800;
+
+export function FeedSummary({ text }: { text: string }) {
+  const [expanded, setExpanded] = React.useState(false);
+  if (text.length <= SUMMARY_COLLAPSE_AT) return <p>{text}</p>;
+  const cut = text.lastIndexOf(" ", SUMMARY_PREVIEW_CHARS);
+  const preview = `${text.slice(0, cut > 0 ? cut : SUMMARY_PREVIEW_CHARS)}…`;
+  return <div>
+    <p>{expanded ? text : preview}</p>
+    <button type="button" onClick={() => setExpanded(value => !value)}>
+      {expanded ? "Zwiń streszczenie" : `Pokaż całe streszczenie (${text.length} znaków)`}
+    </button>
+  </div>;
+}
+
 type PromptVersion = { id: number; version: number; label: string; note: string | null; is_active: boolean };
 
 type Action = "import" | "skip" | "ignore" | "save-for-later" | "restore" | "to_radar";
@@ -485,7 +503,7 @@ export default function FeedReview() {
           Ważne do: {formatDate(item.expires_at)} ({item.retention_months} mies.)
         </div>}
         <a href={item.url} target="_blank" rel="noreferrer">{view === "later" ? "Otwórz materiał" : item.url}</a>
-        {item.summary && <p>{item.summary}</p>}
+        {item.summary && <FeedSummary key={`summary-${item.id}`} text={item.summary} />}
         <FeedItemComment key={`comment-${item.id}`} itemId={item.id} initialNote={item.review_note}
           seedDocumentId={item.seed_document_id}
           onSeedCreated={documentId => {
@@ -604,7 +622,7 @@ export default function FeedReview() {
         {item.saved_at && <>{item.published_at ? " · " : ""}Zapisano: {formatDate(item.saved_at)}</>}
         {item.expires_at && <> · Ważne do: {formatDate(item.expires_at)}</>}
       </div>
-      {item.summary && <p>{item.summary}</p>}
+      {item.summary && <FeedSummary key={`summary-${item.id}`} text={item.summary} />}
       {item.review_note && <p style={{ color: "#475569", fontStyle: "italic" }}>Komentarz: {item.review_note}</p>}
       {!!item.groups?.length && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
         {item.groups.map(group => <span key={group.id} style={{ background: group.kind === "priority" ? "#dbeafe" : "#f1f5f9", borderRadius: 12, padding: "2px 8px", fontSize: ".85rem" }}>{group.name}</span>)}
