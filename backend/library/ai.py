@@ -152,7 +152,8 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         def call():
             import library.api.google.google_vertexai as google_vertexai
 
-            return google_vertexai.connect_to_google_llm_with_role(query, model)
+            return google_vertexai.connect_to_google_llm_with_role(
+                query, model, temperature=temperature, max_output_tokens=max_token_count, top_p=top_p)
 
     else:
         raise Exception(f"ERROR: Unknown model {model}")

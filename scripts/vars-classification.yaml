@@ -543,17 +543,23 @@ groups:
     description: "Google Cloud Platform settings"
     variables:
       GCP_PROJECT_ID:
-        description: "GCP project ID for Vertex AI"
+        description: "GCP project ID for Vertex AI (not needed with GCP_VERTEX_API_KEY)"
         type: config
-        required_when: "LLM_PROVIDER=vertex"
-        example: "lenie-ai"
-        used_by: [local]
+        required: false
+        example: "lenie-ai-478308"
+        used_by: [docker, local]
       GCP_LOCATION:
-        description: "GCP region for Vertex AI"
+        description: "Vertex AI endpoint location; defaults to global (Gemini 3.x, cheapest price tier)"
         type: config
-        required_when: "LLM_PROVIDER=vertex"
-        example: "europe-central2"
-        used_by: [local]
+        required: false
+        default: "global"
+        example: "global"
+        used_by: [docker, local]
+      GCP_VERTEX_API_KEY:
+        description: "Vertex AI API key; alternative to Application Default Credentials for the Gemini calls of ai_ask()"
+        type: secret
+        required: false
+        used_by: [docker, local]
       GCP_FIRESTORE_PROJECT_ID:
         description: "GCP project ID for Firestore database"
         type: config

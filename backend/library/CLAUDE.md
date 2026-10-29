@@ -315,7 +315,7 @@ Supported models:
 | `aws/s3_aws.py` | `s3_file_exist()`, `s3_take_file()` | AWS credentials |
 | `aws/text_detect_language_aws.py` | `detect_text_language_aws()` (Comprehend) | AWS credentials |
 | `aws/credentionals.py` | `validate_credentials()` (STS) | AWS credentials |
-| `google/google_vertexai.py` | `connect_to_google_llm_with_role()` | `GCP_PROJECT_ID`, `GCP_LOCATION` |
+| `google/google_vertexai.py` | `connect_to_google_llm_with_role()` (google-genai SDK, `vertexai=True`; tokens incl. reasoning tokens go to `AiResponse`, priced from `llm_pricing`) | `GCP_VERTEX_API_KEY`, or ADC + `GCP_PROJECT_ID` (+ `GCP_LOCATION`, default `global`) |
 | `cloudferro/sherlock/sherlock.py` | `sherlock_get_completion()` | `CLOUDFERRO_SHERLOCK_KEY` |
 | `cloudferro/sherlock/sherlock_embedding.py` | `sherlock_create_embedding()`, `sherlock_create_embeddings()` | `CLOUDFERRO_SHERLOCK_KEY` |
 | `asemblyai/asemblyai_transcript.py` | `transcript_assemblyai()` | `ASSEMBLYAI` |
@@ -365,7 +365,7 @@ POSTGRESQL_SSLMODE  # Optional: set to 'require' for RDS encrypted connections
 # LLM / Embedding providers
 OPENAI_API_KEY, OPENAI_ORGANIZATION
 AWS_REGION
-GCP_PROJECT_ID, GCP_LOCATION
+GCP_PROJECT_ID, GCP_LOCATION, GCP_VERTEX_API_KEY  # Vertex AI: API key, or ADC (GOOGLE_APPLICATION_CREDENTIALS) + project
 CLOUDFERRO_SHERLOCK_KEY
 ASSEMBLYAI
 
