@@ -693,6 +693,7 @@ These write to the private contact book (personal CRM), independent of the NER p
   python imports/whatsapp_chat_import.py --export "chat.zip" --chat-key "..." --chat-name "..." --apply --skip-media   # text log only, no MinIO uploads
   python imports/whatsapp_chat_import.py --export "chat.zip" --chat-key "..." --chat-name "..." --apply --limit 50 -v # smoke test
   ```
+  Live sync (`library/whatsapp_sync_service.py`) now covers the same tables without manual exports; the importer skips a text message that has an unambiguous synced twin (same text, same minute, exactly one match) so importing an export after sync does not double it.
   Known limitation: a message first imported with `--skip-media` won't retroactively get its attachment uploaded on a later re-import (its `dedup_hash` is unchanged, so it's treated as already-imported) — delete that row first if a media backfill is needed.
 - **`whatsapp_chat_backfill_contacts.py`** — one-off: re-resolves `contact_id` for already-imported `chat_messages` rows left `NULL` before `whatsapp_chat_import.py` stripped the sender's community-name suffix — re-running the importer itself won't fix these, since `dedup_hash` for an already-present message is unchanged and the row is skipped as a duplicate rather than updated. Only touches rows with `contact_id IS NULL`; uses the same resolve-only `find_contact()` (ambiguous same-name contacts stay unresolved, matching the importer's own safety rule).
   ```

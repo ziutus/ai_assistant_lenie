@@ -1,8 +1,9 @@
+# Build context is the repository root (infra/docker/nas-deploy.sh), like the other services.
 FROM golang:1.26-alpine AS build
 WORKDIR /src
-COPY go.mod go.sum ./
+COPY whatsapp_bridge/go.mod whatsapp_bridge/go.sum ./
 RUN go mod download
-COPY *.go ./
+COPY whatsapp_bridge/*.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/whatsapp_bridge .
 
 FROM alpine:3.20

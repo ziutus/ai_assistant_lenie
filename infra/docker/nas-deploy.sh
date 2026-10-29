@@ -54,6 +54,7 @@ declare -A SVC_IMAGE=(
     [document-worker]="lenie-ai-document-worker:latest"
     [db]="lenie-ai-db:latest"
     [ner-service]="lenie-ner-service:latest"
+    [whatsapp-bridge]="lenie-whatsapp-bridge:latest"
     [lenie-mcp]="lenie-mcp:latest"
 )
 declare -A SVC_REGISTRY_IMAGE=(
@@ -65,6 +66,7 @@ declare -A SVC_REGISTRY_IMAGE=(
     [document-worker]="${REGISTRY}/lenie-ai-document-worker:latest"
     [db]="${REGISTRY}/lenie-ai-db:latest"
     [ner-service]="${REGISTRY}/lenie-ner-service:latest"
+    [whatsapp-bridge]="${REGISTRY}/lenie-whatsapp-bridge:latest"
     [lenie-mcp]="${REGISTRY}/lenie-mcp:latest"
 )
 declare -A SVC_DOCKERFILE=(
@@ -74,6 +76,7 @@ declare -A SVC_DOCKERFILE=(
     [document-worker]="backend/Dockerfile"
     [db]="infra/docker/Postgresql/Dockerfile"
     [ner-service]="ner_service/Dockerfile"
+    [whatsapp-bridge]="whatsapp_bridge/Dockerfile"
     [lenie-mcp]="lenie_mcp/Dockerfile"
 )
 declare -A SVC_COMPOSE_NAME=(
@@ -86,6 +89,7 @@ declare -A SVC_COMPOSE_NAME=(
     [db]="lenie-ai-db"
     [minio]="lenie-minio"
     [ner-service]="lenie-ner-service"
+    [whatsapp-bridge]="lenie-whatsapp-bridge"
     [lenie-mcp]="lenie-mcp"
     [obsidian-headless-sync]="obsidian-headless-sync"
 )
@@ -396,9 +400,9 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, db, minio, ner-service, lenie-mcp, obsidian-headless-sync, all (default: core services)"
+echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, db, minio, ner-service, whatsapp-bridge, lenie-mcp, obsidian-headless-sync, all (default: core services)"
     echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
-    echo "  minio, ner-service, lenie-mcp and obsidian-headless-sync must be deployed explicitly."
+    echo "  minio, ner-service, whatsapp-bridge, lenie-mcp and obsidian-headless-sync must be deployed explicitly."
     echo ""
     echo "Options:"
     echo "  --skip-build      Skip Docker build, push existing local image"
@@ -462,7 +466,7 @@ while [[ $# -gt 0 ]]; do
         --mark-done=*)   MARK_DONE="true"; MARK_DONE_NAME="${1#--mark-done=}"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|lenie-mcp|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|whatsapp-bridge|lenie-mcp|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done

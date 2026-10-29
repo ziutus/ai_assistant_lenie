@@ -3,6 +3,7 @@ import axios from "axios";
 import { NavLink, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination, PAGE_SIZES } from "../components/Pagination/pagination";
+import WhatsappSyncPanel from "../components/WhatsappSyncPanel/whatsappSyncPanel";
 
 // Imported chat logs (currently WhatsApp only, backend/imports/whatsapp_chat_import.py) —
 // read-only browsing of chat_conversations/chat_messages, backend/library/chat_routes.py.
@@ -70,6 +71,8 @@ const Chats = () => {
         Pełne logi zaimportowanych czatów (obecnie WhatsApp) — patrz{" "}
         <code>backend/imports/whatsapp_chat_import.py</code>. Tylko do odczytu.
       </p>
+
+      <WhatsappSyncPanel />
 
       <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading}
         label="rozmów" onPageChange={(p) => fetchConversations(p)} />

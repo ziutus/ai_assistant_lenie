@@ -80,7 +80,7 @@ services:
     mem_reservation: 384m
     cpus: 0.75
     pids_limit: 192
-    command: ["/app/.venv/bin/python", "worker.py", "--scheduler", "--types", "feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect,retention_sweep"]
+    command: ["/app/.venv/bin/python", "worker.py", "--scheduler", "--types", "feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect,retention_sweep,whatsapp_sync"]
     env_file:
       - /share/Container/lenie-env/.env
     # See the NOTE on lenie-ai-server above — same SECRETS_BACKEND=vault caveat
@@ -319,6 +319,34 @@ services:
     networks:
       - lenie-net
 
+  # Receive-only WhatsApp companion device (docs/deployment/nas/whatsapp-sync.md, ADR-031).
+  # Internal API on lenie-net only (http://lenie-whatsapp-bridge:8095, bearer token); the
+  # loopback-published port serves pairing over an SSH tunnel and is not reachable from the LAN.
+  # The session (device keys) and the journal live in the named volume — back it up, never commit it.
+  lenie-whatsapp-bridge:
+    image: 192.168.200.7:5005/lenie-whatsapp-bridge:latest
+    container_name: lenie-whatsapp-bridge
+    restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 96m
+    cpus: 0.5
+    pids_limit: 128
+    # WA_BRIDGE_TOKEN comes from the NAS env file (it must equal WHATSAPP_BRIDGE_TOKEN in Vault,
+    # the backend side of the same secret). Without it only this container refuses to start.
+    env_file:
+      - /share/Container/lenie-env/.env
+    environment:
+      WA_BRIDGE_DATA_DIR: /data
+      WA_BRIDGE_MAX_MEDIA_BYTES: "52428800"
+      WA_BRIDGE_MEDIA_CONCURRENCY: "2"
+      WA_BRIDGE_UNSELECTED_RETENTION_HOURS: "168"
+    volumes:
+      - lenie-whatsapp-data:/data
+    ports:
+      - "127.0.0.1:8095:8095"
+    networks:
+      - lenie-net
+
   lenie-ner-service:
     image: 192.168.200.7:5005/lenie-ner-service:latest
     container_name: lenie-ner-service
@@ -410,6 +438,7 @@ volumes:
     external: true
   lenie-document-work:
     external: true
+  lenie-whatsapp-data:
   lenie-obsidian-vault-data:
     external: true
   lenie-obsidian-config-data:
