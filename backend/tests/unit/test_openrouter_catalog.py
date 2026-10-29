@@ -128,7 +128,7 @@ def test_registry_flags_json_schema_support_per_provider():
         items = {item["id"]: item for item in selectable_models()}
     assert items["Bielik-11B-v3.0-Instruct"]["supports_structured_outputs"] is True
     assert items["gpt-4o-mini"]["supports_structured_outputs"] is False  # ai_ask() does not forward a schema there
-    assert items["gemini-2.0-flash-lite-001"]["supports_structured_outputs"] is False
+    assert items["gemini-3.5-flash-lite"]["supports_structured_outputs"] is False
     assert items["openrouter/openai/gpt-4o-mini"]["supports_structured_outputs"] is True  # from the catalog
     assert items["openrouter/qwen/qwen-2.5-7b-instruct"]["supports_structured_outputs"] is None  # not in the catalog
 

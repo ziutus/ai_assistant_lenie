@@ -20,7 +20,7 @@ def test_suggestion_models_exclude_providers_without_json_schema(monkeypatch):
     monkeypatch.setattr(registry, "_openrouter_enabled", lambda: True)
     ids = {item["id"] for item in registry._base_models(TASK)}
     assert "Bielik-11B-v3.0-Instruct" in ids and "openrouter/google/gemini-2.5-flash-lite" in ids
-    assert not ids & {"gpt-4o-mini", "gemini-2.0-flash-lite-001"}
+    assert not ids & {"gpt-4o-mini", "gemini-3.5-flash-lite"}
     # the other tasks keep the full list
     assert "gpt-4o-mini" in {item["id"] for item in registry._base_models("tool_tags")}
     assert registry.is_selectable("gpt-4o-mini", "tool_tags") and not registry.is_selectable("gpt-4o-mini", TASK)

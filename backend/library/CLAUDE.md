@@ -235,7 +235,7 @@ Entry point: `ai_ask(query, model, temperature, max_token_count, top_p, *, syste
 Supported models:
 - **OpenAI**: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-mini
 - **AWS Bedrock**: amazon.titan-tg1-large, amazon.nova-micro, amazon.nova-pro
-- **Google Vertex AI**: gemini-2.0-flash-lite-001
+- **Google Vertex AI**: gemini-3.5-flash-lite
 - **CloudFerro**: Bielik-11B-v2.3-Instruct, Bielik-11B-v3.0-Instruct (Polish)
 - **ARK Labs**: `arklabs/<model>` (stateless/stateful GPU session variant)
 

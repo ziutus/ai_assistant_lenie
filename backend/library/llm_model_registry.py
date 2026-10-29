@@ -20,7 +20,7 @@ _ORGANIZATION_DESCRIPTION_MODELS: tuple[tuple[str, str, str, bool, bool], ...] =
     ("Bielik-11B-v3.0-Instruct", "Bielik 11B v3.0 (CloudFerro)", "cloudferro", False, True),
     ("Bielik-11B-v2.3-Instruct", "Bielik 11B v2.3 (CloudFerro)", "cloudferro", False, True),
     ("gpt-4o-mini", "GPT-4o mini (OpenAI)", "openai", False, True),
-    ("gemini-2.0-flash-lite-001", "Gemini 2.0 Flash Lite (Google)", "google-vertexai", False, True),
+    ("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Google)", "google-vertexai", False, True),
     ("openrouter/openai/gpt-4o-mini", "GPT-4o mini (OpenRouter)", "openrouter", True, False),
     ("openrouter/google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (OpenRouter)", "openrouter", True, False),
     ("openrouter/meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B (OpenRouter)", "openrouter", True, False),
