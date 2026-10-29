@@ -190,11 +190,11 @@ it("shows a fixed, dismissible error when changing page fails", async () => {
 
 it("defaults to single mode and requests suggestions when the selected model changes", async () => {
   const model = "openrouter/google/gemini-2.5-flash-lite";
-  localStorage.setItem("lenie_feedReviewFilters", JSON.stringify({ feedSourceId: "", view: "new" }));
-  const second = { ...feedItem, id: 8, title: "Drugi wpis" };
+  localStorage.setItem("lenie_feedReviewFilters", JSON.stringify({ feedSourceId: "", view: "later" }));
+  const second = { ...feedItem, id: 8, title: "Drugi wpis", status: "saved_for_later" };
   vi.mocked(fetch).mockImplementation(async (url, init) => {
     const u = String(url);
-    if (u.includes("/feed_items?")) return jsonResponse({ feed_items: [feedItem, second], total: 2 });
+    if (u.includes("/feed_items?")) return jsonResponse({ feed_items: [{ ...feedItem, status: "saved_for_later" }, second], total: 2 });
     if (u.endsWith("/feed_sources")) return jsonResponse({ feed_sources: [] });
     if (u.endsWith("/content_group_model")) return jsonResponse({ default_model: model, models: [
       { id: model, label: "Gemini", external: true }, { id: "gpt-4o-mini", label: "GPT" },
@@ -286,7 +286,7 @@ it("edits item comments in both modes and on the later tab", async () => {
   await waitFor(() => expect(screen.getByLabelText(label)).toHaveProperty("value", feedItem.review_note));
 });
 
-it("switches modes in the URL, remembers all mode, and suggests every list item", async () => {
+it("switches modes in the URL, remembers all mode, and suggests topics only for kept list items", async () => {
   const model = "gpt-4o-mini";
   vi.mocked(fetch).mockImplementation(async (url, init) => {
     const u = String(url);
@@ -303,12 +303,14 @@ it("switches modes in the URL, remembers all mode, and suggests every list item"
   expect(screen.getAllByLabelText("Stronicowanie wpisów feedu")).toHaveLength(2);
   expect(screen.queryByLabelText("Nawigacja wpisów")).toBeNull();
   const posts = () => vi.mocked(fetch).mock.calls.filter(([url, init]) => String(url).endsWith("/group-suggestions") && init?.method === "POST");
-  await waitFor(() => expect(posts()).toHaveLength(2));
-  expect(posts().map(([, init]) => init?.body)).toEqual([JSON.stringify({ model }), JSON.stringify({ model })]);
+  // Undecided entries on the "Nowe" tab get no topic suggestions; they start once the text is kept.
+  expect(posts()).toHaveLength(0);
   const loads = () => vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("/feed_items?")).length;
   const before = loads();
   fireEvent.click(screen.getAllByText("Do przeczytania")[0]);
   await screen.findByText("Zachowano tylko link do oceny");
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  expect(posts()[0][1]?.body).toBe(JSON.stringify({ model }));
   expect(loads()).toBe(before);
   expect(screen.getAllByRole("article")).toHaveLength(2);
   fireEvent.click(screen.getByText("Po jednym wpisie"));
