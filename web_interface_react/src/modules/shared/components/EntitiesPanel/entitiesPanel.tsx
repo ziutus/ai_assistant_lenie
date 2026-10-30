@@ -4,7 +4,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import { copyText } from "../../utils/copyText";
-import { modelOptionText, type ModelOption } from "../../utils/modelDetails";
+import { isModelUnavailable, modelOptionText, type ModelOption } from "../../utils/modelDetails";
 import type { CountryTag } from "../CountryMap/countryMap";
 import InfoTip from "../InfoTip";
 import SkillHint from "../SkillHint";
@@ -2466,7 +2466,7 @@ const EntitiesPanel = ({
             <div style={{ marginTop: 8 }}>
               <label style={{ display: "block" }}>Model
                 <select value={orgModel} onChange={(e) => setOrgModel(e.target.value)} style={{ marginLeft: 6 }}>
-                  {orgModels.map((model) => <option key={model.id} value={model.id}>{modelOptionText(model)}</option>)}
+                  {orgModels.map((model) => <option key={model.id} value={model.id} disabled={isModelUnavailable(model)}>{modelOptionText(model)}</option>)}
                 </select>
               </label>
               <label style={{ display: "block", marginTop: 6 }}>Prompt wysyłany do modelu (możesz go zmienić)
@@ -2493,7 +2493,7 @@ const EntitiesPanel = ({
                     <div>Wybierz od 2 do 4 modeli (ten sam prompt trafi do wszystkich):</div>
                     {orgModels.map((model) => (
                       <label key={model.id} style={{ display: "block" }}>
-                        <input type="checkbox" checked={arenaModels.includes(model.id)} onChange={() => toggleArenaModel(model.id)} />
+                        <input type="checkbox" checked={arenaModels.includes(model.id)} disabled={isModelUnavailable(model)} onChange={() => toggleArenaModel(model.id)} />
                         {" "}{modelOptionText(model)}{model.external ? " ⚠ zewnętrzny" : ""}
                       </label>
                     ))}

@@ -1,9 +1,11 @@
 """Server-side allowlist of language models a reviewer may pick for a task.
 
-Only models that ``library.ai.ai_ask`` can dispatch are listed; the endpoint rejects any other id, so a
-client can never route a document to an arbitrary provider. OpenRouter models are listed only while the
-``OPENROUTER_ENABLED`` flag is on, because they send the document text to an external intermediary.
-The content_group_suggestion task sends public feed titles/summaries to that provider;
+The list lives in the ``llm_models`` table (ADR-032, ``library.llm_model_store``): adding or retiring a model is
+a REST call, not a deploy. Only models that ``library.ai.ai_ask`` can dispatch are listed; the endpoint rejects
+any other id, so a client can never route a document to an arbitrary provider. A ``retired`` model is hidden
+from every picker; a ``deprecated`` one is still offered, with its ``status`` and ``retires_on``. OpenRouter
+models are listed only while the ``OPENROUTER_ENABLED`` flag is on, because they send the document text to an
+external intermediary. The content_group_suggestion task sends public feed titles/summaries to that provider;
 document topic suggestions retain their existing Bielik model.
 
 Limits and prices are not hard-coded: an OpenRouter model takes them from the live public catalog
@@ -13,22 +15,11 @@ Whatever cannot be resolved is reported as ``None`` — never as a guessed numbe
 
 import logging
 
+from library import llm_model_store
+
 logger = logging.getLogger(__name__)
 
-# (id, label, provider, external, verified) — ``verified`` False = id/price/quality not yet checked by a human.
-_ORGANIZATION_DESCRIPTION_MODELS: tuple[tuple[str, str, str, bool, bool], ...] = (
-    ("Bielik-11B-v3.0-Instruct", "Bielik 11B v3.0 (CloudFerro)", "cloudferro", False, True),
-    ("Bielik-11B-v2.3-Instruct", "Bielik 11B v2.3 (CloudFerro)", "cloudferro", False, True),
-    ("gpt-4o-mini", "GPT-4o mini (OpenAI)", "openai", False, True),
-    ("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite (Google Vertex)", "google-vertexai", False, True),
-    ("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Google Vertex)", "google-vertexai", False, True),
-    ("openrouter/openai/gpt-4o-mini", "GPT-4o mini (OpenRouter)", "openrouter", True, False),
-    ("openrouter/google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (OpenRouter)", "openrouter", True, False),
-    ("openrouter/meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B (OpenRouter)", "openrouter", True, False),
-    ("openrouter/qwen/qwen-2.5-7b-instruct", "Qwen 2.5 7B (OpenRouter)", "openrouter", True, False),
-)
-
-# Tasks that share the list above. ``tool_tags`` sends only public tool metadata (name, URL, description).
+# Tasks that share the model list. ``tool_tags`` sends only public tool metadata (name, URL, description).
 # Content-group suggestions send public feed titles/summaries to an external provider
 # when an OpenRouter model is selected; document classification stays on Bielik.
 _TASKS = {"organization_description", "tool_tags", "content_group_suggestion", "transcript_chapters"}
@@ -51,17 +42,50 @@ def _openrouter_enabled() -> bool:
         return False
 
 
+def _provider_problem(provider: str) -> str | None:
+    """Why models of ``provider`` cannot be called right now (missing credentials), or None.
+
+    Only Google Vertex AI has a local check today; every other provider is assumed to be reachable.
+    """
+    if provider != "google-vertexai":
+        return None
+    from library.api.google import google_vertexai
+
+    try:
+        return google_vertexai.configuration_problem()
+    except Exception:  # a failed check must not hide the model
+        return None
+
+
 def _base_models(task: str) -> list[dict]:
-    """The allowlist as ``{id, label, provider, external, verified}`` dicts — no network, no database."""
+    """The offered models as ``{id, label, provider, external, verified, status, retires_on, available,
+    unavailable_reason}`` dicts.
+
+    No network; the database is read through the cached ``llm_model_store`` (the code seed while it is unreachable).
+    A model whose provider has no credentials is still listed — greyed out in the pickers, with the reason — but is
+    not ``is_selectable``.
+    """
     if task not in _TASKS:
         return []
     from library.ai import _RESPONSE_FORMAT_PROVIDERS
 
     show_openrouter = _openrouter_enabled()
     needs_json = task in _STRUCTURED_OUTPUT_TASKS
-    return [{"id": model_id, "label": label, "provider": provider, "external": external, "verified": verified}
-            for model_id, label, provider, external, verified in _ORGANIZATION_DESCRIPTION_MODELS
-            if (provider != "openrouter" or show_openrouter) and (not needs_json or provider in _RESPONSE_FORMAT_PROVIDERS)]
+    problems: dict[str, str | None] = {}
+    models = []
+    for m in llm_model_store.get_models():
+        if m.status == "retired" or (m.provider == "openrouter" and not show_openrouter):
+            continue
+        if needs_json and m.provider not in _RESPONSE_FORMAT_PROVIDERS:
+            continue
+        if m.provider not in problems:
+            problems[m.provider] = _provider_problem(m.provider)
+        problem = problems[m.provider]
+        models.append({"id": m.model_id, "label": m.label, "provider": m.provider, "external": m.external,
+                       "verified": m.verified, "status": m.status,
+                       "retires_on": m.retires_on.isoformat() if m.retires_on else None,
+                       "available": problem is None, "unavailable_reason": problem})
+    return models
 
 
 def _money(value) -> str | None:
@@ -153,8 +177,12 @@ def selectable_models(task: str = "organization_description") -> list[dict]:
 
 
 def is_selectable(model: str, task: str = "organization_description") -> bool:
-    """Allowlist check only — deliberately no catalog or database access, it runs on every request."""
-    return any(item["id"] == model for item in _base_models(task))
+    """Allowlist check — no catalog lookup and no query of its own (the store is cached), it runs on every request.
+
+    A listed model whose provider has no credentials is NOT selectable: the endpoints reject it and a saved household
+    choice falls back to the task default until the credential is configured.
+    """
+    return any(item["id"] == model and item["available"] for item in _base_models(task))
 
 
 def model_details(model: str, task: str = "organization_description") -> dict | None:

@@ -12,7 +12,16 @@ export interface ModelOption {
   listed_by_provider?: boolean | null;
   /** true = the model honours a JSON-schema response format; false = it does not; null/undefined = unknown. */
   supports_structured_outputs?: boolean | null;
+  /** false = the provider has no credentials configured: shown greyed out with `unavailable_reason`, cannot be chosen. */
+  available?: boolean;
+  unavailable_reason?: string | null;
+  /** "deprecated" = still offered, but the provider is retiring it (`retires_on`). */
+  status?: string;
+  retires_on?: string | null;
 }
+
+/** A model that cannot be chosen right now (e.g. its provider has no credentials). Unknown counts as available. */
+export const isModelUnavailable = (model: ModelOption): boolean => model.available === false;
 
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", EUR: "€", PLN: "zł" };
 
@@ -29,6 +38,8 @@ const formatPrice = (price: string, currency: string): string => {
 /** Short Polish summary of a model's price and limits ("$0.15 / $0.6 za 1 mln tok. · okno 128 tys."); "" when unknown. */
 export const describeModel = (model: ModelOption): string => {
   const parts: string[] = [];
+  if (isModelUnavailable(model)) parts.push(`niedostępny: ${model.unavailable_reason ?? "brak poświadczeń"}`);
+  if (model.status === "deprecated") parts.push(model.retires_on ? `wycofywany (${model.retires_on})` : "wycofywany");
   if (model.listed_by_provider === false) parts.push("brak w katalogu dostawcy");
   if (model.input_price_per_million != null && model.output_price_per_million != null && model.currency) {
     parts.push(`${formatPrice(model.input_price_per_million, model.currency)} / ${formatPrice(model.output_price_per_million, model.currency)} za 1 mln tok.`);

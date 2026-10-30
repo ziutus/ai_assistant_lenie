@@ -27,6 +27,17 @@ def test_suggestion_models_exclude_providers_without_json_schema(monkeypatch):
     assert registry.is_selectable("gpt-4o-mini", "tool_tags") and not registry.is_selectable("gpt-4o-mini", TASK)
 
 
+CHEAP_OPENROUTER = ("openrouter/mistralai/mistral-small-3.2-24b-instruct", "openrouter/google/gemma-3-27b-it")
+
+
+def test_cheap_openrouter_models_are_offered_only_while_openrouter_is_enabled(monkeypatch):
+    monkeypatch.setattr(registry, "_openrouter_enabled", lambda: True)
+    assert set(CHEAP_OPENROUTER) <= {item["id"] for item in registry._base_models(TASK)}
+    assert all(registry.is_selectable(model, TASK) for model in CHEAP_OPENROUTER)
+    monkeypatch.setattr(registry, "_openrouter_enabled", lambda: False)
+    assert not set(CHEAP_OPENROUTER) & {item["id"] for item in registry._base_models(TASK)}
+
+
 def test_openrouter_model_without_structured_outputs_is_dropped_unknown_is_kept(monkeypatch):
     monkeypatch.setattr(registry, "_openrouter_enabled", lambda: True)
     monkeypatch.setattr(registry, "_database_prices", lambda _models: {})
