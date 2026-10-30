@@ -35,7 +35,9 @@ from library.chat_contact_service import (
 )
 from library.db.engine import get_scoped_session
 from library.chat_senders_service import list_senders
-from library.db.models import ChatConversation, ChatMessage, Contact, Document
+from library.db.models import (
+    ChatConversation, ChatMessage, Contact, Document, WhatsappGroup, WhatsappSyncChat,
+)
 from library.whatsapp_parser import is_phone_number
 
 logger = logging.getLogger(__name__)
@@ -126,7 +128,8 @@ def _avatar_for(storage, message: ChatMessage, memo: dict) -> tuple[str | None, 
     return url, (None if known else jid)
 
 
-def _conversation_dict(conv: ChatConversation) -> dict:
+def _conversation_dict(conv: ChatConversation, community: dict | None = None) -> dict:
+    community = community or {}
     return {
         "id": conv.id,
         "platform": conv.platform,
@@ -134,7 +137,43 @@ def _conversation_dict(conv: ChatConversation) -> dict:
         "display_name": conv.display_name,
         "message_count": conv.message_count,
         "last_imported_at": conv.last_imported_at.isoformat() if conv.last_imported_at else None,
+        "community_group_id": community.get("community_group_id"),
+        "community_name": community.get("community_name"),
+        "is_community": bool(community.get("is_community")),
+        "is_announce": bool(community.get("is_announce")),
     }
+
+
+def _communities_by_conversation(session, conversation_ids: list[int]) -> dict[int, dict]:
+    """Which WhatsApp community (if any) each listed conversation belongs to.
+
+    A conversation is linked to a group through its sync chat; a sub-group points at its community by
+    ``parent_jid`` and the community's own umbrella conversation is marked ``is_community``. Two queries for
+    the whole page, nothing per row.
+    """
+    if not conversation_ids:
+        return {}
+    links = session.execute(
+        select(WhatsappSyncChat.conversation_id, WhatsappSyncChat.jid)
+        .where(WhatsappSyncChat.conversation_id.in_(conversation_ids))
+        .order_by(WhatsappSyncChat.id)
+    ).all()
+    groups = {g.jid: g for g in session.scalars(select(WhatsappGroup))}
+    result: dict[int, dict] = {}
+    for conversation_id, jid in links:
+        group = groups.get(jid)
+        if group is None or conversation_id in result:
+            continue
+        community = group if group.is_community else groups.get(group.parent_jid)
+        if community is not None and not community.is_community:
+            community = None
+        result[conversation_id] = {
+            "community_group_id": community.id if community else None,
+            "community_name": community.name if community else None,
+            "is_community": bool(group.is_community),
+            "is_announce": bool(group.is_announce or group.is_default_sub),
+        }
+    return result
 
 
 def _contact_summary(contact) -> dict | None:
@@ -153,9 +192,10 @@ def list_chat_conversations():
     rows = session.execute(
         select(ChatConversation).order_by(ChatConversation.display_name).offset(offset).limit(limit)
     ).scalars().all()
+    communities = _communities_by_conversation(session, [c.id for c in rows])
     return jsonify({
         "status": "success",
-        "conversations": [_conversation_dict(c) for c in rows],
+        "conversations": [_conversation_dict(c, communities.get(c.id)) for c in rows],
         "total": total,
         "offset": offset,
         "limit": limit,
@@ -189,10 +229,15 @@ def list_chat_messages(conversation_id: int):
     total = session.execute(select(func.count()).select_from(ChatMessage).where(*conditions)).scalar_one()
     offset = request.args.get("offset", default=0, type=int)
     limit = min(request.args.get("limit", default=200, type=int), 1000)
-    order = ChatMessage.sent_at.desc() if request.args.get("sort") == "desc" else ChatMessage.sent_at.asc()
+    # The id tie-break follows the direction: TXT exports only know the minute, so several messages share a
+    # timestamp and "newest first" must not read them oldest-first inside that minute.
+    if request.args.get("sort") == "desc":
+        order = (ChatMessage.sent_at.desc(), ChatMessage.id.desc())
+    else:
+        order = (ChatMessage.sent_at.asc(), ChatMessage.id.asc())
 
     rows = session.execute(
-        select(ChatMessage).where(*conditions).order_by(order, ChatMessage.id).offset(offset).limit(limit)
+        select(ChatMessage).where(*conditions).order_by(*order).offset(offset).limit(limit)
     ).scalars().all()
 
     # Attachments and sender thumbnails are served as presigned links.
