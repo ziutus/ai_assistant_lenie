@@ -36,6 +36,16 @@ def api(db_session, monkeypatch):
     return app.test_client(), session
 
 
+@pytest.mark.parametrize("path", ["/whatsapp_groups", "/whatsapp_groups/1/members", "/whatsapp_groups/sync"])
+def test_cors_preflight_is_not_rejected_without_auth(path):
+    # Production skips auth for OPTIONS (server.py before_request), so g.auth is unset on a preflight.
+    app = Flask(__name__)
+    app.register_blueprint(routes.bp)
+    client = app.test_client()
+    assert client.options(path).status_code != 403
+    assert client.get("/whatsapp_groups").status_code == 403  # a real request still needs a key
+
+
 def test_list_groups_parent_conversation_counts(api):
     client, session = api
     contact(session, 1, phone_number="+48579060001")

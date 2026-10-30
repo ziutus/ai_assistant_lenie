@@ -17,7 +17,14 @@ from library.whatsapp_groups_service import (
 
 logger = logging.getLogger(__name__)
 bp = Blueprint("whatsapp_groups", __name__)
-bp.before_request(_authorized)
+
+
+@bp.before_request
+def _require_key_except_preflight():
+    # The global before_request skips auth for OPTIONS, so g.auth is unset on a CORS preflight;
+    # checking it here would answer 403 and the browser would never send the real request.
+    if request.method != "OPTIONS":
+        _authorized()
 
 
 def _error(message, code=400):
