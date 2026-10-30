@@ -454,7 +454,7 @@ class Job(Base):
     initiated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True)
     __table_args__ = (
-        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest','document_prepare','entity_enrichment','legacy_aws_pull','obsidian_reimport','tool_candidate_detect','retention_sweep')", name="ck_jobs_type"),
+        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest','document_prepare','entity_enrichment','legacy_aws_pull','obsidian_reimport','tool_candidate_detect','retention_sweep','whatsapp_sync')", name="ck_jobs_type"),
     )
 
 
@@ -4371,6 +4371,9 @@ class ChatMessage(Base):
         ),
         Index("idx_chat_messages_conversation_sent_at", "conversation_id", "sent_at"),
         Index("idx_chat_messages_contact", "contact_id"),
+        # WhatsApp's own id is the identity of a synced message; NULLs (TXT imports) never collide.
+        Index("uq_chat_messages_wa_identity", "wa_chat_jid", "wa_message_id", unique=True),
+        Index("idx_chat_messages_media_pending", "media_status", "media_next_attempt_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -4389,6 +4392,22 @@ class ChatMessage(Base):
     dedup_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
+    # Live sync (library/whatsapp_sync_service.py). A row written by the TXT/ZIP importer has
+    # source='import' and no wa_* identity; a synced row is identified by WhatsApp's own ids.
+    source: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'import'"))
+    wa_chat_jid: Mapped[str | None] = mapped_column(String(128))
+    wa_message_id: Mapped[str | None] = mapped_column(String(128))
+    wa_sender_jid: Mapped[str | None] = mapped_column(String(128))
+    wa_sender_alt_jid: Mapped[str | None] = mapped_column(String(128))
+    is_from_me: Mapped[bool | None] = mapped_column(Boolean)
+    edited_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    # pending | downloaded | unavailable | error; NULL = the row has no attachment to fetch.
+    media_status: Mapped[str | None] = mapped_column(String(12))
+    media_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    media_next_attempt_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    media_error: Mapped[str | None] = mapped_column(String(200))
+
     conversation: Mapped["ChatConversation"] = relationship(foreign_keys=[conversation_id])
     contact: Mapped["Contact | None"] = relationship(foreign_keys=[contact_id])
 
@@ -4397,6 +4416,49 @@ class ChatMessage(Base):
             f"ChatMessage(id={self.id!r}, conversation_id={self.conversation_id!r}, "
             f"sender_name_raw={self.sender_name_raw!r}, sent_at={self.sent_at!r})"
         )
+
+
+class WhatsappSyncChat(Base):
+    """A WhatsApp chat the bridge has seen, with the owner's explicit choice whether to
+    archive it. Nothing is imported until ``enabled`` is set; ``cursor_seq`` is the last
+    bridge journal sequence stored durably for this chat (per-chat, so enabling a chat
+    later still reads whatever the bridge buffered for it)."""
+
+    __tablename__ = "whatsapp_sync_chats"
+    __table_args__ = (Index("idx_whatsapp_sync_chats_enabled", "enabled"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    jid: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False, server_default=sa_text("''"))
+    is_group: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    conversation_id: Mapped[int | None] = mapped_column(ForeignKey("chat_conversations.id", ondelete="SET NULL"))
+    cursor_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=sa_text("0"))
+    buffered_events: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    last_message_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    last_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    conversation: Mapped["ChatConversation | None"] = relationship(foreign_keys=[conversation_id])
+
+
+class WhatsappSyncState(Base):
+    """Single row (id=1): what the last sync cycle learned about the bridge."""
+
+    __tablename__ = "whatsapp_sync_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    connection_state: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'unknown'"))
+    needs_pairing: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    bridge_reachable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    account_jid: Mapped[str | None] = mapped_column(String(128))
+    bridge_epoch: Mapped[str | None] = mapped_column(String(64))
+    bridge_checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    last_success_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    last_error_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
 class NarrativeSet(Base):

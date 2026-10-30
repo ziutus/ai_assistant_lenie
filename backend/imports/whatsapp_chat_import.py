@@ -73,6 +73,8 @@ from library.whatsapp_parser import (  # noqa: E402
     strip_sender_suffix,
 )
 
+from library.whatsapp_sync_service import sync_twin_exists  # noqa: E402
+
 logger = logging.getLogger("whatsapp_chat_import")
 
 DEFAULT_CONTENT_TYPE = "application/octet-stream"
@@ -262,6 +264,11 @@ def main():
                 continue
 
             if dedup_hash in existing_hashes:
+                duplicate_count += 1
+                continue
+            # Live sync may already hold this message (identified by WhatsApp's own id): skip an
+            # unambiguous twin so an export imported after sync does not double it.
+            if sent_at is not None and sync_twin_exists(session, conversation.id, message_type, content, sent_at):
                 duplicate_count += 1
                 continue
             existing_hashes.add(dedup_hash)

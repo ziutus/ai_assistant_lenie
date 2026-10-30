@@ -17,6 +17,7 @@ JOB_TYPES = {
     "obsidian_reimport",
     "tool_candidate_detect",
     "retention_sweep",
+    "whatsapp_sync",
 }
 
 
