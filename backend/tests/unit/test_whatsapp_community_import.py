@@ -7,9 +7,10 @@ import test_whatsapp_groups_service as service_tests
 from flask import Flask, g
 from sqlalchemy import select
 
+from library import chat_routes
 from library import whatsapp_groups_routes as groups_routes
 from library import whatsapp_sync_routes as sync_routes
-from library.db.models import WhatsappSyncChat
+from library.db.models import ChatConversation, WhatsappSyncChat
 from test_whatsapp_groups_service import participant, snapshot, sync
 
 db_session = service_tests.session
@@ -18,11 +19,12 @@ db_session = service_tests.session
 @pytest.fixture
 def api(db_session, monkeypatch):
     session = db_session
-    for module in (groups_routes, sync_routes):
+    for module in (groups_routes, sync_routes, chat_routes):
         monkeypatch.setattr(module, "get_scoped_session", lambda: session)
     app = Flask(__name__)
     app.register_blueprint(groups_routes.bp)
     app.register_blueprint(sync_routes.bp)
+    app.register_blueprint(chat_routes.bp)
 
     @app.before_request
     def auth():
@@ -144,3 +146,29 @@ def test_import_needs_a_key_but_preflight_does_not(api):
     assert client.options(path).status_code != 403
     assert client.post(path, json={}).status_code == 403
     assert "sub2@g.us" not in enabled_by_jid(session)  # the rejected request wrote nothing
+
+
+def test_conversation_list_groups_conversations_under_their_community(api):
+    app, session = api
+    for conversation_id, jid in ((201, "sub1@g.us"), (202, "community@g.us"), (203, "announce@g.us"),
+                                 (204, "plain@g.us")):
+        session.add(ChatConversation(id=conversation_id, chat_key=f"k{conversation_id}", platform="whatsapp",
+                                     display_name=f"rozmowa {conversation_id}", message_count=0))
+        chat = session.scalar(select(WhatsappSyncChat).where(WhatsappSyncChat.jid == jid))
+        if chat is None:
+            chat = WhatsappSyncChat(jid=jid, display_name=jid, is_group=True, enabled=True)
+            session.add(chat)
+        chat.conversation_id = conversation_id
+    session.add(ChatConversation(id=205, chat_key="k205", platform="whatsapp", display_name="bez grupy",
+                                 message_count=3))
+    session.commit()
+
+    rows = {c["id"]: c for c in app.test_client().get("/chat_conversations").get_json()["conversations"]}
+    community = community_id(session)
+    assert rows[201]["community_group_id"] == community and rows[201]["community_name"] == "Dom"
+    assert rows[201]["is_community"] is False and rows[201]["is_announce"] is False
+    assert rows[202]["community_group_id"] == community and rows[202]["is_community"] is True  # the umbrella
+    assert rows[203]["community_group_id"] == community and rows[203]["is_announce"] is True
+    assert rows[204]["community_group_id"] is None and rows[204]["community_name"] is None  # plain group
+    assert rows[205]["community_group_id"] is None and rows[205]["message_count"] == 3  # no sync chat at all
+    assert rows[205]["display_name"] == "bez grupy"  # existing keys are kept

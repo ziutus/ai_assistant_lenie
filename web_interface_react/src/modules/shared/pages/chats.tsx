@@ -15,6 +15,10 @@ export interface ChatConversationListItem {
   display_name: string;
   message_count: number;
   last_imported_at: string | null;
+  community_group_id?: number | null;
+  community_name?: string | null;
+  is_community?: boolean;
+  is_announce?: boolean;
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -64,6 +68,37 @@ const Chats = () => {
 
   const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString("pl-PL") : "—");
 
+  // Conversations of a WhatsApp community are shown together under its name; the umbrella conversation of the
+  // community and its announcement group come first. Everything else stays in the usual flat order.
+  const byCommunity = new Map<number, ChatConversationListItem[]>();
+  const standalone: ChatConversationListItem[] = [];
+  conversations.forEach((c) => {
+    if (c.community_group_id == null) {
+      standalone.push(c);
+      return;
+    }
+    byCommunity.set(c.community_group_id, [...(byCommunity.get(c.community_group_id) ?? []), c]);
+  });
+  const communitySections = Array.from(byCommunity, ([id, rows]) => ({
+    id,
+    name: rows[0].community_name || "Społeczność",
+    rows: [...rows].sort((a, b) => Number(!!b.is_community) - Number(!!a.is_community)
+      || Number(!!b.is_announce) - Number(!!a.is_announce) || a.display_name.localeCompare(b.display_name, "pl")),
+  })).sort((a, b) => a.name.localeCompare(b.name, "pl"));
+
+  const conversationRow = (c: ChatConversationListItem) => (
+    <tr key={c.id} style={{ borderBottom: "1px solid #eee" }}>
+      <td style={{ padding: "10px 8px" }}>
+        <NavLink to={`/chats/${c.id}`}>{c.display_name}</NavLink>
+        {c.is_community && <strong> — Społeczność</strong>}
+        {c.is_announce && <strong> — Ogłoszenia</strong>}
+      </td>
+      <td style={{ padding: "10px 8px" }}>{c.platform}</td>
+      <td style={{ padding: "10px 8px" }}>{c.message_count.toLocaleString("pl")}</td>
+      <td style={{ padding: "10px 8px" }}>{formatDate(c.last_imported_at)}</td>
+    </tr>
+  );
+
   return (
     <div>
       <h2 style={{ marginBottom: "10px" }}>Rozmowy (czaty)</h2>
@@ -92,16 +127,21 @@ const Chats = () => {
             </tr>
           </thead>
           <tbody>
-            {conversations.map((c) => (
-              <tr key={c.id} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: "6px 8px" }}>
-                  <NavLink to={`/chats/${c.id}`}>{c.display_name}</NavLink>
-                </td>
-                <td style={{ padding: "6px 8px" }}>{c.platform}</td>
-                <td style={{ padding: "6px 8px" }}>{c.message_count.toLocaleString("pl")}</td>
-                <td style={{ padding: "6px 8px" }}>{formatDate(c.last_imported_at)}</td>
-              </tr>
+            {communitySections.map((section) => (
+              <React.Fragment key={section.id}>
+                <tr><th colSpan={4} style={{ padding: "24px 8px 8px", textAlign: "left" }}>
+                  <h4 style={{ margin: 0 }}>{section.name}</h4>
+                  <span style={{ fontWeight: "normal", color: "#667" }}>
+                    Społeczność WhatsApp · {section.rows.length} rozmów na tej stronie
+                  </span>
+                </th></tr>
+                {section.rows.map(conversationRow)}
+              </React.Fragment>
             ))}
+            {communitySections.length > 0 && standalone.length > 0 && (
+              <tr><th colSpan={4} style={{ padding: "24px 8px 8px", textAlign: "left" }}>Pozostałe rozmowy</th></tr>
+            )}
+            {standalone.map(conversationRow)}
           </tbody>
         </table>
       )}
