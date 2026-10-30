@@ -16,7 +16,7 @@ from flask import Blueprint, Response, abort, g, jsonify, request
 from sqlalchemy import func, select
 
 from library.db.engine import get_scoped_session
-from library.db.models import ChatConversation, ChatMessage, WhatsappSyncChat, WhatsappSyncState
+from library.db.models import ChatConversation, ChatMessage, WhatsappGroup, WhatsappSyncChat, WhatsappSyncState
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,18 @@ def _iso(value):
     return value.isoformat() if value else None
 
 
-def _chat_dict(chat: WhatsappSyncChat) -> dict:
+def _chat_dict(chat: WhatsappSyncChat, groups=None) -> dict:
+    groups = groups or {}
+    group = groups.get(chat.jid)
+    community = group if group and group.is_community else groups.get(group.parent_jid) if group else None
+    if community and not community.is_community:
+        community = None
     return {
+        "community_group_id": community.id if community else None,
+        "community_jid": community.jid if community else None,
+        "community_name": community.name if community else None,
+        "is_community": bool(group and group.is_community),
+        "is_announce": bool(group and (group.is_announce or group.is_default_sub)),
         "id": chat.id,
         "jid": chat.jid,
         "display_name": chat.display_name,
@@ -94,7 +104,8 @@ def whatsapp_sync_chats():
     rows = session.scalars(
         select(WhatsappSyncChat).order_by(WhatsappSyncChat.enabled.desc(), WhatsappSyncChat.last_message_at.desc())
     ).all()
-    return jsonify({"status": "success", "chats": [_chat_dict(c) for c in rows]})
+    groups = {group.jid: group for group in session.scalars(select(WhatsappGroup))}
+    return jsonify({"status": "success", "chats": [_chat_dict(c, groups) for c in rows]})
 
 
 @bp.route("/whatsapp_sync/chats/<int:chat_id>", methods=["PATCH"])

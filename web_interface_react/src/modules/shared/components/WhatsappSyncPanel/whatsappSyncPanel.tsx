@@ -20,6 +20,11 @@ interface SyncStatus {
 }
 
 interface SyncChat {
+  community_group_id?: number | null;
+  community_name?: string | null;
+  community_jid?: string | null;
+  is_community?: boolean;
+  is_announce?: boolean;
   id: number;
   jid: string;
   display_name: string;
@@ -29,6 +34,18 @@ interface SyncChat {
   buffered_events: number;
   last_message_at: string | null;
   last_synced_at: string | null;
+}
+
+interface Community {
+  id: number;
+  import_total: number;
+  import_enabled: number;
+}
+
+interface ImportPreview {
+  community: { id: number; name: string };
+  counts: { subgroups: number; already: number; changed: number; created: number };
+  enabled: boolean;
 }
 
 const STATE_LABELS: Record<string, string> = {
@@ -52,6 +69,9 @@ const WhatsappSyncPanel = () => {
   const [filter, setFilter] = React.useState("");
   const [qrUrl, setQrUrl] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState("");
+  const [communities, setCommunities] = React.useState<Community[]>([]);
+  const [preview, setPreview] = React.useState<ImportPreview | null>(null);
+  const [importBusy, setImportBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try {
@@ -61,6 +81,15 @@ const WhatsappSyncPanel = () => {
       ]);
       setStatus(s.data);
       setChats(c.data.chats ?? []);
+      try {
+        const groups = await axios.get(`${apiUrl}/whatsapp_groups`, { headers });
+        setCommunities(groups.data.groups ?? []);
+      } catch {
+        setCommunities([]);
+        if ((c.data.chats ?? []).some((chat: SyncChat) => chat.community_group_id != null)) {
+          setMessage("Nie udało się pobrać liczników społeczności. Odśwież stan, aby spróbować ponownie.");
+        }
+      }
     } catch (error: any) {
       setMessage(`Nie udało się pobrać stanu synchronizacji: ${error.response?.data?.message || error.message}`);
     }
@@ -79,6 +108,27 @@ const WhatsappSyncPanel = () => {
       await load();
     } catch (error: any) {
       setMessage(`Nie udało się zmienić wyboru: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const importCommunity = async (id: number, enabled: boolean, dryRun: boolean) => {
+    setImportBusy(true);
+    setMessage("");
+    try {
+      const response = await axios.post(`${apiUrl}/whatsapp_groups/${id}/import`,
+        dryRun ? { enabled, dry_run: true } : { enabled }, { headers });
+      if (dryRun) {
+        setPreview({ ...response.data, enabled });
+      } else {
+        setPreview(null);
+        const counts = response.data.counts;
+        setMessage(`${enabled ? "Włączono" : "Wyłączono"} ${counts.changed}, utworzono ${counts.created}, już było ${counts.already}.`);
+        await load();
+      }
+    } catch {
+      setMessage("Nie udało się zmienić importu społeczności. Odśwież stan i spróbuj ponownie.");
+    } finally {
+      setImportBusy(false);
     }
   };
 
@@ -119,6 +169,30 @@ const WhatsappSyncPanel = () => {
   const shown = chats.filter((c) => !filter || c.display_name.toLowerCase().includes(filter.toLowerCase())
     || c.jid.includes(filter));
   const problem = status && (!status.bridge_reachable || status.needs_pairing || status.last_error);
+  const sections = new Map<number, SyncChat[]>();
+  shown.forEach((chat) => {
+    if (chat.community_group_id != null) {
+      const rows = sections.get(chat.community_group_id) ?? [];
+      rows.push(chat);
+      sections.set(chat.community_group_id, rows);
+    }
+  });
+  const chatRows = (rows: SyncChat[]) => rows.map((c) => (
+    <tr key={c.id} style={{ borderBottom: "1px solid #eee" }}>
+      <td style={{ padding: "12px 6px" }}>
+        <input type="checkbox" checked={c.enabled} onChange={() => toggle(c)}
+          disabled={importBusy || preview !== null} aria-label={`Importuj ${c.display_name || c.jid}`} />
+        <span>{c.enabled ? " Włączony" : " Wyłączony"}</span>
+      </td>
+      <td style={{ padding: "12px 6px" }}>{c.display_name || "(bez nazwy)"}
+        {c.is_announce && <strong> — Ogłoszenia</strong>}</td>
+      <td style={{ padding: "12px 6px", overflowWrap: "anywhere" }}><code>{c.jid}</code></td>
+      <td style={{ padding: "12px 6px" }}>{formatDate(c.last_message_at)}</td>
+      <td style={{ padding: "12px 6px" }}>
+        {c.conversation_id ? <a href={`/chats/${c.conversation_id}`}>#{c.conversation_id}</a> : "—"}
+      </td>
+    </tr>
+  ));
 
   return (
     <details open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
@@ -162,6 +236,23 @@ const WhatsappSyncPanel = () => {
           </div>
           {qrUrl && <img src={qrUrl} alt="Kod QR do sparowania WhatsApp" style={{ width: 240, height: 240 }} />}
 
+          {preview && (
+            <section aria-label="Potwierdzenie importu społeczności"
+              style={{ padding: 20, margin: "20px 0", border: "2px solid #777", lineHeight: 1.8 }}>
+              <p>{preview.enabled ? "Włączyć" : "Wyłączyć"} import {preview.counts.subgroups} podgrup
+                społeczności „{preview.community.name}”
+                {preview.enabled && ` (w tym ${preview.counts.created} jeszcze niewidzianych przez synchronizację)`}?</p>
+              {preview.enabled && <p>Wiadomości będą pobierane od teraz oraz z historii, którą odda WhatsApp.
+                Załączniki pobierają się po 2 naraz.</p>}
+              <div style={{ display: "flex", gap: 20 }}>
+                <button disabled={importBusy} onClick={() => importCommunity(preview.community.id, preview.enabled, false)}>
+                  Potwierdź</button>
+                <button disabled={importBusy} onClick={() => setPreview(null)}>Anuluj</button>
+              </div>
+            </section>
+          )}
+          {importBusy && <p role="status">Przetwarzanie importu społeczności…</p>}
+
           <h4 style={{ margin: "10px 0 4px" }}>Rozmowy widziane przez most</h4>
           <p style={{ color: "#667", margin: "0 0 6px" }}>
             Zaznacz rozmowy do archiwizacji. Domyślnie nic nie jest importowane. Ta sama osoba może widnieć pod
@@ -182,26 +273,35 @@ const WhatsappSyncPanel = () => {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((c) => (
-                  <tr key={c.id} style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "4px 6px" }}>
-                      <input type="checkbox" checked={c.enabled} onChange={() => toggle(c)}
-                        aria-label={`Importuj ${c.display_name || c.jid}`} />
-                    </td>
-                    <td style={{ padding: "4px 6px" }}>{c.display_name || "(bez nazwy)"}{c.is_group ? " 👥" : ""}</td>
-                    <td style={{ padding: "4px 6px" }}><code>{c.jid}</code></td>
-                    <td style={{ padding: "4px 6px" }}>{formatDate(c.last_message_at)}</td>
-                    <td style={{ padding: "4px 6px" }}>
-                      {c.conversation_id ? <a href={`/chats/${c.conversation_id}`}>#{c.conversation_id}</a> : "—"}
-                    </td>
-                  </tr>
-                ))}
+                {Array.from(sections, ([id, rows]) => {
+                  const community = communities.find((group) => group.id === id);
+                  const allRows = chats.filter((chat) => chat.community_group_id === id && !chat.is_community);
+                  const total = community?.import_total ?? allRows.length;
+                  const enabled = community?.import_enabled ?? allRows.filter((chat) => chat.enabled).length;
+                  const allEnabled = total > 0 && enabled === total;
+                  return <React.Fragment key={id}>
+                    <tr><th colSpan={5} style={{ padding: "24px 6px 12px", textAlign: "left" }}>
+                      <h4>{rows[0].community_name || "Społeczność"}</h4>
+                      <p>{enabled} z {total} podgrup importowanych</p>
+                      <button disabled={importBusy || preview !== null || !community}
+                        onClick={() => importCommunity(id, !allEnabled, true)}>
+                        {allEnabled ? "Wyłącz import społeczności" : "Importuj całą społeczność"}
+                      </button>
+                    </th></tr>
+                    {chatRows([...rows].sort((a, b) => Number(!!b.is_announce) - Number(!!a.is_announce)
+                      || (b.last_message_at ?? "").localeCompare(a.last_message_at ?? "")))}
+                  </React.Fragment>;
+                })}
+                {shown.some((chat) => chat.community_group_id == null) && <>
+                  <tr><th colSpan={5} style={{ padding: "24px 6px 12px", textAlign: "left" }}>Pozostałe czaty</th></tr>
+                  {chatRows(shown.filter((chat) => chat.community_group_id == null))}
+                </>}
               </tbody>
             </table>
           )}
         </div>
       )}
-      {message && <p className={message.startsWith("Nie udało") ? "error" : undefined}>{message}</p>}
+      {message && <p role="status" className={message.startsWith("Nie udało") ? "error" : undefined}>{message}</p>}
     </details>
   );
 };

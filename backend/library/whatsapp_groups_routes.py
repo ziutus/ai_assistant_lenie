@@ -4,13 +4,15 @@ import logging
 from collections import defaultdict
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from werkzeug.exceptions import HTTPException
 
 from library.chat_routes import _authorized, _bridge
 from library.chat_senders_service import _search_text
 from library.db.engine import get_scoped_session
-from library.db.models import Contact, ContactCategory, WhatsappGroup, WhatsappGroupMember, WhatsappGroupMemberEvent
+from library.db.models import (
+    Contact, ContactCategory, WhatsappGroup, WhatsappGroupMember, WhatsappGroupMemberEvent, WhatsappSyncChat,
+)
 from library.whatsapp_groups_service import (
     ContactIndex, contact_dict, create_contact_from_member, group_dict, iso, member_dict, member_summary,
 )
@@ -70,9 +72,62 @@ def list_groups():
     for event in events:
         events_by_group[event.group_id].append(event)
     result = [group_dict(g, groups, by_group[g.id], index, events_by_group[g.id]) for g in groups if g.is_active]
+    counts = {jid: (total, enabled) for jid, total, enabled in get_scoped_session().execute(
+        select(WhatsappGroup.parent_jid, func.count(WhatsappGroup.id),
+               func.sum(case((WhatsappSyncChat.enabled.is_(True), 1), else_=0)))
+        .outerjoin(WhatsappSyncChat, WhatsappSyncChat.jid == WhatsappGroup.jid)
+        .where(WhatsappGroup.is_active.is_(True), WhatsappGroup.parent_jid.is_not(None))
+        .group_by(WhatsappGroup.parent_jid)
+    )}
+    for group in result:
+        total, enabled = counts.get(group["jid"], (0, 0))
+        group["import_total"] = total if group["is_community"] else None
+        group["import_enabled"] = enabled if group["is_community"] else None
     communities = sum(g["is_community"] for g in result)
     return jsonify(status="success", groups=result, summary={"groups": len(result) - communities,
                                                              "communities": communities})
+
+
+@bp.post("/whatsapp_groups/<int:group_id>/import")
+def import_community(group_id):
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return _error("Expected an object")
+    enabled, dry_run = body.get("enabled", True), body.get("dry_run", False)
+    if type(enabled) is not bool or type(dry_run) is not bool:
+        return _error("Expected boolean enabled and dry_run")
+    session = get_scoped_session()
+    community = session.get(WhatsappGroup, group_id)
+    if community is None:
+        return _error("Group not found", 404)
+    if not community.is_community:
+        return _error("Group is not a community")
+    groups = list(session.scalars(select(WhatsappGroup).where(
+        WhatsappGroup.parent_jid == community.jid, WhatsappGroup.is_active.is_(True),
+    ).order_by(WhatsappGroup.id)))
+    chats = {chat.jid: chat for chat in session.scalars(select(WhatsappSyncChat).where(
+        WhatsappSyncChat.jid.in_([group.jid for group in groups]),
+    ))}
+    counts = {"subgroups": len(groups), "already": 0, "changed": 0, "created": 0}
+    result = []
+    for group in groups:
+        chat = chats.get(group.jid)
+        if chat is None and enabled:
+            counts["created"] += 1
+            if not dry_run:
+                session.add(WhatsappSyncChat(jid=group.jid, display_name=group.name, is_group=True, enabled=True))
+        elif chat is not None and chat.enabled != enabled:
+            counts["changed"] += 1
+            if not dry_run:
+                chat.enabled = enabled
+        else:
+            counts["already"] += 1
+        result.append({"jid": group.jid, "name": group.name, "enabled": enabled})
+    if not dry_run:
+        session.commit()
+    return jsonify(status="success", dry_run=dry_run,
+                   community={"id": community.id, "jid": community.jid, "name": community.name},
+                   counts=counts, chats=result)
 
 
 @bp.get("/whatsapp_groups/<int:group_id>/members")
