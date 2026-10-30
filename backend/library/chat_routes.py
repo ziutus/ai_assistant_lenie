@@ -318,9 +318,10 @@ def create_contact_from_chat_message(message_id: int):
             fetch_photo=fetch_photo, existing_contact_id=body.get("existing_contact_id"),
         )
         session.commit()
-    except SenderError as exc:
+    except SenderError:
         session.rollback()
-        return jsonify({"status": "error", "message": str(exc)}), 400
+        logger.info("Chat message %s cannot be added to contacts", message_id, exc_info=True)
+        return jsonify({"status": "error", "message": "This message's sender cannot be added to contacts"}), 400
     except Exception:
         session.rollback()
         logger.exception("Creating a contact from chat message %s failed", message_id)
@@ -356,9 +357,10 @@ def import_chat_message_url(message_id: int):
         document, outcome = service.import_document(
             url, document_type, title=slug or parsed.netloc, source=f"WhatsApp: {conversation.display_name}"[:100],
         )
-    except ValueError as exc:
+    except ValueError:
         session.rollback()
-        return jsonify({"status": "error", "message": str(exc)}), 400
+        logger.info("Chat message %s: link %s was rejected", message_id, parsed.netloc, exc_info=True)
+        return jsonify({"status": "error", "message": "This link cannot be added"}), 400
     session.commit()
     created = outcome != "skipped"
     result = {"status": "success", "document_id": document.id, "created": created,
