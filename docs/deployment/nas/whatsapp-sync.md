@@ -103,3 +103,12 @@ into an empty volume before starting the container.
 | Reset everything | stop the container, `docker volume rm lenie-whatsapp-data`, start, pair; Lenie data stays |
 
 Logs never contain message text, QR codes or keys. Message content is rendered as plain text in the UI.
+
+## 7. Group snapshots
+
+`GET /groups` requires the bridge Bearer token and returns joined groups, community links,
+and participants (including known phone numbers and admin flags), with UTC `fetched_at`.
+Snapshots are cached in memory for 60 seconds; WhatsApp queries time out after 30 seconds.
+A disconnected or logged-out bridge returns HTTP 503 with `{"error":"not_connected"}`.
+This read-only endpoint does not write to the journal or subscribe to group events;
+phone numbers and participant lists are not logged.

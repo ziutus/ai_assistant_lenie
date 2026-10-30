@@ -49,6 +49,7 @@ type Bridge struct {
 	resolving     map[string]bool
 
 	mediaSem chan struct{}
+	groups   groupsCache
 }
 
 func NewBridge(cfg Config, j *Journal, log *slog.Logger) *Bridge {

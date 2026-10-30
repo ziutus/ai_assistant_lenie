@@ -171,6 +171,23 @@ def create_contact_from_message(session, message: ChatMessage, *, bridge=None, d
         session.flush()
         created = True
 
+    group, photo = enrich_whatsapp_contact(
+        session, contact, conversation, message, phone, nickname, bridge=bridge, fetch_photo=fetch_photo,
+    )
+    linked = link_sender_messages(session, message, contact.id)
+    # the message itself may already be attached to this very contact id by a previous run
+    message.contact_id = contact.id
+    record_contact_change(
+        session, contact, "other", changed_fields=["created_from_whatsapp" if created else "linked_to_whatsapp"],
+        note=f"Kanał WhatsApp: {conversation.display_name}",
+    )
+    return {"contact_id": contact.id, "created": created, "existing": not created, "photo": photo,
+            "linked_messages": linked, "group": group.name}
+
+
+def enrich_whatsapp_contact(session, contact, conversation, message, phone, nickname, *,
+                            bridge=None, fetch_photo=False):
+    """Shared channel provenance and optional photo for message and membership contacts."""
     note = f"Poznany(-a) z kanału WhatsApp „{conversation.display_name}”."
     if nickname and nickname != contact.display_label:
         note += f" Pseudonim w WhatsApp: {nickname}."
@@ -192,12 +209,4 @@ def create_contact_from_message(session, message: ChatMessage, *, bridge=None, d
                 logger.warning("Storing the WhatsApp picture failed for contact %s", contact.id, exc_info=True)
                 photo = "unavailable"
     contact.updated_at = dt.datetime.now()
-    linked = link_sender_messages(session, message, contact.id)
-    # the message itself may already be attached to this very contact id by a previous run
-    message.contact_id = contact.id
-    record_contact_change(
-        session, contact, "other", changed_fields=["created_from_whatsapp" if created else "linked_to_whatsapp"],
-        note=f"Kanał WhatsApp: {conversation.display_name}",
-    )
-    return {"contact_id": contact.id, "created": created, "existing": not created, "photo": photo,
-            "linked_messages": linked, "group": group.name}
+    return group, photo

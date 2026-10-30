@@ -75,6 +75,10 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
         from library.obsidian_reimport_service import execute_obsidian_reimport
 
         return execute_obsidian_reimport(session, job)
+    if job.type == "whatsapp_groups_sync":
+        from library.whatsapp_groups_service import execute_whatsapp_groups_sync
+
+        return execute_whatsapp_groups_sync(session, job)
     if job.type == "whatsapp_sync":
         from library.whatsapp_sync_service import execute_whatsapp_sync
 
@@ -121,10 +125,10 @@ def scheduler(session, now: dt.datetime) -> None:
             _schedule_legacy_aws_pull(session, now, task)
         elif task.id == "obsidian_reimport":
             _schedule_obsidian_reimport(session, now, task)
-        elif task.id == "whatsapp_sync":
+        elif task.id in {"whatsapp_sync", "whatsapp_groups_sync"}:
             # Same once-per-minute idempotency guard as obsidian_reimport above.
             local = now.astimezone(ZoneInfo(task.timezone)).replace(second=0, microsecond=0)
-            enqueue(session, "whatsapp_sync", idempotency_key=f"whatsapp_sync:{local.strftime('%Y-%m-%dT%H:%M%z')}")
+            enqueue(session, task.id, idempotency_key=f"{task.id}:{local.strftime('%Y-%m-%dT%H:%M%z')}")
 
 
 def _is_due(task: ScheduledTask, now: dt.datetime) -> bool:
@@ -201,7 +205,7 @@ def main() -> int:
     parser.add_argument("--healthcheck", action="store_true")
     parser.add_argument(
         "--types",
-        default="feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect,retention_sweep,whatsapp_sync",
+        default="feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect,retention_sweep,whatsapp_sync,whatsapp_groups_sync",
         help="comma-separated job types handled by this worker",
     )
     parser.add_argument("--scheduler", action="store_true")

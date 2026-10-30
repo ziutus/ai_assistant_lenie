@@ -59,6 +59,8 @@ import Scheduler from "./modules/shared/pages/scheduler";
 import Entities from "./modules/shared/pages/entities";
 import ChapterGroups from "./modules/shared/pages/chapterGroups";
 import Chats from "./modules/shared/pages/chats";
+import WhatsappGroups from "./modules/shared/pages/whatsappGroups";
+import WhatsappGroup from "./modules/shared/pages/whatsappGroup";
 import ChatConversation from "./modules/shared/pages/chatConversation";
 import { AuthorizationContext } from "./modules/shared/context/authorizationContext";
 
@@ -148,6 +150,8 @@ function App() {
                   <Route path="/scheduler" element={<Scheduler />} />
                   <Route path="/chapter-groups" element={<ChapterGroups />} />
                   <Route path="/chats" element={<Chats />} />
+                  <Route path="/whatsapp-groups" element={<WhatsappGroups />} />
+                  <Route path="/whatsapp-groups/:id" element={<WhatsappGroup />} />
                   <Route path="/chats/:id" element={<ChatConversation />} />
                   <Route path="/search" element={<Search />} />
                   <Route path="/upload-file" element={<UploadFile />} />
