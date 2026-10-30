@@ -67,6 +67,7 @@ const Chats = () => {
   return (
     <div>
       <h2 style={{ marginBottom: "10px" }}>Rozmowy (czaty)</h2>
+      <p><NavLink to="/whatsapp-groups">Grupy WhatsApp →</NavLink></p>
       <p style={{ color: "#667", marginBottom: 14 }}>
         Pełne logi zaimportowanych czatów (obecnie WhatsApp) — patrz{" "}
         <code>backend/imports/whatsapp_chat_import.py</code>. Tylko do odczytu.

@@ -454,7 +454,7 @@ class Job(Base):
     initiated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True)
     __table_args__ = (
-        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest','document_prepare','entity_enrichment','legacy_aws_pull','obsidian_reimport','tool_candidate_detect','retention_sweep','whatsapp_sync')", name="ck_jobs_type"),
+        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest','document_prepare','entity_enrichment','legacy_aws_pull','obsidian_reimport','tool_candidate_detect','retention_sweep','whatsapp_sync','whatsapp_groups_sync')", name="ck_jobs_type"),
     )
 
 
@@ -4441,6 +4441,59 @@ class WhatsappSyncChat(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     conversation: Mapped["ChatConversation | None"] = relationship(foreign_keys=[conversation_id])
+
+
+class WhatsappGroup(Base):
+    """Last accepted membership snapshot of a WhatsApp group or community."""
+
+    __tablename__ = "whatsapp_groups"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    jid: Mapped[str] = mapped_column(String(128), unique=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    is_community: Mapped[bool] = mapped_column(Boolean, default=False)
+    parent_jid: Mapped[str | None] = mapped_column(String(128))
+    is_announce: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_default_sub: Mapped[bool] = mapped_column(Boolean, default=False)
+    participant_count: Mapped[int] = mapped_column(Integer, default=0)
+    conversation_id: Mapped[int | None] = mapped_column(ForeignKey("chat_conversations.id", ondelete="SET NULL"))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    first_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    last_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    baseline_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+
+class WhatsappGroupMember(Base):
+    __tablename__ = "whatsapp_group_members"
+    __table_args__ = (UniqueConstraint("group_id", "member_key", name="uq_whatsapp_group_member"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("whatsapp_groups.id", ondelete="CASCADE"))
+    member_key: Mapped[str] = mapped_column(String(128))
+    jid: Mapped[str] = mapped_column(String(128))
+    lid: Mapped[str | None] = mapped_column(String(128))
+    phone: Mapped[str | None] = mapped_column(String(30))
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime)
+    last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime)
+    left_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"))
+
+
+class WhatsappGroupMemberEvent(Base):
+    __tablename__ = "whatsapp_group_member_events"
+    __table_args__ = (
+        CheckConstraint("event_type IN ('join', 'leave')", name="ck_whatsapp_group_event_type"),
+        Index("idx_whatsapp_group_events_detected", "group_id", sa_text("detected_at DESC")),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("whatsapp_groups.id", ondelete="CASCADE"))
+    member_key: Mapped[str] = mapped_column(String(128))
+    event_type: Mapped[str] = mapped_column(String(5))
+    phone: Mapped[str | None] = mapped_column(String(30))
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    detected_at: Mapped[datetime.datetime] = mapped_column(DateTime)
+    previous_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
 
 class WhatsappSyncState(Base):

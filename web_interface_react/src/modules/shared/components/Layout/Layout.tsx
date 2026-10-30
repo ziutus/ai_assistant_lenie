@@ -161,6 +161,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           Duplikaty kontaktów
         </NavLink>
         <NavLink to="/chats" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Rozmowy</NavLink>
+        <NavLink to="/whatsapp-groups" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Grupy WhatsApp</NavLink>
         <NavLink to="/topics" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Tematy</NavLink>
         <NavLink to="/project-cards" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Karty projektów</NavLink>
         <NavLink to="/recipes" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Przepisy</NavLink>

@@ -89,6 +89,9 @@ class BridgeClient:
     def chats(self) -> list[dict]:
         return self._json("GET", "/chats")["chats"]
 
+    def groups(self) -> list[dict]:
+        return self._json("GET", "/groups")["groups"]
+
     def put_allowlist(self, jids: list[str]) -> None:
         self._json("PUT", "/allowlist", json={"jids": jids})
 

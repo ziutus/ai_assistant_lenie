@@ -206,3 +206,7 @@ Each subdirectory has its own `CLAUDE.md` with detailed documentation:
 | `test_code/` | [test_code/CLAUDE.md](test_code/CLAUDE.md) | Experimental scripts: RAG pipeline, LLM provider testing, Bielik text processing, cloud migrations |
 
 Headerless YouTube/movie transcripts support AI chapter proposals through POST /document/<id>/suggest_chapters (dry-run model planning without generation) and explicit POST /document/<id>/apply_chapters. Models select sentence indexes and Polish titles only; lossless insertion shares the chapter editor splitter, checks embeddings, active analysis and optional text SHA-256, and initializes chapter types. The transcript_chapters allowlist and /transcript_chapters/model household setting gate providers; unknown context limits block generation. Suggestions record transcript_chapter_suggestion usage and never persist text; chapter application updates Document.text, like manual chapter splits.
+
+## WhatsApp group membership
+
+`whatsapp_groups_sync` snapshots groups and communities every 30 minutes (migration `b8e4f6a2c913`); it is a no-op without bridge URL/token. `/whatsapp_groups` exposes membership, join/leave intervals and explicit bulk contact creation. Baselines create no events; incomplete or mass-departure snapshots preserve the last accepted state.

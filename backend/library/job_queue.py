@@ -18,6 +18,7 @@ JOB_TYPES = {
     "tool_candidate_detect",
     "retention_sweep",
     "whatsapp_sync",
+    "whatsapp_groups_sync",
 }
 
 

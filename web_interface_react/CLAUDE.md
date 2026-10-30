@@ -10,6 +10,8 @@ React 18 single-page application for managing documents and running AI operation
 
 All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. Unauthenticated users redirected to `/connect`.
 
+`/whatsapp-groups` lists communities and their groups; `/whatsapp-groups/:id` shows members and membership changes with URL tabs, filters and pagination, plus confirmed bulk contact creation without photo fetching.
+
 `/feeds` supports adding and editing feed sources (including renaming) with shared configuration fields. The name field has a "Pobierz tytuł" button (`POST /feed_sources/fetch_title`) that fills it from the feed's own title once the URL or YouTube channel ID is entered; the name stays editable and is still required on save.
 
 ## UX conventions
