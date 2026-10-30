@@ -172,7 +172,6 @@ const AddContactButton = ({ m, channel, apiUrl, headers }: {
   };
   return (
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: "0.85em" }}>
-      <span>{m.sender_phone ? `+${m.sender_phone}` : m.sender_name_raw}</span>
       <input value={label} placeholder="Pseudonim / nazwa" onChange={(e) => setLabel(e.target.value)} />
       <label><input type="checkbox" checked={fetchPhoto} onChange={(e) => setFetchPhoto(e.target.checked)} /> zdjęcie z WhatsAppa</label>
       <button type="button" className="button" disabled={busy} onClick={() => void save()}>
@@ -406,13 +405,19 @@ const ChatConversation = () => {
         {messages.map((m) => (
           <div key={m.id} style={{ border: "1px solid #eee", borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, color: "#556", fontSize: "0.9em", marginBottom: 4 }}>
-              <strong>
-                {m.contact ? (
-                  <NavLink to={`/contacts/${m.contact.id}`}>{m.contact.display_name ?? m.sender_name_raw}</NavLink>
-                ) : (
-                  m.sender_name_raw
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <strong>
+                  {m.contact ? (
+                    <NavLink to={`/contacts/${m.contact.id}`}>{m.contact.display_name ?? m.sender_name_raw}</NavLink>
+                  ) : (
+                    m.sender_name_raw
+                  )}
+                </strong>
+                {m.can_add_contact && (
+                  <AddContactButton m={m} channel={conversation?.display_name ?? `#${id}`} apiUrl={apiUrl}
+                    headers={headers} />
                 )}
-              </strong>
+              </span>
               <span>
                 {formatDate(m.sent_at)}
                 {contactId && m.sent_at && (
@@ -444,10 +449,6 @@ const ChatConversation = () => {
             )}
             <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <AddToTopicButton messageId={m.id} topics={topics} apiUrl={apiUrl} headers={headers} />
-              {m.can_add_contact && (
-                <AddContactButton m={m} channel={conversation?.display_name ?? `#${id}`} apiUrl={apiUrl}
-                  headers={headers} />
-              )}
             </div>
           </div>
         ))}
