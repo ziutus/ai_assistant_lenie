@@ -23,7 +23,19 @@ interface ChatMessageItem {
   media_original_filename: string | null;
   media_mime_type: string | null;
   media_size_bytes: number | null;
+  // live-sync fields (absent/null for rows from TXT/ZIP imports)
+  source?: string;
+  is_from_me?: boolean | null;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  media_status?: "pending" | "downloaded" | "unavailable" | "error" | null;
 }
+
+const MEDIA_STATUS_LABELS: Record<string, string> = {
+  pending: "załącznik oczekuje na pobranie",
+  unavailable: "załącznik niedostępny (WhatsApp go już nie udostępnia lub jest za duży)",
+  error: "nie udało się pobrać załącznika po kilku próbach",
+};
 
 const DEFAULT_PAGE_SIZE = 100;
 const MESSAGE_TYPES = [
@@ -101,19 +113,21 @@ const AddToTopicButton = ({ messageId, topics, apiUrl, headers }: {
 };
 
 const MessageMedia = ({ m }: { m: ChatMessageItem }) => {
-  if (!m.media_original_filename) return null;
+  if (!m.media_original_filename && !m.media_url && !m.media_status) return null;
   const sizeLabel = formatSize(m.media_size_bytes);
+  const fileLabel = m.media_original_filename || m.media_mime_type || m.message_type;
   if (!m.media_url) {
+    const reason = m.media_status ? MEDIA_STATUS_LABELS[m.media_status] : "plik niedostępny w eksporcie";
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        📎 {m.media_original_filename}{sizeLabel ? ` (${sizeLabel})` : ""} — plik niedostępny w eksporcie
+        📎 {fileLabel}{sizeLabel ? ` (${sizeLabel})` : ""} — {reason}
       </div>
     );
   }
   if (m.message_type === "image") {
     return (
       <a href={m.media_url} target="_blank" rel="noreferrer">
-        <img src={m.media_url} alt={m.media_original_filename}
+        <img src={m.media_url} alt={fileLabel}
           style={{ maxWidth: 260, maxHeight: 260, borderRadius: 4, display: "block" }} />
       </a>
     );
@@ -126,7 +140,7 @@ const MessageMedia = ({ m }: { m: ChatMessageItem }) => {
   }
   return (
     <a href={m.media_url} target="_blank" rel="noreferrer">
-      📄 {m.media_original_filename}{sizeLabel ? ` (${sizeLabel})` : ""}
+      📄 {fileLabel}{sizeLabel ? ` (${sizeLabel})` : ""}
     </a>
   );
 };
@@ -301,6 +315,11 @@ const ChatConversation = () => {
             ) : (
               <>
                 {m.content && <div style={{ whiteSpace: "pre-line" }}>{m.content}</div>}
+                {m.edited_at && (
+                  <div style={{ color: "#888", fontSize: 12 }}>
+                    (edytowana {new Date(m.edited_at).toLocaleString("pl-PL")})
+                  </div>
+                )}
                 <MessageMedia m={m} />
               </>
             )}

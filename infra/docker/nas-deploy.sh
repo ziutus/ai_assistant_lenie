@@ -54,6 +54,7 @@ declare -A SVC_IMAGE=(
     [document-worker]="lenie-ai-document-worker:latest"
     [db]="lenie-ai-db:latest"
     [ner-service]="lenie-ner-service:latest"
+    [whatsapp-bridge]="lenie-whatsapp-bridge:latest"
     [lenie-mcp]="lenie-mcp:latest"
 )
 declare -A SVC_REGISTRY_IMAGE=(
@@ -65,6 +66,7 @@ declare -A SVC_REGISTRY_IMAGE=(
     [document-worker]="${REGISTRY}/lenie-ai-document-worker:latest"
     [db]="${REGISTRY}/lenie-ai-db:latest"
     [ner-service]="${REGISTRY}/lenie-ner-service:latest"
+    [whatsapp-bridge]="${REGISTRY}/lenie-whatsapp-bridge:latest"
     [lenie-mcp]="${REGISTRY}/lenie-mcp:latest"
 )
 declare -A SVC_DOCKERFILE=(
@@ -74,6 +76,7 @@ declare -A SVC_DOCKERFILE=(
     [document-worker]="backend/Dockerfile"
     [db]="infra/docker/Postgresql/Dockerfile"
     [ner-service]="ner_service/Dockerfile"
+    [whatsapp-bridge]="whatsapp_bridge/Dockerfile"
     [lenie-mcp]="lenie_mcp/Dockerfile"
 )
 declare -A SVC_COMPOSE_NAME=(
@@ -86,6 +89,7 @@ declare -A SVC_COMPOSE_NAME=(
     [db]="lenie-ai-db"
     [minio]="lenie-minio"
     [ner-service]="lenie-ner-service"
+    [whatsapp-bridge]="lenie-whatsapp-bridge"
     [lenie-mcp]="lenie-mcp"
     [obsidian-headless-sync]="obsidian-headless-sync"
 )
@@ -116,6 +120,51 @@ nas_ssh() {
 
 nas_docker() {
     nas_ssh "${NAS_DOCKER} $*"
+}
+
+# --- Sekrety z Vaulta wstrzykiwane przy `compose up` --------------------------
+# Kontener Go (whatsapp-bridge) nie czyta Vaulta, a sekretu nie trzymamy w .env na
+# NAS-ie. Token (WHATSAPP_BRIDGE_TOKEN) pobieramy z Vaulta lokalnie i przekazujemy
+# przez stdin ssh (nie trafia do argv ani na dysk NAS-a).
+# VAULT_ADDR / VAULT_TOKEN / VAULT_ENV: ze srodowiska albo z ${PROJECT_ROOT}/.env.
+vault_env_value() {
+    local key=$1 v="${!1:-}" f common
+    if [ -z "$v" ]; then
+        # W worktree .env lezy w glownym checkoucie (katalog nadrzedny git-common-dir).
+        common=$(git -C "${PROJECT_ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+        for f in "${PROJECT_ROOT}/.env" "${common:+${common}/../.env}"; do
+            [ -n "$f" ] && [ -f "$f" ] || continue
+            v=$(grep -E "^${key}=" "$f" | tail -1 | cut -d= -f2- | tr -d "\r\"'" || true)
+            [ -z "$v" ] || break
+        done
+    fi
+    printf '%s' "$v"
+}
+
+fetch_whatsapp_bridge_token() {
+    local addr tok env_name body
+    addr=$(vault_env_value VAULT_ADDR); addr="${addr:-http://${NAS_HOST}:8210}"
+    tok=$(vault_env_value VAULT_TOKEN)
+    [ -n "$tok" ] || return 1
+    env_name=$(vault_env_value VAULT_ENV); env_name="${env_name:-dev}"
+    body=$(curl -s -m 8 -H "X-Vault-Token: ${tok}" "${addr%/}/v1/secret/data/lenie/${env_name}") || return 1
+    printf '%s' "$body" | sed -n 's/.*"WHATSAPP_BRIDGE_TOKEN"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+# compose up na NAS z WA_BRIDGE_TOKEN w srodowisku. Zawsze przez te funkcje: `up` bez
+# zmiennej odtworzylby most z pustym tokenem (zmienia sie hash konfiguracji kontenera).
+nas_compose_up() {
+    local token
+    token=$(fetch_whatsapp_bridge_token || true)
+    if [ -z "$token" ]; then
+        # Pusty token odtworzylby most i nie wystartowalby - przerwij, gdy `up` go dotyczy.
+        if [ -z "$*" ] || [[ " $* " == *" lenie-whatsapp-bridge "* ]]; then
+            error "Brak WHATSAPP_BRIDGE_TOKEN w Vault (sprawdz VAULT_ADDR/VAULT_TOKEN w srodowisku lub .env) - przerywam"
+        fi
+        warn "Brak WHATSAPP_BRIDGE_TOKEN w Vault - pomijam (up nie dotyczy mostu WhatsApp)"
+    fi
+    printf '%s\n' "$token" | nas_ssh \
+        "IFS= read -r WA_BRIDGE_TOKEN; export WA_BRIDGE_TOKEN; ${NAS_DOCKER} compose -f ${NAS_COMPOSE_FILE} up -d $*"
 }
 
 check_nas_connection() {
@@ -330,11 +379,11 @@ deploy_on_nas() {
         done
         log "Pull:${compose_names}..."
         nas_docker "compose -f ${NAS_COMPOSE_FILE} pull${compose_names}"
-        nas_docker "compose -f ${NAS_COMPOSE_FILE} up -d${compose_names}"
+        nas_compose_up "${compose_names}"
     else
         # Pull and deploy everything
         nas_docker "compose -f ${NAS_COMPOSE_FILE} pull"
-        nas_docker "compose -f ${NAS_COMPOSE_FILE} up -d"
+        nas_compose_up
     fi
 
     ok "Deploy na NAS zakończony"
@@ -396,9 +445,9 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, db, minio, ner-service, lenie-mcp, obsidian-headless-sync, all (default: core services)"
+echo "Services: frontend, app2, backend, worker, cloud-bridge, document-worker, db, minio, ner-service, whatsapp-bridge, lenie-mcp, obsidian-headless-sync, all (default: core services)"
     echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
-    echo "  minio, ner-service, lenie-mcp and obsidian-headless-sync must be deployed explicitly."
+    echo "  minio, ner-service, whatsapp-bridge, lenie-mcp and obsidian-headless-sync must be deployed explicitly."
     echo ""
     echo "Options:"
     echo "  --skip-build      Skip Docker build, push existing local image"
@@ -462,7 +511,7 @@ while [[ $# -gt 0 ]]; do
         --mark-done=*)   MARK_DONE="true"; MARK_DONE_NAME="${1#--mark-done=}"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|lenie-mcp|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|worker|cloud-bridge|document-worker|db|minio|ner-service|whatsapp-bridge|lenie-mcp|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done

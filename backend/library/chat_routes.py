@@ -7,8 +7,9 @@ Endpoints (x-api-key required via the global before_request):
                                                 MinIO URLs; optional ?sender=/?message_type=/
                                                 ?contact_id= filters
 
-Read-only — chat_conversations/chat_messages are populated exclusively by
-imports/whatsapp_chat_import.py; there is no write path here.
+Read-only — chat_conversations/chat_messages are populated by
+imports/whatsapp_chat_import.py and by the live sync (library/whatsapp_sync_service.py);
+there is no write path here.
 """
 
 import logging
@@ -115,6 +116,12 @@ def list_chat_messages(conversation_id: int):
             "media_original_filename": m.media_original_filename,
             "media_mime_type": m.media_mime_type,
             "media_size_bytes": m.media_size_bytes,
+            # live-sync fields; null/"import" for rows from TXT/ZIP imports
+            "source": m.source,
+            "is_from_me": m.is_from_me,
+            "edited_at": m.edited_at.isoformat() if m.edited_at else None,
+            "deleted_at": m.deleted_at.isoformat() if m.deleted_at else None,
+            "media_status": m.media_status,
         }
         for m in rows
     ]

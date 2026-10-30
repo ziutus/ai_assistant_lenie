@@ -33,6 +33,7 @@ Monorepo, each subproject with its own dependency environment. Most have their o
 |---|---|---|
 | `backend/` | Flask REST API — the core: document CRUD, LLM/embedding operations, NER, search, auth | [backend/CLAUDE.md](backend/CLAUDE.md) (and nested `library/`, `database/`, `imports/`, `data/`, `tests/` `CLAUDE.md` files) |
 | `lenie_mcp/` | Local stdio MCP server (Claude Code / ChatGPT Desktop personal plugin): create Obsidian notes from Lenie documents via REST, two-step propose/commit write | [lenie_mcp/README.md](lenie_mcp/README.md), [ADR-030](docs/adr/adr-030-mcp-server-notes-from-documents.md) |
+| `whatsapp_bridge/` | Receive-only WhatsApp companion device (Go, whatsmeow) feeding the live chat sync — [ADR-031](docs/adr/adr-031-whatsapp-live-sync-bridge.md), runbook [docs/deployment/nas/whatsapp-sync.md](docs/deployment/nas/whatsapp-sync.md); `cd whatsapp_bridge && go test ./...` | ADR-031 |
 | `ner_service/` | Internal-only microservice wrapping spaCy Polish NER, isolated so the ~600MB model doesn't bloat the backend image | `ner_service/README.md` |
 | `web_interface_react/` | Main React 18 SPA | [web_interface_react/CLAUDE.md](web_interface_react/CLAUDE.md) |
 | `web_chrome_extension/` | Chrome/Kiwi Manifest v3 extension, primary content-capture path | [web_chrome_extension/CLAUDE.md](web_chrome_extension/CLAUDE.md) |
