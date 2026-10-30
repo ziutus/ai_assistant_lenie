@@ -35,6 +35,10 @@ interface ChatMessageItem {
   sender_nickname?: string | null;
   can_add_contact?: boolean;
   urls?: MessageUrl[];
+  // thumbnail of the sender: the contact's own photo, else the cached WhatsApp one; avatar_fetch_jid is set
+  // while nobody has asked WhatsApp for a picture of this person yet
+  avatar_url?: string | null;
+  avatar_fetch_jid?: string | null;
 }
 
 interface MessageUrl {
@@ -123,7 +127,32 @@ const AddToTopicButton = ({ messageId, topics, apiUrl, headers }: {
   );
 };
 
-type MentionMap = Record<string, { contact: ChatContactSummary | null; name: string | null }>;
+const AVATAR_COLORS = ["#6b7fd7", "#d76b8a", "#4fa88b", "#c98a3c", "#8d6bd7", "#4f9bc9", "#a0a04a", "#c9604f"];
+
+// Round thumbnail of the sender; without a picture, initials on a colour derived from the name, so the same
+// person always looks the same.
+const SenderAvatar = ({ url, name }: { url?: string | null; name: string }) => {
+  const [broken, setBroken] = React.useState(false);
+  const size = 36;
+  if (url && !broken) {
+    return (
+      <img src={url} alt="" width={size} height={size} loading="lazy" onError={() => setBroken(true)}
+        style={{ borderRadius: "50%", objectFit: "cover", flex: "none" }} />
+    );
+  }
+  const letters = name.replace(/^[~+\s]+/, "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => Array.from(w)[0]).join("");
+  const color = AVATAR_COLORS[Array.from(name).reduce((sum, ch) => sum + (ch.codePointAt(0) ?? 0), 0) % AVATAR_COLORS.length];
+  return (
+    <span aria-hidden style={{
+      width: size, height: size, borderRadius: "50%", background: color, color: "#fff", flex: "none",
+      display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600,
+    }}>
+      {/^\d*$/.test(letters) ? "👤" : letters.toUpperCase()}
+    </span>
+  );
+};
+
+type MentionMap =Record<string, { contact: ChatContactSummary | null; name: string | null }>;
 
 // WhatsApp writes a mention as "@<id>"; the backend resolves the ids it knows to a contact or a name.
 const MessageText = ({ text, mentions }: { text: string; mentions: MentionMap }) => (
@@ -303,6 +332,7 @@ const ChatConversation = () => {
   const [conversation, setConversation] = React.useState<ChatConversationListItem | null>(null);
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([]);
   const [mentions, setMentions] = React.useState<MentionMap>({});
+  const [fetchedAvatars, setFetchedAvatars] = React.useState<Record<string, string | null>>({});
   const [messageType, setMessageType] = React.useState(searchParams.get("message_type") ?? "");
   const [dateFrom, setDateFrom] = React.useState(searchParams.get("date_from") ?? "");
   const contactId = searchParams.get("contact_id") ?? "";
@@ -370,6 +400,30 @@ const ChatConversation = () => {
     fetchMessages(initialPage, messageType, dateFrom);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, contactId]);
+
+  // Senders nobody has asked WhatsApp about yet: fetch their pictures a few at a time (the backend caches
+  // them, so this only happens once per person). A sender the bridge could not answer for stays pending.
+  React.useEffect(() => {
+    const pending = Array.from(new Set(
+      messages.map((m) => m.avatar_fetch_jid).filter((jid): jid is string => !!jid && !(jid in fetchedAvatars)),
+    ));
+    if (!pending.length) return undefined;
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < pending.length; i += 6) {
+        try {
+          const response = await axios.post(`${apiUrl}/chat_avatars/fetch`, { jids: pending.slice(i, i + 6) }, { headers });
+          if (cancelled) return;
+          setFetchedAvatars((prev) => ({ ...prev, ...response.data.avatars }));
+        } catch (error) {
+          console.error("Error fetching sender pictures", error);
+          return;
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
 
   return (
     <div>
@@ -447,6 +501,11 @@ const ChatConversation = () => {
           <div key={m.id} style={{ border: "1px solid #eee", borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, color: "#556", fontSize: "0.9em", marginBottom: 4 }}>
               <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {!m.is_from_me && (
+                  <SenderAvatar
+                    url={m.avatar_fetch_jid && m.avatar_fetch_jid in fetchedAvatars ? fetchedAvatars[m.avatar_fetch_jid] : m.avatar_url}
+                    name={m.contact?.display_name ?? m.sender_name_raw} />
+                )}
                 <strong>
                   {m.contact ? (
                     <NavLink to={`/contacts/${m.contact.id}`}>{m.contact.display_name ?? m.sender_name_raw}</NavLink>
