@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from library import llm_model_store
 from library.db.engine import get_scoped_session
 from library.db.models import LlmModel, LlmPricing
-from library.llm_model_store import ModelValidationError, invalidate_cache, validate_model
+from library.llm_model_store import check_model, invalidate_cache
 
 bp = Blueprint("llm_models", __name__)
 
@@ -71,14 +71,13 @@ def list_models():
 def add_model():
     _require_service()
     data = _body()
-    try:
-        values = validate_model(
-            model_id=data.get("model_id"), label=data.get("label"), provider=data.get("provider"),
-            external=data.get("external"), verified=data.get("verified", False),
-            status=data.get("status", "active"), retires_on=data.get("retires_on"), note=data.get("note"),
-        )
-    except ModelValidationError as exc:
-        return _error(str(exc), 400)
+    values, problem = check_model(
+        model_id=data.get("model_id"), label=data.get("label"), provider=data.get("provider"),
+        external=data.get("external"), verified=data.get("verified", False),
+        status=data.get("status", "active"), retires_on=data.get("retires_on"), note=data.get("note"),
+    )
+    if problem:
+        return _error(problem, 400)
     session = get_scoped_session()
     if session.scalars(select(LlmModel.id).where(LlmModel.model_id == values["model_id"])).first() is not None:
         return _error("Model o tym identyfikatorze już istnieje", 409)
@@ -110,10 +109,9 @@ def patch_model(model_pk: int):
             return _error(f"{key} jest niezmienny: usuń model i dodaj go ponownie", 400)
     merged = {key: getattr(model, key) for key in ("model_id", "provider", *_PATCHABLE)}
     merged.update({key: data[key] for key in _PATCHABLE if key in data})
-    try:
-        values = validate_model(**merged)
-    except ModelValidationError as exc:
-        return _error(str(exc), 400)
+    values, problem = check_model(**merged)
+    if problem:
+        return _error(problem, 400)
     try:
         for key in _PATCHABLE:
             setattr(model, key, values[key])

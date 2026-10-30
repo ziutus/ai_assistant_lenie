@@ -136,45 +136,66 @@ def provider_of(model_id: str) -> str | None:
     return next((m.provider for m in get_models() if m.model_id == model_id and m.status != "retired"), None)
 
 
-def _text(value, name: str, max_length: int, *, required: bool = True) -> str | None:
+def _clean_text(value, name: str, max_length: int, *, required: bool = True) -> tuple[str | None, str | None]:
+    """``(stripped text, None)`` or ``(None, message)``; an optional ``None`` is fine."""
     if value is None and not required:
-        return None
+        return None, None
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > max_length:
-        raise ModelValidationError(f"{name} musi mieć od 1 do {max_length} znaków")
-    return value.strip()
+        return None, f"{name} musi mieć od 1 do {max_length} znaków"
+    return value.strip(), None
 
 
-def _date(value) -> datetime.date | None:
+def _clean_date(value) -> tuple[datetime.date | None, str | None]:
     if value is None or value == "":
-        return None
+        return None, None
     if isinstance(value, datetime.date):
-        return value
+        return value, None
     try:
-        return datetime.date.fromisoformat(value)
-    except (TypeError, ValueError) as exc:
-        raise ModelValidationError("retires_on musi być datą RRRR-MM-DD") from exc
+        return datetime.date.fromisoformat(value), None
+    except (TypeError, ValueError):
+        return None, "retires_on musi być datą RRRR-MM-DD"
 
 
-def validate_model(*, model_id, label, provider, external=None, verified=False, status="active", retires_on=None,
-                   note=None) -> dict:
-    """Return the normalized row fields or raise ModelValidationError."""
-    model_id = _text(model_id, "model_id", MAX_MODEL_ID_LENGTH)
+def check_model(*, model_id, label, provider, external=None, verified=False, status="active", retires_on=None,
+                note=None) -> tuple[dict | None, str | None]:
+    """Validate a row without raising: ``(normalized fields, None)`` or ``(None, Polish message)``.
+
+    The REST layer uses this form, so no exception object ever reaches an HTTP response.
+    """
+    model_id, error = _clean_text(model_id, "model_id", MAX_MODEL_ID_LENGTH)
+    if error:
+        return None, error
     if re.search(r"\s", model_id):
-        raise ModelValidationError("model_id nie może zawierać białych znaków")
+        return None, "model_id nie może zawierać białych znaków"
     if provider not in PROVIDERS:
-        raise ModelValidationError(f"provider musi być jednym z: {', '.join(PROVIDERS)}")
+        return None, f"provider musi być jednym z: {', '.join(PROVIDERS)}"
     if provider == "openrouter":
         if not model_id.startswith(OPENROUTER_PREFIX) or "/" not in model_id[len(OPENROUTER_PREFIX):]:
-            raise ModelValidationError("model OpenRouter musi mieć postać openrouter/<dostawca>/<model>")
+            return None, "model OpenRouter musi mieć postać openrouter/<dostawca>/<model>"
     elif model_id.startswith(OPENROUTER_PREFIX):
-        raise ModelValidationError("prefiks openrouter/ jest zarezerwowany dla providera openrouter")
-    label = _text(label, "label", MAX_LABEL_LENGTH)
+        return None, "prefiks openrouter/ jest zarezerwowany dla providera openrouter"
+    label, error = _clean_text(label, "label", MAX_LABEL_LENGTH)
+    if error:
+        return None, error
     if status not in STATUSES:
-        raise ModelValidationError(f"status musi być jednym z: {', '.join(STATUSES)}")
+        return None, f"status musi być jednym z: {', '.join(STATUSES)}"
     if external is None:
         external = provider == "openrouter"  # an intermediary that receives the text
     if not isinstance(external, bool) or not isinstance(verified, bool):
-        raise ModelValidationError("external i verified muszą być wartościami logicznymi")
-    note = _text(note or None, "note", MAX_NOTE_LENGTH, required=False)
+        return None, "external i verified muszą być wartościami logicznymi"
+    note, error = _clean_text(note or None, "note", MAX_NOTE_LENGTH, required=False)
+    if error:
+        return None, error
+    retires, error = _clean_date(retires_on)
+    if error:
+        return None, error
     return {"model_id": model_id, "label": label, "provider": provider, "external": external, "verified": verified,
-            "status": status, "retires_on": _date(retires_on), "note": note}
+            "status": status, "retires_on": retires, "note": note}, None
+
+
+def validate_model(**fields) -> dict:
+    """Return the normalized row fields or raise ModelValidationError (for callers that prefer an exception)."""
+    values, error = check_model(**fields)
+    if error:
+        raise ModelValidationError(error)
+    return values

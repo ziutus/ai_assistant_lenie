@@ -89,6 +89,29 @@ class TestValidation:
         assert validate_model(**OK, note="")["note"] is None
 
 
+class TestCheckModel:
+    """check_model() is the form the REST layer uses: a result tuple, never an exception."""
+
+    def test_valid_row_returns_values_and_no_problem(self):
+        values, problem = store.check_model(**OK, retires_on="2027-05-01")
+        assert problem is None and values["retires_on"] == datetime.date(2027, 5, 1)
+
+    @pytest.mark.parametrize("override, fragment", [
+        ({"model_id": ""}, "model_id"), ({"model_id": "has space"}, "białych znaków"), ({"provider": "bedrock"}, "provider"),
+        ({"status": "gone"}, "status"), ({"retires_on": "jutro"}, "RRRR-MM-DD"), ({"external": "yes"}, "logicznymi"),
+        ({"label": " "}, "label"), ({"note": "x" * 1001}, "note"), ({"model_id": "openrouter/gemini"}, "zarezerwowany"),
+    ])
+    def test_invalid_row_returns_a_message_without_raising(self, override, fragment):
+        values, problem = store.check_model(**{**OK, **override})
+        assert values is None and fragment in problem
+
+    def test_validate_model_still_raises_with_the_same_message(self):
+        _, problem = store.check_model(**{**OK, "status": "gone"})
+        with pytest.raises(ModelValidationError, match="status"):
+            validate_model(**{**OK, "status": "gone"})
+        assert "status" in problem
+
+
 def test_migration_seed_matches_the_code_seed():
     path = next(pathlib.Path(__file__).resolve().parents[2].glob("alembic/versions/f2c8a4d6b190_*.py"))
     spec = importlib.util.spec_from_file_location("llm_models_migration", path)
