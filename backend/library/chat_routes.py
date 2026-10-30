@@ -1,6 +1,8 @@
 """Flask blueprint: browsing imported chat logs (chat_conversations/chat_messages).
 
 Endpoints (x-api-key required via the global before_request):
+  GET /chat_conversations/<id>/senders       — aggregated authors and contact status
+  POST /chat_conversations/<id>/senders/add_contacts — add up to 50 authors with per-item isolation
   GET /chat_conversations                    — paginated list of imported chats
   GET /chat_conversations/<id>/messages      — paginated message thread (chronological
                                                 by default), media served as presigned
@@ -12,7 +14,7 @@ Endpoints (x-api-key required via the global before_request):
   POST /chat_messages/<id>/import_url        — add a link written in a message to the library
 
 Messages are populated by imports/whatsapp_chat_import.py and by the live sync
-(library/whatsapp_sync_service.py); the only writes here are the two explicit owner actions above.
+(library/whatsapp_sync_service.py); writes here are explicit owner actions.
 """
 
 import logging
@@ -32,6 +34,7 @@ from library.chat_contact_service import (
     sender_phone,
 )
 from library.db.engine import get_scoped_session
+from library.chat_senders_service import list_senders
 from library.db.models import ChatConversation, ChatMessage, Contact, Document
 from library.whatsapp_parser import is_phone_number
 
@@ -238,6 +241,67 @@ def list_chat_messages(conversation_id: int):
         "offset": offset,
         "limit": limit,
     })
+
+
+@bp.route("/chat_conversations/<int:conversation_id>/senders", methods=["GET"])
+def list_chat_senders(conversation_id: int):
+    session = get_scoped_session()
+    conversation = session.get(ChatConversation, conversation_id)
+    if conversation is None:
+        return jsonify({"status": "error", "message": "Conversation not found"}), 404
+    status = request.args.get("status")
+    if status is not None and status not in {"missing", "in_contacts"}:
+        return jsonify({"status": "error", "message": "Invalid status"}), 400
+    offset = max(0, request.args.get("offset", default=0, type=int))
+    limit = max(1, min(500, request.args.get("limit", default=200, type=int)))
+    result = list_senders(session, conversation_id, status=status, q=request.args.get("q", ""),
+                          offset=offset, limit=limit)
+    return jsonify({"status": "success", "conversation": _conversation_dict(conversation), **result})
+
+
+@bp.route("/chat_conversations/<int:conversation_id>/senders/add_contacts", methods=["POST"])
+def add_chat_sender_contacts(conversation_id: int):
+    _authorized()
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"status": "error", "message": "Expected an object"}), 400
+    ids = body.get("message_ids")
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 50 or any(type(i) is not int for i in ids):
+        return jsonify({"status": "error", "message": "Expected 1 to 50 integer message_ids"}), 400
+    if ("category_id" in body and type(body["category_id"]) is not int or
+            "fetch_photo" in body and type(body["fetch_photo"]) is not bool):
+        return jsonify({"status": "error", "message": "Invalid category_id or fetch_photo"}), 400
+    session = get_scoped_session()
+    if session.get(ChatConversation, conversation_id) is None:
+        return jsonify({"status": "error", "message": "Conversation not found"}), 404
+    fetch_photo = body.get("fetch_photo", False)
+    counts = dict.fromkeys(("created", "linked_existing", "skipped", "error"), 0)
+    results = []
+    for message_id in ids:
+        item = {"message_id": message_id}
+        try:
+            with session.begin_nested():
+                message = session.get(ChatMessage, message_id)
+                if message is None or message.conversation_id != conversation_id:
+                    item.update(outcome="skipped", reason="not_in_conversation")
+                elif message.contact_id is not None:
+                    item.update(outcome="skipped", reason="already_in_contacts")
+                else:
+                    result = create_contact_from_message(
+                        session, message, bridge=_bridge() if fetch_photo else None,
+                        category_id=body.get("category_id"), fetch_photo=fetch_photo,
+                    )
+                    item.update(outcome="linked_existing" if result["existing"] else "created",
+                                contact_id=result["contact_id"])
+        except SenderError:
+            item = {"message_id": message_id, "outcome": "error", "reason": "sender_not_eligible"}
+        except Exception:
+            logger.exception("Creating a contact from chat message %s failed", message_id)
+            item = {"message_id": message_id, "outcome": "error", "reason": "could_not_create_contact"}
+        counts[item["outcome"]] += 1
+        results.append(item)
+    session.commit()
+    return jsonify({"status": "success", "results": results, "counts": counts})
 
 
 def _bridge():
