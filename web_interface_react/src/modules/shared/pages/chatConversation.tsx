@@ -123,6 +123,25 @@ const AddToTopicButton = ({ messageId, topics, apiUrl, headers }: {
   );
 };
 
+type MentionMap = Record<string, { contact: ChatContactSummary | null; name: string | null }>;
+
+// WhatsApp writes a mention as "@<id>"; the backend resolves the ids it knows to a contact or a name.
+const MessageText = ({ text, mentions }: { text: string; mentions: MentionMap }) => (
+  <>
+    {text.split(/(@\d{8,20})/).map((part, index) => {
+      const known = part.startsWith("@") ? mentions[part.slice(1)] : undefined;
+      if (!known) return <React.Fragment key={index}>{part}</React.Fragment>;
+      return known.contact ? (
+        <NavLink key={index} to={`/contacts/${known.contact.id}`} title={part}>
+          @{known.contact.display_name ?? known.name}
+        </NavLink>
+      ) : (
+        <span key={index} title={part}>@{known.name}</span>
+      );
+    })}
+  </>
+);
+
 const PHOTO_RESULT_LABELS: Record<string, string> = {
   stored: "zdjęcie z WhatsAppa zapisane",
   none: "brak zdjęcia profilowego w WhatsAppie",
@@ -263,6 +282,7 @@ const ChatConversation = () => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [conversation, setConversation] = React.useState<ChatConversationListItem | null>(null);
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([]);
+  const [mentions, setMentions] = React.useState<MentionMap>({});
   const [messageType, setMessageType] = React.useState(searchParams.get("message_type") ?? "");
   const [dateFrom, setDateFrom] = React.useState(searchParams.get("date_from") ?? "");
   const contactId = searchParams.get("contact_id") ?? "";
@@ -304,6 +324,7 @@ const ChatConversation = () => {
       setConversation(response.data.conversation ?? null);
       const rows: ChatMessageItem[] = response.data.messages ?? [];
       setMessages(rows);
+      setMentions(response.data.mentions ?? {});
       if (contactId) {
         const match = rows.find((m) => String(m.contact?.id) === contactId);
         if (match?.contact?.display_name) setContactLabel(match.contact.display_name);
@@ -436,7 +457,9 @@ const ChatConversation = () => {
               <>
                 {m.content && (
                   <div style={{ whiteSpace: "pre-line" }}
-                    data-radar-context={`${m.sender_name_raw}, ${formatDate(m.sent_at)}`}>{m.content}</div>
+                    data-radar-context={`${m.sender_name_raw}, ${formatDate(m.sent_at)}`}>
+                    <MessageText text={m.content} mentions={mentions} />
+                  </div>
                 )}
                 <MessageUrls m={m} apiUrl={apiUrl} headers={headers} />
                 {m.edited_at && (

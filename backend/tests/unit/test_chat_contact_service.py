@@ -130,3 +130,31 @@ class TestBridgeAvatar:
 def test_selecting_still_works(session):
     _msg(session)
     assert session.scalar(select(ChatMessage.id)) is not None
+
+
+class TestMentionMap:
+    def test_linked_contact_wins_and_is_resolved_by_lid(self, session, monkeypatch):
+        from library import chat_routes
+
+        monkeypatch.setattr(session, "get", lambda model, pk: object())
+        monkeypatch.setattr(chat_routes, "_contact_summary", lambda c: {"id": 492, "display_name": "Bartłomiej Karalus"})
+        _msg(session, name="+48572317523", jid="113344723824824@lid", alt="48572317523@s.whatsapp.net", contact_id=492)
+
+        result = chat_routes.mention_map(session, ["@113344723824824 żyjesz, urlop?", None])
+
+        assert result == {"113344723824824": {"contact": {"id": 492, "display_name": "Bartłomiej Karalus"}, "name": None}}
+
+    def test_falls_back_to_the_whatsapp_name_and_skips_unknown_or_numeric(self, session):
+        from library import chat_routes
+
+        _msg(session, name="Ala z Bloku", jid="111111111111@lid")
+        _msg(session, name="+48600600600", jid="222222222222@lid")
+
+        result = chat_routes.mention_map(session, ["@111111111111 @222222222222 @333333333333 @12"])
+
+        assert result == {"111111111111": {"contact": None, "name": "Ala z Bloku"}}
+
+    def test_no_mentions_no_query(self, session):
+        from library import chat_routes
+
+        assert chat_routes.mention_map(session, ["bez wzmianek", None]) == {}

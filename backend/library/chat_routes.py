@@ -25,7 +25,8 @@ from sqlalchemy import func, select
 
 from library.chat_contact_service import SenderError, create_contact_from_message, sender_nickname, sender_phone
 from library.db.engine import get_scoped_session
-from library.db.models import ChatConversation, ChatMessage, Document
+from library.db.models import ChatConversation, ChatMessage, Contact, Document
+from library.whatsapp_parser import is_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,39 @@ def _url_entries(session, text: str | None) -> list[dict]:
         entries.append({"url": url, "document": None if document is None else {
             "id": document.id, "title": document.title, "document_type": document.document_type}})
     return entries
+
+
+_MENTION_RE = re.compile(r"@(\d{8,20})\b")
+
+
+def mention_map(session, texts: list[str | None]) -> dict[str, dict]:
+    """Who the ``@<number>`` mentions written in these texts stand for.
+
+    WhatsApp stores a mention as the person's LID (or phone number) instead of a name. Anyone who
+    wrote in a synced chat is known by that id, so it is looked up among the senders: a linked
+    contact wins, else the name the person chose in WhatsApp. Unknown ids are left out."""
+    ids = {found for text in texts for found in _MENTION_RE.findall(text or "")}
+    if not ids:
+        return {}
+    keys = {f"{i}@lid": i for i in ids} | {f"{i}@s.whatsapp.net": i for i in ids}
+    rows = session.execute(
+        select(ChatMessage.wa_sender_jid, ChatMessage.wa_sender_alt_jid, ChatMessage.contact_id,
+               ChatMessage.sender_name_raw)
+        .where(ChatMessage.wa_sender_jid.in_(keys) | ChatMessage.wa_sender_alt_jid.in_(keys))
+        .distinct()
+    ).all()
+    found: dict[str, dict] = {}
+    for jid, alt, contact_id, name in rows:
+        for key in (jid, alt):
+            mention_id = keys.get(key)
+            if mention_id is None:
+                continue
+            entry = found.setdefault(mention_id, {"contact": None, "name": None})
+            if contact_id and entry["contact"] is None:
+                entry["contact"] = _contact_summary(session.get(Contact, contact_id))
+            if entry["name"] is None and name and not is_phone_number(name) and not name.startswith("WhatsApp "):
+                entry["name"] = name
+    return {k: v for k, v in found.items() if v["contact"] or v["name"]}
 
 
 def _conversation_dict(conv: ChatConversation) -> dict:
@@ -171,6 +205,7 @@ def list_chat_messages(conversation_id: int):
         "status": "success",
         "conversation": _conversation_dict(conversation),
         "messages": messages,
+        "mentions": mention_map(session, [r.content for r in rows]),
         "total": total,
         "offset": offset,
         "limit": limit,
