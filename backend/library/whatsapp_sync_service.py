@@ -118,6 +118,12 @@ class BridgeClient:
             raise BridgeError(f"bridge returned HTTP {response.status_code}")
         return response.content, response.headers.get("Content-Type")
 
+    def contact_name(self, jids: list[str]) -> tuple[str | None, str | None]:
+        """(name, source) the bridge's contact store knows for one person, given any of their ids;
+        source is "push_name" (chosen by the person) or "address_book" (saved on the owner's phone)."""
+        data = self._json("GET", "/contact", params={"jid": jids}, timeout=15)
+        return data.get("name") or None, data.get("source") or None
+
     def qr_png(self) -> bytes | None:
         response = self._call("GET", "/pairing/qr.png")
         if response.status_code == 404:

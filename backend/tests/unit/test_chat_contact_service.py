@@ -127,6 +127,45 @@ class TestBridgeAvatar:
             BridgeClient("http://b", "t", http=_Http(_Resp(502))).avatar("48@s.whatsapp.net")
 
 
+class _JsonResp(_Resp):
+    def __init__(self, status, payload):
+        super().__init__(status)
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+class TestBridgeName:
+    def test_asks_with_every_id_and_returns_name_and_source(self):
+        http = _Http(_JsonResp(200, {"name": "Marek", "source": "push_name"}))
+        client = BridgeClient("http://b", "t", http=http)
+        assert client.contact_name(["48@s.whatsapp.net", "9@lid"]) == ("Marek", "push_name")
+        assert http.calls[0] == ("GET", "http://b/contact", {"jid": ["48@s.whatsapp.net", "9@lid"]})
+
+    def test_empty_answer_is_none(self):
+        client = BridgeClient("http://b", "t", http=_Http(_JsonResp(200, {"name": "", "source": ""})))
+        assert client.contact_name(["48@s.whatsapp.net"]) == (None, None)
+
+    def test_service_asks_the_phone_jid_and_the_lid_and_survives_a_bridge_error(self, session):
+        class Bridge:
+            def __init__(self, error=False):
+                self.error, self.asked = error, None
+
+            def contact_name(self, jids):
+                self.asked = jids
+                if self.error:
+                    raise BridgeError("down")
+                return "Marek", "push_name"
+
+        m = _msg(session, jid="9@lid", alt="48601379007@s.whatsapp.net")
+        bridge = Bridge()
+        assert svc.bridge_name(bridge, m, "48601379007") == ("Marek", "push_name")
+        assert bridge.asked == ["48601379007@s.whatsapp.net", "9@lid"]
+        assert svc.bridge_name(Bridge(error=True), m, "48601379007") == (None, None)
+        assert svc.bridge_name(None, m, None) == (None, None)
+
+
 def test_selecting_still_works(session):
     _msg(session)
     assert session.scalar(select(ChatMessage.id)) is not None

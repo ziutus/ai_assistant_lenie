@@ -15,6 +15,52 @@ import (
 
 const maxAvatarBytes = 5 * 1024 * 1024
 
+// contactName is the best human name the account's store knows for one user: the name the
+// person chose for themselves (push name), else the one saved in the owner's address book.
+func (b *Bridge) contactName(ctx context.Context, jids ...types.JID) (name, source string) {
+	b.mu.Lock()
+	client := b.client
+	b.mu.Unlock()
+	if client == nil || client.Store == nil || client.Store.Contacts == nil {
+		return "", ""
+	}
+	for _, jid := range jids {
+		if jid.IsEmpty() {
+			continue
+		}
+		c, err := client.Store.Contacts.GetContact(ctx, jid.ToNonAD())
+		if err != nil {
+			continue
+		}
+		if c.PushName != "" {
+			return c.PushName, "push_name"
+		}
+		if c.FullName != "" {
+			return c.FullName, "address_book"
+		}
+	}
+	return "", ""
+}
+
+// handleContact answers with the name the bridge knows for a user (either id of the same person
+// may be passed: the phone-number JID and the LID).
+func (b *Bridge) handleContact(w http.ResponseWriter, r *http.Request) {
+	var jids []types.JID
+	for _, raw := range r.URL.Query()["jid"] {
+		if jid, err := types.ParseJID(raw); err == nil && !jid.IsEmpty() && jid.Server != types.GroupServer {
+			jids = append(jids, jid)
+		}
+	}
+	if len(jids) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a user jid is required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	name, source := b.contactName(ctx, jids...)
+	writeJSON(w, http.StatusOK, map[string]string{"name": name, "source": source})
+}
+
 // avatarHostAllowed limits the download to WhatsApp's own picture CDN: the URL comes
 // from a server response, so it must never lead the bridge to an arbitrary host.
 func avatarHostAllowed(raw string) bool {

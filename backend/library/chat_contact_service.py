@@ -47,6 +47,19 @@ def sender_nickname(message: ChatMessage) -> str | None:
     return None if not name or is_phone_number(name) or name.startswith("WhatsApp ") else name
 
 
+def bridge_name(bridge, message: ChatMessage, phone: str | None) -> tuple[str | None, str | None]:
+    """Name WhatsApp itself holds for the sender (see BridgeClient.contact_name); (None, None) when
+    the bridge is off, unreachable or knows nothing. Both the phone JID and the LID are asked."""
+    jids = [j for j in (f"{phone}@s.whatsapp.net" if phone else None, message.wa_sender_alt_jid,
+                        message.wa_sender_jid) if j]
+    if bridge is None or not jids:
+        return None, None
+    try:
+        return bridge.contact_name(list(dict.fromkeys(jids)))
+    except BridgeError:
+        return None, None
+
+
 def _sender_filter(message: ChatMessage):
     base = [ChatMessage.contact_id.is_(None), ChatMessage.is_from_me.is_not(True)]
     if message.wa_sender_jid:
@@ -134,7 +147,7 @@ def create_contact_from_message(session, message: ChatMessage, *, bridge=None, d
         raise SenderError("the message has no sender")
     conversation = session.get(ChatConversation, message.conversation_id)
     phone = sender_phone(message)
-    nickname = sender_nickname(message)
+    nickname = sender_nickname(message) or bridge_name(bridge, message, phone)[0]
 
     contact, created = None, False
     if existing_contact_id:

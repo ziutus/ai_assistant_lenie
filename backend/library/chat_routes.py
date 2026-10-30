@@ -23,7 +23,13 @@ from urllib.parse import urlparse
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, select
 
-from library.chat_contact_service import SenderError, create_contact_from_message, sender_nickname, sender_phone
+from library.chat_contact_service import (
+    SenderError,
+    bridge_name,
+    create_contact_from_message,
+    sender_nickname,
+    sender_phone,
+)
 from library.db.engine import get_scoped_session
 from library.db.models import ChatConversation, ChatMessage, Contact, Document
 from library.whatsapp_parser import is_phone_number
@@ -221,6 +227,22 @@ def _bridge():
     return BridgeClient(url, token) if url and token else None
 
 
+@bp.route("/chat_messages/<int:message_id>/sender_profile", methods=["GET"])
+def chat_message_sender_profile(message_id: int):
+    """What WhatsApp knows about the sender, to pre-fill the add-to-contacts form:
+    ``nickname`` (null when there is none) and ``source`` (push_name / address_book / message)."""
+    _authorized()
+    session = get_scoped_session()
+    message = session.get(ChatMessage, message_id)
+    if message is None:
+        return jsonify({"status": "error", "message": "Message not found"}), 404
+    nickname, source = sender_nickname(message), "message"
+    if nickname is None:
+        nickname, source = bridge_name(_bridge(), message, sender_phone(message))
+    return jsonify({"status": "success", "nickname": nickname, "source": source if nickname else None,
+                    "phone": sender_phone(message)})
+
+
 @bp.route("/chat_messages/<int:message_id>/create_contact", methods=["POST"])
 def create_contact_from_chat_message(message_id: int):
     """Add the sender of this message to the contact book.
@@ -237,7 +259,7 @@ def create_contact_from_chat_message(message_id: int):
     fetch_photo = bool(body.get("fetch_photo", True))
     try:
         result = create_contact_from_message(
-            session, message, bridge=_bridge() if fetch_photo else None,
+            session, message, bridge=_bridge(),
             display_label=body.get("display_label"), first_name=body.get("first_name"),
             last_name=body.get("last_name"), category_id=body.get("category_id"),
             fetch_photo=fetch_photo, existing_contact_id=body.get("existing_contact_id"),

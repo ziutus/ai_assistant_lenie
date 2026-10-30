@@ -160,6 +160,25 @@ const AddContactButton = ({ m, channel, apiUrl, headers }: {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [result, setResult] = React.useState<{ contact_id: number; created: boolean; photo: string } | null>(null);
+  const [hint, setHint] = React.useState("");
+
+  // WhatsApp often does not put the name in the message itself; ask what the account knows about the sender.
+  const openForm = async () => {
+    setOpen(true);
+    if (label) return;
+    try {
+      const response = await axios.get(`${apiUrl}/chat_messages/${m.id}/sender_profile`, { headers });
+      const { nickname, source } = response.data;
+      if (nickname) {
+        setLabel(nickname);
+        setHint(source === "address_book" ? "nazwa z Twojej książki telefonicznej" : "nazwa ustawiona przez tę osobę w WhatsAppie");
+      } else {
+        setHint("WhatsApp nie zna nazwy tej osoby — wpisz własną");
+      }
+    } catch {
+      setHint("nie udało się zapytać WhatsAppa o nazwę");
+    }
+  };
 
   if (result) {
     return (
@@ -174,7 +193,7 @@ const AddContactButton = ({ m, channel, apiUrl, headers }: {
     return (
       <button type="button" className="button" style={{ fontSize: "0.8em", padding: "2px 8px" }}
         title="Dodaj nadawcę do kontaktów — z informacją, że znacie się z tego kanału WhatsApp"
-        onClick={() => setOpen(true)}>
+        onClick={openForm}>
         👤 Dodaj do kontaktów
       </button>
     );
@@ -192,6 +211,7 @@ const AddContactButton = ({ m, channel, apiUrl, headers }: {
   return (
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: "0.85em" }}>
       <input value={label} placeholder="Pseudonim / nazwa" onChange={(e) => setLabel(e.target.value)} />
+      {hint && <span style={{ color: "#667" }}>({hint})</span>}
       <label><input type="checkbox" checked={fetchPhoto} onChange={(e) => setFetchPhoto(e.target.checked)} /> zdjęcie z WhatsAppa</label>
       <button type="button" className="button" disabled={busy} onClick={() => void save()}>
         Zapisz (kanał: {channel})
