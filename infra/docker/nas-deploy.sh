@@ -122,6 +122,41 @@ nas_docker() {
     nas_ssh "${NAS_DOCKER} $*"
 }
 
+# --- Sekrety z Vaulta wstrzykiwane przy `compose up` --------------------------
+# Kontener Go (whatsapp-bridge) nie czyta Vaulta, a sekretu nie trzymamy w .env na
+# NAS-ie. Token (WHATSAPP_BRIDGE_TOKEN) pobieramy z Vaulta lokalnie i przekazujemy
+# przez stdin ssh (nie trafia do argv ani na dysk NAS-a).
+# VAULT_ADDR / VAULT_TOKEN / VAULT_ENV: ze srodowiska albo z ${PROJECT_ROOT}/.env.
+vault_env_value() {
+    local key=$1 v="${!1:-}"
+    if [ -z "$v" ] && [ -f "${PROJECT_ROOT}/.env" ]; then
+        v=$(grep -E "^${key}=" "${PROJECT_ROOT}/.env" | tail -1 | cut -d= -f2- | tr -d "\r\"'" || true)
+    fi
+    printf '%s' "$v"
+}
+
+fetch_whatsapp_bridge_token() {
+    local addr tok env_name body
+    addr=$(vault_env_value VAULT_ADDR); addr="${addr:-http://${NAS_HOST}:8210}"
+    tok=$(vault_env_value VAULT_TOKEN)
+    [ -n "$tok" ] || return 1
+    env_name=$(vault_env_value VAULT_ENV); env_name="${env_name:-dev}"
+    body=$(curl -s -m 8 -H "X-Vault-Token: ${tok}" "${addr%/}/v1/secret/data/lenie/${env_name}") || return 1
+    printf '%s' "$body" | sed -n 's/.*"WHATSAPP_BRIDGE_TOKEN"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+# compose up na NAS z WA_BRIDGE_TOKEN w srodowisku. Zawsze przez te funkcje: `up` bez
+# zmiennej odtworzylby most z pustym tokenem (zmienia sie hash konfiguracji kontenera).
+nas_compose_up() {
+    local token
+    token=$(fetch_whatsapp_bridge_token || true)
+    if [ -z "$token" ]; then
+        warn "Brak WHATSAPP_BRIDGE_TOKEN w Vault (lub VAULT_TOKEN) - most WhatsApp dostanie pusty token i nie wystartuje"
+    fi
+    printf '%s\n' "$token" | nas_ssh \
+        "IFS= read -r WA_BRIDGE_TOKEN; export WA_BRIDGE_TOKEN; ${NAS_DOCKER} compose -f ${NAS_COMPOSE_FILE} up -d $*"
+}
+
 check_nas_connection() {
     log "Sprawdzanie połączenia z NAS ($NAS_HOST)..."
     if ! nas_ssh "echo ok" &>/dev/null; then
@@ -334,11 +369,11 @@ deploy_on_nas() {
         done
         log "Pull:${compose_names}..."
         nas_docker "compose -f ${NAS_COMPOSE_FILE} pull${compose_names}"
-        nas_docker "compose -f ${NAS_COMPOSE_FILE} up -d${compose_names}"
+        nas_compose_up "${compose_names}"
     else
         # Pull and deploy everything
         nas_docker "compose -f ${NAS_COMPOSE_FILE} pull"
-        nas_docker "compose -f ${NAS_COMPOSE_FILE} up -d"
+        nas_compose_up
     fi
 
     ok "Deploy na NAS zakończony"

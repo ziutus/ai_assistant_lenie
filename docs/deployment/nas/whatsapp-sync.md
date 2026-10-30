@@ -17,13 +17,16 @@ best-effort: do not treat it as complete.
 ## 1. One-time setup
 
 1. Pick a secret of at least 16 characters (`openssl rand -hex 24`).
-2. NAS env file `/share/Container/lenie-env/.env`: `WA_BRIDGE_TOKEN=<secret>`.
-3. Vault (same secret, backend side): `WHATSAPP_BRIDGE_TOKEN=<secret>` and
-   `WHATSAPP_BRIDGE_URL=http://lenie-whatsapp-bridge:8095`.
+2. Vault (the only place the secret lives): `WHATSAPP_BRIDGE_TOKEN=<secret>` and
+   `WHATSAPP_BRIDGE_URL=http://lenie-whatsapp-bridge:8095`. The backend reads them at startup;
+   `nas-deploy.sh` reads the token from Vault (`VAULT_ADDR`/`VAULT_TOKEN`/`VAULT_ENV` from the
+   environment or the repo `.env`) and passes it to the bridge as `WA_BRIDGE_TOKEN` over the ssh
+   stdin on every `compose up`. Nothing is written to the NAS env file. Run `compose up` for the
+   bridge only through `nas-deploy.sh`; a bare `docker compose up` recreates it with an empty token.
    Optional keys: `WHATSAPP_SYNC_TIMEZONE` (default `Europe/Warsaw`; TXT exports store naive local
    time and synced messages use the same convention), `WHATSAPP_OWN_SENDER_NAME` (default `Ja`),
    `WHATSAPP_MEDIA_MAX_BYTES` (default 50 MiB).
-4. Deploy from the home LAN (see AGENTS.md): `bash ./infra/docker/nas-deploy.sh backend whatsapp-bridge`
+3. Deploy from the home LAN (see AGENTS.md): `bash ./infra/docker/nas-deploy.sh backend whatsapp-bridge`
    (`backend` also recreates the worker and runs the Alembic migration `e4a7c1d9b358`).
    Until Vault has the URL/token the `whatsapp_sync` job is a no-op.
 

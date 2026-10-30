@@ -331,11 +331,12 @@ services:
     mem_reservation: 96m
     cpus: 0.5
     pids_limit: 128
-    # WA_BRIDGE_TOKEN comes from the NAS env file (it must equal WHATSAPP_BRIDGE_TOKEN in Vault,
-    # the backend side of the same secret). Without it only this container refuses to start.
-    env_file:
-      - /share/Container/lenie-env/.env
+    # WA_BRIDGE_TOKEN is injected by nas-deploy.sh at `compose up` time from Vault
+    # (WHATSAPP_BRIDGE_TOKEN, the same secret the backend uses) - deliberately NOT in the NAS
+    # env file. Run `compose up` for this service through nas-deploy.sh only: with the variable
+    # unset the container is recreated with an empty token and refuses to start.
     environment:
+      WA_BRIDGE_TOKEN: ${WA_BRIDGE_TOKEN:-}
       WA_BRIDGE_DATA_DIR: /data
       WA_BRIDGE_MAX_MEDIA_BYTES: "52428800"
       WA_BRIDGE_MEDIA_CONCURRENCY: "2"
