@@ -128,9 +128,15 @@ nas_docker() {
 # przez stdin ssh (nie trafia do argv ani na dysk NAS-a).
 # VAULT_ADDR / VAULT_TOKEN / VAULT_ENV: ze srodowiska albo z ${PROJECT_ROOT}/.env.
 vault_env_value() {
-    local key=$1 v="${!1:-}"
-    if [ -z "$v" ] && [ -f "${PROJECT_ROOT}/.env" ]; then
-        v=$(grep -E "^${key}=" "${PROJECT_ROOT}/.env" | tail -1 | cut -d= -f2- | tr -d "\r\"'" || true)
+    local key=$1 v="${!1:-}" f common
+    if [ -z "$v" ]; then
+        # W worktree .env lezy w glownym checkoucie (katalog nadrzedny git-common-dir).
+        common=$(git -C "${PROJECT_ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+        for f in "${PROJECT_ROOT}/.env" "${common:+${common}/../.env}"; do
+            [ -n "$f" ] && [ -f "$f" ] || continue
+            v=$(grep -E "^${key}=" "$f" | tail -1 | cut -d= -f2- | tr -d "\r\"'" || true)
+            [ -z "$v" ] || break
+        done
     fi
     printf '%s' "$v"
 }
@@ -151,7 +157,11 @@ nas_compose_up() {
     local token
     token=$(fetch_whatsapp_bridge_token || true)
     if [ -z "$token" ]; then
-        warn "Brak WHATSAPP_BRIDGE_TOKEN w Vault (lub VAULT_TOKEN) - most WhatsApp dostanie pusty token i nie wystartuje"
+        # Pusty token odtworzylby most i nie wystartowalby - przerwij, gdy `up` go dotyczy.
+        if [ -z "$*" ] || [[ " $* " == *" lenie-whatsapp-bridge "* ]]; then
+            error "Brak WHATSAPP_BRIDGE_TOKEN w Vault (sprawdz VAULT_ADDR/VAULT_TOKEN w srodowisku lub .env) - przerywam"
+        fi
+        warn "Brak WHATSAPP_BRIDGE_TOKEN w Vault - pomijam (up nie dotyczy mostu WhatsApp)"
     fi
     printf '%s\n' "$token" | nas_ssh \
         "IFS= read -r WA_BRIDGE_TOKEN; export WA_BRIDGE_TOKEN; ${NAS_DOCKER} compose -f ${NAS_COMPOSE_FILE} up -d $*"
