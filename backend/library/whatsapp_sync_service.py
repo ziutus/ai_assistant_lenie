@@ -109,6 +109,15 @@ class BridgeClient:
     def delete_media(self, chat_jid: str, wa_id: str) -> None:
         self._json("DELETE", "/media", params={"chat": chat_jid, "id": wa_id})
 
+    def avatar(self, jid: str) -> tuple[bytes | None, str | None]:
+        """Profile picture of one user as (bytes, content type); (None, None) when there is none."""
+        response = self._call("GET", "/avatar", params={"jid": jid}, timeout=60)
+        if response.status_code == 404:
+            return None, None
+        if response.status_code >= 400:
+            raise BridgeError(f"bridge returned HTTP {response.status_code}")
+        return response.content, response.headers.get("Content-Type")
+
     def qr_png(self) -> bytes | None:
         response = self._call("GET", "/pairing/qr.png")
         if response.status_code == 404:

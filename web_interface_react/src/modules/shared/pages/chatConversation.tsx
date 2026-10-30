@@ -3,6 +3,7 @@ import axios from "axios";
 import { NavLink, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination, PAGE_SIZES } from "../components/Pagination/pagination";
+import RadarSelectionMenu from "../components/RadarSelectionMenu/radarSelectionMenu";
 import type { ChatConversationListItem } from "./chats";
 
 // Message thread view for one imported chat conversation — see chats.tsx.
@@ -29,6 +30,16 @@ interface ChatMessageItem {
   edited_at?: string | null;
   deleted_at?: string | null;
   media_status?: "pending" | "downloaded" | "unavailable" | "error" | null;
+  // sender not in the contact book / links written in the text (live-sync and TXT rows alike)
+  sender_phone?: string | null;
+  sender_nickname?: string | null;
+  can_add_contact?: boolean;
+  urls?: MessageUrl[];
+}
+
+interface MessageUrl {
+  url: string;
+  document: { id: number; title: string | null; document_type: string } | null;
 }
 
 const MEDIA_STATUS_LABELS: Record<string, string> = {
@@ -109,6 +120,108 @@ const AddToTopicButton = ({ messageId, topics, apiUrl, headers }: {
       </button>
       {status === "error" && <span style={{ color: "#c00" }}>Nie udało się dodać</span>}
     </span>
+  );
+};
+
+const PHOTO_RESULT_LABELS: Record<string, string> = {
+  stored: "zdjęcie z WhatsAppa zapisane",
+  none: "brak zdjęcia profilowego w WhatsAppie",
+  unavailable: "nie udało się pobrać zdjęcia (most WhatsApp niedostępny)",
+  skipped: "",
+};
+
+// Adds the sender of a message to the private contact book: nickname (WhatsApp name), phone, profile
+// picture and a note + group naming this chat as the place where the two met.
+const AddContactButton = ({ m, channel, apiUrl, headers }: {
+  m: ChatMessageItem; channel: string; apiUrl: string; headers: Record<string, string>;
+}) => {
+  const [open, setOpen] = React.useState(false);
+  const [label, setLabel] = React.useState(m.sender_nickname ?? "");
+  const [fetchPhoto, setFetchPhoto] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [result, setResult] = React.useState<{ contact_id: number; created: boolean; photo: string } | null>(null);
+
+  if (result) {
+    return (
+      <span style={{ fontSize: "0.85em", color: "#2a7" }}>
+        ✓ {result.created ? "Dodano" : "Powiązano z istniejącym"} kontakt{" "}
+        <NavLink to={`/contacts/${result.contact_id}`}>#{result.contact_id}</NavLink>
+        {PHOTO_RESULT_LABELS[result.photo] ? ` — ${PHOTO_RESULT_LABELS[result.photo]}` : ""}
+      </span>
+    );
+  }
+  if (!open) {
+    return (
+      <button type="button" className="button" style={{ fontSize: "0.8em", padding: "2px 8px" }}
+        title="Dodaj nadawcę do kontaktów — z informacją, że znacie się z tego kanału WhatsApp"
+        onClick={() => setOpen(true)}>
+        👤 Dodaj do kontaktów
+      </button>
+    );
+  }
+  const save = async () => {
+    setBusy(true); setError("");
+    try {
+      const response = await axios.post(`${apiUrl}/chat_messages/${m.id}/create_contact`,
+        { display_label: label.trim() || undefined, fetch_photo: fetchPhoto }, { headers });
+      setResult(response.data);
+    } catch (cause: any) {
+      setError(cause.response?.data?.message || cause.message);
+    } finally { setBusy(false); }
+  };
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: "0.85em" }}>
+      <span>{m.sender_phone ? `+${m.sender_phone}` : m.sender_name_raw}</span>
+      <input value={label} placeholder="Pseudonim / nazwa" onChange={(e) => setLabel(e.target.value)} />
+      <label><input type="checkbox" checked={fetchPhoto} onChange={(e) => setFetchPhoto(e.target.checked)} /> zdjęcie z WhatsAppa</label>
+      <button type="button" className="button" disabled={busy} onClick={() => void save()}>
+        Zapisz (kanał: {channel})
+      </button>
+      <button type="button" className="button" disabled={busy} onClick={() => setOpen(false)}>Anuluj</button>
+      {error && <span role="alert" style={{ color: "#c00" }}>{error}</span>}
+    </span>
+  );
+};
+
+// Links written in a message: add one to the library (YouTube as a video, anything else as a page).
+const MessageUrls = ({ m, apiUrl, headers }: { m: ChatMessageItem; apiUrl: string; headers: Record<string, string> }) => {
+  const [urls, setUrls] = React.useState<MessageUrl[]>(m.urls ?? []);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [error, setError] = React.useState("");
+  if (!urls.length) return null;
+
+  const add = async (url: string) => {
+    setBusy(url); setError("");
+    try {
+      const response = await axios.post(`${apiUrl}/chat_messages/${m.id}/import_url`, { url }, { headers });
+      const { document_id: id, document_type: type, promotion_failed: failed } = response.data;
+      setUrls((prev) => prev.map((u) => (u.url === url ? { url, document: { id, title: null, document_type: type } } : u)));
+      if (failed) setError(`Dodano jako link, ale treści nie udało się pobrać (${failed}).`);
+    } catch (cause: any) {
+      setError(cause.response?.data?.message || cause.message);
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <div style={{ marginTop: 4, fontSize: "0.85em" }}>
+      {urls.map((u) => (
+        <div key={u.url}>
+          🔗 <a href={u.url} target="_blank" rel="noreferrer">{u.url}</a>{" "}
+          {u.document ? (
+            <NavLink to={`/${u.document.document_type === "link" ? "link" : u.document.document_type === "youtube" ? "youtube" : "webpage"}/${u.document.id}`}>
+              ✓ w bazie wiedzy (#{u.document.id})
+            </NavLink>
+          ) : (
+            <button type="button" className="button" style={{ fontSize: "0.9em", padding: "1px 6px" }} disabled={busy === u.url}
+              onClick={() => void add(u.url)}>
+              {busy === u.url ? "Dodaję…" : "＋ Dodaj do bazy wiedzy"}
+            </button>
+          )}
+        </div>
+      ))}
+      {error && <span role="alert" style={{ color: "#c00" }}>{error}</span>}
+    </div>
   );
 };
 
@@ -287,6 +400,8 @@ const ChatConversation = () => {
       {message && <p className={isError ? "error" : undefined}>{message}</p>}
       {isLoading && <p>Ładowanie...</p>}
 
+      <RadarSelectionMenu apiUrl={apiUrl} headers={headers}
+        sourceContext={`WhatsApp: ${conversation?.display_name ?? `rozmowa #${id}`}`}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {messages.map((m) => (
           <div key={m.id} style={{ border: "1px solid #eee", borderRadius: 6, padding: "8px 12px" }}>
@@ -314,7 +429,11 @@ const ChatConversation = () => {
               <em style={{ color: "#999" }}>Wiadomość usunięta</em>
             ) : (
               <>
-                {m.content && <div style={{ whiteSpace: "pre-line" }}>{m.content}</div>}
+                {m.content && (
+                  <div style={{ whiteSpace: "pre-line" }}
+                    data-radar-context={`${m.sender_name_raw}, ${formatDate(m.sent_at)}`}>{m.content}</div>
+                )}
+                <MessageUrls m={m} apiUrl={apiUrl} headers={headers} />
                 {m.edited_at && (
                   <div style={{ color: "#888", fontSize: 12 }}>
                     (edytowana {new Date(m.edited_at).toLocaleString("pl-PL")})
@@ -323,12 +442,17 @@ const ChatConversation = () => {
                 <MessageMedia m={m} />
               </>
             )}
-            <div style={{ marginTop: 6 }}>
+            <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <AddToTopicButton messageId={m.id} topics={topics} apiUrl={apiUrl} headers={headers} />
+              {m.can_add_contact && (
+                <AddContactButton m={m} channel={conversation?.display_name ?? `#${id}`} apiUrl={apiUrl}
+                  headers={headers} />
+              )}
             </div>
           </div>
         ))}
       </div>
+      </RadarSelectionMenu>
 
       <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading}
         label="wiadomości" onPageChange={(p) => fetchMessages(p)} />

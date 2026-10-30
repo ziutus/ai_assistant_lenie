@@ -7,23 +7,59 @@ Endpoints (x-api-key required via the global before_request):
                                                 MinIO URLs; optional ?sender=/?message_type=/
                                                 ?contact_id= filters
 
-Read-only — chat_conversations/chat_messages are populated by
-imports/whatsapp_chat_import.py and by the live sync (library/whatsapp_sync_service.py);
-there is no write path here.
+  POST /chat_messages/<id>/create_contact    — add the sender of a message to the private contact
+                                                book (nickname, phone, WhatsApp picture, provenance)
+  POST /chat_messages/<id>/import_url        — add a link written in a message to the library
+
+Messages are populated by imports/whatsapp_chat_import.py and by the live sync
+(library/whatsapp_sync_service.py); the only writes here are the two explicit owner actions above.
 """
 
 import logging
+import re
 from datetime import datetime
+from urllib.parse import urlparse
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, select
 
+from library.chat_contact_service import SenderError, create_contact_from_message, sender_nickname, sender_phone
 from library.db.engine import get_scoped_session
-from library.db.models import ChatConversation, ChatMessage
+from library.db.models import ChatConversation, ChatMessage, Document
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("chat", __name__)
+
+_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
+_YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"}
+
+
+def _authorized():
+    if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
+        abort(403, "user or service API key required")
+
+
+def urls_in_text(text: str | None) -> list[str]:
+    """http(s) addresses written in a message, in reading order, without repeats."""
+    found: dict[str, None] = {}
+    for match in _URL_RE.finditer(text or ""):
+        url = match.group(0).rstrip(".,;:!?")
+        if urlparse(url).netloc:
+            found.setdefault(url, None)
+    return list(found)
+
+
+def _url_entries(session, text: str | None) -> list[dict]:
+    entries = []
+    for url in urls_in_text(text):
+        try:
+            document = Document.get_by_url(session, url)
+        except ValueError:
+            continue
+        entries.append({"url": url, "document": None if document is None else {
+            "id": document.id, "title": document.title, "document_type": document.document_type}})
+    return entries
 
 
 def _conversation_dict(conv: ChatConversation) -> dict:
@@ -122,6 +158,11 @@ def list_chat_messages(conversation_id: int):
             "edited_at": m.edited_at.isoformat() if m.edited_at else None,
             "deleted_at": m.deleted_at.isoformat() if m.deleted_at else None,
             "media_status": m.media_status,
+            # who sent it, for "add to contacts": only a message of someone not in the book qualifies
+            "sender_phone": sender_phone(m) if m.contact_id is None and not m.is_from_me else None,
+            "sender_nickname": sender_nickname(m) if m.contact_id is None and not m.is_from_me else None,
+            "can_add_contact": m.contact_id is None and not m.is_from_me and m.message_type != "deleted",
+            "urls": _url_entries(session, m.content) if m.content and "http" in m.content else [],
         }
         for m in rows
     ]
@@ -134,3 +175,89 @@ def list_chat_messages(conversation_id: int):
         "offset": offset,
         "limit": limit,
     })
+
+
+def _bridge():
+    from library.config_loader import load_config
+    from library.whatsapp_sync_service import BridgeClient
+
+    config = load_config()
+    url, token = config.get("WHATSAPP_BRIDGE_URL"), config.get("WHATSAPP_BRIDGE_TOKEN")
+    return BridgeClient(url, token) if url and token else None
+
+
+@bp.route("/chat_messages/<int:message_id>/create_contact", methods=["POST"])
+def create_contact_from_chat_message(message_id: int):
+    """Add the sender of this message to the contact book.
+
+    Body (all optional): ``display_label`` (nickname; defaults to the WhatsApp name),
+    ``first_name``, ``last_name``, ``category_id``, ``fetch_photo`` (default true) and
+    ``existing_contact_id`` (link the sender to a contact already in the book instead)."""
+    _authorized()
+    session = get_scoped_session()
+    message = session.get(ChatMessage, message_id)
+    if message is None:
+        return jsonify({"status": "error", "message": "Message not found"}), 404
+    body = request.get_json(silent=True) or {}
+    fetch_photo = bool(body.get("fetch_photo", True))
+    try:
+        result = create_contact_from_message(
+            session, message, bridge=_bridge() if fetch_photo else None,
+            display_label=body.get("display_label"), first_name=body.get("first_name"),
+            last_name=body.get("last_name"), category_id=body.get("category_id"),
+            fetch_photo=fetch_photo, existing_contact_id=body.get("existing_contact_id"),
+        )
+        session.commit()
+    except SenderError as exc:
+        session.rollback()
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    except Exception:
+        session.rollback()
+        logger.exception("Creating a contact from chat message %s failed", message_id)
+        return jsonify({"status": "error", "message": "Could not create the contact"}), 500
+    return jsonify({"status": "success", **result}), 201 if result["created"] else 200
+
+
+@bp.route("/chat_messages/<int:message_id>/import_url", methods=["POST"])
+def import_chat_message_url(message_id: int):
+    """Add one link written in the message to the library (idempotent).
+
+    YouTube addresses become ``youtube`` documents (transcript fetched by the normal pipeline),
+    everything else a ``link`` that is promoted to a webpage right away, like a radar link. The
+    discovery source is the chat, so "where did I get this" stays answerable."""
+    _authorized()
+    session = get_scoped_session()
+    message = session.get(ChatMessage, message_id)
+    if message is None:
+        return jsonify({"status": "error", "message": "Message not found"}), 404
+    url = str((request.get_json(silent=True) or {}).get("url") or "").strip()
+    if url not in urls_in_text(message.content):
+        return jsonify({"status": "error", "message": "url is not written in this message"}), 400
+
+    from library.document_promotion import PromotionError
+    from library.document_service import DocumentService
+
+    conversation = session.get(ChatConversation, message.conversation_id)
+    parsed = urlparse(url)
+    document_type = "youtube" if parsed.netloc.lower() in _YOUTUBE_HOSTS else "link"
+    slug = parsed.path.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").replace("_", " ")
+    service = DocumentService(session)
+    try:
+        document, outcome = service.import_document(
+            url, document_type, title=slug or parsed.netloc, source=f"WhatsApp: {conversation.display_name}"[:100],
+        )
+    except ValueError as exc:
+        session.rollback()
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    session.commit()
+    created = outcome != "skipped"
+    result = {"status": "success", "document_id": document.id, "created": created,
+              "document_type": document.document_type}
+    if created and document.document_type == "link":
+        try:
+            promoted = service.promote_link_to_webpage(document.id)
+            result.update(document_type=promoted.document_type, processing_job_id=promoted.processing_job_id)
+        except PromotionError as exc:
+            session.rollback()
+            result["promotion_failed"] = exc.reason
+    return jsonify(result), 201 if created else 200
