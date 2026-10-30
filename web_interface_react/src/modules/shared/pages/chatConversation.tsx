@@ -5,6 +5,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination, PAGE_SIZES } from "../components/Pagination/pagination";
 import RadarSelectionMenu from "../components/RadarSelectionMenu/radarSelectionMenu";
 import type { ChatConversationListItem } from "./chats";
+import ChatSendersPanel from "./components/ChatSendersPanel";
 
 // Message thread view for one imported chat conversation — see chats.tsx.
 
@@ -338,6 +339,7 @@ const ChatConversation = () => {
   const [messageType, setMessageType] = React.useState(searchParams.get("message_type") ?? "");
   const [dateFrom, setDateFrom] = React.useState(searchParams.get("date_from") ?? "");
   const contactId = searchParams.get("contact_id") ?? "";
+  const sender = searchParams.get("sender") ?? "";
   const requestedPageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
   const initialPageSize = PAGE_SIZES.includes(requestedPageSize) ? requestedPageSize : DEFAULT_PAGE_SIZE;
   const requestedPage = Number(searchParams.get("page") ?? "1");
@@ -383,6 +385,7 @@ const ChatConversation = () => {
       if (messageTypeArg) params.message_type = messageTypeArg;
       if (dateFromArg) params.date_from = dateFromArg;
       if (contactId) params.contact_id = contactId;
+      if (sender) params.sender = sender;
       const response = await axios.get(`${apiUrl}/chat_conversations/${id}/messages`, { params, headers });
       setConversation(response.data.conversation ?? null);
       const rows: ChatMessageItem[] = response.data.messages ?? [];
@@ -399,7 +402,12 @@ const ChatConversation = () => {
       if (messageTypeArg) nextParams.message_type = messageTypeArg;
       if (dateFromArg) nextParams.date_from = dateFromArg;
       if (contactId) nextParams.contact_id = contactId;
-      setSearchParams(nextParams, { replace: true });
+      if (sender) nextParams.sender = sender;
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(nextParams);
+        if (prev.has("senders_page")) next.set("senders_page", prev.get("senders_page")!);
+        return next;
+      }, { replace: true });
       if (!rows.length) setMessage("Brak wiadomości pasujących do filtra.");
     } catch (error: any) {
       console.error("Error fetching chat messages", error);
@@ -412,7 +420,7 @@ const ChatConversation = () => {
   React.useEffect(() => {
     fetchMessages(initialPage, messageType, dateFrom);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, contactId]);
+  }, [id, contactId, sender]);
 
   // Senders nobody has asked WhatsApp about yet: fetch their pictures a few at a time (the backend caches
   // them, so this only happens once per person). A sender the bridge could not answer for stays pending.
@@ -448,6 +456,17 @@ const ChatConversation = () => {
           {" "}ostatni import: {formatDate(conversation.last_imported_at)}
         </p>
       )}
+
+      <ChatSendersPanel key={id} id={id!} channel={conversation?.display_name ?? `#${id}`}
+        apiUrl={apiUrl} apiKey={`${apiKey}`} onAdded={() => void fetchMessages(page)}
+        onSender={(name) => {
+          const next = new URLSearchParams(searchParams);
+          next.set("sender", name); next.delete("contact_id"); next.delete("page");
+          setSearchParams(next);
+        }} />
+
+      {sender && <p>Pokazuję tylko wiadomości: <strong>{sender}</strong>{" — "}
+        <NavLink to={`/chats/${id}`}>pokaż wszystkie</NavLink></p>}
 
       {contactId && (
         <p style={{ background: "#eef6ff", padding: "8px 10px", borderRadius: 6, marginBottom: 14 }}>
