@@ -337,7 +337,8 @@ services:
     # unset the container is recreated with an empty token and refuses to start.
     environment:
       WA_BRIDGE_TOKEN: ${WA_BRIDGE_TOKEN:-}
-      WA_BRIDGE_DATA_DIR: /data      WA_BRIDGE_MAX_MEDIA_BYTES: "52428800"
+      WA_BRIDGE_DATA_DIR: /data
+      WA_BRIDGE_MAX_MEDIA_BYTES: "52428800"
       WA_BRIDGE_MEDIA_CONCURRENCY: "2"
       WA_BRIDGE_UNSELECTED_RETENTION_HOURS: "168"
     volumes:
