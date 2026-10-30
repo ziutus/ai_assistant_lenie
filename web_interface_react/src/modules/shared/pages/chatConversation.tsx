@@ -54,6 +54,7 @@ const MEDIA_STATUS_LABELS: Record<string, string> = {
 };
 
 const DEFAULT_PAGE_SIZE = 100;
+const SORT_STORAGE_KEY = "chatMessagesSort";
 const MESSAGE_TYPES = [
   { value: "", label: "Wszystkie typy" },
   { value: "text", label: "Tekst" },
@@ -338,6 +339,12 @@ const ChatConversation = () => {
   const [fetchedAvatars, setFetchedAvatars] = React.useState<Record<string, string | null>>({});
   const [messageType, setMessageType] = React.useState(searchParams.get("message_type") ?? "");
   const [dateFrom, setDateFrom] = React.useState(searchParams.get("date_from") ?? "");
+  // Newest-first is an explicit choice: the address wins, else the last choice made in this browser.
+  const [newestFirst, setNewestFirst] = React.useState(() => {
+    const fromUrl = searchParams.get("sort");
+    if (fromUrl) return fromUrl === "desc";
+    try { return localStorage.getItem(SORT_STORAGE_KEY) === "desc"; } catch { return false; }
+  });
   const contactId = searchParams.get("contact_id") ?? "";
   const sender = searchParams.get("sender") ?? "";
   const requestedPageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
@@ -373,7 +380,9 @@ const ChatConversation = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchMessages = async (pageArg: number, messageTypeArg = messageType, dateFromArg = dateFrom) => {
+  const fetchMessages = async (
+    pageArg: number, messageTypeArg = messageType, dateFromArg = dateFrom, newestFirstArg = newestFirst,
+  ) => {
     setIsLoading(true);
     setIsError(false);
     setMessage("");
@@ -386,6 +395,7 @@ const ChatConversation = () => {
       if (dateFromArg) params.date_from = dateFromArg;
       if (contactId) params.contact_id = contactId;
       if (sender) params.sender = sender;
+      if (newestFirstArg) params.sort = "desc";
       const response = await axios.get(`${apiUrl}/chat_conversations/${id}/messages`, { params, headers });
       setConversation(response.data.conversation ?? null);
       const rows: ChatMessageItem[] = response.data.messages ?? [];
@@ -403,6 +413,7 @@ const ChatConversation = () => {
       if (dateFromArg) nextParams.date_from = dateFromArg;
       if (contactId) nextParams.contact_id = contactId;
       if (sender) nextParams.sender = sender;
+      if (newestFirstArg) nextParams.sort = "desc";
       setSearchParams((prev) => {
         const next = new URLSearchParams(nextParams);
         if (prev.has("senders_page")) next.set("senders_page", prev.get("senders_page")!);
@@ -503,6 +514,22 @@ const ChatConversation = () => {
               fetchMessages(1, messageType, e.target.value);
             }}
           />
+        </label>
+        <label style={{ marginLeft: 12 }}>
+          Kolejność:{" "}
+          <select
+            value={newestFirst ? "desc" : "asc"}
+            disabled={isLoading}
+            onChange={(e) => {
+              const desc = e.target.value === "desc";
+              setNewestFirst(desc);
+              try { localStorage.setItem(SORT_STORAGE_KEY, desc ? "desc" : "asc"); } catch { /* storage unavailable */ }
+              fetchMessages(1, messageType, dateFrom, desc);
+            }}
+          >
+            <option value="asc">Od najstarszych</option>
+            <option value="desc">Od najnowszych</option>
+          </select>
         </label>
         {dateFrom && (
           <button

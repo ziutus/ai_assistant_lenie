@@ -229,10 +229,15 @@ def list_chat_messages(conversation_id: int):
     total = session.execute(select(func.count()).select_from(ChatMessage).where(*conditions)).scalar_one()
     offset = request.args.get("offset", default=0, type=int)
     limit = min(request.args.get("limit", default=200, type=int), 1000)
-    order = ChatMessage.sent_at.desc() if request.args.get("sort") == "desc" else ChatMessage.sent_at.asc()
+    # The id tie-break follows the direction: TXT exports only know the minute, so several messages share a
+    # timestamp and "newest first" must not read them oldest-first inside that minute.
+    if request.args.get("sort") == "desc":
+        order = (ChatMessage.sent_at.desc(), ChatMessage.id.desc())
+    else:
+        order = (ChatMessage.sent_at.asc(), ChatMessage.id.asc())
 
     rows = session.execute(
-        select(ChatMessage).where(*conditions).order_by(order, ChatMessage.id).offset(offset).limit(limit)
+        select(ChatMessage).where(*conditions).order_by(*order).offset(offset).limit(limit)
     ).scalars().all()
 
     # Attachments and sender thumbnails are served as presigned links.

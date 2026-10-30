@@ -48,3 +48,26 @@ class TestChatMessagesContactFilter:
         assert response.status_code == 200
         sqls = [str(call.args[0]) for call in session.execute.call_args_list]
         assert not any("chat_messages.contact_id =" in sql for sql in sqls)
+
+
+class TestChatMessagesSortOrder:
+    @staticmethod
+    def _order_by(session):
+        sqls = [str(call.args[0]) for call in session.execute.call_args_list]
+        return next(sql.split("ORDER BY")[1] for sql in sqls if "ORDER BY" in sql and "FROM chat_messages" in sql)
+
+    def test_default_is_oldest_first_with_ascending_id_tie_break(self, monkeypatch):
+        client, session = _conversation_api(monkeypatch)
+
+        assert client.get("/chat_conversations/2/messages").status_code == 200
+
+        order = " ".join(self._order_by(session).split())
+        assert order.startswith("chat_messages.sent_at ASC, chat_messages.id ASC")
+
+    def test_desc_is_newest_first_and_ties_break_newest_first_too(self, monkeypatch):
+        client, session = _conversation_api(monkeypatch)
+
+        assert client.get("/chat_conversations/2/messages", query_string={"sort": "desc"}).status_code == 200
+
+        order = " ".join(self._order_by(session).split())
+        assert order.startswith("chat_messages.sent_at DESC, chat_messages.id DESC")
