@@ -53,10 +53,15 @@ type Bridge struct {
 }
 
 func NewBridge(cfg Config, j *Journal, log *slog.Logger) *Bridge {
-	return &Bridge{
+	b := &Bridge{
 		cfg: cfg, journal: j, log: log, state: StateStarting,
 		resolving: map[string]bool{}, mediaSem: make(chan struct{}, cfg.MediaConcurrency),
 	}
+	b.groups.names = func(ctx context.Context, jids ...types.JID) string {
+		name, _ := b.contactName(ctx, jids...)
+		return name
+	}
+	return b
 }
 
 func (b *Bridge) setState(state string) {

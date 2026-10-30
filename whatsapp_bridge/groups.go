@@ -34,7 +34,9 @@ type groupParticipantResponse struct {
 	DisplayName  string `json:"display_name"`
 }
 
-func mapGroups(groups []*types.GroupInfo, fetchedAt time.Time) groupsResponse {
+// mapGroups converts a WhatsApp snapshot. names (may be nil) resolves a participant's human name
+// from the account's contact store; GroupInfo itself only carries a masked placeholder (or nothing).
+func mapGroups(groups []*types.GroupInfo, fetchedAt time.Time, names func(...types.JID) string) groupsResponse {
 	out := groupsResponse{Groups: make([]groupResponse, 0, len(groups)), FetchedAt: fetchedAt.UTC().Format(time.RFC3339)}
 	for _, group := range groups {
 		if group == nil {
@@ -57,6 +59,11 @@ func mapGroups(groups []*types.GroupInfo, fetchedAt time.Time) groupsResponse {
 				JID: participant.JID.String(), IsAdmin: participant.IsAdmin,
 				IsSuperAdmin: participant.IsSuperAdmin, DisplayName: participant.DisplayName,
 			}
+			if names != nil {
+				if name := names(participant.JID, participant.LID, participant.PhoneNumber); name != "" {
+					p.DisplayName = name
+				}
+			}
 			if !participant.LID.IsEmpty() {
 				p.LID = participant.LID.String()
 			}
@@ -78,6 +85,7 @@ type groupsSource interface {
 }
 
 type groupsCache struct {
+	names     func(context.Context, ...types.JID) string // contact-store lookup; nil in tests
 	mu        sync.Mutex
 	source    groupsSource
 	response  groupsResponse
@@ -119,7 +127,11 @@ func (cache *groupsCache) serve(w http.ResponseWriter, r *http.Request, source g
 		return
 	}
 	cache.fetchedAt = time.Now()
-	cache.response = mapGroups(groups, cache.fetchedAt)
+	var resolve func(...types.JID) string
+	if cache.names != nil {
+		resolve = func(jids ...types.JID) string { return cache.names(ctx, jids...) }
+	}
+	cache.response = mapGroups(groups, cache.fetchedAt, resolve)
 	cache.source = source
 	writeJSON(w, http.StatusOK, cache.response)
 }
