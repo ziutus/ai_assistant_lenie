@@ -24,6 +24,8 @@ _ORGANIZATION_DESCRIPTION_MODELS: tuple[tuple[str, str, str, bool, bool], ...] =
     ("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Google Vertex)", "google-vertexai", False, True),
     ("openrouter/openai/gpt-4o-mini", "GPT-4o mini (OpenRouter)", "openrouter", True, False),
     ("openrouter/google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (OpenRouter)", "openrouter", True, False),
+    ("openrouter/mistralai/mistral-small-3.2-24b-instruct", "Mistral Small 3.2 24B (OpenRouter)", "openrouter", True, False),
+    ("openrouter/google/gemma-3-27b-it", "Gemma 3 27B (OpenRouter)", "openrouter", True, False),
     ("openrouter/meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B (OpenRouter)", "openrouter", True, False),
     ("openrouter/qwen/qwen-2.5-7b-instruct", "Qwen 2.5 7B (OpenRouter)", "openrouter", True, False),
 )
