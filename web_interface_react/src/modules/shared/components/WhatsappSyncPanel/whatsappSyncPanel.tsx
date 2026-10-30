@@ -72,6 +72,7 @@ const WhatsappSyncPanel = () => {
   const [communities, setCommunities] = React.useState<Community[]>([]);
   const [preview, setPreview] = React.useState<ImportPreview | null>(null);
   const [importBusy, setImportBusy] = React.useState(false);
+  const [importResult, setImportResult] = React.useState<{ id: number; text: string } | null>(null);
 
   const load = React.useCallback(async () => {
     try {
@@ -114,6 +115,7 @@ const WhatsappSyncPanel = () => {
   const importCommunity = async (id: number, enabled: boolean, dryRun: boolean) => {
     setImportBusy(true);
     setMessage("");
+    setImportResult(null);
     try {
       const response = await axios.post(`${apiUrl}/whatsapp_groups/${id}/import`,
         dryRun ? { enabled, dry_run: true } : { enabled }, { headers });
@@ -122,11 +124,15 @@ const WhatsappSyncPanel = () => {
       } else {
         setPreview(null);
         const counts = response.data.counts;
-        setMessage(`${enabled ? "Włączono" : "Wyłączono"} ${counts.changed}, utworzono ${counts.created}, już było ${counts.already}.`);
+        // Shown under the clicked community header, where the user is looking, not at the top of the panel.
+        setImportResult({
+          id,
+          text: `${enabled ? "Włączono" : "Wyłączono"} ${counts.changed}, utworzono ${counts.created}, już było ${counts.already}.`,
+        });
         await load();
       }
     } catch {
-      setMessage("Nie udało się zmienić importu społeczności. Odśwież stan i spróbuj ponownie.");
+      setImportResult({ id, text: "Nie udało się zmienić importu społeczności. Odśwież stan i spróbuj ponownie." });
     } finally {
       setImportBusy(false);
     }
@@ -181,7 +187,7 @@ const WhatsappSyncPanel = () => {
     <tr key={c.id} style={{ borderBottom: "1px solid #eee" }}>
       <td style={{ padding: "12px 6px" }}>
         <input type="checkbox" checked={c.enabled} onChange={() => toggle(c)}
-          disabled={importBusy || preview !== null} aria-label={`Importuj ${c.display_name || c.jid}`} />
+          disabled={importBusy} aria-label={`Importuj ${c.display_name || c.jid}`} />
         <span>{c.enabled ? " Włączony" : " Wyłączony"}</span>
       </td>
       <td style={{ padding: "12px 6px" }}>{c.display_name || "(bez nazwy)"}
@@ -236,23 +242,6 @@ const WhatsappSyncPanel = () => {
           </div>
           {qrUrl && <img src={qrUrl} alt="Kod QR do sparowania WhatsApp" style={{ width: 240, height: 240 }} />}
 
-          {preview && (
-            <section aria-label="Potwierdzenie importu społeczności"
-              style={{ padding: 20, margin: "20px 0", border: "2px solid #777", lineHeight: 1.8 }}>
-              <p>{preview.enabled ? "Włączyć" : "Wyłączyć"} import {preview.counts.subgroups} podgrup
-                społeczności „{preview.community.name}”
-                {preview.enabled && ` (w tym ${preview.counts.created} jeszcze niewidzianych przez synchronizację)`}?</p>
-              {preview.enabled && <p>Wiadomości będą pobierane od teraz oraz z historii, którą odda WhatsApp.
-                Załączniki pobierają się po 2 naraz.</p>}
-              <div style={{ display: "flex", gap: 20 }}>
-                <button disabled={importBusy} onClick={() => importCommunity(preview.community.id, preview.enabled, false)}>
-                  Potwierdź</button>
-                <button disabled={importBusy} onClick={() => setPreview(null)}>Anuluj</button>
-              </div>
-            </section>
-          )}
-          {importBusy && <p role="status">Przetwarzanie importu społeczności…</p>}
-
           <h4 style={{ margin: "10px 0 4px" }}>Rozmowy widziane przez most</h4>
           <p style={{ color: "#667", margin: "0 0 6px" }}>
             Zaznacz rozmowy do archiwizacji. Domyślnie nic nie jest importowane. Ta sama osoba może widnieć pod
@@ -283,11 +272,32 @@ const WhatsappSyncPanel = () => {
                     <tr><th colSpan={5} style={{ padding: "24px 6px 12px", textAlign: "left" }}>
                       <h4>{rows[0].community_name || "Społeczność"}</h4>
                       <p>{enabled} z {total} podgrup importowanych</p>
-                      <button disabled={importBusy || preview !== null || !community}
+                      <button disabled={importBusy || !community}
                         onClick={() => importCommunity(id, !allEnabled, true)}>
                         {allEnabled ? "Wyłącz import społeczności" : "Importuj całą społeczność"}
                       </button>
                     </th></tr>
+                    {preview?.community.id === id && (
+                      <tr><td colSpan={5}>
+                        <section aria-label="Potwierdzenie importu społeczności"
+                          style={{ padding: 20, margin: "8px 0 16px", border: "2px solid #777", lineHeight: 1.8 }}>
+                          <p>{preview.enabled ? "Włączyć" : "Wyłączyć"} import {preview.counts.subgroups} podgrup
+                            społeczności „{preview.community.name}”
+                            {preview.enabled && ` (w tym ${preview.counts.created} jeszcze niewidzianych przez synchronizację)`}?</p>
+                          {preview.enabled && <p>Wiadomości będą pobierane od teraz oraz z historii, którą odda WhatsApp.
+                            Załączniki pobierają się po 2 naraz.</p>}
+                          <div style={{ display: "flex", gap: 20 }}>
+                            <button disabled={importBusy}
+                              onClick={() => importCommunity(preview.community.id, preview.enabled, false)}>
+                              {importBusy ? "Zapisuję…" : "Potwierdź"}</button>
+                            <button disabled={importBusy} onClick={() => setPreview(null)}>Anuluj</button>
+                          </div>
+                        </section>
+                      </td></tr>
+                    )}
+                    {importResult?.id === id && (
+                      <tr><td colSpan={5}><p role="status" style={{ margin: "8px 0 16px" }}>{importResult.text}</p></td></tr>
+                    )}
                     {chatRows([...rows].sort((a, b) => Number(!!b.is_announce) - Number(!!a.is_announce)
                       || (b.last_message_at ?? "").localeCompare(a.last_message_at ?? "")))}
                   </React.Fragment>;
