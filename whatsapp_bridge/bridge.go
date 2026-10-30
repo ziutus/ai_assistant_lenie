@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -115,7 +116,12 @@ func (b *Bridge) start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	client := whatsmeow.NewClient(device, waLog.Noop)
+	clientLog := waLog.Noop
+	if os.Getenv("WA_BRIDGE_DEBUG") != "" {
+		// Protocol-level diagnostics for pairing problems; off by default (noisy).
+		clientLog = waLog.Stdout("whatsmeow", "DEBUG", false)
+	}
+	client := whatsmeow.NewClient(device, clientLog)
 	client.AddEventHandler(b.handle)
 	b.mu.Lock()
 	b.client = client
@@ -170,6 +176,8 @@ func (b *Bridge) handle(raw any) {
 		b.mu.Lock()
 		b.accountJID, b.qrCode, b.lastError = v.ID.String(), "", ""
 		b.mu.Unlock()
+	case *events.PairError:
+		b.setError(fmt.Sprintf("pairing failed: %v", v.Error))
 	case *events.Connected:
 		b.mu.Lock()
 		b.state, b.lastConnected, b.lastError = StateConnected, time.Now(), ""
