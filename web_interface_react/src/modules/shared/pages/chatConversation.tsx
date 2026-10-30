@@ -450,8 +450,13 @@ const ChatConversation = () => {
                 <strong>
                   {m.contact ? (
                     <NavLink to={`/contacts/${m.contact.id}`}>{m.contact.display_name ?? m.sender_name_raw}</NavLink>
-                  ) : (
+                  ) : m.is_from_me || /^[+\d]/.test(m.sender_name_raw) ? (
                     m.sender_name_raw
+                  ) : (
+                    // like WhatsApp: a name chosen by the sender, not saved in the contact book, is marked with ~
+                    <span title="Nie ma w książce kontaktów — to nazwa ustawiona przez tę osobę w WhatsAppie">
+                      ~{m.sender_name_raw}
+                    </span>
                   )}
                 </strong>
                 {m.can_add_contact && (
