@@ -270,7 +270,7 @@ def test_openrouter_exact_cost_or_catalog_estimate(value, extra):
 
 
 class TestRoutingByAllowlist:
-    """ADR-030: an id without a built-in rule is routed by the provider recorded in llm_models."""
+    """ADR-032: an id without a built-in rule is routed by the provider recorded in llm_models."""
 
     @staticmethod
     def _allowlist(monkeypatch, *entries):

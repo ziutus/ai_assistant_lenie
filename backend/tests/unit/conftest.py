@@ -27,7 +27,7 @@ def _database_unavailable():
 
 @pytest.fixture(autouse=True)
 def no_database_llm_models(monkeypatch):
-    """Keep unit tests off the database: the model allowlist falls back to the code seed (ADR-030).
+    """Keep unit tests off the database: the model allowlist falls back to the code seed (ADR-032).
 
     Tests of the store or of registry behaviour on database rows patch ``_fetch_rows`` / ``get_models`` again.
     """

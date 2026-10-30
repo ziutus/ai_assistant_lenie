@@ -1,4 +1,4 @@
-"""ADR-030: cached database allowlist with a code-seed fallback, validation and migration/seed parity."""
+"""ADR-032: cached database allowlist with a code-seed fallback, validation and migration/seed parity."""
 
 import datetime
 import importlib.util

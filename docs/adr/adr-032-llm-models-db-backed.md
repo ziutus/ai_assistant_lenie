@@ -1,4 +1,4 @@
-# ADR-030: Database-backed allowlist of language models
+# ADR-032: Database-backed allowlist of language models
 
 **Date:** 2026-10-29
 **Status:** Accepted

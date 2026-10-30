@@ -1,6 +1,6 @@
 """Server-side allowlist of language models a reviewer may pick for a task.
 
-The list lives in the ``llm_models`` table (ADR-030, ``library.llm_model_store``): adding or retiring a model is
+The list lives in the ``llm_models`` table (ADR-032, ``library.llm_model_store``): adding or retiring a model is
 a REST call, not a deploy. Only models that ``library.ai.ai_ask`` can dispatch are listed; the endpoint rejects
 any other id, so a client can never route a document to an arbitrary provider. A ``retired`` model is hidden
 from every picker; a ``deprecated`` one is still offered, with its ``status`` and ``retires_on``. OpenRouter

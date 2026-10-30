@@ -1,4 +1,4 @@
-"""The registry offers what the llm_models table says (ADR-030): retirement and new models need no code change."""
+"""The registry offers what the llm_models table says (ADR-032): retirement and new models need no code change."""
 
 import datetime
 

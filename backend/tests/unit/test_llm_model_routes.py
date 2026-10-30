@@ -1,4 +1,4 @@
-"""HTTP contract of /llm_models (ADR-030) with the session replaced by a mock."""
+"""HTTP contract of /llm_models (ADR-032) with the session replaced by a mock."""
 
 import datetime
 from types import SimpleNamespace

@@ -1,4 +1,4 @@
-"""Add llm_models: the database-backed allowlist of language models (ADR-030), seeded with the current list."""
+"""Add llm_models: the database-backed allowlist of language models (ADR-032), seeded with the current list."""
 import sqlalchemy as sa
 from alembic import op
 

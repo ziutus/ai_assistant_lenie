@@ -1,4 +1,4 @@
-"""REST for the database-backed model allowlist (ADR-030); writes need a service key.
+"""REST for the database-backed model allowlist (ADR-032); writes need a service key.
 
 A retired model disappears from every picker (``PATCH {"status": "retired"}``), a new one is offered
 after ``POST``; both take effect within the store's cache TTL, without a deploy.

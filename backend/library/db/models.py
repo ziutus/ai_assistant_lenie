@@ -3340,7 +3340,7 @@ class ToolRecommendation(Base):
 
 
 class LlmModel(Base):
-    """A language model the household may pick for a task (ADR-030).
+    """A language model the household may pick for a task (ADR-032).
 
     The database is the allowlist: ``library/llm_model_store.py`` reads these rows (short TTL cache)
     and falls back to the seed in code only while the database is unreachable. ``status`` is

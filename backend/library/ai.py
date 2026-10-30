@@ -33,7 +33,7 @@ _RESPONSE_FORMAT_PROVIDERS = ("cloudferro", "openrouter", "google-vertexai")
 
 
 def _registry_provider(model: str) -> str | None:
-    """Provider of an allowlisted model id that has no built-in routing rule (ADR-030).
+    """Provider of an allowlisted model id that has no built-in routing rule (ADR-032).
 
     The tuples above are only the built-in rules; a model added through ``POST /llm_models`` (a new Gemini,
     a new Bielik) is routed by the provider recorded in ``llm_models`` — no code change. Never raises.

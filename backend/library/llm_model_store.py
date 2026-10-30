@@ -1,4 +1,4 @@
-"""Database-backed allowlist of language models (ADR-030): cached read + write validation.
+"""Database-backed allowlist of language models (ADR-032): cached read + write validation.
 
 The ``llm_models`` table is the allowlist of models a reviewer may pick for a task and the routing
 table ``ai_ask()`` consults for model ids it has no built-in rule for. ``SEED_MODELS`` is only the
