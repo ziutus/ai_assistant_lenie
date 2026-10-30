@@ -225,6 +225,12 @@ func (b *Bridge) ingestHistory(h *events.HistorySync) {
 }
 
 func (b *Bridge) ingest(info types.MessageInfo, msg *waE2E.Message, isEdit bool, source string) {
+	if info.PushName == "" && !info.IsFromMe {
+		// History-sync messages usually carry no push name; the account's contact store often has one.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		info.PushName, _ = b.contactName(ctx, info.Sender, info.SenderAlt)
+		cancel()
+	}
 	ev, rawMedia, ok := convertMessage(info, msg, isEdit, source, b.resolvePN)
 	if !ok {
 		return

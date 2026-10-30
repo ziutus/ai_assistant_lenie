@@ -3,6 +3,7 @@ import axios from "axios";
 import { NavLink, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination, PAGE_SIZES } from "../components/Pagination/pagination";
+import RadarSelectionMenu from "../components/RadarSelectionMenu/radarSelectionMenu";
 import type { ChatConversationListItem } from "./chats";
 
 // Message thread view for one imported chat conversation — see chats.tsx.
@@ -29,6 +30,20 @@ interface ChatMessageItem {
   edited_at?: string | null;
   deleted_at?: string | null;
   media_status?: "pending" | "downloaded" | "unavailable" | "error" | null;
+  // sender not in the contact book / links written in the text (live-sync and TXT rows alike)
+  sender_phone?: string | null;
+  sender_nickname?: string | null;
+  can_add_contact?: boolean;
+  urls?: MessageUrl[];
+  // thumbnail of the sender: the contact's own photo, else the cached WhatsApp one; avatar_fetch_jid is set
+  // while nobody has asked WhatsApp for a picture of this person yet
+  avatar_url?: string | null;
+  avatar_fetch_jid?: string | null;
+}
+
+interface MessageUrl {
+  url: string;
+  document: { id: number; title: string | null; document_type: string } | null;
 }
 
 const MEDIA_STATUS_LABELS: Record<string, string> = {
@@ -112,6 +127,173 @@ const AddToTopicButton = ({ messageId, topics, apiUrl, headers }: {
   );
 };
 
+const AVATAR_COLORS = ["#6b7fd7", "#d76b8a", "#4fa88b", "#c98a3c", "#8d6bd7", "#4f9bc9", "#a0a04a", "#c9604f"];
+
+// Round thumbnail of the sender; without a picture, initials on a colour derived from the name, so the same
+// person always looks the same.
+const SenderAvatar = ({ url, name }: { url?: string | null; name: string }) => {
+  const [broken, setBroken] = React.useState(false);
+  const size = 36;
+  if (url && !broken) {
+    return (
+      <img src={url} alt="" width={size} height={size} loading="lazy" onError={() => setBroken(true)}
+        style={{ borderRadius: "50%", objectFit: "cover", flex: "none" }} />
+    );
+  }
+  const letters = name.replace(/^[~+\s]+/, "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => Array.from(w)[0]).join("");
+  const color = AVATAR_COLORS[Array.from(name).reduce((sum, ch) => sum + (ch.codePointAt(0) ?? 0), 0) % AVATAR_COLORS.length];
+  return (
+    <span aria-hidden style={{
+      width: size, height: size, borderRadius: "50%", background: color, color: "#fff", flex: "none",
+      display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600,
+    }}>
+      {/^\d*$/.test(letters) ? "👤" : letters.toUpperCase()}
+    </span>
+  );
+};
+
+type MentionMap =Record<string, { contact: ChatContactSummary | null; name: string | null }>;
+
+// WhatsApp writes a mention as "@<id>"; the backend resolves the ids it knows to a contact or a name.
+const MessageText = ({ text, mentions }: { text: string; mentions: MentionMap }) => (
+  <>
+    {text.split(/(@\d{8,20})/).map((part, index) => {
+      const known = part.startsWith("@") ? mentions[part.slice(1)] : undefined;
+      if (!known) return <React.Fragment key={index}>{part}</React.Fragment>;
+      return known.contact ? (
+        <NavLink key={index} to={`/contacts/${known.contact.id}`} title={part}>
+          @{known.contact.display_name ?? known.name}
+        </NavLink>
+      ) : (
+        <span key={index} title={part}>@{known.name}</span>
+      );
+    })}
+  </>
+);
+
+const PHOTO_RESULT_LABELS: Record<string, string> = {
+  stored: "zdjęcie z WhatsAppa zapisane",
+  none: "brak zdjęcia profilowego w WhatsAppie",
+  unavailable: "nie udało się pobrać zdjęcia (most WhatsApp niedostępny)",
+  skipped: "",
+};
+
+// Adds the sender of a message to the private contact book: nickname (WhatsApp name), phone, profile
+// picture and a note + group naming this chat as the place where the two met.
+const AddContactButton = ({ m, channel, apiUrl, headers, onAdded }: {
+  m: ChatMessageItem; channel: string; apiUrl: string; headers: Record<string, string>;
+  onAdded: (contactId: number, name: string) => void;
+}) => {
+  const [open, setOpen] = React.useState(false);
+  const [label, setLabel] = React.useState(m.sender_nickname ?? "");
+  const [fetchPhoto, setFetchPhoto] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [result, setResult] = React.useState<{ contact_id: number; created: boolean; photo: string } | null>(null);
+  const [hint, setHint] = React.useState("");
+
+  // WhatsApp often does not put the name in the message itself; ask what the account knows about the sender.
+  const openForm = async () => {
+    setOpen(true);
+    if (label) return;
+    try {
+      const response = await axios.get(`${apiUrl}/chat_messages/${m.id}/sender_profile`, { headers });
+      const { nickname, source } = response.data;
+      if (nickname) {
+        setLabel(nickname);
+        setHint(source === "address_book" ? "nazwa z Twojej książki telefonicznej" : "nazwa ustawiona przez tę osobę w WhatsAppie");
+      } else {
+        setHint("WhatsApp nie zna nazwy tej osoby — wpisz własną");
+      }
+    } catch {
+      setHint("nie udało się zapytać WhatsAppa o nazwę");
+    }
+  };
+
+  if (result) {
+    return (
+      <span style={{ fontSize: "0.85em", color: "#2a7" }}>
+        ✓ {result.created ? "Dodano" : "Powiązano z istniejącym"} kontakt{" "}
+        <NavLink to={`/contacts/${result.contact_id}`}>#{result.contact_id}</NavLink>
+        {PHOTO_RESULT_LABELS[result.photo] ? ` — ${PHOTO_RESULT_LABELS[result.photo]}` : ""}
+      </span>
+    );
+  }
+  if (!open) {
+    return (
+      <button type="button" className="button" style={{ fontSize: "0.8em", padding: "2px 8px" }}
+        title="Dodaj nadawcę do kontaktów — z informacją, że znacie się z tego kanału WhatsApp"
+        onClick={openForm}>
+        👤 Dodaj do kontaktów
+      </button>
+    );
+  }
+  const save = async () => {
+    setBusy(true); setError("");
+    try {
+      const response = await axios.post(`${apiUrl}/chat_messages/${m.id}/create_contact`,
+        { display_label: label.trim() || undefined, fetch_photo: fetchPhoto }, { headers });
+      setResult(response.data);
+      onAdded(response.data.contact_id, label.trim() || m.sender_nickname || m.sender_name_raw);
+    } catch (cause: any) {
+      setError(cause.response?.data?.message || cause.message);
+    } finally { setBusy(false); }
+  };
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: "0.85em" }}>
+      <input value={label} placeholder="Pseudonim / nazwa" onChange={(e) => setLabel(e.target.value)} />
+      {hint && <span style={{ color: "#667" }}>({hint})</span>}
+      <label><input type="checkbox" checked={fetchPhoto} onChange={(e) => setFetchPhoto(e.target.checked)} /> zdjęcie z WhatsAppa</label>
+      <button type="button" className="button" disabled={busy} onClick={() => void save()}>
+        Zapisz (kanał: {channel})
+      </button>
+      <button type="button" className="button" disabled={busy} onClick={() => setOpen(false)}>Anuluj</button>
+      {error && <span role="alert" style={{ color: "#c00" }}>{error}</span>}
+    </span>
+  );
+};
+
+// Links written in a message: add one to the library (YouTube as a video, anything else as a page).
+const MessageUrls = ({ m, apiUrl, headers }: { m: ChatMessageItem; apiUrl: string; headers: Record<string, string> }) => {
+  const [urls, setUrls] = React.useState<MessageUrl[]>(m.urls ?? []);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [error, setError] = React.useState("");
+  if (!urls.length) return null;
+
+  const add = async (url: string) => {
+    setBusy(url); setError("");
+    try {
+      const response = await axios.post(`${apiUrl}/chat_messages/${m.id}/import_url`, { url }, { headers });
+      const { document_id: id, document_type: type, promotion_failed: failed } = response.data;
+      setUrls((prev) => prev.map((u) => (u.url === url ? { url, document: { id, title: null, document_type: type } } : u)));
+      if (failed) setError(`Dodano jako link, ale treści nie udało się pobrać (${failed}).`);
+    } catch (cause: any) {
+      setError(cause.response?.data?.message || cause.message);
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <div style={{ marginTop: 4, fontSize: "0.85em" }}>
+      {urls.map((u) => (
+        <div key={u.url}>
+          🔗 <a href={u.url} target="_blank" rel="noreferrer">{u.url}</a>{" "}
+          {u.document ? (
+            <NavLink to={`/${u.document.document_type === "link" ? "link" : u.document.document_type === "youtube" ? "youtube" : "webpage"}/${u.document.id}`}>
+              ✓ w bazie wiedzy (#{u.document.id})
+            </NavLink>
+          ) : (
+            <button type="button" className="button" style={{ fontSize: "0.9em", padding: "1px 6px" }} disabled={busy === u.url}
+              onClick={() => void add(u.url)}>
+              {busy === u.url ? "Dodaję…" : "＋ Dodaj do bazy wiedzy"}
+            </button>
+          )}
+        </div>
+      ))}
+      {error && <span role="alert" style={{ color: "#c00" }}>{error}</span>}
+    </div>
+  );
+};
+
 const MessageMedia = ({ m }: { m: ChatMessageItem }) => {
   if (!m.media_original_filename && !m.media_url && !m.media_status) return null;
   const sizeLabel = formatSize(m.media_size_bytes);
@@ -151,6 +333,8 @@ const ChatConversation = () => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [conversation, setConversation] = React.useState<ChatConversationListItem | null>(null);
   const [messages, setMessages] = React.useState<ChatMessageItem[]>([]);
+  const [mentions, setMentions] = React.useState<MentionMap>({});
+  const [fetchedAvatars, setFetchedAvatars] = React.useState<Record<string, string | null>>({});
   const [messageType, setMessageType] = React.useState(searchParams.get("message_type") ?? "");
   const [dateFrom, setDateFrom] = React.useState(searchParams.get("date_from") ?? "");
   const contactId = searchParams.get("contact_id") ?? "";
@@ -168,6 +352,17 @@ const ChatConversation = () => {
   const [topics, setTopics] = React.useState<TopicOption[]>([]);
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
+
+  // The backend has already attached every message of this sender to the new contact; show it here without
+  // reloading, so the open "added" confirmation stays and the headers turn into links to the contact book.
+  // (can_add_contact stays true on purpose: it keeps the confirmation mounted until the page is reloaded.)
+  const linkSenderToContact = (added: ChatMessageItem, contactId: number, name: string) => {
+    setMessages((prev) => prev.map((x) => (
+      !x.contact && !x.is_from_me && x.sender_name_raw === added.sender_name_raw && x.sender_phone === added.sender_phone
+        ? { ...x, contact: { id: contactId, display_name: name } }
+        : x
+    )));
+  };
 
   React.useEffect(() => {
     axios.get(`${apiUrl}/topics`, { params: { limit: 100 }, headers: { "x-api-key": `${apiKey}` } })
@@ -192,6 +387,7 @@ const ChatConversation = () => {
       setConversation(response.data.conversation ?? null);
       const rows: ChatMessageItem[] = response.data.messages ?? [];
       setMessages(rows);
+      setMentions(response.data.mentions ?? {});
       if (contactId) {
         const match = rows.find((m) => String(m.contact?.id) === contactId);
         if (match?.contact?.display_name) setContactLabel(match.contact.display_name);
@@ -217,6 +413,30 @@ const ChatConversation = () => {
     fetchMessages(initialPage, messageType, dateFrom);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, contactId]);
+
+  // Senders nobody has asked WhatsApp about yet: fetch their pictures a few at a time (the backend caches
+  // them, so this only happens once per person). A sender the bridge could not answer for stays pending.
+  React.useEffect(() => {
+    const pending = Array.from(new Set(
+      messages.map((m) => m.avatar_fetch_jid).filter((jid): jid is string => !!jid && !(jid in fetchedAvatars)),
+    ));
+    if (!pending.length) return undefined;
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < pending.length; i += 6) {
+        try {
+          const response = await axios.post(`${apiUrl}/chat_avatars/fetch`, { jids: pending.slice(i, i + 6) }, { headers });
+          if (cancelled) return;
+          setFetchedAvatars((prev) => ({ ...prev, ...response.data.avatars }));
+        } catch (error) {
+          console.error("Error fetching sender pictures", error);
+          return;
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
 
   return (
     <div>
@@ -287,17 +507,35 @@ const ChatConversation = () => {
       {message && <p className={isError ? "error" : undefined}>{message}</p>}
       {isLoading && <p>Ładowanie...</p>}
 
+      <RadarSelectionMenu apiUrl={apiUrl} headers={headers}
+        sourceContext={`WhatsApp: ${conversation?.display_name ?? `rozmowa #${id}`}`}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {messages.map((m) => (
           <div key={m.id} style={{ border: "1px solid #eee", borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, color: "#556", fontSize: "0.9em", marginBottom: 4 }}>
-              <strong>
-                {m.contact ? (
-                  <NavLink to={`/contacts/${m.contact.id}`}>{m.contact.display_name ?? m.sender_name_raw}</NavLink>
-                ) : (
-                  m.sender_name_raw
+              <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {!m.is_from_me && (
+                  <SenderAvatar
+                    url={m.avatar_fetch_jid && m.avatar_fetch_jid in fetchedAvatars ? fetchedAvatars[m.avatar_fetch_jid] : m.avatar_url}
+                    name={m.contact?.display_name ?? m.sender_name_raw} />
                 )}
-              </strong>
+                <strong>
+                  {m.contact ? (
+                    <NavLink to={`/contacts/${m.contact.id}`}>{m.contact.display_name ?? m.sender_name_raw}</NavLink>
+                  ) : m.is_from_me || /^[+\d]/.test(m.sender_name_raw) ? (
+                    m.sender_name_raw
+                  ) : (
+                    // like WhatsApp: a name chosen by the sender, not saved in the contact book, is marked with ~
+                    <span title="Nie ma w książce kontaktów — to nazwa ustawiona przez tę osobę w WhatsAppie">
+                      ~{m.sender_name_raw}
+                    </span>
+                  )}
+                </strong>
+                {m.can_add_contact && (
+                  <AddContactButton m={m} channel={conversation?.display_name ?? `#${id}`} apiUrl={apiUrl}
+                    headers={headers} onAdded={(contactId, name) => linkSenderToContact(m, contactId, name)} />
+                )}
+              </span>
               <span>
                 {formatDate(m.sent_at)}
                 {contactId && m.sent_at && (
@@ -314,7 +552,13 @@ const ChatConversation = () => {
               <em style={{ color: "#999" }}>Wiadomość usunięta</em>
             ) : (
               <>
-                {m.content && <div style={{ whiteSpace: "pre-line" }}>{m.content}</div>}
+                {m.content && (
+                  <div style={{ whiteSpace: "pre-line" }}
+                    data-radar-context={`${m.sender_name_raw}, ${formatDate(m.sent_at)}`}>
+                    <MessageText text={m.content} mentions={mentions} />
+                  </div>
+                )}
+                <MessageUrls m={m} apiUrl={apiUrl} headers={headers} />
                 {m.edited_at && (
                   <div style={{ color: "#888", fontSize: 12 }}>
                     (edytowana {new Date(m.edited_at).toLocaleString("pl-PL")})
@@ -323,12 +567,13 @@ const ChatConversation = () => {
                 <MessageMedia m={m} />
               </>
             )}
-            <div style={{ marginTop: 6 }}>
+            <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <AddToTopicButton messageId={m.id} topics={topics} apiUrl={apiUrl} headers={headers} />
             </div>
           </div>
         ))}
       </div>
+      </RadarSelectionMenu>
 
       <Pagination page={page} pageSize={pageSize} total={total} isLoading={isLoading}
         label="wiadomości" onPageChange={(p) => fetchMessages(p)} />

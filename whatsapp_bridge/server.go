@@ -31,6 +31,8 @@ func (b *Bridge) Routes() http.Handler {
 	mux.HandleFunc("POST /ack", b.auth(b.handleAck))
 	mux.HandleFunc("GET /media", b.auth(b.handleMedia))
 	mux.HandleFunc("DELETE /media", b.auth(b.handleDeleteMedia))
+	mux.HandleFunc("GET /avatar", b.auth(b.handleAvatar))
+	mux.HandleFunc("GET /contact", b.auth(b.handleContact))
 	mux.HandleFunc("GET /pairing/qr", b.auth(b.handleQR))
 	mux.HandleFunc("GET /pairing/qr.png", b.auth(b.handleQRPNG))
 	mux.HandleFunc("POST /pairing/reset", b.auth(b.handleReset))
