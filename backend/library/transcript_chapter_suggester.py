@@ -20,8 +20,8 @@ def default_model(session):
     saved = app_settings.get_setting(session, SETTING_KEY)
     if isinstance(saved, str) and llm_model_registry.is_selectable(saved, TASK):
         return saved
-    ids = [item["id"] for item in llm_model_registry.selectable_models(TASK)]
-    preferred = "openrouter/google/gemini-2.5-flash-lite"
+    ids = [item["id"] for item in llm_model_registry.selectable_models(TASK) if item["available"]]
+    preferred = "openrouter/mistralai/mistral-small-3.2-24b-instruct"
     if preferred in ids:
         return preferred
     return next((item for item in ids if "bielik" not in item.lower()), ids[0] if ids else None)

@@ -13,6 +13,7 @@ def _use(monkeypatch, rows, openrouter=True):
     monkeypatch.setattr(store, "_fetch_rows", lambda: list(rows))
     store.invalidate_cache()
     monkeypatch.setattr(registry, "_openrouter_enabled", lambda: openrouter)
+    monkeypatch.setattr(registry, "_provider_problem", lambda provider: None)  # availability: test_llm_model_availability.py
 
 
 def _ids(task=TASK):

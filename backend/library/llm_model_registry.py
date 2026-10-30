@@ -42,10 +42,28 @@ def _openrouter_enabled() -> bool:
         return False
 
 
+def _provider_problem(provider: str) -> str | None:
+    """Why models of ``provider`` cannot be called right now (missing credentials), or None.
+
+    Only Google Vertex AI has a local check today; every other provider is assumed to be reachable.
+    """
+    if provider != "google-vertexai":
+        return None
+    from library.api.google import google_vertexai
+
+    try:
+        return google_vertexai.configuration_problem()
+    except Exception:  # a failed check must not hide the model
+        return None
+
+
 def _base_models(task: str) -> list[dict]:
-    """The offered models as ``{id, label, provider, external, verified, status, retires_on}`` dicts.
+    """The offered models as ``{id, label, provider, external, verified, status, retires_on, available,
+    unavailable_reason}`` dicts.
 
     No network; the database is read through the cached ``llm_model_store`` (the code seed while it is unreachable).
+    A model whose provider has no credentials is still listed — greyed out in the pickers, with the reason — but is
+    not ``is_selectable``.
     """
     if task not in _TASKS:
         return []
@@ -53,12 +71,21 @@ def _base_models(task: str) -> list[dict]:
 
     show_openrouter = _openrouter_enabled()
     needs_json = task in _STRUCTURED_OUTPUT_TASKS
-    return [{"id": m.model_id, "label": m.label, "provider": m.provider, "external": m.external,
-             "verified": m.verified, "status": m.status,
-             "retires_on": m.retires_on.isoformat() if m.retires_on else None}
-            for m in llm_model_store.get_models()
-            if m.status != "retired" and (m.provider != "openrouter" or show_openrouter)
-            and (not needs_json or m.provider in _RESPONSE_FORMAT_PROVIDERS)]
+    problems: dict[str, str | None] = {}
+    models = []
+    for m in llm_model_store.get_models():
+        if m.status == "retired" or (m.provider == "openrouter" and not show_openrouter):
+            continue
+        if needs_json and m.provider not in _RESPONSE_FORMAT_PROVIDERS:
+            continue
+        if m.provider not in problems:
+            problems[m.provider] = _provider_problem(m.provider)
+        problem = problems[m.provider]
+        models.append({"id": m.model_id, "label": m.label, "provider": m.provider, "external": m.external,
+                       "verified": m.verified, "status": m.status,
+                       "retires_on": m.retires_on.isoformat() if m.retires_on else None,
+                       "available": problem is None, "unavailable_reason": problem})
+    return models
 
 
 def _money(value) -> str | None:
@@ -150,8 +177,12 @@ def selectable_models(task: str = "organization_description") -> list[dict]:
 
 
 def is_selectable(model: str, task: str = "organization_description") -> bool:
-    """Allowlist check only — no catalog lookup and no query of its own (the store is cached), it runs on every request."""
-    return any(item["id"] == model for item in _base_models(task))
+    """Allowlist check — no catalog lookup and no query of its own (the store is cached), it runs on every request.
+
+    A listed model whose provider has no credentials is NOT selectable: the endpoints reject it and a saved household
+    choice falls back to the task default until the credential is configured.
+    """
+    return any(item["id"] == model and item["available"] for item in _base_models(task))
 
 
 def model_details(model: str, task: str = "organization_description") -> dict | None:

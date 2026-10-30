@@ -34,7 +34,7 @@ def default_model(session) -> str | None:
     saved = app_settings.get_setting(session, SETTING_KEY)
     if isinstance(saved, str) and is_selectable(saved, TASK):
         return saved
-    ids = [item["id"] for item in selectable_models(TASK)]
+    ids = [item["id"] for item in selectable_models(TASK) if item["available"]]
     if FALLBACK_MODEL in ids:
         return FALLBACK_MODEL
     return next((model_id for model_id in ids if "bielik" not in model_id.lower()), ids[0] if ids else None)

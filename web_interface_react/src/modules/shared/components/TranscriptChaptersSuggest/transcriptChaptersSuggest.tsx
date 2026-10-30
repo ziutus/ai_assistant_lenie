@@ -1,7 +1,7 @@
 import React from "react";
 import axios from "axios";
 import { AuthorizationContext } from "../../context/authorizationContext";
-import { ModelOption, modelOptionText } from "../../utils/modelDetails";
+import { isModelUnavailable, ModelOption, modelOptionText } from "../../utils/modelDetails";
 
 type Candidates = { estimated_tokens: number; fits_single_call: boolean | null; model_calls: number | null };
 type Chapter = { start_sentence: number; title: string; preview: string; checked: boolean };
@@ -66,7 +66,7 @@ export default function TranscriptChaptersSuggest({ docId, onSaved, disabled = f
     <button type="button" className="button" disabled={locked} onClick={prepare}>Wybierz model i zaproponuj rozdziały</button>
     {models.length > 0 && <div style={{ marginTop: 10 }}>
       <label>Model <select value={model} disabled={locked} onChange={event => setModel(event.target.value)}>
-        {models.map(item => <option key={item.id} value={item.id}>{modelOptionText(item)}</option>)}
+        {models.map(item => <option key={item.id} value={item.id} disabled={isModelUnavailable(item)}>{modelOptionText(item)}</option>)}
       </select></label>
       <p>{fits === null ? "Brak informacji o oknie modelu — nie można zaplanować wywołania."
         : fits ? "Transkrypcja mieści się w całości (1 wywołanie)." : `Transkrypcja wymaga podziału na okna (${calls} wywołań).`}</p>

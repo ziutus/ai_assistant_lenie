@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeModel, modelOptionText } from "./modelDetails";
+import { describeModel, isModelUnavailable, modelOptionText } from "./modelDetails";
 
 describe("describeModel", () => {
   it("formats price and limits of a priced model", () => {
@@ -27,6 +27,25 @@ describe("describeModel", () => {
     expect(describeModel({ id: "e", label: "E", supports_structured_outputs: true })).toBe("schemat JSON ✓");
     expect(describeModel({ id: "f", label: "F", supports_structured_outputs: false })).toBe("bez schematu JSON");
     expect(describeModel({ id: "g", label: "G", supports_structured_outputs: null })).toBe("");
+  });
+
+  it("marks a model whose provider has no credentials as unavailable, with the reason", () => {
+    const model = { id: "v", label: "Gemini", available: false, unavailable_reason: "brak poświadczeń Google" };
+    expect(isModelUnavailable(model)).toBe(true);
+    expect(describeModel(model)).toBe("niedostępny: brak poświadczeń Google");
+    expect(modelOptionText(model)).toBe("Gemini — niedostępny: brak poświadczeń Google");
+    expect(describeModel({ id: "v", label: "Gemini", available: false })).toBe("niedostępny: brak poświadczeń");
+  });
+
+  it("treats a model without the flag as available", () => {
+    expect(isModelUnavailable({ id: "x", label: "X" })).toBe(false);
+    expect(isModelUnavailable({ id: "x", label: "X", available: true })).toBe(false);
+  });
+
+  it("warns that a deprecated model is being retired", () => {
+    expect(describeModel({ id: "d", label: "D", status: "deprecated", retires_on: "2026-10-20" })).toBe("wycofywany (2026-10-20)");
+    expect(describeModel({ id: "d", label: "D", status: "deprecated" })).toBe("wycofywany");
+    expect(describeModel({ id: "d", label: "D", status: "active" })).toBe("");
   });
 
   it("appends details to the label", () => {
