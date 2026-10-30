@@ -35,7 +35,7 @@ MAX_COMMENT_CHARS = 1000  # the reader's own note about a feed item; kept whole,
 MAX_SUGGESTIONS = 5
 TASK = "content_group_suggestion"
 SETTING_KEY = "content_group_suggestion_model"
-FEED_DEFAULT_MODEL = "openrouter/google/gemini-2.5-flash-lite"
+FEED_DEFAULT_MODEL = "openrouter/mistralai/mistral-small-3.2-24b-instruct"
 
 
 def default_model(session) -> str:

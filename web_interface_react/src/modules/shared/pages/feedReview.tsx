@@ -8,7 +8,7 @@ import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPa
 import { loadFeedReviewFilters, saveFeedReviewFilters } from "../services/storage";
 import type { ContentGroup } from "../../../types";
 import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
-import { modelOptionText, type ModelOption } from "../utils/modelDetails";
+import { isModelUnavailable, modelOptionText, type ModelOption } from "../utils/modelDetails";
 
 type FeedSource = { id: number; name: string; type: string; disabled: boolean };
 type FeedItem = {
@@ -706,7 +706,7 @@ export default function FeedReview() {
       <summary style={{ cursor: "help" }}>Model do podpowiadania tematów: <strong>{models.find(option => option.id === suggestModel)?.label ?? suggestModel}</strong></summary>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
         <select value={suggestModel} onChange={event => setSuggestModel(event.target.value)} aria-label="Model do podpowiadania tematów">
-          {models.map(option => <option key={option.id} value={option.id}>{modelOptionText(option)}{option.id === defaultModel ? " — domyślny" : ""}</option>)}
+          {models.map(option => <option key={option.id} value={option.id} disabled={isModelUnavailable(option)}>{modelOptionText(option)}{option.id === defaultModel ? " — domyślny" : ""}</option>)}
         </select>
         <button type="button" disabled={!suggestModel || suggestModel === defaultModel} onClick={() => void saveDefaultModel(suggestModel)}>Zapisz jako domyślny</button>
         <button type="button" onClick={() => void saveDefaultModel(null)}>Przywróć domyślny serwera</button>

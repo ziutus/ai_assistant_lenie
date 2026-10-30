@@ -98,7 +98,7 @@ class TestSuggestTags:
 
 
 class TestDefaultModel:
-    MODELS = [{"id": "Bielik-11B-v3.0-Instruct"}, {"id": "gpt-4o-mini"}, {"id": "gemini-3.5-flash-lite"}]
+    MODELS = [{"id": "Bielik-11B-v3.0-Instruct", "available": True}, {"id": "gpt-4o-mini", "available": True}, {"id": "gemini-3.5-flash-lite", "available": True}]
 
     def _setup(self, monkeypatch, saved, models=None):
         monkeypatch.setattr("library.app_settings.get_setting", lambda session, key, default=None: saved)
@@ -116,11 +116,11 @@ class TestDefaultModel:
         assert suggester.default_model(MagicMock()) == "gpt-4o-mini"
 
     def test_without_gpt_the_first_non_bielik_model(self, monkeypatch):
-        self._setup(monkeypatch, None, [{"id": "Bielik-11B-v3.0-Instruct"}, {"id": "gemini-3.5-flash-lite"}])
+        self._setup(monkeypatch, None, [{"id": "Bielik-11B-v3.0-Instruct", "available": True}, {"id": "gemini-3.5-flash-lite", "available": True}])
         assert suggester.default_model(MagicMock()) == "gemini-3.5-flash-lite"
 
     def test_only_bielik_is_still_better_than_nothing(self, monkeypatch):
-        self._setup(monkeypatch, None, [{"id": "Bielik-11B-v3.0-Instruct"}])
+        self._setup(monkeypatch, None, [{"id": "Bielik-11B-v3.0-Instruct", "available": True}])
         assert suggester.default_model(MagicMock()) == "Bielik-11B-v3.0-Instruct"
 
 

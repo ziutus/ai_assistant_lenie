@@ -8,6 +8,7 @@ location: Gemini 3.x models and the cheapest price tier are served there.
 """
 
 import logging
+import os
 
 from library.models.ai_response import AiResponse
 
@@ -40,6 +41,34 @@ def _client(genai):
     if not project:
         raise ValueError("GCP_PROJECT_ID is not configured")
     return genai.Client(vertexai=True, project=project, location=_setting("GCP_LOCATION") or DEFAULT_LOCATION)
+
+
+def _adc_file_exists() -> bool:
+    """Application Default Credentials as a file: GOOGLE_APPLICATION_CREDENTIALS or the gcloud login file."""
+    explicit = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if explicit:
+        return os.path.isfile(explicit)
+    base = os.environ.get("APPDATA") if os.name == "nt" else os.path.join(os.path.expanduser("~"), ".config")
+    return bool(base) and os.path.isfile(os.path.join(base, "gcloud", "application_default_credentials.json"))
+
+
+def configuration_problem() -> str | None:
+    """Why a call would fail right now for lack of credentials, or None when it can be attempted.
+
+    A cheap local check (configuration + a file test, no network) used to mark the Vertex models as
+    unavailable in the pickers while the NAS has no Google credential. It cannot prove the credential is valid.
+    """
+    try:
+        if _setting("GCP_VERTEX_API_KEY"):
+            return None
+        project = _setting("GCP_PROJECT_ID")
+    except (SystemExit, Exception):  # config backend unreachable: do not claim the models are broken
+        return None
+    if not project:
+        return "brak poświadczeń Google: ustaw GCP_VERTEX_API_KEY albo GCP_PROJECT_ID z kluczem konta serwisowego"
+    if not _adc_file_exists():
+        return "brak poświadczeń Google: ustaw GCP_VERTEX_API_KEY albo GOOGLE_APPLICATION_CREDENTIALS"
+    return None
 
 
 def _json_schema(response_format: dict) -> dict:

@@ -3339,6 +3339,38 @@ class ToolRecommendation(Base):
     )
 
 
+class LlmModel(Base):
+    """A language model the household may pick for a task (ADR-032).
+
+    The database is the allowlist: ``library/llm_model_store.py`` reads these rows (short TTL cache)
+    and falls back to the seed in code only while the database is unreachable. ``status`` is
+    ``active`` / ``deprecated`` (still offered, with a warning and ``retires_on``) / ``retired``
+    (hidden from every picker). Prices stay in ``llm_pricing``; limits of OpenRouter models come
+    from the live OpenRouter catalog.
+    """
+
+    __tablename__ = "llm_models"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    model_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    external: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    status: Mapped[str] = mapped_column(String(12), nullable=False, server_default=sa_text("'active'"))
+    retires_on: Mapped[datetime.date | None] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'deprecated', 'retired')", name="ck_llm_models_status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"LlmModel(id={self.id!r}, model_id={self.model_id!r}, status={self.status!r})"
+
+
 class AppSetting(Base):
     """One UI-chosen setting (for example ``tool_tags_model``); the value is any JSON."""
 

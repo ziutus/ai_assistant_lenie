@@ -12,7 +12,7 @@ import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance
 import ToolProfileSuggest, { type ProfileSuggestion } from "../components/ToolProfileSuggest/toolProfileSuggest";
 import { isRepositoryUrl } from "../components/ToolCard/toolCardParts";
 import GithubRate, { type GithubRateInfo } from "../components/GithubRate/githubRate";
-import { modelOptionText, type ModelOption } from "../utils/modelDetails";
+import { isModelUnavailable, modelOptionText, type ModelOption } from "../utils/modelDetails";
 
 type RecommendationStatus = "watchlist" | "compare" | "testing" | "test_future" | "adopted" | "phasing_out" | "rejected" | "archived";
 type GithubRefreshResult = { repositories?: number; refreshed?: number; failed?: number; rate_limited?: boolean; quota_reserved?: boolean; rate_limit_remaining?: number | null; pending?: number };
@@ -617,7 +617,7 @@ export default function ToolRecommendations() {
       <summary style={{ cursor: "help" }} title="Wybór modelu językowego, który podpowiada tagi po kliknięciu „✨ Podpowiedz tagi” albo „✨ Podpowiedz opis, kategorię i tagi” na karcie narzędzia.">Model do podpowiadania: <strong>{tagModels.find(option => option.id === tagModel)?.label ?? (tagModel || "domyślny")}</strong></summary>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
         <select value={tagModel} onChange={event => setTagModel(event.target.value)} aria-label="Model do podpowiadania">
-          {tagModels.map(option => <option key={option.id} value={option.id}>{modelOptionText(option)}{option.id === defaultTagModel ? " — domyślny" : ""}</option>)}
+          {tagModels.map(option => <option key={option.id} value={option.id} disabled={isModelUnavailable(option)}>{modelOptionText(option)}{option.id === defaultTagModel ? " — domyślny" : ""}</option>)}
         </select>
         <button type="button" disabled={!tagModel || tagModel === defaultTagModel} onClick={() => void saveDefaultTagModel(tagModel)}
           title="Zapisuje wybór na serwerze — będzie obowiązywał wszystkich domowników.">Ustaw jako domyślny</button>

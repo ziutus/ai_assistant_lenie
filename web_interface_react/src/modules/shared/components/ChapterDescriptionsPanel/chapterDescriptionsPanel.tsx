@@ -1,6 +1,6 @@
 import React from "react";
 import axios from "axios";
-import { modelOptionText, type ModelOption } from "../../utils/modelDetails";
+import { isModelUnavailable, modelOptionText, type ModelOption } from "../../utils/modelDetails";
 
 interface Candidate { key: string; kind: "organization" | "person"; name: string; mentions: number }
 interface Proposal extends Candidate {
@@ -144,7 +144,7 @@ const ChapterDescriptionsPanel = ({ apiUrl, apiKey, docId, position, onSaved }: 
           </p>
           <label>Model{" "}
             <select value={model} onChange={(event) => setModel(event.target.value)}>
-              {models.map((option) => <option key={option.id} value={option.id}>{modelOptionText(option)}</option>)}
+              {models.map((option) => <option key={option.id} value={option.id} disabled={isModelUnavailable(option)}>{modelOptionText(option)}</option>)}
             </select>
           </label>
           {models.find((option) => option.id === model)?.supports_structured_outputs === false && (
