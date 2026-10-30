@@ -180,8 +180,9 @@ const PHOTO_RESULT_LABELS: Record<string, string> = {
 
 // Adds the sender of a message to the private contact book: nickname (WhatsApp name), phone, profile
 // picture and a note + group naming this chat as the place where the two met.
-const AddContactButton = ({ m, channel, apiUrl, headers }: {
+const AddContactButton = ({ m, channel, apiUrl, headers, onAdded }: {
   m: ChatMessageItem; channel: string; apiUrl: string; headers: Record<string, string>;
+  onAdded: (contactId: number, name: string) => void;
 }) => {
   const [open, setOpen] = React.useState(false);
   const [label, setLabel] = React.useState(m.sender_nickname ?? "");
@@ -233,6 +234,7 @@ const AddContactButton = ({ m, channel, apiUrl, headers }: {
       const response = await axios.post(`${apiUrl}/chat_messages/${m.id}/create_contact`,
         { display_label: label.trim() || undefined, fetch_photo: fetchPhoto }, { headers });
       setResult(response.data);
+      onAdded(response.data.contact_id, label.trim() || m.sender_nickname || m.sender_name_raw);
     } catch (cause: any) {
       setError(cause.response?.data?.message || cause.message);
     } finally { setBusy(false); }
@@ -350,6 +352,17 @@ const ChatConversation = () => {
   const [topics, setTopics] = React.useState<TopicOption[]>([]);
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
+
+  // The backend has already attached every message of this sender to the new contact; show it here without
+  // reloading, so the open "added" confirmation stays and the headers turn into links to the contact book.
+  // (can_add_contact stays true on purpose: it keeps the confirmation mounted until the page is reloaded.)
+  const linkSenderToContact = (added: ChatMessageItem, contactId: number, name: string) => {
+    setMessages((prev) => prev.map((x) => (
+      !x.contact && !x.is_from_me && x.sender_name_raw === added.sender_name_raw && x.sender_phone === added.sender_phone
+        ? { ...x, contact: { id: contactId, display_name: name } }
+        : x
+    )));
+  };
 
   React.useEffect(() => {
     axios.get(`${apiUrl}/topics`, { params: { limit: 100 }, headers: { "x-api-key": `${apiKey}` } })
@@ -520,7 +533,7 @@ const ChatConversation = () => {
                 </strong>
                 {m.can_add_contact && (
                   <AddContactButton m={m} channel={conversation?.display_name ?? `#${id}`} apiUrl={apiUrl}
-                    headers={headers} />
+                    headers={headers} onAdded={(contactId, name) => linkSenderToContact(m, contactId, name)} />
                 )}
               </span>
               <span>
