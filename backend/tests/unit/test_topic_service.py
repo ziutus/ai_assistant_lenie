@@ -16,7 +16,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from library import topic_routes, topic_service as svc
-from library.db.models import ChatConversation, ChatMessage, Contact, ContactGroupEvent, Document, Topic, TopicItem
+from library.db.models import (
+    ChatConversation, ChatMessage, Contact, ContactGroup, ContactGroupEvent, Document, Topic, TopicItem,
+)
 
 
 @pytest.fixture
@@ -316,3 +318,27 @@ def test_event_migration_upgrade_downgrade():
     assert sql.count("DROP CONSTRAINT ck_topic_items_entity_type") == 2
     assert sql.count("ADD CONSTRAINT ck_topic_items_entity_type CHECK") == 2
     assert sql.index("DELETE FROM topic_items") < sql.rindex("DROP CONSTRAINT")
+
+
+def test_topic_people_from_event_channel_and_manual_items():
+    ann, bob, cid, dan = (Contact(id=i, first_name=n) for i, n in enumerate(("Ann", "Bob", "Cid", "Dan"), 1))
+    event = ContactGroupEvent(id=12, title="Jam #1", event_date=date(2026, 10, 29), participants=[ann, bob])
+    conversation = ChatConversation(id=3, display_name="Jam")
+    group = ContactGroup(name="WhatsApp: Jam", contacts=[bob, cid])
+    items = [TopicItem(topic_id=1, entity_type="contact_group_event", entity_id=12),
+             TopicItem(topic_id=1, entity_type="chat_conversation", entity_id=3)]
+    session = MagicMock()
+    session.get.return_value = Topic(id=1, name="Jam")
+    # Dan wrote in the chat (3 messages) but is not in its contact group; Cid is in the group but silent.
+    session.execute.return_value.all.return_value = [(dan.id, 3)]
+    session.scalars.side_effect = [
+        MagicMock(all=lambda: items), MagicMock(all=lambda: [event]), MagicMock(all=lambda: [conversation]),
+        MagicMock(first=lambda: group), MagicMock(all=lambda: [dan]),
+    ]
+    people = svc.get_topic_people(session, 1)
+    assert [p["display_name"] for p in people] == ["Ann", "Bob", "Dan", "Cid"]
+    assert {p["display_name"]: [r["kind"] for r in p["roles"]] for p in people} == {
+        "Ann": ["event"], "Bob": ["event", "channel"], "Dan": ["channel"], "Cid": ["channel"]}
+    assert people[2]["roles"][0]["message_count"] == 3
+    session.get.return_value = None
+    assert svc.get_topic_people(session, 999) is None

@@ -3738,7 +3738,7 @@ class ContactLink(Base):
     __tablename__ = "contact_links"
     __table_args__ = (
         CheckConstraint(
-            "link_type IN ('linkedin', 'facebook', 'instagram', 'twitter', 'website', 'fixly', 'other')",
+            "link_type IN ('linkedin', 'facebook', 'instagram', 'twitter', 'website', 'fixly', 'luma', 'other')",
             name="ck_contact_links_link_type",
         ),
         Index("idx_contact_links_contact", "contact_id"),
@@ -4099,9 +4099,39 @@ class ContactGroupEvent(Base):
         order_by="Contact.id",
     )
     source_document: Mapped["Document | None"] = relationship(foreign_keys=[source_document_id])
+    links: Mapped[list["ContactGroupEventLink"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", passive_deletes=True, order_by="ContactGroupEventLink.id",
+    )
 
     def __repr__(self) -> str:
         return f"ContactGroupEvent(id={self.id!r}, group_id={self.group_id!r}, title={self.title!r})"
+
+
+class ContactGroupEventLink(Base):
+    """A web page about an event: its Luma/Meetup page, slides, a recording.
+
+    Several per event; ``luma`` is the key a Luma guest list is matched against.
+    """
+
+    __tablename__ = "contact_group_event_links"
+    __table_args__ = (
+        CheckConstraint("link_type IN ('luma', 'meetup', 'slides', 'recording', 'other')",
+                        name="ck_contact_group_event_links_link_type"),
+        Index("idx_contact_group_event_links_event", "event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("contact_group_events.id", ondelete="CASCADE"), nullable=False)
+    link_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    event: Mapped["ContactGroupEvent"] = relationship(back_populates="links")
+
+    def __repr__(self) -> str:
+        return f"ContactGroupEventLink(id={self.id!r}, event_id={self.event_id!r}, link_type={self.link_type!r})"
 
 
 class ContactChangeLog(Base):

@@ -40,9 +40,9 @@ Widoczność jest sterowana kategorią kontaktu — w kodzie frontendu to `conta
 |---|---|---|---|---|
 | Organizacje (`contact_organizations` — etat/JDG/funkcje) | Afiliacje *osoby* wobec innych podmiotów (może mieć kilka naraz: etat + własna JDG) | widoczne | **ukryte** | opisuje przynależność osoby do organizacji; kontakt-firma nie ma „własnych” afiliacji w tym sensie — dane JDG samej firmy (NIP/REGON z CEIDG) siedzą w tej tabeli przy kontakcie **osoby-właściciela**, nie przy kontakcie-firmie |
 | Relacje (`contact_relationships`) | Powiązania między dowolnymi dwoma kontaktami (rodzina, znajomi, pracownik–pracodawca, **właściciel firmy**) | widoczne | **widoczne — kluczowe** | to właśnie tym mechanizmem kontakt-firma jest połączony z osobą, np. `Artur Kalicki (127) --właściciel--> Kal - Serwis Artur Kalicki (638)`; ukrycie zerwałoby jedyny widoczny link między nimi |
-| Linki (`contact_links` — LinkedIn/Facebook/WWW) | Profile społecznościowe/strona | widoczne | **widoczne** | istotne również dla firmy — strona WWW, profil FB firmy to naturalne dane kontaktowe |
+| Linki (`contact_links` — LinkedIn/Facebook/WWW/Luma; `luma` = `luma.com/user/usr-…`, the exact key for matching event guests) | Profile społecznościowe/strona | widoczne | **widoczne** | istotne również dla firmy — strona WWW, profil FB firmy to naturalne dane kontaktowe |
 | Grupy (`contact_groups`) | Ręczne grupowanie kontaktów (np. „Rodzina”, „Tuwima Gardens”) | widoczne | widoczne | użyteczne też dla firm (np. grupa „usługodawcy”) |
-| Wydarzenia (`contact_group_events`) | Wydarzenia życiowe/grupowe z udziałem kontaktu | widoczne | widoczne | rzadki przypadek dla firmy, ale nieszkodliwy — nie ukrywane |
+| Wydarzenia (`contact_group_events`, linki do stron wydarzenia w `contact_group_event_links`: luma/meetup/slides/recording/other) | Wydarzenia życiowe/grupowe z udziałem kontaktu | widoczne | widoczne | rzadki przypadek dla firmy, ale nieszkodliwy — nie ukrywane |
 
 ## Pola uniwersalne (bez zmian dla żadnej kategorii)
 

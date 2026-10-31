@@ -2473,6 +2473,87 @@ def _make_link(id_=1, contact_id=1, link_type="facebook", url="https://facebook.
     return SimpleNamespace(id=id_, **defaults)
 
 
+class TestContactEventLinks:
+    def _session(self, monkeypatch, found=True):
+        from library.db.models import ContactGroupEvent
+
+        session = MagicMock()
+        session.get.return_value = ContactGroupEvent(id=7, title="Jam", event_date=dt.date(2026, 10, 29)) if found else None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        return session
+
+    def test_adds_luma_link(self, monkeypatch):
+        from library.contact_routes import contact_event_links_add
+
+        session = self._session(monkeypatch)
+        with Flask(__name__).test_request_context(
+            "/contact_group_events/7/links", method="POST",
+            json={"link_type": "luma", "url": " https://luma.com/096jxav1 ", "label": "Zapisy"},
+        ):
+            response = contact_event_links_add(7)
+
+        assert response[1] == 200
+        added = session.add.call_args[0][0]
+        assert (added.event_id, added.link_type, added.url, added.label) == (7, "luma", "https://luma.com/096jxav1", "Zapisy")
+
+    @pytest.mark.parametrize("body", [{"link_type": "facebook", "url": "https://x.pl"}, {"link_type": "luma"}, {}])
+    def test_invalid_link_is_400(self, monkeypatch, body):
+        from library.contact_routes import contact_event_links_add
+
+        session = self._session(monkeypatch)
+        with Flask(__name__).test_request_context("/contact_group_events/7/links", method="POST", json=body):
+            response = contact_event_links_add(7)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+    def test_missing_event_is_404(self, monkeypatch):
+        from library.contact_routes import contact_event_links_add
+
+        session = self._session(monkeypatch, found=False)
+        with Flask(__name__).test_request_context(
+            "/contact_group_events/9/links", method="POST", json={"link_type": "luma", "url": "https://luma.com/x"},
+        ):
+            response = contact_event_links_add(9)
+
+        assert response[1] == 404
+        session.add.assert_not_called()
+
+    def test_update_and_delete(self, monkeypatch):
+        from library.contact_routes import contact_event_links_delete, contact_event_links_update
+        from library.db.models import ContactGroupEventLink
+
+        session = MagicMock()
+        row = ContactGroupEventLink(id=3, event_id=7, link_type="luma", url="https://luma.com/a")
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context("/contact_event_links/3", method="PATCH",
+                                                 json={"link_type": "slides", "label": "Prezentacja"}):
+            response = contact_event_links_update(3)
+        assert response[1] == 200
+        assert (row.link_type, row.url, row.label) == ("slides", "https://luma.com/a", "Prezentacja")
+        with Flask(__name__).test_request_context("/contact_event_links/3", method="PATCH", json={"url": " "}):
+            assert contact_event_links_update(3)[1] == 400
+        with Flask(__name__).test_request_context("/contact_event_links/3", method="DELETE"):
+            assert contact_event_links_delete(3)[1] == 200
+        session.delete.assert_called_once_with(row)
+
+    def test_luma_is_a_contact_link_type(self, monkeypatch):
+        from library.contact_routes import contact_links_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        with Flask(__name__).test_request_context(
+            "/contacts/1/links", method="POST",
+            json={"link_type": "luma", "url": "https://luma.com/user/usr-XuVmZKxbJRYRDwZ"},
+        ):
+            response = contact_links_add(1)
+
+        assert response[1] == 200
+        assert session.add.call_args[0][0].link_type == "luma"
+
+
 class TestContactLinksAdd:
     def test_adds_facebook_link(self, monkeypatch):
         from library.contact_routes import contact_links_add
@@ -2863,7 +2944,7 @@ class TestContactGroupEvents:
             id=index, group_id=index, title="Meeting", event_date=dt.date(2026, 9, index),
             event_date_end=dt.date(2026, 9, 4) if index == 3 else None,
             summary=None, source_document_id=None, source_document=None,
-            created_at=None, updated_at=None, group=SimpleNamespace(name=f"Group {index}"), participants=[],
+            created_at=None, updated_at=None, group=SimpleNamespace(name=f"Group {index}"), participants=[], links=[],
         ) for index in (3, 2)]
         session.get.return_value = _make_contact()
         captured = []
@@ -3573,7 +3654,7 @@ class TestContactEventParticipants:
         assert response.json["event"]["source_document_title"] == "Meeting note"
         assert response.json["event"]["participants"][0]["id"] == 1
         assert response.json["event"]["event_date_end"] == "2026-09-15"
-        assert len(session.get.call_args.kwargs["options"]) == 3
+        assert len(session.get.call_args.kwargs["options"]) == 4
 
     def test_get_missing_event(self, event_client):
         client, _, _, _ = event_client

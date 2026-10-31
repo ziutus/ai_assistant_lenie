@@ -3,7 +3,7 @@ import axios from "axios";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { formatEventDateRange } from "../utils/contactEventDate";
-import type { ContactGroupEvent } from "./contactGroupDetail";
+import type { ContactEventLink, ContactGroupEvent } from "./contactGroupDetail";
 import type { ContactGroup } from "./contactGroups";
 
 type Participant = ContactGroupEvent["participants"][number];
@@ -18,6 +18,57 @@ interface EventForm {
 const emptyForm: EventForm = { title: "", event_date: "", event_date_end: "", summary: "", group_id: null, participants: [] };
 const rowStyle: React.CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
 const chipStyle: React.CSSProperties = { display: "inline-block", padding: "2px 8px", borderRadius: 12, background: "#eef2ff" };
+
+const LINK_TYPE_LABELS: Record<ContactEventLink["link_type"], string> = {
+  luma: "Luma", meetup: "Meetup", slides: "Prezentacja", recording: "Nagranie", other: "Inne",
+};
+
+const EventLinksPanel = ({ eventId, links, apiUrl, headers, onChange }: {
+  eventId: number; links: ContactEventLink[]; apiUrl: string; headers: Record<string, string>;
+  onChange: (links: ContactEventLink[]) => void;
+}) => {
+  const [type, setType] = React.useState<ContactEventLink["link_type"]>("luma");
+  const [url, setUrl] = React.useState("");
+  const [label, setLabel] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true); setError("");
+    try { await action(); } catch (err: any) {
+      setError(`Nie udało się zapisać linku: ${err.response?.data?.message || err.message}`);
+    } finally { setBusy(false); }
+  };
+  return <section>
+    <h3>Linki</h3>
+    {!links.length && <p>Brak linków.</p>}
+    <ul>{links.map(link => <li key={link.id}>
+      {LINK_TYPE_LABELS[link.link_type]}: <a href={link.url} target="_blank" rel="noreferrer">{link.label || link.url}</a>{" "}
+      <button type="button" className="button" disabled={busy} aria-label={`Usuń link ${link.url}`}
+        onClick={() => void run(async () => {
+          await axios.delete(`${apiUrl}/contact_event_links/${link.id}`, { headers });
+          onChange(links.filter(row => row.id !== link.id));
+        })}>Usuń</button>
+    </li>)}</ul>
+    <form style={rowStyle} onSubmit={event => {
+      event.preventDefault();
+      void run(async () => {
+        const response = await axios.post(`${apiUrl}/contact_group_events/${eventId}/links`,
+          { link_type: type, url, label: label || null }, { headers });
+        onChange([...links, response.data.link]); setUrl(""); setLabel("");
+      });
+    }}>
+      <select aria-label="Typ linku" value={type} onChange={event => setType(event.target.value as ContactEventLink["link_type"])}>
+        {Object.entries(LINK_TYPE_LABELS).map(([key, text]) => <option key={key} value={key}>{text}</option>)}
+      </select>
+      <input aria-label="Adres linku" required type="url" placeholder="https://…" value={url}
+        onChange={event => setUrl(event.target.value)} />
+      <input aria-label="Opis linku" placeholder="Opis (opcjonalnie)" value={label}
+        onChange={event => setLabel(event.target.value)} />
+      <button className="button" disabled={busy || !url.trim()}>Dodaj link</button>
+    </form>
+    {error && <p role="alert" style={{ color: "#b91c1c" }}>{error}</p>}
+  </section>;
+};
 
 const toForm = (event: ContactGroupEvent): EventForm => ({
   title: event.title, event_date: event.event_date, event_date_end: event.event_date_end ?? "",
@@ -204,6 +255,8 @@ const ContactEventDetail = () => {
             </NavLink>)}
           </div>
           {event.summary && <p style={{ whiteSpace: "pre-wrap" }}>{event.summary}</p>}
+          <EventLinksPanel eventId={event.id} links={event.links ?? []} apiUrl={apiUrl} headers={headers}
+            onChange={links => setEvent(current => current && { ...current, links })} />
           {event.source_document_id !== null && <p><NavLink to={`/read/${event.source_document_id}`}>
             {event.source_document_title || `Dokument #${event.source_document_id}`}
           </NavLink></p>}

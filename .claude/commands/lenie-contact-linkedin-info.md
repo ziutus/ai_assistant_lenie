@@ -3,9 +3,9 @@ name: 'lenie-contact-linkedin-info'
 description: 'Pull structured facts (current city, education, hobby/interest tags) from a contact''s LinkedIn profile via the logged-in Claude in Chrome browser, and save them to Lenie''s private contact book'
 ---
 
-Give a contact in Lenie's private contact book (`backend/library/contact_routes.py`) structured facts pulled from their LinkedIn profile: `current_city`, education entries (`contact_education`), and hobby/interest tags (`contact_interests`). Useful when a contact is known to have a LinkedIn profile but is missing this data in Lenie.
+Give a contact in Lenie's private contact book (`backend/library/contact_routes.py`) structured facts pulled from their LinkedIn profile: `current_city`, the profile photo (only if the contact has none), education entries (`contact_education`), and hobby/interest tags (`contact_interests`). Useful when a contact is known to have a LinkedIn profile but is missing this data in Lenie.
 
-This is the LinkedIn sibling of `[[lenie-contact-facebook-enrich]]` — kept as a **separate** skill rather than folded into it because the source site, navigation, and data shape are different enough to not share a workflow: LinkedIn has no reliable profile-photo path worth automating here (Facebook already covers the photo, and LinkedIn's own picture is often the same one or lower-resolution/restricted behind a "2nd-degree connection" limited view), doesn't expose `gender`/`birthday` at all, but *does* give a clean, explicitly-labeled Education section — something Facebook only has inconsistently. Run this skill in addition to (not instead of) the Facebook one when a contact has both profiles; run whichever the contact actually has when only one exists.
+This is the LinkedIn sibling of `[[lenie-contact-facebook-enrich]]` — kept as a **separate** skill rather than folded into it because the source site, navigation, and data shape are different enough to not share a workflow: LinkedIn's picture is lower-resolution and sometimes restricted behind a "2nd-degree connection" limited view, so the photo is only taken when the contact has none yet (Step 3b; Facebook's is usually better), LinkedIn doesn't expose `gender`/`birthday` at all, but *does* give a clean, explicitly-labeled Education section — something Facebook only has inconsistently. Run this skill in addition to (not instead of) the Facebook one when a contact has both profiles; run whichever the contact actually has when only one exists.
 
 `current_city`, education, and hobby tags are all **small-talk aids** — concrete, low-effort conversation topics kept as structured fields (not buried in free-text `notes`) so they're easy to scan before a conversation, and (for education/hobby) searchable/filterable across contacts. See `[[user_accessibility_social_interaction]]` in memory for why the contact book treats this as a first-class need.
 
@@ -47,6 +47,18 @@ Load the Chrome tools in one `ToolSearch` call if not already loaded: `select:mc
 ### Step 3: Location → `current_city`
 
 The line under the name/headline (format "City, Region, Country", e.g. "Łódź, Łódzkie, Poland") is the profile's self-reported location. Take just the city (first comma-separated segment) as `current_city`. Skip if the line isn't in that recognizable form, or if it's not present.
+
+### Step 3b: Profile photo (only when the contact has no photo)
+
+Skip when Step 1 shows the contact already has a `photo_url` (say so in the report; a photo from the Facebook skill is usually better). Otherwise click the round profile picture so LinkedIn opens its photo viewer (the larger copy), `zoom` on exactly the circle with `save_to_disk: true`, press Escape to close the viewer, and look at the saved image. LinkedIn's image URLs carry signed query strings and the JavaScript tool refuses to return them, so a screenshot of the viewer is the supported route.
+
+Upload only a real photo of the person: if the picture is an illustration, logo, cartoon, a group shot or the grey default silhouette, do not upload it - a contact book used to recognise people is misled by it; report "zdjęcie: brak (awatar nie jest zdjęciem)". A fully visible photo with a round crop is fine (the Facebook skill's crops look the same).
+
+```bash
+curl -s -H "x-api-key: $LENIE_API_KEY" -X POST -F "photo=@<saved screenshot path>" "http://192.168.200.7:5055/contacts/<ID>/photo"
+```
+
+Plain `-F "photo=@<path>"` only (no `;type=` suffix - it breaks curl in Git Bash). The old photo is kept in the photo history, so this is safe even if one exists.
 
 ### Step 4: Education section → `contact_education`
 

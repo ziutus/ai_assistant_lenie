@@ -4,8 +4,12 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
-from library.db.models import ChatConversation, ChatMessage, Contact, ContactGroupEvent, Document, Topic, TopicItem
+from library.contact_names import contact_display_name
+from library.db.models import (
+    ChatConversation, ChatMessage, Contact, ContactGroup, ContactGroupEvent, Document, Topic, TopicItem,
+)
 
 ENTITY_MODELS = {
     "document": Document,
@@ -178,3 +182,60 @@ def get_topic_detail(session, topic_id) -> dict | None:
             # Deleted polymorphic targets remain visible/removable as missing links.
             grouped[kind].append({**item_to_dict(item), "entity": _display(kind, entity, storage) if entity else None})
     return {**topic_to_dict(topic), "items": grouped}
+
+
+def get_topic_people(session, topic_id) -> list[dict] | None:
+    """People related to a topic, derived from its items rather than stored on it.
+
+    A person gets one role per way they are tied to the topic: ``event`` (participant of a
+    linked meeting), ``channel`` (member of the linked chat's contact group or a sender in it,
+    with the sender's message count) or ``topic`` (added by hand as a ``contact`` item).
+    """
+    if get_topic(session, topic_id) is None:
+        return None
+    items = session.scalars(select(TopicItem).where(TopicItem.topic_id == topic_id)).all()
+
+    def ids(kind):
+        return [item.entity_id for item in items if item.entity_type == kind]
+
+    people: dict[int, dict] = {}
+
+    def add(contact, role):
+        entry = people.setdefault(contact.id, {"id": contact.id, "display_name": contact_display_name(contact),
+                                               "roles": []})
+        entry["roles"].append(role)
+
+    if ids("contact"):
+        for contact in session.scalars(select(Contact).where(Contact.id.in_(ids("contact")))).all():
+            add(contact, {"kind": "topic"})
+    if ids("contact_group_event"):
+        events = session.scalars(select(ContactGroupEvent).options(selectinload(ContactGroupEvent.participants))
+                                 .where(ContactGroupEvent.id.in_(ids("contact_group_event")))).all()
+        for event in events:
+            for contact in event.participants:
+                add(contact, {"kind": "event", "entity_id": event.id, "label": event.title})
+    if ids("chat_conversation"):
+        conversations = session.scalars(select(ChatConversation)
+                                        .where(ChatConversation.id.in_(ids("chat_conversation")))).all()
+        for conversation in conversations:
+            # Same naming rule as chat_contact_service._channel_group, which fills the group.
+            group = session.scalars(select(ContactGroup).options(selectinload(ContactGroup.contacts))
+                                    .where(ContactGroup.name == f"WhatsApp: {conversation.display_name}"[:100])).first()
+            members = {contact.id: contact for contact in (group.contacts if group else [])}
+            counts = dict(session.execute(
+                select(ChatMessage.contact_id, func.count()).where(
+                    ChatMessage.conversation_id == conversation.id, ChatMessage.contact_id.is_not(None),
+                ).group_by(ChatMessage.contact_id)).all())
+            missing = [cid for cid in counts if cid not in members]
+            if missing:
+                members.update({c.id: c for c in session.scalars(select(Contact).where(Contact.id.in_(missing))).all()})
+            for contact in members.values():
+                add(contact, {"kind": "channel", "entity_id": conversation.id, "label": conversation.display_name,
+                              "message_count": counts.get(contact.id, 0)})
+
+    def rank(entry):
+        kinds = {role["kind"] for role in entry["roles"]}
+        messages = sum(role.get("message_count", 0) for role in entry["roles"])
+        return (0 if "event" in kinds else 1, -messages, entry["display_name"].lower())
+
+    return sorted(people.values(), key=rank)
