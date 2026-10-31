@@ -39,6 +39,8 @@ def fetch_profile(url: str) -> dict:
         "name": user.get("name"),
         "bio_short": user.get("bio_short"),
         "avatar_url": user.get("avatar_url"),
+        # Luma serves a stock picture (cdn.lu.ma/avatars-default/...) when the person set none.
+        "avatar_is_default": "avatars-default" in (user.get("avatar_url") or ""),
         "timezone": user.get("timezone"),
         "website": user.get("website"),
         "linkedin_url": f"https://www.linkedin.com{linkedin}" if linkedin else None,
@@ -67,7 +69,7 @@ def main() -> int:
     parser.add_argument("--photo", help="download the avatar to this path")
     args = parser.parse_args()
     profile = fetch_profile(args.url)
-    if args.photo and profile["avatar_url"]:
+    if args.photo and profile["avatar_url"] and not profile["avatar_is_default"]:
         download_photo(profile["avatar_url"], args.photo)
         profile["photo_path"] = args.photo
     sys.stdout.reconfigure(encoding="utf-8")

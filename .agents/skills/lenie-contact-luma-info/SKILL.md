@@ -36,7 +36,7 @@ python -I .agents/skills/lenie-contact-luma-info/luma_profile.py "<luma url>" --
 
 On Windows use the contact-venv-free system `python`; the script uses only the standard library. It prints JSON: `name`, `bio_short`, `avatar_url`, `website`, `linkedin_url`, `*_handle`, `timezone`, `luma_id`. A missing `__NEXT_DATA__` error means the URL is not a profile or Luma changed its layout - report it and stop.
 
-Check the photo visually (Read tool) before uploading: Luma's default avatar is a generic silhouette/initials image. Do not upload a placeholder; record "zdjęcie: brak".
+`avatar_is_default: true` means the person set no picture (Luma's stock avatar) - the script then downloads nothing; record "zdjęcie: brak". Check a downloaded photo visually (Read tool) before uploading.
 
 ### Step 3: Identity check
 
