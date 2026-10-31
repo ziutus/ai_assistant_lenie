@@ -864,24 +864,27 @@ def contact_group_events_delete(event_id: int):
     return jsonify({"status": "success", "deleted_id": event_id}), 200
 
 
-def _event_link_values(data, partial=False) -> dict:
+def _event_link_values(data, partial=False) -> tuple[dict, str | None]:
+    """Validated event-link fields, or an error message (fixed text, never an exception's)."""
     values = {}
     if not partial or "link_type" in data:
-        link_type = (data.get("link_type") or "").strip() if isinstance(data.get("link_type"), str) else ""
+        link_type = data.get("link_type")
+        link_type = link_type.strip() if isinstance(link_type, str) else ""
         if link_type not in _EVENT_LINK_TYPES:
-            raise ValueError(f"link_type must be one of {_EVENT_LINK_TYPES}")
+            return {}, f"link_type must be one of {_EVENT_LINK_TYPES}"
         values["link_type"] = link_type
     if not partial or "url" in data:
-        url = (data.get("url") or "").strip() if isinstance(data.get("url"), str) else ""
+        url = data.get("url")
+        url = url.strip() if isinstance(url, str) else ""
         if not url:
-            raise ValueError("url is required")
+            return {}, "url is required"
         values["url"] = url
     if "label" in data:
         label = data["label"]
         if label is not None and not isinstance(label, str):
-            raise ValueError("label must be a string or null")
+            return {}, "label must be a string or null"
         values["label"] = (label or "").strip()[:200] or None
-    return values
+    return values, None
 
 
 @bp.route("/contact_group_events/<int:event_id>/links", methods=["POST", "OPTIONS"])
@@ -892,10 +895,9 @@ def contact_event_links_add(event_id: int):
     if session.get(ContactGroupEvent, event_id) is None:
         return {"status": "error", "message": "Event not found"}, 404
     data = request.get_json(silent=True)
-    try:
-        values = _event_link_values(data if isinstance(data, dict) else {})
-    except ValueError as exc:
-        return {"status": "error", "message": str(exc)}, 400
+    values, problem = _event_link_values(data if isinstance(data, dict) else {})
+    if problem:
+        return {"status": "error", "message": problem}, 400
     row = ContactGroupEventLink(event_id=event_id, **values)
     session.add(row)
     try:
@@ -915,10 +917,9 @@ def contact_event_links_update(link_id: int):
     if row is None:
         return {"status": "error", "message": "Link not found"}, 404
     data = request.get_json(silent=True)
-    try:
-        values = _event_link_values(data if isinstance(data, dict) else {}, partial=True)
-    except ValueError as exc:
-        return {"status": "error", "message": str(exc)}, 400
+    values, problem = _event_link_values(data if isinstance(data, dict) else {}, partial=True)
+    if problem:
+        return {"status": "error", "message": problem}, 400
     for key, value in values.items():
         setattr(row, key, value)
     row.updated_at = datetime.datetime.now()
