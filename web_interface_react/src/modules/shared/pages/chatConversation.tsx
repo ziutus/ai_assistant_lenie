@@ -339,6 +339,8 @@ const ChatConversation = () => {
   const [fetchedAvatars, setFetchedAvatars] = React.useState<Record<string, string | null>>({});
   const [messageType, setMessageType] = React.useState(searchParams.get("message_type") ?? "");
   const [dateFrom, setDateFrom] = React.useState(searchParams.get("date_from") ?? "");
+  const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
+  const [queryInput, setQueryInput] = React.useState(searchParams.get("q") ?? "");
   // Newest-first is an explicit choice: the address wins, else the last choice made in this browser.
   const [newestFirst, setNewestFirst] = React.useState(() => {
     const fromUrl = searchParams.get("sort");
@@ -382,6 +384,7 @@ const ChatConversation = () => {
 
   const fetchMessages = async (
     pageArg: number, messageTypeArg = messageType, dateFromArg = dateFrom, newestFirstArg = newestFirst,
+    queryArg = query,
   ) => {
     setIsLoading(true);
     setIsError(false);
@@ -393,6 +396,7 @@ const ChatConversation = () => {
       };
       if (messageTypeArg) params.message_type = messageTypeArg;
       if (dateFromArg) params.date_from = dateFromArg;
+      if (queryArg) params.q = queryArg;
       if (contactId) params.contact_id = contactId;
       if (sender) params.sender = sender;
       if (newestFirstArg) params.sort = "desc";
@@ -411,6 +415,7 @@ const ChatConversation = () => {
       if (pageArg !== 1) nextParams.page = String(pageArg);
       if (messageTypeArg) nextParams.message_type = messageTypeArg;
       if (dateFromArg) nextParams.date_from = dateFromArg;
+      if (queryArg) nextParams.q = queryArg;
       if (contactId) nextParams.contact_id = contactId;
       if (sender) nextParams.sender = sender;
       if (newestFirstArg) nextParams.sort = "desc";
@@ -429,7 +434,7 @@ const ChatConversation = () => {
   };
 
   React.useEffect(() => {
-    fetchMessages(initialPage, messageType, dateFrom);
+    fetchMessages(initialPage, messageType, dateFrom, newestFirst, query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, contactId, sender]);
 
@@ -487,6 +492,29 @@ const ChatConversation = () => {
         </p>
       )}
 
+      <form style={{ marginBottom: 10 }} onSubmit={(e) => {
+        e.preventDefault();
+        const trimmed = queryInput.trim();
+        setQuery(trimmed);
+        fetchMessages(1, messageType, dateFrom, newestFirst, trimmed);
+      }}>
+        <label>
+          Szukaj w treści:{" "}
+          <input type="search" value={queryInput} placeholder="np. herdr" style={{ minWidth: 220 }}
+            onChange={(e) => setQueryInput(e.target.value)} />
+        </label>
+        <button type="submit" className="button" style={{ marginLeft: 8 }} disabled={isLoading}>Szukaj</button>
+        {query && (
+          <button type="button" className="button" style={{ marginLeft: 8 }} disabled={isLoading}
+            onClick={() => { setQueryInput(""); setQuery(""); fetchMessages(1, messageType, dateFrom, newestFirst, ""); }}>
+            Wyczyść wyszukiwanie
+          </button>
+        )}
+        {query && !isLoading && <span style={{ marginLeft: 12, color: "#667" }}>
+          Znaleziono: {total.toLocaleString("pl")}
+        </span>}
+      </form>
+
       <div style={{ marginBottom: 14 }}>
         <label>
           Typ wiadomości:{" "}
@@ -495,7 +523,7 @@ const ChatConversation = () => {
             disabled={isLoading}
             onChange={(e) => {
               setMessageType(e.target.value);
-              fetchMessages(1, e.target.value);
+              fetchMessages(1, e.target.value, dateFrom, newestFirst, query);
             }}
           >
             {MESSAGE_TYPES.map((t) => (
@@ -511,7 +539,7 @@ const ChatConversation = () => {
             disabled={isLoading}
             onChange={(e) => {
               setDateFrom(e.target.value);
-              fetchMessages(1, messageType, e.target.value);
+              fetchMessages(1, messageType, e.target.value, newestFirst, query);
             }}
           />
         </label>
@@ -524,7 +552,7 @@ const ChatConversation = () => {
               const desc = e.target.value === "desc";
               setNewestFirst(desc);
               try { localStorage.setItem(SORT_STORAGE_KEY, desc ? "desc" : "asc"); } catch { /* storage unavailable */ }
-              fetchMessages(1, messageType, dateFrom, desc);
+              fetchMessages(1, messageType, dateFrom, desc, query);
             }}
           >
             <option value="asc">Od najstarszych</option>
@@ -539,7 +567,7 @@ const ChatConversation = () => {
             disabled={isLoading}
             onClick={() => {
               setDateFrom("");
-              fetchMessages(1, messageType, "");
+              fetchMessages(1, messageType, "", newestFirst, query);
             }}
           >
             Wyczyść
