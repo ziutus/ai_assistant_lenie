@@ -71,3 +71,24 @@ class TestChatMessagesSortOrder:
 
         order = " ".join(self._order_by(session).split())
         assert order.startswith("chat_messages.sent_at DESC, chat_messages.id DESC")
+
+
+class TestChatMessagesTextSearch:
+    @staticmethod
+    def _message_sqls(session):
+        sqls = [str(call.args[0]).upper() for call in session.execute.call_args_list]
+        return [sql for sql in sqls if "FROM CHAT_MESSAGES" in sql]
+
+    def test_q_filters_content_with_every_word(self, monkeypatch):
+        client, session = _conversation_api(monkeypatch)
+
+        assert client.get("/chat_conversations/2/messages", query_string={"q": "herdr tmux"}).status_code == 200
+
+        assert all(sql.count("LIKE") >= 2 for sql in self._message_sqls(session))
+
+    def test_without_q_there_is_no_content_filter(self, monkeypatch):
+        client, session = _conversation_api(monkeypatch)
+
+        assert client.get("/chat_conversations/2/messages").status_code == 200
+
+        assert not any("LIKE" in sql for sql in self._message_sqls(session))

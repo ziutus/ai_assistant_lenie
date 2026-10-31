@@ -225,6 +225,10 @@ def list_chat_messages(conversation_id: int):
             conditions.append(ChatMessage.sent_at >= datetime.strptime(date_from, "%Y-%m-%d"))
         except ValueError:
             pass
+    # Every word has to occur in the text (case-insensitive); LIKE wildcards typed by the user stay literal.
+    for word in (request.args.get("q") or "").split():
+        escaped = word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        conditions.append(ChatMessage.content.ilike(f"%{escaped}%", escape="\\"))
 
     total = session.execute(select(func.count()).select_from(ChatMessage).where(*conditions)).scalar_one()
     offset = request.args.get("offset", default=0, type=int)
