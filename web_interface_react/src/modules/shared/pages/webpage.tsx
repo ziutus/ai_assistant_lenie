@@ -162,6 +162,17 @@ const Webpage = () => {
             {chunkActionLabel}
           </NavLink>
         )}
+        {id && (
+          <NavLink
+            className={"button"}
+            to={`/ner/${id}`}
+            aria-disabled={pageBusy}
+            onClick={(event) => { if (pageBusy) event.preventDefault(); }}
+            style={{ fontSize: "0.85em", pointerEvents: pageBusy ? "none" : "auto", opacity: pageBusy ? 0.55 : 1 }}
+          >
+            🏷️ Przegląd NER
+          </NavLink>
+        )}
         {id && contentLocked && (
           <button type="button" className="button" onClick={reopenForEditing} disabled={pageBusy}>
             {reopening ? "Otwieram…" : "Otwórz ponownie do edycji"}
