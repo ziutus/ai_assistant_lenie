@@ -5,6 +5,13 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import { formatEventDateRange } from "../utils/contactEventDate";
 import type { ContactGroup } from "./contactGroups";
 
+export interface ContactEventLink {
+  id: number;
+  link_type: "luma" | "meetup" | "slides" | "recording" | "other";
+  url: string;
+  label: string | null;
+}
+
 export interface ContactGroupEvent {
   id: number;
   group_id: number | null;
@@ -16,6 +23,7 @@ export interface ContactGroupEvent {
   summary: string | null;
   source_document_id: number | null;
   source_document_title: string | null;
+  links?: ContactEventLink[];
   created_at: string;
   updated_at: string;
 }

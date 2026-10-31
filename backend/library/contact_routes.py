@@ -35,7 +35,7 @@ from library.db.engine import get_scoped_session
 from library.db.models import (
     Address, ContactAddress, ContactAlternateName,
     ChatConversation, ChatMessage,
-    Contact, ContactPhoto, ContactPhotoLink, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupMembership, ContactLink,
+    Contact, ContactPhoto, ContactPhotoLink, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupEvent, ContactGroupEventLink, ContactGroupMembership, ContactLink,
     ContactDuplicateDismissal, ContactEducation, ContactInterest, ContactInterestMembership,
     ContactLookupResult, ContactEventParticipant, ContactOrganization, ContactRelationship, Document,
 )
@@ -172,7 +172,8 @@ _ORG_FIELDS = (
 )
 _ORG_DATE_FIELDS = ("start_date", "end_date", "suspended_at", "verified_at")
 
-_LINK_TYPES = ("linkedin", "facebook", "instagram", "twitter", "website", "fixly", "other")
+_LINK_TYPES = ("linkedin", "facebook", "instagram", "twitter", "website", "fixly", "luma", "other")
+_EVENT_LINK_TYPES = ("luma", "meetup", "slides", "recording", "other")
 
 _GENDER_VALUES = ("male", "female", "other")
 
@@ -280,6 +281,15 @@ def _event_dict(row: ContactGroupEvent) -> dict:
         "summary": row.summary,
         "source_document_id": row.source_document_id,
         "source_document_title": row.source_document.title if row.source_document else None,
+        "links": [_event_link_dict(link) for link in row.links],
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _event_link_dict(row: ContactGroupEventLink) -> dict:
+    return {
+        "id": row.id, "event_id": row.event_id, "link_type": row.link_type, "url": row.url, "label": row.label,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -354,7 +364,7 @@ def _event_values(session, data, partial=False, row=None) -> dict:
 def _events_query(contact_id=None, group_id=None):
     query = select(ContactGroupEvent).options(
         joinedload(ContactGroupEvent.group), joinedload(ContactGroupEvent.source_document),
-        selectinload(ContactGroupEvent.participants),
+        selectinload(ContactGroupEvent.participants), selectinload(ContactGroupEvent.links),
     )
     if contact_id is not None:
         # Subqueries avoid duplicate events when both forms of membership match.
@@ -807,7 +817,7 @@ def contact_group_events_get(event_id: int):
     session = get_scoped_session()
     row = session.get(ContactGroupEvent, event_id, options=(
         joinedload(ContactGroupEvent.group), joinedload(ContactGroupEvent.source_document),
-        selectinload(ContactGroupEvent.participants),
+        selectinload(ContactGroupEvent.participants), selectinload(ContactGroupEvent.links),
     ))
     if row is None:
         return {"status": "error", "message": "Event not found"}, 404
@@ -852,6 +862,89 @@ def contact_group_events_delete(event_id: int):
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
     return jsonify({"status": "success", "deleted_id": event_id}), 200
+
+
+def _event_link_values(data, partial=False) -> dict:
+    values = {}
+    if not partial or "link_type" in data:
+        link_type = (data.get("link_type") or "").strip() if isinstance(data.get("link_type"), str) else ""
+        if link_type not in _EVENT_LINK_TYPES:
+            raise ValueError(f"link_type must be one of {_EVENT_LINK_TYPES}")
+        values["link_type"] = link_type
+    if not partial or "url" in data:
+        url = (data.get("url") or "").strip() if isinstance(data.get("url"), str) else ""
+        if not url:
+            raise ValueError("url is required")
+        values["url"] = url
+    if "label" in data:
+        label = data["label"]
+        if label is not None and not isinstance(label, str):
+            raise ValueError("label must be a string or null")
+        values["label"] = (label or "").strip()[:200] or None
+    return values
+
+
+@bp.route("/contact_group_events/<int:event_id>/links", methods=["POST", "OPTIONS"])
+def contact_event_links_add(event_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    if session.get(ContactGroupEvent, event_id) is None:
+        return {"status": "error", "message": "Event not found"}, 404
+    data = request.get_json(silent=True)
+    try:
+        values = _event_link_values(data if isinstance(data, dict) else {})
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+    row = ContactGroupEventLink(event_id=event_id, **values)
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "link": _event_link_dict(row)}), 200
+
+
+@bp.route("/contact_event_links/<int:link_id>", methods=["PATCH", "OPTIONS"])
+def contact_event_links_update(link_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    row = session.get(ContactGroupEventLink, link_id)
+    if row is None:
+        return {"status": "error", "message": "Link not found"}, 404
+    data = request.get_json(silent=True)
+    try:
+        values = _event_link_values(data if isinstance(data, dict) else {}, partial=True)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
+    for key, value in values.items():
+        setattr(row, key, value)
+    row.updated_at = datetime.datetime.now()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "link": _event_link_dict(row)}), 200
+
+
+@bp.route("/contact_event_links/<int:link_id>", methods=["DELETE", "OPTIONS"])
+def contact_event_links_delete(link_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+    session = get_scoped_session()
+    row = session.get(ContactGroupEventLink, link_id)
+    if row is None:
+        return {"status": "error", "message": "Link not found"}, 404
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": link_id}), 200
 
 
 @bp.route("/contact_groups", methods=["POST", "OPTIONS"])
