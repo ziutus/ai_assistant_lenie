@@ -637,6 +637,8 @@ export default function ToolRecommendations() {
         <li><strong>Archiwizuję</strong> — zachowuję wpis i jego źródła historycznie, ale chowam go z bieżącego radaru.</li>
       </ul>
     </details>
+    <details style={{ margin: "0 0 12px" }}>
+      <summary style={{ cursor: "pointer", color: "#475569" }}>➕ Dodaj narzędzie ręcznie</summary>
     <form onSubmit={event => void addTool(event)} aria-label="Dodaj narzędzie do radaru" style={{ display: "flex", alignItems: "end", gap: 8, flexWrap: "wrap", padding: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 12 }}>
       <label style={{ flex: "1 1 160px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Dodaj narzędzie: nazwa<Help text="Ręcznie dodaje jedno narzędzie do radaru. Jeśli nazwa jest już na radarze lub w Spisie narzędzi, nie powstanie duplikat. Resztę (opis, kategorię, tagi) możesz uzupełnić na karcie, także podpowiedzią modelu." /></span><input required value={addForm.name} onChange={event => setAddForm(current => ({ ...current, name: event.target.value }))} placeholder="np. herdr" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
       <label style={{ flex: "2 1 220px" }}>Strona / repozytorium<input value={addForm.homepage_url} onChange={event => setAddForm(current => ({ ...current, homepage_url: event.target.value }))} placeholder="https://herdr.dev/" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
@@ -647,12 +649,16 @@ export default function ToolRecommendations() {
       <button className="button" type="submit" disabled={addBusy || !addForm.name.trim()}>{addBusy ? "Dodaję…" : "Dodaj do radaru"}</button>
       {addMessage && <span role="status" style={{ color: "#166534" }}>{addMessage}</span>}
     </form>
+    </details>
+    <details style={{ margin: "0 0 18px" }}>
+      <summary style={{ cursor: "pointer", color: "#475569" }}>📥 Importuj katalog GitHub (lista narzędzi)</summary>
     <div style={{ display: "flex", alignItems: "end", gap: 8, flexWrap: "wrap", padding: "12px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, marginBottom: 18 }}>
       <label style={{ flex: "2 1 420px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Importuj katalog GitHub (README Markdown)<Help text="Wklej adres repozytorium GitHub z listą narzędzi (np. awesome-list). Lenie pobierze README i doda każdą pozycję jako rekomendację; narzędzia już obecne w radarze lub Spisie narzędzi są pomijane." /></span><input value={importUrl} onChange={event => setImportUrl(event.target.value)} placeholder="https://github.com/AwesomeHomelab/awesome-homelab" style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
       <label style={{ flex: "1 1 220px" }}><span style={{ display: "inline-flex", alignItems: "center" }}>Nadpisz źródło linkiem Lenie (opcjonalnie)<Help text="Dokument w Lenie (ID lub /link/10333), który poleca ten katalog — zapisze się jako „polecone przez”. Zwykle wykrywane automatycznie z adresu katalogu." /></span><input value={recommendationSource} onChange={event => setRecommendationSource(event.target.value)} placeholder="Zwykle wykrywane automatycznie" title="Importer najpierw szuka adresu katalogu w Lenie. Podaj ID lub link tylko, gdy chcesz wskazać inne źródło." style={{ width: "100%", display: "block", marginTop: 4 }} /></label>
       <button className="button" disabled={!importUrl.trim()} onClick={() => void importMarkdown()}>Importuj</button>
       {importMessage && <span role="status" style={{ color: "#166534" }}>{importMessage}</span>}
     </div>
+    </details>
     {skippedItems.length > 0 && <details open style={{ margin: "-8px 0 18px", padding: "10px 12px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e" }}>
       <summary>Pomijane pozycje ({skippedItems.length})</summary>
       <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>{skippedItems.map(item => <li key={item.name}>{item.name} — {item.reason === "already_in_tools" ? "jest już w Spisie narzędzi" : "jest już w Radarze"}</li>)}</ul>
