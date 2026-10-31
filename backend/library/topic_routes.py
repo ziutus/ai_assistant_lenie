@@ -56,6 +56,12 @@ def topics_detail(topic_id):
     return jsonify(status="success", topic=topic) if topic else _missing()
 
 
+@bp.get("/topics/<int:topic_id>/people")
+def topics_people(topic_id):
+    people = svc.get_topic_people(get_scoped_session(), topic_id)
+    return jsonify(status="success", people=people) if people is not None else _missing()
+
+
 @bp.patch("/topics/<int:topic_id>")
 def topics_update(topic_id):
     topic = svc.update_topic(get_scoped_session(), topic_id, _body())

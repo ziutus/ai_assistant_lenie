@@ -24,6 +24,11 @@ interface Topic {
   archived_at: string | null;
   items?: Record<EntityType, TopicItem[]>;
 }
+interface TopicPersonRole { kind: "event" | "channel" | "topic"; label?: string; message_count?: number }
+interface TopicPerson { id: number; display_name: string; roles: TopicPersonRole[] }
+const roleText = (role: TopicPersonRole) => role.kind === "event" ? `spotkanie: ${role.label}`
+  : role.kind === "channel" ? `kanał: ${role.label}${role.message_count ? ` (wiadomości: ${role.message_count})` : ""}`
+    : "dodany ręcznie";
 const errorText = (error: unknown) => axios.isAxiosError(error)
   ? error.response?.data?.message || error.message : "Nie udało się wykonać operacji";
 
@@ -124,6 +129,7 @@ export function TopicDetail() {
   const [editing, setEditing] = React.useState(false);
   const [adding, setAdding] = React.useState(false);
   const [topic, setTopic] = React.useState<Topic | null>(null);
+  const [people, setPeople] = React.useState<TopicPerson[]>([]);
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [kind, setKind] = React.useState<EntityType>("document");
@@ -140,6 +146,10 @@ export function TopicDetail() {
       setTopic(data.topic); setName(data.topic.name); setDescription(data.topic.description || "");
     }).catch(err => { if (!controller.signal.aborted) setError(errorText(err)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    // People are derived from the topic's items; a failure here must not hide the topic itself.
+    setPeople([]);
+    api.get(`/topics/${id}/people`, { signal: controller.signal })
+      .then(({ data }) => setPeople(data.people || [])).catch(() => undefined);
     return () => controller.abort();
   }, [api, id, version]);
   React.useEffect(() => { setEditing(false); setAdding(false); }, [id, api]);
@@ -193,6 +203,14 @@ export function TopicDetail() {
           <button className="button">Dodaj</button>
         </fieldset>
       </form>}
+      <section>
+        <h3>Osoby powiązane z tematem</h3>
+        {!people.length && <p>Brak osób — pojawią się, gdy temat obejmie wydarzenie albo czat.</p>}
+        <ul>{people.map(person => <li key={person.id} style={{ marginBottom: 8 }}>
+          <Link to={`/contacts/${person.id}`}>{person.display_name}</Link>
+          {" — "}{person.roles.map(roleText).join("; ")}
+        </li>)}</ul>
+      </section>
       {(Object.keys(sections) as EntityType[]).map(type => <section key={type}>
         <h3>{sections[type]}</h3>
         {!topic.items?.[type]?.length && <p>Brak powiązań.</p>}

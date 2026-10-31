@@ -37,6 +37,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TopicDetail", () => {
+  it("lists people derived from the meeting and the channel with their roles", async () => {
+    api.get.mockImplementation(async (url: string) => url.endsWith("/people")
+      ? { data: { people: [
+        { id: 5, display_name: "Jarek", roles: [{ kind: "event", label: "Jam #1" },
+          { kind: "channel", label: "Jam", message_count: 4 }] },
+        { id: 6, display_name: "Cid", roles: [{ kind: "channel", label: "Jam", message_count: 0 }] },
+      ] } } : { data: { topic } });
+    await openTopic();
+    expect((await screen.findByRole("link", { name: "Jarek" })).getAttribute("href")).toBe("/contacts/5");
+    expect(screen.getByText(/spotkanie: Jam #1; kanał: Jam \(wiadomości: 4\)/)).toBeTruthy();
+    expect(screen.getByText(/— kanał: Jam$/)).toBeTruthy();
+  });
+
   it("presents links without forms and restores saved values on cancel", async () => {
     await openTopic();
     expect(screen.getByText("Plany podróży")).toBeTruthy();
