@@ -4640,24 +4640,60 @@ class Country(Base):
         return f"Country(id={self.id!r}, slug={self.slug!r})"
 
 
+class GeoEventKind(Base):
+    """Dictionary of event kinds (election, outage, product_launch, ...)."""
+
+    __tablename__ = "geo_event_kinds"
+
+    code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+
+
+class GeoEventRole(Base):
+    """Dictionary of participant roles (actor, target, host, winner, ...); a dictionary, not a CHECK."""
+
+    __tablename__ = "geo_event_roles"
+
+    code: Mapped[str] = mapped_column(String(20), primary_key=True)
+    label: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class GeoEvent(Base):
-    """A dated world event with the countries it involves and the documents that report it."""
+    """A world event: optional date and range, optional countries, organizations and persons, aliases, sources.
+
+    The canonical, cross-document event (ADR-034). Countries are not required: a software outage or a product
+    launch is an event too. ``geo_events`` keeps its name because ADR-033 rows and foreign keys point at it.
+    """
 
     __tablename__ = "geo_events"
     __table_args__ = (
         CheckConstraint("status IN ('proposed', 'confirmed', 'rejected')", name="ck_geo_events_status"),
-        CheckConstraint("date_precision IN ('day', 'month', 'year')", name="ck_geo_events_precision"),
+        CheckConstraint("date_precision IN ('day', 'month', 'year', 'unknown')", name="ck_geo_events_precision"),
         CheckConstraint("event_date_end IS NULL OR event_date_end >= event_date", name="ck_geo_events_dates"),
+        CheckConstraint("(event_date IS NULL) = (date_precision = 'unknown')", name="ck_geo_events_unknown_date"),
+        CheckConstraint(
+            "end_date_precision IS NULL OR end_date_precision IN ('day', 'month', 'year')",
+            name="ck_geo_events_end_precision",
+        ),
+        CheckConstraint("NOT (is_ongoing AND event_date_end IS NOT NULL)", name="ck_geo_events_ongoing"),
         Index("idx_geo_events_status_date", "status", "event_date"),
-        Index("idx_geo_events_dedup_key", "dedup_key"),
+        Index("idx_geo_events_kind_date", "kind", "event_date"),
+        Index("uq_geo_events_dedup_key", "dedup_key", unique=True, postgresql_where=sa_text("dedup_key IS NOT NULL")),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    event_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    event_date: Mapped[datetime.date | None] = mapped_column(Date)
     event_date_end: Mapped[datetime.date | None] = mapped_column(Date)
     date_precision: Mapped[str] = mapped_column(String(10), nullable=False, server_default="day")
+    end_date_precision: Mapped[str | None] = mapped_column(String(10))
+    # A process that has started and not ended yet; an unknown end is not the same as a point event.
+    is_ongoing: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    kind: Mapped[str] = mapped_column(
+        String(30), ForeignKey("geo_event_kinds.code", ondelete="RESTRICT"), nullable=False, server_default="other",
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="proposed")
     detection_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
     model: Mapped[str | None] = mapped_column(String(120))
@@ -4669,6 +4705,15 @@ class GeoEvent(Base):
     decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     participants: Mapped[list["GeoEventParticipant"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", lazy="selectin",
+    )
+    organizations: Mapped[list["GeoEventOrganization"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", lazy="selectin",
+    )
+    persons: Mapped[list["GeoEventPerson"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", lazy="selectin",
+    )
+    aliases: Mapped[list["GeoEventAlias"]] = relationship(
         back_populates="event", cascade="all, delete-orphan", lazy="selectin",
     )
     sources: Mapped[list["GeoEventSource"]] = relationship(
@@ -4683,17 +4728,99 @@ class GeoEventParticipant(Base):
     __tablename__ = "geo_event_participants"
     __table_args__ = (
         UniqueConstraint("event_id", "country_id", "role", name="uq_geo_event_participants"),
-        CheckConstraint("role IN ('actor', 'target', 'affected', 'location')", name="ck_geo_event_participants_role"),
         Index("idx_geo_event_participants_country", "country_id", "event_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
     country_id: Mapped[int] = mapped_column(ForeignKey("countries.id", ondelete="RESTRICT"), nullable=False)
-    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), ForeignKey("geo_event_roles.code", ondelete="RESTRICT"), nullable=False)
 
     event: Mapped["GeoEvent"] = relationship(back_populates="participants")
     country: Mapped["Country"] = relationship(lazy="joined")
+
+
+class GeoEventOrganization(Base):
+    """An organization taking part in an event (WHO declaring a pandemic, a company behind an outage)."""
+
+    __tablename__ = "geo_event_organizations"
+    __table_args__ = (
+        UniqueConstraint("event_id", "organization_id", "role", name="uq_geo_event_organizations"),
+        Index("idx_geo_event_organizations_org", "organization_id", "event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), ForeignKey("geo_event_roles.code", ondelete="RESTRICT"), nullable=False)
+
+    event: Mapped["GeoEvent"] = relationship(back_populates="organizations")
+    organization: Mapped["Organization"] = relationship(lazy="joined")
+
+
+class GeoEventPerson(Base):
+    """A person taking part in an event (a candidate, a speaker, the author of a decision)."""
+
+    __tablename__ = "geo_event_persons"
+    __table_args__ = (
+        UniqueConstraint("event_id", "person_id", "role", name="uq_geo_event_persons"),
+        Index("idx_geo_event_persons_person", "person_id", "event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
+    person_id: Mapped[int] = mapped_column(ForeignKey("persons.id", ondelete="RESTRICT"), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), ForeignKey("geo_event_roles.code", ondelete="RESTRICT"), nullable=False)
+
+    event: Mapped["GeoEvent"] = relationship(back_populates="persons")
+    person: Mapped["Person"] = relationship(lazy="joined")
+
+
+class GeoEventAlias(Base):
+    """A name an event is known by. ``name_key`` is the identity (NFC, spaces, casefold); ``search_key`` folds
+    accents and punctuation for trigram search and carries no identity."""
+
+    __tablename__ = "geo_event_aliases"
+    __table_args__ = (
+        UniqueConstraint("event_id", "name_key", name="uq_geo_event_aliases"),
+        CheckConstraint("name_key <> ''", name="ck_geo_event_aliases_key"),
+        Index("idx_geo_event_aliases_name_key", "name_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+    name_key: Mapped[str] = mapped_column(Text, nullable=False)
+    search_key: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    event: Mapped["GeoEvent"] = relationship(back_populates="aliases")
+
+
+class GeoEventMentionLink(Base):
+    """The reader's decision that a named-event mention of a document means a registry event.
+
+    ``document_entities`` rows (entity_type ``eventName``) are rebuilt on every NER refresh, so the decision is
+    keyed by (document, normalized name), not by the row. ``rejected`` is remembered so the same suggestion is
+    not made again.
+    """
+
+    __tablename__ = "geo_event_mention_links"
+    __table_args__ = (
+        UniqueConstraint("document_id", "name_key", "event_id", name="uq_geo_event_mention_links"),
+        CheckConstraint("status IN ('confirmed', 'rejected')", name="ck_geo_event_mention_links_status"),
+        Index("idx_geo_event_mention_links_event", "event_id", "status"),
+        Index("idx_geo_event_mention_links_name", "name_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    name_key: Mapped[str] = mapped_column(Text, nullable=False)
+    surface: Mapped[str] = mapped_column(Text, nullable=False)
+    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="confirmed")
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decided_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
 class GeoEventSource(Base):
@@ -4712,6 +4839,8 @@ class GeoEventSource(Base):
     anchor_quote: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     stance: Mapped[str] = mapped_column(String(20), nullable=False, server_default="supports")
+    # Where the passage came from; SET NULL because the timeline extraction deletes and recreates its rows.
+    document_event_id: Mapped[int | None] = mapped_column(ForeignKey("document_events.id", ondelete="SET NULL"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     event: Mapped["GeoEvent"] = relationship(back_populates="sources")
@@ -4780,6 +4909,7 @@ class CountryRelationEvidence(Base):
     __table_args__ = (
         UniqueConstraint("assessment_id", "event_id", name="uq_country_relation_evidence"),
         CheckConstraint("stance IN ('supports', 'contradicts')", name="ck_country_relation_evidence_stance"),
+        CheckConstraint("evidence_kind IN ('direct', 'context')", name="ck_country_relation_evidence_kind"),
         Index("idx_country_relation_evidence_event", "event_id"),
     )
 
@@ -4787,8 +4917,11 @@ class CountryRelationEvidence(Base):
     assessment_id: Mapped[int] = mapped_column(
         ForeignKey("country_relation_assessments.id", ondelete="CASCADE"), nullable=False,
     )
-    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
+    # RESTRICT: deleting an event must not silently remove the grounds of a confirmed assessment.
+    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="RESTRICT"), nullable=False)
     stance: Mapped[str] = mapped_column(String(20), nullable=False, server_default="supports")
+    # direct: the event names both countries of the assessment; context: background only, never a justification.
+    evidence_kind: Mapped[str] = mapped_column(String(10), nullable=False, server_default="direct")
 
     assessment: Mapped["CountryRelationAssessment"] = relationship(back_populates="evidence")
     event: Mapped["GeoEvent"] = relationship(lazy="joined")

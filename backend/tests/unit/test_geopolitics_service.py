@@ -11,19 +11,16 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text, create_engine
+from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from library import geopolitics_detect as detect
 from library import geopolitics_service as svc
-from library.db.engine import Base
+from tests.unit.geo_sqlite_support import create_schema, make_engine
 from library.db.models import (
     Country,
     CountryRelationAssessment,
-    CountryRelationEvidence,
     GeoEvent,
-    GeoEventParticipant,
-    GeoEventSource,
 )
 
 
@@ -50,18 +47,8 @@ class StubDocument(_StubBase):
 
 @pytest.fixture
 def session(monkeypatch):
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            Country.__table__,
-            GeoEvent.__table__,
-            GeoEventParticipant.__table__,
-            GeoEventSource.__table__,
-            CountryRelationAssessment.__table__,
-            CountryRelationEvidence.__table__,
-        ],
-    )
+    engine = make_engine()
+    create_schema(engine)
     _StubBase.metadata.create_all(engine)
     monkeypatch.setattr(svc, "Document", StubDocument)
     monkeypatch.setattr(detect, "Document", StubDocument)
@@ -151,8 +138,9 @@ def test_create_event_requires_known_country_and_role(session):
     assert unknown.value.status == 404
     with pytest.raises(svc.GeopoliticsError):
         svc.create_event(session, title="X", event_date="2026", participants=[("turcja", "boss")])
-    with pytest.raises(svc.GeopoliticsError):
-        svc.create_event(session, title="X", event_date="2026", participants=[])
+    # since ADR-034 an event needs neither a country nor a date
+    event, created = svc.create_event(session, title="X", event_date="2026", participants=[])
+    assert created and event.participants == []
 
 
 def test_repeated_report_adds_a_source_instead_of_a_second_event(session):
