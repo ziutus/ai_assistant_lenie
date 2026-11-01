@@ -133,8 +133,15 @@ const Geopolitics = () => {
     try {
       const r = await axios.post(`${apiUrl}/document/${id}/geopolitics/detect`, {}, { headers, timeout: 180000 });
       const d = r.data;
-      setNotice(`Dokument ${id}: ${d.events_created} nowych zdarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji.`
-        + ` Odrzucone przez walidację: ${Object.values(d.rejected as Record<string, number>).reduce((a, b) => a + b, 0)}.`);
+      const labels: Record<string, string> = {
+        quote_not_found: "cytat nie występuje w tekście", bad_date: "nieustalona data",
+        bad_participants: "niepoprawni uczestnicy", bad_relation: "niepoprawna relacja",
+      };
+      const rejected = Object.entries(d.rejected as Record<string, number>).filter(([, n]) => n > 0)
+        .map(([key, n]) => `${labels[key] ?? key}: ${n}`).join(", ");
+      setNotice(`Dokument ${id}: ${d.events_created} nowych zdarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji${d.assessments_merged ? ` (+${d.assessments_merged} dowodów dołączono do istniejących)` : ""}.`
+        + (d.dated_from_reference ? ` ${d.dated_from_reference} zdarzeń z datą względną dostało datę artykułu (adnotacja w opisie).` : "")
+        + (rejected ? ` Odrzucone przez walidację — ${rejected}.` : ""));
       setReload((n) => n + 1);
     } catch (reason: any) {
       setError(`Analiza dokumentu nie powiodła się: ${errorText(reason)}`);

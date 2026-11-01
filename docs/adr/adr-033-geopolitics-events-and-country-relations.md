@@ -55,8 +55,10 @@ Rules:
 - Axes: `political` and `security`, both −2..+2, with the meaning of each step written in
   `geopolitics_service.AXES` and shown in the UI. "Strength of influence" is a different quantity and is
   deliberately not folded into these axes yet.
-- **No event decides a relation alone.** An assessment backed by at most one event has its confidence capped at
-  0.7 (`SINGLE_EVENT_CONFIDENCE_CAP`). No data is not neutrality: the map shows grey, and an empty result says
+- **No event decides a relation alone.** An assessment backed by fewer than two *independent documents* has its
+  confidence capped at 0.7 (`SINGLE_EVENT_CONFIDENCE_CAP`); several events from one article are still one source.
+  Repeated proposals for the same pair, axis, start and score are merged into one proposal with more evidence
+  (`propose_assessment`) instead of a queue of identical cards. No data is not neutrality: the map shows grey, and an empty result says
   so. A confirmed assessment past `review_due_at` (default 6 months) is flagged as needing review, never
   silently changed.
 - "Zones of influence" are a **view**, not an attribute; independence of a state shows up as different scores
@@ -64,7 +66,9 @@ Rules:
 
 Flow (`library/geopolitics_detect.py`, `POST /document/<id>/geopolitics/detect`): the model gets the text in
 fragments (≤ 4 × 10 000 characters) and the slugs of the countries found in it. It may answer "nothing". Every
-candidate is validated: the quote must occur verbatim in the document, the date must parse, countries must
+candidate is validated: the quote must occur verbatim in the document, the date must parse (a relative date such as
+"obecnie" that the model could not resolve against the document's publication/ingestion date is dated to that
+date, month precision, with a note in the description, instead of being dropped), countries must
 exist, a relation is kept only if both countries are participants of the same event. Everything is stored as
 `proposed`; the reader approves "event + change" in one click (`POST /geopolitics/proposals/<id>/decision`,
 `expected_version` → 409 on a stale view) or rejects it. Usage is logged by `ai_ask()` as

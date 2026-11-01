@@ -385,7 +385,7 @@ def create_assessment(
     for event_id in event_ids:
         if session.get(GeoEvent, event_id) is None:
             raise GeopoliticsError(f"Unknown event: {event_id}", 404)
-    if len(event_ids) <= 1:
+    if independent_document_count(session, event_ids) < 2:
         conf = min(conf, SINGLE_EVENT_CONFIDENCE_CAP)
     if status not in ("proposed", "confirmed"):
         raise GeopoliticsError("status must be proposed or confirmed")
@@ -410,6 +410,56 @@ def create_assessment(
     if status == "confirmed":
         confirm_assessment(session, row, user_id=user_id)
     return row
+
+
+def independent_document_count(session, event_ids: list[int]) -> int:
+    """How many distinct documents report the given events.
+
+    Several events from one article are still ONE source, so they do not lift the
+    confidence cap that a single report gets.
+    """
+    if not event_ids:
+        return 0
+    rows = session.scalars(
+        select(GeoEventSource.document_id).where(GeoEventSource.event_id.in_(event_ids)).distinct()
+    ).all()
+    return len(set(rows))
+
+
+def propose_assessment(session, **kwargs) -> tuple[CountryRelationAssessment, bool]:
+    """Like ``create_assessment`` for a PROPOSAL, but a repeat of an open proposal adds evidence.
+
+    Several events of one article usually point at the same relation (US-Laos, -1, same
+    day). They become one proposal with several pieces of evidence instead of a queue of
+    identical cards, of which only the first could ever be confirmed. A proposal with a
+    different score for the same pair, axis and start stays separate so the disagreement
+    is visible. Returns (assessment, created).
+    """
+    source = resolve_country(session, kwargs["from_country"])
+    target = resolve_country(session, kwargs["to_country"])
+    start = _parse_date_only(kwargs["valid_from"], "valid_from")
+    score = validate_score(kwargs["score"])
+    axis = validate_axis(kwargs["axis"])
+    existing = session.scalar(
+        select(CountryRelationAssessment).where(
+            CountryRelationAssessment.from_country_id == source.id,
+            CountryRelationAssessment.to_country_id == target.id,
+            CountryRelationAssessment.axis == axis,
+            CountryRelationAssessment.valid_from == start,
+            CountryRelationAssessment.score == score,
+            CountryRelationAssessment.status == "proposed",
+        )
+    )
+    if existing is None:
+        return create_assessment(session, **kwargs), True
+    known = {evidence.event_id for evidence in existing.evidence}
+    for event_id in dict.fromkeys(kwargs.get("event_ids") or []):
+        if event_id not in known:
+            if session.get(GeoEvent, event_id) is None:
+                raise GeopoliticsError(f"Unknown event: {event_id}", 404)
+            existing.evidence.append(CountryRelationEvidence(event_id=event_id))
+    session.flush()
+    return existing, False
 
 
 def confirm_assessment(

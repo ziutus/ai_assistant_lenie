@@ -7,6 +7,7 @@ found verbatim in the document and the score is in range. One event never yields
 confidence above ``SINGLE_EVENT_CONFIDENCE_CAP``.
 """
 
+import datetime
 import json
 import logging
 import re
@@ -18,8 +19,8 @@ from library.geopolitics_service import (
     AXES,
     ROLES,
     GeopoliticsError,
-    create_assessment,
     create_event,
+    propose_assessment,
     normalize_text,
     parse_event_date,
 )
@@ -63,7 +64,9 @@ ZASADY:
 - Zwracaj tylko wydarzenia, które fragment opisuje wprost. Nie zgaduj. Jeśli nic nie pasuje, zwróć [].
 - "country" to wyłącznie slug z listy: {", ".join(slugs) if slugs else "(brak kandydatów)"}.
 - "role": actor (sprawca), target (cel), affected (dotknięty), location (miejsce).
-- "date": YYYY-MM-DD, YYYY-MM lub YYYY. Data publikacji tekstu: {published or "nieznana"}. Bez daty pomiń wydarzenie.
+- "date": YYYY-MM-DD, YYYY-MM lub YYYY. Data odniesienia (kiedy tekst powstał / został pobrany): {published or "nieznana"}.
+  Wyrażenia względne ("w ubiegłym miesiącu", "od stycznia", "obecnie") przelicz na datę względem daty odniesienia.
+  Jeśli nie da się ustalić nawet roku, wpisz null. W "date_text" podaj oryginalne sformułowanie daty z tekstu (lub null).
 - "quote": DOKŁADNY, dosłowny cytat ze fragmentu (do 300 znaków), który potwierdza wydarzenie.
 - "relation" ustaw TYLKO wtedy, gdy samo wydarzenie wyraźnie zmienia lub ujawnia stosunek jednego z krajów
   do drugiego; w przeciwnym razie null. Pojedyncze zdarzenie (np. ucieczka polityka do obcego kraju)
@@ -72,7 +75,7 @@ ZASADY:
 - Maksymalnie {MAX_EVENTS_PER_FRAGMENT} wydarzeń.
 
 Odpowiedz WYŁĄCZNIE tablicą JSON:
-[{{"title": "...", "description": "...", "date": "...", "quote": "...",
+[{{"title": "...", "description": "...", "date": "...", "date_text": "...", "quote": "...",
   "participants": [{{"country": "slug", "role": "actor"}}],
   "relation": null lub {{"from": "slug", "to": "slug", "axis": "political", "score": -1, "confidence": 0.5, "rationale": "..."}}}}]
 
@@ -110,8 +113,8 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
     model = model or DEFAULT_MODEL
     haystack = normalize_text(text).casefold()
     slugs = [entry.slug for entry in detect_countries(text)]
-    published = getattr(doc, "document_date", None) or getattr(doc, "published_on", None)
-    published_text = published.isoformat() if hasattr(published, "isoformat") else None
+    reference = _reference_date(doc)
+    published_text = reference.isoformat() if reference else None
 
     summary = {
         "document_id": doc_id,
@@ -122,6 +125,8 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
         "events_created": 0,
         "events_existing": 0,
         "assessments_proposed": 0,
+        "assessments_merged": 0,
+        "dated_from_reference": 0,
         "rejected": {"quote_not_found": 0, "bad_date": 0, "bad_participants": 0, "bad_relation": 0},
         "event_ids": [],
         "assessment_ids": [],
@@ -141,21 +146,53 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
         )
         for item in parse_response(response.response_text)[:MAX_EVENTS_PER_FRAGMENT]:
             summary["candidates"] += 1
-            _store_candidate(session, doc_id, item, haystack, model, user_id, summary)
+            _store_candidate(session, doc_id, item, haystack, model, user_id, summary, reference)
     return summary
 
 
-def _store_candidate(session, doc_id, item, haystack, model, user_id, summary) -> None:
+def _reference_date(doc) -> datetime.date | None:
+    """When the text was written: its publication date, else the day it was ingested."""
+    for name in ("published_on", "ingested_at"):
+        value = getattr(doc, name, None)
+        if isinstance(value, datetime.datetime):
+            return value.date()
+        if isinstance(value, datetime.date):
+            return value
+    return None
+
+
+def _resolve_date(item, reference) -> tuple[object, str | None, str | None]:
+    """The model's own date when it parses; else the article date, noted in the description.
+
+    Returns (date, precision override, note). Without a reference date an unusable date
+    stays unusable (the caller rejects the candidate).
+    """
+    try:
+        parse_event_date(item.get("date"))
+        return item.get("date"), None, None
+    except GeopoliticsError:
+        pass
+    if reference is None:
+        raise GeopoliticsError("event date could not be determined")
+    phrase = normalize_text(str(item.get("date_text") or item.get("date") or ""))
+    note = f"Data w tekście: „{phrase}”; przyjęto datę artykułu." if phrase else "Przyjęto datę artykułu."
+    return reference, "month", note
+
+
+def _store_candidate(session, doc_id, item, haystack, model, user_id, summary, reference=None) -> None:
     rejected = summary["rejected"]
     quote = normalize_text(str(item.get("quote") or ""))
     if not _quote_in_text(quote, haystack):
         rejected["quote_not_found"] += 1
         return
     try:
-        parse_event_date(item.get("date"))
+        event_date, precision, date_note = _resolve_date(item, reference)
     except GeopoliticsError:
         rejected["bad_date"] += 1
         return
+    if date_note:
+        summary["dated_from_reference"] += 1
+        item = {**item, "description": normalize_text(f"{item.get('description') or ''} {date_note}")}
     participants = []
     for entry in item.get("participants") or []:
         if isinstance(entry, dict) and entry.get("role") in ROLES and isinstance(entry.get("country"), str):
@@ -168,7 +205,8 @@ def _store_candidate(session, doc_id, item, haystack, model, user_id, summary) -
             session,
             title=str(item.get("title") or ""),
             description=item.get("description"),
-            event_date=item.get("date"),
+            event_date=event_date,
+            date_precision=precision,
             participants=participants,
             source={"document_id": doc_id, "quote": quote},
             detection_method="llm",
@@ -193,7 +231,7 @@ def _store_candidate(session, doc_id, item, haystack, model, user_id, summary) -
         rejected["bad_relation"] += 1
         return
     try:
-        assessment = create_assessment(
+        assessment, assessment_created = propose_assessment(
             session,
             from_country=relation["from"],
             to_country=relation["to"],
@@ -211,5 +249,9 @@ def _store_candidate(session, doc_id, item, haystack, model, user_id, summary) -
         logger.info("geopolitics: relation rejected: %s", exc.message)
         rejected["bad_relation"] += 1
         return
-    summary["assessments_proposed"] += 1
-    summary["assessment_ids"].append(assessment.id)
+    if assessment_created:
+        summary["assessments_proposed"] += 1
+    else:
+        summary["assessments_merged"] += 1
+    if assessment.id not in summary["assessment_ids"]:
+        summary["assessment_ids"].append(assessment.id)

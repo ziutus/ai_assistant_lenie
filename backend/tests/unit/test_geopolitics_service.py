@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import Integer, String, Text, create_engine
+from sqlalchemy import DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from library import geopolitics_detect as detect
@@ -39,6 +39,8 @@ class StubDocument(_StubBase):
     title: Mapped[str] = mapped_column(String(100), default="t")
     text_md: Mapped[str | None] = mapped_column(Text)
     text: Mapped[str | None] = mapped_column(Text)
+    published_on: Mapped[datetime.date | None] = mapped_column(DateTime)
+    ingested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
     @classmethod
     def get_by_id(cls, session, doc_id):
@@ -225,11 +227,60 @@ def test_single_event_confidence_is_capped(session):
     assert float(row.confidence) == svc.SINGLE_EVENT_CONFIDENCE_CAP
 
 
-def test_two_independent_events_may_exceed_the_cap(session):
-    first, _ = _event(session)
-    second, _ = _event(session, title="Sankcje", date="2026-04-01")
+def test_two_events_from_one_article_stay_capped(session):
+    first, _ = _event(session, source={"document_id": 1, "quote": "Opozycjonista uciekł do USA"})
+    second, _ = _event(
+        session, title="Sankcje", date="2026-04-01", source={"document_id": 1, "quote": "po wyborach w Brazylii"}
+    )
     row = _propose(session, confidence=0.9, event_ids=[first.id, second.id])
+    assert float(row.confidence) == svc.SINGLE_EVENT_CONFIDENCE_CAP
+
+
+def test_reports_from_two_documents_may_exceed_the_cap(session):
+    session.add(StubDocument(id=2, text_md="Inny artykuł."))
+    session.commit()
+    first, _ = _event(session, source={"document_id": 1, "quote": "Opozycjonista uciekł do USA"})
+    second, _ = _event(session, title="Sankcje", date="2026-04-01", source={"document_id": 2, "quote": "Inny artykuł"})
+    row = _propose(session, confidence=0.9, event_ids=[first.id, second.id])
+    assert svc.independent_document_count(session, [first.id, second.id]) == 2
     assert float(row.confidence) == 0.9
+
+
+def test_repeated_proposal_adds_evidence_instead_of_a_duplicate(session):
+    first, _ = _event(session)
+    second, _ = _event(session, title="Drugie", date="2026-03-10")
+    kwargs = dict(
+        from_country="brazylia", to_country="stany-zjednoczone", axis="political", score=-1, valid_from="2026-03-10"
+    )
+    row, created = svc.propose_assessment(session, event_ids=[first.id], **kwargs)
+    again, created_again = svc.propose_assessment(session, event_ids=[first.id, second.id], **kwargs)
+    session.commit()
+    assert created and not created_again and row.id == again.id
+    assert sorted(e.event_id for e in again.evidence) == sorted([first.id, second.id])
+    assert session.query(CountryRelationAssessment).count() == 1
+
+
+def test_a_different_score_for_the_same_start_stays_a_separate_proposal(session):
+    first, _ = _event(session)
+    kwargs = dict(from_country="brazylia", to_country="stany-zjednoczone", axis="political", valid_from="2026-03-10")
+    svc.propose_assessment(session, score=-1, event_ids=[first.id], **kwargs)
+    _, created = svc.propose_assessment(session, score=1, event_ids=[first.id], **kwargs)
+    assert created and session.query(CountryRelationAssessment).count() == 2
+
+
+def test_a_confirmed_assessment_does_not_absorb_a_new_proposal(session):
+    _propose(session, score=-1, status="confirmed")
+    event, _ = _event(session)
+    _, created = svc.propose_assessment(
+        session,
+        from_country="brazylia",
+        to_country="stany-zjednoczone",
+        axis="political",
+        score=-1,
+        valid_from="2026-03-10",
+        event_ids=[event.id],
+    )
+    assert created
 
 
 def test_proposal_is_invisible_on_the_map_until_confirmed(session):
@@ -449,6 +500,54 @@ def test_detect_rejects_bad_date_unknown_country_and_foreign_relation(session, d
     assert out["rejected"]["bad_participants"] == 1
     assert out["rejected"]["bad_relation"] == 1
     assert out["events_created"] == 1 and out["assessments_proposed"] == 0
+
+
+def test_relative_date_falls_back_to_the_article_date_with_a_note(session, doc, monkeypatch):
+    session.get(StubDocument, 1).ingested_at = datetime.datetime(2026, 10, 27, 12, 0)
+    session.commit()
+    calls = _fake_llm(
+        monkeypatch,
+        [
+            _candidate(date="obecnie", date_text="obecnie"),
+            _candidate(title="Inne", date=None, date_text="od stycznia"),
+            _candidate(title="Trzecie", date="2026-09"),
+        ],
+    )
+    out = detect.detect_for_document(session, 1)
+    session.commit()
+    assert out["rejected"]["bad_date"] == 0 and out["events_created"] == 3 and out["dated_from_reference"] == 2
+    assert "2026-10-27" in calls[0][0]
+    events = {e.title: e for e in session.query(GeoEvent).all()}
+    relative = events["Opozycjonista uciekł do USA"]
+    assert relative.event_date == datetime.date(2026, 10, 27) and relative.date_precision == "month"
+    assert "Data w tekście: „obecnie”" in relative.description
+    assert events["Inne"].description.endswith("„od stycznia”; przyjęto datę artykułu.")
+    assert events["Trzecie"].event_date == datetime.date(2026, 9, 1) and "przyjęto" not in (
+        events["Trzecie"].description or ""
+    )
+
+
+def test_published_on_wins_over_ingestion_date(session, doc):
+    row = session.get(StubDocument, 1)
+    row.published_on = datetime.datetime(2026, 5, 1)
+    row.ingested_at = datetime.datetime(2026, 10, 27)
+    assert detect._reference_date(row) == datetime.date(2026, 5, 1)
+
+
+def test_detect_merges_same_relation_from_one_article_into_one_proposal(session, doc, monkeypatch):
+    relation = {"from": "brazylia", "to": "stany-zjednoczone", "axis": "political", "score": -1, "confidence": 1}
+    _fake_llm(
+        monkeypatch,
+        [
+            _candidate(relation=relation),
+            _candidate(title="Drugie", quote="po wyborach w Brazylii", relation=relation),
+        ],
+    )
+    out = detect.detect_for_document(session, 1)
+    session.commit()
+    assert out["events_created"] == 2 and out["assessments_proposed"] == 1 and out["assessments_merged"] == 1
+    row = session.query(CountryRelationAssessment).one()
+    assert len(row.evidence) == 2 and float(row.confidence) == svc.SINGLE_EVENT_CONFIDENCE_CAP
 
 
 def test_detect_second_run_does_not_duplicate(session, doc, monkeypatch):
