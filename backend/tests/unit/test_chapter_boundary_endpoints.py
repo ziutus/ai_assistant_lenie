@@ -18,6 +18,7 @@ def setup(monkeypatch):
     doc = MagicMock(spec=Document)
     doc.text, doc.text_md, doc.text_raw, doc.chapter_list = TEXT, "markdown", "raw", "timestamps"
     doc.chapter_types = None
+    doc.chapter_notes = None
     session = MagicMock()
     session.get.return_value = doc
     session.scalar.side_effect = [None, 2]
@@ -56,7 +57,7 @@ def test_post_changes_only_text(setup, steps):
 
 
 @pytest.mark.parametrize("method,path", [("get", "chapter_sections"), ("post", "move_chapter_boundary"),
-                                        ("post", "split_chapter"), ("post", "merge_chapter"), ("post", "chapter_type"),
+                                        ("post", "split_chapter"), ("post", "merge_chapter"), ("post", "chapter_type"), ("post", "chapter_note"),
                                         ("get", "chapter_sections/1/sentences"), ("get", "chapter_entities")])
 def test_not_found(setup, method, path):
     client, session, _, _ = setup
@@ -66,7 +67,7 @@ def test_not_found(setup, method, path):
 
 
 @pytest.mark.parametrize("method,path", [("get", "chapter_sections"), ("post", "move_chapter_boundary"),
-                                        ("post", "split_chapter"), ("post", "merge_chapter"), ("post", "chapter_type"),
+                                        ("post", "split_chapter"), ("post", "merge_chapter"), ("post", "chapter_type"), ("post", "chapter_note"),
                                         ("get", "chapter_sections/1/sentences"), ("get", "chapter_entities")])
 @pytest.mark.parametrize("text", [None, "", "  \n"])
 def test_no_text(setup, method, path, text):
@@ -76,7 +77,7 @@ def test_no_text(setup, method, path, text):
     session.commit.assert_not_called()
 
 
-@pytest.mark.parametrize("operation", ["move_chapter_boundary", "split_chapter", "merge_chapter", "chapter_type"])
+@pytest.mark.parametrize("operation", ["move_chapter_boundary", "split_chapter", "merge_chapter", "chapter_type", "chapter_note"])
 def test_embeddings_conflict(setup, operation):
     client, session, doc, embeddings = setup
     embeddings.return_value = True
@@ -87,7 +88,7 @@ def test_embeddings_conflict(setup, operation):
     session.commit.assert_not_called()
 
 
-@pytest.mark.parametrize("operation", ["move_chapter_boundary", "split_chapter", "merge_chapter", "chapter_type"])
+@pytest.mark.parametrize("operation", ["move_chapter_boundary", "split_chapter", "merge_chapter", "chapter_type", "chapter_note"])
 def test_active_job_conflict(setup, operation):
     client, session, doc, _ = setup
     session.scalar.side_effect = ["active-job"]
@@ -159,7 +160,7 @@ def test_new_edit_invalid_input(setup, operation, payload):
     session.commit.assert_not_called()
 
 
-@pytest.mark.parametrize("operation", ["split_chapter", "merge_chapter", "chapter_type"])
+@pytest.mark.parametrize("operation", ["split_chapter", "merge_chapter", "chapter_type", "chapter_note"])
 @pytest.mark.parametrize("payload", [None, [], {}, "invalid", True])
 def test_new_edit_invalid_body(setup, operation, payload):
     client, session, doc, _ = setup
@@ -356,3 +357,76 @@ def test_entities_only_compute_selected_chapter(setup, monkeypatch, position):
         from library.transcript_chapter_boundaries import parse_sections
         filtered.assert_called_once_with(grouped, parse_sections(doc.text)[position].body)
         countries.assert_called_once_with(parse_sections(doc.text)[position].body)
+
+
+@pytest.mark.parametrize("chapter_type", ["TEMAT", "REKLAMA", "SZUM", "ZRODLA"])
+def test_split_explicit_chapter_type_and_empty_note(setup, chapter_type):
+    client, session, doc, _ = setup
+    doc.chapter_types = ["REKLAMA", "TEMAT"]
+    doc.chapter_notes = ["Pierwsza", "Druga"]
+    response = client.post("/document/42/split_chapter", json={
+        "position": 1, "sentence_index": 2, "title": "Nowy", "chapter_type": chapter_type,
+    })
+    assert response.status_code == 200
+    assert doc.chapter_types == ["REKLAMA", chapter_type, "TEMAT"]
+    assert doc.chapter_notes == ["Pierwsza", "", "Druga"]
+    session.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("chapter_type", [None, True, 1, [], "unknown"])
+def test_split_invalid_chapter_type_is_atomic(setup, chapter_type):
+    client, session, doc, _ = setup
+    response = client.post("/document/42/split_chapter", json={
+        "position": 1, "sentence_index": 2, "title": "Nowy", "chapter_type": chapter_type,
+    })
+    assert response.status_code == 400
+    assert doc.text == TEXT
+    session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("note", ["", "Sprawdź źródła", "ż" * 2000])
+def test_chapter_note_save_and_get(setup, note):
+    client, session, doc, _ = setup
+    response = client.post("/document/42/chapter_note", json={"position": 2, "note": note})
+    assert response.status_code == 200
+    assert doc.chapter_notes == ["", note]
+    assert doc.text == TEXT
+    assert response.json["stale_analysis_runs"] == 0
+    session.commit.assert_called_once()
+    response = client.get("/document/42/chapter_sections?with_sentences=1")
+    assert [section["note"] for section in response.json["sections"]] == ["", note]
+
+
+@pytest.mark.parametrize("payload", [
+    {"position": 1, "note": "x" * 2001}, {"position": 0, "note": "x"},
+    {"position": 3, "note": "x"}, {"position": True, "note": "x"},
+    {"position": 1, "note": None}, {"position": 1, "note": []}, {},
+])
+def test_chapter_note_invalid(setup, payload):
+    client, session, doc, _ = setup
+    response = client.post("/document/42/chapter_note", json=payload)
+    assert response.status_code == 400
+    assert doc.chapter_notes is None
+    session.commit.assert_not_called()
+
+
+def test_chapter_notes_merge_and_move(setup):
+    client, session, doc, _ = setup
+    doc.chapter_notes = ["A", "B"]
+    response = client.post("/document/42/move_chapter_boundary", json={"position": 2, "sentences": 1})
+    assert response.status_code == 200
+    assert doc.chapter_notes == ["A", "B"]
+    session.scalar.side_effect = [None, 2]
+    response = client.post("/document/42/merge_chapter", json={"position": 2})
+    assert response.status_code == 200
+    assert doc.chapter_notes == ["A\n\nB"]
+
+
+def test_chapter_note_merge_overflow_is_atomic(setup):
+    client, session, doc, _ = setup
+    doc.chapter_notes = ["a" * 1000, "b" * 1000]
+    response = client.post("/document/42/merge_chapter", json={"position": 2})
+    assert response.status_code == 400
+    assert doc.text == TEXT
+    assert doc.chapter_notes == ["a" * 1000, "b" * 1000]
+    session.commit.assert_not_called()

@@ -72,3 +72,10 @@ code second.
   change type to every other type, delete. When you add an entity type or a
   retype endpoint, update that matrix and the tests in `entitiesPanel.test.tsx`
   (they assert the exact menu lists).
+
+## Collapsible sections
+
+Use native `<details><summary>` through `CollapsibleSection` for collapsible sections.
+Never add a separate Zwiń/Rozwiń button. After an action completes a section
+(description fetched, chapter marked as noise/advertisement), start it collapsed.
+Keep actions that must remain readily accessible outside the collapsible content.

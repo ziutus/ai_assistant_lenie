@@ -768,6 +768,7 @@ class Document(Base):
     search_terms: Mapped[str | None] = mapped_column(Text)
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
+    chapter_notes: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     chapter_types: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     outline_md: Mapped[str | None] = mapped_column(Text)
     outline_anchors: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))

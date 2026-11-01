@@ -645,6 +645,106 @@ def import_recommendation_url(recommendation_id):
     return jsonify(result), 201 if created else 200
 
 
+# "/youtube/123", "/link/10333" or a bare path of the app: the numeric tail is the document id.
+_APP_PATH_RE = re.compile(r"^/(?:[A-Za-z_-]+/)*(\d+)(?:[/?#].*)?$")
+
+
+def _resolve_document_ref(session, raw) -> Document:
+    """A library document named by id (``9332``), app path (``/youtube/9332``) or its own URL."""
+    text = str(raw if raw is not None else "").strip()
+    if not text:
+        abort(400, "document is required")
+    path = _APP_PATH_RE.match(text)
+    if text.isdigit() or path:
+        document = session.get(Document, int(text) if text.isdigit() else int(path.group(1)))
+    elif text.lower().startswith(("http://", "https://")):
+        try:
+            document = Document.get_by_url(session, text)
+        except ValueError:
+            abort(400, "invalid document url")
+    else:
+        abort(400, "document must be an id, an app path such as /youtube/123, or a URL")
+    if document is None:
+        abort(404, "document not found")
+    return document
+
+
+@bp.post("/tool_recommendations/<int:recommendation_id>/documents")
+def attach_recommendation_document(recommendation_id):
+    """Link a library document that talks about the tool (a video, an article) to a radar entry.
+
+    ``{"document": id | "/youtube/123" | url, "context"?: str}``. Stored the way the detector and the
+    feed bridge store a mention: a ``mentioned_in`` evidence row pointing at the document. The entry's
+    ``source_document_id`` is filled only when it is still empty. Idempotent: 201 created, 200 already linked.
+    """
+    _user()
+    body = request.get_json(silent=True) or {}
+    context = body.get("context")
+    if context is not None and not isinstance(context, str):
+        abort(400, "context must be a string")
+    context = (context or "").strip() or None
+    session = get_scoped_session()
+    item = session.get(ToolRecommendation, recommendation_id)
+    if item is None:
+        abort(404, "tool recommendation not found")
+    document = _resolve_document_ref(session, body.get("document", body.get("document_id")))
+    evidence = session.execute(select(ToolRecommendationEvidence).where(
+        ToolRecommendationEvidence.tool_recommendation_id == item.id,
+        ToolRecommendationEvidence.recommender_document_id == document.id,
+        ToolRecommendationEvidence.relation_type == "mentioned_in",
+    ).limit(1)).scalars().first()
+    created = evidence is None
+    if created:
+        session.add(ToolRecommendationEvidence(
+            tool_recommendation_id=item.id, relation_type="mentioned_in", catalog_url=document.url,
+            catalog_label=(document.title or document.url or f"dokument {document.id}")[:255],
+            context=context, recommender_document_id=document.id,
+        ))
+    elif context:
+        evidence.context = context
+    if item.source_document_id is None:
+        item.source_document_id = document.id
+    item.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    session.commit()
+    session.refresh(item)
+    return jsonify({"tool_recommendation": _dict(item), "created": created}), 201 if created else 200
+
+
+@bp.delete("/tool_recommendations/<int:recommendation_id>/documents/<int:document_id>")
+def detach_recommendation_document(recommendation_id, document_id):
+    """Undo :func:`attach_recommendation_document`: drop the ``mentioned_in`` rows for that document.
+
+    ``source_document_id`` is cleared too, but only when it points at this document and no other evidence
+    row (for example a catalog the document recommended) still refers to it.
+    """
+    _user()
+    session = get_scoped_session()
+    item = session.get(ToolRecommendation, recommendation_id)
+    if item is None:
+        abort(404, "tool recommendation not found")
+    rows = session.execute(select(ToolRecommendationEvidence).where(
+        ToolRecommendationEvidence.tool_recommendation_id == item.id,
+        ToolRecommendationEvidence.recommender_document_id == document_id,
+        ToolRecommendationEvidence.relation_type == "mentioned_in",
+    )).scalars().all()
+    still_referenced = session.execute(select(ToolRecommendationEvidence.id).where(
+        ToolRecommendationEvidence.tool_recommendation_id == item.id,
+        ToolRecommendationEvidence.recommender_document_id == document_id,
+        ToolRecommendationEvidence.relation_type != "mentioned_in",
+    ).limit(1)).first() is not None
+    clear_source = item.source_document_id == document_id and not still_referenced
+    if not rows and not clear_source:
+        abort(404, "document is not linked to this entry")
+    for row in rows:
+        session.delete(row)
+    if clear_source:
+        item.source_document_id = None
+    item.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    session.commit()
+    session.refresh(item)
+    return jsonify({"tool_recommendation": _dict(item), "removed": len(rows)})
+
+
 @bp.patch("/tool_recommendations/<int:recommendation_id>")
 def update_tool_recommendation(recommendation_id):
     """Edit the descriptive fields of one radar entry (absent key = unchanged, empty string clears)."""
