@@ -86,6 +86,10 @@ without a deploy; every event and proposal stores the label of the prompt versio
 Surface: `library/geopolitics_service.py`, `geopolitics_detect.py`, `geopolitics_routes.py`; the `/geopolitics`
 page in `web_interface_react` (map, proposal queue, events, document analysis) on the existing Leaflet stack.
 
+> Update: events later became a general registry that needs neither a country nor a date, with aliases and
+> organizations/persons as participants — see [ADR-034](adr-034-world-events-registry.md). The rules below about
+> assessments, confirmation and the map are unchanged; direct evidence now has to name both countries.
+
 ## Not in the MVP
 
 Influence instruments (X, Facebook, TikTok, Starlink, currency, arms, energy) and their use as a separate

@@ -15,15 +15,17 @@ interface Country { id: number; slug: string; name_pl: string; map_code: string;
 interface Axis { value: string; label: string; scale: Record<string, string> }
 interface EventSource { id: number; document_id: number; quote: string; stance: string }
 interface GeoEvent {
-  id: number; title: string; description: string | null; event_date: string; status: string;
+  id: number; title: string; description: string | null; event_date: string | null; event_date_end?: string | null;
+  is_ongoing?: boolean; kind?: string; status: string;
   detection_method: string; model: string | null; prompt_version?: string | null;
-  participants: { country: Country; role: string }[]; sources: EventSource[];
+  participants: { type?: string; country?: Country; organization?: { id: number; name: string }; person?: { id: number; name: string }; role: string }[];
+  sources: EventSource[];
 }
 interface Assessment {
   id: number; from_country: Country; to_country: Country; axis: string; score: number; confidence: number;
   valid_from: string; valid_to: string | null; review_due_at: string | null; overdue: boolean;
   rationale: string | null; status: string; detection_method: string; model?: string | null; prompt_version?: string | null; version: number;
-  evidence?: { event: GeoEvent; stance: string }[];
+  evidence?: { event: GeoEvent; stance: string; kind?: string }[];
   other_country?: Country;
   current?: Assessment | null;
 }
@@ -34,7 +36,14 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "proposals", label: "Propozycje" },
   { value: "events", label: "Zdarzenia" },
 ];
-const ROLE_LABEL: Record<string, string> = { actor: "sprawca", target: "cel", affected: "dotknięty", location: "miejsce" };
+const ROLE_LABEL: Record<string, string> = {
+  actor: "sprawca", target: "cel", affected: "dotknięty", location: "miejsce", host: "gospodarz",
+  organizer: "organizator", winner: "zwycięzca", subject: "podmiot",
+};
+const eventDates = (e: { event_date: string | null; event_date_end?: string | null; is_ongoing?: boolean }) =>
+  !e.event_date ? "bez daty" : e.event_date_end ? `${e.event_date} – ${e.event_date_end}` : e.is_ongoing ? `${e.event_date} – trwa` : e.event_date;
+const participantLabel = (p: GeoEvent["participants"][number]) =>
+  `${p.country?.name_pl ?? p.organization?.name ?? p.person?.name ?? "?"} (${ROLE_LABEL[p.role] ?? p.role})`;
 const STATUS_LABEL: Record<string, string> = { proposed: "propozycja", confirmed: "zatwierdzone", rejected: "odrzucone" };
 const SCORE_COLOR: Record<string, string> = { "-2": "#b91c1c", "-1": "#f97316", "0": "#9ca3af", "1": "#86efac", "2": "#15803d" };
 const SCORE_WORD: Record<string, string> = { "-2": "wroga", "-1": "napięta", "0": "neutralna", "1": "przyjazna", "2": "sojusznicza" };
@@ -115,7 +124,7 @@ const Geopolitics = () => {
       axios.get(`${apiUrl}/geopolitics/proposals`, { headers })
         .then((r) => { if (!cancelled) setProposals(r.data.proposals ?? []); }).catch(fail).finally(done);
     } else {
-      axios.get(`${apiUrl}/geo_events`, { headers, params: { limit: pageSize, offset: (page - 1) * pageSize } })
+      axios.get(`${apiUrl}/geo_events`, { headers, params: { with_countries: 1, limit: pageSize, offset: (page - 1) * pageSize } })
         .then((r) => { if (!cancelled) { setEvents(r.data.events ?? []); setEventsTotal(r.data.total ?? 0); } }).catch(fail).finally(done);
     }
     return () => { cancelled = true; };
@@ -355,15 +364,16 @@ const Geopolitics = () => {
 
       {tab === "events" && (
         <div>
-          <span style={{ color: "#64748b" }}>{loading ? "Wczytuję…" : `${eventsTotal} zdarzeń`}</span>
+          <span style={{ color: "#64748b" }}>{loading ? "Wczytuję…" : `${eventsTotal} zdarzeń z krajami`}</span>{" "}
+          <span style={{ color: "#64748b", fontSize: "0.85em" }}>Zdarzenia bez kraju (awarie, premiery, …) są w <Link to="/world-events">rejestrze wydarzeń świata</Link>.</span>
           <ul aria-label="Zdarzenia" style={{ listStyle: "none", padding: 0, margin: "6px 0 0" }}>
             {events.map((e) => (
               <li key={e.id} style={{ padding: "8px 10px", marginBottom: 8, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
-                <strong>📅 {e.event_date} — {e.title}</strong>{" "}
+                <strong>📅 {eventDates(e)} — {e.title}</strong>{" "}
                 <span style={{ color: "#64748b", fontSize: "0.85em" }}>{STATUS_LABEL[e.status] ?? e.status}{e.detection_method === "llm" ? ` · ${e.model ?? "model"}${e.prompt_version ? `, prompt ${e.prompt_version}` : ""}` : ""}</span>
                 {e.description && <div style={{ margin: "4px 0" }}>{e.description}</div>}
                 <div style={{ fontSize: "0.85em", color: "#475569" }}>
-                  {e.participants.map((p) => `${p.country.name_pl} (${ROLE_LABEL[p.role] ?? p.role})`).join(", ")}
+                  {e.participants.map(participantLabel).join(", ")}
                 </div>
                 <SourceList sources={e.sources} />
                 {e.status === "proposed" && (
@@ -396,14 +406,14 @@ const SourceList = ({ sources }: { sources: EventSource[] }) => (
   )
 );
 
-const EvidenceList = ({ evidence }: { evidence?: { event: GeoEvent; stance: string }[] }) => (
+const EvidenceList = ({ evidence }: { evidence?: { event: GeoEvent; stance: string; kind?: string }[] }) => (
   !evidence || evidence.length === 0 ? (
     <div style={{ color: "#94a3b8", fontSize: "0.85em" }}>Bez powiązanych zdarzeń.</div>
   ) : (
     <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: "0.85em" }}>
-      {evidence.map(({ event, stance }) => (
+      {evidence.map(({ event, stance, kind }) => (
         <li key={event.id}>
-          {event.event_date}: {event.title}{stance === "contradicts" ? " (przeczy)" : ""}
+          {eventDates(event)}: {event.title}{stance === "contradicts" ? " (przeczy)" : ""}{kind === "context" ? " (tło)" : ""}
           <SourceList sources={event.sources} />
         </li>
       ))}

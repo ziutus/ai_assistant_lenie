@@ -139,7 +139,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           Miejsca
         </NavLink>
         <NavLink to="/world-events" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
-          Wydarzenia w tekstach
+          Wydarzenia świata
         </NavLink>
         <NavLink to="/geopolitics" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           Geopolityka
