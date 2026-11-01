@@ -718,6 +718,24 @@ it.each([false, true])("reports no new countries or a detection error: %s", asyn
   expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
+it("explains a network error on entity detection with target, source and a copyable details block", async () => {
+  vi.mocked(axios.post).mockRejectedValue({
+    message: "Network Error", code: "ERR_NETWORK",
+    config: { method: "post", url: "/website_entities", baseURL: "http://192.168.200.7:5055", timeout: 150000 },
+  });
+  render(<MemoryRouter><EntitiesPanel docId={11226} /></MemoryRouter>);
+  await screen.findByRole("button", { name: place.text });
+  fireEvent.click(screen.getByRole("button", { name: "Wykryj osoby, miejsca i obiekty" }));
+  expect(await screen.findByText(/Nie udało się wykryć encji: brak odpowiedzi serwera/)).toBeTruthy();
+  const details = screen.getByText(/^Operacja: Nie udało się wykryć encji/).textContent ?? "";
+  expect(details).toContain("Dokument: 11226");
+  expect(details).toContain("Żądanie: POST http://192.168.200.7:5055/website_entities");
+  expect(details).toContain("Strona (źródło żądania):");
+  expect(details).toContain("Czas błędu:");
+  expect(details).toContain("Kod błędu klienta: ERR_NETWORK");
+  expect(screen.getByRole("button", { name: "Kopiuj szczegóły" })).toBeTruthy();
+});
+
 it("proposes geopolitical events with the default model, reports the cost and keeps the panel busy meanwhile", async () => {
   let finish!: (value: any) => void;
   vi.mocked(axios.post).mockReturnValue(new Promise(resolve => { finish = resolve; }));

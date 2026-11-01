@@ -79,3 +79,45 @@ Use native `<details><summary>` through `CollapsibleSection` for collapsible sec
 Never add a separate Zwiń/Rozwiń button. After an action completes a section
 (description fetched, chapter marked as noise/advertisement), start it collapsed.
 Keep actions that must remain readily accessible outside the collapsible content.
+
+## Error messages (failed requests)
+
+A user who sees "Network Error" can do nothing, and an engineer who is told
+"it said Network Error" has to reconstruct the case from server logs. Every
+message for a failed request must therefore carry both a plain explanation and
+the facts needed to debug it without asking the user anything.
+
+Build it with `describeRequestError(error, operation, { startedAt?, context? })`
+from `src/modules/shared/utils/requestError.ts` and show the details with
+`components/RequestErrorDetails` (a native `<details>` "Szczegóły techniczne"
+plus "Kopiuj szczegóły"). Do not hand-format `error.message`.
+
+- **Summary (always visible):** `<what the user was doing, as a failure>: <why>`,
+  in Polish, e.g. `Nie udało się wykryć encji: brak odpowiedzi serwera — …`.
+  Start from the operation, not from the exception. When the server sent a
+  `message`, show it verbatim (backend messages are already Polish and meant for
+  the user). Never show raw English client text such as `Request failed with
+  status code 500` or `Network Error` as the only reason.
+- **Say what to do next.** No response (`ERR_NETWORK`): the request did not reach
+  the backend or the answer was blocked — check the connection and the API
+  address in `/connect`, refresh, retry. Timeout (`ECONNABORTED`): the operation
+  may still have run — reload the data before retrying. HTTP 4xx: what is wrong
+  with the input. HTTP 5xx: the server failed, retrying later may help.
+- **Details (collapsed, copyable):** operation, identifying context (document id,
+  entity id — pass `context: { Dokument: docId }`), method and full target URL,
+  the page it came from (`origin + pathname`), local time of the failure with the
+  UTC offset, request duration (pass `startedAt: Date.now()` taken before the
+  call), HTTP status and server message or "brak", client error code. The
+  duration is diagnostic: a failure after 50 ms never left the browser (CORS,
+  wrong host, stale tab), one after the full timeout is a slow or hung backend.
+- **Never include** the API key, request headers, request bodies or document
+  text — the details are meant to be pasted into chats and bug reports.
+- **Keep the context where the user is looking:** show the message next to the
+  control that failed (or in the existing page-level banner, see `/feed-review`),
+  not in `alert()` or the console only. Log the full error with `console.error`
+  as well.
+- **Clear stale details** when the next plain message replaces an error
+  (`EntitiesPanel` does this in its `setMessage` wrapper).
+- A new handler for a request that can fail uses this helper from the start; when
+  you touch an old `catch` that formats `error.message` by hand, convert it.
+  Tests: assert the summary and that the details contain the target URL.
