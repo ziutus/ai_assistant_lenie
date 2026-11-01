@@ -486,7 +486,7 @@ def confirm_assessment(
             CountryRelationAssessment.status == "confirmed",
             CountryRelationAssessment.id != row.id,
         )
-        .with_for_update()
+        .with_for_update(of=CountryRelationAssessment)
     ).all()
     previous = None
     for other in siblings:
@@ -546,7 +546,9 @@ def decide_assessment(
     approve_events: bool = True,
 ) -> CountryRelationAssessment:
     row = session.scalar(
-        select(CountryRelationAssessment).where(CountryRelationAssessment.id == assessment_id).with_for_update()
+        select(CountryRelationAssessment)
+        .where(CountryRelationAssessment.id == assessment_id)
+        .with_for_update(of=CountryRelationAssessment)
     )
     if row is None:
         raise GeopoliticsError("Assessment not found", 404)

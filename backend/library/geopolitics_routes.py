@@ -44,6 +44,23 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("geopolitics", __name__)
 
 
+@bp.errorhandler(Exception)
+def _unexpected_error(exc):
+    """Answer an unexpected failure with JSON the UI can show.
+
+    Without this Flask's default 500 page carries no CORS headers, which a browser reports as a bare
+    "Network Error". The exception class goes to the reader, the details only to the log.
+    """
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(exc, HTTPException):
+        return exc
+    logger.exception("geopolitics request failed")
+    return jsonify(
+        {"status": "error", "message": f"Błąd serwera ({type(exc).__name__}); szczegóły w logu backendu"}
+    ), 500
+
+
 def _user_id() -> int | None:
     return getattr(getattr(g, "auth", None), "user_id", None)
 

@@ -41,7 +41,13 @@ const SCORE_WORD: Record<string, string> = { "-2": "wroga", "-1": "napięta", "0
 const GEOJSON_URL = "/geo/world-countries.geo.json";
 const DEFAULT_PAGE_SIZE = 20;
 
-const errorText = (reason: any) => reason?.response?.data?.message || reason?.message || "nieznany błąd";
+const errorText = (reason: any) => {
+  const data = reason?.response?.data?.message;
+  if (data) return data;
+  if (reason?.response) return `serwer odpowiedział błędem ${reason.response.status}`;
+  if (reason?.request || reason?.message === "Network Error") return "brak odpowiedzi serwera (backend niedostępny, przekroczony czas lub błąd CORS); sprawdź logi backendu";
+  return reason?.message || "nieznany błąd";
+};
 const today = () => new Date().toISOString().slice(0, 10);
 
 const Geopolitics = () => {

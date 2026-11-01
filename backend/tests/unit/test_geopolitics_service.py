@@ -608,3 +608,14 @@ def test_split_fragments_caps_cost():
     text = "\n\n".join("akapit " * 50 for _ in range(500))
     fragments = detect.split_fragments(text, size=1000, limit=3)
     assert len(fragments) == 3 and all(len(f) <= 1000 for f in fragments)
+
+
+def test_row_locks_are_limited_to_the_assessment_table():
+    """`FOR UPDATE` on a query with joined-eager relationships fails on PostgreSQL ("nullable side of an outer
+    join"), which SQLite does not notice; every lock must name its table (found out on the NAS)."""
+    import inspect
+    import re
+
+    source = inspect.getsource(svc)
+    locks = re.findall(r"with_for_update\(([^)]*)\)", source)
+    assert locks and all("of=" in lock for lock in locks)

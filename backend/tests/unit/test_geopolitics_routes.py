@@ -257,3 +257,18 @@ def test_a_saved_model_that_became_unavailable_falls_back(client, monkeypatch):
 
 
 MODELS_BACKUP: list = []
+
+
+def test_unexpected_failure_is_json_with_the_error_class_and_no_details(client, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("secret internal detail")
+
+    monkeypatch.setattr(routes, "list_proposals", boom)
+    response = client.get("/geopolitics/proposals")
+    body = response.get_json()
+    assert response.status_code == 500 and body["status"] == "error"
+    assert "RuntimeError" in body["message"] and "secret" not in body["message"]
+
+
+def test_http_errors_keep_their_own_status(client):
+    assert client.get("/geopolitics/nonexistent").status_code == 404
