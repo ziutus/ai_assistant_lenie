@@ -7,6 +7,7 @@ import ToolFocusReview from "../components/ToolFocusReview/toolFocusReview";
 import GithubStatsLine, { type GithubStats } from "../components/GithubStatsLine/githubStatsLine";
 import GithubAbout from "../components/GithubAbout/githubAbout";
 import EntryUrls from "../components/EntryUrls/entryUrls";
+import EntryDocuments from "../components/EntryDocuments/entryDocuments";
 import ToolLinksEditor from "../components/ToolLinksEditor/toolLinksEditor";
 import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
 import ToolProfileSuggest, { type ProfileSuggestion } from "../components/ToolProfileSuggest/toolProfileSuggest";
@@ -545,6 +546,8 @@ export default function ToolRecommendations() {
     <ToolLinksEditor homepageUrl={item.homepage_url} links={item.links ?? []} disabled={busy === item.id}
       onSave={links => saveLinks(item, links)} />
     <EntryUrls recommendationId={item.id} apiUrl={apiUrl} headers={headers} />
+    <EntryDocuments recommendationId={item.id} apiUrl={apiUrl} headers={headers} evidences={item.evidences}
+      disabled={busy === item.id} onChanged={load} />
     {item.obsidian_note_path && <div style={{ color: "#64748b", fontSize: ".8rem" }}>Notatka w Obsidianie: {item.obsidian_note_path}</div>}
     {item.github && <GithubStatsLine stats={item.github} />}
     {[item.homepage_url, ...(item.links ?? []).map(link => link.url)].some(isRepositoryUrl) && <button type="button" disabled={busy === item.id} onClick={() => void refreshOneGithub(item)}
@@ -569,7 +572,7 @@ export default function ToolRecommendations() {
           {evidence.relation_type === "mentioned_in" ? "Wspomniane w: " : "Znajduje się w katalogu: "}
           {evidence.catalog_url ? <a href={evidence.catalog_url} target="_blank" rel="noreferrer">{evidence.catalog_label || evidence.catalog_url}</a> : evidence.catalog_label || "nieznane źródło"}
           {evidence.context && ` · ${evidence.context}`}
-          {evidence.recommender_document && <div style={{ marginTop: 3 }}>↳ katalog polecony przez: {evidence.recommender_document.discovery_source || evidence.recommender_document.title || "link Lenie"}{evidence.recommender_document.title && evidence.recommender_document.discovery_source ? ` · ${evidence.recommender_document.title}` : ""}{evidence.recommender_document.url && <> · <a href={evidence.recommender_document.url} target="_blank" rel="noreferrer">otwórz</a></>}</div>}
+          {evidence.recommender_document && <div style={{ marginTop: 3 }}>↳ {evidence.relation_type === "mentioned_in" ? "dokument w Lenie" : "katalog polecony przez"}:{evidence.recommender_document.discovery_source || evidence.recommender_document.title || "link Lenie"}{evidence.recommender_document.title && evidence.recommender_document.discovery_source ? ` · ${evidence.recommender_document.title}` : ""}{evidence.recommender_document.url && <> · <a href={evidence.recommender_document.url} target="_blank" rel="noreferrer">otwórz</a></>}</div>}
         </li>)}
       </ul>
     </details> : (item.source_document || item.source_url) && <div style={{ color: "#64748b", fontSize: ".85rem", margin: "8px 0" }}>

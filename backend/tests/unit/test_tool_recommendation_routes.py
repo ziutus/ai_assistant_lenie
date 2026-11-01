@@ -315,6 +315,147 @@ class TestEntryUrls:
         assert exc_info.value.code == 400
 
 
+class TestAttachDocument:
+    """POST/DELETE /tool_recommendations/<id>/documents: a library document that talks about the tool."""
+
+    def _session(self, monkeypatch, item, document, existing=None, remaining=None):
+        session = MagicMock()
+        session.get.side_effect = lambda model, _pk: item if model.__name__ == "ToolRecommendation" else document
+        session.execute.return_value.scalars.return_value.first.return_value = existing
+        session.execute.return_value.scalars.return_value.all.return_value = [] if existing is None else [existing]
+        session.execute.return_value.first.return_value = remaining
+        monkeypatch.setattr("library.tool_recommendation_routes.get_scoped_session", lambda: session)
+        return session
+
+    def _video(self):
+        return SimpleNamespace(id=9332, title="Herdr w praktyce", url="https://www.youtube.com/watch?v=Ct-mtWqV3Ro")
+
+    def test_attach_by_id_adds_mention_and_fills_empty_source_document(self, monkeypatch):
+        from library.tool_recommendation_routes import attach_recommendation_document
+
+        item = _item()
+        session = self._session(monkeypatch, item, self._video())
+        with Flask(__name__).test_request_context("/x", method="POST", json={"document": "9332", "context": " omawia herdr "}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response, status = attach_recommendation_document(17)
+
+        evidence = session.add.call_args.args[0]
+        assert status == 201 and response.json["created"] is True
+        assert (evidence.relation_type, evidence.recommender_document_id) == ("mentioned_in", 9332)
+        assert evidence.catalog_url == "https://www.youtube.com/watch?v=Ct-mtWqV3Ro"
+        assert evidence.catalog_label == "Herdr w praktyce" and evidence.context == "omawia herdr"
+        assert item.source_document_id == 9332
+        session.commit.assert_called_once()
+
+    def test_attach_is_idempotent_and_keeps_existing_source_document(self, monkeypatch):
+        from library.tool_recommendation_routes import attach_recommendation_document
+
+        item = _item()
+        item.source_document_id = 5
+        existing = SimpleNamespace(context=None)
+        session = self._session(monkeypatch, item, self._video(), existing=existing)
+        with Flask(__name__).test_request_context("/x", method="POST", json={"document_id": 9332, "context": "nowy kontekst"}):
+            g.auth = SimpleNamespace(kind="service")
+            response, status = attach_recommendation_document(17)
+
+        assert status == 200 and response.json["created"] is False
+        session.add.assert_not_called()
+        assert existing.context == "nowy kontekst" and item.source_document_id == 5
+
+    def test_attach_resolves_app_path_and_document_url(self, monkeypatch):
+        from library.tool_recommendation_routes import attach_recommendation_document
+
+        item = _item()
+        video = self._video()
+        session = self._session(monkeypatch, item, video)
+        looked_up = []
+        monkeypatch.setattr("library.tool_recommendation_routes.Document.get_by_url",
+                            lambda _s, url: looked_up.append(url) or video)
+        app = Flask(__name__)
+        with app.test_request_context("/x", method="POST", json={"document": "/youtube/9332"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            assert attach_recommendation_document(17)[1] == 201
+        assert looked_up == []  # the path carries the id, no URL lookup
+        with app.test_request_context("/x", method="POST", json={"document": video.url}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            assert attach_recommendation_document(17)[1] == 201
+        assert looked_up == [video.url]
+        assert session.commit.call_count == 2
+
+    @pytest.mark.parametrize("payload, code", [({}, 400), ({"document": "herdr"}, 400), ({"document": 5, "context": 3}, 400)])
+    def test_attach_rejects_bad_input(self, monkeypatch, payload, code):
+        from library.tool_recommendation_routes import attach_recommendation_document
+
+        self._session(monkeypatch, _item(), self._video())
+        with Flask(__name__).test_request_context("/x", method="POST", json=payload):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(Exception) as exc_info:
+                attach_recommendation_document(17)
+        assert exc_info.value.code == code
+
+    def test_attach_unknown_document_and_entry_are_404(self, monkeypatch):
+        from library.tool_recommendation_routes import attach_recommendation_document
+
+        app = Flask(__name__)
+        self._session(monkeypatch, _item(), None)
+        with app.test_request_context("/x", method="POST", json={"document": "9"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(Exception) as exc_info:
+                attach_recommendation_document(17)
+        assert exc_info.value.code == 404
+        self._session(monkeypatch, None, self._video())
+        with app.test_request_context("/x", method="POST", json={"document": "9"}):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(Exception) as exc_info:
+                attach_recommendation_document(99)
+        assert exc_info.value.code == 404
+
+    def test_attach_needs_user_or_service_key(self, monkeypatch):
+        from library.tool_recommendation_routes import attach_recommendation_document
+
+        self._session(monkeypatch, _item(), self._video())
+        with Flask(__name__).test_request_context("/x", method="POST", json={"document": "9"}):
+            g.auth = SimpleNamespace(kind="reader")
+            with pytest.raises(Exception) as exc_info:
+                attach_recommendation_document(17)
+        assert exc_info.value.code == 403
+
+    def test_detach_removes_mention_and_clears_source_document(self, monkeypatch):
+        from library.tool_recommendation_routes import detach_recommendation_document
+
+        item = _item()
+        item.source_document_id = 9332
+        row = SimpleNamespace()
+        session = self._session(monkeypatch, item, self._video(), existing=row)
+        with Flask(__name__).test_request_context("/x", method="DELETE"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = detach_recommendation_document(17, 9332)
+
+        session.delete.assert_called_once_with(row)
+        assert response.json["removed"] == 1 and item.source_document_id is None
+
+    def test_detach_keeps_source_document_when_a_catalog_evidence_still_uses_it(self, monkeypatch):
+        from library.tool_recommendation_routes import detach_recommendation_document
+
+        item = _item()
+        item.source_document_id = 9332
+        self._session(monkeypatch, item, self._video(), existing=SimpleNamespace(), remaining=(1,))
+        with Flask(__name__).test_request_context("/x", method="DELETE"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            detach_recommendation_document(17, 9332)
+        assert item.source_document_id == 9332
+
+    def test_detach_unlinked_document_is_404(self, monkeypatch):
+        from library.tool_recommendation_routes import detach_recommendation_document
+
+        self._session(monkeypatch, _item(), self._video())
+        with Flask(__name__).test_request_context("/x", method="DELETE"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            with pytest.raises(Exception) as exc_info:
+                detach_recommendation_document(17, 9332)
+        assert exc_info.value.code == 404
+
+
 class TestTags:
     def test_normalize_lowercases_dedupes_and_joins_words(self):
         from library.tool_recommendation_routes import normalize_tags
