@@ -89,6 +89,15 @@ def preview_prompt_template():
     except prompt_templates.TemplateInvalid as exc:
         abort(400, str(exc))
     session = get_scoped_session()
+    if task == prompt_templates.TASK_GEOPOLITICS:
+        from library.geopolitics_detect import preview_variables
+
+        variables, document_id = preview_variables(session, body.get("document_id"))
+        return jsonify({
+            "system": prompt_templates.render(system_template, **variables),
+            "user": prompt_templates.render(user_template, **variables),
+            "document_id": document_id,
+        })
     item = session.get(FeedItem, body["feed_item_id"]) if isinstance(body.get("feed_item_id"), int) else None
     variables = {
         "catalog": json.dumps(active_topic_catalog(session), ensure_ascii=False),

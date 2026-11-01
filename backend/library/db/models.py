@@ -4653,6 +4653,7 @@ class GeoEvent(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="proposed")
     detection_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
     model: Mapped[str | None] = mapped_column(String(120))
+    prompt_version: Mapped[str | None] = mapped_column(String(40))
     dedup_key: Mapped[str | None] = mapped_column(String(64))
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -4743,6 +4744,7 @@ class CountryRelationAssessment(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="proposed")
     detection_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
     model: Mapped[str | None] = mapped_column(String(120))
+    prompt_version: Mapped[str | None] = mapped_column(String(40))
     supersedes_id: Mapped[int | None] = mapped_column(
         ForeignKey("country_relation_assessments.id", ondelete="SET NULL"),
     )

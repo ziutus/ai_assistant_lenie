@@ -74,6 +74,9 @@ exist, a relation is kept only if both countries are participants of the same ev
 `expected_version` → 409 on a stale view) or rejects it. Usage is logged by `ai_ask()` as
 `geopolitics_event_extraction`.
 
+The analysis prompt is a versioned `prompt_templates` task (`geopolitics_events`), editable at `/prompt-templates`
+without a deploy; every event and proposal stores the label of the prompt version that produced it.
+
 Surface: `library/geopolitics_service.py`, `geopolitics_detect.py`, `geopolitics_routes.py`; the `/geopolitics`
 page in `web_interface_react` (map, proposal queue, events, document analysis) on the existing Leaflet stack.
 

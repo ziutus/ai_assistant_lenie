@@ -16,13 +16,13 @@ interface Axis { value: string; label: string; scale: Record<string, string> }
 interface EventSource { id: number; document_id: number; quote: string; stance: string }
 interface GeoEvent {
   id: number; title: string; description: string | null; event_date: string; status: string;
-  detection_method: string; model: string | null;
+  detection_method: string; model: string | null; prompt_version?: string | null;
   participants: { country: Country; role: string }[]; sources: EventSource[];
 }
 interface Assessment {
   id: number; from_country: Country; to_country: Country; axis: string; score: number; confidence: number;
   valid_from: string; valid_to: string | null; review_due_at: string | null; overdue: boolean;
-  rationale: string | null; status: string; detection_method: string; version: number;
+  rationale: string | null; status: string; detection_method: string; model?: string | null; prompt_version?: string | null; version: number;
   evidence?: { event: GeoEvent; stance: string }[];
   other_country?: Country;
   current?: Assessment | null;
@@ -250,7 +250,8 @@ const Geopolitics = () => {
           onClick={() => saveDefaultModel(model)}>Ustaw jako domyślny</button>
         {modelSaved && <button type="button" className="button" onClick={() => saveDefaultModel(null)}>Przywróć domyślny serwera</button>}
         <button type="submit" className="button" disabled={loading}>Zaproponuj zdarzenia</button>
-        <span style={{ color: "#64748b", fontSize: "0.85em" }}>Ceny: wejście / wyjście za 1 mln tokenów. Model tylko proponuje; nic nie trafia na mapę bez Twojej decyzji.</span>
+        <span style={{ color: "#64748b", fontSize: "0.85em" }}>Ceny: wejście / wyjście za 1 mln tokenów. Model tylko proponuje; nic nie trafia na mapę bez Twojej decyzji.
+          {" "}<Link to="/prompt-templates?variant=event_extraction">Edytuj prompt</Link>.</span>
       </form>
 
       {tab === "map" && (
@@ -332,7 +333,7 @@ const Geopolitics = () => {
                 <strong>{p.from_country.name_pl} → {p.to_country.name_pl}</strong>{" "}
                 <span style={{ color: "#64748b", fontSize: "0.85em" }}>
                   {axes.find((a) => a.value === p.axis)?.label ?? p.axis} · od {p.valid_from} · pewność {Math.round(p.confidence * 100)}%
-                  {p.detection_method === "llm" ? " · zaproponował model" : " · wpisane ręcznie"}
+                  {p.detection_method === "llm" ? ` · zaproponował model${p.model ? ` ${p.model}` : ""}${p.prompt_version ? `, prompt ${p.prompt_version}` : ""}` : " · wpisane ręcznie"}
                 </span>
                 <div style={{ margin: "4px 0" }}>
                   Proponowana ocena: <strong>{SCORE_WORD[String(p.score)]} ({p.score > 0 ? "+" : ""}{p.score})</strong>
@@ -359,7 +360,7 @@ const Geopolitics = () => {
             {events.map((e) => (
               <li key={e.id} style={{ padding: "8px 10px", marginBottom: 8, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                 <strong>📅 {e.event_date} — {e.title}</strong>{" "}
-                <span style={{ color: "#64748b", fontSize: "0.85em" }}>{STATUS_LABEL[e.status] ?? e.status}{e.detection_method === "llm" ? " · model" : ""}</span>
+                <span style={{ color: "#64748b", fontSize: "0.85em" }}>{STATUS_LABEL[e.status] ?? e.status}{e.detection_method === "llm" ? ` · ${e.model ?? "model"}${e.prompt_version ? `, prompt ${e.prompt_version}` : ""}` : ""}</span>
                 {e.description && <div style={{ margin: "4px 0" }}>{e.description}</div>}
                 <div style={{ fontSize: "0.85em", color: "#475569" }}>
                   {e.participants.map((p) => `${p.country.name_pl} (${ROLE_LABEL[p.role] ?? p.role})`).join(", ")}

@@ -12,7 +12,7 @@ import json
 import logging
 import re
 
-from library import app_settings
+from library import app_settings, prompt_templates
 from library.ai import ai_ask
 from library.country_gazetteer import detect_countries
 from library.db.models import Document
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 TASK = "geopolitics"  # model allowlist of library/llm_model_registry.py
 SETTING_KEY = "geopolitics_model"  # household default in app_settings
 DEFAULT_MODEL = "Bielik-11B-v3.0-Instruct"
-PROMPT_VERSION = "geo-v1"
+VARIANT = "event_extraction"  # (task, variant) of the prompt in library/prompt_templates.py
 MAX_FRAGMENT_CHARS = 10_000
 MAX_FRAGMENTS = 4
 MAX_EVENTS_PER_FRAGMENT = 6
@@ -72,34 +72,34 @@ def split_fragments(text: str, size: int = MAX_FRAGMENT_CHARS, limit: int = MAX_
     return fragments
 
 
-def build_prompt(fragment: str, slugs: list[str], published: str | None) -> str:
-    axes = "; ".join(f"{key} ({value['label']})" for key, value in AXES.items())
-    return f"""Jesteś analitykiem geopolityki. Z poniższego fragmentu wydobądź KONKRETNE, datowane wydarzenia
-międzynarodowe (decyzje rządów, wybory, sankcje, umowy, ataki, ucieczki polityków, przejęcia platform itp.).
+def prompt_variables(fragment: str, slugs: list[str], published: str | None) -> dict:
+    """The closed set of variables a prompt template may use (``prompt_templates.VARIABLES``)."""
+    return {
+        "fragment": fragment,
+        "countries": ", ".join(slugs) if slugs else "(brak kandydatów)",
+        "reference_date": published or "nieznana",
+        "axes": "; ".join(f"{key} ({value['label']})" for key, value in AXES.items()),
+        "max_events": MAX_EVENTS_PER_FRAGMENT,
+    }
 
-ZASADY:
-- Zwracaj tylko wydarzenia, które fragment opisuje wprost. Nie zgaduj. Jeśli nic nie pasuje, zwróć [].
-- "country" to wyłącznie slug z listy: {", ".join(slugs) if slugs else "(brak kandydatów)"}.
-- "role": actor (sprawca), target (cel), affected (dotknięty), location (miejsce).
-- "date": YYYY-MM-DD, YYYY-MM lub YYYY. Data odniesienia (kiedy tekst powstał / został pobrany): {published or "nieznana"}.
-  Wyrażenia względne ("w ubiegłym miesiącu", "od stycznia", "obecnie") przelicz na datę względem daty odniesienia.
-  Jeśli nie da się ustalić nawet roku, wpisz null. W "date_text" podaj oryginalne sformułowanie daty z tekstu (lub null).
-- "quote": DOKŁADNY, dosłowny cytat ze fragmentu (do 300 znaków), który potwierdza wydarzenie.
-- "relation" ustaw TYLKO wtedy, gdy samo wydarzenie wyraźnie zmienia lub ujawnia stosunek jednego z krajów
-  do drugiego; w przeciwnym razie null. Pojedyncze zdarzenie (np. ucieczka polityka do obcego kraju)
-  zwykle NIE wystarcza do oceny stosunków. Osie: {axes}.
-  "from" i "to" muszą być uczestnikami tego wydarzenia; "score" od -2 (wroga) do 2 (sojusznicza); "confidence" 0-1.
-- Maksymalnie {MAX_EVENTS_PER_FRAGMENT} wydarzeń.
 
-Odpowiedz WYŁĄCZNIE tablicą JSON:
-[{{"title": "...", "description": "...", "date": "...", "date_text": "...", "quote": "...",
-  "participants": [{{"country": "slug", "role": "actor"}}],
-  "relation": null lub {{"from": "slug", "to": "slug", "axis": "political", "score": -1, "confidence": 0.5, "rationale": "..."}}}}]
+def build_prompt(fragment: str, slugs: list[str], published: str | None, template=None) -> str:
+    """Render the prompt: ``template`` (a resolved ``prompt_templates`` row) or the built-in text."""
+    template = template or prompt_templates.builtin(prompt_templates.TASK_GEOPOLITICS, VARIANT)
+    return prompt_templates.render(template.user, **prompt_variables(fragment, slugs, published))
 
-FRAGMENT:
-\"\"\"
-{fragment}
-\"\"\""""
+
+def preview_variables(session, document_id: int | None) -> tuple[dict, int | None]:
+    """Variables for the `/prompt-templates` preview: the first fragment of a real document, else a sample."""
+    doc = Document.get_by_id(session, document_id) if isinstance(document_id, int) else None
+    text = (doc.text_md or doc.text or "") if doc is not None else ""
+    if not text.strip():
+        sample = "Przykładowy fragment: Rząd A wprowadził sankcje wobec kraju B."
+        return prompt_variables(sample, ["polska", "niemcy"], "2026-01-01"), None
+    reference = _reference_date(doc)
+    slugs = [entry.slug for entry in detect_countries(text)]
+    fragment = (split_fragments(text, limit=1) or [text])[0]
+    return prompt_variables(fragment, slugs, reference.isoformat() if reference else None), doc.id
 
 
 def parse_response(raw: str) -> list[dict]:
@@ -129,6 +129,7 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
         raise GeopoliticsError("Document has no text content")
     model = model or default_model(session) or DEFAULT_MODEL
     usage_reports: list[dict] = []
+    template = prompt_templates.get_active(session, prompt_templates.TASK_GEOPOLITICS, VARIANT)
     haystack = normalize_text(text).casefold()
     slugs = [entry.slug for entry in detect_countries(text)]
     reference = _reference_date(doc)
@@ -137,7 +138,7 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
     summary = {
         "document_id": doc_id,
         "model": model,
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": template.label,
         "fragments": 0,
         "candidates": 0,
         "events_created": 0,
@@ -155,19 +156,33 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
 
     for fragment in split_fragments(text):
         summary["fragments"] += 1
+        try:
+            prompt = build_prompt(fragment, slugs, published_text, template)
+        except Exception as exc:  # a saved template is validated, but the built-in/DB text may still fail to render
+            raise GeopoliticsError(f"Szablon promptu {template.label} nie renderuje się: {exc}") from exc
+        extra = (
+            {
+                "system_prompt": prompt_templates.render(
+                    template.system, **prompt_variables(fragment, slugs, published_text)
+                )
+            }
+            if template.system
+            else {}
+        )
         response = ai_ask(
-            build_prompt(fragment, slugs, published_text),
+            prompt,
             model=model,
             temperature=0.1,
             max_token_count=3000,
             operation="geopolitics_event_extraction",
             document_id=doc_id,
+            **extra,
         )
         usage_reports.append(usage_report(getattr(response, "usage", None)).as_dict())
         summary["usage"] = combine_usage_reports(usage_reports)
         for item in parse_response(response.response_text)[:MAX_EVENTS_PER_FRAGMENT]:
             summary["candidates"] += 1
-            _store_candidate(session, doc_id, item, haystack, model, user_id, summary, reference)
+            _store_candidate(session, doc_id, item, haystack, model, user_id, summary, reference, template.label)
     return summary
 
 
@@ -200,7 +215,9 @@ def _resolve_date(item, reference) -> tuple[object, str | None, str | None]:
     return reference, "month", note
 
 
-def _store_candidate(session, doc_id, item, haystack, model, user_id, summary, reference=None) -> None:
+def _store_candidate(
+    session, doc_id, item, haystack, model, user_id, summary, reference=None, prompt_version=None
+) -> None:
     rejected = summary["rejected"]
     quote = normalize_text(str(item.get("quote") or ""))
     if not _quote_in_text(quote, haystack):
@@ -232,6 +249,7 @@ def _store_candidate(session, doc_id, item, haystack, model, user_id, summary, r
             source={"document_id": doc_id, "quote": quote},
             detection_method="llm",
             model=model,
+            prompt_version=prompt_version,
             user_id=user_id,
         )
     except GeopoliticsError as exc:
@@ -264,6 +282,7 @@ def _store_candidate(session, doc_id, item, haystack, model, user_id, summary, r
             event_ids=[event.id],
             detection_method="llm",
             model=model,
+            prompt_version=prompt_version,
             user_id=user_id,
         )
     except GeopoliticsError as exc:

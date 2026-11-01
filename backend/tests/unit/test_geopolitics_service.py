@@ -65,6 +65,9 @@ def session(monkeypatch):
     monkeypatch.setattr(svc, "Document", StubDocument)
     monkeypatch.setattr(detect, "Document", StubDocument)
     monkeypatch.setattr(detect, "default_model", lambda session: "default-model")
+    monkeypatch.setattr(
+        detect.prompt_templates, "get_active", lambda s, task, variant: detect.prompt_templates.builtin(task, variant)
+    )
     with sessionmaker(bind=engine)() as s:
         for slug, name, code in [
             ("brazylia", "Brazylia", "BRA"),
@@ -619,3 +622,50 @@ def test_row_locks_are_limited_to_the_assessment_table():
     source = inspect.getsource(svc)
     locks = re.findall(r"with_for_update\(([^)]*)\)", source)
     assert locks and all("of=" in lock for lock in locks)
+
+
+def test_detect_renders_the_active_template_and_records_its_version(session, doc, monkeypatch):
+    from library.prompt_templates import ResolvedTemplate
+
+    custom = ResolvedTemplate(
+        5, "event_extraction-v3", None, "ZMIENIONY PROMPT: {{ countries }} | {{ reference_date }} | {{ fragment }}"
+    )
+    monkeypatch.setattr(detect.prompt_templates, "get_active", lambda s, task, variant: custom)
+    relation = {"from": "brazylia", "to": "stany-zjednoczone", "axis": "political", "score": -1}
+    calls = _fake_llm(monkeypatch, [_candidate(relation=relation)])
+    out = detect.detect_for_document(session, 1)
+    session.commit()
+    assert calls[0][0].startswith("ZMIENIONY PROMPT: brazylia, stany-zjednoczone | nieznana |")
+    assert "system_prompt" not in calls[0][1]
+    assert out["prompt_version"] == "event_extraction-v3"
+    assert session.query(GeoEvent).one().prompt_version == "event_extraction-v3"
+    assert session.query(CountryRelationAssessment).one().prompt_version == "event_extraction-v3"
+
+
+def test_detect_without_a_saved_version_uses_the_builtin_and_says_so(session, doc, monkeypatch):
+    _fake_llm(monkeypatch, [_candidate()])
+    out = detect.detect_for_document(session, 1)
+    session.commit()
+    assert out["prompt_version"] == "event_extraction-builtin"
+    assert session.query(GeoEvent).one().prompt_version == "event_extraction-builtin"
+
+
+def test_detect_sends_a_system_prompt_only_when_the_template_has_one(session, doc, monkeypatch):
+    from library.prompt_templates import ResolvedTemplate
+
+    custom = ResolvedTemplate(6, "event_extraction-v4", "Jesteś ostrożny. Osie: {{ axes }}", "{{ fragment }}")
+    monkeypatch.setattr(detect.prompt_templates, "get_active", lambda s, task, variant: custom)
+    calls = _fake_llm(monkeypatch, [])
+    detect.detect_for_document(session, 1)
+    assert calls[0][1]["system_prompt"].startswith("Jesteś ostrożny. Osie: political (Polityczna)")
+
+
+def test_detect_reports_a_template_that_cannot_render(session, doc, monkeypatch):
+    from library.prompt_templates import ResolvedTemplate
+
+    broken = ResolvedTemplate(7, "event_extraction-v9", None, "{{ nieznana }}")
+    monkeypatch.setattr(detect.prompt_templates, "get_active", lambda s, task, variant: broken)
+    _fake_llm(monkeypatch, [])
+    with pytest.raises(svc.GeopoliticsError) as exc:
+        detect.detect_for_document(session, 1)
+    assert "event_extraction-v9" in exc.value.message

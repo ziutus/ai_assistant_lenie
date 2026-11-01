@@ -87,3 +87,38 @@ it("can load the built-in text into the editor", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Wczytaj tekst wbudowany" }));
   expect(screen.getByDisplayValue("B-USER {{ catalog }}")).toBeTruthy();
 });
+
+it("edits the geopolitics prompt: asks for its own task, previews on a document and hides the topic comparison", async () => {
+  const geoListing = {
+    templates: [], variables: { fragment: "fragment dokumentu", countries: "slugi krajów" },
+    builtin: { event_extraction: { system_template: null, user_template: "GEO {{ countries }} {{ fragment }}" } },
+  };
+  vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+    if (url.endsWith("/prompt_templates/preview")) return Promise.resolve(json({ system: null, user: "GEO RENDER", document_id: 11205 }));
+    if (url.endsWith("/prompt_templates") && init?.method === "POST") {
+      return Promise.resolve(json({ template: { ...template, id: 9, task: "geopolitics_events", variant: "event_extraction", version: 1, label: "event_extraction-v1" } }, 201));
+    }
+    if (url.includes("/prompt_templates?")) return Promise.resolve(json(geoListing));
+    return Promise.reject(new TypeError("Failed to fetch"));
+  }));
+  render(<MemoryRouter initialEntries={["/prompt-templates?variant=event_extraction"]}><PromptTemplates /></MemoryRouter>);
+
+  expect(await screen.findByDisplayValue("GEO {{ countries }} {{ fragment }}")).toBeTruthy();
+  const listCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes("/prompt_templates?"));
+  expect(String(listCall?.[0])).toContain("task=geopolitics_events");
+  expect(String(listCall?.[0])).toContain("variant=event_extraction");
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/comparison"))).toBe(false);
+  expect(screen.queryByText("Porównanie modeli i wersji promptu")).toBeNull();
+
+  fireEvent.change(screen.getByLabelText("na dokumencie nr"), { target: { value: "11205" } });
+  fireEvent.click(screen.getByRole("button", { name: "Podgląd (bez wywołania modelu)" }));
+  expect(await screen.findByText("GEO RENDER")).toBeTruthy();
+  expect(screen.getByText(/dokument 11205/)).toBeTruthy();
+  const preview = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/preview"));
+  expect(JSON.parse(String(preview?.[1]?.body))).toMatchObject({ task: "geopolitics_events", variant: "event_extraction", document_id: 11205 });
+
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz jako nową wersję i aktywuj" }));
+  expect((await screen.findByRole("status")).textContent).toContain("event_extraction-v1");
+  const post = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === "POST" && String(init.body).includes("activate"));
+  expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ task: "geopolitics_events", variant: "event_extraction", activate: true });
+});

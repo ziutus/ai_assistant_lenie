@@ -36,10 +36,26 @@ a model has no price.
 ## 3. Prompts
 
 Prompts that a person should be able to tune live in the `prompt_templates` table (versioned, Jinja2 in a
-sandbox, UI at `/prompt-templates`, `library/prompt_templates.py`). **Today the table serves only the
-`content_group_suggestion` task** (`VARIANTS`, `VARIABLES`, `DEFAULTS` are per task in code). A new feature's
-prompt is a code constant until a task is registered there; keep it in one function and record a
-`PROMPT_VERSION` so results can be traced to the wording that produced them.
+sandbox, UI at `/prompt-templates`, `library/prompt_templates.py`). The table is generic over `(task, variant)`:
+`content_group_suggestion` (feed review, documents) and `geopolitics_events` (`event_extraction`) use it today.
+
+To put a new prompt there:
+
+1. Register the task in `VARIANTS`, its closed variable set in `VARIABLES` and the built-in text in `DEFAULTS`
+   (`library/prompt_templates.py`). The built-in text is the fallback while the table has no active row, so
+   write it so it renders exactly like the prompt it replaces, and test that equality with a captured golden
+   string (`tests/unit/test_geopolitics_prompt.py`).
+2. Give `_samples(task)` the variable sets the template must render with (every `{% if %}` branch), so an
+   unknown variable or a syntax error is a 400 at save time, never a failed job.
+3. In the feature, resolve the prompt with `get_active(session, task, variant)` and render it with the same
+   variables; store the label (`template.label`, e.g. `event_extraction-v3` or `…-builtin`) on every row the
+   model produced, so a wording can be judged by what it produced (`geo_events.prompt_version`).
+4. `POST /prompt_templates/preview` renders a draft without calling a model; give the task a branch in
+   `prompt_template_routes.preview_prompt_template` that builds the variables from a real object (a document
+   id) or a sample.
+5. UI: add the variant to `VARIANT_LABELS` / `TASK_OF` in `promptTemplates.tsx`.
+
+The model/prompt comparison report (`/prompt_templates/comparison`) is still specific to topic suggestions.
 
 ## 4. Never trust the answer
 

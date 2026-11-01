@@ -178,6 +178,7 @@ def create_event(
     status: str = "proposed",
     detection_method: str = "manual",
     model: str | None = None,
+    prompt_version: str | None = None,
     user_id: int | None = None,
 ) -> tuple[GeoEvent, bool]:
     """Create an event, or attach a source to the equivalent one. Returns (event, created).
@@ -215,6 +216,7 @@ def create_event(
         status=status,
         detection_method=detection_method,
         model=model,
+        prompt_version=prompt_version,
         dedup_key=key,
         created_by_user_id=user_id,
     )
@@ -279,6 +281,7 @@ def event_to_dict(event: GeoEvent, *, with_documents: bool = True) -> dict:
         "status": event.status,
         "detection_method": event.detection_method,
         "model": event.model,
+        "prompt_version": event.prompt_version,
         "participants": [
             {"country": country_to_dict(p.country), "role": p.role}
             for p in sorted(event.participants, key=lambda p: (ROLES.index(p.role), p.country.name_pl))
@@ -345,6 +348,7 @@ def assessment_to_dict(
         "status": row.status,
         "detection_method": row.detection_method,
         "model": row.model,
+        "prompt_version": row.prompt_version,
         "supersedes_id": row.supersedes_id,
         "version": row.version,
     }
@@ -370,6 +374,7 @@ def create_assessment(
     status: str = "proposed",
     detection_method: str = "manual",
     model: str | None = None,
+    prompt_version: str | None = None,
     user_id: int | None = None,
 ) -> CountryRelationAssessment:
     """Create a PROPOSED assessment (or a confirmed one right away for a manual decision)."""
@@ -401,6 +406,7 @@ def create_assessment(
         status="proposed",
         detection_method=detection_method,
         model=model,
+        prompt_version=prompt_version,
         created_by_user_id=user_id,
     )
     for event_id in event_ids:
