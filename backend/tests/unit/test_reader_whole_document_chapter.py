@@ -43,6 +43,7 @@ def _make_obsidian_note(doc_id=9766, text_md=NOTE_TEXT) -> Document:
     doc.title = "Linux i BIOS"
     doc.url = "obsidian://02-wiedza/Informatyka/linux-i-bios.md"
     doc.tags = ""
+    doc.byline = None
     doc.quality = None
     doc.published_on = None
     doc.ingested_at = None

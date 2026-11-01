@@ -16,6 +16,10 @@ All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. 
 
 ## UX conventions
 
+Collapsible sections use native `<details><summary>` via `CollapsibleSection`,
+with no separate toggle button. Completed sections start collapsed; frequently
+needed actions stay outside. See [AGENTS.md](AGENTS.md#collapsible-sections).
+
 ### Pagination for collection views
 
 Any view that can list more than 50 records must use pagination. The backend

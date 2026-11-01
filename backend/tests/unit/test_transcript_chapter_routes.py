@@ -14,7 +14,7 @@ from library import transcript_chapter_suggester as s
 def client(monkeypatch):
     session = MagicMock()
     session.get.return_value = SimpleNamespace(document_type="youtube", text="Pierwsze. Drugie. Trzecie.",
-                                             text_md="Original markdown", chapter_types=["SZUM"])
+                                             text_md="Original markdown", chapter_types=["SZUM"], chapter_notes=["Old note"])
     session.scalar.return_value = None
     monkeypatch.setattr(routes, "get_scoped_session", lambda: session)
     monkeypatch.setattr(routes, "_chapter_boundary_run_count", lambda *args: 2)
@@ -59,6 +59,7 @@ def test_apply_updates_types_and_preserves_text_md(client):
     assert response.status_code == 200
     assert response.get_json()["chapter_count"] == 2
     assert doc.chapter_types == ["TEMAT", "TEMAT"]
+    assert doc.chapter_notes == ["", ""]
     assert doc.text_md == "Original markdown"
     assert "## Drugi\n\nTrzecie." in doc.text
     client.session.commit.assert_called_once()

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ChapterBoundariesPanel from "./chapterBoundariesPanel";
@@ -37,12 +37,14 @@ async function open(disabled = false, defaultOpen = true) {
   return { onSaved, onFormSubmit, onBusyChange };
 }
 const idle = () => waitFor(() => expect(screen.queryByText("Przetwarzam…")).toBeNull());
+const card = (position: number) => document.querySelector<HTMLDetailsElement>('[data-chapter-position="' + position + '"]')!;
+async function collapse(position: number) {
+  await act(async () => { card(position).open = false; fireEvent(card(position), new Event("toggle")); });
+}
 async function expand(position: number) {
-  const toggle = screen.queryByRole("button", { name: "Rozwiń rozdział " + position });
-  if (toggle) fireEvent.click(toggle);
-  await screen.findByText("Rozdział " + position + ", zdanie 1.");
+  await act(async () => { card(position).open = true; fireEvent(card(position), new Event("toggle")); });
   await idle();
-  return screen.getByRole("region", { name: "Rozdział " + position + ": Temat " + position });
+  return card(position);
 }
 const row = (chapter: HTMLElement, index: number) => within(chapter).getByLabelText("Zdanie " + index);
 
@@ -54,8 +56,9 @@ it("loads all chapters expanded on mount with parallel entity loading and keeps 
     headers: { "x-api-key": "test-key" }, params: { with_sentences: 1 },
   });
   for (const position of [1, 2, 3]) expect(screen.getByText("Rozdział " + position + ", zdanie 4.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 2" }));
-  expect(screen.queryByText("Rozdział 2, zdanie 1.")).toBeNull();
+  await collapse(2);
+  expect(card(2).open).toBe(false);
+  expect(screen.queryByRole("button", { name: /Zwiń|Rozwiń/ })).toBeNull();
   expect(screen.getByText("Rozdział 1, zdanie 1.")).toBeTruthy();
   await expand(2);
   expect(axios.get).toHaveBeenCalledTimes(2);
@@ -64,7 +67,7 @@ it("loads all chapters expanded on mount with parallel entity loading and keeps 
 it("also loads all chapters when a collapsed panel is opened", async () => {
   await open(false, false);
   expect(axios.get).toHaveBeenCalledTimes(2);
-  expect(screen.getAllByRole("button", { name: /Zwiń rozdział/ })).toHaveLength(3);
+  expect(document.querySelectorAll("details[data-chapter-position][open]")).toHaveLength(3);
 });
 
 it.each([
@@ -73,7 +76,7 @@ it.each([
 ])("moves the chosen run to %s and refreshes expanded chapters", async (direction, index, position, count) => {
   const { onSaved } = await open();
   await expand(1);
-  fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 3" }));
+  await collapse(3);
   const chapter = await expand(2);
   fireEvent.click(within(row(chapter, index)).getByRole("button", { name: new RegExp("Przenieś do " + direction) }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -82,9 +85,9 @@ it.each([
     { headers: { "x-api-key": "test-key" } });
   expect(axios.get).toHaveBeenCalledTimes(4);
   expect(sentenceCalls()).toHaveLength(0);
-  expect(screen.getByRole("button", { name: (direction === "następnego" ? "Zwiń" : "Rozwiń") + " rozdział 3" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Zwiń rozdział 1" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Zwiń rozdział 2" })).toBeTruthy();
+  expect(card(3).open).toBe(direction === "następnego");
+  expect(card(1).open).toBe(true);
+  expect(card(2).open).toBe(true);
   expect(screen.getByRole("link", { name: "/chunks/42" }).getAttribute("href")).toBe("/chunks/42");
 });
 
@@ -95,6 +98,8 @@ it("opens a split title, submits with Enter without submitting the page form, an
   const input = screen.getByLabelText("Tytuł nowego rozdziału") as HTMLInputElement;
   expect(input.value).toBe("Temat 1 (cd.)");
   expect(row(chapter, 3).style.borderLeft).toBe("3px solid rgb(249, 115, 22)");
+  expect((screen.getByLabelText("Typ nowego rozdziału") as HTMLSelectElement).value).toBe("TEMAT");
+  fireEvent.change(screen.getByLabelText("Typ nowego rozdziału"), { target: { value: "SZUM" } });
   fireEvent.change(input, { target: { value: "Nowy temat" } });
   vi.mocked(axios.get).mockResolvedValue({ data: { ...data, sections: [
     sections[0], { position: 2, title: "Nowy temat", sentence_count: 2, sentences: rows(2).slice(0, 2) },
@@ -102,11 +107,11 @@ it("opens a split title, submits with Enter without submitting the page form, an
   ], stale_analysis_runs: 2 } });
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
-  expect(axios.post).toHaveBeenCalledWith("/document/42/split_chapter", { position: 1, sentence_index: 3, title: "Nowy temat" }, expect.any(Object));
+  expect(axios.post).toHaveBeenCalledWith("/document/42/split_chapter", { position: 1, sentence_index: 3, title: "Nowy temat", chapter_type: "SZUM" }, expect.any(Object));
   expect(onFormSubmit).not.toHaveBeenCalled();
   expect(await screen.findByText("#2 Nowy temat · 2 zdań")).toBeTruthy();
   await idle();
-  expect(screen.getAllByRole("button", { name: /Zwiń rozdział/ })).toHaveLength(4);
+  expect(document.querySelectorAll("details[data-chapter-position][open]")).toHaveLength(4);
   expect(screen.queryByLabelText("Tytuł nowego rozdziału")).toBeNull();
 });
 
@@ -125,7 +130,7 @@ it("requires merge confirmation, then saves and re-expands all chapters", async 
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   const { onSaved } = await open();
   await expand(2);
-  fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 1" }));
+  await collapse(1);
   const merge = screen.getByRole("button", { name: "Scal rozdział 2 z poprzednim" });
   fireEvent.click(merge);
   expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Numery kolejnych rozdziałów"));
@@ -137,7 +142,7 @@ it("requires merge confirmation, then saves and re-expands all chapters", async 
   expect(axios.post).toHaveBeenCalledWith("/document/42/merge_chapter", { position: 2 }, expect.any(Object));
   await idle();
   expect(axios.get).toHaveBeenCalledTimes(4);
-  expect(screen.getAllByRole("button", { name: /Zwiń rozdział/ })).toHaveLength(2);
+  expect(document.querySelectorAll("details[data-chapter-position][open]")).toHaveLength(2);
 });
 
 it("merges a chapter with the next one via merge_chapter of the following position", async () => {
@@ -240,8 +245,8 @@ it.each([
     return { data: { ...data, sections: regroup(sizes) } };
   });
   // Receiving chapters start collapsed; moves must reveal them without losing the anchor.
-  if (operation === "up" || operation === "merge") fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 1" }));
-  if (operation === "down") fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 3" }));
+  if (operation === "up" || operation === "merge") await collapse(1);
+  if (operation === "down") await collapse(3);
   if (operation === "up") {
     fireEvent.click(within(row(chapter, 2)).getByRole("button", { name: /Przenieś do poprzedniego/ }));
   } else if (operation === "down") {
@@ -259,8 +264,8 @@ it.each([
   expect(window.scrollBy).toHaveBeenCalledExactlyOnceWith(0, -120);
   const newAnchor = document.querySelector<HTMLElement>('[data-gsi="' + ordinal + '"]')!;
   expect(newAnchor.querySelector('span[style*="white-space"]')!.textContent).toBe(originalText);
-  expect(newAnchor.closest("section")!.dataset.chapterPosition).toBe(String(anchorChapter));
-  expect(screen.getByRole("button", { name: "Zwiń rozdział " + anchorChapter })).toBeTruthy();
+  expect(newAnchor.closest("details")!.dataset.chapterPosition).toBe(String(anchorChapter));
+  expect(card(anchorChapter).open).toBe(true);
 });
 
 it("keeps cards and reserved status space mounted throughout the POST and document reload", async () => {
@@ -319,19 +324,22 @@ it.each([
   expect(onSaved).toHaveBeenCalledTimes(1);
   expect(axios.get).toHaveBeenCalledTimes(4);
   expect(select.value).toBe(type);
+  expect(card(2).open).toBe(false);
+  await expand(2);
+  expect(card(2).open).toBe(true);
   expect(screen.getByLabelText("Typ: " + label).style.background).toBe(color);
   expect(screen.getByRole("link", { name: "/chunks/42" })).toBeTruthy();
 });
 
 it("keeps collapsed chapters and restores the card scroll anchor after a type change", async () => {
   await open();
-  fireEvent.click(screen.getByRole("button", { name: "Zwiń rozdział 2" }));
+  await collapse(2);
   let refreshed = false;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({ top: refreshed ? 180 : 300 } as DOMRect));
   vi.mocked(axios.get).mockImplementation(async () => { refreshed = true; return { data }; });
   fireEvent.change(screen.getByLabelText("Typ rozdziału 2"), { target: { value: "REKLAMA" } });
   await idle();
-  expect(screen.getByRole("button", { name: "Rozwiń rozdział 2" })).toBeTruthy();
+  expect(card(2).open).toBe(false);
   expect(window.scrollBy).toHaveBeenCalledExactlyOnceWith(0, -120);
 });
 
@@ -441,4 +449,38 @@ it("preserves entity details and card nodes across edits without toggling the pa
   fireEvent(details, new Event("toggle", { bubbles: true }));
   expect(panel.open).toBe(true);
   expect(axios.get).toHaveBeenCalledTimes(4);
+});
+
+it.each(["SZUM", "REKLAMA", "ZRODLA"])("starts %s collapsed and opens when changed to content", async type => {
+  vi.mocked(axios.get).mockResolvedValue({ data: { ...data, sections: sections.map(section => ({ ...section, type })) } });
+  await open();
+  expect(card(1).open).toBe(false);
+  await expand(1);
+  vi.mocked(axios.get).mockResolvedValue({ data });
+  fireEvent.change(screen.getByLabelText("Typ rozdziału 1"), { target: { value: "TEMAT" } });
+  await idle();
+  expect(card(1).open).toBe(true);
+});
+
+it("saves a note separately and clears the dirty marker", async () => {
+  await open();
+  const chapter = card(1);
+  const input = within(chapter).getByRole("textbox", { name: "Notatka dla LLM — rozdział 1" });
+  expect(input.getAttribute("maxlength")).toBe("2000");
+  fireEvent.change(input, { target: { value: "Sprawdź źródła" } });
+  expect(within(chapter).getByText("Niezapisane zmiany")).toBeTruthy();
+  fireEvent.click(within(chapter).getByRole("button", { name: "Zapisz notatkę" }));
+  await idle();
+  expect(axios.post).toHaveBeenCalledWith("/document/42/chapter_note", { position: 1, note: "Sprawdź źródła" }, expect.any(Object));
+  expect(within(chapter).queryByText("Niezapisane zmiany")).toBeNull();
+});
+
+it("retains an unsaved note after a failed save", async () => {
+  await open();
+  vi.mocked(axios.post).mockRejectedValue(new Error("offline"));
+  fireEvent.change(screen.getByLabelText("Notatka dla LLM — rozdział 1"), { target: { value: "Zachowaj" } });
+  fireEvent.click(within(card(1)).getByRole("button", { name: "Zapisz notatkę" }));
+  await idle();
+  expect((screen.getByLabelText("Notatka dla LLM — rozdział 1") as HTMLTextAreaElement).value).toBe("Zachowaj");
+  expect(within(card(1)).getByText("Niezapisane zmiany")).toBeTruthy();
 });

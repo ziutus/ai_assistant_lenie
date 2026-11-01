@@ -1,5 +1,6 @@
 import React from "react";
 import axios from "axios";
+import CollapsibleSection from "../CollapsibleSection/collapsibleSection";
 import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 
@@ -14,6 +15,7 @@ const typeColors = { REKLAMA: "#fef3c7", SZUM: "#e5e7eb", ZRODLA: "#dbeafe" };
 
 interface Section {
   type: ChapterType;
+  note?: string;
   position: number;
   title: string;
   sentence_count: number;
@@ -69,9 +71,9 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
   const [entityData, setEntityData] = React.useState<EntityResponse | null>(null);
   const [entityError, setEntityError] = React.useState(false);
   const [typeChanged, setTypeChanged] = React.useState(false);
-  const [expanded, setExpanded] = React.useState<Set<number>>(new Set());
+  const [openChapters, setOpenChapters] = React.useState<Set<number>>(new Set());
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
-  const [split, setSplit] = React.useState<{ position: number; index: number; title: string } | null>(null);
+  const [split, setSplit] = React.useState<{ position: number; index: number; title: string; chapterType: ChapterType } | null>(null);
   const splitTrigger = React.useRef<HTMLButtonElement | null>(null);
   const [busy, setBusy] = React.useState(false);
   const pending = React.useRef(false);
@@ -93,9 +95,11 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
 
   React.useLayoutEffect(() => {
     if (!pendingScrollRestore) return;
-    const row = pendingScrollRestore.chapterPosition
+    let row = pendingScrollRestore.chapterPosition
       ? panel.current?.querySelector<HTMLElement>('[data-chapter-position="' + pendingScrollRestore.chapterPosition + '"]')
       : panel.current?.querySelector<HTMLElement>('[data-gsi="' + pendingScrollRestore.ordinal + '"]');
+    const chapter = row?.closest<HTMLDetailsElement>("details[data-chapter-position]");
+    if (chapter && !chapter.open) row = chapter;
     if (row) {
       // Layout's content is in normal document flow; only the sidebar scrolls independently.
       window.scrollBy(0, row.getBoundingClientRect().top - pendingScrollRestore.top);
@@ -113,7 +117,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
     catch (error) { setError(errorMessage(error)); }
     finally { pending.current = false; setBusy(false); onBusyChange?.(false); }
   };
-  const loadSections = async (expandAll: boolean, reveal: number[] = [], scrollAnchor: ScrollAnchor | null = null) => {
+  const loadSections = async (expandAll: boolean, reveal: number[] = [], scrollAnchor: ScrollAnchor | null = null, typeChange?: { position: number; type: string }) => {
     const [sectionResponse, entities] = await Promise.all([
       axios.get<{ sections: Section[]; has_embeddings: boolean }>(base + "/chapter_sections", {
         headers, params: { with_sentences: 1 },
@@ -126,8 +130,12 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
     setSections(data.sections);
     setHasEmbeddings(data.has_embeddings);
     setSplit(null);
-    const positions = data.sections.filter(section => section.position > 0).map(section => section.position);
-    setExpanded(current => new Set(expandAll ? positions : positions.filter(position => current.has(position) || reveal.includes(position))));
+    setOpenChapters(current => new Set(data.sections.filter(section => section.position > 0).filter(section => {
+      const { position } = section;
+      if (typeChange?.position === position) return typeChange.type === "TEMAT";
+      if (reveal.includes(position)) return true;
+      return expandAll ? !section.type || section.type === "TEMAT" : current.has(position);
+    }).map(section => section.position)));
     // Schedule restoration only together with the fresh rows, never during intermediate busy renders.
     setPendingScrollRestore(scrollAnchor);
   };
@@ -135,16 +143,6 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
   React.useEffect(() => {
     if (isOpen) void load();
   }, [isOpen, docId, apiUrl, apiKey]);
-  const toggleChapter = (position: number) => {
-    if (pending.current) return;
-    if (expanded.has(position)) {
-      setExpanded(current => { const next = new Set(current); next.delete(position); return next; });
-      if (split?.position === position) setSplit(null);
-      return;
-    }
-    setExpanded(current => new Set([...current, position]));
-
-  };
   const edit = (operation: string, payload: Record<string, string | number>) => {
     if (disabled || hasEmbeddings) return;
     return withLock(async () => {
@@ -158,11 +156,13 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
         ? count > 0 ? count + 1 : (anchorChapter?.sentence_count ?? 0) + count + 1
         : operation === "split_chapter" ? Number(payload.sentence_index) : 1;
       const ordinal = (chapterOffsets.get(anchorPosition) ?? 0) + anchorIndex;
-      // A collapsed chapter has no sentence rows; merge from its header keeps that location instead.
-      const anchorElement = (changingType
+      // Native details keeps hidden sentence rows mounted; anchor closed chapters to their header.
+      let anchorElement = (changingType
         ? panel.current?.querySelector<HTMLElement>('[data-chapter-position="' + position + '"]')
         : panel.current?.querySelector<HTMLElement>('[data-gsi="' + ordinal + '"]'))
         ?? panel.current?.querySelector<HTMLElement>('[data-chapter-position="' + anchorPosition + '"]');
+      const anchorDetails = anchorElement?.closest<HTMLDetailsElement>("details[data-chapter-position]");
+      if (anchorDetails && !anchorDetails.open) anchorElement = anchorDetails;
       const scrollAnchor = anchorElement ? { ordinal, top: anchorElement.getBoundingClientRect().top,
         ...(changingType ? { chapterPosition: position } : {}) } : null;
       const { data } = await axios.post(base + "/" + operation, payload, { headers });
@@ -171,19 +171,19 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
       if (data.type_conflict) setTypeConflict(data.type_conflict);
       setSplit(null);
       await onSaved();
-      await loadSections(!moving && !changingType, moving ? [position - 1, position] : [], scrollAnchor);
+      await loadSections(!moving && !changingType, moving ? [position - 1, position] : [], scrollAnchor,
+        changingType ? { position, type: String(payload.type) } : undefined);
     });
   };
   const cancelSplit = () => { setSplit(null); splitTrigger.current?.focus(); };
   const submitSplit = () => {
     if (split && split.title.trim()) void edit("split_chapter", {
-      position: split.position, sentence_index: split.index, title: split.title,
+      position: split.position, sentence_index: split.index, title: split.title, chapter_type: split.chapterType,
     });
   };
   return (
-    <details ref={panel} open={isOpen} style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}
+    <CollapsibleSection title="Granice rozdziałów" ref={panel} open={isOpen} style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}
       onToggle={event => { if (event.target === event.currentTarget) setIsOpen(event.currentTarget.open); }}>
-      <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Granice rozdziałów</summary>
       <p><NavLink to={"/ner/" + docId}>Przejrzyj NER per rozdział →</NavLink></p>
       <p>Zapisuje od razu w bazie. Po zmianie formularz zostanie odświeżony — wcześniej zapisz inne zmiany.</p>
       {hasEmbeddings && <p role="status">Dokument ma embeddingi — otwórz go ponownie do edycji przed zmianą granic rozdziałów.</p>}
@@ -198,27 +198,25 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
       {error && <p role="alert">{error} <button type="button" onClick={load} disabled={busy}>Odśwież</button></p>}
       <p role="status" style={{ minHeight: "1.5em" }}>{busy ? "Przetwarzam…" : ""}</p>
       {chapters.map(section => {
-        const isOpen = expanded.has(section.position);
+        const isOpen = openChapters.has(section.position);
         const entities = entityData?.sections.find(item => item.position === section.position)?.entities;
         const skipped = section.type && section.type !== "TEMAT";
         const entityCount = skipped ? 0 : Object.values(entities ?? {}).reduce((count, items) => count + items.length, 0);
-        return <section key={section.position} data-chapter-position={section.position} aria-label={"Rozdział " + section.position + ": " + section.title}
+        return <CollapsibleSection key={section.position} role="region" open={isOpen}
+          onToggle={event => {
+            const opened = event.currentTarget.open;
+            setOpenChapters(current => { const next = new Set(current); if (opened) next.add(section.position); else next.delete(section.position); return next; });
+            if (!opened && split?.position === section.position) setSplit(null);
+          }}
+          title={<strong>#{section.position} {section.title} · {section.sentence_count} zdań</strong>}
+          summaryExtra={section.type && section.type !== "TEMAT" && <span aria-label={"Typ: " + typeLabels[section.type]}
+            style={{ background: typeColors[section.type], color: "#334155", borderRadius: 4, padding: "2px 6px" }}>{typeLabels[section.type]}</span>} data-chapter-position={section.position} aria-label={"Rozdział " + section.position + ": " + section.title}
           style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <strong>#{section.position} {section.title} · {section.sentence_count} zdań</strong>
             <select aria-label={"Typ rozdziału " + section.position} value={section.type || "TEMAT"} disabled={blocked}
               onChange={event => void edit("chapter_type", { position: section.position, type: event.target.value })}>
               {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
-            {section.type && section.type !== "TEMAT" && <span aria-label={"Typ: " + typeLabels[section.type]}
-              style={{ background: typeColors[section.type], color: "#334155", borderRadius: 4, padding: "2px 6px" }}>
-              {typeLabels[section.type]}
-            </span>}
-            <button type="button" aria-expanded={isOpen} aria-controls={"chapter-sentences-" + docId + "-" + section.position}
-              aria-label={(isOpen ? "Zwiń" : "Rozwiń") + " rozdział " + section.position}
-              style={cardButtonStyle} disabled={busy} onClick={() => toggleChapter(section.position)}>
-              {isOpen ? "▾ Zwiń" : "▸ Rozwiń"}
-            </button>
             {section.position >= 2 && <button type="button" style={cardButtonStyle} disabled={blocked}
               aria-label={"Scal rozdział " + section.position + " z poprzednim"}
               onClick={() => {
@@ -244,7 +242,8 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
                 <EntityChips label="Organizacje" items={entities.orgName ?? []} />
               </>}
           </details>
-          {isOpen && <div id={"chapter-sentences-" + docId + "-" + section.position} style={{ marginTop: 10 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+          <div id={"chapter-sentences-" + docId + "-" + section.position} style={{ marginTop: 10, flex: "1 1 320px", minWidth: 0 }}>
             {section.sentences?.map(sentence => {
               const marked = split?.position === section.position && split.index === sentence.index;
               const label = " — rozdział " + section.position + ", zdanie " + sentence.index;
@@ -255,7 +254,7 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
                   {sentence.index > 1 && <SentenceButton symbol="✂" title="Podziel tutaj — to zdanie zacznie nowy rozdział"
                     label={"Podziel tutaj" + label} disabled={blocked} onClick={event => {
                       splitTrigger.current = event.currentTarget;
-                      setSplit({ position: section.position, index: sentence.index, title: (section.title + " (cd.)").slice(0, 200) });
+                      setSplit({ position: section.position, index: sentence.index, title: (section.title + " (cd.)").slice(0, 200), chapterType: section.type || "TEMAT" });
                     }} />}
                   {section.position >= 2 && sentence.index < section.sentence_count && <SentenceButton symbol="↑"
                     title="Przenieś to zdanie i wcześniejsze do poprzedniego rozdziału" label={"Przenieś do poprzedniego" + label}
@@ -278,6 +277,10 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
                   }}>
                   <label>Tytuł nowego rozdziału <input autoFocus maxLength={200} value={split.title} disabled={blocked}
                     onChange={event => setSplit({ ...split, title: event.target.value })} /></label>
+                  <label>Typ nowego rozdziału <select value={split.chapterType} disabled={blocked}
+                    onChange={event => setSplit({ ...split, chapterType: event.target.value as ChapterType })}>
+                    {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select></label>
                   <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                     <button type="button" style={cardButtonStyle} disabled={blocked || !split.title.trim()} onClick={submitSplit}>Podziel</button>
                     <button type="button" style={cardButtonStyle} disabled={busy} onClick={cancelSplit}>Anuluj</button>
@@ -286,9 +289,33 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
               </div>;
             })}
             {section.sentences?.length === 0 && <em style={{ color: "#94a3b8" }}>Brak zdań.</em>}
-          </div>}
-        </section>;
+          </div>
+          <ChapterNote key={docId + ":" + section.position + ":" + (section.note ?? "")} note={section.note ?? ""}
+            position={section.position} disabled={blocked} onSave={note => withLock(async () => {
+              if (disabled || hasEmbeddings) return;
+              await axios.post(base + "/chapter_note", { position: section.position, note }, { headers });
+              setSections(current => current.map(item => item.position === section.position ? { ...item, note } : item));
+            })} />
+          </div>
+        </CollapsibleSection>;
       })}
-    </details>
+    </CollapsibleSection>
   );
+}
+
+function ChapterNote({ note, position, disabled, onSave }: {
+  note: string; position: number; disabled: boolean; onSave: (note: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = React.useState(note);
+  const dirty = draft !== note;
+  return <div style={{ flex: "0 1 260px", maxWidth: "100%", marginTop: 10 }}>
+    <label>Notatka dla LLM
+      <textarea aria-label={"Notatka dla LLM — rozdział " + position} maxLength={2000} rows={6}
+        style={{ width: "100%", boxSizing: "border-box" }} value={draft} disabled={disabled}
+        onChange={event => setDraft(event.target.value)} />
+    </label>
+    {dirty && <small>Niezapisane zmiany</small>}
+    <button type="button" style={cardButtonStyle} disabled={disabled || !dirty || draft.length > 2000}
+      onClick={() => void onSave(draft)}>Zapisz notatkę</button>
+  </div>;
 }
