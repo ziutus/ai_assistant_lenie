@@ -56,6 +56,28 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it("loads API skip choices once and defaults to the first reason", async () => {
+  const fallback = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (url, init) => String(url).includes("/feed_review_reasons?")
+    ? jsonResponse({ reasons: [{ code: "interesting_no_time", label: "Ciekawe, ale nie mam czasu" }] }) : fallback(url, init));
+  render(<MemoryRouter><FeedReview /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: "Pomiń" }));
+  const select = screen.getByRole("combobox", { name: "Powód pominięcia" });
+  expect(select).toHaveProperty("value", "interesting_no_time");
+  expect(within(select).getByRole("option", { name: "Ciekawe, ale nie mam czasu" })).toBeTruthy();
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("/feed_review_reasons?"))).toHaveLength(1);
+});
+
+it("falls back to the five old skip choices when the catalog fails", async () => {
+  render(<MemoryRouter><FeedReview /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: "Pomiń" }));
+  const select = screen.getByRole("combobox", { name: "Powód pominięcia" });
+  expect(within(select).getAllByRole("option")).toHaveLength(5);
+  expect(select).toHaveProperty("value", "not_interested");
+  expect(await screen.findByText(/Używam listy domyślnej/)).toBeTruthy();
+  expect(screen.getByText(/Żądanie: GET http:\/\/nas:5000\/feed_review_reasons/)).toBeTruthy();
+});
+
 it("shows the discussion count and flags a card independently of its text decision", async () => {
   render(<MemoryRouter><FeedReview /></MemoryRouter>);
   await screen.findByRole("tab", { name: "Do omówienia (3)" });

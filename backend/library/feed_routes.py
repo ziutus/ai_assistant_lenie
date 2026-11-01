@@ -933,6 +933,7 @@ def _decision_dict(row):
         "feed_item_id": row.feed_item_id, "feed_source_id": row.feed_item.feed_source_id,
         "title": row.feed_item.title, "url": row.feed_item.url, "action": row.action,
         "previous_status": row.previous_status, "new_status": row.new_status,
+        "previous_review_reason": row.previous_review_reason,
         "previous_document_id": row.previous_document_id, "new_document_id": row.new_document_id,
         "previous_group_ids": row.previous_group_ids or [], "new_group_ids": row.new_group_ids or [],
         "metadata": row.metadata_json or {}, "created_at": row.created_at.isoformat(),

@@ -354,6 +354,18 @@ class ContentGroup(Base):
     )
 
 
+class FeedReviewReason(Base):
+    __tablename__ = "feed_review_reasons"
+    code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    system: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    selectable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("100"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class FeedItem(Base):
     __tablename__ = "feed_items"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -375,7 +387,7 @@ class FeedItem(Base):
     reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     review_note: Mapped[str | None] = mapped_column(Text)
-    review_reason: Mapped[str | None] = mapped_column(String(40))
+    review_reason: Mapped[str | None] = mapped_column(String(40), ForeignKey("feed_review_reasons.code", name="fk_feed_items_review_reason"))
     llm_discussion_status: Mapped[str | None] = mapped_column(String(10))
     llm_discussion_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     llm_discussion_done_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
@@ -387,10 +399,6 @@ class FeedItem(Base):
         CheckConstraint(
             "status IN ('new','llm_analysis_requested','saved_for_later','imported','skipped','ignored','error')",
             name="ck_feed_items_status",
-        ),
-        CheckConstraint(
-            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other','sent_to_radar','expired')",
-            name="ck_feed_items_review_reason",
         ),
         Index("idx_feed_items_source_status", "feed_source_id", "status"),
         Index("idx_feed_items_status_first_seen", "status", "first_seen_at"),

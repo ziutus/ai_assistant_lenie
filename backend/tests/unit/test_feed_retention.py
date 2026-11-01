@@ -104,7 +104,7 @@ def test_a_concurrent_change_is_reported_and_does_not_stop_the_run(monkeypatch):
 
 
 def test_expired_is_an_accepted_review_reason():
-    assert "expired" in feed_monitor_service.REVIEW_REASONS
+    assert feed_monitor_service.feed_review_reason_store.is_valid_reason("expired")
 
 
 @pytest.mark.parametrize("value,kind,ok", [

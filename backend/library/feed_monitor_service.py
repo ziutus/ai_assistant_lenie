@@ -7,6 +7,7 @@ import time
 import uuid
 import regex as safe_regex
 from sqlalchemy import select, update, text
+from library import feed_review_reason_store
 from library.db.models import FeedSource, FeedItem, ContentGroup, Document, DocumentGroupMembership, FeedItemGroupMembership, FeedReviewDecision
 from library.db.engine import get_session
 from library.document_service import DocumentService
@@ -16,7 +17,7 @@ from library.content_group_service import replace_feed_item_groups
 
 logger = logging.getLogger(__name__)
 NEW_ENTRIES_LISTED = 10  # per feed in a run_check() result; a first import of a feed can bring hundreds
-REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other", "sent_to_radar", "expired"}
+
 ACTIVE_TRANSITIONS = {
     "new": {"llm_analysis_requested", "saved_for_later", "imported", "skipped", "ignored", "error"},
     "llm_analysis_requested": {"saved_for_later", "imported", "skipped", "ignored", "error"},
@@ -428,8 +429,13 @@ def transition_item(
         raise ValueError("feed item not found")
     if target not in ACTIVE_TRANSITIONS.get(item.status, set()):
         raise RuntimeError("invalid feed item state transition")
-    if review_reason is not None and review_reason not in REVIEW_REASONS:
-        raise ValueError("invalid review reason")
+    reason_to_write = "other" if target == "skipped" and review_reason is None else review_reason
+    if reason_to_write is not None:
+        if not feed_review_reason_store.is_valid_reason(reason_to_write) or not any(
+            row.code == reason_to_write and (row.active or row.system)
+            for row in feed_review_reason_store.list_reasons()
+        ):
+            raise ValueError("invalid review reason")
     previous_status = item.status
     previous_document_id = item.document_id
     previous_saved_at = item.saved_at
