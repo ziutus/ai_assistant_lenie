@@ -6,20 +6,14 @@ pytest.importorskip("sqlalchemy")
 pytest.importorskip("flask")
 
 from flask import Flask
-from sqlalchemy import Integer, String, Text, create_engine
+from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from library import geopolitics_routes as routes
 from library import geopolitics_service as svc
-from library.db.engine import Base
+from tests.unit.geo_sqlite_support import create_schema, make_engine
 from library.db.models import (
     Country,
-    CountryRelationAssessment,
-    CountryRelationEvidence,
-    GeoEvent,
-    GeoEventParticipant,
-    GeoEventSource,
 )
 
 
@@ -36,18 +30,8 @@ class StubDocument(_StubBase):
 
 @pytest.fixture
 def client(monkeypatch):
-    engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            Country.__table__,
-            GeoEvent.__table__,
-            GeoEventParticipant.__table__,
-            GeoEventSource.__table__,
-            CountryRelationAssessment.__table__,
-            CountryRelationEvidence.__table__,
-        ],
-    )
+    engine = make_engine()
+    create_schema(engine)
     _StubBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     for slug, name, code in [("brazylia", "Brazylia", "BRA"), ("stany-zjednoczone", "Stany Zjednoczone", "USA")]:
@@ -154,8 +138,9 @@ def test_manual_event_with_source_and_status_change(client):
     assert client.get("/geo_events?status=weird").status_code == 400
 
 
-def test_event_requires_participants_and_valid_source(client):
-    assert client.post("/geo_events", json={"title": "x", "event_date": "2026"}).status_code == 400
+def test_event_needs_a_title_and_a_valid_source_but_no_country(client):
+    assert client.post("/geo_events", json={"event_date": "2026"}).status_code == 400
+    assert client.post("/geo_events", json={"title": "x", "event_date": "2026"}).status_code == 201
     bad_doc = {
         "title": "x",
         "event_date": "2026",

@@ -1,6 +1,7 @@
-"""Geopolitics: source-backed world events and versioned, directed country-relation assessments.
+"""World events (ADR-034) and versioned, directed country-relation assessments (ADR-033).
 
-ADR-033. A *geo event* is something that happened (with cited documents). A *relation
+A *world event* is something that happened, with cited documents; it may involve countries, organizations and
+persons, or none of them (an outage, a product launch). ADR-033. A *geo event* is something that happened (with cited documents). A *relation
 assessment* says how country A stands toward country B on one axis over a validity
 period. Events never change the map on their own: they back a PROPOSED assessment, a
 human confirms it, and only ``confirmed`` assessments are drawn. Confirming a new
@@ -12,18 +13,26 @@ backstop.
 import datetime
 import hashlib
 import re
+import unicodedata
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
+from unidecode import unidecode
 
 from library.db.models import (
     Country,
     CountryRelationAssessment,
     CountryRelationEvidence,
     Document,
+    DocumentEvent,
     GeoEvent,
+    GeoEventAlias,
+    GeoEventOrganization,
     GeoEventParticipant,
+    GeoEventPerson,
     GeoEventSource,
+    Organization,
+    Person,
 )
 
 # axis -> (label, what -2 and +2 mean). Scores are -2..+2 on every axis.
@@ -49,7 +58,29 @@ AXES: dict[str, dict] = {
         },
     },
 }
-ROLES = ("actor", "target", "affected", "location")
+# Dictionaries (tables geo_event_roles / geo_event_kinds, seeded by migration c7e2b5a9d814); kept in step by a test.
+ROLES = ("actor", "target", "affected", "location", "host", "organizer", "winner", "subject")
+PERSON_FORBIDDEN_ROLES = ("location",)
+EVENT_KINDS = (
+    "election",
+    "summit",
+    "diplomatic",
+    "agreement",
+    "sanctions",
+    "conflict",
+    "exercise",
+    "protest",
+    "disaster",
+    "health",
+    "outage",
+    "cyber",
+    "product_launch",
+    "corporate",
+    "market",
+    "other",
+)
+PARTICIPANT_TYPES = ("country", "organization", "person")
+DATE_PRECISIONS = ("day", "month", "year")
 STATUSES = ("proposed", "confirmed", "rejected")
 # One event is circumstantial; LLM/manual proposals backed by a single event never claim more.
 SINGLE_EVENT_CONFIDENCE_CAP = 0.7
@@ -102,8 +133,41 @@ def _parse_date_only(raw, field: str) -> datetime.date:
         raise GeopoliticsError(f"{field}: {exc.message}") from exc
 
 
-def event_dedup_key(title: str, event_date: datetime.date, country_ids: list[int]) -> str:
-    base = f"{normalize_text(title).casefold()}|{event_date.isoformat()}|{','.join(map(str, sorted(set(country_ids))))}"
+def name_key(value) -> str:
+    """Identity of a name: NFC, collapsed spaces, casefold. Accents are kept ('Łódź' is not 'Lodz')."""
+    return normalize_text(unicodedata.normalize("NFC", str(value or ""))).casefold()
+
+
+def search_key(value) -> str:
+    """Search form of a name: accents and punctuation folded. Never an identity."""
+    folded = unidecode(unicodedata.normalize("NFC", str(value or ""))).lower()
+    return re.sub(r"[^a-z0-9]+", " ", folded).strip()
+
+
+def parse_optional_date(raw) -> tuple[datetime.date | None, str]:
+    """Like ``parse_event_date`` but a missing date is allowed: ``(None, 'unknown')``."""
+    if raw is None or (isinstance(raw, str) and raw.strip().lower() in ("", "unknown", "nieznana")):
+        return None, "unknown"
+    return parse_event_date(raw)
+
+
+def event_dedup_key(
+    title: str,
+    event_date: datetime.date | None,
+    country_ids: list[int],
+    organization_ids: list[int] = (),
+    person_ids: list[int] = (),
+) -> str:
+    """Identity of a REPORT of an event, not of the event: the same title, date and participants.
+
+    A dated, countries-only event keeps the formula of ADR-033, so keys of existing rows stay valid.
+    """
+    date_part = event_date.isoformat() if event_date else "undated"
+    base = f"{normalize_text(title).casefold()}|{date_part}|{','.join(map(str, sorted(set(country_ids))))}"
+    if organization_ids or person_ids:
+        base += (
+            f"|o:{','.join(map(str, sorted(set(organization_ids))))}|p:{','.join(map(str, sorted(set(person_ids))))}"
+        )
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
@@ -166,14 +230,109 @@ def resolve_country(session, ref) -> Country:
 # --- events ------------------------------------------------------------------
 
 
+def validate_kind(kind) -> str:
+    if kind not in EVENT_KINDS:
+        raise GeopoliticsError(f"kind must be one of: {', '.join(EVENT_KINDS)}")
+    return kind
+
+
+def _check_dates(start: datetime.date | None, end: datetime.date | None, is_ongoing: bool) -> None:
+    if end is not None and start is None:
+        raise GeopoliticsError("an event with an end date needs a start date")
+    if end is not None and start is not None and end < start:
+        raise GeopoliticsError("event_date_end must not be before event_date")
+    if is_ongoing and end is not None:
+        raise GeopoliticsError("an ongoing event has no end date")
+
+
+def _resolve_registry_row(session, model, ref, label: str):
+    """An organization or person by id, or by exact canonical name (ignoring case)."""
+    row = None
+    if isinstance(ref, int) and not isinstance(ref, bool):
+        row = session.get(model, ref)
+    elif isinstance(ref, str) and ref.strip():
+        matches = session.scalars(
+            select(model).where(func.lower(model.canonical_name) == ref.strip().lower()).limit(2)
+        ).all()
+        if len(matches) > 1:
+            raise GeopoliticsError(f"More than one {label} is called {ref!r}; use the id", 409)
+        row = matches[0] if matches else None
+    if row is None:
+        raise GeopoliticsError(f"Unknown {label}: {ref!r}", 404)
+    return row
+
+
+def resolve_participant(session, spec) -> tuple[str, object, str]:
+    """``(type, row, role)`` from ``(country, role)`` or ``{type, ref|id|name|country, role}``."""
+    if isinstance(spec, (tuple, list)) and len(spec) == 2:
+        ptype, ref, role = "country", spec[0], spec[1]
+    elif isinstance(spec, dict):
+        ptype = spec.get("type") or ("country" if "country" in spec else None)
+        ref = spec.get("ref", spec.get("id", spec.get("country", spec.get("name"))))
+        role = spec.get("role")
+    else:
+        raise GeopoliticsError("a participant needs a type, a reference and a role")
+    if ptype not in PARTICIPANT_TYPES:
+        raise GeopoliticsError(f"participant type must be one of: {', '.join(PARTICIPANT_TYPES)}")
+    if role not in ROLES:
+        raise GeopoliticsError(f"participant role must be one of: {', '.join(ROLES)}")
+    if ptype == "person" and role in PERSON_FORBIDDEN_ROLES:
+        raise GeopoliticsError(f"a person cannot have the role {role!r}")
+    if ptype == "country":
+        row = resolve_country(session, ref)
+    elif ptype == "organization":
+        row = _resolve_registry_row(session, Organization, ref, "organization")
+    else:
+        row = _resolve_registry_row(session, Person, ref, "person")
+    return ptype, row, role
+
+
+def _attach_participants(event: GeoEvent, resolved: list[tuple[str, object, str]]) -> None:
+    seen = set()
+    for ptype, row, role in resolved:
+        if (ptype, row.id, role) in seen:
+            continue
+        seen.add((ptype, row.id, role))
+        if ptype == "country":
+            event.participants.append(GeoEventParticipant(country_id=row.id, role=role))
+        elif ptype == "organization":
+            event.organizations.append(GeoEventOrganization(organization_id=row.id, role=role))
+        else:
+            event.persons.append(GeoEventPerson(person_id=row.id, role=role))
+
+
+def _ensure_aliases(event: GeoEvent, names) -> None:
+    known = {alias.name_key for alias in event.aliases}
+    for name in names:
+        alias = normalize_text(name)
+        key = name_key(alias)
+        if not key or key in known:
+            continue
+        known.add(key)
+        event.aliases.append(GeoEventAlias(alias=alias, name_key=key, search_key=search_key(alias)))
+
+
+def _attach_to_existing(session, existing: GeoEvent, source, aliases) -> None:
+    if source:
+        _add_source(session, existing, source)
+    if aliases:
+        _ensure_aliases(existing, aliases)
+        session.flush()
+
+
 def create_event(
     session,
     *,
     title: str,
-    event_date,
-    participants: list[tuple[object, str]],
+    event_date=None,
+    participants=(),
     description: str | None = None,
     date_precision: str | None = None,
+    event_date_end=None,
+    end_date_precision: str | None = None,
+    is_ongoing: bool = False,
+    kind: str = "other",
+    aliases=(),
     source: dict | None = None,
     status: str = "proposed",
     detection_method: str = "manual",
@@ -183,29 +342,38 @@ def create_event(
 ) -> tuple[GeoEvent, bool]:
     """Create an event, or attach a source to the equivalent one. Returns (event, created).
 
-    A rejected equivalent is never revived: the same report cannot re-propose a decision
-    the reader already refused. A repeated report adds a source instead of a second event.
+    Neither a date nor a participant is required. A rejected equivalent is never revived: the same report
+    cannot re-propose a decision the reader already refused. A repeated report adds a source instead of a
+    second event; two analyses racing for the same report end up with one row (unique ``dedup_key``).
     """
     title = normalize_text(title)
     if not title:
         raise GeopoliticsError("title is required")
     if status not in STATUSES:
         raise GeopoliticsError("invalid status")
-    date_value, precision = parse_event_date(event_date)
-    precision = date_precision or precision
-    if not participants:
-        raise GeopoliticsError("at least one participant is required")
-    resolved: list[tuple[Country, str]] = []
-    for ref, role in participants:
-        if role not in ROLES:
-            raise GeopoliticsError(f"participant role must be one of: {', '.join(ROLES)}")
-        resolved.append((resolve_country(session, ref), role))
+    kind = validate_kind(kind)
+    date_value, precision = parse_optional_date(event_date)
+    if date_precision and date_value is not None:
+        if date_precision not in DATE_PRECISIONS:
+            raise GeopoliticsError("date_precision must be day, month or year")
+        precision = date_precision
+    end_value, end_precision = (None, None)
+    if event_date_end not in (None, ""):
+        end_value, end_precision = parse_event_date(event_date_end)
+        end_precision = end_date_precision or end_precision
+    _check_dates(date_value, end_value, bool(is_ongoing))
+    resolved = [resolve_participant(session, spec) for spec in participants or ()]
 
-    key = event_dedup_key(title, date_value, [country.id for country, _ in resolved])
+    key = event_dedup_key(
+        title,
+        date_value,
+        [row.id for ptype, row, _ in resolved if ptype == "country"],
+        [row.id for ptype, row, _ in resolved if ptype == "organization"],
+        [row.id for ptype, row, _ in resolved if ptype == "person"],
+    )
     existing = session.scalar(select(GeoEvent).where(GeoEvent.dedup_key == key).order_by(GeoEvent.id))
     if existing is not None:
-        if source:
-            _add_source(session, existing, source)
+        _attach_to_existing(session, existing, source, aliases)
         return existing, False
 
     event = GeoEvent(
@@ -213,6 +381,10 @@ def create_event(
         description=normalize_text(description) if description else None,
         event_date=date_value,
         date_precision=precision,
+        event_date_end=end_value,
+        end_date_precision=end_precision,
+        is_ongoing=bool(is_ongoing),
+        kind=kind,
         status=status,
         detection_method=detection_method,
         model=model,
@@ -223,13 +395,126 @@ def create_event(
     if status != "proposed":
         event.decided_at = datetime.datetime.now()
         event.decided_by_user_id = user_id
-    for country, role in dict.fromkeys((c.id, r) for c, r in resolved):
-        event.participants.append(GeoEventParticipant(country_id=country, role=role))
-    session.add(event)
-    session.flush()
+    _attach_participants(event, resolved)
+    _ensure_aliases(event, [title, *aliases])
+    try:
+        with session.begin_nested():
+            session.add(event)
+            session.flush()
+    except IntegrityError:
+        # Lost a race with an equal report: keep the winner instead of failing the whole request.
+        existing = session.scalar(select(GeoEvent).where(GeoEvent.dedup_key == key).order_by(GeoEvent.id))
+        if existing is None:
+            raise
+        _attach_to_existing(session, existing, source, aliases)
+        return existing, False
     if source:
         _add_source(session, event, source)
     return event, True
+
+
+def update_event(session, event: GeoEvent, *, expected_version: int | None = None, **changes) -> GeoEvent:
+    """Edit descriptive fields: title, description, kind, event_date, event_date_end, is_ongoing.
+
+    A stale ``expected_version`` is a conflict (409). The identity key is not recomputed: an edited event is
+    still the event the first report created. A new title keeps the old one as an alias.
+    """
+    allowed = {"title", "description", "kind", "event_date", "event_date_end", "is_ongoing"}
+    unknown = set(changes) - allowed
+    if unknown:
+        raise GeopoliticsError(f"cannot change: {', '.join(sorted(unknown))}")
+    if expected_version is not None and event.version != expected_version:
+        raise GeopoliticsError("The event changed since you loaded it; reload", 409)
+    if "title" in changes:
+        title = normalize_text(changes["title"])
+        if not title:
+            raise GeopoliticsError("title is required")
+        event.title = title
+        _ensure_aliases(event, [title])
+    if "description" in changes:
+        event.description = normalize_text(changes["description"]) or None
+    if "kind" in changes:
+        event.kind = validate_kind(changes["kind"])
+    if "event_date" in changes:
+        event.event_date, event.date_precision = parse_optional_date(changes["event_date"])
+    if "event_date_end" in changes:
+        raw = changes["event_date_end"]
+        if raw in (None, ""):
+            event.event_date_end, event.end_date_precision = None, None
+        else:
+            event.event_date_end, event.end_date_precision = parse_event_date(raw)
+    if "is_ongoing" in changes:
+        event.is_ongoing = bool(changes["is_ongoing"])
+    _check_dates(event.event_date, event.event_date_end, event.is_ongoing)
+    event.version += 1
+    session.flush()
+    return event
+
+
+def add_participant(session, event: GeoEvent, spec) -> GeoEvent:
+    ptype, row, role = resolve_participant(session, spec)
+    _attach_participants(event, [(ptype, row, role)])
+    session.flush()
+    session.refresh(event)
+    return event
+
+
+def remove_participant(session, event: GeoEvent, ptype: str, participant_id: int, role: str) -> GeoEvent:
+    """Remove one participant row; a country that a CONFIRMED assessment's direct evidence needs stays."""
+    if ptype == "country":
+        grounded = session.scalar(
+            select(func.count())
+            .select_from(CountryRelationEvidence)
+            .join(CountryRelationAssessment, CountryRelationAssessment.id == CountryRelationEvidence.assessment_id)
+            .where(
+                CountryRelationEvidence.event_id == event.id,
+                CountryRelationEvidence.evidence_kind == "direct",
+                CountryRelationAssessment.status == "confirmed",
+                or_(
+                    CountryRelationAssessment.from_country_id == participant_id,
+                    CountryRelationAssessment.to_country_id == participant_id,
+                ),
+            )
+        )
+        if grounded:
+            raise GeopoliticsError("A confirmed assessment relies on this country in this event", 409)
+        rows = [p for p in event.participants if p.country_id == participant_id and p.role == role]
+    elif ptype == "organization":
+        rows = [p for p in event.organizations if p.organization_id == participant_id and p.role == role]
+    elif ptype == "person":
+        rows = [p for p in event.persons if p.person_id == participant_id and p.role == role]
+    else:
+        raise GeopoliticsError(f"participant type must be one of: {', '.join(PARTICIPANT_TYPES)}")
+    if not rows:
+        raise GeopoliticsError("No such participant in this event", 404)
+    for row in rows:
+        session.delete(row)
+    session.flush()
+    session.refresh(event)
+    return event
+
+
+def add_alias(session, event: GeoEvent, alias: str) -> GeoEventAlias:
+    alias = normalize_text(alias)
+    key = name_key(alias)
+    if not key:
+        raise GeopoliticsError("alias is required")
+    if any(existing.name_key == key for existing in event.aliases):
+        raise GeopoliticsError("The event already has this name", 409)
+    row = GeoEventAlias(alias=alias, name_key=key, search_key=search_key(alias))
+    event.aliases.append(row)
+    session.flush()
+    return row
+
+
+def remove_alias(session, event: GeoEvent, alias_id: int) -> None:
+    row = next((a for a in event.aliases if a.id == alias_id), None)
+    if row is None:
+        raise GeopoliticsError("No such alias in this event", 404)
+    if row.name_key == name_key(event.title):
+        raise GeopoliticsError("The canonical title cannot be removed; rename the event first", 400)
+    event.aliases.remove(row)
+    session.flush()
 
 
 def _add_source(session, event: GeoEvent, source: dict) -> GeoEventSource | None:
@@ -244,6 +529,11 @@ def _add_source(session, event: GeoEvent, source: dict) -> GeoEventSource | None
     stance = source.get("stance") or "supports"
     if stance not in ("supports", "disputes"):
         raise GeopoliticsError("source.stance must be supports or disputes")
+    document_event_id = source.get("document_event_id")
+    if document_event_id is not None:
+        timeline_row = session.get(DocumentEvent, document_event_id)
+        if timeline_row is None or timeline_row.document_id != document_id:
+            raise GeopoliticsError("source.document_event_id does not belong to that document", 400)
     digest = content_hash(quote)
     for existing in event.sources:
         if existing.document_id == document_id and existing.content_hash == digest:
@@ -254,6 +544,7 @@ def _add_source(session, event: GeoEvent, source: dict) -> GeoEventSource | None
         anchor_quote=quote,
         content_hash=digest,
         stance=stance,
+        document_event_id=document_event_id,
     )
     session.add(row)
     session.flush()
@@ -271,21 +562,47 @@ def set_event_status(session, event: GeoEvent, status: str, user_id: int | None)
     return event
 
 
+def _participant_dicts(event: GeoEvent) -> list[dict]:
+    order = {role: index for index, role in enumerate(ROLES)}
+    items: list[tuple[tuple, dict]] = []
+    for p in event.participants:
+        items.append(
+            (
+                (0, order[p.role], p.country.name_pl),
+                {"type": "country", "role": p.role, "country": country_to_dict(p.country)},
+            )
+        )
+    for p in event.organizations:
+        item = {
+            "type": "organization",
+            "role": p.role,
+            "organization": {"id": p.organization.id, "name": p.organization.canonical_name},
+        }
+        items.append(((1, order[p.role], p.organization.canonical_name), item))
+    for p in event.persons:
+        item = {"type": "person", "role": p.role, "person": {"id": p.person.id, "name": p.person.canonical_name}}
+        items.append(((2, order[p.role], p.person.canonical_name), item))
+    return [item for _, item in sorted(items, key=lambda pair: pair[0])]
+
+
 def event_to_dict(event: GeoEvent, *, with_documents: bool = True) -> dict:
     data = {
         "id": event.id,
         "title": event.title,
         "description": event.description,
-        "event_date": event.event_date.isoformat(),
+        "kind": event.kind,
+        "event_date": event.event_date.isoformat() if event.event_date else None,
         "date_precision": event.date_precision,
+        "event_date_end": event.event_date_end.isoformat() if event.event_date_end else None,
+        "end_date_precision": event.end_date_precision,
+        "is_ongoing": event.is_ongoing,
         "status": event.status,
+        "version": event.version,
         "detection_method": event.detection_method,
         "model": event.model,
         "prompt_version": event.prompt_version,
-        "participants": [
-            {"country": country_to_dict(p.country), "role": p.role}
-            for p in sorted(event.participants, key=lambda p: (ROLES.index(p.role), p.country.name_pl))
-        ],
+        "aliases": [{"id": a.id, "alias": a.alias} for a in sorted(event.aliases, key=lambda a: a.id)],
+        "participants": _participant_dicts(event),
     }
     if with_documents:
         data["sources"] = [
@@ -305,23 +622,41 @@ def list_events(
     *,
     status: str | None = None,
     country_id: int | None = None,
+    kind: str | None = None,
+    q: str | None = None,
+    with_countries: bool | None = None,
+    undated: bool | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[GeoEvent], int]:
-    from sqlalchemy import func
-
     query = select(GeoEvent)
     if status:
         if status not in STATUSES:
             raise GeopoliticsError("invalid status")
         query = query.where(GeoEvent.status == status)
+    if kind:
+        query = query.where(GeoEvent.kind == validate_kind(kind))
     if country_id is not None:
         query = query.where(
             GeoEvent.id.in_(select(GeoEventParticipant.event_id).where(GeoEventParticipant.country_id == country_id))
         )
+    has_country = GeoEvent.id.in_(select(GeoEventParticipant.event_id))
+    if with_countries is True:
+        query = query.where(has_country)
+    elif with_countries is False:
+        query = query.where(~has_country)
+    if undated is True:
+        query = query.where(GeoEvent.event_date.is_(None))
+    elif undated is False:
+        query = query.where(GeoEvent.event_date.is_not(None))
+    if q and search_key(q):
+        needle = f"%{search_key(q)}%"
+        query = query.where(
+            GeoEvent.id.in_(select(GeoEventAlias.event_id).where(GeoEventAlias.search_key.like(needle)))
+        )
     total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = session.scalars(
-        query.order_by(GeoEvent.event_date.desc(), GeoEvent.id.desc()).limit(limit).offset(offset)
+        query.order_by(GeoEvent.event_date.desc().nulls_last(), GeoEvent.id.desc()).limit(limit).offset(offset)
     ).all()
     return list(rows), total
 
@@ -354,10 +689,29 @@ def assessment_to_dict(
     }
     if with_evidence:
         data["evidence"] = [
-            {"event": event_to_dict(ev.event), "stance": ev.stance}
-            for ev in sorted(row.evidence, key=lambda e: e.event.event_date)
+            {"event": event_to_dict(ev.event), "stance": ev.stance, "kind": ev.evidence_kind}
+            for ev in sorted(row.evidence, key=lambda e: (e.event.event_date or datetime.date.max, e.event_id))
         ]
     return data
+
+
+def _check_direct_evidence(session, source: Country, target: Country, event_id: int) -> None:
+    """A direct piece of evidence names both countries of the assessment; anything less is context."""
+    event = session.get(GeoEvent, event_id)
+    if event is None:
+        raise GeopoliticsError(f"Unknown event: {event_id}", 404)
+    covered = {p.country_id for p in event.participants}
+    if not {source.id, target.id} <= covered:
+        raise GeopoliticsError(
+            f"Direct evidence must name both {source.name_pl} and {target.name_pl}; event {event_id} does not "
+            "(attach it as context evidence instead)",
+            400,
+        )
+
+
+def _check_context_event(session, event_id: int) -> None:
+    if session.get(GeoEvent, event_id) is None:
+        raise GeopoliticsError(f"Unknown event: {event_id}", 404)
 
 
 def create_assessment(
@@ -371,13 +725,18 @@ def create_assessment(
     confidence=None,
     rationale: str | None = None,
     event_ids: list[int] | None = None,
+    context_event_ids: list[int] | None = None,
     status: str = "proposed",
     detection_method: str = "manual",
     model: str | None = None,
     prompt_version: str | None = None,
     user_id: int | None = None,
 ) -> CountryRelationAssessment:
-    """Create a PROPOSED assessment (or a confirmed one right away for a manual decision)."""
+    """Create a PROPOSED assessment (or a confirmed one right away for a manual decision).
+
+    ``event_ids`` are DIRECT evidence: every such event names both countries. ``context_event_ids`` are
+    background (an election in one of them, an outage) and never justify the score; they need a rationale.
+    """
     source = resolve_country(session, from_country)
     target = resolve_country(session, to_country)
     if source.id == target.id:
@@ -388,8 +747,12 @@ def create_assessment(
     start = _parse_date_only(valid_from, "valid_from")
     event_ids = list(dict.fromkeys(event_ids or []))
     for event_id in event_ids:
-        if session.get(GeoEvent, event_id) is None:
-            raise GeopoliticsError(f"Unknown event: {event_id}", 404)
+        _check_direct_evidence(session, source, target, event_id)
+    context_ids = [i for i in dict.fromkeys(context_event_ids or []) if i not in event_ids]
+    for event_id in context_ids:
+        _check_context_event(session, event_id)
+    if context_ids and not normalize_text(rationale or ""):
+        raise GeopoliticsError("A rationale is required when context events are attached")
     if independent_document_count(session, event_ids) < 2:
         conf = min(conf, SINGLE_EVENT_CONFIDENCE_CAP)
     if status not in ("proposed", "confirmed"):
@@ -410,7 +773,9 @@ def create_assessment(
         created_by_user_id=user_id,
     )
     for event_id in event_ids:
-        row.evidence.append(CountryRelationEvidence(event_id=event_id))
+        row.evidence.append(CountryRelationEvidence(event_id=event_id, evidence_kind="direct"))
+    for event_id in context_ids:
+        row.evidence.append(CountryRelationEvidence(event_id=event_id, evidence_kind="context"))
     session.add(row)
     session.flush()
     if status == "confirmed":
@@ -458,12 +823,22 @@ def propose_assessment(session, **kwargs) -> tuple[CountryRelationAssessment, bo
     )
     if existing is None:
         return create_assessment(session, **kwargs), True
-    known = {evidence.event_id for evidence in existing.evidence}
+    known = {evidence.event_id: evidence for evidence in existing.evidence}
     for event_id in dict.fromkeys(kwargs.get("event_ids") or []):
-        if event_id not in known:
-            if session.get(GeoEvent, event_id) is None:
-                raise GeopoliticsError(f"Unknown event: {event_id}", 404)
-            existing.evidence.append(CountryRelationEvidence(event_id=event_id))
+        row = known.get(event_id)
+        if row is not None and row.evidence_kind == "direct":
+            continue
+        _check_direct_evidence(session, source, target, event_id)  # also guards a context -> direct promotion
+        if row is not None:
+            row.evidence_kind = "direct"
+        else:
+            known[event_id] = CountryRelationEvidence(event_id=event_id, evidence_kind="direct")
+            existing.evidence.append(known[event_id])
+    for event_id in dict.fromkeys(kwargs.get("context_event_ids") or []):
+        if event_id not in known:  # never downgrades direct evidence
+            _check_context_event(session, event_id)
+            known[event_id] = CountryRelationEvidence(event_id=event_id, evidence_kind="context")
+            existing.evidence.append(known[event_id])
     session.flush()
     return existing, False
 
