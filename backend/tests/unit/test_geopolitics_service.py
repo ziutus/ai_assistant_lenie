@@ -1,0 +1,491 @@
+"""Unit tests for library/geopolitics_service.py and geopolitics_detect.py (in-memory SQLite).
+
+The exclusion constraint of the migration is PostgreSQL-only and is covered by the
+integration test; here the service-level period logic is exercised.
+"""
+
+import datetime
+from types import SimpleNamespace
+
+import pytest
+
+pytest.importorskip("sqlalchemy")
+
+from sqlalchemy import Integer, String, Text, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
+from library import geopolitics_detect as detect
+from library import geopolitics_service as svc
+from library.db.engine import Base
+from library.db.models import (
+    Country,
+    CountryRelationAssessment,
+    CountryRelationEvidence,
+    GeoEvent,
+    GeoEventParticipant,
+    GeoEventSource,
+)
+
+
+class _StubBase(DeclarativeBase):
+    pass
+
+
+class StubDocument(_StubBase):
+    """Stands in for the real Document (pgvector columns cannot be created on SQLite)."""
+
+    __tablename__ = "stub_documents"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(100), default="t")
+    text_md: Mapped[str | None] = mapped_column(Text)
+    text: Mapped[str | None] = mapped_column(Text)
+
+    @classmethod
+    def get_by_id(cls, session, doc_id):
+        return session.get(cls, doc_id)
+
+
+@pytest.fixture
+def session(monkeypatch):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            Country.__table__,
+            GeoEvent.__table__,
+            GeoEventParticipant.__table__,
+            GeoEventSource.__table__,
+            CountryRelationAssessment.__table__,
+            CountryRelationEvidence.__table__,
+        ],
+    )
+    _StubBase.metadata.create_all(engine)
+    monkeypatch.setattr(svc, "Document", StubDocument)
+    monkeypatch.setattr(detect, "Document", StubDocument)
+    with sessionmaker(bind=engine)() as s:
+        for slug, name, code in [
+            ("brazylia", "Brazylia", "BRA"),
+            ("stany-zjednoczone", "Stany Zjednoczone", "USA"),
+            ("turcja", "Turcja", "TUR"),
+            ("kosowo", "Kosowo", "XKX"),
+        ]:
+            s.add(Country(slug=slug, name_pl=name, iso3=None if code == "XKX" else code, map_code=code))
+        s.add(StubDocument(id=1, text_md="Opozycjonista uciekł do USA po wyborach w Brazylii."))
+        s.commit()
+        yield s
+
+
+def _event(session, title="Ucieczka", date="2026-03-10", **kw):
+    event, created = svc.create_event(
+        session,
+        title=title,
+        event_date=date,
+        participants=[("brazylia", "actor"), ("stany-zjednoczone", "target")],
+        **kw,
+    )
+    session.commit()
+    return event, created
+
+
+# --- pure helpers -------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2026-03-10", (datetime.date(2026, 3, 10), "day")),
+        ("2026-03", (datetime.date(2026, 3, 1), "month")),
+        ("2026", (datetime.date(2026, 1, 1), "year")),
+    ],
+)
+def test_parse_event_date(raw, expected):
+    assert svc.parse_event_date(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["", "10.03.2026", "2026-13-01", None])
+def test_parse_event_date_rejects(raw):
+    with pytest.raises(svc.GeopoliticsError):
+        svc.parse_event_date(raw)
+
+
+@pytest.mark.parametrize("score", [3, -3, "1", 1.5, True, None])
+def test_validate_score_rejects(score):
+    with pytest.raises(svc.GeopoliticsError):
+        svc.validate_score(score)
+
+
+def test_every_axis_has_a_full_scale():
+    for axis in svc.AXES.values():
+        assert set(axis["scale"]) == {-2, -1, 0, 1, 2}
+
+
+def test_add_months_clamps_day():
+    assert svc._add_months(datetime.date(2026, 8, 31), 6) == datetime.date(2027, 2, 28)
+
+
+# --- events -------------------------------------------------------------------
+
+
+def test_create_event_resolves_slug_with_kraj_prefix(session):
+    event, created = svc.create_event(
+        session,
+        title="X",
+        event_date="2026-01-01",
+        participants=[("kraj-turcja", "actor")],
+    )
+    assert created and event.participants[0].country.slug == "turcja"
+
+
+def test_create_event_requires_known_country_and_role(session):
+    with pytest.raises(svc.GeopoliticsError) as unknown:
+        svc.create_event(session, title="X", event_date="2026", participants=[("atlantyda", "actor")])
+    assert unknown.value.status == 404
+    with pytest.raises(svc.GeopoliticsError):
+        svc.create_event(session, title="X", event_date="2026", participants=[("turcja", "boss")])
+    with pytest.raises(svc.GeopoliticsError):
+        svc.create_event(session, title="X", event_date="2026", participants=[])
+
+
+def test_repeated_report_adds_a_source_instead_of_a_second_event(session):
+    first, created = _event(session, source={"document_id": 1, "quote": "Opozycjonista uciekł do USA"})
+    second, created_again = _event(session, source={"document_id": 1, "quote": "po wyborach w Brazylii"})
+    assert created and not created_again
+    assert first.id == second.id
+    assert len(second.sources) == 2
+    assert session.query(GeoEvent).count() == 1
+
+
+def test_same_source_quote_is_not_duplicated(session):
+    _event(session, source={"document_id": 1, "quote": "Opozycjonista  uciekł do USA"})
+    event, _ = _event(session, source={"document_id": 1, "quote": "opozycjonista uciekł do usa"})
+    assert len(event.sources) == 1
+
+
+def test_rejected_event_is_not_revived_by_a_new_report(session):
+    event, _ = _event(session)
+    svc.set_event_status(session, event, "rejected", None)
+    session.commit()
+    again, created = _event(session)
+    assert not created and again.status == "rejected"
+
+
+def test_source_needs_existing_document_and_quote(session):
+    with pytest.raises(svc.GeopoliticsError) as missing:
+        _event(session, title="Y", source={"document_id": 99, "quote": "cos"})
+    assert missing.value.status == 404
+    with pytest.raises(svc.GeopoliticsError):
+        _event(session, title="Z", source={"document_id": 1, "quote": " "})
+
+
+# --- assessments --------------------------------------------------------------
+
+
+def _propose(session, score=-1, valid_from="2026-03-10", **kw):
+    row = svc.create_assessment(
+        session,
+        from_country="brazylia",
+        to_country="stany-zjednoczone",
+        axis="political",
+        score=score,
+        valid_from=valid_from,
+        **kw,
+    )
+    session.commit()
+    return row
+
+
+def test_assessment_validation(session):
+    with pytest.raises(svc.GeopoliticsError):
+        svc.create_assessment(
+            session,
+            from_country="turcja",
+            to_country="turcja",
+            axis="political",
+            score=0,
+            valid_from="2026",
+        )
+    with pytest.raises(svc.GeopoliticsError):
+        _propose(session, score=5)
+    with pytest.raises(svc.GeopoliticsError):
+        svc.create_assessment(
+            session,
+            from_country="turcja",
+            to_country="brazylia",
+            axis="cultural",
+            score=0,
+            valid_from="2026",
+        )
+    with pytest.raises(svc.GeopoliticsError):
+        _propose(session, event_ids=[404])
+
+
+def test_single_event_confidence_is_capped(session):
+    event, _ = _event(session)
+    row = _propose(session, confidence=0.95, event_ids=[event.id])
+    assert float(row.confidence) == svc.SINGLE_EVENT_CONFIDENCE_CAP
+
+
+def test_two_independent_events_may_exceed_the_cap(session):
+    first, _ = _event(session)
+    second, _ = _event(session, title="Sankcje", date="2026-04-01")
+    row = _propose(session, confidence=0.9, event_ids=[first.id, second.id])
+    assert float(row.confidence) == 0.9
+
+
+def test_proposal_is_invisible_on_the_map_until_confirmed(session):
+    _propose(session)
+    brazil = svc.resolve_country(session, "brazylia")
+    at = datetime.date(2026, 6, 1)
+    assert svc.relations_at(session, country=brazil, at=at, axis="political", direction="from") == []
+
+
+def test_confirming_closes_the_previous_open_period(session):
+    old = _propose(session, score=1, valid_from="2025-01-01", status="confirmed")
+    new = _propose(session, score=-1, valid_from="2026-03-10")
+    svc.decide_assessment(session, new.id, decision="approve", expected_version=new.version, user_id=7)
+    session.commit()
+    session.refresh(old)
+    assert old.valid_to == datetime.date(2026, 3, 10)
+    assert new.status == "confirmed" and new.supersedes_id == old.id and new.decided_by_user_id == 7
+    brazil = svc.resolve_country(session, "brazylia")
+    before = svc.relations_at(session, country=brazil, at=datetime.date(2026, 3, 9), axis="political", direction="from")
+    after = svc.relations_at(session, country=brazil, at=datetime.date(2026, 3, 10), axis="political", direction="from")
+    assert [r["score"] for r in before] == [1]
+    assert [r["score"] for r in after] == [-1]
+    assert after[0]["other_country"]["slug"] == "stany-zjednoczone"
+
+
+def test_direction_is_not_symmetric(session):
+    _propose(session, score=-1, status="confirmed")
+    usa = svc.resolve_country(session, "stany-zjednoczone")
+    brazil = svc.resolve_country(session, "brazylia")
+    at = datetime.date(2026, 6, 1)
+    assert svc.relations_at(session, country=usa, at=at, axis="political", direction="from") == []
+    toward_usa = svc.relations_at(session, country=usa, at=at, axis="political", direction="to")
+    assert [r["other_country"]["slug"] for r in toward_usa] == ["brazylia"]
+    assert svc.relations_at(session, country=brazil, at=at, axis="security", direction="from") == []
+
+
+def test_axes_are_independent(session):
+    _propose(session, score=-1, status="confirmed")
+    svc.create_assessment(
+        session,
+        from_country="brazylia",
+        to_country="stany-zjednoczone",
+        axis="security",
+        score=2,
+        valid_from="2026-01-01",
+        status="confirmed",
+    )
+    session.commit()
+    brazil = svc.resolve_country(session, "brazylia")
+    at = datetime.date(2026, 6, 1)
+    assert svc.relations_at(session, country=brazil, at=at, axis="political", direction="from")[0]["score"] == -1
+    assert svc.relations_at(session, country=brazil, at=at, axis="security", direction="from")[0]["score"] == 2
+
+
+def test_backdated_change_before_a_confirmed_period_is_refused(session):
+    _propose(session, score=1, valid_from="2026-03-10", status="confirmed")
+    with pytest.raises(svc.GeopoliticsError) as exc:
+        _propose(session, score=-1, valid_from="2026-01-01", status="confirmed")
+    assert exc.value.status == 409
+
+
+def test_same_start_date_conflicts(session):
+    _propose(session, score=1, valid_from="2026-03-10", status="confirmed")
+    with pytest.raises(svc.GeopoliticsError) as exc:
+        _propose(session, score=0, valid_from="2026-03-10", status="confirmed")
+    assert exc.value.status == 409
+
+
+def test_stale_expected_version_is_a_conflict(session):
+    row = _propose(session)
+    with pytest.raises(svc.GeopoliticsError) as exc:
+        svc.decide_assessment(session, row.id, decision="approve", expected_version=row.version + 5, user_id=None)
+    assert exc.value.status == 409
+
+
+def test_decided_assessment_cannot_be_decided_again(session):
+    row = _propose(session)
+    svc.decide_assessment(session, row.id, decision="reject", expected_version=None, user_id=None)
+    with pytest.raises(svc.GeopoliticsError) as exc:
+        svc.decide_assessment(session, row.id, decision="approve", expected_version=None, user_id=None)
+    assert exc.value.status == 409
+
+
+def test_approving_confirms_proposed_events_only_when_asked(session):
+    event, _ = _event(session)
+    keep, _ = _event(session, title="Inne", date="2026-04-01")
+    row = _propose(session, event_ids=[event.id])
+    svc.decide_assessment(session, row.id, decision="approve", expected_version=None, user_id=None)
+    assert event.status == "confirmed" and keep.status == "proposed"
+
+    event2, _ = _event(session, title="Trzecie", date="2026-05-01")
+    row2 = _propose(session, score=0, valid_from="2026-05-01", event_ids=[event2.id])
+    svc.decide_assessment(
+        session, row2.id, decision="approve", expected_version=None, user_id=None, approve_events=False
+    )
+    assert event2.status == "proposed"
+
+
+def test_rejected_proposal_never_reaches_the_map(session):
+    row = _propose(session)
+    svc.decide_assessment(session, row.id, decision="reject", expected_version=None, user_id=None)
+    brazil = svc.resolve_country(session, "brazylia")
+    assert (
+        svc.relations_at(session, country=brazil, at=datetime.date(2027, 1, 1), axis="political", direction="from")
+        == []
+    )
+
+
+def test_overdue_flag_after_review_date(session):
+    row = _propose(session, status="confirmed")
+    row.review_due_at = datetime.date(2026, 5, 1)
+    assert svc.assessment_to_dict(row, today=datetime.date(2026, 6, 1))["overdue"] is True
+    assert svc.assessment_to_dict(row, today=datetime.date(2026, 4, 1))["overdue"] is False
+
+
+def test_proposals_list_shows_the_assessment_it_would_replace(session):
+    _propose(session, score=1, valid_from="2025-01-01", status="confirmed")
+    _propose(session, score=-1, valid_from="2026-03-10")
+    proposals = svc.list_proposals(session)
+    assert len(proposals) == 1
+    assert proposals[0]["score"] == -1 and proposals[0]["current"]["score"] == 1
+
+
+def test_history_lists_all_periods_of_the_pair_and_axis(session):
+    first = _propose(session, score=1, valid_from="2025-01-01", status="confirmed")
+    _propose(session, score=-1, valid_from="2026-03-10", status="confirmed")
+    history = svc.assessment_history(session, first.id)
+    assert [h["score"] for h in history] == [1, -1]
+    assert history[0]["valid_to"] == "2026-03-10"
+
+
+# --- detection ----------------------------------------------------------------
+
+
+TEXT = "Opozycjonista uciekł do USA po wyborach w Brazylii. Rząd Brazylii zaprotestował."
+
+
+def _fake_llm(monkeypatch, payload):
+    import json
+
+    calls = []
+
+    def fake(prompt, **kwargs):
+        calls.append((prompt, kwargs))
+        return SimpleNamespace(response_text=json.dumps(payload) if not isinstance(payload, str) else payload)
+
+    monkeypatch.setattr(detect, "ai_ask", fake)
+    return calls
+
+
+def _candidate(**over):
+    item = {
+        "title": "Opozycjonista uciekł do USA",
+        "description": "Po wyborach przeciwnik prezydenta wyjechał do Stanów.",
+        "date": "2026-03-10",
+        "quote": "Opozycjonista uciekł do USA po wyborach",
+        "participants": [{"country": "brazylia", "role": "actor"}, {"country": "stany-zjednoczone", "role": "target"}],
+        "relation": None,
+    }
+    item.update(over)
+    return item
+
+
+@pytest.fixture
+def doc(session, monkeypatch):
+    session.get(StubDocument, 1).text_md = TEXT
+    session.commit()
+    monkeypatch.setattr(
+        detect,
+        "detect_countries",
+        lambda text: [SimpleNamespace(slug="brazylia"), SimpleNamespace(slug="stany-zjednoczone")],
+    )
+
+
+def test_detect_stores_event_as_proposal_without_relation(session, doc, monkeypatch):
+    calls = _fake_llm(monkeypatch, [_candidate()])
+    out = detect.detect_for_document(session, 1, model="m")
+    session.commit()
+    assert out["events_created"] == 1 and out["assessments_proposed"] == 0
+    event = session.get(GeoEvent, out["event_ids"][0])
+    assert event.status == "proposed" and event.detection_method == "llm" and event.model == "m"
+    assert event.sources[0].document_id == 1
+    assert calls[0][1]["operation"] == "geopolitics_event_extraction"
+    assert "brazylia" in calls[0][0]
+
+
+def test_detect_one_event_relation_is_proposed_with_capped_confidence(session, doc, monkeypatch):
+    relation = {"from": "brazylia", "to": "stany-zjednoczone", "axis": "political", "score": -1, "confidence": 0.99}
+    _fake_llm(monkeypatch, [_candidate(relation=relation)])
+    out = detect.detect_for_document(session, 1)
+    session.commit()
+    assert out["assessments_proposed"] == 1
+    row = session.get(CountryRelationAssessment, out["assessment_ids"][0])
+    assert row.status == "proposed" and float(row.confidence) == svc.SINGLE_EVENT_CONFIDENCE_CAP
+    assert row.valid_from == datetime.date(2026, 3, 10)
+    assert [e.event_id for e in row.evidence] == out["event_ids"]
+
+
+def test_detect_rejects_hallucinated_quote(session, doc, monkeypatch):
+    _fake_llm(monkeypatch, [_candidate(quote="Prezydent ogłosił wojnę całemu światu dzisiaj")])
+    out = detect.detect_for_document(session, 1)
+    assert out["events_created"] == 0 and out["rejected"]["quote_not_found"] == 1
+
+
+def test_detect_rejects_bad_date_unknown_country_and_foreign_relation(session, doc, monkeypatch):
+    foreign = {"from": "turcja", "to": "stany-zjednoczone", "axis": "political", "score": 1}
+    _fake_llm(
+        monkeypatch,
+        [
+            _candidate(date="wczoraj"),
+            _candidate(title="Inne", participants=[{"country": "atlantyda", "role": "actor"}]),
+            _candidate(title="Trzecie", relation=foreign),
+        ],
+    )
+    out = detect.detect_for_document(session, 1)
+    assert out["rejected"]["bad_date"] == 1
+    assert out["rejected"]["bad_participants"] == 1
+    assert out["rejected"]["bad_relation"] == 1
+    assert out["events_created"] == 1 and out["assessments_proposed"] == 0
+
+
+def test_detect_second_run_does_not_duplicate(session, doc, monkeypatch):
+    relation = {"from": "brazylia", "to": "stany-zjednoczone", "axis": "political", "score": -1}
+    _fake_llm(monkeypatch, [_candidate(relation=relation)])
+    detect.detect_for_document(session, 1)
+    session.commit()
+    again = detect.detect_for_document(session, 1)
+    session.commit()
+    assert again["events_created"] == 0 and again["events_existing"] == 1 and again["assessments_proposed"] == 0
+    assert session.query(GeoEvent).count() == 1
+    assert session.query(CountryRelationAssessment).count() == 1
+
+
+def test_detect_survives_garbage_and_skips_llm_without_countries(session, doc, monkeypatch):
+    _fake_llm(monkeypatch, "przepraszam, nie umiem")
+    assert detect.detect_for_document(session, 1)["candidates"] == 0
+    monkeypatch.setattr(detect, "detect_countries", lambda text: [])
+    calls = _fake_llm(monkeypatch, [_candidate()])
+    assert detect.detect_for_document(session, 1)["fragments"] == 0 and calls == []
+
+
+def test_detect_unknown_or_empty_document(session, doc):
+    with pytest.raises(svc.GeopoliticsError) as exc:
+        detect.detect_for_document(session, 404)
+    assert exc.value.status == 404
+    session.get(StubDocument, 1).text_md = " "
+    with pytest.raises(svc.GeopoliticsError):
+        detect.detect_for_document(session, 1)
+
+
+def test_parse_response_tolerates_fences_and_prose():
+    assert detect.parse_response('```json\n[{"a": 1}]\n```') == [{"a": 1}]
+    assert detect.parse_response("brak") == [] and detect.parse_response('{"a": 1}') == []
+
+
+def test_split_fragments_caps_cost():
+    text = "\n\n".join("akapit " * 50 for _ in range(500))
+    fragments = detect.split_fragments(text, size=1000, limit=3)
+    assert len(fragments) == 3 and all(len(f) <= 1000 for f in fragments)

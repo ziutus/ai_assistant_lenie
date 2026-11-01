@@ -4605,3 +4605,179 @@ class DocumentNarrativeScore(Base):
     confidence: Mapped[decimal.Decimal | None] = mapped_column(Numeric(4, 3))
     review: Mapped[str | None] = mapped_column(String(20))
     scored_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class Country(Base):
+    """A state-like entity relations are recorded between (ADR-033).
+
+    Frozen seed of ``library/country_gazetteer.py``; ``iso3`` is NULL for Kosovo
+    (no official code), ``map_code`` keys ``public/geo/world-countries.geo.json``.
+    """
+
+    __tablename__ = "countries"
+    __table_args__ = (
+        CheckConstraint("entity_kind IN ('state', 'disputed', 'territory')", name="ck_countries_kind"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    name_pl: Mapped[str] = mapped_column(String(120), nullable=False)
+    iso3: Mapped[str | None] = mapped_column(String(3), unique=True)
+    map_code: Mapped[str] = mapped_column(String(3), nullable=False, unique=True)
+    entity_kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default="state")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+
+    def __repr__(self) -> str:
+        return f"Country(id={self.id!r}, slug={self.slug!r})"
+
+
+class GeoEvent(Base):
+    """A dated world event with the countries it involves and the documents that report it."""
+
+    __tablename__ = "geo_events"
+    __table_args__ = (
+        CheckConstraint("status IN ('proposed', 'confirmed', 'rejected')", name="ck_geo_events_status"),
+        CheckConstraint("date_precision IN ('day', 'month', 'year')", name="ck_geo_events_precision"),
+        CheckConstraint("event_date_end IS NULL OR event_date_end >= event_date", name="ck_geo_events_dates"),
+        Index("idx_geo_events_status_date", "status", "event_date"),
+        Index("idx_geo_events_dedup_key", "dedup_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    event_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    event_date_end: Mapped[datetime.date | None] = mapped_column(Date)
+    date_precision: Mapped[str] = mapped_column(String(10), nullable=False, server_default="day")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="proposed")
+    detection_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
+    model: Mapped[str | None] = mapped_column(String(120))
+    dedup_key: Mapped[str | None] = mapped_column(String(64))
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+    participants: Mapped[list["GeoEventParticipant"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", lazy="selectin",
+    )
+    sources: Mapped[list["GeoEventSource"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", lazy="selectin",
+    )
+
+    def __repr__(self) -> str:
+        return f"GeoEvent(id={self.id!r}, date={self.event_date!r}, status={self.status!r})"
+
+
+class GeoEventParticipant(Base):
+    __tablename__ = "geo_event_participants"
+    __table_args__ = (
+        UniqueConstraint("event_id", "country_id", "role", name="uq_geo_event_participants"),
+        CheckConstraint("role IN ('actor', 'target', 'affected', 'location')", name="ck_geo_event_participants_role"),
+        Index("idx_geo_event_participants_country", "country_id", "event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
+    country_id: Mapped[int] = mapped_column(ForeignKey("countries.id", ondelete="RESTRICT"), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    event: Mapped["GeoEvent"] = relationship(back_populates="participants")
+    country: Mapped["Country"] = relationship(lazy="joined")
+
+
+class GeoEventSource(Base):
+    """A document passage reporting a geo event; RESTRICT keeps the grounds of confirmed assessments."""
+
+    __tablename__ = "geo_event_sources"
+    __table_args__ = (
+        UniqueConstraint("event_id", "document_id", "content_hash", name="uq_geo_event_sources"),
+        CheckConstraint("stance IN ('supports', 'disputes')", name="ck_geo_event_sources_stance"),
+        Index("idx_geo_event_sources_document", "document_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False)
+    anchor_quote: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    stance: Mapped[str] = mapped_column(String(20), nullable=False, server_default="supports")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    event: Mapped["GeoEvent"] = relationship(back_populates="sources")
+
+
+class CountryRelationAssessment(Base):
+    """``from`` country's stance toward ``to`` country on one axis over [valid_from, valid_to).
+
+    Only ``confirmed`` rows reach the map; an exclusion constraint keeps confirmed periods of one
+    (from, to, axis) from overlapping (see migration d7e1a4b9c205).
+    """
+
+    __tablename__ = "country_relation_assessments"
+    __table_args__ = (
+        CheckConstraint("from_country_id <> to_country_id", name="ck_country_relation_distinct"),
+        CheckConstraint("axis IN ('political', 'security')", name="ck_country_relation_axis"),
+        CheckConstraint("score BETWEEN -2 AND 2", name="ck_country_relation_score"),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="ck_country_relation_confidence"),
+        CheckConstraint("valid_to IS NULL OR valid_to > valid_from", name="ck_country_relation_period"),
+        CheckConstraint(
+            "status IN ('proposed', 'confirmed', 'rejected')", name="ck_country_relation_status",
+        ),
+        Index("idx_country_relation_from", "from_country_id", "axis", "valid_from"),
+        Index("idx_country_relation_to", "to_country_id", "axis", "valid_from"),
+        Index("idx_country_relation_status", "status", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_country_id: Mapped[int] = mapped_column(ForeignKey("countries.id", ondelete="RESTRICT"), nullable=False)
+    to_country_id: Mapped[int] = mapped_column(ForeignKey("countries.id", ondelete="RESTRICT"), nullable=False)
+    axis: Mapped[str] = mapped_column(String(20), nullable=False)
+    score: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    confidence: Mapped[decimal.Decimal] = mapped_column(Numeric(3, 2), nullable=False, server_default="0.50")
+    valid_from: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[datetime.date | None] = mapped_column(Date)
+    review_due_at: Mapped[datetime.date | None] = mapped_column(Date)
+    rationale: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="proposed")
+    detection_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
+    model: Mapped[str | None] = mapped_column(String(120))
+    supersedes_id: Mapped[int | None] = mapped_column(
+        ForeignKey("country_relation_assessments.id", ondelete="SET NULL"),
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+    from_country: Mapped["Country"] = relationship(foreign_keys=[from_country_id], lazy="joined")
+    to_country: Mapped["Country"] = relationship(foreign_keys=[to_country_id], lazy="joined")
+    evidence: Mapped[list["CountryRelationEvidence"]] = relationship(
+        back_populates="assessment", cascade="all, delete-orphan", lazy="selectin",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"CountryRelationAssessment(id={self.id!r}, {self.from_country_id!r}->{self.to_country_id!r}, "
+            f"axis={self.axis!r}, score={self.score!r}, status={self.status!r})"
+        )
+
+
+class CountryRelationEvidence(Base):
+    __tablename__ = "country_relation_evidence"
+    __table_args__ = (
+        UniqueConstraint("assessment_id", "event_id", name="uq_country_relation_evidence"),
+        CheckConstraint("stance IN ('supports', 'contradicts')", name="ck_country_relation_evidence_stance"),
+        Index("idx_country_relation_evidence_event", "event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(
+        ForeignKey("country_relation_assessments.id", ondelete="CASCADE"), nullable=False,
+    )
+    event_id: Mapped[int] = mapped_column(ForeignKey("geo_events.id", ondelete="CASCADE"), nullable=False)
+    stance: Mapped[str] = mapped_column(String(20), nullable=False, server_default="supports")
+
+    assessment: Mapped["CountryRelationAssessment"] = relationship(back_populates="evidence")
+    event: Mapped["GeoEvent"] = relationship(lazy="joined")
