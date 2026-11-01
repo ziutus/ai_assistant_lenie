@@ -237,15 +237,51 @@ def decide_proposal(assessment_id: int):
     return jsonify({"status": "success", "assessment": assessment_to_dict(row, with_evidence=True)})
 
 
+@bp.route("/geopolitics/model", methods=["GET"])
+def get_geopolitics_model():
+    """Models offered for the analysis (with prices), the one in effect and whether it was chosen."""
+    from library import app_settings
+    from library.geopolitics_detect import SETTING_KEY, TASK, default_model
+    from library.llm_model_registry import selectable_models
+
+    session = get_scoped_session()
+    return jsonify(
+        {
+            "status": "success",
+            "default_model": default_model(session),
+            "saved": isinstance(app_settings.get_setting(session, SETTING_KEY), str),
+            "models": selectable_models(TASK),
+        }
+    )
+
+
+@bp.route("/geopolitics/model", methods=["PUT"])
+def put_geopolitics_model():
+    """Set the default analysis model (``{"model": id}``); ``{"model": null}`` restores the built-in default."""
+    from library import app_settings
+    from library.geopolitics_detect import SETTING_KEY, TASK, default_model
+    from library.llm_model_registry import is_selectable
+
+    body = request.get_json(silent=True) or {}
+    if "model" not in body:
+        return jsonify({"status": "error", "message": "model is required"}), 400
+    model = body["model"]
+    if model is not None and (not isinstance(model, str) or not is_selectable(model, TASK)):
+        return jsonify({"status": "error", "message": "Model is not available"}), 400
+    session = get_scoped_session()
+    app_settings.set_setting(session, SETTING_KEY, model)
+    return jsonify({"status": "success", "default_model": default_model(session), "saved": model is not None})
+
+
 @bp.route("/document/<int:doc_id>/geopolitics/detect", methods=["POST"])
 def detect_document_geopolitics(doc_id: int):
-    from library.geopolitics_detect import detect_for_document
+    from library.geopolitics_detect import TASK, detect_for_document
     from library.llm_model_registry import is_selectable
 
     session = get_scoped_session()
     data = request.get_json(silent=True) or {}
     model = data.get("model")
-    if model is not None and (not isinstance(model, str) or not is_selectable(model)):
+    if model is not None and (not isinstance(model, str) or not is_selectable(model, TASK)):
         return jsonify({"status": "error", "message": "Model is not available"}), 400
     try:
         summary = detect_for_document(session, doc_id, model=model, user_id=_user_id())

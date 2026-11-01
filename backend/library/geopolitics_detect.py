@@ -12,9 +12,11 @@ import json
 import logging
 import re
 
+from library import app_settings
 from library.ai import ai_ask
 from library.country_gazetteer import detect_countries
 from library.db.models import Document
+from library.llm_usage.report import combine_usage_reports, usage_report
 from library.geopolitics_service import (
     AXES,
     ROLES,
@@ -27,11 +29,26 @@ from library.geopolitics_service import (
 
 logger = logging.getLogger(__name__)
 
+TASK = "geopolitics"  # model allowlist of library/llm_model_registry.py
+SETTING_KEY = "geopolitics_model"  # household default in app_settings
 DEFAULT_MODEL = "Bielik-11B-v3.0-Instruct"
 PROMPT_VERSION = "geo-v1"
 MAX_FRAGMENT_CHARS = 10_000
 MAX_FRAGMENTS = 4
 MAX_EVENTS_PER_FRAGMENT = 6
+
+
+def default_model(session) -> str | None:
+    """The saved household choice while it is still allowed, else Bielik, else the first available model."""
+    from library.llm_model_registry import is_selectable, selectable_models
+
+    saved = app_settings.get_setting(session, SETTING_KEY)
+    if isinstance(saved, str) and is_selectable(saved, TASK):
+        return saved
+    if is_selectable(DEFAULT_MODEL, TASK):
+        return DEFAULT_MODEL
+    ids = [item["id"] for item in selectable_models(TASK) if item["available"]]
+    return ids[0] if ids else None
 
 
 def split_fragments(text: str, size: int = MAX_FRAGMENT_CHARS, limit: int = MAX_FRAGMENTS) -> list[str]:
@@ -110,7 +127,8 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
     text = doc.text_md or doc.text or ""
     if not text.strip():
         raise GeopoliticsError("Document has no text content")
-    model = model or DEFAULT_MODEL
+    model = model or default_model(session) or DEFAULT_MODEL
+    usage_reports: list[dict] = []
     haystack = normalize_text(text).casefold()
     slugs = [entry.slug for entry in detect_countries(text)]
     reference = _reference_date(doc)
@@ -126,6 +144,7 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
         "events_existing": 0,
         "assessments_proposed": 0,
         "assessments_merged": 0,
+        "usage": None,
         "dated_from_reference": 0,
         "rejected": {"quote_not_found": 0, "bad_date": 0, "bad_participants": 0, "bad_relation": 0},
         "event_ids": [],
@@ -144,6 +163,8 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
             operation="geopolitics_event_extraction",
             document_id=doc_id,
         )
+        usage_reports.append(usage_report(getattr(response, "usage", None)).as_dict())
+        summary["usage"] = combine_usage_reports(usage_reports)
         for item in parse_response(response.response_text)[:MAX_EVENTS_PER_FRAGMENT]:
             summary["candidates"] += 1
             _store_candidate(session, doc_id, item, haystack, model, user_id, summary, reference)

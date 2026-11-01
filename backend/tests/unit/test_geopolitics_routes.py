@@ -56,6 +56,15 @@ def client(monkeypatch):
     session.commit()
     monkeypatch.setattr(routes, "get_scoped_session", lambda: session)
     monkeypatch.setattr(svc, "Document", StubDocument)
+    store: dict = {}
+    from library import app_settings
+
+    monkeypatch.setattr(app_settings, "get_setting", lambda s, key, default=None: store.get(key, default))
+    monkeypatch.setattr(
+        app_settings,
+        "set_setting",
+        lambda s, key, value: store.pop(key, None) if value is None else store.__setitem__(key, value),
+    )
     app = Flask(__name__)
     app.register_blueprint(routes.bp)
     yield app.test_client()
@@ -172,3 +181,79 @@ def test_detect_rejects_unavailable_model_and_hides_provider_errors(client, monk
     monkeypatch.setattr(detect, "detect_for_document", boom)
     response = client.post("/document/1/geopolitics/detect", json={"model": "ok"})
     assert response.status_code == 503 and "secret" not in response.get_data(as_text=True)
+
+
+MODELS = [
+    {
+        "id": "Bielik-11B-v3.0-Instruct",
+        "label": "Bielik",
+        "available": True,
+        "external": False,
+        "input_price_per_million": "0.2",
+        "output_price_per_million": "0.4",
+        "currency": "USD",
+    },
+    {
+        "id": "openrouter/x/y",
+        "label": "Y",
+        "available": True,
+        "external": True,
+        "input_price_per_million": "0.1",
+        "output_price_per_million": "0.3",
+        "currency": "USD",
+    },
+]
+
+
+def _registry(monkeypatch):
+    import library.llm_model_registry as registry
+
+    seen = []
+
+    def selectable(task="organization_description"):
+        seen.append(task)
+        return MODELS
+
+    monkeypatch.setattr(registry, "selectable_models", selectable)
+    monkeypatch.setattr(
+        registry, "is_selectable", lambda model, task="organization_description": any(m["id"] == model for m in MODELS)
+    )
+    return seen
+
+
+def test_model_list_has_prices_and_uses_its_own_task(client, monkeypatch):
+    seen = _registry(monkeypatch)
+    body = client.get("/geopolitics/model").get_json()
+    assert seen == ["geopolitics"]
+    assert body["default_model"] == "Bielik-11B-v3.0-Instruct" and body["saved"] is False
+    assert body["models"][1]["input_price_per_million"] == "0.1"
+
+
+def test_default_model_can_be_saved_and_cleared(client, monkeypatch):
+    _registry(monkeypatch)
+    saved = client.put("/geopolitics/model", json={"model": "openrouter/x/y"}).get_json()
+    assert saved["default_model"] == "openrouter/x/y" and saved["saved"] is True
+    assert client.get("/geopolitics/model").get_json()["default_model"] == "openrouter/x/y"
+    cleared = client.put("/geopolitics/model", json={"model": None}).get_json()
+    assert cleared["default_model"] == "Bielik-11B-v3.0-Instruct" and cleared["saved"] is False
+
+
+def test_unknown_model_cannot_be_saved(client, monkeypatch):
+    _registry(monkeypatch)
+    assert client.put("/geopolitics/model", json={"model": "nope"}).status_code == 400
+    assert client.put("/geopolitics/model", json={}).status_code == 400
+
+
+def test_a_saved_model_that_became_unavailable_falls_back(client, monkeypatch):
+    _registry(monkeypatch)
+    client.put("/geopolitics/model", json={"model": "openrouter/x/y"})
+    del MODELS_BACKUP[:]
+    MODELS_BACKUP.extend(MODELS)
+    MODELS[:] = [MODELS_BACKUP[0]]
+    try:
+        assert client.get("/geopolitics/model").get_json()["default_model"] == "Bielik-11B-v3.0-Instruct"
+    finally:
+        MODELS[:] = MODELS_BACKUP
+
+
+MODELS_BACKUP: list = []

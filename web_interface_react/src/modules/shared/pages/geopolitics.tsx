@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import "leaflet/dist/leaflet.css";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination, PAGE_SIZES } from "../components/Pagination/pagination";
+import { isModelUnavailable, modelOptionText, type ModelOption } from "../utils/modelDetails";
 
 // ADR-033: source-backed world events and directed, versioned relation assessments between countries.
 // The map draws only CONFIRMED assessments; proposals (from the LLM or by hand) wait in the queue.
@@ -68,6 +69,10 @@ const Geopolitics = () => {
   const [error, setError] = React.useState("");
   const [notice, setNotice] = React.useState("");
   const [docId, setDocId] = React.useState("");
+  const [models, setModels] = React.useState<ModelOption[]>([]);
+  const [defaultModel, setDefaultModel] = React.useState("");
+  const [modelSaved, setModelSaved] = React.useState(false);
+  const [model, setModel] = React.useState("");
   const [reload, setReload] = React.useState(0);
 
   const update = (changes: Record<string, string | null>) => {
@@ -81,6 +86,12 @@ const Geopolitics = () => {
   React.useEffect(() => {
     axios.get(`${apiUrl}/countries`, { headers }).then((r) => setCountries(r.data.countries ?? [])).catch((e) => setError(`Nie udało się pobrać krajów: ${errorText(e)}`));
     axios.get(`${apiUrl}/geopolitics/axes`, { headers }).then((r) => setAxes(r.data.axes ?? [])).catch(() => undefined);
+    axios.get(`${apiUrl}/geopolitics/model`, { headers }).then((r) => {
+      setModels(r.data.models ?? []);
+      setDefaultModel(r.data.default_model ?? "");
+      setModelSaved(Boolean(r.data.saved));
+      setModel((current) => current || r.data.default_model || "");
+    }).catch(() => undefined);
     fetch(GEOJSON_URL).then((r) => r.json()).then(setGeojson).catch(() => undefined);
   }, [apiUrl, headers]);
 
@@ -125,13 +136,26 @@ const Geopolitics = () => {
     }
   };
 
+  const saveDefaultModel = async (value: string | null) => {
+    setError(""); setNotice("");
+    try {
+      const r = await axios.put(`${apiUrl}/geopolitics/model`, { model: value }, { headers });
+      setDefaultModel(r.data.default_model ?? "");
+      setModelSaved(Boolean(r.data.saved));
+      setModel(r.data.default_model ?? "");
+      setNotice(value ? "Zapisano domyślny model analizy." : "Przywrócono domyślny model serwera.");
+    } catch (reason: any) {
+      setError(`Nie udało się zapisać modelu: ${errorText(reason)}`);
+    }
+  };
+
   const detect = async (event: React.FormEvent) => {
     event.preventDefault();
     const id = Number(docId);
     if (!Number.isInteger(id) || id <= 0) { setError("Podaj numer dokumentu."); return; }
     setError(""); setNotice(""); setLoading(true);
     try {
-      const r = await axios.post(`${apiUrl}/document/${id}/geopolitics/detect`, {}, { headers, timeout: 180000 });
+      const r = await axios.post(`${apiUrl}/document/${id}/geopolitics/detect`, model ? { model } : {}, { headers, timeout: 180000 });
       const d = r.data;
       const labels: Record<string, string> = {
         quote_not_found: "cytat nie występuje w tekście", bad_date: "nieustalona data",
@@ -139,9 +163,12 @@ const Geopolitics = () => {
       };
       const rejected = Object.entries(d.rejected as Record<string, number>).filter(([, n]) => n > 0)
         .map(([key, n]) => `${labels[key] ?? key}: ${n}`).join(", ");
+      const cost = d.usage?.llm_cost_amount != null
+        ? ` Koszt: ${Number(d.usage.llm_cost_amount).toFixed(4)} ${d.usage.llm_cost_currency ?? ""}${d.usage.llm_cost_status === "estimated" ? " (szacunek)" : ""}, ${d.usage.llm_tokens ?? "?"} tokenów, model ${d.model}.`
+        : ` Koszt nieznany (model ${d.model} bez ceny w cenniku).`;
       setNotice(`Dokument ${id}: ${d.events_created} nowych zdarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji${d.assessments_merged ? ` (+${d.assessments_merged} dowodów dołączono do istniejących)` : ""}.`
         + (d.dated_from_reference ? ` ${d.dated_from_reference} zdarzeń z datą względną dostało datę artykułu (adnotacja w opisie).` : "")
-        + (rejected ? ` Odrzucone przez walidację — ${rejected}.` : ""));
+        + (rejected ? ` Odrzucone przez walidację — ${rejected}.` : "") + cost);
       setReload((n) => n + 1);
     } catch (reason: any) {
       setError(`Analiza dokumentu nie powiodła się: ${errorText(reason)}`);
@@ -204,8 +231,20 @@ const Geopolitics = () => {
         <label>Analizuj dokument (nr):{" "}
           <input aria-label="Numer dokumentu" inputMode="numeric" value={docId} onChange={(e) => setDocId(e.target.value)} style={{ width: 90, padding: "4px 8px" }} />
         </label>
+        <label>Model:{" "}
+          <select aria-label="Model do analizy" value={model} onChange={(e) => setModel(e.target.value)} disabled={loading || models.length === 0}>
+            {models.map((option) => (
+              <option key={option.id} value={option.id} disabled={isModelUnavailable(option)}>
+                {modelOptionText(option)}{option.id === defaultModel ? " — domyślny" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="button" disabled={!model || (model === defaultModel && modelSaved)}
+          onClick={() => saveDefaultModel(model)}>Ustaw jako domyślny</button>
+        {modelSaved && <button type="button" className="button" onClick={() => saveDefaultModel(null)}>Przywróć domyślny serwera</button>}
         <button type="submit" className="button" disabled={loading}>Zaproponuj zdarzenia</button>
-        <span style={{ color: "#64748b", fontSize: "0.85em" }}>Model tylko proponuje; nic nie trafia na mapę bez Twojej decyzji.</span>
+        <span style={{ color: "#64748b", fontSize: "0.85em" }}>Ceny: wejście / wyjście za 1 mln tokenów. Model tylko proponuje; nic nie trafia na mapę bez Twojej decyzji.</span>
       </form>
 
       {tab === "map" && (

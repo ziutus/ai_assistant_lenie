@@ -64,6 +64,7 @@ def session(monkeypatch):
     _StubBase.metadata.create_all(engine)
     monkeypatch.setattr(svc, "Document", StubDocument)
     monkeypatch.setattr(detect, "Document", StubDocument)
+    monkeypatch.setattr(detect, "default_model", lambda session: "default-model")
     with sessionmaker(bind=engine)() as s:
         for slug, name, code in [
             ("brazylia", "Brazylia", "BRA"),
@@ -568,6 +569,25 @@ def test_detect_survives_garbage_and_skips_llm_without_countries(session, doc, m
     monkeypatch.setattr(detect, "detect_countries", lambda text: [])
     calls = _fake_llm(monkeypatch, [_candidate()])
     assert detect.detect_for_document(session, 1)["fragments"] == 0 and calls == []
+
+
+def test_detect_uses_the_default_model_and_reports_cost(session, doc, monkeypatch):
+    from decimal import Decimal
+
+    usage = SimpleNamespace(
+        usage_log_id=7,
+        total_tokens=1234,
+        cost=SimpleNamespace(total_cost=Decimal("0.0042"), currency="USD", status="estimated"),
+    )
+
+    def fake(prompt, **kwargs):
+        return SimpleNamespace(response_text="[]", usage=usage)
+
+    monkeypatch.setattr(detect, "ai_ask", fake)
+    out = detect.detect_for_document(session, 1)
+    assert out["model"] == "default-model"
+    assert out["usage"]["llm_cost_amount"] == "0.0042" and out["usage"]["llm_cost_currency"] == "USD"
+    assert out["usage"]["llm_tokens"] == 1234 and out["usage"]["llm_calls"] == 1
 
 
 def test_detect_unknown_or_empty_document(session, doc):
