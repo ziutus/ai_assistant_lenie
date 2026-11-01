@@ -4,11 +4,13 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import { copyText } from "../../utils/copyText";
+import { describeRequestError } from "../../utils/requestError";
 import { isModelUnavailable, modelOptionText, type ModelOption } from "../../utils/modelDetails";
 import type { CountryTag } from "../CountryMap/countryMap";
 import InfoTip from "../InfoTip";
 import SkillHint from "../SkillHint";
 import RejectedPlaces from "./rejectedPlaces";
+import RequestErrorDetails from "../RequestErrorDetails/requestErrorDetails";
 import OrganizationMergePreview, { type MergePreviewData } from "./organizationMergePreview";
 
 // NER entities detected in the document (backend: GET/POST /website_entities,
@@ -551,7 +553,23 @@ const EntitiesPanel = ({
   const [fetchedCountries, setFetchedCountries] = React.useState<CountryTag[]>([]);
   const countries = providedCountries ?? fetchedCountries;
   const [enrichmentJob, setEnrichmentJob] = React.useState<EntityEnrichmentJob | null>(null);
-  const [message, setMessage] = React.useState("");
+  const [message, setMessageText] = React.useState("");
+  // Technical details of the last failed request (see utils/requestError.ts);
+  // any plain message clears them so a stale block never sits under new text.
+  const [messageDetails, setMessageDetails] = React.useState("");
+  const setMessage = (text: string) => {
+    setMessageText(text);
+    setMessageDetails("");
+  };
+  const reportError = (
+    error: unknown,
+    operation: string,
+    options: { startedAt?: number } = {},
+  ) => {
+    const info = describeRequestError(error, operation, { ...options, context: { Dokument: docId } });
+    setMessageText(info.summary);
+    setMessageDetails(info.details);
+  };
   // Set when the last NER refresh found ner_service unreachable (backend:
   // web_documents.ner_unavailable_at) — lets us warn instead of implying
   // "no entities" when the real cause was a dead service.
@@ -767,7 +785,7 @@ const EntitiesPanel = ({
       onEntitiesChanged?.();
     } catch (error: any) {
       console.error("Error detecting countries", error);
-      setMessage(`Nie udało się wykryć państw: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się wykryć państw");
     } finally {
       setIsDetectingCountries(false);
       onBusyChange?.(false);
@@ -813,6 +831,7 @@ const EntitiesPanel = ({
     setIsRefreshing(true);
     onBusyChange?.(true);
     setMessage("");
+    const startedAt = Date.now();
     try {
       // First call after an ner_service restart loads the spaCy model (~90s) —
       // hence the generous timeout.
@@ -836,7 +855,7 @@ const EntitiesPanel = ({
         setNerUnavailableAt(new Date().toISOString());
         setMessage("Serwis NER jest niedostępny — spróbuj ponownie za chwilę.");
       } else {
-        setMessage(`Nie udało się wykryć encji: ${error.response?.data?.message || error.message}`);
+        reportError(error, "Nie udało się wykryć encji", { startedAt });
       }
     }
     setIsRefreshing(false);
@@ -874,7 +893,7 @@ const EntitiesPanel = ({
       fetchEntities();
       setMessage(`Połączono organizacje: „${data.source.canonical_name}” → „${data.target.canonical_name}”.`);
     } catch (error: any) {
-      setMessage(`Nie udało się połączyć organizacji: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się połączyć organizacji");
     } finally {
       setIsMergingOrg(false);
     }
@@ -1025,7 +1044,7 @@ const EntitiesPanel = ({
       fetchEntities();
     } catch (error: any) {
       console.error("Error deleting entity", error);
-      setMessage(`Nie udało się usunąć encji: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się usunąć encji");
     }
   };
 
@@ -1060,7 +1079,7 @@ const EntitiesPanel = ({
       fetchEntities();
     } catch (error: any) {
       console.error("Error merging person link", error);
-      setMessage(`Nie udało się zmienić osoby: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się zmienić osoby");
     }
   };
 
@@ -1102,7 +1121,7 @@ const EntitiesPanel = ({
       fetchEntities();
     } catch (error: any) {
       console.error("Error merging organization", error);
-      setMessage(`Nie udało się połączyć organizacji: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się połączyć organizacji");
     }
   };
 
@@ -1112,7 +1131,7 @@ const EntitiesPanel = ({
       await axios.post(`${apiUrl}/document/${docId}/organizations/${item.organization_link_id}/approve`, {}, { headers: jsonHeaders });
       fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zatwierdzić organizacji: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się zatwierdzić organizacji");
     }
   };
 
@@ -1135,7 +1154,7 @@ const EntitiesPanel = ({
       setMessage("Miejsca zostały połączone.");
     } catch (error: any) {
       console.error("Error merging place", error);
-      setMessage(`Nie udało się połączyć miejsc: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się połączyć miejsc");
     } finally {
       setIsMergingPlace(false);
     }
@@ -1162,8 +1181,8 @@ const EntitiesPanel = ({
         ? `Osoby „${merged[0]}” i „${target.text}” zostały połączone.`
         : `Połączono ${merged.length} osoby (${merged.map((name) => `„${name}”`).join(", ")}) z „${target.text}”.`);
     } catch (error: any) {
-      const done = merged.length ? ` Połączono już: ${merged.map((name) => `„${name}”`).join(", ")}.` : "";
-      setMessage(`Nie udało się połączyć osób: ${error.response?.data?.message || error.message}.${done}`);
+      const done = merged.length ? ` (połączono już: ${merged.map((name) => `„${name}”`).join(", ")})` : "";
+      reportError(error, `Nie udało się połączyć osób${done}`);
     } finally {
       await fetchEntities();
       setIsMergingPlace(false);
@@ -1203,7 +1222,7 @@ const EntitiesPanel = ({
       fetchEntities();
     } catch (error: any) {
       console.error("Error excluding entity", error);
-      setMessage(`Nie udało się wykluczyć: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się wykluczyć");
     }
   };
 
@@ -1223,7 +1242,7 @@ const EntitiesPanel = ({
       fetchEntities();
     } catch (error: any) {
       console.error("Error updating organization description", error);
-      setMessage(`Nie udało się zapisać opisu: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się zapisać opisu");
     }
   };
 
@@ -1242,7 +1261,7 @@ const EntitiesPanel = ({
       setOrgModel(response.data.default_model ?? response.data.models?.[0]?.id ?? "");
       setOrgPromptOpen(true);
     } catch (error: any) {
-      setMessage(`Nie udało się przygotować promptu: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się przygotować promptu");
     } finally {
       setOrgDescriptionBusy(false);
     }
@@ -1258,7 +1277,7 @@ const EntitiesPanel = ({
         { models: arenaModels, prompt: orgPrompt }, { headers: jsonHeaders });
       setArenaResults(response.data.results ?? []);
     } catch (error: any) {
-      setMessage(`Arena nie powiodła się: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Arena nie powiodła się");
     } finally {
       setOrgDescriptionBusy(false);
     }
@@ -1286,7 +1305,7 @@ const EntitiesPanel = ({
         setMessage(`Model ${data.model} uznał, że rozdział nie wystarcza do opisu — wpisz go ręcznie.`);
       }
     } catch (error: any) {
-      setMessage(`Nie udało się wygenerować opisu: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się wygenerować opisu");
     } finally {
       setOrgDescriptionBusy(false);
     }
@@ -1308,7 +1327,7 @@ const EntitiesPanel = ({
       setMessage(`Alias dodany do: ${aliasFor.canonical_name}`);
     } catch (error: any) {
       console.error("Error adding alias", error);
-      setMessage(`Nie udało się dodać aliasu: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się dodać aliasu");
     }
   };
 
@@ -1337,7 +1356,7 @@ const EntitiesPanel = ({
       setMessage(`Propozycja lokalizacji dla „${item.text}” odrzucona — miejsce zostaje bez lokalizacji.`);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się odrzucić propozycji: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się odrzucić propozycji");
     } finally {
       setConfirmingPlace(null);
     }
@@ -1352,7 +1371,7 @@ const EntitiesPanel = ({
       setMessage(`„${item.text}” zmienione na organizację: ${response.data.organization_name}.`);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zmienić na organizację: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się zmienić na organizację");
     }
   };
 
@@ -1366,7 +1385,7 @@ const EntitiesPanel = ({
       setMessage(`„${item.text}” zmienione na osobę${linked ? `: ${linked}` : " (bez dopasowania w rejestrze osób)"}.`);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zmienić na osobę: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się zmienić na osobę");
     }
   };
 
@@ -1381,7 +1400,7 @@ const EntitiesPanel = ({
       setMessage(`„${item.text}” zmienione na ${noun}: ${response.data.product_name}.`);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zmienić na ${noun}: ${error.response?.data?.message || error.message}`);
+      reportError(error, `Nie udało się zmienić na ${noun}`);
     }
   };
 
@@ -1395,7 +1414,7 @@ const EntitiesPanel = ({
       setMessage(`„${item.text}” zmienione na ${label}.`);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zmienić na ${label}: ${error.response?.data?.message || error.message}`);
+      reportError(error, `Nie udało się zmienić na ${label}`);
     }
   };
 
@@ -1410,7 +1429,7 @@ const EntitiesPanel = ({
       setToPlaceFor(null);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zmienić na miejsce: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się zmienić na miejsce");
     } finally {
       setIsRetyping(false);
     }
@@ -1427,7 +1446,7 @@ const EntitiesPanel = ({
       setToOrgFor(null);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zmienić na organizację: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się zmienić na organizację");
     } finally {
       setIsRetyping(false);
     }
@@ -1445,7 +1464,7 @@ const EntitiesPanel = ({
       setSlipFor(null);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się oznaczyć błędu transkrypcji: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się oznaczyć błędu transkrypcji");
     } finally {
       setIsRetyping(false);
     }
@@ -1462,7 +1481,7 @@ const EntitiesPanel = ({
       setRealNameFor(null);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się nadać nazwiska: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się nadać nazwiska");
     } finally {
       setIsRetyping(false);
     }
@@ -1479,7 +1498,7 @@ const EntitiesPanel = ({
       setWikiFor(null);
       await fetchEntities();
     } catch (error: any) {
-      setMessage(`Nie udało się zapisać linku Wikipedii: ${error.response?.data?.message || error.message}`);
+      reportError(error, "Nie udało się zapisać linku Wikipedii");
     } finally {
       setIsRetyping(false);
     }
@@ -1499,7 +1518,7 @@ const EntitiesPanel = ({
       await fetchEntities();
     } catch (error: any) {
       const what = splitKind === "organization" ? "organizacji" : "miejsca";
-      setMessage(`Nie udało się podzielić ${what}: ${error.response?.data?.message || error.message}`);
+      reportError(error, `Nie udało się podzielić ${what}`);
     } finally {
       setIsRetyping(false);
     }
@@ -2605,6 +2624,7 @@ const EntitiesPanel = ({
       {message && (
         <div style={{ marginTop: "6px", color: message.startsWith("Pełna weryfikacja") ? "#2e7d43" : "#a33" }}>
           {message}
+          <RequestErrorDetails details={messageDetails} />
         </div>
       )}
     </div>
