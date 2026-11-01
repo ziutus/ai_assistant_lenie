@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import DateTime, Integer, String, Text, create_engine
+from sqlalchemy import JSON, DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from library import geopolitics_detect as detect
@@ -39,6 +39,7 @@ class StubDocument(_StubBase):
     title: Mapped[str] = mapped_column(String(100), default="t")
     text_md: Mapped[str | None] = mapped_column(Text)
     text: Mapped[str | None] = mapped_column(Text)
+    chapter_types: Mapped[list | None] = mapped_column(JSON)
     published_on: Mapped[datetime.date | None] = mapped_column(DateTime)
     ingested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
@@ -65,6 +66,8 @@ def session(monkeypatch):
     monkeypatch.setattr(svc, "Document", StubDocument)
     monkeypatch.setattr(detect, "Document", StubDocument)
     monkeypatch.setattr(detect, "default_model", lambda session: "default-model")
+    # The channel glossary reads tables SQLite does not have here; tests that need it patch it themselves.
+    monkeypatch.setattr("library.entity_service.apply_channel_glossary_text", lambda session, document_id, text: text)
     monkeypatch.setattr(
         detect.prompt_templates, "get_active", lambda s, task, variant: detect.prompt_templates.builtin(task, variant)
     )
@@ -669,3 +672,47 @@ def test_detect_reports_a_template_that_cannot_render(session, doc, monkeypatch)
     with pytest.raises(svc.GeopoliticsError) as exc:
         detect.detect_for_document(session, 1)
     assert "event_extraction-v9" in exc.value.message
+
+
+TRANSCRIPT = "## Wstęp\nBrazylia wybrała prezydenta, a jego rywal uciekł do USA po wyborach.\n\n## Sponsor\nKup VPN i oszczędzaj w Rosji i Chinach, kod rabatowy GEO."
+
+
+def test_detect_skips_advertisement_chapters_of_a_transcript(session, doc, monkeypatch):
+    row = session.get(StubDocument, 1)
+    row.text_md, row.text, row.chapter_types = None, TRANSCRIPT, ["TEMAT", "REKLAMA"]
+    session.commit()
+    ad_candidate = _candidate(title="Reklama VPN", quote="Kup VPN i oszczędzaj w Rosji i Chinach")
+    calls = _fake_llm(
+        monkeypatch, [_candidate(quote="Brazylia wybrała prezydenta, a jego rywal uciekł do USA"), ad_candidate]
+    )
+    out = detect.detect_for_document(session, 1)
+    assert "Kup VPN" not in calls[0][0] and "Brazylia wybrała prezydenta" in calls[0][0]
+    assert out["events_created"] == 1 and out["rejected"]["quote_not_found"] == 1
+
+
+def test_detect_refuses_a_document_that_is_only_advertisement_and_noise(session, doc):
+    row = session.get(StubDocument, 1)
+    row.text_md, row.text, row.chapter_types = None, "## Sponsor\nKup VPN.\n\n## Szum\nsubskrybuj", ["REKLAMA", "SZUM"]
+    session.commit()
+    with pytest.raises(svc.GeopoliticsError) as exc:
+        detect.detect_for_document(session, 1)
+    assert "no text content" in exc.value.message
+
+
+def test_countries_are_found_after_the_channel_glossary_but_the_prompt_keeps_the_original_text(
+    session, doc, monkeypatch
+):
+    from library.country_gazetteer import detect_countries as real_detect
+
+    monkeypatch.setattr(detect, "detect_countries", real_detect)
+    monkeypatch.setattr(
+        "library.entity_service.apply_channel_glossary_text",
+        lambda session, document_id, text: text.replace("państwo z gwiazdką", "Izrael"),
+    )
+    session.get(StubDocument, 1).text_md = "Premier powiedział, że państwo z gwiazdką odpowie na atak w Libanie."
+    session.commit()
+    calls = _fake_llm(monkeypatch, [])
+    detect.detect_for_document(session, 1)
+    prompt = calls[0][0]
+    assert "izrael" in prompt.split("slug z listy:")[1].split("\n")[0]
+    assert "państwo z gwiazdką" in prompt  # the model reads the original wording

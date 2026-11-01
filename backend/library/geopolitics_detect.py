@@ -72,6 +72,22 @@ def split_fragments(text: str, size: int = MAX_FRAGMENT_CHARS, limit: int = MAX_
     return fragments
 
 
+def analysis_input(session, doc) -> tuple[str, list[str]]:
+    """The text the model reads and the countries it may name.
+
+    The text is the one NER uses (``entity_text.document_ner_text``): a transcript's advertisement, noise and
+    source chapters are left out, so a sponsor read-out cannot become an "event". The countries come from a copy
+    with the channel glossary applied ("państwo z gwiazdką" = Izrael); the prompt and the quote check keep the
+    original text, so a quote stays verbatim in the stored document.
+    """
+    from library.entity_service import apply_channel_glossary_text
+    from library.entity_text import document_ner_text
+
+    text = document_ner_text(doc)
+    repaired = apply_channel_glossary_text(session, doc.id, text) if text.strip() else text
+    return text, [entry.slug for entry in detect_countries(repaired)]
+
+
 def prompt_variables(fragment: str, slugs: list[str], published: str | None) -> dict:
     """The closed set of variables a prompt template may use (``prompt_templates.VARIABLES``)."""
     return {
@@ -92,12 +108,11 @@ def build_prompt(fragment: str, slugs: list[str], published: str | None, templat
 def preview_variables(session, document_id: int | None) -> tuple[dict, int | None]:
     """Variables for the `/prompt-templates` preview: the first fragment of a real document, else a sample."""
     doc = Document.get_by_id(session, document_id) if isinstance(document_id, int) else None
-    text = (doc.text_md or doc.text or "") if doc is not None else ""
+    text, slugs = analysis_input(session, doc) if doc is not None else ("", [])
     if not text.strip():
         sample = "Przykładowy fragment: Rząd A wprowadził sankcje wobec kraju B."
         return prompt_variables(sample, ["polska", "niemcy"], "2026-01-01"), None
     reference = _reference_date(doc)
-    slugs = [entry.slug for entry in detect_countries(text)]
     fragment = (split_fragments(text, limit=1) or [text])[0]
     return prompt_variables(fragment, slugs, reference.isoformat() if reference else None), doc.id
 
@@ -124,14 +139,15 @@ def detect_for_document(session, doc_id: int, *, model: str | None = None, user_
     doc = Document.get_by_id(session, doc_id)
     if doc is None:
         raise GeopoliticsError("Document not found", 404)
-    text = doc.text_md or doc.text or ""
+    text, slugs = analysis_input(session, doc)
     if not text.strip():
-        raise GeopoliticsError("Document has no text content")
+        raise GeopoliticsError(
+            "Document has no text content to analyse (all chapters are advertisement, noise or sources)"
+        )
     model = model or default_model(session) or DEFAULT_MODEL
     usage_reports: list[dict] = []
     template = prompt_templates.get_active(session, prompt_templates.TASK_GEOPOLITICS, VARIANT)
     haystack = normalize_text(text).casefold()
-    slugs = [entry.slug for entry in detect_countries(text)]
     reference = _reference_date(doc)
     published_text = reference.isoformat() if reference else None
 

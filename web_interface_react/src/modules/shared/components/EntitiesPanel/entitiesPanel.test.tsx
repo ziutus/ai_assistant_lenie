@@ -718,6 +718,49 @@ it.each([false, true])("reports no new countries or a detection error: %s", asyn
   expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
+it("proposes geopolitical events with the default model, reports the cost and keeps the panel busy meanwhile", async () => {
+  let finish!: (value: any) => void;
+  vi.mocked(axios.post).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const onBusyChange = vi.fn();
+  render(<MemoryRouter><EntitiesPanel docId={11205} onBusyChange={onBusyChange} /></MemoryRouter>);
+  await screen.findByRole("button", { name: place.text });
+  fireEvent.click(screen.getByRole("button", { name: "Zaproponuj relacje geopolityczne" }));
+  expect(axios.post).toHaveBeenCalledWith("/document/11205/geopolitics/detect", {},
+    { headers: expect.objectContaining({ "x-api-key": expect.any(String) }), timeout: 180000 });
+  expect((screen.getByRole("button", { name: "Analizuję geopolitykę..." }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Wykryj państwa" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(onBusyChange).toHaveBeenLastCalledWith(true);
+  await act(async () => finish({ data: {
+    events_created: 6, events_existing: 0, assessments_proposed: 2, assessments_merged: 4, rejected: { bad_date: 1 },
+    model: "Bielik-11B-v3.0-Instruct", usage: { llm_cost_amount: "0.0042", llm_cost_currency: "EUR", llm_cost_status: "estimated" },
+  } }));
+  const message = screen.getByText(/^Geopolityka:/).textContent ?? "";
+  expect(message).toContain("6 nowych zdarzeń");
+  expect(message).toContain("2 propozycji relacji (+4 dowodów dołączono do istniejących)");
+  expect(message).toContain("odrzucone przez walidację: 1");
+  expect(message).toContain("Zatwierdź je w Geopolityka → Propozycje");
+  expect(message).toContain("Koszt 0.0042 EUR (szacunek), model Bielik-11B-v3.0-Instruct");
+  expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  expect((screen.getByRole("button", { name: "Zaproponuj relacje geopolityczne" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it.each(["nothing", "error", "network"])("reports %s of the geopolitics proposal", async (outcome) => {
+  if (outcome === "nothing") vi.mocked(axios.post).mockResolvedValue({ data: {
+    events_created: 0, events_existing: 0, assessments_proposed: 0, assessments_merged: 0, rejected: {}, model: "m", usage: null,
+  } });
+  if (outcome === "error") vi.mocked(axios.post).mockRejectedValue({ response: { status: 400, data: { message: "Document has no text content" } } });
+  if (outcome === "network") vi.mocked(axios.post).mockRejectedValue({ message: "Network Error" });
+  render(<MemoryRouter><EntitiesPanel docId={11205} /></MemoryRouter>);
+  await screen.findByRole("button", { name: place.text });
+  fireEvent.click(screen.getByRole("button", { name: "Zaproponuj relacje geopolityczne" }));
+  const expected = {
+    nothing: /model nie znalazł zdarzeń do zapisania.*koszt nieznany/,
+    error: /Nie udało się zaproponować relacji geopolitycznych: Document has no text content/,
+    network: /Nie udało się zaproponować relacji geopolitycznych: brak odpowiedzi serwera/,
+  }[outcome] as RegExp;
+  expect(await screen.findByText(expected)).toBeTruthy();
+});
+
 it.each(["external", "enrichment"])("disables detection while %s work is active", async (busy) => {
   if (busy === "enrichment") vi.mocked(axios.get).mockResolvedValue({ data: {
     job: { status: "running" }, entities: {},

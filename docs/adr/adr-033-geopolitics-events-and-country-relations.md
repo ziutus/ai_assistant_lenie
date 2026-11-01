@@ -64,6 +64,12 @@ Rules:
 - "Zones of influence" are a **view**, not an attribute; independence of a state shows up as different scores
   on different axes toward different states.
 
+Where it runs: on demand, from the "Zaproponuj relacje geopolityczne" button of the entities panel (editors and
+reader). The input is the text NER reads (no advertisement/noise/source chapters of a transcript); the countries offered to
+the model are found after the channel glossary is applied. A background job queued after `create_run()` (the
+`entity_enrichment` pattern), gated by country tags, is the planned next step; running it inside `create_run()` is
+rejected because it would lengthen an already long request without a retry.
+
 Flow (`library/geopolitics_detect.py`, `POST /document/<id>/geopolitics/detect`): the model gets the text in
 fragments (≤ 4 × 10 000 characters) and the slugs of the countries found in it. It may answer "nothing". Every
 candidate is validated: the quote must occur verbatim in the document, the date must parse (a relative date such as
