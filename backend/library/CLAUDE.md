@@ -67,6 +67,8 @@ re-pointed (a run that already suggested the target keeps that one and the sourc
 twin is dismissed) and the source is archived; topics only, both active. Response: `moved`
 counts plus both groups. Tests: `tests/unit/test_content_group_merge.py`.
 
+**Review reasons**: `feed_review_reasons` stores editable skip reasons; `feed_review_reason_store.py` caches reads for 60 seconds with a seed fallback, and `GET/POST /feed_review_reasons` plus `PATCH/DELETE /feed_review_reasons/<code>` expose the catalog (writes require a service key and bust the cache).
+
 **Expiry of "Może kiedyś" items** (`feed_retention.py`, migration `c7a2e5d9b148`). A feed item
 that is `saved_for_later` AND carries the priority group with `priority_rank` 100 (the same rule
 the UI uses for its "Może kiedyś" button) expires `retention` months after `saved_at`: the

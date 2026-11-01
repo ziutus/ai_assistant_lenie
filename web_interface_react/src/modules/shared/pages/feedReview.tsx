@@ -1,4 +1,7 @@
 import React from "react";
+import { reasonsRequest } from "../services/feedReviewReasons";
+import RequestErrorDetails from "../components/RequestErrorDetails/requestErrorDetails";
+import type { RequestErrorInfo } from "../utils/requestError";
 import FeedItemComment from "../components/FeedItemComment/feedItemComment";
 import SkillHint from "../components/SkillHint";
 import { Pagination } from "../components/Pagination/pagination";
@@ -18,6 +21,7 @@ type FeedItem = {
   url: string;
   summary: string | null;
   review_note?: string | null;
+  review_reason?: string | null;
   seed_document_id?: number | null;
   llm_discussion_status?: "open" | "done" | null;
   llm_discussion_at?: string | null;
@@ -56,10 +60,11 @@ type Action = "import" | "skip" | "ignore" | "save-for-later" | "restore" | "to_
 type ReviewDecision = {
   id: number; batch_id: string; job_id: string | null; feed_item_id: number;
   feed_source_id: number; title: string; action: string; previous_status: string;
+  previous_review_reason?: string | null;
   new_status: string; created_at: string; undone_at: string | null;
 };
-type ReviewReason = "not_interested" | "duplicate" | "already_known" | "too_long" | "other";
-const reviewReasons: Array<[ReviewReason, string]> = [
+type ReviewReason = string;
+const fallbackReviewReasons: Array<[ReviewReason, string]> = [
   ["not_interested", "Nie interesuje mnie temat"],
   ["duplicate", "Duplikat / już widziałem"],
   ["already_known", "Już to znam"],
@@ -176,6 +181,9 @@ export default function FeedReview() {
   const [ignoreField, setIgnoreField] = React.useState<"title" | "url">("title");
   const [ignorePattern, setIgnorePattern] = React.useState("");
   const [skipItemId, setSkipItemId] = React.useState<number | null>(null);
+  const [reviewReasons, setReviewReasons] = React.useState<Array<[string, string]>>(fallbackReviewReasons);
+  const [reasonsError, setReasonsError] = React.useState<RequestErrorInfo | null>(null);
+  const reasonLabel = (code: string) => reviewReasons.find(([value]) => value === code)?.[1] || code;
   const [skipReason, setSkipReason] = React.useState<ReviewReason>("not_interested");
   const [radarItemId, setRadarItemId] = React.useState<number | null>(null);
   const [radarName, setRadarName] = React.useState("");
@@ -204,6 +212,23 @@ export default function FeedReview() {
   const browseKind = BROWSE_KINDS.some(([value]) => value === searchParams.get("kind")) ? searchParams.get("kind") as string : "all";
   const discussion = searchParams.get("discussion") === "done" ? "done" : "open";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
+  React.useEffect(() => {
+    let cancelled = false;
+    setReasonsError(null);
+    void reasonsRequest(`${apiUrl}/feed_review_reasons?selectable=1`, apiKey || "")
+      .then(data => {
+        if (cancelled) return;
+        const reasons: Array<[string, string]> = (data.reasons || []).map(row => [row.code, row.label]);
+        setReviewReasons(reasons);
+        setSkipReason(reasons[0]?.[0] || "");
+      }).catch((cause: RequestErrorInfo) => {
+        if (cancelled) return;
+        setReviewReasons(fallbackReviewReasons);
+        setSkipReason(fallbackReviewReasons[0][0]);
+        setReasonsError(cause);
+      });
+    return () => { cancelled = true; };
+  }, [apiUrl, apiKey]);
   const refreshDiscussionCount = React.useCallback(async () => {
     try {
       const response = await fetchWithTimeout(`${apiUrl}/feed_items/discussion_summary`, { headers }, ACTION_TIMEOUT_MS);
@@ -489,6 +514,7 @@ export default function FeedReview() {
       return <article key={item.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
         <div style={{ color: "#64748b", fontSize: ".85rem", marginBottom: 6 }}>{sourceName(item.feed_source_id)}</div>
         <h3>{item.title}</h3>
+        {item.review_reason && <p>Powód: {reasonLabel(item.review_reason)}</p>}
         {mode === "all" && <div style={{ marginBottom: 6 }}>
           <Link to={{ search: `?${new URLSearchParams({ mode: "single", item: String(item.id), ...(view === "discuss" ? { view, discussion } : view === "later" ? { view: "later" } : {}) }).toString()}` }}
             onClick={event => openSingle(event, item)}>🔗 Pracuj nad tym wpisem</Link>
@@ -557,7 +583,7 @@ export default function FeedReview() {
             <HelpBadge text={RADAR_HELP} />
             <button disabled={busy} onClick={() => { setRadarItemId(item.id); setRadarName(suggestToolName(item.title)); setRadarCategory(""); }}>Do radaru</button>{" "}
             <HelpBadge text={SKIP_HELP} />
-            <button disabled={busy} onClick={() => { setSkipItemId(item.id); setSkipReason("not_interested"); }}>Pomiń</button>{" "}
+            <button disabled={busy} onClick={() => { setSkipItemId(item.id); setSkipReason(reviewReasons[0]?.[0] || ""); }}>Pomiń</button>{" "}
             <HelpBadge text={IGNORE_HELP} />
             <button disabled={busy} onClick={() => { setIgnoreItemId(item.id); setIgnorePattern(""); }}>Ignoruj</button>
           </> : <>
@@ -596,13 +622,14 @@ export default function FeedReview() {
           <button type="submit" disabled={busy || !radarName.trim()}>Dodaj do radaru</button>{" "}
           <button type="button" onClick={() => setRadarItemId(null)} disabled={busy}>Anuluj</button>
         </form>}
+        {skipItemId === item.id && reasonsError && <div role="status"><p>{reasonsError.summary}. Używam listy domyślnej.</p><RequestErrorDetails details={reasonsError.details} /></div>}
         {skipItemId === item.id && <form onSubmit={event => { event.preventDefault(); void act(item.id, "skip", { reason: skipReason }); }}>
           <label>Powód pominięcia:{" "}
             <select aria-label="Powód pominięcia" value={skipReason} onChange={event => setSkipReason(event.target.value as ReviewReason)} disabled={busy}>
               {reviewReasons.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>{" "}
-          <button type="submit" disabled={busy}>Zapisz decyzję</button>{" "}
+          <button type="submit" disabled={busy || !skipReason}>Zapisz decyzję</button>{" "}
           <button type="button" onClick={() => setSkipItemId(null)} disabled={busy}>Anuluj</button>
         </form>}
       </article>;
@@ -666,6 +693,7 @@ export default function FeedReview() {
       {!historyLoading && !decisions.length && <p>Brak zapisanych decyzji dla tego źródła.</p>}
       {decisions.map(decision => <div key={decision.id} style={{ borderTop: "1px solid #e2e8f0", padding: "10px 0", marginTop: 10 }}>
         <strong>{decision.title}</strong><br />
+        {decision.previous_review_reason && <span>Poprzedni powód: {reasonLabel(decision.previous_review_reason)}<br /></span>}
         <small>{decision.action}: {decision.previous_status} → {decision.new_status} · {formatDate(decision.created_at)} · batch {decision.batch_id}</small>{" "}
         <button type="button" onClick={async () => {
           setError("");
