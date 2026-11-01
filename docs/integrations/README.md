@@ -33,6 +33,7 @@ Szczegóły klienta, klucza i obserwacji statusu: [external-services.md](../exte
 |---|---|---|
 | Shodan | Bez stałego publicznego IP nie ma sensu; do wznowienia po jego uzyskaniu | [shodan.md](shodan.md) |
 | SignalHire | Odrzucone: 10 darmowych kredytów miesięcznie to za mało, baza zawodowa nie pokrywa prywatnych kontaktów, broker danych (RODO) | [signalhire.md](signalhire.md) |
+| Cookidoo (Thermomix) | Odrzucone: brak API, a import po URL przyjmuje tylko domeny Cookidoo i społeczności Vorwerk (test 2026-11-01); przepisy wpisuje się ręcznie | [cookidoo.md](cookidoo.md) |
 
 ## Zasady dla nowych integracji
 
