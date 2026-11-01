@@ -20,6 +20,17 @@ Collapsible sections use native `<details><summary>` via `CollapsibleSection`,
 with no separate toggle button. Completed sections start collapsed; frequently
 needed actions stay outside. See [AGENTS.md](AGENTS.md#collapsible-sections).
 
+### Error messages for failed requests
+
+A failed request shows a plain Polish summary (what failed and why, with the next
+step) plus a collapsed, copyable "Szczegóły techniczne" block: operation, document
+or entity id, method and target URL, source page, local time, duration, HTTP status
+and client error code — never the API key, headers or request body. Built by
+`describeRequestError()` (`src/modules/shared/utils/requestError.ts`) and
+`components/RequestErrorDetails`; `EntitiesPanel` uses it for every action. The
+full rule for agents lives in [AGENTS.md](AGENTS.md#error-messages-failed-requests);
+keep the two in sync.
+
 ### Pagination for collection views
 
 Any view that can list more than 50 records must use pagination. The backend
