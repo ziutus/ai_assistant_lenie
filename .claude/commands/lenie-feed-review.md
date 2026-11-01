@@ -13,6 +13,7 @@ Review feed candidates stored in PostgreSQL through the Lenie REST API.
    - show title, source, publication date, summary and URL;
    - fetch the article content;
    - provide a concise Polish summary in 3–5 bullet points;
+   - check whether the text is really about a PAID tool or product (pricing page, "free trial", licence, subscription, affiliate/referral links, the recommender is the vendor or sells it) even though the feed presents it as a neutral recommendation or a free resource; say so explicitly in the summary ("opisuje płatne narzędzie: <nazwa>, <cena/model>") and note that the recommender may not have verified the text. Reference example: feed item 12501 (source 1, `Do przeczytania`), whose text turned out to describe a paid tool. Read the user's own comment (`review_note` of `GET /feed_items/{id}`) first: it may already carry such a verdict;
    - answer the user's questions about the current article;
    - ask whether to import, skip, ignore, or continue.
 4. Apply the decision through the REST API:
