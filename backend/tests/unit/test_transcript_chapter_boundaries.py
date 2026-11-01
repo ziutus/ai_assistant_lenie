@@ -40,7 +40,7 @@ def test_moves_both_directions(steps, counts):
 
 def test_description_and_preamble():
     sections = describe_sections(TEXT)
-    assert sections[0] == {"position": 0, "type": "TEMAT", "title": "", "is_preamble": True, "sentence_count": 1,
+    assert sections[0] == {"position": 0, "note": "", "type": "TEMAT", "title": "", "is_preamble": True, "sentence_count": 1,
                            "char_length": 8, "first_sentences": ["Wstęp."], "last_sentences": ["Wstęp."]}
     assert sections[1]["position"] == 1
     assert sections[1]["title"] == "Pierwszy"
@@ -217,3 +217,17 @@ def test_preamble_has_no_stored_type():
     assert [s["type"] for s in describe_sections(TEXT, stored_types=["SZUM", "ZRODLA"])] == [
         "TEMAT", "SZUM", "ZRODLA",
     ]
+
+
+@pytest.mark.parametrize("stored", [None, [], ["one"], ["one", "two", "three"]])
+def test_chapter_notes_alignment(stored):
+    from library.transcript_chapter_boundaries import resolve_chapter_notes
+    assert resolve_chapter_notes(TEXT, stored) == ["", ""]
+
+
+@pytest.mark.parametrize("stored,expected", [(["a", ""], ["a"]), (["", "b"], ["b"]), (["", ""], [""])])
+def test_chapter_notes_merge_omits_empty(stored, expected):
+    from library.transcript_chapter_boundaries import edit_chapter_notes
+    original = stored.copy()
+    assert edit_chapter_notes(TEXT, stored, "merge_chapter", 2) == expected
+    assert stored == original

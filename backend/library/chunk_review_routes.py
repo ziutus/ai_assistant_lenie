@@ -646,6 +646,7 @@ def document_ai_chapters(doc_id: int):
         stale_runs = _chapter_boundary_run_count(session, doc_id)
         doc.text = updated
         doc.chapter_types = ["TEMAT"] * count
+        doc.chapter_notes = [""] * count
         session.commit()
         return jsonify(status="ok", chapter_count=count, stale_analysis_runs=stale_runs)
     model = body.get("model") or suggester.default_model(session)
@@ -802,7 +803,7 @@ def document_chapter_sections(doc_id: int):
     if not (doc.text or "").strip():
         return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
     sections = describe_sections(
-        doc.text, stored_types=doc.chapter_types,
+        doc.text, stored_types=doc.chapter_types, stored_notes=doc.chapter_notes,
         with_sentences="position" not in request.args and request.args.get("with_sentences") == "1",
     )
     try:
@@ -926,7 +927,7 @@ def _chapter_boundary_run_count(session, doc_id: int) -> int:
 def _edit_transcript_chapters(doc_id: int, operation, fields: dict[str, type]):
     """Shared guards, strict JSON validation and persistence for chapter edits."""
     from library.document_editing import document_has_embeddings
-    from library.transcript_chapter_boundaries import describe_sections, edit_chapter_types
+    from library.transcript_chapter_boundaries import describe_sections, edit_chapter_notes, edit_chapter_types
 
     session = get_scoped_session()
     doc = session.get(Document, doc_id)
@@ -952,24 +953,36 @@ def _edit_transcript_chapters(doc_id: int, operation, fields: dict[str, type]):
         message = ("Pola position i sentences muszą być liczbami całkowitymi." if "sentences" in fields
                    else "Nieprawidłowe pola żądania lub typy danych.")
         return jsonify({"status": "error", "message": message}), 400
+    note_edit = "note" in fields
     try:
+        if operation and operation.__name__ == "split_chapter" and "chapter_type" in payload:
+            if not isinstance(payload["chapter_type"], str):
+                raise ValueError("Nieprawidłowy typ nowego rozdziału.")
         updated = operation(doc.text, **{key: payload[key] for key in fields}) if operation else doc.text
+        operation_name = operation.__name__ if operation else "chapter_note" if note_edit else "chapter_type"
+        notes = edit_chapter_notes(doc.text, doc.chapter_notes, operation_name, payload["position"], payload.get("note"))
         types, conflict = edit_chapter_types(
-            doc.text, doc.chapter_types, operation.__name__ if operation else "chapter_type",
-            payload["position"], payload.get("type"),
+            doc.text, doc.chapter_types, operation.__name__ if operation else "move_boundary" if note_edit else "chapter_type",
+            payload["position"], payload.get("type"), new_chapter_type=payload.get("chapter_type"),
         )
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
-    stale_runs = _chapter_boundary_run_count(session, doc_id)
+    stale_runs = 0 if note_edit else _chapter_boundary_run_count(session, doc_id)
     if operation:
         doc.text = updated
     doc.chapter_types = types
+    doc.chapter_notes = notes
     session.commit()
     return jsonify({
-        "status": "success", "doc_id": doc_id, "sections": describe_sections(updated, stored_types=types),
+        "status": "success", "doc_id": doc_id, "sections": describe_sections(updated, stored_types=types, stored_notes=notes),
         **({"type_conflict": conflict} if conflict else {}),
         "has_embeddings": False, "has_analysis_runs": bool(stale_runs), "stale_analysis_runs": stale_runs,
     })
+
+
+@bp.route("/document/<int:doc_id>/chapter_note", methods=["POST"])
+def set_document_chapter_note(doc_id: int):
+    return _edit_transcript_chapters(doc_id, None, {"position": int, "note": str})
 
 
 @bp.route("/document/<int:doc_id>/chapter_type", methods=["POST"])

@@ -1,4 +1,5 @@
 import React from "react";
+import CollapsibleSection from "../components/CollapsibleSection/collapsibleSection";
 import TranscriptChaptersSuggest from "../components/TranscriptChaptersSuggest/transcriptChaptersSuggest";
 import SkillCommand from "../components/SkillCommand";
 import ChapterBoundariesPanel from "../components/ChapterBoundariesPanel/chapterBoundariesPanel";
@@ -211,8 +212,8 @@ const Youtube = () => {
       {id && <NavLink to={`/llm-costs?document_id=${id}`} style={{ display: "inline-block", marginBottom: 10, fontSize: "0.9em", color: "#0369a1" }}>💰 Koszty i etapy LLM</NavLink>}
       <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
         {id && (
-          <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
-            <strong>Opis filmu</strong>
+          <>
+          <CollapsibleSection key={String(hasDescription)} title="Opis filmu" defaultOpen={!hasDescription}>
             <div style={{ marginTop: 6, color: "#475569" }}>
               Pobiera aktualny opis z YouTube i wyciąga z niego spis rozdziałów (linie w formacie „0:00 Tytuł”). Nadpisuje pole „Chapter list” poniżej, jeśli znajdzie co najmniej dwa znaczniki czasu{hasDescription ? " — ponowne pobranie zastąpi obecną listę rozdziałów" : ""}.
             </div>
@@ -221,11 +222,15 @@ const Youtube = () => {
                 ✓ Opis zapisany ({descriptionLength} znaków), {chapterCount > 0 ? `rozdziałów: ${chapterCount}` : "brak spisu rozdziałów"}
               </div>
             )}
-            <button type="button" className="button" style={{ marginTop: 10 }} onClick={refetchDescription} disabled={refetchingDescription || isLoading}>
+            {!hasDescription && <button type="button" className="button" style={{ marginTop: 10 }} onClick={refetchDescription} disabled={refetchingDescription || isLoading}>
               {refetchingDescription ? "Pobieram opis…" : hasDescription ? "Pobierz opis ponownie (odśwież z YouTube)" : "Pobierz opis z YouTube"}
-            </button>
+            </button>}
             {descriptionMessage && <div style={{ marginTop: 8 }}>{descriptionMessage}</div>}
-          </section>
+          </CollapsibleSection>
+          {hasDescription && <button type="button" className="button" style={{ marginTop: 10 }} onClick={refetchDescription} disabled={refetchingDescription || isLoading}>
+              {refetchingDescription ? "Pobieram opis…" : hasDescription ? "Pobierz opis ponownie (odśwież z YouTube)" : "Pobierz opis z YouTube"}
+            </button>}
+          </>
         )}
         {formik.values.outline_md?.trim() && (
           <details style={{ marginBottom: 14 }}>
@@ -272,8 +277,7 @@ const Youtube = () => {
           }} />
         )}
         {id && !transcriptMissing && (
-          <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
-            <strong>Formatowanie transkrypcji</strong>
+          <CollapsibleSection key={String(hasMarkdownChapters)} title="Formatowanie transkrypcji" defaultOpen={!hasMarkdownChapters}>
             <div style={{ marginTop: 6, color: "#475569" }}>
               Bielik wskaże granice akapitów w obrębie istniejących rozdziałów. Zmieni wyłącznie odstępy między zdaniami{alreadyParagraphized ? ". Ponowne uruchomienie jest zwykle zbędne i zużywa wywołania modelu" : ""}.
             </div>
@@ -299,7 +303,7 @@ const Youtube = () => {
               {paragraphizing ? "Dzielę na akapity…" : alreadyParagraphized ? "Podziel na akapity ponownie (Bielik)" : "Podziel transkrypcję na akapity (Bielik)"}
             </button>
             {paragraphMessage && <div style={{ marginTop: 8 }}>{paragraphMessage}</div>}
-          </section>
+          </CollapsibleSection>
         )}
         {id && showChapterEditor && (
           <ChapterBoundariesPanel key={id} docId={id} defaultOpen disabled={isLoading || paragraphizing}

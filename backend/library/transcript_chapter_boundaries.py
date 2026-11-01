@@ -50,9 +50,10 @@ def _sentence_spans(body: str) -> list[tuple[int, int]]:
     return spans
 
 
-def describe_sections(text: str, *, with_sentences: bool = False, stored_types=None) -> list[dict]:
+def describe_sections(text: str, *, with_sentences: bool = False, stored_types=None, stored_notes=None) -> list[dict]:
     """Describe H2 chapters, with position 0 reserved for an optional preamble."""
     types = resolve_chapter_types(text, stored_types)
+    notes = resolve_chapter_notes(text, stored_notes)
     result = []
     position = 0
     for section in parse_sections(text):
@@ -63,6 +64,7 @@ def describe_sections(text: str, *, with_sentences: bool = False, stored_types=N
         sentences = [section.body[start:end].strip() for start, end in _sentence_spans(section.body)]
         result.append({
             "position": position,
+            "note": notes[position - 1] if section.heading else "",
             "type": types[position - 1] if section.heading else "TEMAT",
             "title": section.heading[3:].strip() if section.heading else "",
             "is_preamble": not bool(section.heading),
@@ -201,14 +203,19 @@ def resolve_chapter_types(text: str, stored) -> list[str]:
     return [value if isinstance(value, str) and value in CHAPTER_TYPES else "TEMAT" for value in stored]
 
 
-def edit_chapter_types(text: str, stored, operation: str, position: int, chapter_type=None) -> tuple[list[str], dict]:
+def edit_chapter_types(text: str, stored, operation: str, position: int, chapter_type=None,
+                       new_chapter_type=None) -> tuple[list[str], dict]:
     """Maintain positional types alongside a validated text edit, without mutating stored JSON."""
     types = resolve_chapter_types(text, stored)
     if type(position) is not int or not 1 <= position <= len(types):
         raise ValueError("Nie ma rozdziału o podanym numerze.")
     conflict = {}
     if operation == "split_chapter":
-        types.insert(position, types[position - 1])
+        if new_chapter_type is not None and (
+            not isinstance(new_chapter_type, str) or new_chapter_type not in CHAPTER_TYPES
+        ):
+            raise ValueError("Typ rozdziału musi być jednym z: TEMAT, REKLAMA, SZUM, ZRODLA.")
+        types.insert(position, new_chapter_type if new_chapter_type is not None else types[position - 1])
     elif operation == "merge_chapter":
         if position < 2:
             raise ValueError("Pierwszego rozdziału nie można scalić z poprzednim.")
@@ -223,3 +230,30 @@ def edit_chapter_types(text: str, stored, operation: str, position: int, chapter
     elif operation != "move_boundary":
         raise ValueError("Nieznana operacja na rozdziałach.")
     return types, conflict
+
+
+def resolve_chapter_notes(text: str, stored) -> list[str]:
+    count = sum(bool(section.heading) for section in parse_sections(text))
+    if not isinstance(stored, list) or len(stored) != count:
+        return [""] * count
+    return [value if isinstance(value, str) else "" for value in stored]
+
+
+def edit_chapter_notes(text: str, stored, operation: str, position: int, note=None) -> list[str]:
+    notes = resolve_chapter_notes(text, stored)
+    if type(position) is not int or not 1 <= position <= len(notes):
+        raise ValueError("Nie ma rozdziału o podanym numerze.")
+    if operation == "split_chapter":
+        notes.insert(position, "")
+    elif operation == "merge_chapter":
+        if position < 2:
+            raise ValueError("Pierwszego rozdziału nie można scalić z poprzednim.")
+        merged = "\n\n".join(value for value in notes[position - 2:position] if value.strip())
+        if len(merged) > 2000:
+            raise ValueError("Połączona notatka przekracza 2000 znaków. Skróć notatki przed scaleniem.")
+        notes[position - 2:position] = [merged]
+    elif operation == "chapter_note":
+        if not isinstance(note, str) or len(note) > 2000:
+            raise ValueError("Notatka musi być tekstem o długości do 2000 znaków.")
+        notes[position - 1] = note
+    return notes
