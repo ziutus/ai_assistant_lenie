@@ -25,6 +25,10 @@ class _Session:
     def __init__(self, item):
         self.item = item
         self.statement = None
+        self.decisions = []
+
+    def add(self, row):
+        self.decisions.append(row)
 
     def get(self, model, item_id):
         return self.item if self.item.id == item_id else None
@@ -41,7 +45,7 @@ class _Session:
 
 @pytest.mark.parametrize("source", ["new", "llm_analysis_requested", "error"])
 def test_saved_for_later_transition_records_user_and_timestamp(source):
-    item = SimpleNamespace(id=7, status=source, saved_at=None, saved_by_user_id=None)
+    item = FeedItem(id=7, status=source, saved_at=None, saved_by_user_id=None, group_memberships=[])
     session = _Session(item)
     result = transition_item(session, 7, "saved_for_later", 42)
     assert result is item
@@ -50,6 +54,8 @@ def test_saved_for_later_transition_records_user_and_timestamp(source):
     assert params["saved_by_user_id"] == 42
     assert isinstance(params["saved_at"], dt.datetime)
     assert "reviewed_at" not in params
+    assert len(session.decisions) == 1
+    assert session.decisions[0].previous_status == source
 
 
 def test_saved_for_later_can_restore_to_new():
