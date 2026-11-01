@@ -17,6 +17,7 @@ import Chunks from "./modules/shared/pages/chunks";
 import NerChapters from "./modules/shared/pages/nerChapters";
 import Places from "./modules/shared/pages/places";
 import WorldEvents from "./modules/shared/pages/worldEvents";
+import Geopolitics from "./modules/shared/pages/geopolitics";
 import Products from "./modules/shared/pages/products";
 import ProductDetail from "./modules/shared/pages/productDetail";
 import Read from "./modules/shared/pages/read";
@@ -115,6 +116,7 @@ function App() {
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/places" element={<Places />} />
                   <Route path="/world-events" element={<WorldEvents />} />
+                  <Route path="/geopolitics" element={<Geopolitics />} />
                   <Route path="/products" element={<Products />} />
                   <Route path="/products/:name" element={<ProductDetail />} />
                   <Route path="/sources" element={<Sources />} />

@@ -2,7 +2,7 @@ import React from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 
-type Variant = "feed_item" | "document";
+type Variant = "feed_item" | "document" | "event_extraction";
 type Template = {
   id: number; variant: Variant; version: number; label: string; system_template: string | null; user_template: string;
   note: string | null; is_active: boolean; created_at: string | null;
@@ -16,7 +16,9 @@ type ComparisonRow = {
   accept_rate: number | null; no_match_runs: number; last_run_at: string | null;
 };
 
-const VARIANT_LABELS: Record<Variant, string> = { feed_item: "Kuracja feedów", document: "Dokumenty (Tematy)" };
+const VARIANT_LABELS: Record<Variant, string> = { feed_item: "Kuracja feedów", document: "Dokumenty (Tematy)", event_extraction: "Geopolityka (zdarzenia)" };
+// Every variant belongs to one task; the task decides the allowed variables and the preview.
+const TASK_OF: Record<Variant, string> = { feed_item: "content_group_suggestion", document: "content_group_suggestion", event_extraction: "geopolitics_events" };
 const DAY_OPTIONS = [{ value: 30, label: "30 dni" }, { value: 90, label: "90 dni" }, { value: 365, label: "rok" }, { value: 0, label: "całość" }];
 const TIMEOUT_MS = 20_000;
 const mono: React.CSSProperties = { fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: ".85rem", width: "100%", boxSizing: "border-box" };
@@ -44,7 +46,10 @@ async function request(url: string, init: RequestInit): Promise<Record<string, u
 export default function PromptTemplates() {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [searchParams, setSearchParams] = useSearchParams();
-  const variant: Variant = searchParams.get("variant") === "document" ? "document" : "feed_item";
+  const variantParam = searchParams.get("variant");
+  const variant: Variant = variantParam === "document" || variantParam === "event_extraction" ? variantParam : "feed_item";
+  const task = TASK_OF[variant];
+  const isGeopolitics = variant === "event_extraction";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "", "Content-Type": "application/json" }), [apiKey]);
 
   const [templates, setTemplates] = React.useState<Template[]>([]);
@@ -55,7 +60,7 @@ export default function PromptTemplates() {
   const [user, setUser] = React.useState("");
   const [note, setNote] = React.useState("");
   const [feedItemId, setFeedItemId] = React.useState("");
-  const [preview, setPreview] = React.useState<{ system: string | null; user: string; feed_item_id: number | null } | null>(null);
+  const [preview, setPreview] = React.useState<{ system: string | null; user: string; feed_item_id?: number | null; document_id?: number | null } | null>(null);
   const [days, setDays] = React.useState(90);
   const [rows, setRows] = React.useState<ComparisonRow[]>([]);
   const [runsConsidered, setRunsConsidered] = React.useState(0);
@@ -78,7 +83,7 @@ export default function PromptTemplates() {
   const loadTemplates = React.useCallback(async (selectId?: number) => {
     setError("");
     try {
-      const data = await request(`${apiUrl}/prompt_templates?variant=${variant}`, { headers });
+      const data = await request(`${apiUrl}/prompt_templates?task=${task}&variant=${variant}`, { headers });
       const list = (Array.isArray(data.templates) ? data.templates : []) as Template[];
       setTemplates(list);
       setBuiltin((data.builtin || {}) as Builtin);
@@ -87,15 +92,16 @@ export default function PromptTemplates() {
       setSelectedId(next ? next.id : "builtin");
       loadEditor(next ?? (data.builtin as Builtin | undefined)?.[variant]);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać szablonów"); }
-  }, [apiUrl, headers, variant, loadEditor]);
+  }, [apiUrl, headers, variant, task, loadEditor]);
 
   const loadComparison = React.useCallback(async () => {
+    if (isGeopolitics) { setRows([]); setRunsConsidered(0); return; }
     try {
       const data = await request(`${apiUrl}/prompt_templates/comparison?variant=${variant}&days=${days}`, { headers });
       setRows((Array.isArray(data.rows) ? data.rows : []) as ComparisonRow[]);
       setRunsConsidered(Number(data.runs_considered || 0));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Nie udało się pobrać porównania"); }
-  }, [apiUrl, headers, variant, days]);
+  }, [apiUrl, headers, variant, days, isGeopolitics]);
 
   React.useEffect(() => { void loadTemplates(); }, [loadTemplates]);
   React.useEffect(() => { void loadComparison(); }, [loadComparison]);
@@ -115,7 +121,7 @@ export default function PromptTemplates() {
 
   const save = (activate: boolean) => run(async () => {
     const data = await request(`${apiUrl}/prompt_templates`, {
-      method: "POST", headers, body: JSON.stringify({ variant, system_template: system || null, user_template: user, note, activate }),
+      method: "POST", headers, body: JSON.stringify({ task, variant, system_template: system || null, user_template: user, note, activate }),
     });
     const created = data.template as Template;
     await loadTemplates(created.id);
@@ -130,11 +136,11 @@ export default function PromptTemplates() {
 
   const showPreview = () => run(async () => {
     const id = feedItemId.trim() ? Number(feedItemId) : undefined;
-    if (id !== undefined && !Number.isInteger(id)) throw new Error("Numer wpisu musi być liczbą całkowitą");
+    if (id !== undefined && !Number.isInteger(id)) throw new Error(isGeopolitics ? "Numer dokumentu musi być liczbą całkowitą" : "Numer wpisu musi być liczbą całkowitą");
     const data = await request(`${apiUrl}/prompt_templates/preview`, {
-      method: "POST", headers, body: JSON.stringify({ variant, system_template: system || null, user_template: user, feed_item_id: id }),
+      method: "POST", headers, body: JSON.stringify({ task, variant, system_template: system || null, user_template: user, ...(isGeopolitics ? { document_id: id } : { feed_item_id: id }) }),
     });
-    setPreview(data as { system: string | null; user: string; feed_item_id: number | null });
+    setPreview(data as { system: string | null; user: string; feed_item_id?: number | null; document_id?: number | null });
   });
 
   const money = (row: ComparisonRow) => Object.entries(row.cost).map(([currency, cost]) => (
@@ -149,8 +155,9 @@ export default function PromptTemplates() {
   return <div style={{ padding: "0 16px 32px", maxWidth: 1100 }}>
     <h1>Prompty LLM</h1>
     <p style={{ color: "#475569" }}>
-      Treść promptu podpowiadającego tematy jest w bazie. Zapis tworzy <strong>nową wersję</strong> (stare zostają, każdy przebieg pamięta wersję i model),
-      więc zmiana działa bez wdrażania aplikacji, a poniżej porównasz modele i brzmienia. Wersję można też wybrać ręcznie w <Link to="/feed-review">Kuracji feedów</Link>.
+      Treść promptów jest w bazie: podpowiadanie tematów oraz analiza geopolityczna. Zapis tworzy <strong>nową wersję</strong> (stare zostają, każdy przebieg pamięta wersję i model),
+      więc zmiana działa bez wdrażania aplikacji. Dla tematów poniżej porównasz modele i brzmienia; wersję można też wybrać ręcznie w <Link to="/feed-review">Kuracji feedów</Link>.
+      Wersja promptu geopolitycznego zapisuje się przy każdym zdarzeniu i propozycji na <Link to="/geopolitics?tab=events">stronie Geopolityka</Link>.
     </p>
 
     <div role="tablist" style={{ display: "flex", gap: 8, margin: "12px 0" }}>
@@ -185,7 +192,9 @@ export default function PromptTemplates() {
         <p>Szablon Jinja2 (tryb bezpieczny): <code>{"{{ zmienna }}"}</code>, <code>{"{% if schema %}…{% endif %}"}</code>. Nieznana zmienna blokuje zapis.</p>
         <ul>{Object.entries(variables).map(([name, description]) => <li key={name}><code>{`{{ ${name} }}`}</code> — {description}</li>)}</ul>
         <p>Dla modeli bez trybu strukturalnego schemat JSON trafia do <code>schema</code>; dla pozostałych <code>schema</code> jest pusty, a schemat idzie osobno jako <code>response_format</code>.
-          Kod nadal wymaga od modelu kluczy <code>suggestions</code>, <code>no_match</code>{variant === "feed_item" ? " i new_topics" : ""} — nie usuwaj ich z instrukcji.</p>
+          {isGeopolitics
+            ? <>Kod nadal wymaga od modelu tablicy JSON z kluczami <code>title</code>, <code>date</code>, <code>quote</code>, <code>participants</code>, <code>relation</code> — nie usuwaj ich z instrukcji. Cytat jest sprawdzany względem tekstu dokumentu.</>
+            : <>Kod nadal wymaga od modelu kluczy <code>suggestions</code>, <code>no_match</code>{variant === "feed_item" ? " i new_topics" : ""} — nie usuwaj ich z instrukcji.</>}</p>
       </details>
 
       <label htmlFor="pt-note">Notatka do wersji <small style={{ color: "#64748b" }}>(po co ta zmiana, np. „krótszy, bez przykładów”)</small></label>
@@ -200,19 +209,20 @@ export default function PromptTemplates() {
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
         <button type="button" disabled={busy || !user.trim()} onClick={() => void showPreview()}>Podgląd (bez wywołania modelu)</button>
-        {variant === "feed_item" && <>
-          <label htmlFor="pt-feed-item">na wpisie nr</label>
-          <input id="pt-feed-item" inputMode="numeric" size={8} placeholder="np. 12382" value={feedItemId} onChange={event => setFeedItemId(event.target.value)} />
+        {variant !== "document" && <>
+          <label htmlFor="pt-feed-item">{isGeopolitics ? "na dokumencie nr" : "na wpisie nr"}</label>
+          <input id="pt-feed-item" inputMode="numeric" size={8} placeholder={isGeopolitics ? "np. 11205" : "np. 12382"} value={feedItemId} onChange={event => setFeedItemId(event.target.value)} />
         </>}
       </div>
       {preview && <div aria-label="Podgląd">
         {preview.system && <><h3>System</h3><pre style={{ ...mono, whiteSpace: "pre-wrap", background: "#f1f5f9", padding: 8 }}>{preview.system}</pre></>}
-        <h3>Użytkownik{preview.feed_item_id ? ` (wpis ${preview.feed_item_id})` : " (przykładowy materiał)"}</h3>
+        <h3>Użytkownik{preview.feed_item_id ? ` (wpis ${preview.feed_item_id})` : preview.document_id ? ` (dokument ${preview.document_id})` : " (przykładowy materiał)"}</h3>
         <pre style={{ ...mono, whiteSpace: "pre-wrap", background: "#f1f5f9", padding: 8 }}>{preview.user}</pre>
       </div>}
     </section>
 
-    <section aria-label="Porównanie" style={{ marginTop: 32 }}>
+    {isGeopolitics && <p style={{ color: "#475569", marginTop: 24 }}>Porównania modeli i wersji dla tego promptu jeszcze nie ma. Zobacz, co dała dana wersja, na liście zdarzeń i propozycji (pole „prompt”), a koszt w <Link to="/llm-costs">kosztach LLM</Link> (operacja <code>geopolitics_event_extraction</code>).</p>}
+    {!isGeopolitics && <section aria-label="Porównanie" style={{ marginTop: 32 }}>
       <h2>Porównanie modeli i wersji promptu</h2>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <label htmlFor="pt-days">Okres:</label>
@@ -242,6 +252,6 @@ export default function PromptTemplates() {
           </tr>)}</tbody>
         </table>
       </div>}
-    </section>
+    </section>}
   </div>;
 }

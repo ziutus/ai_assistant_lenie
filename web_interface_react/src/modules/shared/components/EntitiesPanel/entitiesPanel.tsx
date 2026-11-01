@@ -547,6 +547,7 @@ const EntitiesPanel = ({
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [isDetectingCountries, setIsDetectingCountries] = React.useState(false);
+  const [isProposingGeopolitics, setIsProposingGeopolitics] = React.useState(false);
   const [fetchedCountries, setFetchedCountries] = React.useState<CountryTag[]>([]);
   const countries = providedCountries ?? fetchedCountries;
   const [enrichmentJob, setEnrichmentJob] = React.useState<EntityEnrichmentJob | null>(null);
@@ -769,6 +770,38 @@ const EntitiesPanel = ({
       setMessage(`Nie udało się wykryć państw: ${error.response?.data?.message || error.message}`);
     } finally {
       setIsDetectingCountries(false);
+      onBusyChange?.(false);
+    }
+  };
+
+  // Asks the household's default model for geopolitical events of this document (ADR-033). It only creates
+  // proposals; the reader confirms them on /geopolitics, so nothing reaches the map from here.
+  const handleProposeGeopolitics = async () => {
+    if (!docId) return;
+    setIsProposingGeopolitics(true);
+    onBusyChange?.(true);
+    setMessage("");
+    try {
+      const response = await axios.post(
+        `${apiUrl}/document/${docId}/geopolitics/detect`, {}, { headers: jsonHeaders, timeout: 180000 },
+      );
+      const d = response.data;
+      const rejected = Object.values((d.rejected ?? {}) as Record<string, number>).reduce((a, b) => a + b, 0);
+      const cost = d.usage?.llm_cost_amount != null
+        ? ` Koszt ${Number(d.usage.llm_cost_amount).toFixed(4)} ${d.usage.llm_cost_currency ?? ""}${d.usage.llm_cost_status === "estimated" ? " (szacunek)" : ""}, model ${d.model}.`
+        : ` Model ${d.model}, koszt nieznany.`;
+      setMessage(d.events_created + d.events_existing === 0
+        ? `Geopolityka: model nie znalazł zdarzeń do zapisania${rejected ? ` (odrzucone przez walidację: ${rejected})` : ""}.${cost}`
+        : `Geopolityka: ${d.events_created} nowych zdarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji`
+          + `${d.assessments_merged ? ` (+${d.assessments_merged} dowodów dołączono do istniejących)` : ""}`
+          + `${rejected ? `, odrzucone przez walidację: ${rejected}` : ""}. Zatwierdź je w Geopolityka → Propozycje.${cost}`);
+    } catch (error: any) {
+      console.error("Error proposing geopolitics", error);
+      const reason = error.response?.data?.message
+        || (error.response ? `serwer odpowiedział błędem ${error.response.status}` : "brak odpowiedzi serwera");
+      setMessage(`Nie udało się zaproponować relacji geopolitycznych: ${reason}`);
+    } finally {
+      setIsProposingGeopolitics(false);
       onBusyChange?.(false);
     }
   };
@@ -1935,13 +1968,19 @@ const EntitiesPanel = ({
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <strong>Osoby, miejsca i obiekty (NER)</strong>
-        <button className={"button"} type="button" disabled={isRefreshing || isDetectingCountries || enrichmentActive || externalDisabled} onClick={handleRefresh}>
+        <button className={"button"} type="button" disabled={isRefreshing || isDetectingCountries || isProposingGeopolitics || enrichmentActive || externalDisabled} onClick={handleRefresh}>
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby, miejsca i obiekty"}
         </button>
         <button className={"button"} type="button"
-          disabled={isRefreshing || isDetectingCountries || enrichmentActive || externalDisabled}
+          disabled={isRefreshing || isDetectingCountries || isProposingGeopolitics || enrichmentActive || externalDisabled}
           onClick={handleDetectCountries}>
           {isDetectingCountries ? "Wykrywam państwa..." : "Wykryj państwa"}
+        </button>
+        <button className={"button"} type="button"
+          title="Model (domyślny z strony Geopolityka) tylko proponuje zdarzenia i zmiany relacji między państwami; nic nie trafia na mapę bez Twojego zatwierdzenia."
+          disabled={isRefreshing || isDetectingCountries || isProposingGeopolitics || enrichmentActive || externalDisabled}
+          onClick={handleProposeGeopolitics}>
+          {isProposingGeopolitics ? "Analizuję geopolitykę..." : "Zaproponuj relacje geopolityczne"}
         </button>
         {!isEmpty && (
           <button className={"button"} type="button" onClick={() => { setRenameFor(null); setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setPlaceMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
