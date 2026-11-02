@@ -13,7 +13,7 @@ repos:
       - id: trufflehog
         name: TruffleHog - Detect verified secrets
         description: Detect secrets with online verification.
-        entry: trufflehog git file://. --since-commit HEAD --results=verified --fail --trust-local-git-config
+        entry: bash ./scripts/trufflehog-hook.sh
         language: system
         pass_filenames: false
         stages: ["pre-commit", "pre-push"]

@@ -55,7 +55,13 @@ FOUND_SECRETS=0
 # --- TruffleHog ---
 echo "--- TruffleHog ---"
 if command -v trufflehog &>/dev/null; then
-    TRUFFLEHOG_ARGS=(git "file://." --no-update --json)
+    # `file://.` fails in a linked worktree (.git is a file there), and the `2>/dev/null || true`
+    # below would hide it: the scan would silently cover nothing. The MAIN checkout (parent of the
+    # common git dir) is a real repository from every worktree; a bare `.git` directory reads 0 chunks.
+    COMMON_GIT_DIR="$(git rev-parse --path-format=absolute --git-common-dir)"
+    MAIN_CHECKOUT="$(dirname "$COMMON_GIT_DIR")"
+    if command -v cygpath &>/dev/null; then MAIN_CHECKOUT="$(cygpath -m "$MAIN_CHECKOUT")"; fi
+    TRUFFLEHOG_ARGS=(git "file://$MAIN_CHECKOUT" --no-update --json)
     if [[ "$MODE" == "full" ]]; then
         echo "Scanning entire repository history..."
     else
