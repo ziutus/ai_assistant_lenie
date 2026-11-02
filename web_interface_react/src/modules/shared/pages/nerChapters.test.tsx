@@ -424,6 +424,17 @@ it("copies the selected fragment from the context menu", async () => {
   await waitFor(() => expect(screen.queryByRole("menu", { name: "Dodaj encję z zaznaczenia" })).toBeNull());
 });
 
+it("searches the selected fragment in Google from the context menu", async () => {
+  const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => " Hara   Bolsonaro " } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  fireEvent.click(screen.getByRole("menuitem", { name: "🔍 Szukaj w Google" }));
+  expect(openSpy).toHaveBeenCalledWith(
+    "https://www.google.com/search?q=Hara%20Bolsonaro", "_blank", "noopener,noreferrer");
+  await waitFor(() => expect(screen.queryByRole("menu", { name: "Dodaj encję z zaznaczenia" })).toBeNull());
+});
+
 it("explains that a selected fragment is already an entity", async () => {
   vi.mocked(axios.post).mockRejectedValue(Object.assign(new Error("409"), {
     isAxiosError: true,

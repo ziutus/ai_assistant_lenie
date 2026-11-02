@@ -66,6 +66,13 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
     else setError("Nie udało się skopiować — zaznacz tekst i użyj Ctrl+C.");
   };
 
+  // Opens a Google search for the selected fragment (not the entity-name field, which may be edited
+  // into a canonical form) in a new tab.
+  const searchGoogle = () => {
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    onClose();
+  };
+
   // "Popraw błąd w transkrypcji": stores a literal phrase rule (POST /transcript_corrections, applied to
   // every future transcript) and rewrites this document's text now (POST /transcript_corrections/apply).
   // Entities are not rebuilt by the backend, so the page refreshes the panel and the reviewer re-runs NER.
@@ -181,6 +188,7 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
             <button type="button" role="menuitem" onClick={() => { setError(""); setFixing(true); }}>
               ✏️ Popraw błąd w transkrypcji
             </button>
+            <button type="button" role="menuitem" onClick={searchGoogle}>🔍 Szukaj w Google</button>
             <button type="button" role="menuitem" onClick={() => void copy()}>📋 Kopiuj</button>
             <button type="button" onClick={onClose}>Anuluj</button>
           </div>
