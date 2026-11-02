@@ -61,7 +61,8 @@ the YouTube editor when `outline_md` is empty (`/lenie-youtube-outline`),
 `/feeds` and `/feed-review` headings (`/lenie-feed-review`), the radar heading
 (`/lenie-tool-draft`), the contact page header (`/lenie-contact-facebook-enrich`,
 `-linkedin-info`, `-photo-split`, `/lenie-person-lookup`) and `ArticlePreparationPanel`
-next to the removed-lines preview (`/lenie-review-removed-lines`).
+next to the removed-lines preview (`/lenie-review-removed-lines`) and `ChapterEventsPanel` (`/lenie-chapter-world-events <id> <chapter>`:
+reviews the chapter's event proposals, checks the registry for duplicates, picks kind and countries and, after approval, promotes them).
 `/lenie-shopping-check` has no hint: it runs before a purchase, not from a page.
 
 ### Multi-value filters

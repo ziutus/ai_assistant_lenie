@@ -2,6 +2,7 @@ import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import RequestErrorDetails from "../RequestErrorDetails/requestErrorDetails";
+import SkillHint from "../SkillHint";
 import { describeRequestError, type RequestErrorInfo } from "../../utils/requestError";
 
 interface RegistryRef { id: number; title: string }
@@ -220,6 +221,11 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
             title="Model szuka w tym rozdziale zdarzeń z datą; wynik zastępuje wcześniejsze propozycje tego rozdziału">
             {busy ? "⏳ Wykrywam zdarzenia…" : "🔎 Wykryj zdarzenia"}
           </button>
+          {" "}
+          <SkillHint skill="/lenie-chapter-world-events" command={`/lenie-chapter-world-events ${docId} ${position}`}>
+            Skill przejrzy zdarzenia tego rozdziału, sprawdzi duplikaty w rejestrze, dobierze rodzaj i kraje i po
+            Twojej zgodzie doda je do zdarzeń globalnych.
+          </SkillHint>
           {note && <p role="status" style={{ color: "#166534", margin: "4px 0" }}>{note}</p>}
           {error && (
             <div role="alert" style={{ color: "#a33" }}>
