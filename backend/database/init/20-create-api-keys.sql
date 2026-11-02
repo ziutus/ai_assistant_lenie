@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.api_keys (
     active       BOOLEAN NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
     last_used_at TIMESTAMP,
+    expires_at   TIMESTAMP,  -- temporary keys; NULL = never expires
     CONSTRAINT ck_api_keys_user_id_kind CHECK ((kind = 'user') = (user_id IS NOT NULL))
 );
 

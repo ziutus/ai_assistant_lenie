@@ -4,7 +4,8 @@ Endpoints (x-api-key required via the global before_request; management
 endpoints additionally require a SERVICE key — user and read-only keys get 403):
   GET    /whoami            — identity carried by the presented key
   GET    /api_keys          — [service] list keys (no hashes, prefix only)
-  POST   /api_keys          — [service] create key {kind, name, user_id?};
+  POST   /api_keys          — [service] create key {kind, name, user_id?,
+                              ttl_seconds? (temporary key, max 7 days)};
                               returns the plaintext ONCE
   DELETE /api_keys/<id>     — [service] deactivate (active=false)
 """
@@ -47,6 +48,7 @@ def _key_to_dict(row: ApiKey) -> dict:
         "active": row.active,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+        "expires_at": row.expires_at.isoformat() if row.expires_at else None,
     }
 
 
@@ -88,6 +90,7 @@ def create_api_key_endpoint():
             kind=data.get("kind") or "",
             name=data.get("name") or "",
             user_id=user_id,
+            ttl_seconds=data.get("ttl_seconds"),
         )
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
