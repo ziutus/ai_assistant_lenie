@@ -2238,9 +2238,12 @@ def document_events(doc_id: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
+    query = session.query(DocumentEvent).filter(DocumentEvent.document_id == doc_id)
+    chapter_filter = request.args.get("chapter_position", type=int)
+    if chapter_filter is not None:
+        query = query.filter(DocumentEvent.chapter_position == chapter_filter)
     rows = (
-        session.query(DocumentEvent)
-        .filter(DocumentEvent.document_id == doc_id)
+        query
         .order_by(
             DocumentEvent.sort_year.asc().nullslast(),
             DocumentEvent.event_date.asc().nullslast(),
@@ -2265,6 +2268,67 @@ def document_events(doc_id: int):
             }
             for row in rows
         ],
+    })
+
+
+def _event_to_dict(row) -> dict:
+    return {
+        "id": row.id,
+        "date_text": row.date_text,
+        "event_date": row.event_date.isoformat() if row.event_date else None,
+        "event_date_end": row.event_date_end.isoformat() if row.event_date_end else None,
+        "date_precision": row.date_precision,
+        "description": row.description,
+        "anchor_quote": row.anchor_quote,
+        "chapter_position": row.chapter_position,
+    }
+
+
+@bp.route("/document/<int:doc_id>/chapter/<int:position>/detect_events", methods=["POST"])
+def document_chapter_detect_events(doc_id: int, position: int):
+    """Detect dated events in ONE chapter and store them as proposals (``document_events``).
+
+    Replaces the stored events of that chapter only. Body: optional ``{"model": "..."}``; the default is
+    the model of the document's latest analysis run, else the timeline default.
+    """
+    from library.timeline_events import refresh_document_events
+
+    data = request.get_json(silent=True) or {}
+    model = data.get("model")
+    if model is not None and not isinstance(model, str):
+        return jsonify({"status": "error", "message": "model must be a string"}), 400
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not model:
+        run = _latest_run_for_document(session, doc_id)
+        model = run.model if run else None
+
+    try:
+        result = refresh_document_events(session, doc, model or None, chapter_position=position)
+        session.commit()
+    except ValueError:
+        session.rollback()
+        logger.info("chapter event detection refused for document %s chapter %s", doc_id, position, exc_info=True)
+        return jsonify({"status": "error", "message": "Chapter not found or document has no usable text"}), 400
+    except Exception:
+        session.rollback()
+        logger.exception("chapter event detection failed for document %s chapter %s", doc_id, position)
+        return jsonify({"status": "error", "message": "Event detection failed"}), 500
+
+    rows = result.pop("rows", [])
+    report = (result.get("chapters") or [{}])[0]
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "chapter_position": position,
+        "model": result.get("model"),
+        "events": [_event_to_dict(row) for row in rows],
+        "rejected_without_quote": report.get("rejected_without_quote", 0),
+        "rejected_without_date": report.get("rejected_without_date", 0),
+        "invalid_json": report.get("invalid_json", 0),
     })
 
 

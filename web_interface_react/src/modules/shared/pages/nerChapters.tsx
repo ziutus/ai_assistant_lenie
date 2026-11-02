@@ -5,6 +5,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
 import ChapterDescriptionsPanel from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
+import ChapterEventsPanel from "../components/ChapterEventsPanel/chapterEventsPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import RequestErrorDetails from "../components/RequestErrorDetails/requestErrorDetails";
@@ -672,6 +673,8 @@ const NerChapters = () => {
                           {renderGroups(entities)}
                           {id && <ChapterDescriptionsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
                             position={section.position} onSaved={() => setVersion((current) => current + 1)} />}
+                          {id && <ChapterEventsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
+                            position={section.position} />}
                           {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>
