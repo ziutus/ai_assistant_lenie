@@ -1834,7 +1834,7 @@ def contacts_add():
 
     birthday_error = _validate_birthday_pair(data)
     if birthday_error:
-        return {"status": "error", "message": birthday_error}, 400
+        return jsonify({"status": "error", "message": birthday_error}), 400
 
     try:
         channels = channel_patch(data)
@@ -1921,7 +1921,7 @@ def contacts_update(contact_id: int):
 
     birthday_error = _validate_birthday_pair(data, row)
     if birthday_error:
-        return {"status": "error", "message": birthday_error}, 400
+        return jsonify({"status": "error", "message": birthday_error}), 400
 
     try:
         channels = channel_patch(data, row)

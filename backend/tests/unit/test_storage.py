@@ -31,6 +31,41 @@ def test_local_rejects_path_traversal(tmp_path):
         pass
 
 
+def test_local_iter_objects_rejects_prefix_traversal(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_bytes(b"secret")
+    root = tmp_path / "root"
+    root.mkdir()
+    storage = LocalStorage(root)
+    storage.put_bytes("cache/a.txt", b"a")
+
+    for bad in ("../outside", "cache/../../outside", "..\\outside"):
+        try:
+            list(storage.iter_objects(bad))
+            assert False, f"expected ValueError for {bad!r}"
+        except ValueError:
+            pass
+
+    assert [o.key for o in storage.iter_objects("cache")] == ["cache/a.txt"]
+    assert [o.key for o in storage.iter_objects("cache/")] == ["cache/a.txt"]
+    assert [o.key for o in storage.iter_objects()] == ["cache/a.txt"]
+
+
+def test_local_rejects_absolute_and_backslash_keys(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    storage = LocalStorage(root)
+    storage.put_bytes("/abs/inside.txt", b"x")  # leading slash is stripped, stays inside root
+    assert (root / "abs" / "inside.txt").is_file()
+    for bad in ("..\\outside", "a/../../outside"):
+        try:
+            storage.get_bytes(bad)
+            assert False, f"expected ValueError for {bad!r}"
+        except ValueError:
+            pass
+
+
 def test_local_storage_has_no_presigned_url(tmp_path):
     storage = LocalStorage(tmp_path)
     assert storage.presigned_get_url("a") is None
