@@ -23,6 +23,7 @@ from library.api_key_routes import bp as api_key_bp
 from library.auth import is_read_only_request_allowed, resolve_api_key
 from library.chunk_review_routes import bp as chunk_review_bp, start_analysis_worker
 from library.llm_cost_routes import bp as llm_cost_bp
+from library.provider_balance_routes import bp as provider_balance_bp
 from library.service_status_routes import bp as service_status_bp
 from library.reader_routes import bp as reader_bp
 from library.search_routes import bp as search_bp
@@ -127,6 +128,7 @@ CORS(app)  # This will enable CORS for all routes
 
 app.register_blueprint(chunk_review_bp)
 app.register_blueprint(llm_cost_bp)
+app.register_blueprint(provider_balance_bp)
 app.register_blueprint(service_status_bp)
 app.register_blueprint(reader_bp)
 app.register_blueprint(api_key_bp)
