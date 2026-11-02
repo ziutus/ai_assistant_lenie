@@ -7,6 +7,7 @@ on cache hits, last_used_at throttling) and the /whoami + /api_keys endpoints
 """
 
 import time
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -218,6 +219,67 @@ class TestResolveApiKey:
         session.commit.assert_called_once()
         resolve_api_key(lambda: session, "raw-key")
         assert session.execute.call_count == 2
+
+
+class TestTemporaryKeys:
+    def _session_returning(self, row):
+        session = MagicMock()
+        session.execute.return_value.scalar_one_or_none.return_value = row
+        return session
+
+    def test_key_before_expiry_resolves(self):
+        row = _make_key_row(expires_at=datetime.now() + timedelta(hours=1))
+        ctx = resolve_api_key(lambda: self._session_returning(row), "raw-key")
+        assert ctx is not None and ctx.key_id == 10
+
+    def test_expired_key_is_rejected_and_cached_negative(self):
+        row = _make_key_row(expires_at=datetime.now() - timedelta(seconds=1))
+        assert resolve_api_key(lambda: self._session_returning(row), "raw-key") is None
+        factory2 = MagicMock()
+        assert resolve_api_key(factory2, "raw-key") is None
+        factory2.assert_not_called()
+
+    def test_cache_never_outlives_the_key(self):
+        row = _make_key_row(expires_at=datetime.now() + timedelta(seconds=30))
+        resolve_api_key(lambda: self._session_returning(row), "raw-key")
+        entry = auth.get_cache().get(hash_api_key("raw-key"))
+        assert entry is not None
+        assert entry.expires_at - time.monotonic() <= 31
+
+    def test_key_without_expiry_uses_full_ttl(self):
+        resolve_api_key(lambda: self._session_returning(_make_key_row()), "raw-key")
+        entry = auth.get_cache().get(hash_api_key("raw-key"))
+        assert entry.expires_at - time.monotonic() > auth.POSITIVE_TTL_SECONDS - 5
+
+    def test_create_with_ttl_sets_expires_at(self):
+        session = MagicMock()
+        session.execute.return_value.scalar_one_or_none.return_value = None
+        before = datetime.now()
+        row, _ = create_api_key(session, kind="service", name="claude-session", ttl_seconds=7200)
+        assert before + timedelta(seconds=7199) <= row.expires_at <= datetime.now() + timedelta(seconds=7201)
+
+    def test_create_without_ttl_never_expires(self):
+        session = MagicMock()
+        session.execute.return_value.scalar_one_or_none.return_value = None
+        row, _ = create_api_key(session, kind="service", name="permanent")
+        assert row.expires_at is None
+
+    @pytest.mark.parametrize("ttl", [0, -5, auth.MAX_TTL_SECONDS + 1, True, "2h", 1.5])
+    def test_invalid_ttl_rejected(self, ttl):
+        with pytest.raises(ValueError):
+            create_api_key(MagicMock(), kind="service", name="x", ttl_seconds=ttl)
+
+    @pytest.mark.parametrize("text,seconds", [("90m", 5400), ("2h", 7200), ("1d", 86400), ("45", 45), ("30s", 30)])
+    def test_cli_ttl_parser(self, text, seconds):
+        from imports.api_key_admin import parse_ttl
+        assert parse_ttl(text) == seconds
+
+    def test_cli_ttl_parser_rejects_garbage(self):
+        import argparse
+
+        from imports.api_key_admin import parse_ttl
+        with pytest.raises(argparse.ArgumentTypeError):
+            parse_ttl("soon")
 
 
 # ---------------------------------------------------------------------------
