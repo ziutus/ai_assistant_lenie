@@ -430,3 +430,38 @@ def test_chapter_note_merge_overflow_is_atomic(setup):
     assert doc.text == TEXT
     assert doc.chapter_notes == ["a" * 1000, "b" * 1000]
     session.commit.assert_not_called()
+
+
+def test_paragraphize_one_chapter_by_position(setup, monkeypatch):
+    from library import transcript_paragraphs as tp
+    from library.transcript_paragraphs import ParagraphizeResult
+
+    client, session, doc, _ = setup
+    calls = []
+
+    def fake(text, position, *, document_id, **kwargs):
+        calls.append((text, position, document_id))
+        return ParagraphizeResult(text=text + "\n", chapter_count=1, paragraph_count=2, model_calls=1)
+
+    monkeypatch.setattr(tp, "paragraphize_chapter", fake)
+    response = client.post("/document/42/paragraphize_transcript", json={"position": 2})
+    assert response.status_code == 200
+    assert calls == [(TEXT, 2, 42)]
+    assert response.json["position"] == 2 and response.json["paragraph_count"] == 2
+    assert doc.text == TEXT + "\n"
+    session.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("position", [-1, "1", True, 1.5])
+def test_paragraphize_rejects_invalid_position(setup, position):
+    client, session, doc, _ = setup
+    response = client.post("/document/42/paragraphize_transcript", json={"position": position})
+    assert response.status_code == 400
+    session.commit.assert_not_called()
+
+
+def test_paragraphize_unknown_chapter_is_a_400(setup):
+    client, session, doc, _ = setup
+    response = client.post("/document/42/paragraphize_transcript", json={"position": 9})
+    assert response.status_code == 400
+    session.commit.assert_not_called()

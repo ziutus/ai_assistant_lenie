@@ -7,6 +7,8 @@ import ChannelBadge from "../components/ChannelBadge";
 import ChapterDescriptionsPanel from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
+import RequestErrorDetails from "../components/RequestErrorDetails/requestErrorDetails";
+import { describeRequestError, type RequestErrorInfo } from "../utils/requestError";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
@@ -14,7 +16,7 @@ type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
 // does not draw them.
 type ChapterEntities = Partial<EntitiesByType> & { eventName?: EntityItem[]; productName?: EntityItem[] };
 
-interface Sentence { index: number; text: string }
+interface Sentence { index: number; text: string; paragraph_start?: boolean }
 interface Section {
   position: number;
   title: string;
@@ -153,6 +155,10 @@ const NerChapters = () => {
   const [sectionsVersion, setSectionsVersion] = React.useState(0);
   const [merging, setMerging] = React.useState(false);
   const [mergeError, setMergeError] = React.useState("");
+  // Position of the chapter the model is paragraphizing right now, and the outcome of the last try.
+  const [paragraphizing, setParagraphizing] = React.useState<number | null>(null);
+  const [paragraphError, setParagraphError] = React.useState<RequestErrorInfo | null>(null);
+  const [paragraphNote, setParagraphNote] = React.useState("");
   const headers = React.useMemo(() => ({ "x-api-key": apiKey ?? "" }), [apiKey]);
   const base = `${apiUrl}/document/${id}`;
 
@@ -224,6 +230,32 @@ const NerChapters = () => {
         : "Nie udało się scalić rozdziałów.");
     } finally {
       setMerging(false);
+    }
+  };
+
+  // The same model-guided paragraph split as the YouTube editor, limited to one chapter: the model only
+  // chooses sentence boundaries, the text is never rephrased. Entities stay as they are (only whitespace
+  // is added), so the chapter list is refetched but the entities are not rebuilt.
+  const paragraphizeChapter = async (target: number) => {
+    if (paragraphizing !== null || !window.confirm(
+      "Podzielić ten rozdział na akapity tematyczne przy użyciu Bielika? Tekst nie będzie parafrazowany.",
+    )) return;
+    setParagraphizing(target);
+    setParagraphError(null);
+    setParagraphNote("");
+    const startedAt = Date.now();
+    try {
+      const response = await axios.post<{ paragraph_count: number; model_calls: number }>(
+        `${base}/paragraphize_transcript`, { position: target }, { headers, timeout: 240000 },
+      );
+      setSectionsVersion((current) => current + 1);
+      setParagraphNote(`Rozdział ${target}: ${response.data.paragraph_count} akapitów (${response.data.model_calls} wywołań Bielika).`);
+    } catch (error) {
+      setParagraphError(describeRequestError(error, `Podział rozdziału ${target} na akapity`, {
+        startedAt, context: { dokument: id, rozdział: target },
+      }));
+    } finally {
+      setParagraphizing(null);
     }
   };
 
@@ -558,6 +590,13 @@ const NerChapters = () => {
                   <p style={{ color: "#667" }}>Brak zapisanych encji — użyj przycisku „Wykryj osoby, miejsca i obiekty”.</p>
                 )}
                 {mergeError && <p role="alert" style={{ color: "#a33" }}>{mergeError}</p>}
+                {paragraphNote && <p role="status" style={{ color: "#166534" }}>{paragraphNote}</p>}
+                {paragraphError && (
+                  <div role="alert" style={{ color: "#a33" }}>
+                    <p>{paragraphError.summary}</p>
+                    <RequestErrorDetails details={paragraphError.details} />
+                  </div>
+                )}
                 {visible.map(({ section, type, entities, count, countries, countryHighlights, groups }) => (
                   <section key={section.position} id={`ner-chapter-${section.position}`} aria-label={chapterTitle(section)}
                     style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
@@ -585,6 +624,14 @@ const NerChapters = () => {
                               onClick={() => void mergeChapter(section.position + 1, "ten rozdział z następnym")}>⇣ Scal z następnym</button>
                           )}
                           {type === "TEMAT" && (
+                            <button type="button" disabled={merging || paragraphizing !== null}
+                              aria-label={`Podziel rozdział ${section.position} na akapity`}
+                              title="Bielik wybiera granice akapitów; tekst się nie zmienia"
+                              onClick={() => void paragraphizeChapter(section.position)}>
+                              {paragraphizing === section.position ? "⏳ Dzielę na akapity…" : "¶ Podziel na akapity"}
+                            </button>
+                          )}
+                          {type === "TEMAT" && (
                             <button type="button" disabled={merging || loadingEntities} aria-label={`Oznacz rozdział ${section.position} jako szum`}
                               onClick={() => void markAsNoise(section.position, "ten rozdział")}>🗑 Oznacz jako szum</button>
                           )}
@@ -597,7 +644,9 @@ const NerChapters = () => {
                       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)", gap: 14, marginTop: 8 }}>
                         <div style={{ lineHeight: 1.65, fontSize: "0.9em" }} onContextMenu={openSelectionMenu}>
                           {section.sentences?.map((sentence) => (
-                            <span key={sentence.index}>
+                            <React.Fragment key={sentence.index}>
+                            {sentence.paragraph_start && <div aria-hidden="true" style={{ height: "0.8em" }} />}
+                            <span>
                               {splitByEntities(sentence.text, [
                                 ...(focus ? [{ kind: focus.kind, label: focus.label, variants: focus.variants }] : []),
                                 ...highlightEntries(entities), ...countryHighlights,
@@ -616,6 +665,7 @@ const NerChapters = () => {
                                   }}>{segment.text}</mark>;
                               })}{" "}
                             </span>
+                            </React.Fragment>
                           ))}
                         </div>
                         <div>
