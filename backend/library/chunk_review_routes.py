@@ -2309,9 +2309,10 @@ def document_chapter_detect_events(doc_id: int, position: int):
     try:
         result = refresh_document_events(session, doc, model or None, chapter_position=position)
         session.commit()
-    except ValueError as exc:
+    except ValueError:
         session.rollback()
-        return jsonify({"status": "error", "message": str(exc)}), 400
+        logger.info("chapter event detection refused for document %s chapter %s", doc_id, position, exc_info=True)
+        return jsonify({"status": "error", "message": "Chapter not found or document has no usable text"}), 400
     except Exception:
         session.rollback()
         logger.exception("chapter event detection failed for document %s chapter %s", doc_id, position)
