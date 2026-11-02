@@ -8,7 +8,7 @@ report for the hooks themselves: [pre-commit-verification.md](pre-commit-verific
 | Hook | Stage | Needs in PATH |
 |---|---|---|
 | gitleaks | pre-commit, pre-push | nothing (pre-commit builds it) |
-| TruffleHog | pre-commit, pre-push | `trufflehog` (local `language: system` hook — the hook fails if it is missing) |
+| TruffleHog (`scripts/trufflehog-hook.sh`) | pre-commit, pre-push | `trufflehog` (local `language: system` hook — the hook fails if it is missing) |
 | `scripts/scan-history-secrets.sh` | pre-push | `trufflehog`, `gitleaks`, `python3`, bash (Git Bash) |
 
 `scan-history-secrets.sh` **skips a scanner that is missing from PATH with only a yellow warning** and still
@@ -39,6 +39,24 @@ The script installs `pre-commit` with `uv tool install`, warns about missing bin
 first run downloads hook environments and takes a while). It is safe to re-run.
 
 Hooks live in the main checkout's `.git/hooks`, so worktrees under `.claude/worktrees/` share them — no per-worktree setup.
+
+### How the TruffleHog hook scans
+
+`scripts/trufflehog-hook.sh` replaces the upstream `trufflehog git file://. --since-commit HEAD` entry, which
+failed in worktrees (`.git` is a file there: `repository does not exist`, exit 1, no finding) and on a normal
+commit scanned nothing (`HEAD..HEAD`). Now:
+
+- **pre-commit** exports the *staged* content (the index, so partial staging is honest) to a temp directory and runs
+  `trufflehog filesystem` on it;
+- **pre-push** scans the pushed range (`PRE_COMMIT_FROM_REF..PRE_COMMIT_TO_REF`, or the merge-base with
+  `origin/main` for a new branch) with `trufflehog git` pointed at the **main checkout** — a real repository seen
+  from any worktree (`file://<.git dir>` reads 0 chunks, `file://.` fails in a worktree);
+- both pass `--no-update`: the self-updater cannot replace a running `trufflehog.exe` on Windows and made the hook exit 1
+  with no finding.
+
+The default result filter is `verified` (as before). To see how the hook reacts to an unverified canary:
+`TRUFFLEHOG_RESULTS=verified,unverified,unknown bash scripts/trufflehog-hook.sh` (exit 183 = finding).
+`scan-history-secrets.sh` points at the main checkout for the same worktree reason.
 
 ## Checking that it works
 

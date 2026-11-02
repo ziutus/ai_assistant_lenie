@@ -22,7 +22,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy import select, update
@@ -38,6 +38,9 @@ MAX_CACHE_ENTRIES = 10_000
 # last_used_at is written at most this often per key, so steady traffic on a
 # cached key does not turn into a DB write per request.
 LAST_USED_WRITE_INTERVAL_SECONDS = 300
+
+# Longest lifetime of a temporary key (created with ttl_seconds).
+MAX_TTL_SECONDS = 7 * 24 * 3600
 
 VALID_KINDS = ("user", "service", "read_only")
 READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -141,9 +144,20 @@ def generate_api_key(kind: str) -> tuple[str, str, str]:
     return plaintext, hash_api_key(plaintext), plaintext[:KEY_PREFIX_LEN]
 
 
-def create_api_key(session, kind: str, name: str, user_id: int | None = None) -> tuple[ApiKey, str]:
+def create_api_key(
+    session, kind: str, name: str, user_id: int | None = None, ttl_seconds: int | None = None,
+) -> tuple[ApiKey, str]:
     """Create a key and return (row, plaintext). The plaintext is not stored
-    anywhere — this is the only moment it exists server-side."""
+    anywhere — this is the only moment it exists server-side.
+
+    ``ttl_seconds`` makes a temporary key (an agent session): it stops working
+    after that many seconds (1 .. MAX_TTL_SECONDS). None = never expires.
+    """
+    if ttl_seconds is not None:
+        if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int):
+            raise ValueError("ttl_seconds must be an integer number of seconds")
+        if not 1 <= ttl_seconds <= MAX_TTL_SECONDS:
+            raise ValueError(f"ttl_seconds must be between 1 and {MAX_TTL_SECONDS} (7 days)")
     if kind not in VALID_KINDS:
         raise ValueError(f"kind must be one of {VALID_KINDS}, got {kind!r}")
     name = (name or "").strip()
@@ -163,7 +177,11 @@ def create_api_key(session, kind: str, name: str, user_id: int | None = None) ->
         raise ValueError(f"API key named '{name}' already exists")
 
     plaintext, key_hash, key_prefix = generate_api_key(kind)
-    row = ApiKey(kind=kind, user_id=user_id, name=name, key_hash=key_hash, key_prefix=key_prefix, active=True)
+    expires_at = datetime.now() + timedelta(seconds=ttl_seconds) if ttl_seconds is not None else None
+    row = ApiKey(
+        kind=kind, user_id=user_id, name=name, key_hash=key_hash, key_prefix=key_prefix, active=True,
+        expires_at=expires_at,
+    )
     session.add(row)
     session.commit()
     invalidate_cache()
@@ -203,8 +221,17 @@ def resolve_api_key(session_factory, raw_key: str) -> AuthContext | None:
         select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.active.is_(True))
     ).scalar_one_or_none()
     if row is not None:
+        ttl = float(POSITIVE_TTL_SECONDS)
+        if row.expires_at is not None:
+            remaining = (row.expires_at - datetime.now()).total_seconds()
+            if remaining <= 0:
+                # Expired temporary key: treat as unknown (short negative entry).
+                _cache.set(key_hash, CacheEntry(None, time.monotonic() + NEGATIVE_TTL_SECONDS))
+                return None
+            # Never let the cache outlive the key.
+            ttl = min(ttl, remaining)
         context = AuthContext(kind=row.kind, key_id=row.id, key_name=row.name, user_id=row.user_id)
-        _cache.set(key_hash, CacheEntry(context, time.monotonic() + POSITIVE_TTL_SECONDS))
+        _cache.set(key_hash, CacheEntry(context, time.monotonic() + ttl))
         _touch_last_used(session_factory, context)
         return context
 

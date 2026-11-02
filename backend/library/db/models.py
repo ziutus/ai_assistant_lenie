@@ -2992,6 +2992,9 @@ class ApiKey(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
     last_used_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    # Temporary keys (e.g. an agent session): NULL = never expires. Naive local
+    # time, like created_at/last_used_at. Checked in library/auth.py.
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
     user: Mapped["User | None"] = relationship(foreign_keys=[user_id])
 
