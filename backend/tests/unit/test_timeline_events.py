@@ -335,6 +335,8 @@ def test_document_events_endpoint(monkeypatch):
     assert response.status_code == 200
     assert response.get_json()["events"] == [
         {
+            "id": None,
+            "world_events": [],
             "date_text": "1997",
             "event_date": "1997-01-01",
             "event_date_end": "1997-12-31",
