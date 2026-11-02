@@ -21,6 +21,10 @@ set -euo pipefail
 
 RESULTS="${TRUFFLEHOG_RESULTS:-verified}"
 
+# pre-commit exports PRE_COMMIT=1; TruffleHog then "overrides default flags for hook context" and scans
+# HEAD..HEAD of the repository it is pointed at (0 chunks) whatever range we pass. Hide it.
+unset PRE_COMMIT
+
 if ! command -v trufflehog >/dev/null 2>&1; then
     echo "trufflehog not found on PATH (install it; see docs/security/dev-hooks-setup.md)" >&2
     exit 1
