@@ -173,7 +173,7 @@ def test_merge_invalid_position(position):
 def test_lazy_sentence_description_and_preamble():
     assert chapter_sentences(TEXT, 0) == {"position": 0, "title": "", "sentences": [{"index": 1, "text": "Wstęp."}]}
     assert chapter_sentences(TEXT, 2) == {"position": 2, "title": "Drugi", "sentences": [
-        {"index": 1, "text": "Pies biega."}, {"index": 2, "text": "Pada…"}, {"index": 3, "text": "Świeci słońce."},
+        {"index": 1, "text": "Pies biega."}, {"index": 2, "text": "Pada…"}, {"index": 3, "text": "Świeci słońce.", "paragraph_start": True},
     ]}
     assert chapter_sentences("## Pusty", 1)["sentences"] == []
 
@@ -231,3 +231,12 @@ def test_chapter_notes_merge_omits_empty(stored, expected):
     original = stored.copy()
     assert edit_chapter_notes(TEXT, stored, "merge_chapter", 2) == expected
     assert stored == original
+
+
+def test_sentences_report_paragraph_start_only_after_a_blank_line():
+    text = "## A\n\nPierwsze zdanie. Drugie zdanie.\n\nTrzecie zdanie. Czwarte zdanie.\n"
+    sentences = chapter_sentences(text, 1)["sentences"]
+    assert [bool(item.get("paragraph_start")) for item in sentences] == [False, False, True, False]
+    described = describe_sections(text, with_sentences=True)[0]["sentences"]
+    assert described == sentences
+    assert "paragraph_start" not in chapter_sentences("## A\n\nJedno. Drugie.", 1)["sentences"][0]
