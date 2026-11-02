@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import axios from "axios";
+import { MemoryRouter } from "react-router-dom";
 import ChapterEventsPanel from "./chapterEventsPanel";
 
 vi.mock("axios");
@@ -38,4 +39,57 @@ it("detects events for this chapter only and lists the result", async () => {
   await waitFor(() => expect(screen.getByText(/Atak na Polskę/)).toBeTruthy());
   expect(mocked.post.mock.calls[0][0]).toBe("http://api/document/5/chapter/2/detect_events");
   expect(screen.getByRole("status").textContent).toContain("1 zdarzeń");
+});
+
+const withId = { ...proposal, id: 77, world_events: [] };
+
+const renderOpen = async () => {
+  render(
+    <MemoryRouter>
+      <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Zdarzenia rozdziału/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /Do zdarzeń globalnych/ }));
+};
+
+const mockGets = (candidates: unknown[]) => {
+  mocked.get.mockImplementation(async (url: string) => {
+    if (url.endsWith("/events")) return { data: { events: [withId] } };
+    if (url.endsWith("/geo_event_kinds")) {
+      return { data: { kinds: [{ code: "other", label: "inne" }, { code: "market", label: "rynek" }] } };
+    }
+    if (url.endsWith("/world_events/candidates")) return { data: { candidates } };
+    return { data: {} };
+  });
+};
+
+it("promotes a proposal under a corrected title and marks it as registered", async () => {
+  mockGets([]);
+  mocked.post.mockResolvedValue({ data: { created: true, event: { id: 9, title: "Nord Stream 2 wybuchł" } } });
+  await renderOpen();
+
+  const input = await screen.findByLabelText(/Tytuł zdarzenia/);
+  fireEvent.change(input, { target: { value: "Nord Stream 2 wybuchł" } });
+  fireEvent.click(screen.getByRole("button", { name: "Dodaj do rejestru" }));
+
+  await waitFor(() => expect(screen.getByText(/W rejestrze zdarzeń/)).toBeTruthy());
+  expect(mocked.post).toHaveBeenCalledWith(
+    "http://api/document_events/77/to_world_event",
+    { title: "Nord Stream 2 wybuchł", kind: "other" },
+    expect.anything(),
+  );
+});
+
+it("attaches the proposal as a source of an existing event the reviewer confirms", async () => {
+  mockGets([{ reason: "alias", score: 1, event: { id: 4, title: "Eksplozja Nord Stream", event_date: "2022-09-26" } }]);
+  mocked.post.mockResolvedValue({ data: { created: false, event: { id: 4, title: "Eksplozja Nord Stream" } } });
+  await renderOpen();
+
+  fireEvent.click(await screen.findByRole("button", { name: /Sprawdź, czy już jest/ }));
+  fireEvent.click(await screen.findByLabelText(/Tak, dodaj jako źródło: #4/));
+  fireEvent.click(screen.getByRole("button", { name: "Dodaj jako źródło" }));
+
+  await waitFor(() => expect(mocked.post).toHaveBeenCalled());
+  expect(mocked.post.mock.calls[0][1]).toEqual({ event_id: 4 });
 });

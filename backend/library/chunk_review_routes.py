@@ -2251,24 +2251,34 @@ def document_events(doc_id: int):
         )
         .all()
     )
+    promoted = _promoted_world_events(session, [row.id for row in rows])
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
         "enrichment_run_at": doc.enrichment_run_at.isoformat() if doc.enrichment_run_at else None,
         "events": [
-            {
-                "date_text": row.date_text,
-                "event_date": row.event_date.isoformat() if row.event_date else None,
-                "event_date_end": row.event_date_end.isoformat() if row.event_date_end else None,
-                "date_precision": row.date_precision,
-                "sort_year": row.sort_year,
-                "description": row.description,
-                "anchor_quote": row.anchor_quote,
-                "chapter_position": row.chapter_position,
-            }
+            {**_event_to_dict(row), "sort_year": row.sort_year, "world_events": promoted.get(row.id, [])}
             for row in rows
         ],
     })
+
+
+def _promoted_world_events(session, document_event_ids: list[int]) -> dict[int, list[dict]]:
+    """Registry events (``geo_events``) each timeline entry was already promoted to or attached to."""
+    from library.db.models import GeoEvent, GeoEventSource
+
+    if not document_event_ids:
+        return {}
+    rows = session.execute(
+        select(GeoEventSource.document_event_id, GeoEvent.id, GeoEvent.title)
+        .join(GeoEvent, GeoEvent.id == GeoEventSource.event_id)
+        .where(GeoEventSource.document_event_id.in_(document_event_ids))
+        .order_by(GeoEvent.id)
+    ).all()
+    result: dict[int, list[dict]] = {}
+    for document_event_id, event_id, title in rows:
+        result.setdefault(document_event_id, []).append({"id": event_id, "title": title})
+    return result
 
 
 def _event_to_dict(row) -> dict:
@@ -2325,7 +2335,7 @@ def document_chapter_detect_events(doc_id: int, position: int):
         "doc_id": doc_id,
         "chapter_position": position,
         "model": result.get("model"),
-        "events": [_event_to_dict(row) for row in rows],
+        "events": [{**_event_to_dict(row), "world_events": []} for row in rows],
         "rejected_without_quote": report.get("rejected_without_quote", 0),
         "rejected_without_date": report.get("rejected_without_date", 0),
         "invalid_json": report.get("invalid_json", 0),

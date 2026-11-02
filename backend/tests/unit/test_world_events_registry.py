@@ -684,3 +684,18 @@ def test_context_evidence_over_http(client, session):
     assert ok.status_code == 201
     assert sorted(e["kind"] for e in ok.get_json()["assessment"]["evidence"]) == ["context", "direct"]
     assert session.query(CountryRelationEvidence).count() == 2 and session.query(CountryRelationAssessment).count() == 1
+
+
+def test_promoted_entries_are_reported_back_to_the_timeline_panel(client, session):
+    from library import chunk_review_routes
+
+    add_document_event(session, 20, 1, "Wstrzymano dostawy gazu.", "2022-08-01", precision="month")
+    add_document_event(session, 21, 1, "Inny wpis.", "2023-01-01", precision="year")
+    session.commit()
+    created = client.post("/document_events/20/to_world_event", json={"title": "Nord Stream 1 wstrzymany"})
+    assert created.status_code == 201
+
+    promoted = chunk_review_routes._promoted_world_events(session, [20, 21])
+
+    assert promoted == {20: [{"id": created.get_json()["event"]["id"], "title": "Nord Stream 1 wstrzymany"}]}
+    assert chunk_review_routes._promoted_world_events(session, []) == {}
