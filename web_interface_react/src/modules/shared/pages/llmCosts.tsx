@@ -3,6 +3,7 @@ import axios from "axios";
 import { NavLink, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
+import ProviderBalances from "../components/ProviderBalance/providerBalance";
 
 type CostRow = { currency: string | null; calls: number; tokens: number; cost: string | null; unknown_calls?: number };
 type OperationRow = CostRow & { operation: string; model: string };
@@ -104,6 +105,7 @@ const LlmCosts = () => {
       {documentId && <NavLink to={`/chunks/${documentId}`}>Otwórz dokument #{documentId}</NavLink>}
     </div>
     <div style={{ margin: "10px 0 0" }}><OpenRouterBalance /></div>
+    <div style={{ margin: "4px 0 0" }}><ProviderBalances /></div>
     {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
     {report && <>
       <h3>Podsumowanie</h3>
