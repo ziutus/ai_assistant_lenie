@@ -211,6 +211,58 @@ it("reports a refused merge and does not reload", async () => {
   expect(await screen.findByText(/dokument ma embeddingi/)).toBeTruthy();
 });
 
+it("paragraphizes one chapter with the model and reloads the chapters", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", paragraph_count: 3, model_calls: 1 } });
+  await open();
+  const sectionCalls = () => vi.mocked(axios.get).mock.calls.filter(([url]) => String(url).endsWith("/chapter_sections")).length;
+  const before = sectionCalls();
+  const first = screen.getByRole("region", { name: "#1 Wstęp" });
+  // Skipped chapters (advertisement) are not offered the action.
+  expect(within(screen.getByRole("region", { name: "#2 Sponsor" })).queryByRole("button", { name: /na akapity/ })).toBeNull();
+  fireEvent.click(within(first).getByRole("button", { name: "Podziel rozdział 1 na akapity" }));
+  expect(confirm).toHaveBeenCalled();
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/paragraphize_transcript", { position: 1 },
+    { headers: { "x-api-key": "test-key" }, timeout: 240000 }));
+  await waitFor(() => expect(sectionCalls()).toBe(before + 1));
+  expect(await screen.findByText(/Rozdział 1: 3 akapitów/)).toBeTruthy();
+});
+
+it("does not call the model when the paragraph split is not confirmed", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Podziel rozdział 1 na akapity" }));
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+it("explains a refused paragraph split with technical details", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockRejectedValue({
+    config: { method: "post", url: "/document/42/paragraphize_transcript" },
+    response: { status: 409, data: { message: "Document has embeddings. Reopen it for editing before paragraphizing the transcript." } },
+  });
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Podziel rozdział 1 na akapity" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Podział rozdziału 1 na akapity");
+  expect(alert.textContent).toContain("Document has embeddings");
+  expect(alert.textContent).toContain("Szczegóły techniczne");
+});
+
+it("starts a new paragraph where the server marks a paragraph start", async () => {
+  mockApi({ "/document/42/chapter_sections": { sections: [
+    { position: 1, title: "Wstęp", type: "TEMAT", sentence_count: 3, sentences: [
+      { index: 1, text: "Pierwsze zdanie." }, { index: 2, text: "Drugie zdanie." },
+      { index: 3, text: "Trzecie zdanie.", paragraph_start: true },
+    ] },
+  ] } });
+  render(<MemoryRouter initialEntries={["/ner/42"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
+  const chapter = await screen.findByRole("region", { name: "#1 Wstęp" });
+  const breaks = chapter.querySelectorAll('div[aria-hidden="true"]');
+  expect(breaks).toHaveLength(1);
+  expect(breaks[0].nextElementSibling?.textContent).toContain("Trzecie zdanie.");
+});
+
 it("explains a document without transcript text", async () => {
   const error = Object.assign(new Error("bad"), { isAxiosError: true, response: { data: { message: "Document has no transcript text" } } });
   vi.mocked(axios.isAxiosError).mockReturnValue(true);
@@ -369,6 +421,17 @@ it("copies the selected fragment from the context menu", async () => {
   fireEvent.contextMenu(sentenceBlock());
   fireEvent.click(screen.getByRole("menuitem", { name: "📋 Kopiuj" }));
   await waitFor(() => expect(writeText).toHaveBeenCalledWith("Nic więcej"));
+  await waitFor(() => expect(screen.queryByRole("menu", { name: "Dodaj encję z zaznaczenia" })).toBeNull());
+});
+
+it("searches the selected fragment in Google from the context menu", async () => {
+  const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => " Hara   Bolsonaro " } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  fireEvent.click(screen.getByRole("menuitem", { name: "🔍 Szukaj w Google" }));
+  expect(openSpy).toHaveBeenCalledWith(
+    "https://www.google.com/search?q=Hara%20Bolsonaro", "_blank", "noopener,noreferrer");
   await waitFor(() => expect(screen.queryByRole("menu", { name: "Dodaj encję z zaznaczenia" })).toBeNull());
 });
 

@@ -73,3 +73,29 @@ def test_paragraphize_chunk_text_works_without_chapter_headings(monkeypatch):
     assert calls[0]["document_id"] == 9353
     assert calls[0]["analysis_run_id"] == 163
     assert calls[0]["operation"] == "transcript_paragraphization"
+
+
+def test_paragraphize_chapter_changes_only_the_chosen_chapter(monkeypatch):
+    from library.transcript_paragraphs import paragraphize_chapter
+
+    monkeypatch.setattr("library.ai.ai_ask", lambda prompt, **kwargs: Response())
+
+    result = paragraphize_chapter(TEXT, 2, document_id=11222)
+
+    assert result.chapter_count == 1
+    assert result.model_calls == 1
+    first_chapter = TEXT.split("## Rozdział drugi")[0]
+    assert result.text.startswith(first_chapter)  # chapter 1 untouched, byte for byte
+    assert "pierwszą myśl.\n\nCzwarte" not in result.text.split("## Rozdział drugi")[0]
+    assert "kontekstu.\n\nCzwarte" not in result.text  # sanity: break is after sentence 3 of chapter 2
+    assert "kończy tę krótką wypowiedź, która również ma dostateczną długość.\n\nCzwarte" in result.text
+    assert result.text.endswith("kontekst.\n") is False
+    assert result.text.endswith("wymagany rozmiar.\n")
+
+
+def test_paragraphize_chapter_rejects_unknown_position():
+    import pytest
+    from library.transcript_paragraphs import paragraphize_chapter
+
+    with pytest.raises(ValueError):
+        paragraphize_chapter(TEXT, 9, document_id=1)

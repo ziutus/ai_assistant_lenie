@@ -677,7 +677,13 @@ def paragraphize_document_transcript(doc_id: int):
     ``Document.text`` and retains the original H1/H2 chapter headings.
     """
     from library.document_editing import document_has_embeddings
-    from library.transcript_paragraphs import paragraphize_transcript
+    from library.transcript_paragraphs import paragraphize_chapter, paragraphize_transcript
+
+    # Optional {"position": N} limits the work to one "##" chapter (the /ner/:id page).
+    body = request.get_json(silent=True) or {}
+    position = body.get("position") if isinstance(body, dict) else None
+    if position is not None and (type(position) is not int or position < 0):
+        return jsonify({"status": "error", "message": "position must be a non-negative integer"}), 400
 
     session = get_scoped_session()
     doc = session.get(Document, doc_id)
@@ -700,7 +706,10 @@ def paragraphize_document_transcript(doc_id: int):
         return jsonify({"status": "error", "message": "Document analysis is currently running"}), 409
 
     try:
-        result = paragraphize_transcript(doc.text, document_id=doc_id)
+        if position is None:
+            result = paragraphize_transcript(doc.text, document_id=doc_id)
+        else:
+            result = paragraphize_chapter(doc.text, position, document_id=doc_id)
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
     except Exception:
@@ -716,6 +725,7 @@ def paragraphize_document_transcript(doc_id: int):
         "paragraph_count": result.paragraph_count,
         "model_calls": result.model_calls,
         "text_length": len(result.text),
+        **({"position": position} if position is not None else {}),
     })
 
 

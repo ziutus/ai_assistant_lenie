@@ -50,6 +50,21 @@ def _sentence_spans(body: str) -> list[tuple[int, int]]:
     return spans
 
 
+_PARAGRAPH_GAP = re.compile(r"\n[ \t\r]*\n")
+
+
+def _sentence_items(body: str) -> list[dict]:
+    """Numbered sentences; ``paragraph_start`` (only when true) marks a blank line before the sentence."""
+    items = []
+    for index, (start, end) in enumerate(_sentence_spans(body), 1):
+        raw = body[start:end]
+        item = {"index": index, "text": raw.strip()}
+        if index > 1 and _PARAGRAPH_GAP.search(raw[:len(raw) - len(raw.lstrip())]):
+            item["paragraph_start"] = True
+        items.append(item)
+    return items
+
+
 def describe_sections(text: str, *, with_sentences: bool = False, stored_types=None, stored_notes=None) -> list[dict]:
     """Describe H2 chapters, with position 0 reserved for an optional preamble."""
     types = resolve_chapter_types(text, stored_types)
@@ -72,8 +87,7 @@ def describe_sections(text: str, *, with_sentences: bool = False, stored_types=N
             "char_length": len(section.body),
             "first_sentences": sentences[:2],
             "last_sentences": sentences[-2:],
-            **({"sentences": [{"index": index, "text": sentence} for index, sentence in enumerate(sentences, 1)]}
-               if with_sentences else {}),
+            **({"sentences": _sentence_items(section.body)} if with_sentences else {}),
         })
     return result
 
@@ -133,10 +147,7 @@ def chapter_sentences(text: str, position: int) -> dict:
     return {
         "position": position,
         "title": section.heading[3:].strip() if section.heading else "",
-        "sentences": [
-            {"index": index, "text": section.body[start:end].strip()}
-            for index, (start, end) in enumerate(_sentence_spans(section.body), 1)
-        ],
+        "sentences": _sentence_items(section.body),
     }
 
 

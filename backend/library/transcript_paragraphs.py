@@ -198,6 +198,32 @@ def paragraphize_chunk_text(
     )
 
 
+def paragraphize_chapter(
+    text: str, position: int, *, document_id: int, model: str = DEFAULT_ANALYSIS_MODEL,
+    analysis_run_id: int | None = None,
+) -> ParagraphizeResult:
+    """Add paragraph spacing to ONE ``##`` chapter (position as on /ner/:id; 0 = preamble).
+
+    Everything outside that chapter's body is returned byte for byte; the model only
+    chooses sentence boundaries, as in ``paragraphize_transcript``.
+    """
+    from library.transcript_chapter_boundaries import _section_index, parse_sections, render_sections
+
+    sections = parse_sections(text)
+    index = _section_index(sections, position, allow_preamble=True)
+    section = sections[index]
+    body = section.body
+    lead = body[:len(body) - len(body.lstrip())]
+    trail = body[len(body.rstrip()):]
+    new_body, paragraphs, calls = _paragraphize_body(
+        body.strip(), model=model, document_id=document_id, analysis_run_id=analysis_run_id,
+    )
+    sections[index] = type(section)(section.heading, f"{lead}{new_body.strip()}{trail}")
+    return ParagraphizeResult(
+        text=render_sections(sections), chapter_count=1, paragraph_count=paragraphs, model_calls=calls,
+    )
+
+
 def paragraphize_document(document_id: int, *, model: str = DEFAULT_ANALYSIS_MODEL) -> ParagraphizeResult:
     """Run paragraphization and persist one document; used by the API and CLI."""
     from library.db.engine import get_session
