@@ -38,11 +38,16 @@ class LocalStorage:
     def __init__(self, root: str | os.PathLike):
         self.root = Path(root).resolve()
 
+    def _resolve_under_root(self, relative: str, original: str) -> str:
+        """Join ``relative`` to the root and prove the real path stays inside it."""
+        root = os.path.realpath(self.root)
+        full = os.path.realpath(os.path.join(root, relative))
+        if not full.startswith(root + os.sep):
+            raise ValueError(f"Storage key escapes root: {original!r}")
+        return full
+
     def _path(self, key: str) -> Path:
-        path = (self.root / _safe_key(key)).resolve()
-        if self.root not in path.parents:
-            raise ValueError(f"Storage key escapes root: {key!r}")
-        return path
+        return Path(self._resolve_under_root(_safe_key(key), key))
 
     def put_bytes(self, key: str, data: bytes, content_type: str | None = None) -> None:
         path = self._path(key)
@@ -59,7 +64,11 @@ class LocalStorage:
         self._path(key).unlink(missing_ok=True)
 
     def iter_objects(self, prefix: str = ""):
-        base = self.root / prefix if prefix else self.root
+        clean_prefix = prefix.replace("\\", "/").strip("/")
+        if clean_prefix:
+            base = Path(self._resolve_under_root(_safe_key(clean_prefix), prefix))
+        else:
+            base = self.root
         if not base.exists():
             return
         for path in base.rglob("*"):

@@ -3212,7 +3212,7 @@ def organization_countries(organization_id: int):
         session.rollback()
         logging.exception("organization country add failed for %s", organization_id)
         return {"status": "error", "message": "DB error"}, 500
-    return {"status": "success", "country": country}, 201 if created else 200
+    return jsonify({"status": "success", "country": country}), 201 if created else 200
 
 
 @app.route('/organizations/<int:organization_id>/countries/<int:row_id>', methods=['DELETE', 'OPTIONS'])
@@ -3552,7 +3552,7 @@ def organization_alias_delete(organization_id: int, alias_id: int):
         logging.exception("alias delete failed for organization %s alias %s", organization_id, alias_id)
         return {"status": "error", "message": "DB error"}, 500
 
-    return {"status": "success", "deleted_alias_id": alias_id}, 200
+    return jsonify({"status": "success", "deleted_alias_id": alias_id}), 200
 
 
 @app.route('/organizations/<int:organization_id>/merge_preview', methods=['GET'])
@@ -4852,7 +4852,7 @@ def email_footer_rule(document_id: int):
     doc.text = apply_footer_rule(session, sender, current_text)
     doc.document_length = len(doc.text or "")
     session.commit()
-    return {"status": "success", "email_sender": sender, "text": doc.text}, 200
+    return jsonify({"status": "success", "email_sender": sender, "text": doc.text}), 200
 
 
 @app.route('/document/<int:document_id>/search_terms/generate', methods=['POST'])

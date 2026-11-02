@@ -3331,7 +3331,8 @@ class TestContactBirthdayPair:
     ])
     def test_incomplete_pair_rejected(self, birthday_request, data):
         send, session, row = birthday_request
-        assert send(data) == ({
+        response, status = send(data)
+        assert (response.get_json(), status) == ({
             "status": "error", "message": "birthday_month and birthday_day must be provided together",
         }, 400)
         assert row.birthday_month is None and row.birthday_day is None
@@ -3350,8 +3351,9 @@ class TestContactBirthdayPair:
         send, session, _ = birthday_request
         response, status = send({"birthday_month": month, "birthday_day": day})
         assert status == 400
-        assert response["status"] == "error"
-        assert field in response["message"]
+        body = response.get_json()
+        assert body["status"] == "error"
+        assert field in body["message"]
         session.add.assert_not_called()
         session.commit.assert_not_called()
 
@@ -3409,7 +3411,7 @@ class TestContactBirthdayPair:
         with Flask(__name__).test_request_context("/contacts/1", method="PATCH", json=data):
             response, status = contacts_update(1)
         assert status == 400
-        assert response["status"] == "error"
+        assert response.get_json()["status"] == "error"
         assert (row.birthday_month, row.birthday_day) == (1, 31)
         session.commit.assert_not_called()
 
