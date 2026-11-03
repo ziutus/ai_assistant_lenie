@@ -552,6 +552,13 @@ def _add_source(session, event: GeoEvent, source: dict) -> GeoEventSource | None
     return row
 
 
+def add_source(session, event: GeoEvent, source: dict) -> GeoEventSource:
+    """Cite one more document passage for an existing event (idempotent per document + quote)."""
+    if not isinstance(source, dict):
+        raise GeopoliticsError("source must be an object")
+    return _add_source(session, event, source)
+
+
 def set_event_status(session, event: GeoEvent, status: str, user_id: int | None) -> GeoEvent:
     if status not in ("confirmed", "rejected"):
         raise GeopoliticsError("status must be confirmed or rejected")

@@ -138,6 +138,24 @@ def test_manual_event_with_source_and_status_change(client):
     assert client.get("/geo_events?status=weird").status_code == 400
 
 
+def test_source_can_be_added_to_an_existing_event(client):
+    event = client.post("/geo_events", json={"title": "Szczyt", "event_date": "2026-05"}).get_json()["event"]
+    url = f"/geo_events/{event['id']}/sources"
+
+    first = client.post(url, json={"document_id": 1, "quote": "na szczycie uzgodniono"})
+    assert first.status_code == 201
+    assert [s["document_id"] for s in first.get_json()["event"]["sources"]] == [1]
+
+    # the same passage is not cited twice
+    again = client.post(url, json={"document_id": 1, "quote": "na szczycie uzgodniono"})
+    assert again.status_code == 201
+    assert len(again.get_json()["event"]["sources"]) == 1
+
+    assert client.post(url, json={"document_id": 1}).status_code == 400  # quote required
+    assert client.post(url, json={"document_id": 404, "quote": "x"}).status_code == 404
+    assert client.post("/geo_events/9999/sources", json={"document_id": 1, "quote": "x"}).status_code == 404
+
+
 def test_event_needs_a_title_and_a_valid_source_but_no_country(client):
     assert client.post("/geo_events", json={"event_date": "2026"}).status_code == 400
     assert client.post("/geo_events", json={"title": "x", "event_date": "2026"}).status_code == 201

@@ -11,6 +11,7 @@ read_only keys there):
                                                  event_date_end, is_ongoing, expected_version}
   POST /geo_events/<id>/aliases, DELETE /geo_events/<id>/aliases/<alias_id>
   POST /geo_events/<id>/participants, DELETE /geo_events/<id>/participants   — {type, ref, role}
+  POST /geo_events/<id>/sources                — cite a passage: {document_id, quote, stance?}
   GET  /country_relations?country=&at=&axis=&direction=from|to
   POST /country_relations                      — {from, to, axis, score, valid_from, ...}
   GET  /country_relations/<id>/history
@@ -31,6 +32,7 @@ from library.geopolitics_service import (
     GeopoliticsError,
     add_alias,
     add_participant,
+    add_source,
     assessment_history,
     assessment_to_dict,
     create_assessment,
@@ -248,6 +250,23 @@ def add_event_participant(event_id: int):
     except GeopoliticsError as exc:
         session.rollback()
         return _error(exc)
+    return jsonify({"status": "success", "event": event_to_dict(event)}), 201
+
+
+@bp.route("/geo_events/<int:event_id>/sources", methods=["POST"])
+def add_event_source(event_id: int):
+    """Cite a document passage for an existing event: ``{document_id, quote, stance?, document_event_id?}``."""
+    session = get_scoped_session()
+    event = session.get(GeoEvent, event_id)
+    if event is None:
+        return jsonify({"status": "error", "message": "Event not found"}), 404
+    try:
+        add_source(session, event, request.get_json(silent=True) or {})
+        session.commit()
+    except GeopoliticsError as exc:
+        session.rollback()
+        return _error(exc)
+    session.refresh(event)
     return jsonify({"status": "success", "event": event_to_dict(event)}), 201
 
 
