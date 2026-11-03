@@ -2,6 +2,7 @@ from library.browse_event_transport import browse_execution
 from flask import Flask, Response, g, request, abort, jsonify
 from flask_cors import CORS
 import logging
+import re
 import json
 import os
 from sqlalchemy import select
@@ -1810,12 +1811,25 @@ def website_entities_rename(entity_id: int):
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 500:
         return jsonify(status="error", message="Nazwa musi zawierać od 1 do 500 znaków."), 400
     name = name.strip()
+    fix_text = isinstance(data, dict) and data.get("fix_text") is True
     session = get_scoped_session()
     entity = session.get(DocumentEntity, entity_id)
     if entity is None:
         return jsonify(status="error", message="Nie znaleziono encji."), 404
     if entity.entity_type not in PLACE_ENTITY_TYPES:
         return jsonify(status="error", message="Można poprawiać tylko nazwy miejsc."), 400
+    if fix_text:
+        # The name is a speech-to-text slip: the text itself is corrected, so the same guards as for
+        # other text edits apply (embeddings and chunk offsets depend on the text).
+        from library.document_editing import document_has_embeddings
+        from library.db.models import DocumentAnalysisJob
+        if document_has_embeddings(session, entity.document_id):
+            return jsonify(status="error", message="Dokument ma embeddingi — otwórz go do edycji, aby poprawić tekst."), 409
+        if session.query(DocumentAnalysisJob.id).filter(
+            DocumentAnalysisJob.document_id == entity.document_id,
+            DocumentAnalysisJob.status.in_(("queued", "running")),
+        ).first() is not None:
+            return jsonify(status="error", message="Trwa analiza dokumentu — poczekaj na jej koniec."), 409
 
     conflict_message = 'Takie miejsce już istnieje. Wybierz „Połącz z innym miejscem”.'
 
@@ -1837,6 +1851,11 @@ def website_entities_rename(entity_id: int):
         old_variants = list(entity.variants or [])
         document = session.get(Document, entity.document_id)
         removed_tag = remove_orphaned_tag(session, document, entity) if document is not None else None
+        text_replacements = 0
+        if fix_text and document is not None and document.text and old_name.casefold() != name.casefold():
+            # Only the mistaken name itself: inflected variants would get a wrong grammatical form.
+            document.text, text_replacements = re.subn(
+                rf"(?<!\w){re.escape(old_name)}(?!\w)", lambda _m: name, document.text, flags=re.IGNORECASE)
         entity.entity_text = name
         entity.variants = list(dict.fromkeys([*old_variants, old_name, name]))
         entity.source = "manual"
@@ -1845,7 +1864,8 @@ def website_entities_rename(entity_id: int):
         record_entity_decision(
             session, document_id=entity.document_id, document_entity_id=entity.id,
             entity_type=entity.entity_type, entity_text=old_name, decision="renamed",
-            details={"new_text": name, "variants": old_variants, "removed_tag": removed_tag},
+            details={"new_text": name, "variants": old_variants, "removed_tag": removed_tag,
+                     "fix_text": fix_text, "text_replacements": text_replacements},
         )
         session.flush()
         geocoding = geocode_single_place(session, document, entity)
@@ -1870,7 +1890,7 @@ def website_entities_rename(entity_id: int):
         session.rollback()
         logging.exception("entity rename failed for entity %s", entity_id)
         return jsonify(status="error", message="Nie udało się zapisać nazwy miejsca."), 500
-    return jsonify(status="success", entity=item, **geocoding), 200
+    return jsonify(status="success", entity=item, text_replacements=text_replacements, **geocoding), 200
 
 
 @app.route('/website_entities/<int:entity_id>/confirm_place', methods=['POST'])
