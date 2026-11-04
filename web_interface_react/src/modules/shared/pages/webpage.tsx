@@ -225,6 +225,7 @@ const Webpage = () => {
           entitiesRefreshKey={entitiesRefreshKey}
           handleRemoveNotNeededText={handleRemoveNotNeededText}
           showCleanText
+          onSaveText={handleSaveWebsiteToCorrect}
         />
 
         {autoFlowComplete ? (

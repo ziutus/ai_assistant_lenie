@@ -9,7 +9,7 @@ import { AuthorizationContext } from "../../context/authorizationContext";
 import type { ChunkForPreview } from "../../utils/chunkBoundaries";
 
 // Mounted only in the webpage branch; its key resets the cache on document/run changes.
-const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolean }) => {
+const WebpageLineEditor = ({ formik, disabled, onSave }: { formik: any; disabled: boolean; onSave?: (values: any) => void }) => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [chunks, setChunks] = React.useState<ChunkForPreview[] | null>(null);
   const value: string = formik.values.text_md || formik.values.text || "";
@@ -37,7 +37,7 @@ const WebpageLineEditor = ({ formik, disabled }: { formik: any; disabled: boolea
   const splitChunk = async (id: number, splitAtLines: number[], splitTypes?: string[]) => {
     await axios.post(`${apiUrl}/chunk/${id}/execute_split`, { split_at_lines: splitAtLines, split_types: splitTypes }, { headers });
   };
-  return <MarkdownLineEditor formik={formik} disabled={disabled}
+  return <MarkdownLineEditor formik={formik} disabled={disabled} onSave={onSave}
     chunks={runId ? chunks ?? undefined : undefined}
     chunksStale={value !== chunksTextSnapshot.current}
     onRequestChunks={runId && chunks === null ? requestChunks : undefined}
@@ -57,6 +57,8 @@ interface InputsForAllExceptLinkProps {
   hideText?: boolean;
   onProcessingChange?: (busy: boolean) => void;
   entitiesRefreshKey?: number;
+  // Save button under the article text (webpage editor).
+  onSaveText?: (values: any) => void;
 }
 
 const InputsForAllExceptLink = ({
@@ -67,6 +69,7 @@ const InputsForAllExceptLink = ({
   hideText = false,
   onProcessingChange,
   entitiesRefreshKey,
+  onSaveText,
 }: InputsForAllExceptLinkProps) => {
   return (
     <>
@@ -79,7 +82,7 @@ const InputsForAllExceptLink = ({
           alignItems: "start",
         }}>
           <WebpageLineEditor key={`${formik.values.id}-${formik.values.analysis_run_id}`}
-            formik={formik} disabled={isLoading} />
+            formik={formik} disabled={isLoading} onSave={onSaveText} />
           <ArticleSourceComparison formik={formik} />
         </div>
       ) : formik.values.text_md && (

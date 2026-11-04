@@ -15,7 +15,8 @@ const emptyMarks = (): Record<MarkKind, Set<number>> => ({
   author: new Set(), date: new Set(), sources: new Set(), links: new Set(), ads: new Set(), persons: new Set(),
 });
 
-const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestChunks, onRefreshChunks, onChangeChunkType, onMergeChunk, onSplitChunk }: {
+const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestChunks, onRefreshChunks, onChangeChunkType, onMergeChunk, onSplitChunk, onSave }: {
+  onSave?: (values: any) => void;
   formik: any; disabled: boolean; chunks?: ChunkForPreview[]; onRequestChunks?: () => Promise<void>;
   chunksStale?: boolean;
   onRefreshChunks?: () => Promise<void>;
@@ -257,6 +258,12 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
           <button type="button" className="button" disabled={disabled || !draft.trim()} onClick={() => { changeText(draft); setEditing(false); }}>
             Zastosuj edycję w formularzu
           </button>
+          {onSave && (
+            <button type="button" className="button" style={{ marginLeft: 8 }} disabled={disabled || !draft.trim()}
+              onClick={() => { changeText(draft); setEditing(false); onSave({ ...formik.values, text_md: draft }); }}>
+              Zastosuj i zapisz
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -389,6 +396,13 @@ const MarkdownLineEditor = ({ formik, disabled, chunks, chunksStale, onRequestCh
               );
             })}
           </div>
+          {onSave && (
+            <div style={{ marginTop: 8 }}>
+              <button type="button" className="button" disabled={disabled} onClick={() => onSave(formik.values)}>
+                Zapisz
+              </button>
+            </div>
+          )}
         </>
       )}
     </section>
