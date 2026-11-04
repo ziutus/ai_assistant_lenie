@@ -9,6 +9,7 @@ _ABBREVIATION = re.compile(
     r"(?:\b(?:np|itp|itd|tj|tzn|dr|prof|mgr|inż|ul|al|nr|pkt|ust|art|godz|ok|r|im)"
     r"|\bm\.in|\btzw)\.$", re.IGNORECASE,
 )
+_ABBREVIATION_WINDOW = 8  # > longest abbreviation + a preceding char so \b sees a real neighbour
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,9 @@ def _sentence_spans(body: str) -> list[tuple[int, int]]:
     spans = []
     start = 0
     for match in _END.finditer(body):
-        if match.group() == "." and _ABBREVIATION.search(body[:match.end()]):
+        # Only the last few characters can hold an abbreviation (longest match is 5 chars); slicing
+        # the whole prefix made this quadratic on long transcripts.
+        if match.group() == "." and _ABBREVIATION.search(body[max(0, match.end() - _ABBREVIATION_WINDOW):match.end()]):
             continue
         if body[start:match.end()].strip():
             spans.append((start, match.end()))

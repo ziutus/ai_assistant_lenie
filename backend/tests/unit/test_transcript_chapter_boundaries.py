@@ -240,3 +240,35 @@ def test_sentences_report_paragraph_start_only_after_a_blank_line():
     described = describe_sections(text, with_sentences=True)[0]["sentences"]
     assert described == sentences
     assert "paragraph_start" not in chapter_sentences("## A\n\nJedno. Drugie.", 1)["sentences"][0]
+
+
+def test_sentence_spans_match_whole_prefix_abbreviation_check():
+    """The abbreviation check looks at a short window only; the result must equal the old whole-prefix search."""
+    from library.transcript_chapter_boundaries import _ABBREVIATION, _END, _sentence_spans
+
+    def reference(body):
+        spans, start = [], 0
+        for match in _END.finditer(body):
+            if match.group() == "." and _ABBREVIATION.search(body[:match.end()]):
+                continue
+            if body[start:match.end()].strip():
+                spans.append((start, match.end()))
+            start = match.end()
+        if body[start:].strip():
+            spans.append((start, len(body)))
+        return spans
+
+    for body in ["Dr. Nowak zna m.in. prof. Kowalską, np. z ul. Łąkowej. Koniec.", "xdr. Nowak. Ok. tak.",
+                 "tzw. coś. itd. i tak. r. 2020. godz. 5.", "Zwykłe zdanie. Drugie zdanie! Trzecie?", "a.", ".", ""]:
+        assert _sentence_spans(body) == reference(body)
+
+
+def test_sentence_spans_long_transcript_is_fast():
+    import time
+
+    from library.transcript_chapter_boundaries import _sentence_spans
+
+    body = "To jest zdanie testowe numer dwa. " * 40000  # ~1.4 MB, 40k sentences
+    started = time.perf_counter()
+    assert len(_sentence_spans(body)) == 40000
+    assert time.perf_counter() - started < 3

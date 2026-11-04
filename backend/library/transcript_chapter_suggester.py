@@ -72,8 +72,9 @@ def windows(items, context_length):
     return result
 
 
-def candidates(text, details):
-    items = sentences(text)
+def candidates(text, details, items=None):
+    # Pass `items` when planning for many models: splitting a long transcript once, not per model.
+    items = sentences(text) if items is None else items
     context = details.get("context_length")
     count = None
     if isinstance(context, int) and context > 0:
