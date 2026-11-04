@@ -17,6 +17,16 @@ interface EventProposal {
   anchor_quote: string | null;
 }
 
+/** A registry event that cites this chapter's text without a timeline proposal behind it (the chapter skill). */
+interface RegistrySource {
+  id: number;
+  anchor_quote: string;
+  stance: string;
+  event: { id: number; title: string; status: string; event_date: string | null };
+}
+
+const STATUS_LABEL: Record<string, string> = { confirmed: "zatwierdzone", proposed: "propozycja", rejected: "odrzucone" };
+
 interface Candidate { reason: string; score: number; event: { id: number; title: string; event_date: string | null } }
 interface Kind { code: string; label: string }
 
@@ -155,6 +165,7 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [events, setEvents] = React.useState<EventProposal[] | null>(null);
+  const [registrySources, setRegistrySources] = React.useState<RegistrySource[]>([]);
   const [note, setNote] = React.useState("");
   const [error, setError] = React.useState<RequestErrorInfo | null>(null);
   const [promoting, setPromoting] = React.useState<number | null>(null);
@@ -170,12 +181,14 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
   // Proposals saved by an earlier run are loaded when the panel is opened for the first time.
   const load = async () => {
     try {
-      const { data } = await axios.get<{ events: EventProposal[] }>(
+      const { data } = await axios.get<{ events: EventProposal[]; registry_sources?: RegistrySource[] }>(
         `${apiUrl}/document/${docId}/events`, { headers, params: { chapter_position: position } },
       );
       setEvents(data.events);
+      setRegistrySources(data.registry_sources ?? []);
     } catch {
       setEvents([]);
+      setRegistrySources([]);
     }
   };
 
@@ -213,7 +226,7 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
   return (
     <div style={{ marginTop: 6 }}>
       <button type="button" onClick={toggle} aria-expanded={open}>
-        📅 Zdarzenia rozdziału{events && events.length > 0 ? ` (${events.length})` : ""}
+        📅 Zdarzenia rozdziału{events && events.length + registrySources.length > 0 ? ` (${events.length + registrySources.length})` : ""}
       </button>
       {open && (
         <div style={{ marginTop: 6, paddingLeft: 8, borderLeft: "3px solid #fbcfe8" }}>
@@ -233,8 +246,26 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
               <RequestErrorDetails details={error.details} />
             </div>
           )}
-          {events !== null && events.length === 0 && !busy && (
+          {events !== null && events.length === 0 && registrySources.length === 0 && !busy && (
             <small style={{ color: "#64748b" }}>Brak zapisanych propozycji zdarzeń dla tego rozdziału.</small>
+          )}
+          {registrySources.length > 0 && (
+            <div aria-label="Zdarzenia z rejestru cytujące ten rozdział" style={{ margin: "6px 0" }}>
+              <strong style={{ fontSize: "0.9em" }}>W rejestrze zdarzeń ({registrySources.length})</strong>
+              <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
+                {registrySources.map((source) => (
+                  <li key={source.id} style={{ marginBottom: 4 }}>
+                    <span style={{ color: "#166534" }}>✓ </span>
+                    <Link to={`/world-events?q=${encodeURIComponent(source.event.title)}`}>#{source.event.id} {source.event.title}</Link>
+                    <small style={{ color: "#64748b" }}>
+                      {" "}({source.event.event_date ?? "bez daty"}, {STATUS_LABEL[source.event.status] ?? source.event.status}
+                      {source.stance === "disputes" ? ", przeczy" : ""})
+                    </small>
+                    <div style={{ color: "#64748b", fontSize: "0.85em" }}>„{source.anchor_quote}”</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {events !== null && events.length > 0 && (
             <ul style={{ margin: "6px 0", paddingLeft: 18 }}>

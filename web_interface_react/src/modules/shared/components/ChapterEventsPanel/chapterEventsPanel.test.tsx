@@ -26,6 +26,32 @@ it("loads saved proposals of the chapter when opened", async () => {
   );
 });
 
+it("lists registry events that cite the chapter even without a timeline proposal", async () => {
+  mocked.get.mockResolvedValue({
+    data: {
+      events: [],
+      registry_sources: [{
+        id: 36, stance: "supports", anchor_quote: "wybrano przewodniczącego Knesetu",
+        event: { id: 57, title: "Rozstrzygnięcie władzy w Izraelu", status: "proposed", event_date: "2026-11-01" },
+      }],
+    },
+  });
+  render(
+    <MemoryRouter>
+      <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={11234} position={2} />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /Zdarzenia rozdziału/ }));
+
+  const link = await screen.findByRole("link", { name: /#57 Rozstrzygnięcie władzy w Izraelu/ });
+  expect(link.getAttribute("href")).toBe("/world-events?q=Rozstrzygni%C4%99cie%20w%C5%82adzy%20w%20Izraelu");
+  expect(screen.getByText(/propozycja/)).toBeTruthy();
+  expect(screen.getByText(/wybrano przewodniczącego Knesetu/)).toBeTruthy();
+  expect(screen.queryByText(/Brak zapisanych propozycji/)).toBeNull();
+  expect(screen.getByRole("button", { name: /Zdarzenia rozdziału \(1\)/ })).toBeTruthy();
+});
+
 it("detects events for this chapter only and lists the result", async () => {
   mocked.get.mockResolvedValue({ data: { events: [] } });
   mocked.post.mockResolvedValue({
