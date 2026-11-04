@@ -28,6 +28,18 @@ from library.storage import ObjectStorage, storage_from_config
 logger = logging.getLogger(__name__)
 
 
+def _same_canonical_text(a: str, b: str) -> bool:
+    """True when two texts differ at most in line endings or edge whitespace.
+
+    Used to decide whether a save really edited the document: derived data
+    (entities) stays valid across such invisible differences.
+    """
+    def norm(text: str) -> str:
+        return (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+    return norm(a) == norm(b)
+
+
 class ExistingDocumentError(ValueError):
     """Raised when an URL submitted as new already belongs to a document."""
 
@@ -478,9 +490,14 @@ class DocumentService:
         current_canonical_text = (
             doc.text_md if effective_type == "webpage" and doc.text_md is not None else doc.text
         ) or ""
-        if (submitted_text is not None or submitted_md is not None) and current_canonical_text != previous_canonical_text:
+        if (submitted_text is not None or submitted_md is not None) and not _same_canonical_text(
+            current_canonical_text, previous_canonical_text,
+        ):
             # A later chunk run must refresh entities against the edited text.
             # Keep rows for review history, but mark them as stale immediately.
+            # A browser textarea returns LF where the database may hold CRLF, so a
+            # save that changed nothing the reader can see must not discard an
+            # explicit NER refresh (it made "go to chunks" detect entities twice).
             doc.entities_checked_at = None
             doc.ner_unavailable_at = None
 

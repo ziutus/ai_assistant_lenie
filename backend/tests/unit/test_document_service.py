@@ -357,6 +357,38 @@ class TestSaveDocument:
         assert doc.document_length == len(doc.text_md)
         assert doc.quality is None
 
+    @pytest.mark.parametrize("submitted", [
+        "# Heading\n\nArticle body",          # identical
+        "# Heading\r\n\r\nArticle body",      # browser/DB differ in line endings only
+        "# Heading\n\nArticle body\n",        # trailing newline only
+    ])
+    def test_save_without_visible_change_keeps_entity_check_marker(self, submitted):
+        session = _make_session()
+        checked = object()
+        doc = _make_doc(text_md="# Heading\r\n\r\nArticle body", text="Heading\r\n\r\nArticle body",
+                        entities_checked_at=checked, ner_unavailable_at=None)
+
+        with patch.object(Document, "get_by_id", return_value=doc):
+            DocumentService(session).save_document(
+                url="https://example.com", link_id=42,
+                document_type="webpage", text_md=submitted,
+            )
+
+        assert doc.entities_checked_at is checked
+
+    def test_save_with_edited_text_clears_entity_check_marker(self):
+        session = _make_session()
+        doc = _make_doc(text_md="# Heading\n\nArticle body", text="Heading\n\nArticle body",
+                        entities_checked_at=object(), ner_unavailable_at=None)
+
+        with patch.object(Document, "get_by_id", return_value=doc):
+            DocumentService(session).save_document(
+                url="https://example.com", link_id=42,
+                document_type="webpage", text_md="# Heading\n\nArticle body, edited",
+            )
+
+        assert doc.entities_checked_at is None
+
     def test_legacy_webpage_plain_text_is_promoted_to_markdown(self):
         session = _make_session()
         doc = _make_doc()
