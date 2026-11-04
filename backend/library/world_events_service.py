@@ -89,12 +89,20 @@ def world_events_index(
     kind: str | None = None,
     status: str | None = None,
     with_countries: bool | None = None,
+    country_id: int | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[dict], int]:
     """Registry events with the documents that mention them (cited sources and linked named mentions)."""
     events, total = list_events(
-        session, q=q, kind=kind, status=status, with_countries=with_countries, limit=limit, offset=offset
+        session,
+        q=q,
+        kind=kind,
+        status=status,
+        with_countries=with_countries,
+        country_id=country_id,
+        limit=limit,
+        offset=offset,
     )
     ids = [event.id for event in events]
     links: dict[int, list[tuple[int, str]]] = {event_id: [] for event_id in ids}

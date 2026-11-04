@@ -597,6 +597,23 @@ def test_filters_over_http(client):
     assert client.get("/geo_events?kind=nonsense").status_code == 400
 
 
+def test_world_events_index_filters_by_country_and_status(client):
+    client.post("/geo_events", json={"title": "Halving Bitcoina", "kind": "market"})
+    client.post(
+        "/geo_events",
+        json={
+            "title": "Wybory w Izraelu",
+            "kind": "election",
+            "participants": [{"type": "country", "ref": "izrael", "role": "location"}],
+        },
+    )
+    titles = lambda query: [e["title"] for e in client.get(f"/world_events?{query}").get_json()["events"]]  # noqa: E731
+    assert titles("country=izrael") == ["Wybory w Izraelu"]
+    assert client.get("/world_events?country=nie-ma-takiego-kraju").status_code in (400, 404)
+    assert sorted(titles("status=proposed") + titles("status=confirmed")) == sorted(titles(""))
+    assert client.get("/world_events?status=nonsense").status_code == 400
+
+
 def test_the_mention_queue_and_decisions_over_http(client, session):
     add_event_mention(session, 1, 1, "Wybory w Izraelu", None, 2)
     add_event_mention(session, 2, 2, "Wybory w Izraelu", None, 1)

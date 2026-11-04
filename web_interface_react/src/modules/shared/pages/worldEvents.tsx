@@ -30,6 +30,8 @@ const WorldEvents = () => {
   const q = params.get("q") ?? "";
   const kind = params.get("kind") ?? "";
   const withCountries = params.get("with_countries") ?? "";
+  const country = params.get("country") ?? "";
+  const status = params.get("status") ?? "";
   const requestedSize = Number(params.get("page_size") ?? DEFAULT_PAGE_SIZE);
   const pageSize = PAGE_SIZES.includes(requestedSize) ? requestedSize : DEFAULT_PAGE_SIZE;
   const requestedPage = Number(params.get("page") ?? "1");
@@ -70,7 +72,7 @@ const WorldEvents = () => {
     setError("");
     const paging = { limit: pageSize, offset: (page - 1) * pageSize };
     const request = tab === "events"
-      ? axios.get(`${apiUrl}/world_events`, { headers, params: { ...(q && { q }), ...(kind && { kind }), ...(withCountries && { with_countries: withCountries }), ...paging } })
+      ? axios.get(`${apiUrl}/world_events`, { headers, params: { ...(q && { q }), ...(kind && { kind }), ...(withCountries && { with_countries: withCountries }), ...(country && { country }), ...(status && { status }), ...paging } })
       : axios.get(`${apiUrl}/world_events/unlinked`, { headers, params: { ...(q && { q }), ...paging } });
     request
       .then((r) => {
@@ -81,7 +83,7 @@ const WorldEvents = () => {
       .catch((reason) => { if (!cancelled) setError(`Nie udało się pobrać danych: ${errorText(reason)}`); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [apiUrl, headers, tab, q, kind, withCountries, page, pageSize, reload]);
+  }, [apiUrl, headers, tab, q, kind, withCountries, country, status, page, pageSize, reload]);
 
   const addEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,6 +143,16 @@ const WorldEvents = () => {
             <option value="">Z krajami i bez</option>
             <option value="1">Tylko z krajami</option>
             <option value="0">Tylko bez krajów</option>
+          </select>
+          <select aria-label="Kraj" value={country} onChange={(e) => update({ country: e.target.value || null, page: null })}>
+            <option value="">Wszystkie kraje</option>
+            {countries.map((c) => <option key={c.slug} value={c.slug}>{c.name_pl}</option>)}
+          </select>
+          <select aria-label="Status zdarzenia" value={status} onChange={(e) => update({ status: e.target.value || null, page: null })}>
+            <option value="">Wszystkie statusy</option>
+            <option value="confirmed">Zatwierdzone</option>
+            <option value="proposed">Propozycje (niezatwierdzone)</option>
+            <option value="rejected">Odrzucone</option>
           </select>
         </>}
         <button type="submit" className="button">Szukaj</button>
