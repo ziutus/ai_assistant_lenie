@@ -99,7 +99,8 @@ it.each([false, true])("offers merge after rename (conflict: %s)", async (confli
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }), { target: { value: "Aden" } });
+  // "Adenn" is not in the document's list, so only the server (409 / same geocode) knows it is Aden.
+  fireEvent.change(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }), { target: { value: "Adenn" } });
   fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
   expect(await screen.findByText(conflict
     ? "Miejsce „Aden” już istnieje — połączyć?" : "To samo miejsce co „Aden” — połączyć?")).toBeTruthy();
@@ -110,6 +111,24 @@ it.each([false, true])("offers merge after rename (conflict: %s)", async (confli
   expect(await screen.findByText("Miejsca zostały połączone.")).toBeTruthy();
   expect(axios.get).toHaveBeenCalledTimes(conflict ? 3 : 4);
   expect(screen.queryByRole("button", { name: "Połącz" })).toBeNull();
+});
+
+it("turns the rename into a merge when the typed name is another place of the document", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  await openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  expect(screen.getByRole("checkbox")).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox", { name: "Popraw nazwę miejsca" }), { target: { value: " aden " } });
+  expect(screen.getByText(/To samo miejsce co „Aden”/)).toBeTruthy();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Zatwierdź" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Połącz z „Aden”" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/10753/places/merge",
+    { source_entity_id: 7, target_entity_id: 8 }, { headers: expect.any(Object) }));
+  expect(axios.patch).not.toHaveBeenCalled();
+  expect(await screen.findByText("Miejsca zostały połączone.")).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Popraw nazwę miejsca" })).toBeNull();
 });
 
 it("shows a backend conflict and keeps the form open", async () => {

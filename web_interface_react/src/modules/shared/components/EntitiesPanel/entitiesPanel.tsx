@@ -993,6 +993,11 @@ const EntitiesPanel = ({
       return;
     }
     if (renameFor?.id == null || !renameText.trim() || isRenaming) return;
+    if (renameDuplicate) {
+      // The typed name is a place that already exists in this document: renaming would only hit a 409.
+      await mergePlaces(renameFor, renameDuplicate);
+      return;
+    }
     setIsRenaming(true);
     setMergeHint(null);
     setMessage("");
@@ -1550,8 +1555,15 @@ const EntitiesPanel = ({
   ];
   const rejectedPlaces = allPlaces.filter(item => item.place_verification_status === "rejected");
   const places = allPlaces.filter(item => !item.is_country && item.place_verification_status !== "rejected");
+  // Another place of this document that already carries the name typed in "Popraw nazwę miejsca" (its name or
+  // one of its spellings, case-insensitive): the form then offers a merge instead of a rename.
+  const renameKey = renameText.trim().toLocaleLowerCase("pl");
+  const renameDuplicate: EntityItem | null = renameFor != null && renameFor.organization_id == null && renameKey
+    ? places.find((place) => place.id != null && place.id !== renameFor.id
+      && [place.text, ...(place.variants ?? [])].some((name) => name.toLocaleLowerCase("pl") === renameKey)) ?? null
+    : null;
   const facilities = entities?.facility ?? [];
-  const isEmpty = !persons.length && !organizations.length && !places.length && !rejectedPlaces.length
+  const isEmpty =!persons.length && !organizations.length && !places.length && !rejectedPlaces.length
     && !facilities.length && !countries.length;
   const reviewFormValid = Boolean(reviewReason)
     && (reviewReason !== "other" || Boolean(reviewComment.trim()));
@@ -2133,7 +2145,13 @@ const EntitiesPanel = ({
             <input autoFocus value={renameText} maxLength={500} disabled={isRenaming}
               onChange={(event) => setRenameText(event.target.value)} />
           </label>
-          {renameFor.organization_id == null && (
+          {renameDuplicate && (
+            <div style={{ fontSize: "0.9em" }}>
+              To samo miejsce co „{renameDuplicate.text}” (już jest w tym dokumencie) — zamiast zmieniać nazwę,
+              połącz je. Tekst dokumentu zostaje bez zmian, a ta forma (np. odmiana) dopisuje się do „{renameDuplicate.text}”.
+            </div>
+          )}
+          {renameFor.organization_id == null && !renameDuplicate && (
             <label style={{ display: "block", fontSize: "0.9em" }}>
               <input type="checkbox" checked={renameFixText} disabled={isRenaming}
                 onChange={(event) => setRenameFixText(event.target.checked)} />
@@ -2146,9 +2164,9 @@ const EntitiesPanel = ({
               źródła. Stara nazwa zostaje aliasem.
             </div>
           )}
-          <button type="button" className="button" disabled={isRenaming || !renameText.trim()}
-            onClick={() => void handleRename()}>Zatwierdź</button>
-          <button type="button" disabled={isRenaming} onClick={() => setRenameFor(null)}>Anuluj</button>
+          <button type="button" className="button" disabled={isRenaming || isMergingPlace || !renameText.trim()}
+            onClick={() => void handleRename()}>{renameDuplicate ? `Połącz z „${renameDuplicate.text}”` : "Zatwierdź"}</button>
+          <button type="button" disabled={isRenaming || isMergingPlace} onClick={() => setRenameFor(null)}>Anuluj</button>
         </div>
       )}
 
