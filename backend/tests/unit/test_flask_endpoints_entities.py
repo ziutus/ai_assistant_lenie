@@ -937,6 +937,38 @@ class TestWebsiteEntitiesRename:
         assert audit.call_args.kwargs["entity_text"] == "Jemenu Północnego"
         session.commit.assert_called_once()
 
+    def _fix_text_call(self, client, has_embeddings=False):
+        entity = MagicMock(id=7, document_id=42, entity_type="geogName", entity_text="New Deli",
+                           mention_count=2, variants=["New Deli"], geocode_id=None)
+        document = MagicMock(text="W New Deli i w new deli. Deli nie ruszać.")
+        session = MagicMock()
+        session.get.side_effect = [entity, document]
+        session.query.return_value.filter.return_value.first.return_value = None
+        item = {"id": 7, "text": "New Delhi", "count": 2}
+        with patch("server.get_scoped_session", return_value=session), patch(
+            "library.entity_service.get_document_entities", return_value={"geogName": [item]}
+        ), patch("library.place_verification.remove_orphaned_tag", return_value=None), patch(
+            "library.entity_review_audit.record_entity_decision"
+        ), patch("library.place_verification._get_or_create_geocode", side_effect=TimeoutError), patch(
+            "library.document_editing.document_has_embeddings", return_value=has_embeddings
+        ):
+            resp = client.patch("/website_entities/7", json={"text": "New Delhi", "fix_text": True},
+                                headers=API_HEADERS)
+        return resp, document, session
+
+    def test_fix_text_corrects_document_text(self, client):
+        resp, document, session = self._fix_text_call(client)
+        assert resp.status_code == 200
+        assert resp.get_json()["text_replacements"] == 2
+        assert document.text == "W New Delhi i w New Delhi. Deli nie ruszać."
+        session.commit.assert_called_once()
+
+    def test_fix_text_refused_with_embeddings(self, client):
+        resp, document, session = self._fix_text_call(client, has_embeddings=True)
+        assert resp.status_code == 409
+        assert document.text.startswith("W New Deli")
+        session.commit.assert_not_called()
+
     @pytest.mark.parametrize("concurrent", [False, True])
     def test_collision(self, client, concurrent):
         from sqlalchemy.exc import IntegrityError

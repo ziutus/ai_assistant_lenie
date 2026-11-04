@@ -615,6 +615,7 @@ const EntitiesPanel = ({
   const [renameFor, setRenameFor] = React.useState<EntityItem | null>(null);
   const [renameText, setRenameText] = React.useState("");
   const [isRenaming, setIsRenaming] = React.useState(false);
+  const [renameFixText, setRenameFixText] = React.useState(false);
   const [isSettingRelevance, setIsSettingRelevance] = React.useState(false);
   // "Zmień na miejsce" (person -> place) and "Podziel" (one place entity listing several places) forms.
   const [toPlaceFor, setToPlaceFor] = React.useState<EntityItem | null>(null);
@@ -746,6 +747,7 @@ const EntitiesPanel = ({
     setDeleteFor(null);
     setRenameFor(null);
     setRenameText("");
+    setRenameFixText(false);
     setMergeHint(null);
     setReviewReason("");
     setReviewComment("");
@@ -996,10 +998,12 @@ const EntitiesPanel = ({
     setMessage("");
     try {
       const response = await axios.patch(`${apiUrl}/website_entities/${renameFor.id}`,
-        { text: renameText.trim() }, { headers: jsonHeaders });
+        { text: renameText.trim(), ...(renameFixText ? { fix_text: true } : {}) }, { headers: jsonHeaders });
       setRenameFor(null);
+      setRenameFixText(false);
       fetchEntities();
-      setMessage(`Nazwa miejsca została poprawiona — ${response.data.geocoded
+      setMessage(`Nazwa miejsca została poprawiona${response.data.text_replacements
+        ? ` (w tekście: ${response.data.text_replacements} zamian)` : ""} — ${response.data.geocoded
         ? "miejsce potwierdzone przez geokoder" : "geokoder nie potwierdził"}.`);
       if (response.data.same_place_entity) {
         setMergeHint({ source: renameFor, target: response.data.same_place_entity, conflict: false });
@@ -1593,7 +1597,7 @@ const EntitiesPanel = ({
       entries.push({ label: "Otwórz w rejestrze organizacji", to: `/organizations/${item.organization_id}` });
     }
     if (item.organization_id != null) {
-      entries.push({ label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } });
+      entries.push({ label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); setRenameFixText(false); } });
     }
     if (item.information_source_id != null) {
       entries.push({ label: "Dane źródła (typ, strona, opis)", action: () => {
@@ -1677,7 +1681,7 @@ const EntitiesPanel = ({
   const placeMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "place"),
     ...relevanceEntries(item),
-    { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); } },
+    { label: "Popraw nazwę", action: () => { resetFlows(); setRenameFor(item); setRenameText(item.text); setRenameFixText(false); } },
     ...(places.some((place) => place.id != null && place.id !== item.id)
       ? [{ label: "Połącz z innym miejscem", action: () => { resetFlows(); setPlaceMergeQuery(""); setPlaceMergeFor(item); } }] : []),
     { label: item.split_suggestion ? `Podziel na: ${item.split_suggestion.join(", ")}` : "Podziel na kilka miejsc…",
@@ -2129,6 +2133,13 @@ const EntitiesPanel = ({
             <input autoFocus value={renameText} maxLength={500} disabled={isRenaming}
               onChange={(event) => setRenameText(event.target.value)} />
           </label>
+          {renameFor.organization_id == null && (
+            <label style={{ display: "block", fontSize: "0.9em" }}>
+              <input type="checkbox" checked={renameFixText} disabled={isRenaming}
+                onChange={(event) => setRenameFixText(event.target.checked)} />
+              {" "}Poprawna pisownia — to błąd transkrypcji: popraw też tekst dokumentu
+            </label>
+          )}
           {renameFor.organization_id != null && (
             <div style={{ color: "#667", fontSize: "0.85em" }}>
               Zmiana jest globalna: dotyczy rejestru organizacji, tego i innych dokumentów oraz powiązanego
