@@ -2,7 +2,7 @@
 
 Endpoints (x-api-key required via the global before_request; writes are blocked for read_only keys there):
   GET  /geo_event_kinds, /geo_event_roles            — dictionaries with Polish labels
-  GET  /world_events?q=&kind=&status=&with_countries=&limit=&offset=
+  GET  /world_events?q=&kind=&status=&country=&with_countries=&limit=&offset=
                                                      — canonical events with the documents that mention them
   GET  /world_events/unlinked?q=&limit=&offset=      — named-event mentions not linked to any event, with suggestions
   GET  /world_events/candidates?name=                — events a name may mean (alias first, then similar)
@@ -18,7 +18,7 @@ import logging
 from flask import Blueprint, g, jsonify, request
 
 from library.db.engine import get_scoped_session
-from library.geopolitics_service import GeopoliticsError, event_to_dict
+from library.geopolitics_service import GeopoliticsError, event_to_dict, resolve_country
 from library.world_events_service import (
     KIND_LABELS,
     ROLE_LABELS,
@@ -88,12 +88,17 @@ def get_event_roles():
 def get_world_events():
     session = get_scoped_session()
     try:
+        country_id = None
+        if request.args.get("country"):
+            ref = request.args["country"]
+            country_id = resolve_country(session, int(ref) if ref.isdigit() else ref).id
         items, total = world_events_index(
             session,
             q=request.args.get("q") or None,
             kind=request.args.get("kind") or None,
             status=request.args.get("status") or None,
             with_countries=_flag("with_countries"),
+            country_id=country_id,
             limit=_int_arg("limit", 50, 200) or 50,
             offset=_int_arg("offset", 0, 1_000_000),
         )

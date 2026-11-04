@@ -2260,7 +2260,67 @@ def document_events(doc_id: int):
             {**_event_to_dict(row), "sort_year": row.sort_year, "world_events": promoted.get(row.id, [])}
             for row in rows
         ],
+        "registry_sources": _registry_sources(session, doc, chapter_filter),
     })
+
+
+def _registry_sources(session, doc, chapter_position: int | None) -> list[dict]:
+    """Registry events that cite this document without a timeline entry behind them.
+
+    The chapter skill and ``POST /geo_events/<id>/sources`` record a document passage (``anchor_quote``) with no
+    ``document_events`` row, so the timeline panel cannot see them through ``document_event_id``. With
+    ``chapter_position`` only the passages that occur in that chapter are kept; a chapter that cannot be resolved
+    yields none rather than a wrong guess.
+    """
+    from library.db.models import GeoEvent, GeoEventSource
+
+    rows = session.execute(
+        select(GeoEventSource, GeoEvent)
+        .join(GeoEvent, GeoEvent.id == GeoEventSource.event_id)
+        .where(GeoEventSource.document_id == doc.id, GeoEventSource.document_event_id.is_(None))
+        .order_by(GeoEvent.id, GeoEventSource.id)
+    ).all()
+    if not rows:
+        return []
+    chapter_text = None
+    if chapter_position is not None:
+        chapter_text = _fold_whitespace(_editor_chapter_body(doc.text or "", chapter_position))
+        if not chapter_text:
+            return []
+    return [
+        {
+            "id": source.id,
+            "anchor_quote": source.anchor_quote,
+            "stance": source.stance,
+            "event": {
+                "id": event.id,
+                "title": event.title,
+                "status": event.status,
+                "event_date": event.event_date.isoformat() if event.event_date else None,
+            },
+        }
+        for source, event in rows
+        if chapter_text is None or _fold_whitespace(source.anchor_quote) in chapter_text
+    ]
+
+
+def _editor_chapter_body(text: str, position: int) -> str:
+    """Body of one ``##`` chapter numbered like ``/ner/:id`` does (preamble = 0); empty when there is none."""
+    from library.transcript_chapter_boundaries import parse_sections
+
+    number = 0
+    for section in parse_sections(text):
+        if section.heading:
+            number += 1
+        elif not section.body:
+            continue
+        if number == position:
+            return section.body
+    return ""
+
+
+def _fold_whitespace(text: str) -> str:
+    return " ".join((text or "").split()).casefold()
 
 
 def _promoted_world_events(session, document_event_ids: list[int]) -> dict[int, list[dict]]:

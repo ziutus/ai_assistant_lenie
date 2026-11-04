@@ -597,6 +597,23 @@ def test_filters_over_http(client):
     assert client.get("/geo_events?kind=nonsense").status_code == 400
 
 
+def test_world_events_index_filters_by_country_and_status(client):
+    client.post("/geo_events", json={"title": "Halving Bitcoina", "kind": "market"})
+    client.post(
+        "/geo_events",
+        json={
+            "title": "Wybory w Izraelu",
+            "kind": "election",
+            "participants": [{"type": "country", "ref": "izrael", "role": "location"}],
+        },
+    )
+    titles = lambda query: [e["title"] for e in client.get(f"/world_events?{query}").get_json()["events"]]  # noqa: E731
+    assert titles("country=izrael") == ["Wybory w Izraelu"]
+    assert client.get("/world_events?country=nie-ma-takiego-kraju").status_code in (400, 404)
+    assert sorted(titles("status=proposed") + titles("status=confirmed")) == sorted(titles(""))
+    assert client.get("/world_events?status=nonsense").status_code == 400
+
+
 def test_the_mention_queue_and_decisions_over_http(client, session):
     add_event_mention(session, 1, 1, "Wybory w Izraelu", None, 2)
     add_event_mention(session, 2, 2, "Wybory w Izraelu", None, 1)
@@ -684,6 +701,33 @@ def test_context_evidence_over_http(client, session):
     assert ok.status_code == 201
     assert sorted(e["kind"] for e in ok.get_json()["assessment"]["evidence"]) == ["context", "direct"]
     assert session.query(CountryRelationEvidence).count() == 2 and session.query(CountryRelationAssessment).count() == 1
+
+
+def test_sources_cited_without_a_timeline_entry_are_reported_per_chapter(client, session):
+    from types import SimpleNamespace
+
+    from library import chunk_review_routes
+
+    text = (
+        "Wstęp bez nagłówka.\n\n## Izrael\n\nW Knesecie   wybrano przewodniczącego.\n\n"
+        "## Iran\n\nStany Zjednoczone zaatakowały wyspę Keszm.\n"
+    )
+    doc = SimpleNamespace(id=1, text=text)
+    israel = make(session, "Wybory w Izraelu")
+    iran = make(session, "Atak na Keszm")
+    for event, quote in ((israel, "w knesecie wybrano przewodniczącego"), (iran, "zaatakowały wyspę Keszm")):
+        added = client.post(f"/geo_events/{event.id}/sources", json={"document_id": 1, "quote": quote})
+        assert added.status_code in (200, 201), added.get_json()
+
+    everything = chunk_review_routes._registry_sources(session, doc, None)
+    assert sorted(item["event"]["title"] for item in everything) == ["Atak na Keszm", "Wybory w Izraelu"]
+    first = chunk_review_routes._registry_sources(session, doc, 1)
+    second = chunk_review_routes._registry_sources(session, doc, 2)
+    assert [item["event"]["title"] for item in first] == ["Wybory w Izraelu"]
+    assert [item["event"]["title"] for item in second] == ["Atak na Keszm"]
+    assert {"id", "title", "status", "event_date"} <= set(first[0]["event"])
+    assert chunk_review_routes._registry_sources(session, doc, 9) == []
+    assert chunk_review_routes._registry_sources(session, SimpleNamespace(id=2, text=text), None) == []
 
 
 def test_promoted_entries_are_reported_back_to_the_timeline_panel(client, session):

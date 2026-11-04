@@ -83,6 +83,18 @@ it("passes the search, kind and country filters to the registry", async () => {
   expect((screen.getByLabelText("Rodzaj zdarzenia") as HTMLSelectElement).value).toBe("election");
 });
 
+it("filters by country and by status and keeps both in the URL", async () => {
+  open("/world-events?country=izrael&status=proposed");
+  await screen.findByRole("list", { name: "Zdarzenia" });
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/world_events", {
+    ...H, params: { country: "izrael", status: "proposed", limit: 25, offset: 0 } }));
+  expect((screen.getByLabelText("Kraj") as HTMLSelectElement).value).toBe("izrael");
+  expect((screen.getByLabelText("Status zdarzenia") as HTMLSelectElement).value).toBe("proposed");
+  fireEvent.change(screen.getByLabelText("Status zdarzenia"), { target: { value: "confirmed" } });
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/world_events", {
+    ...H, params: { country: "izrael", status: "confirmed", limit: 25, offset: 0 } }));
+});
+
 it("explains an empty registry and an error", async () => {
   respond({ "/world_events": { total: 0, events: [] } });
   open();
