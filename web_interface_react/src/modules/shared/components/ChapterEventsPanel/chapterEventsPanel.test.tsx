@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import axios from "axios";
 import { MemoryRouter } from "react-router-dom";
-import ChapterEventsPanel from "./chapterEventsPanel";
+import ChapterEventsPanel, { ChapterEventsDetectButton } from "./chapterEventsPanel";
 
 vi.mock("axios");
 const mocked = vi.mocked(axios, true);
@@ -18,7 +18,6 @@ it("loads saved proposals of the chapter when opened", async () => {
   mocked.get.mockResolvedValue({ data: { events: [proposal] } });
   render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
 
-  fireEvent.click(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ }));
 
   expect(await screen.findByText(/Atak na Polskę/)).toBeTruthy();
   expect(mocked.get).toHaveBeenCalledWith(
@@ -42,14 +41,13 @@ it("lists registry events that cite the chapter even without a timeline proposal
     </MemoryRouter>,
   );
 
-  fireEvent.click(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ }));
 
   const link = await screen.findByRole("link", { name: /#57 Rozstrzygnięcie władzy w Izraelu/ });
   expect(link.getAttribute("href")).toBe("/world-events?q=Rozstrzygni%C4%99cie%20w%C5%82adzy%20w%20Izraelu");
   expect(screen.getByText(/propozycja/)).toBeTruthy();
   expect(screen.getByText(/wybrano przewodniczącego Knesetu/)).toBeTruthy();
   expect(screen.queryByText(/Brak zapisanych propozycji/)).toBeNull();
-  expect(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale \(1\)/ })).toBeTruthy();
+  expect(await screen.findByText(/Wydarzenia z datą w rozdziale \(1\):/)).toBeTruthy();
 });
 
 it("detects events for this chapter only and lists the result", async () => {
@@ -59,7 +57,6 @@ it("detects events for this chapter only and lists the result", async () => {
   });
   render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
 
-  fireEvent.click(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ }));
   fireEvent.click(await screen.findByRole("button", { name: /Wykryj wydarzenia/ }));
 
   await waitFor(() => expect(screen.getByText(/Atak na Polskę/)).toBeTruthy());
@@ -75,7 +72,6 @@ const renderOpen = async () => {
       <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
     </MemoryRouter>,
   );
-  fireEvent.click(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ }));
   fireEvent.click(await screen.findByRole("button", { name: /Do rejestru wydarzeń/ }));
 };
 
@@ -120,12 +116,38 @@ it("attaches the proposal as a source of an existing event the reviewer confirms
   expect(mocked.post.mock.calls[0][1]).toEqual({ event_id: 4 });
 });
 
-it("draws its toggle as a bold label like the chip rows, not as a framed button", () => {
-  mocked.get.mockResolvedValue({ data: { events: [] } });
+it("is always expanded: loads the chapter's proposals on its own, with a bold label and no toggle", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [proposal] } });
   render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
-  const toggle = screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ });
-  expect(toggle.textContent).toMatch(/^Wydarzenia z datą w rozdziale: /);
-  expect(toggle.style.fontWeight).toBe("700");
-  expect(toggle.style.background).toBe("transparent");
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+  expect(await screen.findByText(/Atak na Polskę/)).toBeTruthy();
+  const label = screen.getByText(/^Wydarzenia z datą w rozdziale \(1\):$/);
+  expect(label.tagName).toBe("STRONG");
+  expect(screen.queryByRole("button", { name: /Wydarzenia z datą w rozdziale/ })).toBeNull();
+  expect(mocked.get).toHaveBeenCalledWith("http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2 } }));
+});
+
+it("runs the detection when the host bumps detectSignal and has no button of its own then", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [] } });
+  mocked.post.mockResolvedValue({ data: { events: [proposal], model: "m1", rejected_without_quote: 0, rejected_without_date: 0 } });
+  const onBusyChange = vi.fn();
+  const { rerender } = render(
+    <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} detectSignal={0} onBusyChange={onBusyChange} />,
+  );
+  expect(screen.queryByRole("button", { name: /Wykryj wydarzenia/ })).toBeNull();
+  expect(mocked.post).not.toHaveBeenCalled();
+
+  rerender(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} detectSignal={1} onBusyChange={onBusyChange} />);
+
+  expect(await screen.findByText(/Atak na Polskę/)).toBeTruthy();
+  expect(mocked.post.mock.calls[0][0]).toBe("http://api/document/5/chapter/2/detect_events");
+  expect(onBusyChange).toHaveBeenCalledWith(true);
+  expect(onBusyChange).toHaveBeenLastCalledWith(false);
+});
+
+it("exports the detect button for hosts that keep it among their own buttons", () => {
+  const onClick = vi.fn();
+  render(<ChapterEventsDetectButton onClick={onClick} />);
+  fireEvent.click(screen.getByRole("button", { name: "🔎 Wykryj wydarzenia" }));
+  expect(onClick).toHaveBeenCalledTimes(1);
 });

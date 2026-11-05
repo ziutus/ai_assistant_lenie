@@ -151,7 +151,24 @@ interface Props {
   apiKey: string;
   docId: string | number;
   position: number;
+  /**
+   * Host-driven detection: the host draws `ChapterEventsDetectButton` among its own chapter buttons and bumps this
+   * counter on every click; the panel runs the detection when it changes. Without it (undefined) the panel draws
+   * its own "Wykryj wydarzenia" button.
+   */
+  detectSignal?: number;
+  /** Tells the host whether a detection is running (to show "Wykrywam…" on its button). */
+  onBusyChange?: (busy: boolean) => void;
 }
+
+const DETECT_TITLE = "Model szuka w tym rozdziale wydarzeń z datą; wynik zastępuje wcześniejsze propozycje tego rozdziału";
+
+/** The "🔎 Wykryj wydarzenia" trigger, for hosts that keep it among their other chapter buttons. */
+export const ChapterEventsDetectButton = ({ onClick, busy }: { onClick: () => void; busy?: boolean }) => (
+  <button type="button" disabled={busy} onClick={onClick} title={DETECT_TITLE}>
+    {busy ? "⏳ Wykrywam wydarzenia…" : "🔎 Wykryj wydarzenia"}
+  </button>
+);
 
 /**
  * "Wykryj wydarzenia": the LLM looks for dated events in ONE chapter
@@ -160,9 +177,8 @@ interface Props {
  * timeline. Nothing is turned into a named-event entity automatically; a proposal can be promoted by hand to the
  * registry of world events ("➕ Do rejestru wydarzeń", `PromoteForm`).
  */
-const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
+const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onBusyChange }: Props) => {
   const headers = React.useMemo(() => ({ "x-api-key": apiKey }), [apiKey]);
-  const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [events, setEvents] = React.useState<EventProposal[] | null>(null);
   const [registrySources, setRegistrySources] = React.useState<RegistrySource[]>([]);
@@ -178,24 +194,18 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
     setNote(`Dodano do rejestru wydarzeń: #${registry.id} ${registry.title}.`);
   };
 
-  // Proposals saved by an earlier run are loaded when the panel is opened for the first time.
+  // The panel is always expanded: proposals saved by an earlier run are loaded as soon as it appears.
   const load = async () => {
     try {
       const { data } = await axios.get<{ events: EventProposal[]; registry_sources?: RegistrySource[] }>(
         `${apiUrl}/document/${docId}/events`, { headers, params: { chapter_position: position } },
       );
-      setEvents(data.events);
-      setRegistrySources(data.registry_sources ?? []);
+      setEvents(Array.isArray(data?.events) ? data.events : []);
+      setRegistrySources(Array.isArray(data?.registry_sources) ? data.registry_sources : []);
     } catch {
       setEvents([]);
       setRegistrySources([]);
     }
-  };
-
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    if (next && events === null) void load();
   };
 
   const detect = async () => {
@@ -223,21 +233,33 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
     }
   };
 
+  React.useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiUrl, docId, position]);
+
+  React.useEffect(() => {
+    if (detectSignal) void detect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectSignal]);
+
+  // Only a change of `busy` is reported (the host usually passes a fresh callback on every render).
+  React.useEffect(() => { onBusyChange?.(busy); }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div style={{ marginTop: 6 }}>
-      {/* Looks like the label of the "Nazwy wydarzeń" chip row (bold text), and expands on click. */}
-      <button type="button" onClick={toggle} aria-expanded={open}
-        style={{ border: 0, background: "transparent", padding: 0, color: "inherit", font: "inherit", fontWeight: 700, cursor: "pointer" }}>
-        Wydarzenia z datą w rozdziale{events && events.length + registrySources.length > 0 ? ` (${events.length + registrySources.length})` : ""}:{" "}
-        <span aria-hidden="true" style={{ fontWeight: 400 }}>{open ? "▾" : "▸"}</span>
-      </button>
-      {open && (
+      {/* Same look as the label of the "Nazwy wydarzeń" chip row. */}
+      <strong>
+        Wydarzenia z datą w rozdziale{events && events.length + registrySources.length > 0 ? ` (${events.length + registrySources.length})` : ""}:
+      </strong>
+      {(
         <div style={{ marginTop: 6, paddingLeft: 8, borderLeft: "3px solid #fbcfe8" }}>
-          <button type="button" disabled={busy} onClick={() => void detect()}
-            title="Model szuka w tym rozdziale wydarzeń z datą; wynik zastępuje wcześniejsze propozycje tego rozdziału">
-            {busy ? "⏳ Wykrywam wydarzenia…" : "🔎 Wykryj wydarzenia"}
-          </button>
-          {" "}
+          {detectSignal === undefined && (
+            <>
+              <ChapterEventsDetectButton busy={busy} onClick={() => void detect()} />
+              {" "}
+            </>
+          )}
           <SkillHint skill="/lenie-chapter-world-events" command={`/lenie-chapter-world-events ${docId} ${position}`}>
             Skill przejrzy wydarzenia tego rozdziału, sprawdzi duplikaty w rejestrze, dobierze rodzaj i kraje i po
             Twojej zgodzie doda je do rejestru wydarzeń.

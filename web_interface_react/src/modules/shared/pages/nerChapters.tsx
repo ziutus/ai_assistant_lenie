@@ -5,7 +5,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
 import ChapterDescriptionsPanel, { ChapterDescriptionsButton } from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
-import ChapterEventsPanel from "../components/ChapterEventsPanel/chapterEventsPanel";
+import ChapterEventsPanel, { ChapterEventsDetectButton } from "../components/ChapterEventsPanel/chapterEventsPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistryDialog";
@@ -381,6 +381,9 @@ const NerChapters = () => {
   const closeRegistry = React.useCallback(() => setRegistering(null), []);
   // The chapter whose "Uzupełnij brakujące opisy" panel is open (the trigger sits in the chapter's button bar).
   const [descriptionsFor, setDescriptionsFor] = React.useState<number | null>(null);
+  // "Wykryj wydarzenia" sits in the same button bar: a click bumps the nonce, the chapter's panel runs the detection.
+  const [eventsDetect, setEventsDetect] = React.useState<{ position: number; nonce: number } | null>(null);
+  const [eventsBusyFor, setEventsBusyFor] = React.useState<number | null>(null);
   const describeFromText = (item: EntityItem | undefined) => (event: React.MouseEvent) => {
     // A selected fragment keeps the "add entity" menu of the surrounding text.
     if (!item || item.id === undefined || selectedFragment(window.getSelection())) return;
@@ -451,6 +454,41 @@ const NerChapters = () => {
     };
   });
   const lastPosition = Math.max(0, ...sections.map((section) => section.position));
+
+  // The chapter's buttons. A content chapter shows them as ONE bar (wrapping onto two rows if needed) at the top of its
+  // right-hand column; a skipped chapter has no such column, so its merge buttons stay in the header row.
+  const renderChapterBar = (section: Section, type: ChapterType) => (
+    <>
+      {type === "TEMAT" && (
+        <ChapterDescriptionsButton expanded={descriptionsFor === section.position}
+          onClick={() => setDescriptionsFor((current) => current === section.position ? null : section.position)} />
+      )}
+      {type === "TEMAT" && id && (
+        <ChapterEventsDetectButton busy={eventsBusyFor === section.position}
+          onClick={() => setEventsDetect((current) => ({ position: section.position, nonce: (current?.nonce ?? 0) + 1 }))} />
+      )}
+      {section.position >= 2 && (
+        <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z poprzednim`}
+          onClick={() => void mergeChapter(section.position, "ten rozdział z poprzednim")}>⇡ Scal z poprzednim</button>
+      )}
+      {section.position >= 1 && section.position < lastPosition && (
+        <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z następnym`}
+          onClick={() => void mergeChapter(section.position + 1, "ten rozdział z następnym")}>⇣ Scal z następnym</button>
+      )}
+      {type === "TEMAT" && section.position >= 1 && (
+        <button type="button" disabled={merging || paragraphizing !== null}
+          aria-label={`Podziel rozdział ${section.position} na akapity`}
+          title="Bielik wybiera granice akapitów; tekst się nie zmienia"
+          onClick={() => void paragraphizeChapter(section.position)}>
+          {paragraphizing === section.position ? "⏳ Dzielę na akapity…" : "¶ Podziel na akapity"}
+        </button>
+      )}
+      {type === "TEMAT" && section.position >= 1 && (
+        <button type="button" disabled={merging || loadingEntities} aria-label={`Oznacz rozdział ${section.position} jako szum`}
+          onClick={() => void markAsNoise(section.position, "ten rozdział")}>🗑 Oznacz jako szum</button>
+      )}
+    </>
+  );
   // With a filter active only content chapters that still have matching entities stay listed;
   // without one every chapter is shown, skipped (ad/noise/source) chapters included.
   const loadingEntities = entityData === null && !entityError;
@@ -627,32 +665,9 @@ const NerChapters = () => {
                       <span style={{ color: "#64748b", fontSize: "0.85em" }}>
                         {section.sentence_count} zdań · {loadingEntities ? "wczytuję encje…" : `${count} encji`}
                       </span>
-                      {(section.position >= 1 || type === "TEMAT") && (
+                      {type !== "TEMAT" && section.position >= 1 && (
                         <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                          {type === "TEMAT" && (
-                            <ChapterDescriptionsButton expanded={descriptionsFor === section.position}
-                              onClick={() => setDescriptionsFor((current) => current === section.position ? null : section.position)} />
-                          )}
-                          {section.position >= 2 && (
-                            <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z poprzednim`}
-                              onClick={() => void mergeChapter(section.position, "ten rozdział z poprzednim")}>⇡ Scal z poprzednim</button>
-                          )}
-                          {section.position >= 1 && section.position < lastPosition && (
-                            <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z następnym`}
-                              onClick={() => void mergeChapter(section.position + 1, "ten rozdział z następnym")}>⇣ Scal z następnym</button>
-                          )}
-                          {type === "TEMAT" && section.position >= 1 && (
-                            <button type="button" disabled={merging || paragraphizing !== null}
-                              aria-label={`Podziel rozdział ${section.position} na akapity`}
-                              title="Bielik wybiera granice akapitów; tekst się nie zmienia"
-                              onClick={() => void paragraphizeChapter(section.position)}>
-                              {paragraphizing === section.position ? "⏳ Dzielę na akapity…" : "¶ Podziel na akapity"}
-                            </button>
-                          )}
-                          {type === "TEMAT" && section.position >= 1 && (
-                            <button type="button" disabled={merging || loadingEntities} aria-label={`Oznacz rozdział ${section.position} jako szum`}
-                              onClick={() => void markAsNoise(section.position, "ten rozdział")}>🗑 Oznacz jako szum</button>
-                          )}
+                          {renderChapterBar(section, type)}
                         </span>
                       )}
                     </div>
@@ -687,13 +702,20 @@ const NerChapters = () => {
                           ))}
                         </div>
                         <div>
+                          <div aria-label={`Przyciski rozdziału ${section.position}`}
+                            style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                            {renderChapterBar(section, type)}
+                          </div>
                           {renderGroups(entities)}
                           {id && <ChapterDescriptionsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
                             position={section.position} onSaved={() => setVersion((current) => current + 1)}
                             open={descriptionsFor === section.position}
                             onOpenChange={(value) => setDescriptionsFor(value ? section.position : null)} />}
                           {id && <ChapterEventsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
-                            position={section.position} />}
+                            position={section.position}
+                            detectSignal={eventsDetect?.position === section.position ? eventsDetect.nonce : 0}
+                            onBusyChange={(busy) => setEventsBusyFor((current) =>
+                              busy ? section.position : current === section.position ? null : current)} />}
                           {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>
