@@ -683,6 +683,20 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     from library.place_registry import name_key, profile_index
 
     place_profiles = profile_index(session)
+    from library.geopolitics_service import name_key as event_name_key
+
+    registry_events_by_key: dict[str, dict] = {}
+    if any(r.entity_type == "eventName" for r in rows):
+        from library.db.models import GeoEvent, GeoEventMentionLink
+
+        for link, event in session.execute(
+            select(GeoEventMentionLink, GeoEvent)
+            .join(GeoEvent, GeoEvent.id == GeoEventMentionLink.event_id)
+            .where(GeoEventMentionLink.document_id == document_id, GeoEventMentionLink.status == "confirmed")
+        ).all():
+            registry_events_by_key[link.name_key] = {
+                "id": event.id, "title": event.title, "status": event.status, "surface": link.surface,
+            }
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
     pipelines_by_query: dict[str, InfraGeometry] = {}
@@ -740,6 +754,13 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             }
         if row.entity_type == "eventName":
             item["description"] = row.description
+            # The registry event this name was linked to FOR THIS DOCUMENT (null = not linked yet), so the
+            # chip can say so instead of looking unrelated to the registry entry.
+            item["registry_event"] = next((
+                registry_events_by_key[key]
+                for key in (event_name_key(row.entity_text), *(event_name_key(v) for v in (row.variants or [])))
+                if key in registry_events_by_key
+            ), None)
         if row.entity_type == "persName" and row.entity_text in persons_by_mention:
             link = persons_by_mention[row.entity_text]
             item["link_id"] = link["link_id"]

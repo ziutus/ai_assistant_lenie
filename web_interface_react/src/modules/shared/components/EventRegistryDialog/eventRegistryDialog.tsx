@@ -12,6 +12,8 @@ interface Props {
   docId: string | number;
   apiUrl: string;
   headers: Record<string, string>;
+  /** The event the name is linked to now: choosing another event replaces that link (it is removed first). */
+  current?: { id: number; surface: string } | null;
   onClose: () => void;
   onDone: (message: string) => void;
 }
@@ -23,7 +25,7 @@ interface Props {
  * (`POST /geo_events`, the marked name becomes its alias) and the name is linked to it. Nothing is written before
  * the button is pressed; a name alone never links anything.
  */
-const EventRegistryDialog = ({ name, docId, apiUrl, headers, onClose, onDone }: Props) => {
+const EventRegistryDialog = ({ name, docId, apiUrl, headers, current, onClose, onDone }: Props) => {
   const [title, setTitle] = React.useState(name);
   const [kind, setKind] = React.useState("other");
   const [date, setDate] = React.useState("");
@@ -80,6 +82,10 @@ const EventRegistryDialog = ({ name, docId, apiUrl, headers, onClose, onDone }: 
         eventId = data.event.id;
         eventTitle = data.event.title;
       }
+      if (current && current.id !== eventId) {
+        await axios.post(`${apiUrl}/world_events/mentions/unlink`,
+          { name: current.surface, event_id: current.id, document_id: numericDocId }, { headers });
+      }
       await axios.post(`${apiUrl}/world_events/mentions/link`,
         { name, event_id: eventId, document_ids: [numericDocId] }, { headers });
       onDone(`„${name}” jest teraz powiązane z wydarzeniem #${eventId} ${eventTitle}.`);
@@ -99,6 +105,7 @@ const EventRegistryDialog = ({ name, docId, apiUrl, headers, onClose, onDone }: 
       }}>
       <strong>📅 {name}</strong>
       <p style={{ margin: "4px 0 8px", color: "#64748b", fontSize: "0.9em" }}>
+        {current && <strong>Teraz powiązane z wydarzeniem #{current.id}. </strong>}
         Nazwa zaznaczona w tekście to jeszcze nie wydarzenie. Tu wiążesz ją z wydarzeniem z rejestru (<code>/world-events</code>)
         albo tworzysz nowe; powiązanie dotyczy tego dokumentu.
       </p>

@@ -25,6 +25,8 @@ export interface EntityItem {
   count: number;
   // Reviewer-approved description (eventName entities only).
   description?: string | null;
+  /** Event names only: the registry event this name is linked to for this document (null = not linked). */
+  registry_event?: { id: number; title: string; status: string; surface: string } | null;
   // Original NER category. Required when a combined "Miejsca" chip is
   // excluded, so a placeName rule does not turn into a wildcard rule.
   entity_type?: "persName" | "orgName" | "geogName" | "placeName";
@@ -331,6 +333,9 @@ export const EntityChips = ({
               <span style={{ color: item.confidence === "manual_review" ? "#b45309" : "#1d5ca8" }}>
                 {" "}{item.confidence === "manual_review" ? "?" : "✓"}
               </span>
+            )}
+            {item.registry_event && (
+              <span style={{ color: "#2e7d43" }} title={`W rejestrze wydarzeń: #${item.registry_event.id} ${item.registry_event.title}`}> 🔗</span>
             )}
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
             {actions && actions(item)}
@@ -1402,6 +1407,21 @@ const EntitiesPanel = ({
   };
 
   // Person / organization / place -> product / system (default) or named event.
+  // The name stays a name in this document; only its link to the registry event is removed.
+  const unlinkEventName = async (item: EntityItem) => {
+    const linked = item.registry_event;
+    if (!linked) return;
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/world_events/mentions/unlink`,
+        { name: linked.surface || item.text, event_id: linked.id, document_id: Number(docId) }, { headers: jsonHeaders });
+      setMessage(`„${item.text}” odłączone od wydarzenia #${linked.id} ${linked.title}.`);
+      await fetchEntities();
+    } catch (error: any) {
+      reportError(error, "Nie udało się odłączyć nazwy od wydarzenia");
+    }
+  };
+
   const changeEntityToProduct = async (item: EntityItem, target: "productName" | "eventName" = "productName") => {
     if (item.id == null) return;
     const noun = target === "eventName" ? "wydarzenie" : "produkt / system";
@@ -1738,7 +1758,12 @@ const EntitiesPanel = ({
     ...showInTextEntry(item, "event"),
     ...(onDescribeEvent ? [{ label: item.description ? "Opis wydarzenia…" : "Dodaj opis wydarzenia…",
       action: () => { resetFlows(); onDescribeEvent(item); } }] : []),
-    ...(onLinkEvent ? [{ label: "Dodaj do rejestru wydarzeń…", action: () => { resetFlows(); onLinkEvent(item); } }] : []),
+    ...(item.registry_event ? [
+      { label: `🔗 W rejestrze: #${item.registry_event.id} ${item.registry_event.title}`,
+        to: `/world-events?q=${encodeURIComponent(item.registry_event.title)}`, newTab: true },
+      ...(onLinkEvent ? [{ label: "Zmień powiązanie z rejestrem…", action: () => { resetFlows(); onLinkEvent(item); } }] : []),
+      { label: "Odłącz od wydarzenia z rejestru", action: () => { resetFlows(); void unlinkEventName(item); } },
+    ] : onLinkEvent ? [{ label: "Dodaj do rejestru wydarzeń…", action: () => { resetFlows(); onLinkEvent(item); } }] : []),
     ...manualRetypeEntries(item, "eventName"),
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
   ];

@@ -642,3 +642,14 @@ it("shows preamble navigation at position zero", async () => {
   expect(screen.getByRole("link", { name: "Następny →" }).getAttribute("href")).toBe("/ner/42/1");
   expect(entityCalls().every(([, config]) => (config?.params as { position?: number } | undefined)?.position === 0)).toBe(true);
 });
+
+it("keeps the describe-entities trigger in the chapter's button bar next to the other buttons", async () => {
+  await open();
+  const chapter = screen.getByRole("region", { name: "#1 Wstęp" });
+  const describe = within(chapter).getByRole("button", { name: /Uzupełnij brakujące opisy/ });
+  const noise = within(chapter).getByRole("button", { name: "Oznacz rozdział 1 jako szum" });
+  expect(describe.parentElement).toBe(noise.parentElement);
+  // A skipped chapter has no such button.
+  const skipped = within(screen.getByRole("region", { name: "#2 Sponsor" }));
+  expect(skipped.queryByRole("button", { name: /Uzupełnij brakujące opisy/ })).toBeNull();
+});

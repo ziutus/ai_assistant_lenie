@@ -225,8 +225,11 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
 
   return (
     <div style={{ marginTop: 6 }}>
-      <button type="button" onClick={toggle} aria-expanded={open}>
-        📅 Wydarzenia z datą w rozdziale{events && events.length + registrySources.length > 0 ? ` (${events.length + registrySources.length})` : ""}
+      {/* Looks like the label of the "Nazwy wydarzeń" chip row (bold text), and expands on click. */}
+      <button type="button" onClick={toggle} aria-expanded={open}
+        style={{ border: 0, background: "transparent", padding: 0, color: "inherit", font: "inherit", fontWeight: 700, cursor: "pointer" }}>
+        Wydarzenia z datą w rozdziale{events && events.length + registrySources.length > 0 ? ` (${events.length + registrySources.length})` : ""}:{" "}
+        <span aria-hidden="true" style={{ fontWeight: 400 }}>{open ? "▾" : "▸"}</span>
       </button>
       {open && (
         <div style={{ marginTop: 6, paddingLeft: 8, borderLeft: "3px solid #fbcfe8" }}>

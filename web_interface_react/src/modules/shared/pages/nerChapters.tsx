@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
-import ChapterDescriptionsPanel from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
+import ChapterDescriptionsPanel, { ChapterDescriptionsButton } from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import ChapterEventsPanel from "../components/ChapterEventsPanel/chapterEventsPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
@@ -379,6 +379,8 @@ const NerChapters = () => {
   // The registry dialog of an event name ("Dodaj do rejestru wydarzeń…" in the chip menu).
   const [registering, setRegistering] = React.useState<EntityItem | null>(null);
   const closeRegistry = React.useCallback(() => setRegistering(null), []);
+  // The chapter whose "Uzupełnij brakujące opisy" panel is open (the trigger sits in the chapter's button bar).
+  const [descriptionsFor, setDescriptionsFor] = React.useState<number | null>(null);
   const describeFromText = (item: EntityItem | undefined) => (event: React.MouseEvent) => {
     // A selected fragment keeps the "add entity" menu of the surrounding text.
     if (!item || item.id === undefined || selectedFragment(window.getSelection())) return;
@@ -578,6 +580,7 @@ const NerChapters = () => {
           {registering && (
             <EventRegistryDialog key={registering.id ?? itemName(registering)} name={itemName(registering)} docId={id}
               apiUrl={apiUrl} headers={headers} onClose={closeRegistry}
+              current={registering.registry_event ? { id: registering.registry_event.id, surface: registering.registry_event.surface } : null}
               onDone={(message) => { setRegistering(null); setAddedMessage(message); setVersion((current) => current + 1); }} />
           )}
           {selectionMenu && (
@@ -624,17 +627,21 @@ const NerChapters = () => {
                       <span style={{ color: "#64748b", fontSize: "0.85em" }}>
                         {section.sentence_count} zdań · {loadingEntities ? "wczytuję encje…" : `${count} encji`}
                       </span>
-                      {section.position >= 1 && (
+                      {(section.position >= 1 || type === "TEMAT") && (
                         <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                          {type === "TEMAT" && (
+                            <ChapterDescriptionsButton expanded={descriptionsFor === section.position}
+                              onClick={() => setDescriptionsFor((current) => current === section.position ? null : section.position)} />
+                          )}
                           {section.position >= 2 && (
                             <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z poprzednim`}
                               onClick={() => void mergeChapter(section.position, "ten rozdział z poprzednim")}>⇡ Scal z poprzednim</button>
                           )}
-                          {section.position < lastPosition && (
+                          {section.position >= 1 && section.position < lastPosition && (
                             <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z następnym`}
                               onClick={() => void mergeChapter(section.position + 1, "ten rozdział z następnym")}>⇣ Scal z następnym</button>
                           )}
-                          {type === "TEMAT" && (
+                          {type === "TEMAT" && section.position >= 1 && (
                             <button type="button" disabled={merging || paragraphizing !== null}
                               aria-label={`Podziel rozdział ${section.position} na akapity`}
                               title="Bielik wybiera granice akapitów; tekst się nie zmienia"
@@ -642,7 +649,7 @@ const NerChapters = () => {
                               {paragraphizing === section.position ? "⏳ Dzielę na akapity…" : "¶ Podziel na akapity"}
                             </button>
                           )}
-                          {type === "TEMAT" && (
+                          {type === "TEMAT" && section.position >= 1 && (
                             <button type="button" disabled={merging || loadingEntities} aria-label={`Oznacz rozdział ${section.position} jako szum`}
                               onClick={() => void markAsNoise(section.position, "ten rozdział")}>🗑 Oznacz jako szum</button>
                           )}
@@ -682,7 +689,9 @@ const NerChapters = () => {
                         <div>
                           {renderGroups(entities)}
                           {id && <ChapterDescriptionsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
-                            position={section.position} onSaved={() => setVersion((current) => current + 1)} />}
+                            position={section.position} onSaved={() => setVersion((current) => current + 1)}
+                            open={descriptionsFor === section.position}
+                            onOpenChange={(value) => setDescriptionsFor(value ? section.position : null)} />}
                           {id && <ChapterEventsPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
                             position={section.position} />}
                           {(countries.length > 0 || groups.length > 0) && (

@@ -94,3 +94,19 @@ it("shows a plain error and keeps the dialog open when saving fails", async () =
   expect(onDone).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
 });
+
+it("replaces the current link: unlinks the old event first, then links the chosen one", async () => {
+  mockGets([{ reason: "alias", score: 1, event: { id: 71, title: "Krajowa Konwencja Demokratów 2020", event_date: "2020-08-17" } }]);
+  render(<EventRegistryDialog name="Konwencja Demokratów" docId={11237} apiUrl="http://api" headers={headers}
+    current={{ id: 68, surface: "Konwencja Demokratów" }} onClose={vi.fn()} onDone={vi.fn()} />);
+
+  expect(screen.getByText(/Teraz powiązane z wydarzeniem #68/)).toBeTruthy();
+  fireEvent.click(await screen.findByLabelText(/Tak, powiąż z: #71/));
+  fireEvent.click(screen.getByRole("button", { name: "Powiąż z wydarzeniem" }));
+
+  await waitFor(() => expect(mocked.post).toHaveBeenCalledTimes(2));
+  expect(mocked.post).toHaveBeenNthCalledWith(1, "http://api/world_events/mentions/unlink",
+    { name: "Konwencja Demokratów", event_id: 68, document_id: 11237 }, { headers });
+  expect(mocked.post).toHaveBeenNthCalledWith(2, "http://api/world_events/mentions/link",
+    { name: "Konwencja Demokratów", event_id: 71, document_ids: [11237] }, { headers });
+});

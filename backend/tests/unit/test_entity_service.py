@@ -615,6 +615,43 @@ class TestGetDocumentEntities:
             "productName": [],
         }
 
+    @staticmethod
+    def _event_session(rows, links):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.order_by.return_value.all.return_value = rows
+        session.execute.return_value.all.return_value = links
+        return session
+
+    @staticmethod
+    def _event_row(text, variants=()):
+        return MagicMock(id=77, entity_type="eventName", entity_text=text, mention_count=1, geocode=None,
+                         relevance="central", place_verification_status=None, place_review_reason=None,
+                         variants=list(variants), description=None)
+
+    def test_event_name_carries_the_registry_event_it_is_linked_to_in_this_document(self):
+        link = MagicMock(name_key="konwencja demokratów", surface="Konwencja Demokratów")
+        event = MagicMock(id=68, title="Krajowa Konwencja Demokratów 2024 (Chicago)", status="confirmed")
+        session = self._event_session([self._event_row("Konwencja Demokratów")], [(link, event)])
+
+        item = get_document_entities(session, 11237)["eventName"][0]
+
+        assert item["registry_event"] == {
+            "id": 68, "title": "Krajowa Konwencja Demokratów 2024 (Chicago)", "status": "confirmed",
+            "surface": "Konwencja Demokratów"}
+
+    def test_event_name_is_matched_to_its_link_through_a_spelling_variant(self):
+        link = MagicMock(name_key="konwencja demokratów", surface="Konwencja Demokratów")
+        event = MagicMock(id=68, title="Krajowa Konwencja Demokratów 2024 (Chicago)", status="proposed")
+        session = self._event_session([self._event_row("Konwencja", ["Konwencji  Demokratów", "Konwencja Demokratów"])],
+                                      [(link, event)])
+
+        assert get_document_entities(session, 11237)["eventName"][0]["registry_event"]["id"] == 68
+
+    def test_unlinked_event_name_has_no_registry_event(self):
+        session = self._event_session([self._event_row("Szczyt NATO")], [])
+
+        assert get_document_entities(session, 11237)["eventName"][0]["registry_event"] is None
+
     def test_groups_organization_without_geocoding_fields(self):
         row = MagicMock(
             id=4, entity_type="orgName", entity_text="Bloomberg",

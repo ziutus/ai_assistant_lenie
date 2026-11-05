@@ -119,3 +119,13 @@ it("attaches the proposal as a source of an existing event the reviewer confirms
   await waitFor(() => expect(mocked.post).toHaveBeenCalled());
   expect(mocked.post.mock.calls[0][1]).toEqual({ event_id: 4 });
 });
+
+it("draws its toggle as a bold label like the chip rows, not as a framed button", () => {
+  mocked.get.mockResolvedValue({ data: { events: [] } });
+  render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
+  const toggle = screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ });
+  expect(toggle.textContent).toMatch(/^Wydarzenia z datą w rozdziale: /);
+  expect(toggle.style.fontWeight).toBe("700");
+  expect(toggle.style.background).toBe("transparent");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+});
