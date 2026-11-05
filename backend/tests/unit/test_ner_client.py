@@ -334,6 +334,30 @@ class TestCityTaggedAsOrganization:
         assert ("orgName", "Fly Dubai") in aggregate_entities_detailed(entities)
 
 
+class TestStateTaggedAsPerson:
+    """Doc #11237: "…w Ohio, Karolina Północna, Karolina Południowa, nawet w Teksasie."""
+
+    @pytest.mark.parametrize("surface,lemma,canonical", [
+        ("Karolina Północna", "Karolina Północny", "Karolina Północna"),
+        ("Karoliny Południowej", "Karolina Południowy", "Karolina Południowa"),
+    ])
+    def test_state_tagged_as_person_becomes_a_place(self, surface, lemma, canonical):
+        entities = [{"text": surface, "label": "persName", "lemma": lemma, "pos": "PROPN"}]
+        groups = aggregate_entities_detailed(entities)
+        assert list(groups) == [("placeName", canonical)]
+        assert groups[("placeName", canonical)]["variants"] == [surface]
+
+    def test_locative_place_with_unchanged_lemma_becomes_nominative(self):
+        surface = "Karolinie Północnej"
+        entities = [{"text": surface, "label": "placeName", "lemma": surface, "pos": "PROPN"}]
+        assert list(aggregate_entities_detailed(entities)) == [("placeName", "Karolina Północna")]
+
+    @pytest.mark.parametrize("surface", ["Karolina Kowalska", "Karolina"])
+    def test_person_keeps_the_person_label(self, surface):
+        entities = [{"text": surface, "label": "persName", "lemma": surface, "pos": "PROPN"}]
+        assert list(aggregate_entities_detailed(entities)) == [("persName", surface)]
+
+
 class TestAdjectivalSurnames:
     """spaCy tags Slavic surnames that decline like adjectives POS=ADJ (doc #10872: Zacharowa)."""
 
