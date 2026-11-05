@@ -472,9 +472,9 @@ it("highlights hand-added events and products and hands their chips to the share
   await open();
   const chapter = screen.getByRole("region", { name: "#3 Pusty" });
   expect([...chapter.querySelectorAll("mark")].map((mark) => mark.getAttribute("title"))).toEqual([
-    "Bez (Wydarzenia)", "nazw (Produkty i systemy)"]);
+    "Bez (Nazwy wydarzeń)", "nazw (Produkty i systemy)"]);
   // The page no longer draws its own event / product rows: the panel's chips (and menus) do.
-  expect(within(chapter).queryByLabelText("Wydarzenia rozdziału")).toBeNull();
+  expect(within(chapter).queryByLabelText("Nazwy wydarzeń rozdziału")).toBeNull();
   expect(within(chapter).queryByLabelText("Produkty i systemy rozdziału")).toBeNull();
   expect(within(chapter).getByRole("button", { name: "opis Bez" })).toBeTruthy();
   expect(within(chapter).getByRole("button", { name: "scal nazw" })).toBeTruthy();

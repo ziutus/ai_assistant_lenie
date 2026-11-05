@@ -34,7 +34,7 @@ type Tab = "map" | "proposals" | "events";
 const TABS: { value: Tab; label: string }[] = [
   { value: "map", label: "Mapa" },
   { value: "proposals", label: "Propozycje" },
-  { value: "events", label: "Zdarzenia" },
+  { value: "events", label: "Wydarzenia" },
 ];
 const ROLE_LABEL: Record<string, string> = {
   actor: "sprawca", target: "cel", affected: "dotknięty", location: "miejsce", host: "gospodarz",
@@ -147,7 +147,7 @@ const Geopolitics = () => {
       await axios.patch(`${apiUrl}/geo_events/${event.id}`, { status }, { headers });
       setReload((n) => n + 1);
     } catch (reason: any) {
-      setError(`Nie udało się zmienić zdarzenia: ${errorText(reason)}`);
+      setError(`Nie udało się zmienić wydarzenia: ${errorText(reason)}`);
     }
   };
 
@@ -181,8 +181,8 @@ const Geopolitics = () => {
       const cost = d.usage?.llm_cost_amount != null
         ? ` Koszt: ${Number(d.usage.llm_cost_amount).toFixed(4)} ${d.usage.llm_cost_currency ?? ""}${d.usage.llm_cost_status === "estimated" ? " (szacunek)" : ""}, ${d.usage.llm_tokens ?? "?"} tokenów, model ${d.model}.`
         : ` Koszt nieznany (model ${d.model} bez ceny w cenniku).`;
-      setNotice(`Dokument ${id}: ${d.events_created} nowych zdarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji${d.assessments_merged ? ` (+${d.assessments_merged} dowodów dołączono do istniejących)` : ""}.`
-        + (d.dated_from_reference ? ` ${d.dated_from_reference} zdarzeń z datą względną dostało datę artykułu (adnotacja w opisie).` : "")
+      setNotice(`Dokument ${id}: ${d.events_created} nowych wydarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji${d.assessments_merged ? ` (+${d.assessments_merged} dowodów dołączono do istniejących)` : ""}.`
+        + (d.dated_from_reference ? ` ${d.dated_from_reference} wydarzeń z datą względną dostało datę artykułu (adnotacja w opisie).` : "")
         + (rejected ? ` Odrzucone przez walidację — ${rejected}.` : "") + cost);
       setReload((n) => n + 1);
     } catch (reason: any) {
@@ -227,7 +227,7 @@ const Geopolitics = () => {
     <div>
       <h2 style={{ marginBottom: 6 }}>Geopolityka</h2>
       <p style={{ color: "#667", marginBottom: 10 }}>
-        Kierunkowe relacje między państwami i zdarzenia, które je uzasadniają. Mapa pokazuje tylko zatwierdzone oceny; to, co
+        Kierunkowe relacje między państwami i wydarzenia, które je uzasadniają. Mapa pokazuje tylko zatwierdzone oceny; to, co
         zaproponował model albo wpisałeś ręcznie, czeka w „Propozycjach”. Brak koloru oznacza brak danych, nie neutralność.
       </p>
       <div role="tablist" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -258,7 +258,7 @@ const Geopolitics = () => {
         <button type="button" className="button" disabled={!model || (model === defaultModel && modelSaved)}
           onClick={() => saveDefaultModel(model)}>Ustaw jako domyślny</button>
         {modelSaved && <button type="button" className="button" onClick={() => saveDefaultModel(null)}>Przywróć domyślny serwera</button>}
-        <button type="submit" className="button" disabled={loading}>Zaproponuj zdarzenia</button>
+        <button type="submit" className="button" disabled={loading}>Zaproponuj wydarzenia</button>
         <span style={{ color: "#64748b", fontSize: "0.85em" }}>Ceny: wejście / wyjście za 1 mln tokenów. Model tylko proponuje; nic nie trafia na mapę bez Twojej decyzji.
           {" "}<Link to="/prompt-templates?variant=event_extraction">Edytuj prompt</Link>.</span>
       </form>
@@ -353,7 +353,7 @@ const Geopolitics = () => {
                 {p.rationale && <div style={{ margin: "4px 0" }}>{p.rationale}</div>}
                 <EvidenceList evidence={p.evidence} />
                 <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                  <button className="button" onClick={() => decide(p, "approve")}>Zatwierdź zdarzenie i zmianę</button>
+                  <button className="button" onClick={() => decide(p, "approve")}>Zatwierdź wydarzenie i zmianę</button>
                   <button className="button" onClick={() => decide(p, "reject")}>Odrzuć</button>
                 </div>
               </li>
@@ -364,9 +364,9 @@ const Geopolitics = () => {
 
       {tab === "events" && (
         <div>
-          <span style={{ color: "#64748b" }}>{loading ? "Wczytuję…" : `${eventsTotal} zdarzeń z krajami`}</span>{" "}
-          <span style={{ color: "#64748b", fontSize: "0.85em" }}>Zdarzenia bez kraju (awarie, premiery, …) są w <Link to="/world-events">rejestrze wydarzeń świata</Link>.</span>
-          <ul aria-label="Zdarzenia" style={{ listStyle: "none", padding: 0, margin: "6px 0 0" }}>
+          <span style={{ color: "#64748b" }}>{loading ? "Wczytuję…" : `${eventsTotal} wydarzeń z krajami`}</span>{" "}
+          <span style={{ color: "#64748b", fontSize: "0.85em" }}>Wydarzenia bez kraju (awarie, premiery, …) są w <Link to="/world-events">rejestrze wydarzeń świata</Link>.</span>
+          <ul aria-label="Wydarzenia" style={{ listStyle: "none", padding: 0, margin: "6px 0 0" }}>
             {events.map((e) => (
               <li key={e.id} style={{ padding: "8px 10px", marginBottom: 8, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                 <strong>📅 {eventDates(e)} — {e.title}</strong>{" "}
@@ -378,14 +378,14 @@ const Geopolitics = () => {
                 <SourceList sources={e.sources} />
                 {e.status === "proposed" && (
                   <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                    <button className="button" onClick={() => decideEvent(e, "confirmed")}>Zatwierdź zdarzenie</button>
+                    <button className="button" onClick={() => decideEvent(e, "confirmed")}>Zatwierdź wydarzenie</button>
                     <button className="button" onClick={() => decideEvent(e, "rejected")}>Odrzuć</button>
                   </div>
                 )}
               </li>
             ))}
           </ul>
-          <Pagination page={page} pageSize={pageSize} total={eventsTotal} isLoading={loading} label="zdarzeń"
+          <Pagination page={page} pageSize={pageSize} total={eventsTotal} isLoading={loading} label="wydarzeń"
             onPageChange={(next) => update({ page: next > 1 ? String(next) : null })} />
         </div>
       )}
@@ -408,7 +408,7 @@ const SourceList = ({ sources }: { sources: EventSource[] }) => (
 
 const EvidenceList = ({ evidence }: { evidence?: { event: GeoEvent; stance: string; kind?: string }[] }) => (
   !evidence || evidence.length === 0 ? (
-    <div style={{ color: "#94a3b8", fontSize: "0.85em" }}>Bez powiązanych zdarzeń.</div>
+    <div style={{ color: "#94a3b8", fontSize: "0.85em" }}>Bez powiązanych wydarzeń.</div>
   ) : (
     <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: "0.85em" }}>
       {evidence.map(({ event, stance, kind }) => (

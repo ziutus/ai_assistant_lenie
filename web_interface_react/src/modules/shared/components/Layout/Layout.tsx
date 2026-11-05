@@ -172,7 +172,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           to="/contact-events"
           className={({ isActive }) => isActive ? classes.activeLink : classes.link}
         >
-          Wydarzenia
+          Wydarzenia kontaktów
         </NavLink>
         <NavLink
           to="/contact-birthdays"

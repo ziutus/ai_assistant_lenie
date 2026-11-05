@@ -507,6 +507,7 @@ const EntitiesPanel = ({
   chapterRenderer,
   onShowInText,
   onDescribeEvent,
+  onLinkEvent,
   onMergeProducts,
   mentionMenu,
   onMentionMenuClose,
@@ -524,6 +525,8 @@ const EntitiesPanel = ({
   // Page-owned dialogs the event and product menus open (the panel has no form for them): an event's
   // description dialog and the form that folds several spellings of a product into one.
   onDescribeEvent?: (item: EntityItem) => void;
+  // Promotes the name of an event marked in the text to the registry of world events (link or create).
+  onLinkEvent?: (item: EntityItem) => void;
   onMergeProducts?: (item: EntityItem) => void;
   // Chapter mode (the /ner/:id page): the host draws the entity groups itself, once per
   // chapter, through renderGroups(), so every chip keeps this panel's action menus and
@@ -811,8 +814,8 @@ const EntitiesPanel = ({
         ? ` Koszt ${Number(d.usage.llm_cost_amount).toFixed(4)} ${d.usage.llm_cost_currency ?? ""}${d.usage.llm_cost_status === "estimated" ? " (szacunek)" : ""}, model ${d.model}.`
         : ` Model ${d.model}, koszt nieznany.`;
       setMessage(d.events_created + d.events_existing === 0
-        ? `Geopolityka: model nie znalazł zdarzeń do zapisania${rejected ? ` (odrzucone przez walidację: ${rejected})` : ""}.${cost}`
-        : `Geopolityka: ${d.events_created} nowych zdarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji`
+        ? `Geopolityka: model nie znalazł wydarzeń do zapisania${rejected ? ` (odrzucone przez walidację: ${rejected})` : ""}.${cost}`
+        : `Geopolityka: ${d.events_created} nowych wydarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji`
           + `${d.assessments_merged ? ` (+${d.assessments_merged} dowodów dołączono do istniejących)` : ""}`
           + `${rejected ? `, odrzucone przez walidację: ${rejected}` : ""}. Zatwierdź je w Geopolityka → Propozycje.${cost}`);
     } catch (error: any) {
@@ -1735,6 +1738,7 @@ const EntitiesPanel = ({
     ...showInTextEntry(item, "event"),
     ...(onDescribeEvent ? [{ label: item.description ? "Opis wydarzenia…" : "Dodaj opis wydarzenia…",
       action: () => { resetFlows(); onDescribeEvent(item); } }] : []),
+    ...(onLinkEvent ? [{ label: "Dodaj do rejestru wydarzeń…", action: () => { resetFlows(); onLinkEvent(item); } }] : []),
     ...manualRetypeEntries(item, "eventName"),
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
   ];
@@ -1939,7 +1943,7 @@ const EntitiesPanel = ({
             )}
             {editMode && editActions("placeName")(item)}
           </>} />
-        <EntityChips label={"Wydarzenia"} items={source?.eventName ?? []} menuActions={eventMenuActions} />
+        <EntityChips label={"Nazwy wydarzeń"} items={source?.eventName ?? []} menuActions={eventMenuActions} />
         <EntityChips label={"Produkty i systemy"} items={source?.productName ?? []} menuActions={productMenuActions} />
       </>
     );
@@ -2012,7 +2016,7 @@ const EntitiesPanel = ({
           {isDetectingCountries ? "Wykrywam państwa..." : "Wykryj państwa"}
         </button>
         <button className={"button"} type="button"
-          title="Model (domyślny z strony Geopolityka) tylko proponuje zdarzenia i zmiany relacji między państwami; nic nie trafia na mapę bez Twojego zatwierdzenia."
+          title="Model (domyślny z strony Geopolityka) tylko proponuje wydarzenia i zmiany relacji między państwami; nic nie trafia na mapę bez Twojego zatwierdzenia."
           disabled={isRefreshing || isDetectingCountries || isProposingGeopolitics || enrichmentActive || externalDisabled}
           onClick={handleProposeGeopolitics}>
           {isProposingGeopolitics ? "Analizuję geopolitykę..." : "Zaproponuj relacje geopolityczne"}

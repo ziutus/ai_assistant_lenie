@@ -8,6 +8,7 @@ import ChapterDescriptionsPanel from "../components/ChapterDescriptionsPanel/cha
 import ChapterEventsPanel from "../components/ChapterEventsPanel/chapterEventsPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
+import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistryDialog";
 import RequestErrorDetails from "../components/RequestErrorDetails/requestErrorDetails";
 import { describeRequestError, type RequestErrorInfo } from "../utils/requestError";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
@@ -35,7 +36,7 @@ interface EntityResponse {
 
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
 const KIND_LABELS: Record<HighlightKind, string> = {
-  persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Wydarzenia",
+  persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Nazwy wydarzeń",
   product: "Produkty i systemy",
 };
 const KIND_COLORS: Record<HighlightKind, string> = {
@@ -375,6 +376,9 @@ const NerChapters = () => {
   // The description dialog of an event: left click on its chip or right click on its mention in the text.
   const [describing, setDescribing] = React.useState<EntityItem | null>(null);
   const closeDescription = React.useCallback(() => setDescribing(null), []);
+  // The registry dialog of an event name ("Dodaj do rejestru wydarzeń…" in the chip menu).
+  const [registering, setRegistering] = React.useState<EntityItem | null>(null);
+  const closeRegistry = React.useCallback(() => setRegistering(null), []);
   const describeFromText = (item: EntityItem | undefined) => (event: React.MouseEvent) => {
     // A selected fragment keeps the "add entity" menu of the surrounding text.
     if (!item || item.id === undefined || selectedFragment(window.getSelection())) return;
@@ -571,6 +575,11 @@ const NerChapters = () => {
               description={describing.description ?? null} apiUrl={apiUrl} headers={headers} onClose={closeDescription}
               onSaved={() => { setDescribing(null); setVersion((current) => current + 1); }} />
           )}
+          {registering && (
+            <EventRegistryDialog key={registering.id ?? itemName(registering)} name={itemName(registering)} docId={id}
+              apiUrl={apiUrl} headers={headers} onClose={closeRegistry}
+              onDone={(message) => { setRegistering(null); setAddedMessage(message); setVersion((current) => current + 1); }} />
+          )}
           {selectionMenu && (
             <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers} byline={doc?.byline}
               onClose={closeSelectionMenu}
@@ -581,6 +590,7 @@ const NerChapters = () => {
             refreshKey={panelKey}
             onShowInText={showInText}
             onDescribeEvent={setDescribing}
+            onLinkEvent={setRegistering}
             onMergeProducts={(item) => void openProductMerge(item)}
             mentionMenu={mentionMenu}
             onMentionMenuClose={closeMentionMenu}

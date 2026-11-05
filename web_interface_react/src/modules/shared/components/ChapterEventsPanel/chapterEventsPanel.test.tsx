@@ -18,7 +18,7 @@ it("loads saved proposals of the chapter when opened", async () => {
   mocked.get.mockResolvedValue({ data: { events: [proposal] } });
   render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
 
-  fireEvent.click(screen.getByRole("button", { name: /Zdarzenia rozdziału/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ }));
 
   expect(await screen.findByText(/Atak na Polskę/)).toBeTruthy();
   expect(mocked.get).toHaveBeenCalledWith(
@@ -42,14 +42,14 @@ it("lists registry events that cite the chapter even without a timeline proposal
     </MemoryRouter>,
   );
 
-  fireEvent.click(screen.getByRole("button", { name: /Zdarzenia rozdziału/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ }));
 
   const link = await screen.findByRole("link", { name: /#57 Rozstrzygnięcie władzy w Izraelu/ });
   expect(link.getAttribute("href")).toBe("/world-events?q=Rozstrzygni%C4%99cie%20w%C5%82adzy%20w%20Izraelu");
   expect(screen.getByText(/propozycja/)).toBeTruthy();
   expect(screen.getByText(/wybrano przewodniczącego Knesetu/)).toBeTruthy();
   expect(screen.queryByText(/Brak zapisanych propozycji/)).toBeNull();
-  expect(screen.getByRole("button", { name: /Zdarzenia rozdziału \(1\)/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale \(1\)/ })).toBeTruthy();
 });
 
 it("detects events for this chapter only and lists the result", async () => {
@@ -59,12 +59,12 @@ it("detects events for this chapter only and lists the result", async () => {
   });
   render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
 
-  fireEvent.click(screen.getByRole("button", { name: /Zdarzenia rozdziału/ }));
-  fireEvent.click(await screen.findByRole("button", { name: /Wykryj zdarzenia/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /Wykryj wydarzenia/ }));
 
   await waitFor(() => expect(screen.getByText(/Atak na Polskę/)).toBeTruthy());
   expect(mocked.post.mock.calls[0][0]).toBe("http://api/document/5/chapter/2/detect_events");
-  expect(screen.getByRole("status").textContent).toContain("1 zdarzeń");
+  expect(screen.getByRole("status").textContent).toContain("1 wydarzeń");
 });
 
 const withId = { ...proposal, id: 77, world_events: [] };
@@ -75,8 +75,8 @@ const renderOpen = async () => {
       <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
     </MemoryRouter>,
   );
-  fireEvent.click(screen.getByRole("button", { name: /Zdarzenia rozdziału/ }));
-  fireEvent.click(await screen.findByRole("button", { name: /Do zdarzeń globalnych/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Wydarzenia z datą w rozdziale/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /Do rejestru wydarzeń/ }));
 };
 
 const mockGets = (candidates: unknown[]) => {
@@ -95,11 +95,11 @@ it("promotes a proposal under a corrected title and marks it as registered", asy
   mocked.post.mockResolvedValue({ data: { created: true, event: { id: 9, title: "Nord Stream 2 wybuchł" } } });
   await renderOpen();
 
-  const input = await screen.findByLabelText(/Tytuł zdarzenia/);
+  const input = await screen.findByLabelText(/Tytuł wydarzenia/);
   fireEvent.change(input, { target: { value: "Nord Stream 2 wybuchł" } });
   fireEvent.click(screen.getByRole("button", { name: "Dodaj do rejestru" }));
 
-  await waitFor(() => expect(screen.getByText(/W rejestrze zdarzeń/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/W rejestrze wydarzeń/)).toBeTruthy());
   expect(mocked.post).toHaveBeenCalledWith(
     "http://api/document_events/77/to_world_event",
     { title: "Nord Stream 2 wybuchł", kind: "other" },

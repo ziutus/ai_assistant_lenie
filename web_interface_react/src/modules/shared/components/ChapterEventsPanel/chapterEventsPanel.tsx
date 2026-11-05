@@ -86,7 +86,7 @@ const PromoteForm = ({ apiUrl, headers, event, onDone, onCancel }: PromoteProps)
       );
       onDone({ id: data.event.id, title: data.event.title });
     } catch (err) {
-      setError(describeRequestError(err, "Dodawanie zdarzenia do rejestru", {
+      setError(describeRequestError(err, "Dodawanie wydarzenia do rejestru", {
         startedAt, context: { wpis: event.id },
       }));
     } finally {
@@ -97,7 +97,7 @@ const PromoteForm = ({ apiUrl, headers, event, onDone, onCancel }: PromoteProps)
   return (
     <div style={{ margin: "4px 0 8px", padding: 8, border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc" }}>
       <label style={{ display: "block", marginBottom: 6 }}>
-        Tytuł zdarzenia (popraw pisownię z transkrypcji)
+        Tytuł wydarzenia (popraw pisownię z transkrypcji)
         <input type="text" value={title} disabled={target !== null} style={{ width: "100%", padding: "4px 6px" }}
           onChange={(e) => setTitle(e.target.value)} onBlur={() => void lookup()} />
       </label>
@@ -113,10 +113,10 @@ const PromoteForm = ({ apiUrl, headers, event, onDone, onCancel }: PromoteProps)
       </button>
       {candidates.length > 0 && (
         <fieldset style={{ margin: "4px 0", border: "1px solid #e2e8f0" }}>
-          <legend>Czy to to samo zdarzenie?</legend>
+          <legend>Czy to to samo wydarzenie?</legend>
           <label style={{ display: "block" }}>
             <input type="radio" name={`target-${event.id}`} checked={target === null} onChange={() => setTarget(null)} />
-            {" "}Nie, utwórz nowe zdarzenie
+            {" "}Nie, utwórz nowe wydarzenie
           </label>
           {candidates.map((c) => (
             <label key={c.event.id} style={{ display: "block" }}>
@@ -154,11 +154,11 @@ interface Props {
 }
 
 /**
- * "Wykryj zdarzenia": the LLM looks for dated events in ONE chapter
+ * "Wykryj wydarzenia": the LLM looks for dated events in ONE chapter
  * (`POST /document/:id/chapter/:pos/detect_events`). The result is stored as proposals in `document_events`
  * (replacing the earlier proposals of this chapter only) and shown here; they also appear on the reader's
  * timeline. Nothing is turned into a named-event entity automatically; a proposal can be promoted by hand to the
- * registry of world events ("➕ Do zdarzeń globalnych", `PromoteForm`).
+ * registry of world events ("➕ Do rejestru wydarzeń", `PromoteForm`).
  */
 const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
   const headers = React.useMemo(() => ({ "x-api-key": apiKey }), [apiKey]);
@@ -175,7 +175,7 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
       item.id === eventId ? { ...item, world_events: [...(item.world_events ?? []), registry] } : item
     )));
     setPromoting(null);
-    setNote(`Dodano do rejestru zdarzeń: #${registry.id} ${registry.title}.`);
+    setNote(`Dodano do rejestru wydarzeń: #${registry.id} ${registry.title}.`);
   };
 
   // Proposals saved by an earlier run are loaded when the panel is opened for the first time.
@@ -210,12 +210,12 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
       }>(`${apiUrl}/document/${docId}/chapter/${position}/detect_events`, {}, { headers, timeout: 240000 });
       setEvents(data.events);
       const rejected = data.rejected_without_quote + data.rejected_without_date;
-      setNote(`Model ${data.model}: ${data.events.length} zdarzeń`
+      setNote(`Model ${data.model}: ${data.events.length} wydarzeń`
         + (rejected > 0
           ? ` (odrzucone: ${data.rejected_without_quote} bez cytatu, ${data.rejected_without_date} bez daty)` : "")
         + ".");
     } catch (err) {
-      setError(describeRequestError(err, `Wykrywanie zdarzeń w rozdziale ${position}`, {
+      setError(describeRequestError(err, `Wykrywanie wydarzeń w rozdziale ${position}`, {
         startedAt, context: { dokument: docId, rozdział: position },
       }));
     } finally {
@@ -226,18 +226,18 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
   return (
     <div style={{ marginTop: 6 }}>
       <button type="button" onClick={toggle} aria-expanded={open}>
-        📅 Zdarzenia rozdziału{events && events.length + registrySources.length > 0 ? ` (${events.length + registrySources.length})` : ""}
+        📅 Wydarzenia z datą w rozdziale{events && events.length + registrySources.length > 0 ? ` (${events.length + registrySources.length})` : ""}
       </button>
       {open && (
         <div style={{ marginTop: 6, paddingLeft: 8, borderLeft: "3px solid #fbcfe8" }}>
           <button type="button" disabled={busy} onClick={() => void detect()}
-            title="Model szuka w tym rozdziale zdarzeń z datą; wynik zastępuje wcześniejsze propozycje tego rozdziału">
-            {busy ? "⏳ Wykrywam zdarzenia…" : "🔎 Wykryj zdarzenia"}
+            title="Model szuka w tym rozdziale wydarzeń z datą; wynik zastępuje wcześniejsze propozycje tego rozdziału">
+            {busy ? "⏳ Wykrywam wydarzenia…" : "🔎 Wykryj wydarzenia"}
           </button>
           {" "}
           <SkillHint skill="/lenie-chapter-world-events" command={`/lenie-chapter-world-events ${docId} ${position}`}>
-            Skill przejrzy zdarzenia tego rozdziału, sprawdzi duplikaty w rejestrze, dobierze rodzaj i kraje i po
-            Twojej zgodzie doda je do zdarzeń globalnych.
+            Skill przejrzy wydarzenia tego rozdziału, sprawdzi duplikaty w rejestrze, dobierze rodzaj i kraje i po
+            Twojej zgodzie doda je do rejestru wydarzeń.
           </SkillHint>
           {note && <p role="status" style={{ color: "#166534", margin: "4px 0" }}>{note}</p>}
           {error && (
@@ -247,11 +247,11 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
             </div>
           )}
           {events !== null && events.length === 0 && registrySources.length === 0 && !busy && (
-            <small style={{ color: "#64748b" }}>Brak zapisanych propozycji zdarzeń dla tego rozdziału.</small>
+            <small style={{ color: "#64748b" }}>Brak zapisanych propozycji wydarzeń dla tego rozdziału.</small>
           )}
           {registrySources.length > 0 && (
-            <div aria-label="Zdarzenia z rejestru cytujące ten rozdział" style={{ margin: "6px 0" }}>
-              <strong style={{ fontSize: "0.9em" }}>W rejestrze zdarzeń ({registrySources.length})</strong>
+            <div aria-label="Wydarzenia z rejestru cytujące ten rozdział" style={{ margin: "6px 0" }}>
+              <strong style={{ fontSize: "0.9em" }}>W rejestrze wydarzeń ({registrySources.length})</strong>
               <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
                 {registrySources.map((source) => (
                   <li key={source.id} style={{ marginBottom: 4 }}>
@@ -281,14 +281,14 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position }: Props) => {
                   {event.anchor_quote && <div style={{ color: "#64748b", fontSize: "0.85em" }}>„{event.anchor_quote}”</div>}
                   {(event.world_events ?? []).map((registry) => (
                     <div key={registry.id} style={{ fontSize: "0.85em", color: "#166534" }}>
-                      ✓ W rejestrze zdarzeń:{" "}
+                      ✓ W rejestrze wydarzeń:{" "}
                       <Link to={`/world-events?q=${encodeURIComponent(registry.title)}`}>#{registry.id} {registry.title}</Link>
                     </div>
                   ))}
                   {event.id != null && promoting !== event.id && (
                     <button type="button" onClick={() => setPromoting(event.id ?? null)}
-                      title="Zapisuje to zdarzenie w globalnym rejestrze zdarzeń świata (/world-events)">
-                      {(event.world_events ?? []).length > 0 ? "➕ Dodaj do kolejnego zdarzenia" : "➕ Do zdarzeń globalnych"}
+                      title="Zapisuje to wydarzenie w globalnym rejestrze wydarzeń świata (/world-events)">
+                      {(event.world_events ?? []).length > 0 ? "➕ Dodaj do kolejnego wydarzenia" : "➕ Do rejestru wydarzeń"}
                     </button>
                   )}
                   {event.id != null && promoting === event.id && (

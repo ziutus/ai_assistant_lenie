@@ -513,6 +513,18 @@ it("gives event chips the shared menu: description, retype to product, delete", 
     { entity_type: "productName" }, { headers: expect.any(Object) }));
 });
 
+it("offers promotion of an event name to the registry only when the page can open the dialog", async () => {
+  const onLinkEvent = vi.fn();
+  renderManualChips({ onLinkEvent });
+  await openOrgMenu("Szczyt NATO");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "Dodaj do rejestru wydarzeń…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
+    "Zmień na produkt / system", "× Usuń encję",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj do rejestru wydarzeń…" }));
+  expect(onLinkEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 77, text: "Szczyt NATO" }));
+});
+
 it("changes an organization into a named event", async () => {
   mockOrgEntities({ id: 31, text: "Szczyt", count: 2, organization_id: 8 });
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", product_name: "Szczyt" } });
@@ -772,7 +784,7 @@ it("proposes geopolitical events with the default model, reports the cost and ke
     model: "Bielik-11B-v3.0-Instruct", usage: { llm_cost_amount: "0.0042", llm_cost_currency: "EUR", llm_cost_status: "estimated" },
   } }));
   const message = screen.getByText(/^Geopolityka:/).textContent ?? "";
-  expect(message).toContain("6 nowych zdarzeń");
+  expect(message).toContain("6 nowych wydarzeń");
   expect(message).toContain("2 propozycji relacji (+4 dowodów dołączono do istniejących)");
   expect(message).toContain("odrzucone przez walidację: 1");
   expect(message).toContain("Zatwierdź je w Geopolityka → Propozycje");
@@ -791,7 +803,7 @@ it.each(["nothing", "error", "network"])("reports %s of the geopolitics proposal
   await screen.findByRole("button", { name: place.text });
   fireEvent.click(screen.getByRole("button", { name: "Zaproponuj relacje geopolityczne" }));
   const expected = {
-    nothing: /model nie znalazł zdarzeń do zapisania.*koszt nieznany/,
+    nothing: /model nie znalazł wydarzeń do zapisania.*koszt nieznany/,
     error: /Nie udało się zaproponować relacji geopolitycznych: Document has no text content/,
     network: /Nie udało się zaproponować relacji geopolitycznych: brak odpowiedzi serwera/,
   }[outcome] as RegExp;
