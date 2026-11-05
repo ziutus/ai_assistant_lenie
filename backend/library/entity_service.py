@@ -359,10 +359,42 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     exclusions = list(session.execute(select(NerExclusion)).scalars().all())
     if exclusions:
         author = getattr(doc, "byline", None)
+        for key, group in groups.items():
+            mentions = group.get("country_mentions", {})
+            removed = {
+                mention for mention in mentions
+                if mention[2] and is_excluded(
+                    exclusions, key[0], mention[0], author,
+                    raw_terms=[mention[1]], document_id=document_id,
+                )
+            }
+            if not removed:
+                continue
+            # A term shared with a retained mention must keep its original
+            # whole-group exclusion semantics (even if its spelling differs).
+            retained_terms = {
+                value.casefold() for mention in mentions if mention not in removed
+                for value in mention[:2]
+            }
+            removed_terms = {
+                value.casefold() for mention in removed for value in mention[:2]
+            } - retained_terms
+            other_terms = [
+                value for value in [*group.get("raw_lemmas", []), *group.get("variants", [])]
+                if value.casefold() not in removed_terms
+            ]
+            if is_excluded(exclusions, key[0], key[1], author,
+                           raw_terms=other_terms, document_id=document_id):
+                continue  # The ordinary check below still drops the whole group.
+            group["count"] -= sum(mentions[mention] for mention in removed)
+            for field in ("raw_lemmas", "variants"):
+                group[field] = [value for value in group.get(field, []) if value.casefold() not in removed_terms]
+            for mention in removed:
+                del mentions[mention]
         excluded = [
             key
             for key, group in groups.items()
-            if is_excluded(
+            if group["count"] == 0 or is_excluded(
                 exclusions,
                 key[0],
                 key[1],
