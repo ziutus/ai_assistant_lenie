@@ -196,6 +196,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T29 | Nazwa miejsca w związku frazeologicznym / eufemizmie, plus ucięta paczka klasyfikatora | nazwa miejsca jest tylko elementem zwrotu („odsyła do Jerozolimy” = zabija), a klasyfikator kontekstu nie ma takiej reguły; dodatkowo paczka 20 kandydatów przekraczała limit odpowiedzi, JSON się uciął i cała paczka zachowała encje bez werdyktów (fail-open) | „odsyła do Jerozolimy niewinnych cywilów” | E042 |
 
 | T30 | Nazwa kraju odrzucona przez filtr POS | Root poprawnego spanu kraju ma błędny POS, więc wzmianka znika przed kanonikalizacją z gazetteera | „Sri Lanki”, root „Sri” z `POS=X` | E043 |
+| T31 | Miejsce zbieżne z imieniem rozpoznane jako osoba | nazwa miejsca zaczyna się od imienia („Karolina Północna”), spaCy typuje ją jako `persName` ze zepsutym lematem (męski „Północny”); relabel „gazetteer miast → miejsce” obejmował tylko `orgName`, a rejestr osób utrwalał fałszywe osoby | „Karolina Północna / Południowa” (stany USA) | E046 |
 
 Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T31,
 ...) zamiast naciągać istniejącą.
@@ -718,3 +719,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** tylko dane — globalna reguła `ner_exclusions` (id=21), `DELETE /website_entities/19564`, usunięta osierocona organizacja 1137 (SQL; brak linków i aliasów).
 - **Test regresyjny:** brak — bez zmiany kodu; reguła `ner_exclusions` jest regresją danych.
 - **Status:** tylko dane, bez zmiany kodu.
+
+### E046 — „Karolina Północna / Południowa” (stany USA) jako osoby (dok. #11237, PR n/d, 2026-11-05)
+
+- **Typ encji:** persName (fałszywy pozytyw) oraz placeName z niezanonikalizowaną odmianą
+- **Kategoria:** T31
+- **Zdanie źródłowe:** „…w Ohio, Karolina Północna, Karolina Południowa, nawet w Teksasie.” (transkrypcja YouTube)
+- **Objaw:** trzy wiersze `persName` („Karolina Północny”, „Karolina Południowa”, „Karolina Południowy”) i fałszywe osoby w rejestrze (`manual_review`, m.in. „Tilis Karolina Północny” po błędnym fuzzy-dopasowaniu); miejscownik „Karolinie Północnej/Południowej” był `placeName`, ale geokoder dostawał odmianę i trafiał w ulicę w Hesji (`geocode_cache` 1690, 1731, `resolved=false`).
+- **Przyczyna źródłowa:** spaCy bierze „Karolina” za imię i typuje frazę jako osobę z lematem męskim. Relabel „nazwa z gazetteera miast → miejsce” w `ner_client.aggregate_entities_detailed` działał tylko dla `orgName`, a gazetteer nie znał Karoliny. Luka w kodzie i danych, nie stare dane pod naprawionym mechanizmem (ten sam objaw w dok. 11137, 11230, 11234, 9358, 10873).
+- **Poprawka:** kod — relabel obejmuje `persName`; seed `city_gazetteer._CITY_DATA` dostał „Karolina Północna” (`karolin* polnocn*`) i „Karolina Południowa” (`karolin* poludniow*`). Kod napisał Codex, review i sprawdzenie, że test pada bez poprawki: Claude Code.
+- **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestStateTaggedAsPerson` (zdanie z #11237; kontrola, że „Karolina Kowalska” i „Karolina” zostają osobami), `test_city_gazetteer.py::test_carolina_states_doc_11237`.
+- **Status:** w toku (kod w PR, naprawa dok. #11237 po wdrożeniu).

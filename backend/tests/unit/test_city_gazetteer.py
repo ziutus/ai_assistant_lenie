@@ -56,6 +56,25 @@ class TestCanonicalCityName:
         # Five-character suffixes exceed the limit; a phrase is not a complete name.
         assert city_gazetteer.canonical_city_name(mention) is None
 
+    @pytest.mark.parametrize("mention,canonical", [
+        ("Karolina Północna", "Karolina Północna"),
+        ("Karoliny Północnej", "Karolina Północna"),
+        ("Karolinie Północnej", "Karolina Północna"),
+        ("Karolinę Północną", "Karolina Północna"),
+        ("Karolina Północny", "Karolina Północna"),
+        ("Karolina Południowa", "Karolina Południowa"),
+        ("Karoliny Południowej", "Karolina Południowa"),
+        ("Karolinie Południowej", "Karolina Południowa"),
+        ("Karolinę Południową", "Karolina Południowa"),
+        ("Karolina Południowy", "Karolina Południowa"),
+    ])
+    def test_carolina_states_doc_11237(self, mention, canonical):
+        assert city_gazetteer.canonical_city_name(mention) == canonical
+
+    @pytest.mark.parametrize("mention", ["Karolina Kowalska", "Karolina", "w Karolinie Północnej"])
+    def test_carolina_requires_a_complete_state_name(self, mention):
+        assert city_gazetteer.canonical_city_name(mention) is None
+
     @pytest.mark.parametrize("mention", ["Królewiec", "Królewca", "Królewcu", "Królewcem"])
     def test_krolewiec_is_kaliningrad_doc_10872(self, mention):
         # doc #10872: "Rosja grozi wojną o Królewiec", "naszego królewca".

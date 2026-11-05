@@ -64,6 +64,10 @@ _CITY_DATA: list[tuple[str, tuple[str, ...]]] = [
     # keeps the locative "Luisianie" as its lemma. The geocoder received
     # "Luisianie" and found nothing (geocode_cache 1279, resolved=false).
     ("Luizjana", ("luizjan*", "luisian*")),
+    # doc #11237: spaCy tags these US states as persName with mangled adjective
+    # lemmas, or keeps the locative form that sends the geocoder to a street.
+    ("Karolina Północna", ("karolin* polnocn*",)),
+    ("Karolina Południowa", ("karolin* poludniow*",)),
     # doc #10872: the Polish name of the city; a capitalized "Królewiec" that spaCy
     # finds folds into Kaliningrad (the lowercase "królewca" is place_mention_gazetteer's job).
     ("Kaliningrad", ("krolewiec", "krolewc*")),
