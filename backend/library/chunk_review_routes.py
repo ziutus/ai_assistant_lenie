@@ -657,8 +657,9 @@ def document_ai_chapters(doc_id: int):
     if body.get("dry_run"):
         models = llm_model_registry.selectable_models(suggester.TASK)
         details = next((item for item in models if item["id"] == model), {})
-        return jsonify(status="ok", candidates=suggester.candidates(doc.text, details), models=[
-            dict(item, candidates=suggester.candidates(doc.text, item)) for item in models
+        items = suggester.sentences(doc.text)
+        return jsonify(status="ok", candidates=suggester.candidates(doc.text, details, items), models=[
+            dict(item, candidates=suggester.candidates(doc.text, item, items)) for item in models
         ], default_model=suggester.default_model(session), model_context=details)
     try:
         result = suggester.suggest_chapters(doc.text, model=model, document_id=doc_id)

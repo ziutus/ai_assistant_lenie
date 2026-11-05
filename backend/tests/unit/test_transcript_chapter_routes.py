@@ -42,6 +42,13 @@ def test_dry_run_no_model_call(client):
     client.session.commit.assert_not_called()
 
 
+def test_dry_run_splits_transcript_once_for_all_models(client):
+    with patch.object(s, "sentences", wraps=s.sentences) as split:
+        response = client.post("/document/1/suggest_chapters", json={"dry_run": True})
+    assert response.status_code == 200
+    assert split.call_count == 1
+
+
 def test_suggestion_does_not_store(client):
     with patch.object(s, "suggest_chapters", return_value={"status": "ok", "chapters": []}) as suggest:
         response = client.post("/document/1/suggest_chapters", json={"model": "test"})
