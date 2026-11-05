@@ -387,6 +387,55 @@ class TestOrganizationMerging:
         assert added_orgs[0].document_entity_id == rows[0].id
 
 
+class TestAmbiguousOrganizationNames:
+    """A bare institution name with several curated meanings ("Kongres", "Senat") is settled by the
+    document context, and left unresolved when the context does not settle it."""
+
+    RAW = [
+        {"text": "Kongresie", "label": "orgName", "lemma": "Kongresie"},
+        {"text": "Kongresu", "label": "orgName", "lemma": "Kongresie"},
+        {"text": "Kongres", "label": "orgName", "lemma": "Kongresie"},
+    ]
+    CANDIDATES = [MagicMock(id=1), MagicMock(id=2)]
+
+    def _refresh(self, chosen):
+        session = _session_with_exclusions([])
+        with patch("library.entity_service.extract_entities", return_value=self.RAW), \
+             patch("library.entity_service.ambiguous_alias_candidates_for_forms",
+                   return_value=("Kongres", self.CANDIDATES)) as lookup, \
+             patch("library.entity_service.select_ambiguous_alias_candidate_with_llm",
+                   return_value=chosen) as select, \
+             patch("library.entity_service.resolve_or_create") as resolve:
+            rows = refresh_document_entities(session, 11237, "Kongres, Kongresie, Kongresu")
+        return session, rows, lookup, select, resolve
+
+    def test_lookup_covers_the_group_name_and_every_variant(self):
+        _session, _rows, lookup, select, _resolve = self._refresh(None)
+
+        forms = lookup.call_args.args[1]
+        assert forms[0] == "Kongresie"
+        assert {"Kongresu", "Kongres"} <= set(forms)
+        assert select.call_args.args[2] == "Kongres"
+
+    def test_context_choice_links_the_chosen_organization(self):
+        us = MagicMock(id=55, canonical_name="Kongres Stanów Zjednoczonych")
+
+        session, rows, _lookup, _select, resolve = self._refresh(us)
+
+        assert [row.entity_text for row in rows] == ["Kongres Stanów Zjednoczonych"]
+        resolve.assert_not_called()
+        links = [c.args[0] for c in session.add.call_args_list if type(c.args[0]).__name__ == "DocumentOrganization"]
+        assert [(link.organization_id, link.confidence) for link in links] == [(55, "context_llm_matched")]
+
+    def test_no_choice_leaves_the_mention_unresolved_without_a_global_alias_or_new_organization(self):
+        session, rows, _lookup, _select, resolve = self._refresh(None)
+
+        resolve.assert_not_called()
+        assert [row.entity_text for row in rows] == ["Kongresie"]
+        assert rows[0].mention_count >= 1
+        assert not [c for c in session.add.call_args_list if type(c.args[0]).__name__ == "DocumentOrganization"]
+
+
 class TestMergeDocumentEntities:
     """POST /document/<id>/places/merge (server.py) — per-document only, no cross-document registry."""
 

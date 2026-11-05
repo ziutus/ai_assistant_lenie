@@ -30,13 +30,36 @@ from library.ner_normalization import normalize_ner_text, strip_content_markers,
 from library.org_compound_names import merge_compound_org_names
 from library.organization_registry import (
     CONFIDENCE_CONTEXT_LLM_MATCHED,
-    ambiguous_alias_candidates,
+    ambiguous_alias_candidates_for_forms,
     merge_ner_groups,
     resolve_or_create,
     select_ambiguous_alias_candidate_with_llm,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _organization_document_context(doc) -> str:
+    """Short cues about the document (channel, publication date, country tags) for resolving
+    an ambiguous organization name. Country tags are only a hint: they are missing on many
+    documents (doc #11237 is entirely about the USA and has none), so an empty result is normal."""
+    if doc is None:
+        return ""
+    parts = []
+    byline = getattr(doc, "byline", None)
+    if isinstance(byline, str) and byline:
+        parts.append(f"autor/kanał: {byline}")
+    published = getattr(doc, "published_on", None)
+    if isinstance(published, datetime.date):
+        parts.append(f"data publikacji: {published:%Y-%m-%d}")
+    tags = getattr(doc, "tags", None)
+    if isinstance(tags, str):
+        countries = [tag.strip() for tag in tags.split(",") if tag.strip().startswith("kraj-")]
+        if countries:
+            parts.append("tagi krajów: " + ", ".join(countries[:8]))
+    return "; ".join(parts)
+
+
 TEMPORAL_CONTEXT_WINDOW = 220
 COMPACT_DATE_RE = re.compile(
     r"(?<!\d)(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])"
@@ -424,15 +447,27 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             # the LLM only sees the approved local candidates and may decline
             # to choose. Ordinary, uncontested names fall straight through to
             # the deterministic registry path below.
-            candidates = ambiguous_alias_candidates(session, name)
-            organization = select_ambiguous_alias_candidate_with_llm(
-                text, getattr(doc, "title", "") or "", name, candidates,
+            #
+            # The group is named after spaCy's lemma, which for proper names is
+            # often still inflected ("Kongresie"), so the curated alias is looked
+            # up under the name AND every surface variant.
+            ambiguous_form, candidates = ambiguous_alias_candidates_for_forms(
+                session, [name, *group["variants"]],
             )
-            if organization is not None:
-                confidence = CONFIDENCE_CONTEXT_LLM_MATCHED
-            else:
+            organization = select_ambiguous_alias_candidate_with_llm(
+                text, getattr(doc, "title", "") or "", ambiguous_form or name, candidates,
+                extra_context=_organization_document_context(doc),
+            )
+            confidence = CONFIDENCE_CONTEXT_LLM_MATCHED
+            if organization is None and len(candidates) >= 2:
+                # A name with several curated meanings that the context did not
+                # settle stays UNRESOLVED: no global alias, no new registry row.
+                # The entity is kept (unlinked) so a reviewer can pick the meaning.
+                logger.info("Organization %r left unresolved in doc %s: ambiguous alias %r",
+                            name, document_id, ambiguous_form)
+            elif organization is None:
                 organization, confidence = resolve_or_create(session, name, group["variants"])
-            canonical_name = organization.canonical_name
+            canonical_name = organization.canonical_name if organization is not None else name
             merged_key = ("orgName", canonical_name)
             existing = groups.get(merged_key)
             surface_forms = [name, *group["variants"]]
@@ -448,7 +483,8 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                     value for value in surface_forms if value.casefold() != canonical_name.casefold()
                 )
                 groups[merged_key] = {"count": group["count"], "variants": list(distinct_variants)}
-            organization_confidence.setdefault(canonical_name, (organization.id, confidence))
+            if organization is not None:
+                organization_confidence.setdefault(canonical_name, (organization.id, confidence))
 
     # Manually merged rows (source='manual', set by merge_document_entities())
     # survive the refresh. A fresh NER group colliding with one on
