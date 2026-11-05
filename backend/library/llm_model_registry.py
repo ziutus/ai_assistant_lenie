@@ -84,7 +84,8 @@ def _base_models(task: str) -> list[dict]:
         models.append({"id": m.model_id, "label": m.label, "provider": m.provider, "external": m.external,
                        "verified": m.verified, "status": m.status,
                        "retires_on": m.retires_on.isoformat() if m.retires_on else None,
-                       "available": problem is None, "unavailable_reason": problem})
+                       "available": problem is None, "unavailable_reason": problem,
+                       "_context_length": m.context_length, "_max_output_tokens": m.max_output_tokens})
     return models
 
 
@@ -160,10 +161,13 @@ def selectable_models(task: str = "organization_description") -> list[dict]:
     database_models = [item for item in models if item["provider"] != "openrouter"]
     stored = _database_prices(database_models) if database_models else {}
     for item in models:
+        stored_context, stored_output = item.pop("_context_length"), item.pop("_max_output_tokens")
         if item["provider"] == "openrouter":
             item.update(_openrouter_details(item["id"]))
             continue
         item.update(_empty_details())
+        # Direct providers publish no catalog API we call: the limits are the ones stored with the model row.
+        item.update(context_length=stored_context, max_output_tokens=stored_output)
         # Direct providers: a JSON-schema response_format is accepted exactly where ai_ask() forwards it.
         item["supports_structured_outputs"] = item["provider"] in _RESPONSE_FORMAT_PROVIDERS
         row = stored.get((item["provider"], item["id"]))

@@ -38,6 +38,29 @@ def test_a_model_added_to_the_table_is_offered_without_a_code_change(monkeypatch
     assert _ids() == ["gemini-4-flash"] and registry.is_selectable("gemini-4-flash", TASK)
 
 
+def test_direct_provider_models_show_the_limits_stored_with_the_row(monkeypatch):
+    _use(monkeypatch, [
+        ModelEntry("Bielik-11B-v3.0-Instruct", "Bielik", "cloudferro", context_length=32768),
+        ModelEntry("gpt-4o-mini", "GPT", "openai", context_length=128000, max_output_tokens=16384),
+        ModelEntry("gemini-4-flash", "G4", "google-vertexai"),  # limits unknown: stays None, never guessed
+    ])
+    monkeypatch.setattr(registry, "_database_prices", lambda models: {})
+    by_id = {item["id"]: item for item in registry.selectable_models(TASK)}
+    assert (by_id["Bielik-11B-v3.0-Instruct"]["context_length"], by_id["Bielik-11B-v3.0-Instruct"]["max_output_tokens"]) == (32768, None)
+    assert (by_id["gpt-4o-mini"]["context_length"], by_id["gpt-4o-mini"]["max_output_tokens"]) == (128000, 16384)
+    assert by_id["gemini-4-flash"]["context_length"] is None
+    assert not any(key.startswith("_") for item in by_id.values() for key in item)
+
+
+def test_openrouter_models_keep_reading_their_limits_from_the_live_catalog(monkeypatch):
+    _use(monkeypatch, [ModelEntry("openrouter/google/gemma-3-27b-it", "Gemma", "openrouter", context_length=1)])
+    monkeypatch.setattr(registry, "_database_prices", lambda models: {})
+    monkeypatch.setattr(registry, "_openrouter_details", lambda model_id: {
+        **registry._empty_details(), "context_length": 131072, "max_output_tokens": 8192})
+    (item,) = registry.selectable_models(TASK)
+    assert (item["context_length"], item["max_output_tokens"]) == (131072, 8192)
+
+
 def test_json_schema_tasks_only_get_providers_that_honour_it(monkeypatch):
     _use(monkeypatch, [ModelEntry("gpt-4o-mini", "GPT", "openai"), ModelEntry("gemini-4-flash", "G4", "google-vertexai")])
     assert _ids("content_group_suggestion") == ["gemini-4-flash"] and "gpt-4o-mini" in _ids("tool_tags")

@@ -123,4 +123,37 @@ def test_migration_seed_matches_the_code_seed():
     migrated = [ModelEntry(model_id, label, provider, external, verified, status,
                            datetime.date.fromisoformat(retires_on) if retires_on else None, note)
                 for model_id, label, provider, external, verified, status, retires_on, note in module.SEED]
-    assert migrated == list(store.SEED_MODELS)
+    # The first migration predates the token limits (added by a4c8e2f6b913): compare everything else.
+    without_limits = [ModelEntry(m.model_id, m.label, m.provider, m.external, m.verified, m.status, m.retires_on, m.note)
+                      for m in store.SEED_MODELS]
+    assert migrated == without_limits
+
+
+def test_limits_migration_matches_the_code_seed():
+    path = next(pathlib.Path(__file__).resolve().parents[2].glob("alembic/versions/a4c8e2f6b913_*.py"))
+    spec = importlib.util.spec_from_file_location("llm_models_limits_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError:
+        pytest.skip("alembic is not installed")
+    seeded = {m.model_id: (m.context_length, m.max_output_tokens) for m in store.SEED_MODELS if m.context_length}
+    assert {model_id: (context, output) for model_id, context, output in module.LIMITS} == seeded
+    # every direct (non-OpenRouter) model of the seed has a window; OpenRouter ones read it from the live catalog
+    assert all(m.context_length for m in store.SEED_MODELS if m.provider != "openrouter")
+
+
+class TestTokenLimits:
+    def test_limits_are_optional_and_normalized(self):
+        values = validate_model(**OK)
+        assert values["context_length"] is None and values["max_output_tokens"] is None
+        values = validate_model(**OK, context_length=32768, max_output_tokens="")
+        assert values["context_length"] == 32768 and values["max_output_tokens"] is None
+
+    @pytest.mark.parametrize("override", [
+        {"context_length": 0}, {"context_length": -1}, {"context_length": 1.5}, {"context_length": "32768"},
+        {"context_length": True}, {"max_output_tokens": 0}, {"max_output_tokens": 10 ** 9},
+    ])
+    def test_rejects_invalid_limits(self, override):
+        values, problem = store.check_model(**{**OK, **override})
+        assert values is None and ("context_length" in problem or "max_output_tokens" in problem)

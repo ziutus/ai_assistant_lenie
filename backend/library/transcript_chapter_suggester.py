@@ -82,7 +82,7 @@ def candidates(text, details, items=None):
             count = len(windows(items, context))
         except ValueError:
             count = None
-    return {"sentence_count": len(items), "char_count": len(text),
+    return {"sentence_count": len(items), "char_count": len(text), "word_count": len(text.split()),
             "estimated_tokens": math.ceil(sum(len(s) + len(str(i)) + 4 for i, s in enumerate(items)) / 3),
             "fits_single_call": count == 1 if count is not None else None, "model_calls": count}
 

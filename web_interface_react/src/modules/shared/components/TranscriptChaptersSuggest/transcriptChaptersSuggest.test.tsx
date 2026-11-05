@@ -13,7 +13,8 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 it("previews model capacity without auto calling, edits proposals and saves only checked chapters", async () => {
   const onSaved = vi.fn().mockResolvedValue(undefined);
   vi.mocked(axios.post).mockResolvedValueOnce({ data: {
-    default_model: "large", candidates: { estimated_tokens: 10000 }, models: [
+    default_model: "large", candidates: { estimated_tokens: 10000, char_count: 30000, word_count: 4500, sentence_count: 400 },
+    models: [
       { id: "large", label: "Duży", context_length: 100000 },
       { id: "small", label: "Mały", context_length: 4000, external: true,
         candidates: { fits_single_call: false, model_calls: 4 } },
@@ -25,7 +26,11 @@ it("previews model capacity without auto calling, edits proposals and saves only
   fireEvent.click(screen.getByRole("button", { name: "Wybierz model i zaproponuj rozdziały" }));
   await screen.findByText(/mieści się w całości/);
   expect(axios.post).toHaveBeenCalledWith("/document/11172/suggest_chapters", { dry_run: true }, expect.anything());
+  // Size of the transcript and what the chosen model's window means for it.
+  expect(screen.getByText(/Transkrypcja: 30\s000 znaków · 4\s500 wyrazów · 400 zdań · ok\. 10 tys\. tokenów/)).toBeTruthy();
+  expect(screen.getByText(/Okno modelu: 100 tys\. tokenów, czyli do ok\. 210\s000 znaków.*ok\. 10% okna/)).toBeTruthy();
   fireEvent.change(screen.getByRole("combobox"), { target: { value: "small" } });
+  expect(screen.getByText(/Okno modelu: 4 tys\. tokenów, czyli do ok\. 8\s400 znaków.*ok\. 250% okna/)).toBeTruthy();
   expect(screen.getByText(/wymaga podziału na okna \(4 wywołań\)/)).toBeTruthy();
   expect(screen.getByRole("note").textContent).toContain("zewnętrznego pośrednika");
   vi.mocked(axios.post).mockResolvedValueOnce({ data: {
