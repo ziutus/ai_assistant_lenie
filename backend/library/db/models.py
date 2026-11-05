@@ -3372,11 +3372,16 @@ class LlmModel(Base):
     status: Mapped[str] = mapped_column(String(12), nullable=False, server_default=sa_text("'active'"))
     retires_on: Mapped[datetime.date | None] = mapped_column(Date)
     note: Mapped[str | None] = mapped_column(Text)
+    # Provider limits in tokens, NULL = unknown. OpenRouter models take theirs from the live catalog instead.
+    context_length: Mapped[int | None] = mapped_column(Integer)
+    max_output_tokens: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'deprecated', 'retired')", name="ck_llm_models_status"),
+        CheckConstraint("context_length IS NULL OR context_length > 0", name="ck_llm_models_context_length"),
+        CheckConstraint("max_output_tokens IS NULL OR max_output_tokens > 0", name="ck_llm_models_max_output_tokens"),
     )
 
     def __repr__(self) -> str:

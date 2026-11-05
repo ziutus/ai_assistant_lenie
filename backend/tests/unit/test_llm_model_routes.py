@@ -66,6 +66,13 @@ class TestAdd:
         invalidate.assert_called_once()
         assert "llm_pricing" in response.get_json()["warnings"][0]
 
+    def test_creates_a_model_with_its_token_limits(self, api):
+        client, session, _ = api
+        response = client.post("/llm_models", json=vertex(context_length=1048576, max_output_tokens=65536))
+        assert response.status_code == 201
+        added = session.add.call_args.args[0]
+        assert (added.context_length, added.max_output_tokens) == (1048576, 65536)
+
     def test_openrouter_model_needs_no_pricing_row(self, api):
         client, _, _ = api
         response = client.post("/llm_models", json=vertex(model_id="openrouter/google/gemma-3-27b-it", provider="openrouter"))
@@ -106,6 +113,25 @@ class TestPatch:
 
     def test_unknown_model_is_a_404(self, api):
         assert api[0].patch("/llm_models/99", json={"status": "retired"}).status_code == 404
+
+    def test_token_limits_are_set_and_cleared_without_a_deploy(self, api):
+        client, session, invalidate = api
+        model = stored()
+        session.get.return_value = model
+        response = client.patch("/llm_models/7", json={"context_length": 32768, "max_output_tokens": 4096})
+        assert response.status_code == 200 and (model.context_length, model.max_output_tokens) == (32768, 4096)
+        assert response.get_json()["model"]["context_length"] == 32768
+        client.patch("/llm_models/7", json={"max_output_tokens": None})
+        assert (model.context_length, model.max_output_tokens) == (32768, None)
+        assert invalidate.call_count == 2
+
+    def test_invalid_token_limit_is_a_400_and_changes_nothing(self, api):
+        client, session, invalidate = api
+        model = stored(context_length=1000)
+        session.get.return_value = model
+        assert client.patch("/llm_models/7", json={"context_length": -5}).status_code == 400
+        assert model.context_length == 1000
+        invalidate.assert_not_called()
 
     def test_identity_fields_are_immutable(self, api):
         client, session, _ = api

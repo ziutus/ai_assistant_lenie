@@ -17,7 +17,8 @@ from library.llm_model_store import check_model, invalidate_cache
 
 bp = Blueprint("llm_models", __name__)
 
-_PATCHABLE = ("label", "external", "verified", "status", "retires_on", "note")
+_PATCHABLE = ("label", "external", "verified", "status", "retires_on", "note", "context_length",
+              "max_output_tokens")
 
 
 def _require_service() -> None:
@@ -75,6 +76,7 @@ def add_model():
         model_id=data.get("model_id"), label=data.get("label"), provider=data.get("provider"),
         external=data.get("external"), verified=data.get("verified", False),
         status=data.get("status", "active"), retires_on=data.get("retires_on"), note=data.get("note"),
+        context_length=data.get("context_length"), max_output_tokens=data.get("max_output_tokens"),
     )
     if problem:
         return _error(problem, 400)

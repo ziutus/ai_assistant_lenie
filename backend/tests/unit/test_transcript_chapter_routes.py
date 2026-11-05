@@ -37,6 +37,7 @@ def test_dry_run_no_model_call(client):
     data = response.get_json()
     assert data["candidates"]["fits_single_call"] is True
     assert data["candidates"]["sentence_count"] == 3
+    assert data["candidates"]["word_count"] == 3 and data["candidates"]["char_count"] == len("Pierwsze. Drugie. Trzecie.")
     assert data["model_context"]["context_length"] == 10000
     ask.assert_not_called()
     client.session.commit.assert_not_called()

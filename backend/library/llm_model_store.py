@@ -45,16 +45,24 @@ class ModelEntry:
     status: str = "active"
     retires_on: datetime.date | None = None
     note: str | None = None
+    # Provider limits in tokens (None = unknown); OpenRouter models read theirs from the live catalog instead.
+    context_length: int | None = None
+    max_output_tokens: int | None = None
 
 
-# Same content as the seed of migration f2c8a4d6b190 (a unit test keeps the two in step).
+# Same content as the seed of migration f2c8a4d6b190 plus the limits of a4c8e2f6b913 (a unit test keeps them in step).
 # ``verified`` False = id/price/quality not yet checked by a human.
 SEED_MODELS: tuple[ModelEntry, ...] = (
-    ModelEntry("Bielik-11B-v3.0-Instruct", "Bielik 11B v3.0 (CloudFerro)", "cloudferro", verified=True),
-    ModelEntry("Bielik-11B-v2.3-Instruct", "Bielik 11B v2.3 (CloudFerro)", "cloudferro", verified=True),
-    ModelEntry("gpt-4o-mini", "GPT-4o mini (OpenAI)", "openai", verified=True),
-    ModelEntry("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite (Google Vertex)", "google-vertexai", verified=True),
-    ModelEntry("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Google Vertex)", "google-vertexai", verified=True),
+    ModelEntry("Bielik-11B-v3.0-Instruct", "Bielik 11B v3.0 (CloudFerro)", "cloudferro", verified=True,
+               context_length=32768),
+    ModelEntry("Bielik-11B-v2.3-Instruct", "Bielik 11B v2.3 (CloudFerro)", "cloudferro", verified=True,
+               context_length=32768),
+    ModelEntry("gpt-4o-mini", "GPT-4o mini (OpenAI)", "openai", verified=True,
+               context_length=128000, max_output_tokens=16384),
+    ModelEntry("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite (Google Vertex)", "google-vertexai", verified=True,
+               context_length=1048576, max_output_tokens=65536),
+    ModelEntry("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Google Vertex)", "google-vertexai", verified=True,
+               context_length=1048576, max_output_tokens=65536),
     ModelEntry("openrouter/openai/gpt-4o-mini", "GPT-4o mini (OpenRouter)", "openrouter", external=True),
     ModelEntry(
         "openrouter/google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (OpenRouter)", "openrouter", external=True,
@@ -92,7 +100,8 @@ def _fetch_rows() -> list[ModelEntry]:
     session = get_session()
     try:
         return [
-            ModelEntry(r.model_id, r.label, r.provider, r.external, r.verified, r.status, r.retires_on, r.note)
+            ModelEntry(r.model_id, r.label, r.provider, r.external, r.verified, r.status, r.retires_on, r.note,
+                       r.context_length, r.max_output_tokens)
             for r in session.scalars(select(LlmModel).order_by(LlmModel.id))
         ]
     finally:
@@ -156,8 +165,20 @@ def _clean_date(value) -> tuple[datetime.date | None, str | None]:
         return None, "retires_on musi być datą RRRR-MM-DD"
 
 
+MAX_TOKEN_LIMIT = 100_000_000
+
+
+def _clean_limit(value, name: str) -> tuple[int | None, str | None]:
+    """A token limit: ``None``/empty = unknown, otherwise a positive whole number (bool is not a number here)."""
+    if value is None or value == "":
+        return None, None
+    if type(value) is not int or not 0 < value <= MAX_TOKEN_LIMIT:
+        return None, f"{name} musi być dodatnią liczbą całkowitą tokenów (do {MAX_TOKEN_LIMIT})"
+    return value, None
+
+
 def check_model(*, model_id, label, provider, external=None, verified=False, status="active", retires_on=None,
-                note=None) -> tuple[dict | None, str | None]:
+                note=None, context_length=None, max_output_tokens=None) -> tuple[dict | None, str | None]:
     """Validate a row without raising: ``(normalized fields, None)`` or ``(None, Polish message)``.
 
     The REST layer uses this form, so no exception object ever reaches an HTTP response.
@@ -189,8 +210,15 @@ def check_model(*, model_id, label, provider, external=None, verified=False, sta
     retires, error = _clean_date(retires_on)
     if error:
         return None, error
+    context, error = _clean_limit(context_length, "context_length")
+    if error:
+        return None, error
+    max_output, error = _clean_limit(max_output_tokens, "max_output_tokens")
+    if error:
+        return None, error
     return {"model_id": model_id, "label": label, "provider": provider, "external": external, "verified": verified,
-            "status": status, "retires_on": retires, "note": note}, None
+            "status": status, "retires_on": retires, "note": note, "context_length": context,
+            "max_output_tokens": max_output}, None
 
 
 def validate_model(**fields) -> dict:

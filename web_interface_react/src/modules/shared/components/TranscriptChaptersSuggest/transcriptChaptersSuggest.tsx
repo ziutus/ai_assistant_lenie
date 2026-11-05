@@ -3,7 +3,17 @@ import axios from "axios";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import { isModelUnavailable, ModelOption, modelOptionText } from "../../utils/modelDetails";
 
-type Candidates = { estimated_tokens: number; fits_single_call: boolean | null; model_calls: number | null };
+type Candidates = {
+  estimated_tokens: number; fits_single_call: boolean | null; model_calls: number | null;
+  char_count?: number; word_count?: number; sentence_count?: number;
+};
+// Same assumptions as the backend plan (transcript_chapter_suggester.windows): ~3 characters per token and 70 % of
+// the window available for the transcript (the rest is kept for instructions and the answer).
+const CHARS_PER_TOKEN = 3;
+const USABLE_WINDOW_SHARE = 0.7;
+const count = (value: number) => String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+const tokens = (value: number) => value >= 1_000_000 ? `${+(value / 1_000_000).toFixed(1)} mln`
+  : value >= 1000 ? `${Math.round(value / 1000)} tys.` : String(value);
 type Chapter = { start_sentence: number; title: string; preview: string; checked: boolean };
 type Option = ModelOption & { candidates?: Candidates };
 
@@ -68,6 +78,17 @@ export default function TranscriptChaptersSuggest({ docId, onSaved, disabled = f
       <label>Model <select value={model} disabled={locked} onChange={event => setModel(event.target.value)}>
         {models.map(item => <option key={item.id} value={item.id} disabled={isModelUnavailable(item)}>{modelOptionText(item)}</option>)}
       </select></label>
+      {candidates?.char_count != null && <p>
+        Transkrypcja: {count(candidates.char_count)} znaków
+        {candidates.word_count != null && <> · {count(candidates.word_count)} wyrazów</>}
+        {candidates.sentence_count != null && <> · {count(candidates.sentence_count)} zdań</>}
+        {" "}· ok. {tokens(candidates.estimated_tokens)} tokenów (szacunek).
+      </p>}
+      {selected?.context_length ? <p>
+        Okno modelu: {tokens(selected.context_length)} tokenów, czyli do ok.{" "}
+        {count(selected.context_length * USABLE_WINDOW_SHARE * CHARS_PER_TOKEN)} znaków transkrypcji w jednym wywołaniu
+        {candidates ? <> — ta transkrypcja zajmuje ok. {Math.max(1, Math.round(candidates.estimated_tokens / selected.context_length * 100))}% okna</> : null}.
+      </p> : null}
       <p>{fits === null ? "Brak informacji o oknie modelu — nie można zaplanować wywołania."
         : fits ? "Transkrypcja mieści się w całości (1 wywołanie)." : `Transkrypcja wymaga podziału na okna (${calls} wywołań).`}</p>
       {selected?.external && <p role="note" style={{ color: "#92400e" }}>
