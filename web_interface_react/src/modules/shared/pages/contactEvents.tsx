@@ -114,7 +114,7 @@ const ContactEvents = () => {
   const availableResults = results.filter(result => !form.participants.some(contact => contact.id === result.id));
 
   return <div>
-    <h2>Wydarzenia</h2>
+    <h2>Wydarzenia kontaktów</h2>
     {message && <p role={isError ? "alert" : "status"} style={{ color: isError ? "#b91c1c" : "#166534" }}>{message}</p>}
     {isLoading && <p>Ładowanie…</p>}
     <form onSubmit={event => { event.preventDefault(); void save(); }}>

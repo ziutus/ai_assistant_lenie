@@ -16,7 +16,7 @@ type ComparisonRow = {
   accept_rate: number | null; no_match_runs: number; last_run_at: string | null;
 };
 
-const VARIANT_LABELS: Record<Variant, string> = { feed_item: "Kuracja feedów", document: "Dokumenty (Tematy)", event_extraction: "Geopolityka (zdarzenia)" };
+const VARIANT_LABELS: Record<Variant, string> = { feed_item: "Kuracja feedów", document: "Dokumenty (Tematy)", event_extraction: "Geopolityka (wydarzenia)" };
 // Every variant belongs to one task; the task decides the allowed variables and the preview.
 const TASK_OF: Record<Variant, string> = { feed_item: "content_group_suggestion", document: "content_group_suggestion", event_extraction: "geopolitics_events" };
 const DAY_OPTIONS = [{ value: 30, label: "30 dni" }, { value: 90, label: "90 dni" }, { value: 365, label: "rok" }, { value: 0, label: "całość" }];
@@ -157,7 +157,7 @@ export default function PromptTemplates() {
     <p style={{ color: "#475569" }}>
       Treść promptów jest w bazie: podpowiadanie tematów oraz analiza geopolityczna. Zapis tworzy <strong>nową wersję</strong> (stare zostają, każdy przebieg pamięta wersję i model),
       więc zmiana działa bez wdrażania aplikacji. Dla tematów poniżej porównasz modele i brzmienia; wersję można też wybrać ręcznie w <Link to="/feed-review">Kuracji feedów</Link>.
-      Wersja promptu geopolitycznego zapisuje się przy każdym zdarzeniu i propozycji na <Link to="/geopolitics?tab=events">stronie Geopolityka</Link>.
+      Wersja promptu geopolitycznego zapisuje się przy każdym wydarzeniu i propozycji na <Link to="/geopolitics?tab=events">stronie Geopolityka</Link>.
     </p>
 
     <div role="tablist" style={{ display: "flex", gap: 8, margin: "12px 0" }}>
@@ -221,7 +221,7 @@ export default function PromptTemplates() {
       </div>}
     </section>
 
-    {isGeopolitics && <p style={{ color: "#475569", marginTop: 24 }}>Porównania modeli i wersji dla tego promptu jeszcze nie ma. Zobacz, co dała dana wersja, na liście zdarzeń i propozycji (pole „prompt”), a koszt w <Link to="/llm-costs">kosztach LLM</Link> (operacja <code>geopolitics_event_extraction</code>).</p>}
+    {isGeopolitics && <p style={{ color: "#475569", marginTop: 24 }}>Porównania modeli i wersji dla tego promptu jeszcze nie ma. Zobacz, co dała dana wersja, na liście wydarzeń i propozycji (pole „prompt”), a koszt w <Link to="/llm-costs">kosztach LLM</Link> (operacja <code>geopolitics_event_extraction</code>).</p>}
     {!isGeopolitics && <section aria-label="Porównanie" style={{ marginTop: 32 }}>
       <h2>Porównanie modeli i wersji promptu</h2>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

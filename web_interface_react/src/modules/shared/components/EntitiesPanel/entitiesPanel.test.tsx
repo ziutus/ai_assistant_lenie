@@ -513,6 +513,53 @@ it("gives event chips the shared menu: description, retype to product, delete", 
     { entity_type: "productName" }, { headers: expect.any(Object) }));
 });
 
+it("offers promotion of an event name to the registry only when the page can open the dialog", async () => {
+  const onLinkEvent = vi.fn();
+  renderManualChips({ onLinkEvent });
+  await openOrgMenu("Szczyt NATO");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "Dodaj do rejestru wydarzeń…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
+    "Zmień na produkt / system", "× Usuń encję",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj do rejestru wydarzeń…" }));
+  expect(onLinkEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 77, text: "Szczyt NATO" }));
+});
+
+const renderLinkedEvent = (props: Record<string, unknown> = {}) => {
+  mockOrgEntities();
+  renderInRouter(<EntitiesPanel docId={11237} {...props} chapterRenderer={(renderGroups) => <>{renderGroups({
+    eventName: [{ id: 77, text: "Konwencja Demokratów", count: 1, description: null,
+      registry_event: { id: 68, title: "Krajowa Konwencja Demokratów 2024 (Chicago)", status: "confirmed",
+        surface: "Konwencja Demokratów" } }],
+  })}</>} />);
+};
+
+it("marks an event name that is linked to a registry event and offers open / change / unlink", async () => {
+  const onLinkEvent = vi.fn();
+  renderLinkedEvent({ onLinkEvent });
+  expect(screen.getByTitle("W rejestrze wydarzeń: #68 Krajowa Konwencja Demokratów 2024 (Chicago)")).toBeTruthy();
+  await openOrgMenu("Konwencja Demokratów");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "🔗 W rejestrze: #68 Krajowa Konwencja Demokratów 2024 (Chicago)", "Zmień powiązanie z rejestrem…",
+    "Odłącz od wydarzenia z rejestru", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
+    "Zmień na produkt / system", "× Usuń encję",
+  ]);
+  const open = screen.getByRole("menuitem", { name: /W rejestrze: #68/ });
+  expect(open.getAttribute("href")).toBe("/world-events?q=" + encodeURIComponent("Krajowa Konwencja Demokratów 2024 (Chicago)"));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień powiązanie z rejestrem…" }));
+  expect(onLinkEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 77 }));
+});
+
+it("unlinks an event name from the registry for this document only", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  renderLinkedEvent();
+  await openOrgMenu("Konwencja Demokratów");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Odłącz od wydarzenia z rejestru" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/world_events/mentions/unlink",
+    { name: "Konwencja Demokratów", event_id: 68, document_id: 11237 }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/odłączone od wydarzenia #68/)).toBeTruthy();
+});
+
 it("changes an organization into a named event", async () => {
   mockOrgEntities({ id: 31, text: "Szczyt", count: 2, organization_id: 8 });
   vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", product_name: "Szczyt" } });
@@ -772,7 +819,7 @@ it("proposes geopolitical events with the default model, reports the cost and ke
     model: "Bielik-11B-v3.0-Instruct", usage: { llm_cost_amount: "0.0042", llm_cost_currency: "EUR", llm_cost_status: "estimated" },
   } }));
   const message = screen.getByText(/^Geopolityka:/).textContent ?? "";
-  expect(message).toContain("6 nowych zdarzeń");
+  expect(message).toContain("6 nowych wydarzeń");
   expect(message).toContain("2 propozycji relacji (+4 dowodów dołączono do istniejących)");
   expect(message).toContain("odrzucone przez walidację: 1");
   expect(message).toContain("Zatwierdź je w Geopolityka → Propozycje");
@@ -791,7 +838,7 @@ it.each(["nothing", "error", "network"])("reports %s of the geopolitics proposal
   await screen.findByRole("button", { name: place.text });
   fireEvent.click(screen.getByRole("button", { name: "Zaproponuj relacje geopolityczne" }));
   const expected = {
-    nothing: /model nie znalazł zdarzeń do zapisania.*koszt nieznany/,
+    nothing: /model nie znalazł wydarzeń do zapisania.*koszt nieznany/,
     error: /Nie udało się zaproponować relacji geopolitycznych: Document has no text content/,
     network: /Nie udało się zaproponować relacji geopolitycznych: brak odpowiedzi serwera/,
   }[outcome] as RegExp;

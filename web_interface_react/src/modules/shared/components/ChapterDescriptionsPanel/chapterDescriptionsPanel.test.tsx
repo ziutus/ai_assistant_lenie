@@ -1,7 +1,7 @@
 import axios from "axios";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import ChapterDescriptionsPanel from "./chapterDescriptionsPanel";
+import ChapterDescriptionsPanel, { ChapterDescriptionsButton } from "./chapterDescriptionsPanel";
 
 vi.mock("axios");
 afterEach(cleanup);
@@ -115,4 +115,29 @@ it("stops at the first failed save and keeps the unsaved ones for another try", 
   expect(axios.patch).toHaveBeenCalledTimes(1);
   expect(onSaved).not.toHaveBeenCalled();
   expect(screen.getByLabelText("Opis: Luka Nikulesku")).toBeTruthy();
+});
+
+it("in controlled mode draws no button of its own and starts the check when the host opens it", async () => {
+  const { rerender } = render(<ChapterDescriptionsPanel apiUrl="" apiKey="k" docId={11139} position={11} open={false} />);
+  expect(screen.queryByRole("button", { name: /Uzupełnij brakujące opisy/ })).toBeNull();
+  expect(axios.post).not.toHaveBeenCalled();
+
+  rerender(<ChapterDescriptionsPanel apiUrl="" apiKey="k" docId={11139} position={11} open />);
+
+  expect(await screen.findByRole("button", { name: "Generuj opisy" })).toBeTruthy();
+  expect(axios.post).toHaveBeenCalledWith("/document/11139/chapter/11/describe_entities", { dry_run: true }, expect.any(Object));
+});
+
+it("asks the host to close it from the panel's own close button", async () => {
+  const onOpenChange = vi.fn();
+  render(<ChapterDescriptionsPanel apiUrl="" apiKey="k" docId={11139} position={11} open onOpenChange={onOpenChange} />);
+  fireEvent.click(await screen.findByRole("button", { name: /zamknij/ }));
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+});
+
+it("exports the trigger button for hosts that keep it among their own buttons", () => {
+  const onClick = vi.fn();
+  render(<ChapterDescriptionsButton onClick={onClick} />);
+  fireEvent.click(screen.getByRole("button", { name: /Uzupełnij brakujące opisy/ }));
+  expect(onClick).toHaveBeenCalledTimes(1);
 });

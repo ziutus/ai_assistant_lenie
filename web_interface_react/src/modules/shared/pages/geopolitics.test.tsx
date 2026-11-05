@@ -61,7 +61,7 @@ it("shows the proposal next to the assessment it would replace and sends the exp
   expect(item.textContent).toContain("zaproponował model");
   expect(within(item).getByRole("link", { name: "Dokument 77" }).getAttribute("href")).toBe("/read/77");
 
-  fireEvent.click(within(item).getByRole("button", { name: "Zatwierdź zdarzenie i zmianę" }));
+  fireEvent.click(within(item).getByRole("button", { name: "Zatwierdź wydarzenie i zmianę" }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
     "/geopolitics/proposals/5/decision", { decision: "approve", expected_version: 1 }, { headers: { "x-api-key": "test-key" } },
   ));
@@ -97,9 +97,9 @@ it("shows an error when a decision conflicts", async () => {
 it("lists events with participants and lets a proposed one be confirmed", async () => {
   vi.mocked(axios.patch).mockResolvedValue({ data: {} });
   render(<MemoryRouter initialEntries={["/geopolitics?tab=events"]}><Geopolitics /></MemoryRouter>);
-  const list = await screen.findByRole("list", { name: "Zdarzenia" });
+  const list = await screen.findByRole("list", { name: "Wydarzenia" });
   expect(list.textContent).toContain("Brazylia (sprawca), Stany Zjednoczone (cel)");
-  fireEvent.click(within(list).getByRole("button", { name: "Zatwierdź zdarzenie" }));
+  fireEvent.click(within(list).getByRole("button", { name: "Zatwierdź wydarzenie" }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith("/geo_events/9", { status: "confirmed" }, { headers: { "x-api-key": "test-key" } }));
 });
 
@@ -120,7 +120,7 @@ it("offers models with prices, greys out unavailable ones and sends the chosen m
 
   fireEvent.change(select, { target: { value: "openrouter/x/y" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Numer dokumentu" }), { target: { value: "11205" } });
-  fireEvent.click(screen.getByRole("button", { name: "Zaproponuj zdarzenia" }));
+  fireEvent.click(screen.getByRole("button", { name: "Zaproponuj wydarzenia" }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
     "/document/11205/geopolitics/detect", { model: "openrouter/x/y" }, { headers: { "x-api-key": "test-key" }, timeout: 180000 },
   ));

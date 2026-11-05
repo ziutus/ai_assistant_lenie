@@ -61,7 +61,7 @@ afterEach(() => cleanup());
 
 it("lists registry events with kind, dates, participants of every kind, names and documents", async () => {
   open();
-  const list = await screen.findByRole("list", { name: "Zdarzenia" });
+  const list = await screen.findByRole("list", { name: "Wydarzenia" });
   const [first, second] = list.children as unknown as HTMLElement[];
   expect(first.textContent).toContain("Wybory do Knesetu 2026");
   expect(first.textContent).toContain("Wybory · 2026-11-03 · zatwierdzone");
@@ -77,20 +77,20 @@ it("lists registry events with kind, dates, participants of every kind, names an
 
 it("passes the search, kind and country filters to the registry", async () => {
   open("/world-events?q=wybory&kind=election&with_countries=0");
-  await screen.findByRole("list", { name: "Zdarzenia" });
+  await screen.findByRole("list", { name: "Wydarzenia" });
   await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/world_events", {
     ...H, params: { q: "wybory", kind: "election", with_countries: "0", limit: 25, offset: 0 } }));
-  expect((screen.getByLabelText("Rodzaj zdarzenia") as HTMLSelectElement).value).toBe("election");
+  expect((screen.getByLabelText("Rodzaj wydarzenia") as HTMLSelectElement).value).toBe("election");
 });
 
 it("filters by country and by status and keeps both in the URL", async () => {
   open("/world-events?country=izrael&status=proposed");
-  await screen.findByRole("list", { name: "Zdarzenia" });
+  await screen.findByRole("list", { name: "Wydarzenia" });
   await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/world_events", {
     ...H, params: { country: "izrael", status: "proposed", limit: 25, offset: 0 } }));
   expect((screen.getByLabelText("Kraj") as HTMLSelectElement).value).toBe("izrael");
-  expect((screen.getByLabelText("Status zdarzenia") as HTMLSelectElement).value).toBe("proposed");
-  fireEvent.change(screen.getByLabelText("Status zdarzenia"), { target: { value: "confirmed" } });
+  expect((screen.getByLabelText("Status wydarzenia") as HTMLSelectElement).value).toBe("proposed");
+  fireEvent.change(screen.getByLabelText("Status wydarzenia"), { target: { value: "confirmed" } });
   await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/world_events", {
     ...H, params: { country: "izrael", status: "confirmed", limit: 25, offset: 0 } }));
 });
@@ -98,7 +98,7 @@ it("filters by country and by status and keeps both in the URL", async () => {
 it("explains an empty registry and an error", async () => {
   respond({ "/world_events": { total: 0, events: [] } });
   open();
-  expect(await screen.findByText("Brak zdarzeń.")).toBeTruthy();
+  expect(await screen.findByText("Brak wydarzeń.")).toBeTruthy();
   cleanup();
   vi.mocked(axios.get).mockRejectedValue({ response: { status: 500, data: { message: "Błąd serwera (OperationalError)" } } });
   open();
@@ -108,28 +108,28 @@ it("explains an empty registry and an error", async () => {
 it("adds an event without a country", async () => {
   vi.mocked(axios.post).mockResolvedValue({ data: { created: true, event: outage } });
   open();
-  await screen.findByRole("list", { name: "Zdarzenia" });
-  fireEvent.change(screen.getByLabelText("Nazwa nowego zdarzenia"), { target: { value: "Halving Bitcoina" } });
-  fireEvent.change(screen.getByLabelText("Rodzaj nowego zdarzenia"), { target: { value: "other" } });
-  fireEvent.change(screen.getByLabelText("Inne nazwy nowego zdarzenia"), { target: { value: "Bitcoin halving, halving BTC" } });
+  await screen.findByRole("list", { name: "Wydarzenia" });
+  fireEvent.change(screen.getByLabelText("Nazwa nowego wydarzenia"), { target: { value: "Halving Bitcoina" } });
+  fireEvent.change(screen.getByLabelText("Rodzaj nowego wydarzenia"), { target: { value: "other" } });
+  fireEvent.change(screen.getByLabelText("Inne nazwy nowego wydarzenia"), { target: { value: "Bitcoin halving, halving BTC" } });
   fireEvent.click(screen.getByRole("button", { name: "Dodaj" }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/geo_events", {
     title: "Halving Bitcoina", kind: "other", is_ongoing: false, status: "confirmed", aliases: ["Bitcoin halving", "halving BTC"],
     description: undefined, event_date: undefined, event_date_end: undefined }, H));
-  expect((await screen.findByRole("status")).textContent).toContain("Dodano zdarzenie.");
-  fireEvent.change(screen.getByLabelText("Nazwa nowego zdarzenia"), { target: { value: "" } });
+  expect((await screen.findByRole("status")).textContent).toContain("Dodano wydarzenie.");
+  fireEvent.change(screen.getByLabelText("Nazwa nowego wydarzenia"), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "Dodaj" }));
-  expect((await screen.findByRole("alert")).textContent).toContain("Podaj nazwę zdarzenia.");
+  expect((await screen.findByRole("alert")).textContent).toContain("Podaj nazwę wydarzenia.");
 });
 
 it("edits only the changed fields and sends the version it loaded", async () => {
   vi.mocked(axios.patch).mockResolvedValue({ data: {} });
   open();
-  const list = await screen.findByRole("list", { name: "Zdarzenia" });
+  const list = await screen.findByRole("list", { name: "Wydarzenia" });
   const card = list.children[1] as HTMLElement;
   fireEvent.click(within(card).getByRole("button", { name: "Edytuj" }));
   fireEvent.change(within(card).getByLabelText("Data początku"), { target: { value: "2024-07-19" } });
-  fireEvent.change(within(card).getByLabelText("Opis zdarzenia"), { target: { value: "Globalna awaria Windows." } });
+  fireEvent.change(within(card).getByLabelText("Opis wydarzenia"), { target: { value: "Globalna awaria Windows." } });
   fireEvent.click(within(card).getByRole("button", { name: "Zapisz" }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith("/geo_events/2",
     { event_date: "2024-07-19", description: "Globalna awaria Windows.", expected_version: 1 }, H));
@@ -138,18 +138,18 @@ it("edits only the changed fields and sends the version it loaded", async () => 
 it("tells the reader when somebody else changed the event meanwhile", async () => {
   vi.mocked(axios.patch).mockRejectedValue({ response: { status: 409, data: { message: "The event changed since you loaded it; reload" } } });
   open();
-  const card = (await screen.findByRole("list", { name: "Zdarzenia" })).children[0] as HTMLElement;
+  const card = (await screen.findByRole("list", { name: "Wydarzenia" })).children[0] as HTMLElement;
   fireEvent.click(within(card).getByRole("button", { name: "Edytuj" }));
-  fireEvent.change(within(card).getByLabelText("Nazwa zdarzenia"), { target: { value: "Inna nazwa" } });
+  fireEvent.change(within(card).getByLabelText("Nazwa wydarzenia"), { target: { value: "Inna nazwa" } });
   fireEvent.click(within(card).getByRole("button", { name: "Zapisz" }));
-  expect((await screen.findByRole("alert")).textContent).toContain("Ktoś zmienił to zdarzenie w międzyczasie");
+  expect((await screen.findByRole("alert")).textContent).toContain("Ktoś zmienił to wydarzenie w międzyczasie");
 });
 
 it("adds an organization by name and removes a participant", async () => {
   vi.mocked(axios.post).mockResolvedValue({ data: {} });
   vi.mocked(axios.delete).mockResolvedValue({ data: {} });
   open();
-  const card = (await screen.findByRole("list", { name: "Zdarzenia" })).children[1] as HTMLElement;
+  const card = (await screen.findByRole("list", { name: "Wydarzenia" })).children[1] as HTMLElement;
   fireEvent.click(within(card).getByRole("button", { name: "Edytuj" }));
   fireEvent.change(within(card).getByLabelText("Typ uczestnika"), { target: { value: "organization" } });
   fireEvent.change(within(card).getByLabelText("Uczestnik (id lub dokładna nazwa)"), { target: { value: "CrowdStrike" } });
@@ -158,7 +158,7 @@ it("adds an organization by name and removes a participant", async () => {
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/geo_events/2/participants",
     { type: "organization", ref: "CrowdStrike", role: "actor" }, H));
 
-  const first = (await screen.findByRole("list", { name: "Zdarzenia" })).children[0] as HTMLElement;
+  const first = (await screen.findByRole("list", { name: "Wydarzenia" })).children[0] as HTMLElement;
   fireEvent.click(within(first).getByRole("button", { name: "Usuń uczestnika Benjamin Netanjahu" }));
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith("/geo_events/1/participants",
     { ...H, data: { type: "person", id: 7, role: "subject" } }));
@@ -186,12 +186,12 @@ it("remembers a refused suggestion, creates an event from a mention and links to
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/world_events/mentions/reject", { name: "Wybory w Polsce", event_id: 9 }, H));
 
   fireEvent.change(within(item).getByLabelText("Rodzaj dla Wybory w Polsce"), { target: { value: "election" } });
-  fireEvent.click(within(item).getByRole("button", { name: "Utwórz zdarzenie" }));
+  fireEvent.click(within(item).getByRole("button", { name: "Utwórz wydarzenie" }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/world_events/from_mention", { name: "Wybory w Polsce", kind: "election" }, H));
 
   const link = within(item).getByRole("button", { name: "Powiąż z istniejącym" }) as HTMLButtonElement;
   expect(link.disabled).toBe(true);
-  fireEvent.change(within(item).getByLabelText("Numer zdarzenia dla Wybory w Polsce"), { target: { value: "42" } });
+  fireEvent.change(within(item).getByLabelText("Numer wydarzenia dla Wybory w Polsce"), { target: { value: "42" } });
   expect(link.disabled).toBe(false);
   fireEvent.click(link);
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/world_events/mentions/link", { name: "Wybory w Polsce", event_id: 42 }, H));

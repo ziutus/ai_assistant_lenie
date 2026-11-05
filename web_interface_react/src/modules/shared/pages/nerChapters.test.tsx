@@ -472,9 +472,9 @@ it("highlights hand-added events and products and hands their chips to the share
   await open();
   const chapter = screen.getByRole("region", { name: "#3 Pusty" });
   expect([...chapter.querySelectorAll("mark")].map((mark) => mark.getAttribute("title"))).toEqual([
-    "Bez (Wydarzenia)", "nazw (Produkty i systemy)"]);
+    "Bez (Nazwy wydarzeń)", "nazw (Produkty i systemy)"]);
   // The page no longer draws its own event / product rows: the panel's chips (and menus) do.
-  expect(within(chapter).queryByLabelText("Wydarzenia rozdziału")).toBeNull();
+  expect(within(chapter).queryByLabelText("Nazwy wydarzeń rozdziału")).toBeNull();
   expect(within(chapter).queryByLabelText("Produkty i systemy rozdziału")).toBeNull();
   expect(within(chapter).getByRole("button", { name: "opis Bez" })).toBeTruthy();
   expect(within(chapter).getByRole("button", { name: "scal nazw" })).toBeTruthy();
@@ -641,4 +641,39 @@ it("shows preamble navigation at position zero", async () => {
   expect(screen.queryByRole("link", { name: "← Poprzedni" })).toBeNull();
   expect(screen.getByRole("link", { name: "Następny →" }).getAttribute("href")).toBe("/ner/42/1");
   expect(entityCalls().every(([, config]) => (config?.params as { position?: number } | undefined)?.position === 0)).toBe(true);
+});
+
+it("keeps every chapter button in ONE bar at the top of the right-hand column", async () => {
+  await open();
+  const chapter = within(screen.getByRole("region", { name: "#1 Wstęp" }));
+  const bar = chapter.getByLabelText("Przyciski rozdziału 1");
+  const inBar = within(bar);
+  for (const name of [/Uzupełnij brakujące opisy/, /Wykryj wydarzenia/, "Scal rozdział 1 z następnym",
+    "Podziel rozdział 1 na akapity", "Oznacz rozdział 1 jako szum"]) {
+    expect(inBar.getByRole("button", { name })).toBeTruthy();
+  }
+  expect(bar.style.flexWrap).toBe("wrap");
+  // The bar is in the same column as the chips and the events panel, not in the chapter header row.
+  expect(bar.parentElement).toBe(chapter.getByText(/^Wydarzenia z datą w rozdziale/).closest("div")?.parentElement);
+});
+
+it("runs the event detection of that chapter from the bar and keeps the events panel expanded", async () => {
+  vi.mocked(axios.post).mockImplementation(async (url: string) => (
+    String(url).endsWith("/chapter/1/detect_events")
+      ? { data: { events: [], model: "m1", rejected_without_quote: 0, rejected_without_date: 0 } } : { data: {} }));
+  await open();
+  const chapter = within(screen.getByRole("region", { name: "#1 Wstęp" }));
+  expect(chapter.getByText(/^Wydarzenia z datą w rozdziale/)).toBeTruthy();
+
+  fireEvent.click(chapter.getByRole("button", { name: /Wykryj wydarzenia/ }));
+
+  await waitFor(() => expect(vi.mocked(axios.post).mock.calls.some(([url]) => String(url).endsWith("/document/42/chapter/1/detect_events"))).toBe(true));
+});
+
+it("a skipped chapter keeps only its merge buttons in the header row", async () => {
+  await open();
+  const skipped = within(screen.getByRole("region", { name: "#2 Sponsor" }));
+  expect(skipped.getByRole("button", { name: "Scal rozdział 2 z poprzednim" })).toBeTruthy();
+  expect(skipped.queryByRole("button", { name: /Uzupełnij brakujące opisy|Wykryj wydarzenia/ })).toBeNull();
+  expect(skipped.queryByLabelText("Przyciski rozdziału 2")).toBeNull();
 });

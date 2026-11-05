@@ -185,7 +185,7 @@ const ContactEventDetail = () => {
   const availableResults = results.filter(result => !form.participants.some(contact => contact.id === result.id));
 
   return <div>
-    <NavLink to="/contact-events">← Wydarzenia</NavLink>
+    <NavLink to="/contact-events">← Wydarzenia kontaktów</NavLink>
     {!validId ? <p role="alert">Nieprawidłowy lub brakujący identyfikator wydarzenia.</p>
       : isLoading ? <p>Ładowanie…</p>
       : loadError ? <p role="alert">{loadError}</p>
