@@ -19,7 +19,23 @@ interface Props {
   position: number;
   /** Called after at least one description was saved, so the host can refresh its entity chips. */
   onSaved?: () => void;
+  /**
+   * Controlled mode: the host owns `open` and draws the trigger itself (`ChapterDescriptionsButton`, e.g. in the
+   * chapter's button bar); this component then renders only the working panel. Without `open` it is
+   * self-contained and shows its own button while closed.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
+
+const TRIGGER_TITLE = "Opisze jednym zapytaniem do modelu wszystkie organizacje i osoby tego rozdziału, które nie mają opisu";
+
+/** The "🤖 Uzupełnij brakujące opisy" trigger, for hosts that keep it among their other chapter buttons. */
+export const ChapterDescriptionsButton = ({ onClick, expanded }: { onClick: () => void; expanded?: boolean }) => (
+  <button type="button" onClick={onClick} aria-expanded={expanded} title={TRIGGER_TITLE}>
+    🤖 Uzupełnij brakujące opisy
+  </button>
+);
 
 const KIND_LABELS = { organization: "🏢 organizacja", person: "👤 osoba" } as const;
 
@@ -29,10 +45,13 @@ const KIND_LABELS = { organization: "🏢 organizacja", person: "👤 osoba" } a
  * (`POST /document/:id/chapter/:pos/describe_entities`). The model only proposes; the reviewer edits and
  * approves, and only "Zapisz zaznaczone" writes (`PATCH /organizations/:id`, `PATCH /persons/:id`).
  */
-const ChapterDescriptionsPanel = ({ apiUrl, apiKey, docId, position, onSaved }: Props) => {
+const ChapterDescriptionsPanel = ({ apiUrl, apiKey, docId, position, onSaved, open: openProp, onOpenChange }: Props) => {
   const headers = React.useMemo(() => ({ "Content-Type": "application/json", "x-api-key": apiKey }), [apiKey]);
   const url = `${apiUrl}/document/${docId}/chapter/${position}/describe_entities`;
-  const [open, setOpen] = React.useState(false);
+  const [openState, setOpenState] = React.useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
+  const setOpen = (value: boolean) => { if (controlled) onOpenChange?.(value); else setOpenState(value); };
   const [busy, setBusy] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [candidates, setCandidates] = React.useState<Candidate[] | null>(null);
@@ -50,7 +69,7 @@ const ChapterDescriptionsPanel = ({ apiUrl, apiKey, docId, position, onSaved }: 
     (axios.isAxiosError(error) ? error.response?.data?.message : "") || (error as Error).message || "błąd";
 
   const start = async () => {
-    setOpen(true);
+    if (!controlled) setOpenState(true);
     reset();
     setBusy(true);
     try {
@@ -119,10 +138,17 @@ const ChapterDescriptionsPanel = ({ apiUrl, apiKey, docId, position, onSaved }: 
     return next;
   });
 
+  // Controlled mode: opening starts the check, closing drops the state.
+  React.useEffect(() => {
+    if (!controlled) return;
+    if (openProp) void start(); else reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openProp]);
+
   if (!open) {
+    if (controlled) return null;
     return (
-      <button type="button" onClick={() => void start()} style={{ marginTop: 6 }}
-        title="Opisze jednym zapytaniem do modelu wszystkie organizacje i osoby tego rozdziału, które nie mają opisu">
+      <button type="button" onClick={() => void start()} style={{ marginTop: 6 }} title={TRIGGER_TITLE}>
         🤖 Uzupełnij brakujące opisy
       </button>
     );

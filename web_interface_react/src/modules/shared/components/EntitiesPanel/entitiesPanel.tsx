@@ -25,6 +25,8 @@ export interface EntityItem {
   count: number;
   // Reviewer-approved description (eventName entities only).
   description?: string | null;
+  /** Event names only: the registry event this name is linked to for this document (null = not linked). */
+  registry_event?: { id: number; title: string; status: string; surface: string } | null;
   // Original NER category. Required when a combined "Miejsca" chip is
   // excluded, so a placeName rule does not turn into a wildcard rule.
   entity_type?: "persName" | "orgName" | "geogName" | "placeName";
@@ -332,6 +334,9 @@ export const EntityChips = ({
                 {" "}{item.confidence === "manual_review" ? "?" : "✓"}
               </span>
             )}
+            {item.registry_event && (
+              <span style={{ color: "#2e7d43" }} title={`W rejestrze wydarzeń: #${item.registry_event.id} ${item.registry_event.title}`}> 🔗</span>
+            )}
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
             {actions && actions(item)}
           </>
@@ -507,6 +512,7 @@ const EntitiesPanel = ({
   chapterRenderer,
   onShowInText,
   onDescribeEvent,
+  onLinkEvent,
   onMergeProducts,
   mentionMenu,
   onMentionMenuClose,
@@ -524,6 +530,8 @@ const EntitiesPanel = ({
   // Page-owned dialogs the event and product menus open (the panel has no form for them): an event's
   // description dialog and the form that folds several spellings of a product into one.
   onDescribeEvent?: (item: EntityItem) => void;
+  // Promotes the name of an event marked in the text to the registry of world events (link or create).
+  onLinkEvent?: (item: EntityItem) => void;
   onMergeProducts?: (item: EntityItem) => void;
   // Chapter mode (the /ner/:id page): the host draws the entity groups itself, once per
   // chapter, through renderGroups(), so every chip keeps this panel's action menus and
@@ -811,8 +819,8 @@ const EntitiesPanel = ({
         ? ` Koszt ${Number(d.usage.llm_cost_amount).toFixed(4)} ${d.usage.llm_cost_currency ?? ""}${d.usage.llm_cost_status === "estimated" ? " (szacunek)" : ""}, model ${d.model}.`
         : ` Model ${d.model}, koszt nieznany.`;
       setMessage(d.events_created + d.events_existing === 0
-        ? `Geopolityka: model nie znalazł zdarzeń do zapisania${rejected ? ` (odrzucone przez walidację: ${rejected})` : ""}.${cost}`
-        : `Geopolityka: ${d.events_created} nowych zdarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji`
+        ? `Geopolityka: model nie znalazł wydarzeń do zapisania${rejected ? ` (odrzucone przez walidację: ${rejected})` : ""}.${cost}`
+        : `Geopolityka: ${d.events_created} nowych wydarzeń, ${d.events_existing} już znanych, ${d.assessments_proposed} propozycji relacji`
           + `${d.assessments_merged ? ` (+${d.assessments_merged} dowodów dołączono do istniejących)` : ""}`
           + `${rejected ? `, odrzucone przez walidację: ${rejected}` : ""}. Zatwierdź je w Geopolityka → Propozycje.${cost}`);
     } catch (error: any) {
@@ -1399,6 +1407,21 @@ const EntitiesPanel = ({
   };
 
   // Person / organization / place -> product / system (default) or named event.
+  // The name stays a name in this document; only its link to the registry event is removed.
+  const unlinkEventName = async (item: EntityItem) => {
+    const linked = item.registry_event;
+    if (!linked) return;
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/world_events/mentions/unlink`,
+        { name: linked.surface || item.text, event_id: linked.id, document_id: Number(docId) }, { headers: jsonHeaders });
+      setMessage(`„${item.text}” odłączone od wydarzenia #${linked.id} ${linked.title}.`);
+      await fetchEntities();
+    } catch (error: any) {
+      reportError(error, "Nie udało się odłączyć nazwy od wydarzenia");
+    }
+  };
+
   const changeEntityToProduct = async (item: EntityItem, target: "productName" | "eventName" = "productName") => {
     if (item.id == null) return;
     const noun = target === "eventName" ? "wydarzenie" : "produkt / system";
@@ -1735,6 +1758,12 @@ const EntitiesPanel = ({
     ...showInTextEntry(item, "event"),
     ...(onDescribeEvent ? [{ label: item.description ? "Opis wydarzenia…" : "Dodaj opis wydarzenia…",
       action: () => { resetFlows(); onDescribeEvent(item); } }] : []),
+    ...(item.registry_event ? [
+      { label: `🔗 W rejestrze: #${item.registry_event.id} ${item.registry_event.title}`,
+        to: `/world-events?q=${encodeURIComponent(item.registry_event.title)}`, newTab: true },
+      ...(onLinkEvent ? [{ label: "Zmień powiązanie z rejestrem…", action: () => { resetFlows(); onLinkEvent(item); } }] : []),
+      { label: "Odłącz od wydarzenia z rejestru", action: () => { resetFlows(); void unlinkEventName(item); } },
+    ] : onLinkEvent ? [{ label: "Dodaj do rejestru wydarzeń…", action: () => { resetFlows(); onLinkEvent(item); } }] : []),
     ...manualRetypeEntries(item, "eventName"),
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
   ];
@@ -1939,7 +1968,7 @@ const EntitiesPanel = ({
             )}
             {editMode && editActions("placeName")(item)}
           </>} />
-        <EntityChips label={"Wydarzenia"} items={source?.eventName ?? []} menuActions={eventMenuActions} />
+        <EntityChips label={"Nazwy wydarzeń"} items={source?.eventName ?? []} menuActions={eventMenuActions} />
         <EntityChips label={"Produkty i systemy"} items={source?.productName ?? []} menuActions={productMenuActions} />
       </>
     );
@@ -2012,7 +2041,7 @@ const EntitiesPanel = ({
           {isDetectingCountries ? "Wykrywam państwa..." : "Wykryj państwa"}
         </button>
         <button className={"button"} type="button"
-          title="Model (domyślny z strony Geopolityka) tylko proponuje zdarzenia i zmiany relacji między państwami; nic nie trafia na mapę bez Twojego zatwierdzenia."
+          title="Model (domyślny z strony Geopolityka) tylko proponuje wydarzenia i zmiany relacji między państwami; nic nie trafia na mapę bez Twojego zatwierdzenia."
           disabled={isRefreshing || isDetectingCountries || isProposingGeopolitics || enrichmentActive || externalDisabled}
           onClick={handleProposeGeopolitics}>
           {isProposingGeopolitics ? "Analizuję geopolitykę..." : "Zaproponuj relacje geopolityczne"}

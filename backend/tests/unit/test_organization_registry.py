@@ -16,6 +16,7 @@ from library.organization_registry import (  # noqa: E402
     AliasConflictError,
     add_alias,
     ambiguous_alias_candidates,
+    ambiguous_alias_candidates_for_forms,
     merge,
     merge_ner_groups,
     normalize_alias,
@@ -99,7 +100,81 @@ class TestAmbiguousAliasCandidates:
         session.execute.assert_not_called()
 
 
+class TestAmbiguousAliasCandidatesForForms:
+    """A NER group is named after an inflected lemma ("Kongresie"); the curated alias is "Kongres"."""
+
+    @staticmethod
+    def _row(alias, organization_id):
+        return SimpleNamespace(normalized_alias=normalize_alias(alias), alias=alias, organization_id=organization_id)
+
+    def test_finds_the_alias_under_a_surface_variant_not_the_group_name(self):
+        us, india = self._row("Kongres", 1), self._row("Kongres", 2)
+        session = MagicMock()
+        session.execute.return_value = _execute_result(all_=[us, india])
+
+        form, candidates = ambiguous_alias_candidates_for_forms(session, ["Kongresie", "kongres", "Kongresu"])
+
+        assert form == "kongres"
+        assert candidates == [us, india]
+        assert session.execute.call_count == 1
+
+    def test_first_listed_form_wins_when_several_are_ambiguous(self):
+        senate_a, senate_b = self._row("Senat", 1), self._row("Senat", 2)
+        congress = self._row("Kongres", 3)
+        session = MagicMock()
+        session.execute.return_value = _execute_result(all_=[congress, senate_a, senate_b])
+
+        form, candidates = ambiguous_alias_candidates_for_forms(session, ["Senatem", "Senat", "Kongres"])
+
+        assert (form, candidates) == ("Senat", [senate_a, senate_b])
+
+    def test_no_curated_form_returns_nothing(self):
+        session = MagicMock()
+        session.execute.return_value = _execute_result(all_=[])
+
+        assert ambiguous_alias_candidates_for_forms(session, ["Interia"]) == ("", [])
+
+    def test_blank_forms_never_query_the_database(self):
+        session = MagicMock()
+
+        assert ambiguous_alias_candidates_for_forms(session, ["", "  "]) == ("", [])
+        session.execute.assert_not_called()
+
+
 class TestAmbiguousAliasLlmSelection:
+    def test_extra_context_reaches_the_prompt(self, monkeypatch):
+        us = SimpleNamespace(id=11, organization=SimpleNamespace(canonical_name="Senat USA"), context_hint="USA")
+        pl = SimpleNamespace(id=12, organization=SimpleNamespace(canonical_name="Senat RP"), context_hint="Polska")
+        prompts = []
+
+        def fake_ask(prompt, **_kwargs):
+            prompts.append(prompt)
+            return SimpleNamespace(response_text="11")
+
+        monkeypatch.setattr("library.ai.ai_ask", fake_ask)
+        monkeypatch.setattr("library.article_tagging._tagging_model", lambda: "Bielik-11B-v3.0-Instruct")
+
+        chosen = select_ambiguous_alias_candidate_with_llm(
+            "Demokraci przejęli Senat po wyborach.", "Tytuł", "Senat", [us, pl],
+            extra_context="data publikacji: 2026-11-04; tagi krajów: kraj-stany-zjednoczone",
+        )
+
+        assert chosen is us.organization
+        assert "KONTEKST DOKUMENTU: data publikacji: 2026-11-04; tagi krajów: kraj-stany-zjednoczone" in prompts[0]
+
+    def test_without_extra_context_the_prompt_has_no_context_line(self, monkeypatch):
+        a = SimpleNamespace(id=1, organization=SimpleNamespace(canonical_name="A"), context_hint="x")
+        b = SimpleNamespace(id=2, organization=SimpleNamespace(canonical_name="B"), context_hint="y")
+        prompts = []
+        monkeypatch.setattr(
+            "library.ai.ai_ask", lambda prompt, **_kw: prompts.append(prompt) or SimpleNamespace(response_text="NONE"),
+        )
+        monkeypatch.setattr("library.article_tagging._tagging_model", lambda: "Bielik-11B-v3.0-Instruct")
+
+        assert select_ambiguous_alias_candidate_with_llm("A w tekście", "T", "A", [a, b]) is None
+        assert "KONTEKST DOKUMENTU" not in prompts[0]
+
+
     def test_selects_only_an_id_from_the_candidate_list(self, monkeypatch):
         sudan = SimpleNamespace(id=11, organization=SimpleNamespace(canonical_name="Siły Zbrojne Sudanu"),
                                 context_hint="Sudan")

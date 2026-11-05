@@ -87,7 +87,7 @@ const WorldEvents = () => {
 
   const addEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim()) { message("Podaj nazwę zdarzenia.", true); return; }
+    if (!form.title.trim()) { message("Podaj nazwę wydarzenia.", true); return; }
     try {
       const r = await axios.post(`${apiUrl}/geo_events`, {
         title: form.title, kind: form.kind, description: form.description || undefined,
@@ -95,11 +95,11 @@ const WorldEvents = () => {
         is_ongoing: form.is_ongoing, status: "confirmed",
         aliases: form.aliases.split(",").map((s) => s.trim()).filter(Boolean),
       }, { headers });
-      message(r.data.created ? "Dodano zdarzenie." : "Takie zdarzenie już jest w rejestrze; dodano nazwy i źródła.");
+      message(r.data.created ? "Dodano wydarzenie." : "Takie wydarzenie już jest w rejestrze; dodano nazwy i źródła.");
       setForm({ title: "", kind: "other", event_date: "", event_date_end: "", is_ongoing: false, description: "", aliases: "" });
       refresh();
     } catch (reason: any) {
-      message(`Nie udało się dodać zdarzenia: ${errorText(reason)}`, true);
+      message(`Nie udało się dodać wydarzenia: ${errorText(reason)}`, true);
     }
   };
 
@@ -117,25 +117,25 @@ const WorldEvents = () => {
     <div>
       <h2 style={{ marginBottom: 6 }}>Wydarzenia świata</h2>
       <p style={{ color: "#667", marginBottom: 10 }}>
-        Rejestr zdarzeń z datą (albo bez niej), z krajami, organizacjami i osobami (albo bez nich), z kilkoma nazwami i dokumentami, które o nich mówią.
-        Nazwa zaznaczona w tekście tylko <strong>podpowiada</strong> zdarzenie — powiązanie zatwierdzasz Ty.
-        Zdarzenia z krajami zasilają <Link to="/geopolitics?tab=events">Geopolitykę</Link>. To nie są prywatne wydarzenia z książki kontaktów (<Link to="/contact-events">Wydarzenia</Link>).
+        Rejestr wydarzeń z datą (albo bez niej), z krajami, organizacjami i osobami (albo bez nich), z kilkoma nazwami i dokumentami, które o nich mówią.
+        Nazwa zaznaczona w tekście tylko <strong>podpowiada</strong> wydarzenie — powiązanie zatwierdzasz Ty.
+        Wydarzenia z krajami zasilają <Link to="/geopolitics?tab=events">Geopolitykę</Link>. To nie są prywatne wydarzenia z książki kontaktów (<Link to="/contact-events">Wydarzenia kontaktów</Link>).
       </p>
       <div role="tablist" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button role="tab" aria-selected={tab === "events"} className="button" style={{ fontWeight: tab === "events" ? 700 : 400 }}
-          onClick={() => update({ tab: null, page: null })}>Zdarzenia</button>
+          onClick={() => update({ tab: null, page: null })}>Wydarzenia</button>
         <button role="tab" aria-selected={tab === "unlinked"} className="button" style={{ fontWeight: tab === "unlinked" ? 700 : 400 }}
-          onClick={() => update({ tab: "unlinked", page: null })}>Do powiązania z tekstów</button>
+          onClick={() => update({ tab: "unlinked", page: null })}>Nazwy wydarzeń do powiązania</button>
       </div>
       {error && <p role="alert" style={{ color: "#a33" }}>{error}</p>}
       {notice && <p role="status" style={{ color: "#166534" }}>{notice}</p>}
 
       <form onSubmit={(e) => { e.preventDefault(); update({ q: queryText.trim() || null, page: null }); }}
         style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 8 }}>
-        <input type="search" aria-label="Szukaj zdarzenia" placeholder="Szukaj po nazwie…" value={queryText}
+        <input type="search" aria-label="Szukaj wydarzenia" placeholder="Szukaj po nazwie…" value={queryText}
           onChange={(e) => setQueryText(e.target.value)} style={{ padding: "4px 8px" }} />
         {tab === "events" && <>
-          <select aria-label="Rodzaj zdarzenia" value={kind} onChange={(e) => update({ kind: e.target.value || null, page: null })}>
+          <select aria-label="Rodzaj wydarzenia" value={kind} onChange={(e) => update({ kind: e.target.value || null, page: null })}>
             <option value="">Wszystkie rodzaje</option>
             {kinds.map((k) => <option key={k.code} value={k.code}>{k.label}</option>)}
           </select>
@@ -148,7 +148,7 @@ const WorldEvents = () => {
             <option value="">Wszystkie kraje</option>
             {countries.map((c) => <option key={c.slug} value={c.slug}>{c.name_pl}</option>)}
           </select>
-          <select aria-label="Status zdarzenia" value={status} onChange={(e) => update({ status: e.target.value || null, page: null })}>
+          <select aria-label="Status wydarzenia" value={status} onChange={(e) => update({ status: e.target.value || null, page: null })}>
             <option value="">Wszystkie statusy</option>
             <option value="confirmed">Zatwierdzone</option>
             <option value="proposed">Propozycje (niezatwierdzone)</option>
@@ -156,30 +156,30 @@ const WorldEvents = () => {
           </select>
         </>}
         <button type="submit" className="button">Szukaj</button>
-        <span style={{ color: "#64748b" }}>{loading ? "Wczytuję…" : tab === "events" ? `${total} zdarzeń` : `${total} nazw do powiązania`}</span>
+        <span style={{ color: "#64748b" }}>{loading ? "Wczytuję…" : tab === "events" ? `${total} wydarzeń` : `${total} nazw do powiązania`}</span>
       </form>
 
       {tab === "events" && (
         <>
           <details style={{ marginBottom: 10 }}>
-            <summary>➕ Dodaj zdarzenie</summary>
-            <form onSubmit={addEvent} aria-label="Nowe zdarzenie" style={{ display: "grid", gap: 6, maxWidth: 560, padding: 8 }}>
-              <label>Nazwa <input aria-label="Nazwa nowego zdarzenia" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ width: "100%" }} /></label>
+            <summary>➕ Dodaj wydarzenie</summary>
+            <form onSubmit={addEvent} aria-label="Nowe wydarzenie" style={{ display: "grid", gap: 6, maxWidth: 560, padding: 8 }}>
+              <label>Nazwa <input aria-label="Nazwa nowego wydarzenia" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ width: "100%" }} /></label>
               <label>Rodzaj{" "}
-                <select aria-label="Rodzaj nowego zdarzenia" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+                <select aria-label="Rodzaj nowego wydarzenia" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
                   {kinds.map((k) => <option key={k.code} value={k.code}>{k.label}</option>)}
                 </select>
               </label>
-              <label>Początek <input aria-label="Początek nowego zdarzenia" placeholder="RRRR-MM-DD, RRRR-MM, RRRR albo puste" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} /></label>
-              <label>Koniec <input aria-label="Koniec nowego zdarzenia" placeholder="puste = brak" value={form.event_date_end} disabled={form.is_ongoing} onChange={(e) => setForm({ ...form, event_date_end: e.target.value })} /></label>
-              <label><input type="checkbox" aria-label="Nowe zdarzenie trwa nadal" checked={form.is_ongoing} onChange={(e) => setForm({ ...form, is_ongoing: e.target.checked, event_date_end: "" })} /> trwa nadal</label>
-              <label>Inne nazwy (po przecinku) <input aria-label="Inne nazwy nowego zdarzenia" value={form.aliases} onChange={(e) => setForm({ ...form, aliases: e.target.value })} style={{ width: "100%" }} /></label>
-              <label>Opis <textarea aria-label="Opis nowego zdarzenia" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ width: "100%" }} /></label>
-              <div><button type="submit" className="button">Dodaj</button> <span style={{ color: "#64748b", fontSize: "0.85em" }}>Uczestników (kraje, organizacje, osoby) dodasz na karcie zdarzenia.</span></div>
+              <label>Początek <input aria-label="Początek nowego wydarzenia" placeholder="RRRR-MM-DD, RRRR-MM, RRRR albo puste" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} /></label>
+              <label>Koniec <input aria-label="Koniec nowego wydarzenia" placeholder="puste = brak" value={form.event_date_end} disabled={form.is_ongoing} onChange={(e) => setForm({ ...form, event_date_end: e.target.value })} /></label>
+              <label><input type="checkbox" aria-label="Nowe wydarzenie trwa nadal" checked={form.is_ongoing} onChange={(e) => setForm({ ...form, is_ongoing: e.target.checked, event_date_end: "" })} /> trwa nadal</label>
+              <label>Inne nazwy (po przecinku) <input aria-label="Inne nazwy nowego wydarzenia" value={form.aliases} onChange={(e) => setForm({ ...form, aliases: e.target.value })} style={{ width: "100%" }} /></label>
+              <label>Opis <textarea aria-label="Opis nowego wydarzenia" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ width: "100%" }} /></label>
+              <div><button type="submit" className="button">Dodaj</button> <span style={{ color: "#64748b", fontSize: "0.85em" }}>Uczestników (kraje, organizacje, osoby) dodasz na karcie wydarzenia.</span></div>
             </form>
           </details>
-          {!loading && !error && events.length === 0 && <p style={{ color: "#667" }}>Brak zdarzeń.</p>}
-          <ul aria-label="Zdarzenia" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {!loading && !error && events.length === 0 && <p style={{ color: "#667" }}>Brak wydarzeń.</p>}
+          <ul aria-label="Wydarzenia" style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {events.map((event) => (
               <WorldEventCard key={event.id} event={event} kinds={kinds} roles={roles} countries={countries}
                 apiUrl={apiUrl} headers={headers} onChanged={refresh} onMessage={message} />
@@ -191,7 +191,7 @@ const WorldEvents = () => {
       {tab === "unlinked" && (
         <>
           <p style={{ color: "#667" }}>
-            Nazwy wydarzeń zaznaczone w tekstach (prawy klawisz na stronie NER), które nie są jeszcze powiązane z żadnym zdarzeniem rejestru.
+            Nazwy wydarzeń zaznaczone w tekstach (prawy klawisz na stronie NER), które nie są jeszcze powiązane z żadnym wydarzeniem rejestru.
           </p>
           {!loading && !error && mentions.length === 0 && <p style={{ color: "#667" }}>Wszystkie nazwy są powiązane.</p>}
           <ul aria-label="Nazwy do powiązania" style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -200,7 +200,7 @@ const WorldEvents = () => {
         </>
       )}
 
-      <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="zdarzeń"
+      <Pagination page={page} pageSize={pageSize} total={total} isLoading={loading} label="wydarzeń"
         onPageChange={(next) => update({ page: next > 1 ? String(next) : null })} />
     </div>
   );
@@ -232,11 +232,11 @@ const MentionItem = ({ mention, kinds, onDecide }: {
                 <span style={{ color: "#64748b", fontSize: "0.85em" }}>{s.reason === "alias" ? "ta sama nazwa" : `podobna nazwa ${Math.round(s.score * 100)}%`}</span>
               </span>
               <button type="button" className="button"
-                onClick={() => onDecide("mentions/link", { name: mention.name, event_id: s.event.id }, `Powiązano „${mention.name}” ze zdarzeniem „${s.event.title}”.`)}>
+                onClick={() => onDecide("mentions/link", { name: mention.name, event_id: s.event.id }, `Powiązano „${mention.name}” ze wydarzeniem „${s.event.title}”.`)}>
                 Tak, powiąż
               </button>
               <button type="button" className="button"
-                onClick={() => onDecide("mentions/reject", { name: mention.name, event_id: s.event.id }, "Zapamiętano: to nie to zdarzenie.")}>
+                onClick={() => onDecide("mentions/reject", { name: mention.name, event_id: s.event.id }, "Zapamiętano: to nie to wydarzenie.")}>
                 To nie to
               </button>
             </div>
@@ -249,14 +249,14 @@ const MentionItem = ({ mention, kinds, onDecide }: {
           {kinds.map((k) => <option key={k.code} value={k.code}>{k.label}</option>)}
         </select>
         <button type="button" className="button"
-          onClick={() => onDecide("from_mention", { name: mention.name, kind }, `Utworzono zdarzenie „${mention.name}” i powiązano je z tekstami.`)}>
-          Utwórz zdarzenie
+          onClick={() => onDecide("from_mention", { name: mention.name, kind }, `Utworzono wydarzenie „${mention.name}” i powiązano je z tekstami.`)}>
+          Utwórz wydarzenie
         </button>
         <span style={{ color: "#94a3b8" }}>albo</span>
-        <input aria-label={`Numer zdarzenia dla ${mention.name}`} inputMode="numeric" size={6} placeholder="nr zdarzenia" value={eventId}
+        <input aria-label={`Numer wydarzenia dla ${mention.name}`} inputMode="numeric" size={6} placeholder="nr wydarzenia" value={eventId}
           onChange={(e) => setEventId(e.target.value)} />
         <button type="button" className="button" disabled={!/^\d+$/.test(eventId)}
-          onClick={() => onDecide("mentions/link", { name: mention.name, event_id: Number(eventId) }, `Powiązano „${mention.name}” ze zdarzeniem #${eventId}.`)}>
+          onClick={() => onDecide("mentions/link", { name: mention.name, event_id: Number(eventId) }, `Powiązano „${mention.name}” ze wydarzeniem #${eventId}.`)}>
           Powiąż z istniejącym
         </button>
       </div>

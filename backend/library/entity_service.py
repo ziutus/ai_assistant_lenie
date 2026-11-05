@@ -30,13 +30,36 @@ from library.ner_normalization import normalize_ner_text, strip_content_markers,
 from library.org_compound_names import merge_compound_org_names
 from library.organization_registry import (
     CONFIDENCE_CONTEXT_LLM_MATCHED,
-    ambiguous_alias_candidates,
+    ambiguous_alias_candidates_for_forms,
     merge_ner_groups,
     resolve_or_create,
     select_ambiguous_alias_candidate_with_llm,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _organization_document_context(doc) -> str:
+    """Short cues about the document (channel, publication date, country tags) for resolving
+    an ambiguous organization name. Country tags are only a hint: they are missing on many
+    documents (doc #11237 is entirely about the USA and has none), so an empty result is normal."""
+    if doc is None:
+        return ""
+    parts = []
+    byline = getattr(doc, "byline", None)
+    if isinstance(byline, str) and byline:
+        parts.append(f"autor/kanał: {byline}")
+    published = getattr(doc, "published_on", None)
+    if isinstance(published, datetime.date):
+        parts.append(f"data publikacji: {published:%Y-%m-%d}")
+    tags = getattr(doc, "tags", None)
+    if isinstance(tags, str):
+        countries = [tag.strip() for tag in tags.split(",") if tag.strip().startswith("kraj-")]
+        if countries:
+            parts.append("tagi krajów: " + ", ".join(countries[:8]))
+    return "; ".join(parts)
+
+
 TEMPORAL_CONTEXT_WINDOW = 220
 COMPACT_DATE_RE = re.compile(
     r"(?<!\d)(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])"
@@ -424,15 +447,27 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             # the LLM only sees the approved local candidates and may decline
             # to choose. Ordinary, uncontested names fall straight through to
             # the deterministic registry path below.
-            candidates = ambiguous_alias_candidates(session, name)
-            organization = select_ambiguous_alias_candidate_with_llm(
-                text, getattr(doc, "title", "") or "", name, candidates,
+            #
+            # The group is named after spaCy's lemma, which for proper names is
+            # often still inflected ("Kongresie"), so the curated alias is looked
+            # up under the name AND every surface variant.
+            ambiguous_form, candidates = ambiguous_alias_candidates_for_forms(
+                session, [name, *group["variants"]],
             )
-            if organization is not None:
-                confidence = CONFIDENCE_CONTEXT_LLM_MATCHED
-            else:
+            organization = select_ambiguous_alias_candidate_with_llm(
+                text, getattr(doc, "title", "") or "", ambiguous_form or name, candidates,
+                extra_context=_organization_document_context(doc),
+            )
+            confidence = CONFIDENCE_CONTEXT_LLM_MATCHED
+            if organization is None and len(candidates) >= 2:
+                # A name with several curated meanings that the context did not
+                # settle stays UNRESOLVED: no global alias, no new registry row.
+                # The entity is kept (unlinked) so a reviewer can pick the meaning.
+                logger.info("Organization %r left unresolved in doc %s: ambiguous alias %r",
+                            name, document_id, ambiguous_form)
+            elif organization is None:
                 organization, confidence = resolve_or_create(session, name, group["variants"])
-            canonical_name = organization.canonical_name
+            canonical_name = organization.canonical_name if organization is not None else name
             merged_key = ("orgName", canonical_name)
             existing = groups.get(merged_key)
             surface_forms = [name, *group["variants"]]
@@ -448,7 +483,8 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                     value for value in surface_forms if value.casefold() != canonical_name.casefold()
                 )
                 groups[merged_key] = {"count": group["count"], "variants": list(distinct_variants)}
-            organization_confidence.setdefault(canonical_name, (organization.id, confidence))
+            if organization is not None:
+                organization_confidence.setdefault(canonical_name, (organization.id, confidence))
 
     # Manually merged rows (source='manual', set by merge_document_entities())
     # survive the refresh. A fresh NER group colliding with one on
@@ -647,6 +683,20 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     from library.place_registry import name_key, profile_index
 
     place_profiles = profile_index(session)
+    from library.geopolitics_service import name_key as event_name_key
+
+    registry_events_by_key: dict[str, dict] = {}
+    if any(r.entity_type == "eventName" for r in rows):
+        from library.db.models import GeoEvent, GeoEventMentionLink
+
+        for link, event in session.execute(
+            select(GeoEventMentionLink, GeoEvent)
+            .join(GeoEvent, GeoEvent.id == GeoEventMentionLink.event_id)
+            .where(GeoEventMentionLink.document_id == document_id, GeoEventMentionLink.status == "confirmed")
+        ).all():
+            registry_events_by_key[link.name_key] = {
+                "id": event.id, "title": event.title, "status": event.status, "surface": link.surface,
+            }
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
     pipelines_by_query: dict[str, InfraGeometry] = {}
@@ -704,6 +754,13 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             }
         if row.entity_type == "eventName":
             item["description"] = row.description
+            # The registry event this name was linked to FOR THIS DOCUMENT (null = not linked yet), so the
+            # chip can say so instead of looking unrelated to the registry entry.
+            item["registry_event"] = next((
+                registry_events_by_key[key]
+                for key in (event_name_key(row.entity_text), *(event_name_key(v) for v in (row.variants or [])))
+                if key in registry_events_by_key
+            ), None)
         if row.entity_type == "persName" and row.entity_text in persons_by_mention:
             link = persons_by_mention[row.entity_text]
             item["link_id"] = link["link_id"]

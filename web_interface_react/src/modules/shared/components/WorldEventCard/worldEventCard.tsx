@@ -79,7 +79,7 @@ const WorldEventCard = ({ event, kinds, roles, countries, apiUrl, headers, onCha
       onChanged();
     } catch (reason: any) {
       onMessage(reason?.response?.status === 409 && /changed since/.test(errorText(reason))
-        ? "Ktoś zmienił to zdarzenie w międzyczasie; odświeżam. Spróbuj ponownie."
+        ? "Ktoś zmienił to wydarzenie w międzyczasie; odświeżam. Spróbuj ponownie."
         : `Nie udało się zapisać: ${errorText(reason)}`, true);
       if (reason?.response?.status === 409) onChanged();
     } finally {
@@ -100,7 +100,7 @@ const WorldEventCard = ({ event, kinds, roles, countries, apiUrl, headers, onCha
     void run(async () => {
       await axios.patch(url, { ...changes, expected_version: event.version }, { headers });
       setEditing(false);
-    }, "Zapisano zdarzenie.");
+    }, "Zapisano wydarzenie.");
   };
 
   const addParticipant = (e: React.FormEvent) => {
@@ -180,8 +180,8 @@ const WorldEventCard = ({ event, kinds, roles, countries, apiUrl, headers, onCha
 
       {editing && (
         <div style={{ marginTop: 8, padding: 8, background: "#f8fafc", borderRadius: 6 }}>
-          <form onSubmit={save} aria-label="Edycja zdarzenia" style={{ display: "grid", gap: 6 }}>
-            <label>Nazwa <input aria-label="Nazwa zdarzenia" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ width: "100%" }} /></label>
+          <form onSubmit={save} aria-label="Edycja wydarzenia" style={{ display: "grid", gap: 6 }}>
+            <label>Nazwa <input aria-label="Nazwa wydarzenia" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ width: "100%" }} /></label>
             <label>Rodzaj{" "}
               <select aria-label="Rodzaj" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
                 {kinds.map((k) => <option key={k.code} value={k.code}>{k.label}</option>)}
@@ -190,13 +190,13 @@ const WorldEventCard = ({ event, kinds, roles, countries, apiUrl, headers, onCha
             <label>Początek <input aria-label="Data początku" placeholder="RRRR-MM-DD, RRRR-MM, RRRR albo puste" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} /></label>
             <label>Koniec <input aria-label="Data końca" placeholder="puste = brak" value={form.event_date_end} disabled={form.is_ongoing} onChange={(e) => setForm({ ...form, event_date_end: e.target.value })} /></label>
             <label><input type="checkbox" aria-label="Trwa nadal" checked={form.is_ongoing} onChange={(e) => setForm({ ...form, is_ongoing: e.target.checked, event_date_end: e.target.checked ? "" : form.event_date_end })} /> trwa nadal (koniec nieznany)</label>
-            <label>Opis <textarea aria-label="Opis zdarzenia" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ width: "100%" }} /></label>
+            <label>Opis <textarea aria-label="Opis wydarzenia" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ width: "100%" }} /></label>
             <div><button type="submit" className="button" disabled={busy}>Zapisz</button></div>
           </form>
 
           <form onSubmit={(e) => { e.preventDefault(); if (alias.trim()) void run(async () => { await axios.post(`${url}/aliases`, { alias }, { headers }); setAlias(""); }); }}
             aria-label="Dodaj nazwę" style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            <input aria-label="Nowa nazwa" placeholder="inna nazwa tego zdarzenia" value={alias} onChange={(e) => setAlias(e.target.value)} />
+            <input aria-label="Nowa nazwa" placeholder="inna nazwa tego wydarzenia" value={alias} onChange={(e) => setAlias(e.target.value)} />
             <button type="submit" className="button" disabled={busy}>Dodaj nazwę</button>
           </form>
 

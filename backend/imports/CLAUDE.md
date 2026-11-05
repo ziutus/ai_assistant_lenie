@@ -515,6 +515,18 @@ python imports/backfill_obsidian_content_groups.py --apply --limit 20
 - `--limit N` — max number of documents to process
 - `--force` — also re-enqueue documents that already have a content group membership
 
+### `fix_ambiguous_institution_orgs.py`
+
+One-off registry repair (NAS, 2026-11-05) for the bare institution names "Kongres" and "Senat": folds the lemma-named duplicates of the US Congress (#44, #54, #1370) into #55 and renames it "Kongres Stanów Zjednoczonych", moves the two Polish "Senat" documents (#9360, #11178) from #46 to a new "Senat Rzeczypospolitej Polskiej" and renames #46 "Senat Stanów Zjednoczonych" (and #1083 "Indyjski Kongres Narodowy"), then replaces the bare inflected forms among the GLOBAL aliases with `organization_ambiguous_aliases` rows carrying a context hint, so `entity_service` settles each mention per document (see "Ambiguous institution names" in `library/CLAUDE.md`). It goes through `merge_organizations()` / `rename_organization()` (information sources and entity chips stay in step), refuses to run when an organization no longer has the name it expects, and is idempotent. **Deploy the code first**: with the old code a curated ambiguous alias without the global alias would create a new lemma-named organization when the model answers `NONE`.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`; dry-run (default) executes everything and rolls back.
+
+```bash
+cd backend
+python -X utf8 imports/fix_ambiguous_institution_orgs.py            # dry-run (default)
+python -X utf8 imports/fix_ambiguous_institution_orgs.py --apply
+```
+
 ### `create_country_organizations.py`
 
 Creates or promotes one registry organization per country of `library/country_gazetteer.py` (`organization_type='country'`, a `based_in` tie to the `kraj-<slug>`, `primary_note_document_id` pointing at the imported `…/Kraje/…/<Country>.md` note when exactly one file name matches — case- and diacritic-insensitive). An existing organization is promoted only when its canonical name matches; a match through an alias alone (an NER lemma such as "Male" with alias "Mali"), another organization type or several candidates are reported as `CONFLICT` and left untouched for a human to rename/merge first. No aliases are generated and `description` stays empty (the note holds the text). Planning is pure (`library/country_organizations.py`, tests: `tests/unit/test_country_organizations.py`); the report lists countries whose note is missing or ambiguous.
