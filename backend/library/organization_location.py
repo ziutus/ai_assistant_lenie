@@ -2,10 +2,11 @@
 persons/places that co-occur with it in documents."""
 
 from collections import Counter
+from urllib.parse import urlparse
 
 from sqlalchemy import func, select
 
-from library import locationiq_client
+from library import locationiq_client, tool_links
 from library.country_gazetteer import slug_to_name
 from library.db.models import (
     Document,
@@ -307,3 +308,15 @@ def absorb_organization(session, source: Organization, target: Organization) -> 
     for field in ("website", "obsidian_note_path", "primary_note_document_id"):
         if getattr(target, field) is None:
             setattr(target, field, getattr(source, field))
+    # External links: the target's own come first, the source's new URLs are appended.
+    target.links = tool_links.merge_links(target.links, source.links)
+
+
+def wikipedia_url(links) -> str | None:
+    """The first Wikipedia article among an organization's ``links`` (any ``*.wikipedia.org`` host), else None."""
+    for item in links or []:
+        url = str((item or {}).get("url") or "").strip()
+        host = urlparse(url).hostname or ""
+        if url.lower().startswith(("http://", "https://")) and (host == "wikipedia.org" or host.endswith(".wikipedia.org")):
+            return url
+    return None

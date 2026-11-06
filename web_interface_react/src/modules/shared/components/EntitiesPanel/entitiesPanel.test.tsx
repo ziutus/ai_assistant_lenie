@@ -2,7 +2,7 @@ import axios from "axios";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type React from "react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import EntitiesPanel, { EntityChips } from "./entitiesPanel";
 
 vi.mock("axios");
@@ -260,7 +260,7 @@ it("offers the organization menu on a cited source, including a link to the sour
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
+    "Połącz z inną organizacją", "Dodaj stronę Wikipedii", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
@@ -442,11 +442,61 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
-    "Połącz z inną organizacją", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
+    "Połącz z inną organizacją", "Dodaj stronę Wikipedii", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
   expect(screen.getByText(/Krótki opis dla:/)).toBeTruthy();
+});
+
+describe("Wikipedia article of an organization (stored in its links list)", () => {
+  const nato = {
+    id: 12, text: "NATO", count: 3, organization_id: 5,
+    organization_links: [{ url: "https://www.nato.int", label: "Strona" }],
+  };
+  const openWikiForm = async (org: Record<string, unknown>) => {
+    mockOrgEntities(org);
+    vi.mocked(axios.patch).mockResolvedValue({ data: { status: "success" } });
+    renderInRouter(<EntitiesPanel docId={10753} />);
+    await openOrgMenu("NATO");
+  };
+
+  it("adds the article and keeps the other links of the organization", async () => {
+    await openWikiForm(nato);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj stronę Wikipedii" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: " https://pl.wikipedia.org/wiki/NATO " } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith("/organizations/5",
+      { links: [{ url: "https://pl.wikipedia.org/wiki/NATO", label: "Wikipedia" },
+        { url: "https://www.nato.int", label: "Strona" }] }, { headers: expect.any(Object) }));
+    expect(await screen.findByText(/Zapisano artykuł Wikipedii/)).toBeTruthy();
+    expect(axios.put).not.toHaveBeenCalled();
+  });
+
+  it("replaces only the Wikipedia entry and removes it on an empty address", async () => {
+    const withWiki = { ...nato, wikipedia_url: "https://pl.wikipedia.org/wiki/NATO",
+      organization_links: [{ url: "https://pl.wikipedia.org/wiki/NATO", label: "Wikipedia" }, ...nato.organization_links] };
+    await openWikiForm(withWiki);
+    expect(await screen.findByRole("link", { name: "Wikipedia: NATO" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Zmień stronę Wikipedii" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith("/organizations/5",
+      { links: [{ url: "https://www.nato.int", label: "Strona" }] }, { headers: expect.any(Object) }));
+    expect(await screen.findByText(/Usunięto link Wikipedii/)).toBeTruthy();
+  });
+
+  it("refuses an address that is not a Wikipedia article without calling the API", async () => {
+    await openWikiForm(nato);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj stronę Wikipedii" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "https://wikipedia.org.evil.example/wiki/NATO" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
+
+    expect(await screen.findByText(/musi być artykułem Wikipedii/)).toBeTruthy();
+    expect(axios.patch).not.toHaveBeenCalled();
+  });
 });
 
 it("changes a mis-tagged organization into a place with an editable name", async () => {

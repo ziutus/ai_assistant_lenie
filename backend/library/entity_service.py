@@ -669,6 +669,13 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     return rows
 
 
+def _wikipedia_url_from_links(links) -> str | None:
+    """Wikipedia article among an organization's ``links`` (imported lazily: organization_location pulls in the geocoder)."""
+    from library.organization_location import wikipedia_url
+
+    return wikipedia_url(links)
+
+
 def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     """Return the document's stored entities grouped by type, alphabetically.
 
@@ -835,6 +842,11 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["organization_link_id"] = organization_link.id
                 item["organization_review_status"] = organization_link.review_status
                 item["organization_description"] = organization_link.organization.description
+                links = organization_link.organization.links or []
+                item["organization_links"] = links
+                wikipedia = _wikipedia_url_from_links(links)
+                if wikipedia:
+                    item["wikipedia_url"] = wikipedia
         grouped.setdefault(row.entity_type, []).append(item)
     for link in facilities:
         facility = link.facility

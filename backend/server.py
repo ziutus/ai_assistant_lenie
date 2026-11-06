@@ -3188,6 +3188,7 @@ def _organization_location_fields(organization) -> dict:
         "latitude": float(organization.latitude) if organization.latitude is not None else None,
         "longitude": float(organization.longitude) if organization.longitude is not None else None,
         "website": organization.website,
+        "links": organization.links or [],
         "obsidian_note_path": organization.obsidian_note_path,
         "primary_note_document_id": organization.primary_note_document_id,
     }
@@ -3371,6 +3372,11 @@ def organization_update(organization_id: int):
         return {"status": "error", "message": "Organization not found"}, 404
 
     data = request.get_json(silent=True) or {}
+    # Validate the external links first: a bad list answers 400 before anything is changed.
+    cleaned_links = None
+    if 'links' in data:
+        from library import tool_links
+        cleaned_links = tool_links.clean_links(data.get('links') if data.get('links') is not None else [])
     rename_result = None
     if 'canonical_name' in data:
         new_name = (data.get('canonical_name') or "").strip()
@@ -3406,6 +3412,8 @@ def organization_update(organization_id: int):
     for field in ('website', 'obsidian_note_path'):
         if field in data:
             setattr(organization, field, (data.get(field) or "").strip() or None)
+    if cleaned_links is not None:
+        organization.links = cleaned_links
     if 'primary_note_document_id' in data:
         from library.db.models import Document
         raw_note_id = data.get('primary_note_document_id')

@@ -90,6 +90,9 @@ export interface EntityItem {
   // Short explanation shown as a tooltip (e.g. "EDF — francuski operator
   // energetyczny") — Organization.description, edited via PATCH /organizations/<id>.
   organization_description?: string | null;
+  // External pages of the registry organization ({url, label}); the first *.wikipedia.org one is also
+  // exposed as wikipedia_url so the chip shows the same 📖 link a place has.
+  organization_links?: { url: string; label: string }[];
   // Rule-detected physical facility, built from a type phrase and a place.
   facility_type?: string;
   place_name?: string | null;
@@ -1519,13 +1522,30 @@ const EntitiesPanel = ({
     }
   };
 
+  // An organization keeps its Wikipedia article in the general `links` list (like a person), so saving swaps
+  // only the Wikipedia entry and leaves every other link of the organization as it was.
+  const saveOrganizationWikipedia = async (item: EntityItem, url: string) => {
+    const others = (item.organization_links ?? []).filter((link) => link.url !== item.wikipedia_url);
+    const links = url ? [{ url, label: "Wikipedia" }, ...others] : others;
+    await axios.patch(`${apiUrl}/organizations/${item.organization_id}`, { links }, { headers: jsonHeaders });
+  };
+
   const savePlaceWikipedia = async () => {
     if (!wikiFor) return;
+    const isOrganization = wikiFor.organization_id != null;
+    if (isOrganization && wikiText.trim() && !/^https?:\/\/([a-z0-9-]+\.)*wikipedia\.org\//i.test(wikiText.trim())) {
+      setMessage("Adres musi być artykułem Wikipedii (https://….wikipedia.org/wiki/…). Inne strony dodasz w edycji organizacji.");
+      return;
+    }
     setIsRetyping(true);
     setMessage("");
     try {
-      await axios.put(`${apiUrl}/places/profile`,
-        { name: wikiFor.text, wikipedia_url: wikiText.trim() || null }, { headers: jsonHeaders });
+      if (isOrganization) {
+        await saveOrganizationWikipedia(wikiFor, wikiText.trim());
+      } else {
+        await axios.put(`${apiUrl}/places/profile`,
+          { name: wikiFor.text, wikipedia_url: wikiText.trim() || null }, { headers: jsonHeaders });
+      }
       setMessage(wikiText.trim() ? `Zapisano artykuł Wikipedii dla „${wikiFor.text}”.` : `Usunięto link Wikipedii dla „${wikiFor.text}”.`);
       setWikiFor(null);
       await fetchEntities();
@@ -1658,6 +1678,8 @@ const EntitiesPanel = ({
         setOrgSearchQ("");
         setOrgSearchResults([]);
       } });
+      entries.push({ label: item.wikipedia_url ? "Zmień stronę Wikipedii" : "Dodaj stronę Wikipedii",
+        action: () => { resetFlows(); setWikiFor(item); setWikiText(item.wikipedia_url ?? ""); } });
     }
     // Two glued mentions ("NATO Moskwa"): a two-word name is only offered as a pre-filled split, never applied.
     const words = item.text.trim().split(/\s+/);
@@ -2245,7 +2267,8 @@ const EntitiesPanel = ({
               onChange={(event) => setWikiText(event.target.value)} />
           </label>
           <div style={{ color: "#667", fontSize: "0.85em" }}>
-            Link zapisuje się globalnie dla miejsca (dotyczy też innych dokumentów). Pusty adres usuwa link.
+            Link zapisuje się globalnie dla {wikiFor.organization_id != null ? "organizacji" : "miejsca"} (dotyczy też innych
+            dokumentów). Pusty adres usuwa link.
           </div>
           <button type="button" className="button" disabled={isRetyping || (!wikiText.trim() && !wikiFor.wikipedia_url)}
             onClick={() => void savePlaceWikipedia()}>Zapisz</button>

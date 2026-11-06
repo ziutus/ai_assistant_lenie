@@ -7,6 +7,7 @@ import type { CountryTag, PlaceMarker } from "../components/CountryMap/countryMa
 import { COUNTRY_SLUG_TO_ISO3 } from "../data/countryIso";
 import { ISO3_TO_NAME_PL } from "../data/countryNames";
 import { renderMarkdown } from "./read";
+import { linkLabel, type PersonLink } from "./persons";
 
 const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
@@ -33,6 +34,8 @@ interface OrganizationDetail {
   latitude: number | null;
   longitude: number | null;
   website: string | null;
+  // External pages about the organization (Wikipedia, ...), the same {url, label} list persons have.
+  links?: PersonLink[];
   obsidian_note_path: string | null;
   primary_note_document_id?: number | null;
   // Imported Obsidian note the path points at (organization_location.organization_note).
@@ -188,6 +191,7 @@ const Organizations = () => {
   const [newCountryNote, setNewCountryNote] = React.useState("");
   const [editAddress, setEditAddress] = React.useState("");
   const [editWebsite, setEditWebsite] = React.useState("");
+  const [editLinks, setEditLinks] = React.useState<PersonLink[]>([]);
   const [editNotePath, setEditNotePath] = React.useState("");
   const [aliases, setAliases] = React.useState<OrganizationAlias[]>([]);
   const [ambiguousWith, setAmbiguousWith] = React.useState<AmbiguousWith[]>([]);
@@ -297,6 +301,7 @@ const Organizations = () => {
       setEditType(orgResponse.data.organization_type ?? "");
       setEditAddress(orgResponse.data.headquarters_address ?? "");
       setEditWebsite(orgResponse.data.website ?? "");
+      setEditLinks((orgResponse.data.links ?? []).map((link: PersonLink) => ({ ...link })));
       setEditNotePath(orgResponse.data.obsidian_note_path ?? "");
       setDocuments(docsResponse.data.documents ?? []);
       setRelatedPersons(relatedResponse?.data.persons ?? []);
@@ -438,7 +443,11 @@ const Organizations = () => {
       const response = await axios.patch(`${apiUrl}/organizations/${organization.id}`, {
         description: editDescription, organization_type: editType,
         headquarters_address: editAddress, website: editWebsite, obsidian_note_path: editNotePath,
+        // Rows left empty in the form are dropped, like on the person page.
+        links: editLinks.filter((link) => link.url.trim())
+          .map((link) => ({ url: link.url.trim(), label: link.label.trim() })),
       }, { headers: jsonHeaders });
+      setEditLinks((response.data.links ?? []).map((link: PersonLink) => ({ ...link })));
       setOrganization((prev) => prev ? {
         ...prev,
         description: response.data.description,
@@ -447,6 +456,7 @@ const Organizations = () => {
         latitude: response.data.latitude,
         longitude: response.data.longitude,
         website: response.data.website,
+        links: response.data.links ?? [],
         obsidian_note_path: response.data.obsidian_note_path,
         primary_note_document_id: response.data.primary_note_document_id,
         note: response.data.note,
@@ -639,6 +649,23 @@ const Organizations = () => {
                 onChange={(e) => setEditWebsite(e.target.value)}
                 style={{ padding: "6px 10px" }}
               />
+              <div>
+                Linki (np. Wikipedia)
+                {editLinks.map((link, index) => (
+                  <div key={index} style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                    <input type="url" value={link.url} placeholder="https://pl.wikipedia.org/wiki/…" style={{ flex: 3 }}
+                      aria-label={`Adres linku ${index + 1}`}
+                      onChange={(e) => setEditLinks((prev) => prev.map((l, i) => (i === index ? { ...l, url: e.target.value } : l)))} />
+                    <input type="text" value={link.label} placeholder="Etykieta (np. Wikipedia)" style={{ flex: 1 }}
+                      aria-label={`Etykieta linku ${index + 1}`}
+                      onChange={(e) => setEditLinks((prev) => prev.map((l, i) => (i === index ? { ...l, label: e.target.value } : l)))} />
+                    <button type="button" aria-label="Usuń link"
+                      onClick={() => setEditLinks((prev) => prev.filter((_, i) => i !== index))}>×</button>
+                  </div>
+                ))}
+                <button type="button" style={{ marginTop: 6 }}
+                  onClick={() => setEditLinks((prev) => [...prev, { url: "", label: "" }])}>+ Dodaj link</button>
+              </div>
               <input
                 type="text"
                 value={editNotePath}
@@ -653,9 +680,21 @@ const Organizations = () => {
             </div>
           )}
 
-          {!isEditing && (organization.headquarters_address || organization.website || organization.obsidian_note_path) && (
+          {!isEditing && (organization.headquarters_address || organization.website || organization.obsidian_note_path
+            || !!organization.links?.length) && (
             <div style={{ marginTop: 10, fontSize: "0.9em", color: "#334155" }}>
               {organization.headquarters_address && <div>🏢 Siedziba: {organization.headquarters_address}</div>}
+              {!!organization.links?.length && (
+                <div data-testid="organization-links">
+                  🔗{" "}
+                  {organization.links.map((link, index) => (
+                    <span key={link.url}>
+                      {index > 0 && " · "}
+                      <a href={link.url} target="_blank" rel="noopener noreferrer" style={{ color: "#0369a1" }}>{linkLabel(link)}</a>
+                    </span>
+                  ))}
+                </div>
+              )}
               {organization.website && (
                 <div>
                   🌐 {/^https?:\/\//i.test(organization.website)

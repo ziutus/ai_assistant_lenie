@@ -191,6 +191,35 @@ def test_absorb_organization_moves_countries_and_fills_empty_fields():
     assert target.obsidian_note_path == "n/src.md"
 
 
+def test_absorb_organization_appends_new_links_and_keeps_target_labels():
+    wiki = "https://pl.wikipedia.org/wiki/NATO"
+    source = Organization(id=1, canonical_name="Src", links=[
+        {"url": wiki, "label": "stara etykieta"}, {"url": "https://www.nato.int", "label": "NATO"}])
+    target = Organization(id=2, canonical_name="Dst", links=[{"url": wiki, "label": "Wikipedia"}])
+    session = MagicMock()
+    session.execute.return_value.scalars.side_effect = [iter([]), MagicMock(all=lambda: [])]
+
+    absorb_organization(session, source, target)
+
+    assert target.links == [{"url": wiki, "label": "Wikipedia"}, {"url": "https://www.nato.int", "label": "NATO"}]
+
+
+@pytest.mark.parametrize("links,expected", [
+    (None, None),
+    ([], None),
+    ([{"url": "https://www.nato.int", "label": "NATO"}], None),
+    ([{"url": "https://pl.wikipedia.org/wiki/NATO", "label": ""}], "https://pl.wikipedia.org/wiki/NATO"),
+    ([{"url": "https://www.nato.int"}, {"url": "https://en.wikipedia.org/wiki/NATO"}], "https://en.wikipedia.org/wiki/NATO"),
+    # A look-alike host must not count as Wikipedia.
+    ([{"url": "https://wikipedia.org.evil.example/wiki/NATO"}], None),
+    ([{"url": "ftp://pl.wikipedia.org/wiki/NATO"}], None),
+])
+def test_wikipedia_url_picks_the_first_wikipedia_link(links, expected):
+    from library.organization_location import wikipedia_url
+
+    assert wikipedia_url(links) == expected
+
+
 def test_absorb_organization_keeps_target_headquarters():
     source = Organization(id=1, canonical_name="Src", headquarters_address="Aden", latitude=12.8, longitude=45.0)
     target = Organization(id=2, canonical_name="Dst", headquarters_address="Warszawa")
