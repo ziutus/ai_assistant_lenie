@@ -334,6 +334,44 @@ def canonical_country_name(mention: str) -> str | None:
     return next(iter(matches)) if len(matches) == 1 else None
 
 
+# Keep these spellings outside the public gazetteer: entity_sense_classifier.
+# candidate_country() delegates exact gazetteer hits to another path, which
+# does not handle persName. Only country prefixes before a surname use these.
+_OBLIQUE_PREFIX_ONLY_FORMS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Salwador", ("salvadoru*",)),
+)
+
+
+@lru_cache(maxsize=1)
+def _compiled_oblique_prefix_only_forms() -> tuple[tuple[str, tuple[CountryPattern, ...]], ...]:
+    return tuple(
+        (country, tuple(_compile_variant(variant) for variant in variants))
+        for country, variants in _OBLIQUE_PREFIX_ONLY_FORMS
+    )
+
+
+def strip_leading_oblique_country(text: str) -> tuple[str, str, int] | None:
+    """Return (remainder, country_name_pl, words_taken) for an oblique prefix."""
+    words = text.split()
+    for take in range(min(3, len(words) - 1), 0, -1):
+        prefix = " ".join(words[:take])
+        country = canonical_country_name(prefix)
+        if country is None:
+            normalized = unidecode(prefix).casefold()
+            country = next(
+                (
+                    name for name, patterns in _compiled_oblique_prefix_only_forms()
+                    if any(pattern.fullmatch_with_suffix_limit(normalized) for pattern in patterns)
+                ),
+                None,
+            )
+        if country is None or unidecode(prefix).casefold() == unidecode(country).casefold():
+            continue
+        if all(word[0].isupper() for word in words[take:]):
+            return " ".join(words[take:]), country, take
+    return None
+
+
 def strip_country_edge(text: str) -> tuple[str, str] | None:
     """Split off a leading or trailing country mention glued onto `text` by a
     NER span-boundary error, returning (remainder, country_name_pl).
