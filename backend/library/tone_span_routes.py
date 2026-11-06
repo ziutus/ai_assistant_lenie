@@ -143,11 +143,13 @@ def recompute_chapter_core_tone(doc_id: int, position: int):
         session.commit()
     except ValueError as exc:
         session.rollback()
-        code = str(exc)
-        if code in _CORE_TONE_ERRORS:
-            return jsonify({"status": "error", "code": code, "message": _CORE_TONE_ERRORS[code]}), (
-                502 if code == "failed" else 409
-            )
+        reason = str(exc)
+        # Only a key of the constant table ever reaches the response, never the exception's own text.
+        for known_code, known_message in _CORE_TONE_ERRORS.items():
+            if reason == known_code:
+                return jsonify({"status": "error", "code": known_code, "message": known_message}), (
+                    502 if known_code == "failed" else 409
+                )
         logger.info("core tone refused for document %s chapter %s", doc_id, position, exc_info=True)
         return jsonify({"status": "error", "message": "Chapter not found or document has no usable text"}), 400
     except Exception:

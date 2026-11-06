@@ -167,6 +167,21 @@ def test_review_rejects_an_unknown_status_and_an_unknown_span(client, session):
     assert client.patch("/tone_spans/1", json={"status": "confirmed"}).status_code == 404
 
 
+def test_core_tone_never_echoes_the_text_of_an_unexpected_error(client, session, monkeypatch):
+    monkeypatch.setattr(cam, "default_model", lambda s: "m")
+
+    def boom(*args, **kwargs):
+        raise ValueError("internal detail: /srv/secret/path")
+
+    monkeypatch.setattr(tone_spans, "recompute_core_tone", boom)
+
+    r = client.post("/document/5/chapter/2/core_tone", json={})
+
+    assert r.status_code == 400
+    assert "secret" not in r.get_data(as_text=True)
+    session.rollback.assert_called_once()
+
+
 def test_core_tone_is_stored_and_returned(client, session, monkeypatch):
     monkeypatch.setattr(cam, "default_model", lambda s: "m")
     monkeypatch.setattr(
