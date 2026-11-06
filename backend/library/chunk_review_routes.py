@@ -925,7 +925,10 @@ def document_chapter_describe_entities(doc_id: int, position: int):
         return jsonify({**summary, "default_model": _tagging_model(), "models": selectable_models(),
                         "prompt": build_prompt(candidates[:MAX_ENTITIES_PER_CALL], chapter_title,
                                                section.body, doc_title)}), 200
-    return jsonify({**summary, **describe_candidates(candidates, chapter_title, section.body, doc_title, model)}), 200
+    from library.llm_usage.context import document_usage_context
+
+    with document_usage_context(doc_id):
+        return jsonify({**summary, **describe_candidates(candidates, chapter_title, section.body, doc_title, model)}), 200
 
 
 def _chapter_boundary_run_count(session, doc_id: int) -> int:

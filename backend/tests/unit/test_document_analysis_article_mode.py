@@ -530,3 +530,28 @@ def test_country_confirmation_prompt_shows_mentions_beyond_the_excerpt(monkeypat
     assert article_tagging.extract_countries_hybrid(text, "Tytuł") == ["kraj-izrael"]
     assert "FRAGMENTY Z DALSZEJ CZĘŚCI TEKSTU" in prompts[0]
     assert "Rozmowy z Izraelem" in prompts[0]
+
+
+def test_create_run_tagging_usage_context(session, article_env, monkeypatch):
+    from library import article_tagging, search_terms
+    from library.llm_usage.context import current_usage_context, llm_usage_context
+    from types import SimpleNamespace
+    import importlib
+
+    # Restore the real LLM leaves hidden by the pipeline-routing fixture.
+    importlib.reload(article_tagging)
+    importlib.reload(search_terms)
+    monkeypatch.setattr(article_tagging, "_tagging_model", lambda: "test-model")
+    monkeypatch.setattr(article_tagging, "extract_countries_hybrid", lambda *a, **kw: [])
+    seen = []
+
+    def ask(*args, **kwargs):
+        seen.append((kwargs["operation"], current_usage_context()))
+        return SimpleNamespace(response_text="technologia")
+
+    monkeypatch.setattr("library.ai.ai_ask", ask)
+    with llm_usage_context(analysis_job_id="job", analysis_run_id=91):
+        DocumentAnalysisService(session).create_run(doc_id=42, model="test-model", mode="article")
+        assert current_usage_context() == (None, "job", 91)
+    assert ("thematic_tagging", (42, "job", 91)) in seen
+    assert ("search_terms_generation", (42, "job", 91)) in seen

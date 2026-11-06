@@ -389,3 +389,32 @@ def test_country_detection_attaches_document_to_usage_and_payload(db, monkeypatc
     assert usage.analysis_run_id == run_id and usage.analysis_job_id == job_id
     assert payload.usage_log_id == usage.id and payload.response_text == "Haiti"
     assert "kraj-haiti" in doc.tags
+
+
+@pytest.mark.parametrize("document_id", [None, 7, 42])
+@pytest.mark.parametrize("raises", [False, True])
+def test_document_usage_context_preserves_and_restores(monkeypatch, document_id, raises):
+    from library.llm_usage import context
+
+    with context.llm_usage_context(document_id=7, analysis_job_id="job", analysis_run_id=91):
+        original = context.llm_usage_context
+        calls = Mock(wraps=original)
+        monkeypatch.setattr(context, "llm_usage_context", calls)
+        try:
+            with context.document_usage_context(document_id):
+                assert context.current_usage_context() == (document_id or 7, "job", 91)
+                if raises:
+                    raise ValueError("test")
+        except ValueError:
+            assert raises
+        assert context.current_usage_context() == (7, "job", 91)
+        assert calls.call_count == (1 if document_id == 42 else 0)
+    assert context.current_usage_context() == (None, None, None)
+
+
+def test_document_usage_context_without_outer_context():
+    from library.llm_usage.context import current_usage_context, document_usage_context
+
+    with document_usage_context(42):
+        assert current_usage_context() == (42, None, None)
+    assert current_usage_context() == (None, None, None)

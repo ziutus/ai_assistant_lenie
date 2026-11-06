@@ -226,3 +226,25 @@ def test_endpoint_rejects_unknown_model_unknown_chapter_and_non_content_chapter(
                        json={"model": "gpt-99-evil"}).status_code == 400
     assert client.post("/document/42/chapter/99/describe_entities", json={}).status_code == 404
     assert client.post(f"/document/42/chapter/{position + 1}/describe_entities", json={}).status_code == 400
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_chapter_description_usage_context(client, monkeypatch, dry_run):
+    from library.llm_usage.context import current_usage_context, llm_usage_context
+
+    seen = []
+
+    def ask(*args, **kwargs):
+        seen.append((kwargs["operation"], current_usage_context()))
+        return _reply('{"o1": "Description", "p1": null}')
+
+    monkeypatch.setattr("library.ai.ai_ask", ask)
+    monkeypatch.setattr("library.article_tagging._tagging_model", lambda: "Bielik-11B-v3.0-Instruct")
+    monkeypatch.setattr("library.llm_model_registry.selectable_models", lambda: [])
+    monkeypatch.setattr("library.llm_model_registry.model_details", lambda model: None)
+    with llm_usage_context(analysis_job_id="job", analysis_run_id=91):
+        response = client.post(f"/document/42/chapter/{_first_position()}/describe_entities",
+                               json={"dry_run": dry_run})
+        assert current_usage_context() == (None, "job", 91)
+    assert response.status_code == 200
+    assert seen == ([] if dry_run else [("entity_description_batch", (42, "job", 91))])

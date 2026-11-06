@@ -293,380 +293,383 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     # before calling NER/LLM helpers; otherwise their deletes can deadlock.
     # The transaction-scoped PostgreSQL lock is released by the caller's commit
     # or rollback, matching this function's existing transaction contract.
-    session.execute(select(func.pg_advisory_xact_lock(22_004, document_id)))
+    from library.llm_usage.context import document_usage_context
 
-    # Channel glossary: repair known speech-to-text slips in a COPY of the text (the stored
-    # transcript is untouched); every later step works on the repaired copy so offsets agree.
-    text, glossary_replacements = _apply_channel_glossary(session, document_id, text)
+    with document_usage_context(document_id):
+        session.execute(select(func.pg_advisory_xact_lock(22_004, document_id)))
 
-    raw = extract_entities(text)
-    if not raw:
-        if is_available():
-            _record_ner_availability(session, document_id, unavailable=False)
-            return []
-        _record_ner_availability(session, document_id, unavailable=True)
-        raise NERServiceUnavailable(f"NER service unreachable while refreshing entities for document {document_id}")
+        # Channel glossary: repair known speech-to-text slips in a COPY of the text (the stored
+        # transcript is untouched); every later step works on the repaired copy so offsets agree.
+        text, glossary_replacements = _apply_channel_glossary(session, document_id, text)
 
-    # Success: clear a stale unavailable flag as part of the caller's own
-    # transaction (no isolated commit needed — unlike the branches above,
-    # there is no exception here for the caller to roll back).
-    doc = session.get(Document, document_id)
-    if doc is not None:
-        if doc.ner_unavailable_at is not None:
-            doc.ner_unavailable_at = None
-        doc.entities_checked_at = datetime.datetime.now()
+        raw = extract_entities(text)
+        if not raw:
+            if is_available():
+                _record_ner_availability(session, document_id, unavailable=False)
+                return []
+            _record_ner_availability(session, document_id, unavailable=True)
+            raise NERServiceUnavailable(f"NER service unreachable while refreshing entities for document {document_id}")
 
-    groups = aggregate_entities_detailed(raw)
-    _record_glossary_replacements(session, document_id, groups, glossary_replacements)
+        # Success: clear a stale unavailable flag as part of the caller's own
+        # transaction (no isolated commit needed — unlike the branches above,
+        # there is no exception here for the caller to roll back).
+        doc = session.get(Document, document_id)
+        if doc is not None:
+            if doc.ner_unavailable_at is not None:
+                doc.ner_unavailable_at = None
+            doc.entities_checked_at = datetime.datetime.now()
 
-    # spaCy can miss outlet names containing digits (for example "France24").
-    # Promote only known reporting sources that occur in an explicit grounded
-    # attribution phrase; this is a deterministic NER supplement, not a guess.
-    from library.information_provenance import extract_known_reporting_sources
-    for source in extract_known_reporting_sources(text):
-        key = ("orgName", source["canonical_name"])
-        existing = groups.get(key)
-        if existing is None:
-            groups[key] = {"count": 1, "variants": [source["raw_mention"]]}
-        else:
-            existing["count"] += 1
-            if source["raw_mention"] not in existing["variants"]:
-                existing["variants"].append(source["raw_mention"])
+        groups = aggregate_entities_detailed(raw)
+        _record_glossary_replacements(session, document_id, groups, glossary_replacements)
 
-    # Places spaCy never reports (lowercase "królewca", the adjective-only
-    # "obwód kaliningradzki", "przesmyk suwalski"): a closed, text-grounded list.
-    _add_place_mentions(groups, text, raw)
+        # spaCy can miss outlet names containing digits (for example "France24").
+        # Promote only known reporting sources that occur in an explicit grounded
+        # attribution phrase; this is a deterministic NER supplement, not a guess.
+        from library.information_provenance import extract_known_reporting_sources
+        for source in extract_known_reporting_sources(text):
+            key = ("orgName", source["canonical_name"])
+            existing = groups.get(key)
+            if existing is None:
+                groups[key] = {"count": 1, "variants": [source["raw_mention"]]}
+            else:
+                existing["count"] += 1
+                if source["raw_mention"] not in existing["variants"]:
+                    existing["variants"].append(source["raw_mention"])
 
-    # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
-    # country only when a contextual LLM check confirms it.
-    _apply_country_abbreviations(groups, text, getattr(doc, "title", None) or "", document_id)
+        # Places spaCy never reports (lowercase "królewca", the adjective-only
+        # "obwód kaliningradzki", "przesmyk suwalski"): a closed, text-grounded list.
+        _add_place_mentions(groups, text, raw)
 
-    merged_orgs = merge_compound_org_names(
-        strip_content_markers(strip_markdown_emphasis(text)), groups,
-    )
-    if merged_orgs:
-        logger.info("NER compound organization names merged %d groups for doc %s", len(merged_orgs), document_id)
+        # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
+        # country only when a contextual LLM check confirms it.
+        _apply_country_abbreviations(groups, text, getattr(doc, "title", None) or "", document_id)
 
-    # Date/time mentions are not ordinary sidebar entities. Keep them as
-    # grounded hints for the later timeline LLM stage.
-    session.execute(delete(NerTemporalCandidate).where(
-        NerTemporalCandidate.document_id == document_id,
-    ))
-    temporal_rows = _temporal_candidate_rows(document_id, text, raw)
-    if temporal_rows:
-        session.add_all(temporal_rows)
+        merged_orgs = merge_compound_org_names(
+            strip_content_markers(strip_markdown_emphasis(text)), groups,
+        )
+        if merged_orgs:
+            logger.info("NER compound organization names merged %d groups for doc %s", len(merged_orgs), document_id)
 
-    exclusions = list(session.execute(select(NerExclusion)).scalars().all())
-    if exclusions:
-        author = getattr(doc, "byline", None)
-        for key, group in groups.items():
-            mentions = group.get("country_mentions", {})
-            removed = {
-                mention for mention in mentions
-                if mention[2] and is_excluded(
-                    exclusions, key[0], mention[0], author,
-                    raw_terms=[mention[1]], document_id=document_id,
+        # Date/time mentions are not ordinary sidebar entities. Keep them as
+        # grounded hints for the later timeline LLM stage.
+        session.execute(delete(NerTemporalCandidate).where(
+            NerTemporalCandidate.document_id == document_id,
+        ))
+        temporal_rows = _temporal_candidate_rows(document_id, text, raw)
+        if temporal_rows:
+            session.add_all(temporal_rows)
+
+        exclusions = list(session.execute(select(NerExclusion)).scalars().all())
+        if exclusions:
+            author = getattr(doc, "byline", None)
+            for key, group in groups.items():
+                mentions = group.get("country_mentions", {})
+                removed = {
+                    mention for mention in mentions
+                    if mention[2] and is_excluded(
+                        exclusions, key[0], mention[0], author,
+                        raw_terms=[mention[1]], document_id=document_id,
+                    )
+                }
+                if not removed:
+                    continue
+                # A term shared with a retained mention must keep its original
+                # whole-group exclusion semantics (even if its spelling differs).
+                retained_terms = {
+                    value.casefold() for mention in mentions if mention not in removed
+                    for value in mention[:2]
+                }
+                removed_terms = {
+                    value.casefold() for mention in removed for value in mention[:2]
+                } - retained_terms
+                other_terms = [
+                    value for value in [*group.get("raw_lemmas", []), *group.get("variants", [])]
+                    if value.casefold() not in removed_terms
+                ]
+                if is_excluded(exclusions, key[0], key[1], author,
+                               raw_terms=other_terms, document_id=document_id):
+                    continue  # The ordinary check below still drops the whole group.
+                group["count"] -= sum(mentions[mention] for mention in removed)
+                for field in ("raw_lemmas", "variants"):
+                    group[field] = [value for value in group.get(field, []) if value.casefold() not in removed_terms]
+                for mention in removed:
+                    del mentions[mention]
+            excluded = [
+                key
+                for key, group in groups.items()
+                if group["count"] == 0 or is_excluded(
+                    exclusions,
+                    key[0],
+                    key[1],
+                    author,
+                    raw_terms=[*group.get("raw_lemmas", []), *group.get("variants", [])],
+                    document_id=document_id,
                 )
-            }
-            if not removed:
-                continue
-            # A term shared with a retained mention must keep its original
-            # whole-group exclusion semantics (even if its spelling differs).
-            retained_terms = {
-                value.casefold() for mention in mentions if mention not in removed
-                for value in mention[:2]
-            }
-            removed_terms = {
-                value.casefold() for mention in removed for value in mention[:2]
-            } - retained_terms
-            other_terms = [
-                value for value in [*group.get("raw_lemmas", []), *group.get("variants", [])]
-                if value.casefold() not in removed_terms
             ]
-            if is_excluded(exclusions, key[0], key[1], author,
-                           raw_terms=other_terms, document_id=document_id):
-                continue  # The ordinary check below still drops the whole group.
-            group["count"] -= sum(mentions[mention] for mention in removed)
-            for field in ("raw_lemmas", "variants"):
-                group[field] = [value for value in group.get(field, []) if value.casefold() not in removed_terms]
-            for mention in removed:
-                del mentions[mention]
-        excluded = [
-            key
-            for key, group in groups.items()
-            if group["count"] == 0 or is_excluded(
-                exclusions,
-                key[0],
-                key[1],
-                author,
-                raw_terms=[*group.get("raw_lemmas", []), *group.get("variants", [])],
+            for key in excluded:
+                del groups[key]
+            if excluded:
+                logger.info("NER exclusions dropped %d entities for doc %s: %s",
+                            len(excluded), document_id, [k[1] for k in excluded])
+
+        # Faza 6: human-approved lemma-keyed corrections (ner_corrections table) —
+        # runs after exclusions (junk is gone first) and before org-registry
+        # resolution below (a correction can retype orgName -> geogName/placeName,
+        # which must not have already created a bogus Organization row).
+        from library.ner_corrections import apply_ner_corrections
+
+        apply_ner_corrections(session, document_id, groups, getattr(doc, "byline", None))
+
+        # spaCy occasionally labels a capitalized common noun as persName. Verify
+        # only ambiguous one-word candidates with cheap, batched Bielik calls.
+        # Fail open: malformed/unavailable LLM results leave entities untouched.
+        from library.person_context_classifier import classify_single_word_person_candidates
+
+        classifications = classify_single_word_person_candidates(
+            text,
+            getattr(doc, "title", None) or "",
+            groups,
+            document_id,
+        )
+        # Resolve country senses before the person verdicts remove their groups.
+        from library.entity_sense_classifier import apply_country_sense
+
+        sense_results = apply_country_sense(groups, text, getattr(doc, "title", None) or "", document_id)
+        if sense_results:
+            session.add_all([
+                NerContextClassification(
+                    document_id=document_id, entity_type="persName", entity_text=result["entity_text"],
+                    predicted_class="country" if result["sense"] == "kraj" else result["sense"],
+                    confidence=result["confidence"], rationale=result["rationale"],
+                    context_excerpt=result["context"][:2000], model=result["provider"][:100],
+                    dropped=result["dropped"],
+                )
+                for result in sense_results
+            ])
+        if classifications:
+            session.add_all([
+                NerContextClassification(
+                    document_id=document_id,
+                    entity_type="persName",
+                    entity_text=result["entity_text"],
+                    predicted_class=result["predicted_class"],
+                    confidence=result["confidence"],
+                    rationale=result["rationale"],
+                    context_excerpt=result["context"][:2000],
+                    model=result["model"],
+                    dropped=result["dropped"],
+                )
+                for result in classifications
+            ])
+            dropped_by_context = [result["key"] for result in classifications if result["dropped"]]
+            for key in dropped_by_context:
+                groups.pop(key, None)
+            if dropped_by_context:
+                logger.info(
+                    "Context verification dropped %d false person entities for doc %s: %s",
+                    len(dropped_by_context),
+                    document_id,
+                    [key[1] for key in dropped_by_context],
+                )
+
+        # orgName groups: merge same-organization spelling splits within this one
+        # NER result (e.g. "Interia"/"Interii" both present as separate lemma
+        # groups), then resolve each merged group against the global organizations
+        # registry (docs/organization-ner-alias-plan.md). entity_text for orgName
+        # becomes the registry's canonical_name so /webpage, /read and chapter
+        # filtering never show the same organization twice.
+        org_keys = [key for key in groups if key[0] == "orgName"]
+        organization_confidence: dict[str, tuple[int, str]] = {}
+        if org_keys:
+            org_groups_by_name = {key[1]: groups[key] for key in org_keys}
+            merged_org_groups = merge_ner_groups(org_groups_by_name)
+            for key in org_keys:
+                del groups[key]
+            for name, group in merged_org_groups.items():
+                # Any orgName text (a short all-caps abbreviation like "RSF", or a
+                # full multi-word name that happens to collide with an unrelated
+                # organization's name — e.g. "Africa Corps" meaning either the
+                # Russian 2023+ formation or a rendering of WWII's "Afrika
+                # Korps") can have more than one known meaning. This lookup is
+                # cheap (organization_ambiguous_aliases is small and indexed) and
+                # returns nothing for the vast majority of names, which never had
+                # a collision curated for them — it is never a global alias, so
+                # the LLM only sees the approved local candidates and may decline
+                # to choose. Ordinary, uncontested names fall straight through to
+                # the deterministic registry path below.
+                #
+                # The group is named after spaCy's lemma, which for proper names is
+                # often still inflected ("Kongresie"), so the curated alias is looked
+                # up under the name AND every surface variant.
+                ambiguous_form, candidates = ambiguous_alias_candidates_for_forms(
+                    session, [name, *group["variants"]],
+                )
+                organization = select_ambiguous_alias_candidate_with_llm(
+                    text, getattr(doc, "title", "") or "", ambiguous_form or name, candidates,
+                    extra_context=_organization_document_context(doc),
+                )
+                confidence = CONFIDENCE_CONTEXT_LLM_MATCHED
+                if organization is None and len(candidates) >= 2:
+                    # A name with several curated meanings that the context did not
+                    # settle stays UNRESOLVED: no global alias, no new registry row.
+                    # The entity is kept (unlinked) so a reviewer can pick the meaning.
+                    logger.info("Organization %r left unresolved in doc %s: ambiguous alias %r",
+                                name, document_id, ambiguous_form)
+                elif organization is None:
+                    organization, confidence = resolve_or_create(session, name, group["variants"])
+                canonical_name = organization.canonical_name if organization is not None else name
+                merged_key = ("orgName", canonical_name)
+                existing = groups.get(merged_key)
+                surface_forms = [name, *group["variants"]]
+                if existing is not None:
+                    existing["count"] += group["count"]
+                    combined = dict.fromkeys(existing["variants"])
+                    for value in surface_forms:
+                        if value.casefold() != canonical_name.casefold():
+                            combined.setdefault(value, None)
+                    existing["variants"] = list(combined)
+                else:
+                    distinct_variants = dict.fromkeys(
+                        value for value in surface_forms if value.casefold() != canonical_name.casefold()
+                    )
+                    groups[merged_key] = {"count": group["count"], "variants": list(distinct_variants)}
+                if organization is not None:
+                    organization_confidence.setdefault(canonical_name, (organization.id, confidence))
+
+        # Manually merged rows (source='manual', set by merge_document_entities())
+        # survive the refresh. A fresh NER group colliding with one on
+        # (entity_type, casefold(entity_text)/variants) is dropped instead of
+        # inserted — otherwise it would either duplicate the merged name or
+        # violate the (document_id, entity_type, entity_text) unique constraint.
+        # The manual row itself is left completely untouched (no mention_count
+        # update) — the user already merged it and knows what they did.
+        manual_rows = (
+            session.query(DocumentEntity)
+            .filter(DocumentEntity.document_id == document_id, DocumentEntity.source == "manual")
+            .all()
+        )
+        manual_keys_by_type: dict[str, set[str]] = {}
+        for manual_row in manual_rows:
+            names = {manual_row.entity_text.casefold(), *(v.casefold() for v in (manual_row.variants or []))}
+            manual_keys_by_type.setdefault(manual_row.entity_type, set()).update(names)
+
+        colliding_keys = [
+            key for key in groups
+            if key[1].casefold() in manual_keys_by_type.get(key[0], set())
+            or any(v.casefold() in manual_keys_by_type.get(key[0], set()) for v in groups[key]["variants"])
+        ]
+        for key in colliding_keys:
+            del groups[key]
+        if colliding_keys:
+            logger.info(
+                "Skipped %d NER groups colliding with manually merged entities for doc %s: %s",
+                len(colliding_keys), document_id, [key[1] for key in colliding_keys],
+            )
+
+        # Refreshes must not silently erase human decisions.  Explicitly approved
+        # organization links (and links backed by a manual entity merge) survive;
+        # every automatic row removed below gets an immutable audit record.
+        from library.relationship_audit import audit_removals
+
+        removable_entities = session.execute(select(DocumentEntity).where(
+            DocumentEntity.document_id == document_id,
+            DocumentEntity.source != "manual",
+        )).scalars().all()
+        audit_removals(session, document_id, "entity", "ner_refresh", removable_entities, lambda row: {
+            "entity_type": row.entity_type, "entity_text": row.entity_text,
+            "variants": row.variants or [], "source": row.source,
+        })
+        removable_org_links = []
+        manual_entity_ids = {row.id for row in manual_rows}
+        for link in session.execute(select(DocumentOrganization).where(
+            DocumentOrganization.document_id == document_id,
+        )).scalars().all():
+            if link.review_status == "approved" or link.document_entity_id in manual_entity_ids:
+                continue
+            removable_org_links.append(link)
+        audit_removals(session, document_id, "organization", "ner_refresh", removable_org_links, lambda row: {
+            "organization_id": row.organization_id, "document_entity_id": row.document_entity_id,
+            "confidence": row.confidence, "review_status": row.review_status,
+        })
+        for link in removable_org_links:
+            session.delete(link)
+        for row in removable_entities:
+            session.delete(row)
+        # Flush deletes before adding the replacement rows.  Without this explicit
+        # boundary SQLAlchemy may INSERT an unchanged key (for example EDF) before
+        # its old derived row is deleted, violating the per-document unique key.
+        session.flush()
+        rows = [
+            DocumentEntity(
                 document_id=document_id,
+                entity_type=entity_type,
+                entity_text=entity_text,
+                mention_count=group["count"],
+                variants=group["variants"],
+            )
+            for (entity_type, entity_text), group in sorted(
+                groups.items(), key=lambda kv: (-kv[1]["count"], kv[0]),
             )
         ]
-        for key in excluded:
-            del groups[key]
-        if excluded:
-            logger.info("NER exclusions dropped %d entities for doc %s: %s",
-                        len(excluded), document_id, [k[1] for k in excluded])
+        session.add_all(rows)
+        if organization_confidence:
+            session.flush()
+            rows_by_key = {(row.entity_type, row.entity_text): row for row in rows}
+            preserved_organization_ids = set(session.scalars(select(DocumentOrganization.organization_id).where(
+                DocumentOrganization.document_id == document_id,
+            )).all())
+            for entity_text, (organization_id, confidence) in organization_confidence.items():
+                if organization_id in preserved_organization_ids:
+                    continue
+                row = rows_by_key.get(("orgName", entity_text))
+                # A candidate may be removed later in the NER pipeline (for
+                # example by an exclusion rule).  Do not recreate an orphaned
+                # DocumentOrganization link for an entity that is no longer in
+                # the final result set.
+                if row is None:
+                    continue
+                session.add(DocumentOrganization(
+                    document_id=document_id,
+                    organization_id=organization_id,
+                    document_entity_id=row.id,
+                    confidence=confidence,
+                ))
 
-    # Faza 6: human-approved lemma-keyed corrections (ner_corrections table) —
-    # runs after exclusions (junk is gone first) and before org-registry
-    # resolution below (a correction can retype orgName -> geogName/placeName,
-    # which must not have already created a bogus Organization row).
-    from library.ner_corrections import apply_ner_corrections
+        organization_groups = [
+            {
+                "text": entity_text,
+                "variants": group["variants"],
+                "organization_id": organization_confidence.get(entity_text, (None, None))[0],
+            }
+            for (entity_type, entity_text), group in groups.items()
+            if entity_type == "orgName"
+        ]
+        if doc is not None and organization_groups:
+            from library.information_provenance import refresh_ner_cited_sources
 
-    apply_ner_corrections(session, document_id, groups, getattr(doc, "byline", None))
-
-    # spaCy occasionally labels a capitalized common noun as persName. Verify
-    # only ambiguous one-word candidates with cheap, batched Bielik calls.
-    # Fail open: malformed/unavailable LLM results leave entities untouched.
-    from library.person_context_classifier import classify_single_word_person_candidates
-
-    classifications = classify_single_word_person_candidates(
-        text,
-        getattr(doc, "title", None) or "",
-        groups,
-        document_id,
-    )
-    # Resolve country senses before the person verdicts remove their groups.
-    from library.entity_sense_classifier import apply_country_sense
-
-    sense_results = apply_country_sense(groups, text, getattr(doc, "title", None) or "", document_id)
-    if sense_results:
-        session.add_all([
-            NerContextClassification(
-                document_id=document_id, entity_type="persName", entity_text=result["entity_text"],
-                predicted_class="country" if result["sense"] == "kraj" else result["sense"],
-                confidence=result["confidence"], rationale=result["rationale"],
-                context_excerpt=result["context"][:2000], model=result["provider"][:100],
-                dropped=result["dropped"],
-            )
-            for result in sense_results
-        ])
-    if classifications:
-        session.add_all([
-            NerContextClassification(
-                document_id=document_id,
-                entity_type="persName",
-                entity_text=result["entity_text"],
-                predicted_class=result["predicted_class"],
-                confidence=result["confidence"],
-                rationale=result["rationale"],
-                context_excerpt=result["context"][:2000],
-                model=result["model"],
-                dropped=result["dropped"],
-            )
-            for result in classifications
-        ])
-        dropped_by_context = [result["key"] for result in classifications if result["dropped"]]
-        for key in dropped_by_context:
-            groups.pop(key, None)
-        if dropped_by_context:
-            logger.info(
-                "Context verification dropped %d false person entities for doc %s: %s",
-                len(dropped_by_context),
-                document_id,
-                [key[1] for key in dropped_by_context],
-            )
-
-    # orgName groups: merge same-organization spelling splits within this one
-    # NER result (e.g. "Interia"/"Interii" both present as separate lemma
-    # groups), then resolve each merged group against the global organizations
-    # registry (docs/organization-ner-alias-plan.md). entity_text for orgName
-    # becomes the registry's canonical_name so /webpage, /read and chapter
-    # filtering never show the same organization twice.
-    org_keys = [key for key in groups if key[0] == "orgName"]
-    organization_confidence: dict[str, tuple[int, str]] = {}
-    if org_keys:
-        org_groups_by_name = {key[1]: groups[key] for key in org_keys}
-        merged_org_groups = merge_ner_groups(org_groups_by_name)
-        for key in org_keys:
-            del groups[key]
-        for name, group in merged_org_groups.items():
-            # Any orgName text (a short all-caps abbreviation like "RSF", or a
-            # full multi-word name that happens to collide with an unrelated
-            # organization's name — e.g. "Africa Corps" meaning either the
-            # Russian 2023+ formation or a rendering of WWII's "Afrika
-            # Korps") can have more than one known meaning. This lookup is
-            # cheap (organization_ambiguous_aliases is small and indexed) and
-            # returns nothing for the vast majority of names, which never had
-            # a collision curated for them — it is never a global alias, so
-            # the LLM only sees the approved local candidates and may decline
-            # to choose. Ordinary, uncontested names fall straight through to
-            # the deterministic registry path below.
-            #
-            # The group is named after spaCy's lemma, which for proper names is
-            # often still inflected ("Kongresie"), so the curated alias is looked
-            # up under the name AND every surface variant.
-            ambiguous_form, candidates = ambiguous_alias_candidates_for_forms(
-                session, [name, *group["variants"]],
-            )
-            organization = select_ambiguous_alias_candidate_with_llm(
-                text, getattr(doc, "title", "") or "", ambiguous_form or name, candidates,
-                extra_context=_organization_document_context(doc),
-            )
-            confidence = CONFIDENCE_CONTEXT_LLM_MATCHED
-            if organization is None and len(candidates) >= 2:
-                # A name with several curated meanings that the context did not
-                # settle stays UNRESOLVED: no global alias, no new registry row.
-                # The entity is kept (unlinked) so a reviewer can pick the meaning.
-                logger.info("Organization %r left unresolved in doc %s: ambiguous alias %r",
-                            name, document_id, ambiguous_form)
-            elif organization is None:
-                organization, confidence = resolve_or_create(session, name, group["variants"])
-            canonical_name = organization.canonical_name if organization is not None else name
-            merged_key = ("orgName", canonical_name)
-            existing = groups.get(merged_key)
-            surface_forms = [name, *group["variants"]]
-            if existing is not None:
-                existing["count"] += group["count"]
-                combined = dict.fromkeys(existing["variants"])
-                for value in surface_forms:
-                    if value.casefold() != canonical_name.casefold():
-                        combined.setdefault(value, None)
-                existing["variants"] = list(combined)
-            else:
-                distinct_variants = dict.fromkeys(
-                    value for value in surface_forms if value.casefold() != canonical_name.casefold()
-                )
-                groups[merged_key] = {"count": group["count"], "variants": list(distinct_variants)}
-            if organization is not None:
-                organization_confidence.setdefault(canonical_name, (organization.id, confidence))
-
-    # Manually merged rows (source='manual', set by merge_document_entities())
-    # survive the refresh. A fresh NER group colliding with one on
-    # (entity_type, casefold(entity_text)/variants) is dropped instead of
-    # inserted — otherwise it would either duplicate the merged name or
-    # violate the (document_id, entity_type, entity_text) unique constraint.
-    # The manual row itself is left completely untouched (no mention_count
-    # update) — the user already merged it and knows what they did.
-    manual_rows = (
-        session.query(DocumentEntity)
-        .filter(DocumentEntity.document_id == document_id, DocumentEntity.source == "manual")
-        .all()
-    )
-    manual_keys_by_type: dict[str, set[str]] = {}
-    for manual_row in manual_rows:
-        names = {manual_row.entity_text.casefold(), *(v.casefold() for v in (manual_row.variants or []))}
-        manual_keys_by_type.setdefault(manual_row.entity_type, set()).update(names)
-
-    colliding_keys = [
-        key for key in groups
-        if key[1].casefold() in manual_keys_by_type.get(key[0], set())
-        or any(v.casefold() in manual_keys_by_type.get(key[0], set()) for v in groups[key]["variants"])
-    ]
-    for key in colliding_keys:
-        del groups[key]
-    if colliding_keys:
-        logger.info(
-            "Skipped %d NER groups colliding with manually merged entities for doc %s: %s",
-            len(colliding_keys), document_id, [key[1] for key in colliding_keys],
-        )
-
-    # Refreshes must not silently erase human decisions.  Explicitly approved
-    # organization links (and links backed by a manual entity merge) survive;
-    # every automatic row removed below gets an immutable audit record.
-    from library.relationship_audit import audit_removals
-
-    removable_entities = session.execute(select(DocumentEntity).where(
-        DocumentEntity.document_id == document_id,
-        DocumentEntity.source != "manual",
-    )).scalars().all()
-    audit_removals(session, document_id, "entity", "ner_refresh", removable_entities, lambda row: {
-        "entity_type": row.entity_type, "entity_text": row.entity_text,
-        "variants": row.variants or [], "source": row.source,
-    })
-    removable_org_links = []
-    manual_entity_ids = {row.id for row in manual_rows}
-    for link in session.execute(select(DocumentOrganization).where(
-        DocumentOrganization.document_id == document_id,
-    )).scalars().all():
-        if link.review_status == "approved" or link.document_entity_id in manual_entity_ids:
-            continue
-        removable_org_links.append(link)
-    audit_removals(session, document_id, "organization", "ner_refresh", removable_org_links, lambda row: {
-        "organization_id": row.organization_id, "document_entity_id": row.document_entity_id,
-        "confidence": row.confidence, "review_status": row.review_status,
-    })
-    for link in removable_org_links:
-        session.delete(link)
-    for row in removable_entities:
-        session.delete(row)
-    # Flush deletes before adding the replacement rows.  Without this explicit
-    # boundary SQLAlchemy may INSERT an unchanged key (for example EDF) before
-    # its old derived row is deleted, violating the per-document unique key.
-    session.flush()
-    rows = [
-        DocumentEntity(
-            document_id=document_id,
-            entity_type=entity_type,
-            entity_text=entity_text,
-            mention_count=group["count"],
-            variants=group["variants"],
-        )
-        for (entity_type, entity_text), group in sorted(
-            groups.items(), key=lambda kv: (-kv[1]["count"], kv[0]),
-        )
-    ]
-    session.add_all(rows)
-    if organization_confidence:
+            refresh_ner_cited_sources(session, doc, text, organization_groups)
+        # After a reopen-for-editing every place row is fresh NER output; re-apply the
+        # human renames/merges/deletions recorded in entity_review_decisions so those
+        # corrections of the automation are not lost with the derived data.
         session.flush()
-        rows_by_key = {(row.entity_type, row.entity_text): row for row in rows}
-        preserved_organization_ids = set(session.scalars(select(DocumentOrganization.organization_id).where(
-            DocumentOrganization.document_id == document_id,
-        )).all())
-        for entity_text, (organization_id, confidence) in organization_confidence.items():
-            if organization_id in preserved_organization_ids:
-                continue
-            row = rows_by_key.get(("orgName", entity_text))
-            # A candidate may be removed later in the NER pipeline (for
-            # example by an exclusion rule).  Do not recreate an orphaned
-            # DocumentOrganization link for an entity that is no longer in
-            # the final result set.
-            if row is None:
-                continue
-            session.add(DocumentOrganization(
-                document_id=document_id,
-                organization_id=organization_id,
-                document_entity_id=row.id,
-                confidence=confidence,
-            ))
+        from library.entity_overrides import (
+            replay_manual_added_entities, replay_manual_organization_decisions, replay_manual_place_decisions,
+            replay_entity_relevance_decisions, replay_product_merges,
+        )
 
-    organization_groups = [
-        {
-            "text": entity_text,
-            "variants": group["variants"],
-            "organization_id": organization_confidence.get(entity_text, (None, None))[0],
-        }
-        for (entity_type, entity_text), group in groups.items()
-        if entity_type == "orgName"
-    ]
-    if doc is not None and organization_groups:
-        from library.information_provenance import refresh_ner_cited_sources
+        replay_manual_place_decisions(session, document_id, doc)
+        replay_manual_organization_decisions(session, document_id)
+        replay_manual_added_entities(session, document_id, doc)
+        replay_product_merges(session, document_id)
+        replay_entity_relevance_decisions(session, document_id, doc)
+        # Named facilities are semantic entities assembled from a recognised object
+        # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra
+        # spaCy label.  Flush first so their links can safely refer to new place rows.
+        session.flush()
+        from library.facility_service import refresh_document_facilities
 
-        refresh_ner_cited_sources(session, doc, text, organization_groups)
-    # After a reopen-for-editing every place row is fresh NER output; re-apply the
-    # human renames/merges/deletions recorded in entity_review_decisions so those
-    # corrections of the automation are not lost with the derived data.
-    session.flush()
-    from library.entity_overrides import (
-        replay_manual_added_entities, replay_manual_organization_decisions, replay_manual_place_decisions,
-        replay_entity_relevance_decisions, replay_product_merges,
-    )
-
-    replay_manual_place_decisions(session, document_id, doc)
-    replay_manual_organization_decisions(session, document_id)
-    replay_manual_added_entities(session, document_id, doc)
-    replay_product_merges(session, document_id)
-    replay_entity_relevance_decisions(session, document_id, doc)
-    # Named facilities are semantic entities assembled from a recognised object
-    # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra
-    # spaCy label.  Flush first so their links can safely refer to new place rows.
-    session.flush()
-    from library.facility_service import refresh_document_facilities
-
-    refresh_document_facilities(session, document_id, text)
-    return rows
+        refresh_document_facilities(session, document_id, text)
+        return rows
 
 
 def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
