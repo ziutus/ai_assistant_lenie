@@ -37,6 +37,7 @@ class FakeSessionFactory:
         self.added: list = []
         self.session = MagicMock()
         self.session.add.side_effect = self.added.append
+        self.session.flush.side_effect = self._assign_ids
         if fail == "execute":
             self.session.execute.side_effect = RuntimeError("db down")
         else:

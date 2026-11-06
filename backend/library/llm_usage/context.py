@@ -24,3 +24,14 @@ def llm_usage_context(*, document_id: int | None = None, analysis_job_id: str | 
         _analysis_run_id.reset(run_token)
         _analysis_job_id.reset(job_token)
         _document_id.reset(document_token)
+
+
+@contextmanager
+def document_usage_context(document_id: int | None):
+    """Attach a document while preserving the enclosing analysis job and run."""
+    current_document_id, job_id, run_id = current_usage_context()
+    if document_id is None or document_id == current_document_id:
+        yield
+        return
+    with llm_usage_context(document_id=document_id, analysis_job_id=job_id, analysis_run_id=run_id):
+        yield

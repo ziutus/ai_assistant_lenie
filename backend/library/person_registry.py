@@ -180,102 +180,105 @@ def resolve_document_persons(
     Queues changes on the session without committing (caller owns the
     transaction). Returns {"linked": [(name, canonical, confidence)], "skipped": [names]}.
     """
-    from library.wikidata_client import search_persons
+    from library.llm_usage.context import document_usage_context
 
-    entities = (
-        session.query(DocumentEntity)
-        .filter(
-            DocumentEntity.document_id == doc.id,
-            DocumentEntity.entity_type == "persName",
+    with document_usage_context(doc.id):
+        from library.wikidata_client import search_persons
+
+        entities = (
+            session.query(DocumentEntity)
+            .filter(
+                DocumentEntity.document_id == doc.id,
+                DocumentEntity.entity_type == "persName",
+            )
+            .all()
         )
-        .all()
-    )
-    if only_names is not None:
-        wanted = {name.strip().casefold() for name in only_names}
-        entities = [ent for ent in entities if ent.entity_text.strip().casefold() in wanted]
+        if only_names is not None:
+            wanted = {name.strip().casefold() for name in only_names}
+            entities = [ent for ent in entities if ent.entity_text.strip().casefold() in wanted]
 
-    linked: list[tuple[str, str, str]] = []
-    skipped: list[str] = []
-    for index, ent in enumerate(entities, start=1):
-        if progress_callback is not None:
-            progress_callback(index, len(entities))
-        name = ent.entity_text.strip()
+        linked: list[tuple[str, str, str]] = []
+        skipped: list[str] = []
+        for index, ent in enumerate(entities, start=1):
+            if progress_callback is not None:
+                progress_callback(index, len(entities))
+            name = ent.entity_text.strip()
 
-        # 1. Known full alias/canonical name — cheapest, no network. A bare
-        # surname is context-dependent ("Trump" may mean Donald, Donald Jr.,
-        # Ivanka, ...), so it must go through contextual disambiguation below.
-        person = find_by_alias(session, name) if len(name.split()) >= 2 else None
-        if person is not None:
-            if _link(session, doc.id, person, name, CONFIDENCE_ALIAS):
-                linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
-            continue
-
-        # 2. Wikidata humans + LLM context disambiguation
-        candidates = search_persons(name)
-        if len(name.split()) < 2:
-            # A lone word is only usable as a surname (see is_surname_mention).
-            candidates = [c for c in candidates if is_surname_mention(name, c["label"])]
-        if candidates:
-            from library.article_tagging import confirm_person_with_llm
-
-            qid = confirm_person_with_llm(text, doc.title or "", name, candidates)
-            if qid:
-                chosen = next(c for c in candidates if c["qid"] == qid)
-                if not label_matches_mention(name, chosen["label"]):
-                    logger.info("rejecting LLM pick %s (%r) for mention %r — name mismatch",
-                                qid, chosen["label"], name)
-                    qid = None
-            if qid:
-                person = session.execute(
-                    select(Person).where(Person.wikidata_qid == qid)
-                ).scalars().first()
-                if person is None:
-                    # A local row may predate Wikidata enrichment. Reuse the
-                    # exact full label instead of creating a duplicate row.
-                    person = find_by_alias(session, chosen["label"])
-                    if person is not None and person.wikidata_qid not in (None, qid):
-                        person = None
-                if person is None:
-                    person = Person(
-                        canonical_name=chosen["label"],
-                        wikidata_qid=qid,
-                        description=chosen["description"] or None,
-                    )
-                    session.add(person)
-                    session.flush()
-                else:
-                    if person.wikidata_qid is None:
-                        person.wikidata_qid = qid
-                    if not person.description and chosen["description"]:
-                        person.description = chosen["description"]
-                _add_alias(session, person, name)
-                if _link(session, doc.id, person, name, CONFIDENCE_WIKIDATA):
-                    linked.append((name, person.canonical_name, CONFIDENCE_WIKIDATA))
+            # 1. Known full alias/canonical name — cheapest, no network. A bare
+            # surname is context-dependent ("Trump" may mean Donald, Donald Jr.,
+            # Ivanka, ...), so it must go through contextual disambiguation below.
+            person = find_by_alias(session, name) if len(name.split()) >= 2 else None
+            if person is not None:
+                if _link(session, doc.id, person, name, CONFIDENCE_ALIAS):
+                    linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
                 continue
 
-        # 3. Junk guard: a single word that is not the surname of a Wikidata human
-        # (a bare given name such as "Ewa", spaCy noise like "Hornet") is skipped
-        if len(name.split()) < 2:
-            skipped.append(name)
-            continue
+            # 2. Wikidata humans + LLM context disambiguation
+            candidates = search_persons(name)
+            if len(name.split()) < 2:
+                # A lone word is only usable as a surname (see is_surname_mention).
+                candidates = [c for c in candidates if is_surname_mention(name, c["label"])]
+            if candidates:
+                from library.article_tagging import confirm_person_with_llm
 
-        # 4. Internal registry fuzzy match — possible variant of a known person,
-        #    queued for review instead of auto-merging
-        person = find_fuzzy_candidate(session, name)
-        if person is not None:
+                qid = confirm_person_with_llm(text, doc.title or "", name, candidates)
+                if qid:
+                    chosen = next(c for c in candidates if c["qid"] == qid)
+                    if not label_matches_mention(name, chosen["label"]):
+                        logger.info("rejecting LLM pick %s (%r) for mention %r — name mismatch",
+                                    qid, chosen["label"], name)
+                        qid = None
+                if qid:
+                    person = session.execute(
+                        select(Person).where(Person.wikidata_qid == qid)
+                    ).scalars().first()
+                    if person is None:
+                        # A local row may predate Wikidata enrichment. Reuse the
+                        # exact full label instead of creating a duplicate row.
+                        person = find_by_alias(session, chosen["label"])
+                        if person is not None and person.wikidata_qid not in (None, qid):
+                            person = None
+                    if person is None:
+                        person = Person(
+                            canonical_name=chosen["label"],
+                            wikidata_qid=qid,
+                            description=chosen["description"] or None,
+                        )
+                        session.add(person)
+                        session.flush()
+                    else:
+                        if person.wikidata_qid is None:
+                            person.wikidata_qid = qid
+                        if not person.description and chosen["description"]:
+                            person.description = chosen["description"]
+                    _add_alias(session, person, name)
+                    if _link(session, doc.id, person, name, CONFIDENCE_WIKIDATA):
+                        linked.append((name, person.canonical_name, CONFIDENCE_WIKIDATA))
+                    continue
+
+            # 3. Junk guard: a single word that is not the surname of a Wikidata human
+            # (a bare given name such as "Ewa", spaCy noise like "Hornet") is skipped
+            if len(name.split()) < 2:
+                skipped.append(name)
+                continue
+
+            # 4. Internal registry fuzzy match — possible variant of a known person,
+            #    queued for review instead of auto-merging
+            person = find_fuzzy_candidate(session, name)
+            if person is not None:
+                if _link(session, doc.id, person, name, CONFIDENCE_MANUAL_REVIEW):
+                    linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
+                continue
+
+            # 5. New, unknown person (no Wikidata entry — local/less-known figure)
+            person = Person(canonical_name=name)
+            session.add(person)
+            session.flush()
             if _link(session, doc.id, person, name, CONFIDENCE_MANUAL_REVIEW):
                 linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
-            continue
 
-        # 5. New, unknown person (no Wikidata entry — local/less-known figure)
-        person = Person(canonical_name=name)
-        session.add(person)
-        session.flush()
-        if _link(session, doc.id, person, name, CONFIDENCE_MANUAL_REVIEW):
-            linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
-
-    logger.info("person resolution doc=%s: linked=%d skipped=%d", doc.id, len(linked), len(skipped))
-    return {"linked": linked, "skipped": skipped}
+        logger.info("person resolution doc=%s: linked=%d skipped=%d", doc.id, len(linked), len(skipped))
+        return {"linked": linked, "skipped": skipped}
 
 
 def list_manual_review(session) -> list[dict]:

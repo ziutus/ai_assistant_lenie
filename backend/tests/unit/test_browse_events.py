@@ -150,11 +150,13 @@ def test_retention_and_job():
         delete_expired_browse_events(session_factory=lambda: session)
     import worker
 
-    with patch("library.browse_events.delete_expired_browse_events", return_value=2) as browse:
+    with patch("library.browse_events.delete_expired_browse_events", return_value=2) as browse, \
+            patch("library.llm_usage.payloads.delete_expired_llm_payloads", return_value=4):
         with patch("library.search.audit_repository.delete_expired_interpretations", return_value=3) as interpretations:
             assert worker.execute(session, SimpleNamespace(type="retention_sweep")) == {
                 "browse_events": 2,
                 "interpretations": 3,
+                "llm_payloads": 4,
             }
     browse.assert_called_once()
     interpretations.assert_called_once()

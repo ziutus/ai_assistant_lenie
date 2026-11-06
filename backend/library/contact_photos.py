@@ -156,7 +156,7 @@ def generate_description(session, contact_id, body, *, photo_id=None):
         response = ai_ask(
             "Opisz załączone zdjęcie.", model=model, max_token_count=1200, temperature=0.1,
             system_prompt=VISUAL_PROMPT,
-            operation="contact_photo_description",
+            operation="contact_photo_description", store_payload=False,
             image_base64=base64.b64encode(image).decode("ascii"), image_media_type="image/jpeg",
         )
         description = response.response_text
@@ -305,7 +305,7 @@ def suggest_classification(session, photo_id, body):
             return _error("Klasyfikacja AI obsługuje JPEG i PNG.", 415)
         response = ai_ask(
             "Czy widać ludzi i ilu?", model=model, max_token_count=150, temperature=0,
-            system_prompt=CLASSIFICATION_PROMPT, operation="contact_photo_classification",
+            system_prompt=CLASSIFICATION_PROMPT, operation="contact_photo_classification", store_payload=False,
             image_base64=base64.b64encode(prepare_vision_image(image)).decode("ascii"), image_media_type="image/jpeg",
         )
         suggestion = json.loads(response.response_text)
