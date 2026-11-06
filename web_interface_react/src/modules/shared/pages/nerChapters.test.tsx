@@ -89,7 +89,36 @@ async function open() {
 }
 
 beforeEach(() => { vi.resetAllMocks(); mockApi(); });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("offers tone, period and highlighted passages in the right column of each content chapter", async () => {
+  const toneRow = {
+    chapter_position: 1, emotion: "gniewny", secondary_emotions: null, sentiment: "negatywne",
+    intensity: "wysoka", registers: null, evidence: null,
+  };
+  const span = {
+    id: 1, chapter_position: 1, role: "outlier", label: "złośliwy", quote: "Docinek w tekście rozdziału.",
+    note: null, importance: null, status: "proposed", model: "m",
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+    url.endsWith("/tones") ? { status: "success", enrichment_run_at: "2026-11-01T10:00:00", tones: [toneRow] }
+      : url.endsWith("/tone_spans") ? { status: "success", spans: [span] }
+        : { status: "success", time_periods: [], enrichment_run_at: null },
+  ), { status: 200 })));
+  await open();
+
+  const group = within(screen.getByRole("region", { name: "#1 Wstęp" })).getByLabelText("Ton i okres rozdziału 1");
+
+  expect(await within(group).findByText("gniewny")).toBeTruthy();
+  expect(within(group).getByRole("button", { name: "🎭 Oceń ton rozdziału" })).toBeTruthy();
+  expect(within(group).getByRole("button", { name: "⏳ Oceń okres rozdziału" })).toBeTruthy();
+  expect(await within(group).findByText("🔦 Wyróżnione fragmenty (1)")).toBeTruthy();
+  expect(within(group).getByText(/Docinek w tekście rozdziału/)).toBeTruthy();
+  // /ner does not highlight the passages in the sentences, so it offers no highlighting switch
+  expect(within(group).queryByLabelText(/Podświetlaj w tekście/)).toBeNull();
+  // a skipped (advertisement) chapter has no right-hand column
+  expect(screen.queryByLabelText("Ton i okres rozdziału 2")).toBeNull();
+});
 
 it("shows chapters with highlighted mentions, entity chips and skipped chapters", async () => {
   await open();

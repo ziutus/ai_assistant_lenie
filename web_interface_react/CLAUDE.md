@@ -104,7 +104,11 @@ quote that only matches after typography normalisation tints the whole paragraph
 "✓ Potwierdź" / "✗ Odrzuć" / "↺ Cofnij" (`PATCH /tone_spans/:id`; a rejected one is dimmed and never highlighted) and
 "⚖️ Ton bez fragmentów odstających" (`POST .../core_tone`) stores the chapter's tone computed without the outliers; the
 tone panel then shows it under the main tone (`core_tone`, reloaded through its `refreshKey`). "Podświetlaj w tekście"
-switches the marks off.
+switches the marks off. The same three panels (`TimePeriodsPanel`, `TonePanel`, `ToneSpansPanel`, grouped under the
+label "Ton i okres rozdziału N") sit in the right-hand column of every content chapter on `/ner/:id[/:chapter]`, under
+the dated-events block, so tone, period and passages can be judged next to the entities and events; `/ner` draws the
+sentences itself and does not highlight the passages, so the panel omits the highlighting switch there (the page owns
+one `useToneSpans` list and the `toneVersion` that reloads the tone panels).
 
 ### Skill hints
 

@@ -34,8 +34,9 @@ interface Props {
   compact: boolean;
   spans: ToneSpan[];
   onSpansChange: (spans: ToneSpan[]) => void;
-  highlight: boolean;
-  onHighlightChange: (value: boolean) => void;
+  /** Highlighting in the text; a host that does not highlight (`/ner`) omits both and the switch is not drawn. */
+  highlight?: boolean;
+  onHighlightChange?: (value: boolean) => void;
   /** Called after the chapter's tone changed (the tone without outliers was stored), so the tone panel reloads. */
   onToneChanged?: () => void;
 }
@@ -148,10 +149,12 @@ const ToneSpansPanel: React.FC<Props> = ({
       <p style={{ fontSize: "0.8em", color: "#64748b", margin: "6px 0" }}>
         Na żądanie: model wskazuje fragmenty o odmiennym tonie (np. złośliwe) i zdania kluczowe. Nic nie uruchamia się samo.
       </p>
-      <label style={{ fontSize: "0.82em", display: "block", margin: "4px 0" }}>
-        <input type="checkbox" checked={highlight} onChange={(event) => onHighlightChange(event.target.checked)} />
-        {" "}Podświetlaj w tekście
-      </label>
+      {onHighlightChange && (
+        <label style={{ fontSize: "0.82em", display: "block", margin: "4px 0" }}>
+          <input type="checkbox" checked={highlight ?? true} onChange={(event) => onHighlightChange(event.target.checked)} />
+          {" "}Podświetlaj w tekście
+        </label>
+      )}
       <ChapterModelPicker state={modelState} disabled={busy !== null} />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         <button type="button" disabled={busy !== null} onClick={() => void detect()}
