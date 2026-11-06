@@ -716,6 +716,23 @@ def reopen_document_editing(doc_id: int):
     return {"status": "success", **result}, 200
 
 
+@app.route('/document/<int:doc_id>/country_detections', methods=['GET'])
+def country_detections_get(doc_id: int):
+    """Full country detection audit for a document, newest runs first."""
+    from library.country_detection_audit import list_detections
+
+    try:
+        limit = int(request.args.get("limit", "5"))
+        if limit <= 0:
+            raise ValueError
+    except ValueError:
+        return {"status": "error", "message": "limit must be a positive integer"}, 400
+    session = get_scoped_session()
+    if Document.get_by_id(session, doc_id) is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    return {"detections": list_detections(session, doc_id, limit=limit)}, 200
+
+
 @app.route('/document/<int:doc_id>/countries/detect', methods=['POST'])
 def detect_countries_for_document(doc_id: int):
     """Detect country tags independently of chunk analysis."""
@@ -2476,14 +2493,20 @@ def website_entities_describe(entity_id: int):
             return jsonify(status="error", message="Nie znaleziono w tekście rozdziału z tą organizacją."), 404
         prompt = custom_prompt if custom_prompt is not None else build_organization_prompt(
             entity.entity_text, chapter[0], chapter[1], doc_title)
-        result = run_organization_description(prompt, model)
+        from library.llm_usage.context import document_usage_context
+
+        with document_usage_context(entity.document_id):
+            result = run_organization_description(prompt, model)
         return jsonify(status="success", result_status=result["status"], description=result["description"],
                        model=result["model"], latency_ms=result["latency_ms"],
                        error_code=result.get("error_code"), chapter_title=chapter[0]), 200
     sentences = context_sentences(text, forms)
     if not sentences:
         return jsonify(status="error", message="Nie znaleziono w tekście zdań z tym wydarzeniem."), 404
-    description = describe_event(entity.entity_text, sentences, doc_title)
+    from library.llm_usage.context import document_usage_context
+
+    with document_usage_context(entity.document_id):
+        description = describe_event(entity.entity_text, sentences, doc_title)
     return jsonify(status="success", description=description, sentences=sentences), 200
 
 
@@ -2560,7 +2583,13 @@ def website_entities_describe_arena(entity_id: int):
 
     # The DB session is not shared with the workers: they only call the model with the finished prompt.
     pool = ThreadPoolExecutor(max_workers=len(models))
-    futures = {model: pool.submit(run_organization_description, prompt, model) for model in models}
+    from contextvars import copy_context
+
+    from library.llm_usage.context import document_usage_context
+
+    with document_usage_context(entity.document_id):
+        futures = {model: pool.submit(copy_context().run, run_organization_description, prompt, model)
+                   for model in models}
     wait(futures.values(), timeout=ARENA_DEADLINE_SECONDS)
     results = []
     for model, future in futures.items():
@@ -4894,7 +4923,10 @@ def generate_document_search_terms(document_id: int):
 
     from library.search_terms import generate_search_terms
 
-    terms = generate_search_terms(text, doc.title or "")
+    from library.llm_usage.context import document_usage_context
+
+    with document_usage_context(doc.id):
+        terms = generate_search_terms(text, doc.title or "")
     if not terms:
         return {"status": "error", "message": "Could not generate search terms"}, 502
     doc.search_terms = ", ".join(terms)

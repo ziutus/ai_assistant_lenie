@@ -22,6 +22,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
+    JSON,
     Index,
     Numeric,
     SmallInteger,
@@ -3203,6 +3204,37 @@ class LlmPricing(Base):
         )
 
 
+class LlmCallPayload(Base):
+    """Expiring request/response audit; usage accounting survives payload deletion."""
+
+    __tablename__ = "llm_call_payloads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    usage_log_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("llm_usage_logs.id", ondelete="SET NULL"),
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="SET NULL"),
+    )
+    operation: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(100))
+    system_prompt: Mapped[str | None] = mapped_column(Text)
+    request_text: Mapped[str | None] = mapped_column(Text)
+    response_text: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    request_extra: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    request_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    response_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_llm_call_payloads_usage_log_id", "usage_log_id"),
+        Index("ix_llm_call_payloads_document_created", "document_id", "created_at"),
+        Index("ix_llm_call_payloads_created_at", "created_at"),
+    )
+
+
 class LlmUsageLog(Base):
     """One record per LLM/embedding call, independent of provider and model.
 
@@ -4971,3 +5003,43 @@ class CountryRelationEvidence(Base):
 
     assessment: Mapped["CountryRelationAssessment"] = relationship(back_populates="evidence")
     event: Mapped["GeoEvent"] = relationship(lazy="joined")
+
+
+class CountryDetectionRun(Base):
+    """Country tagging input, raw LLM exchange and resulting added tags."""
+
+    __tablename__ = "country_detection_runs"
+    __table_args__ = (Index("ix_country_detection_runs_document_created", "document_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    analysis_run_id: Mapped[int | None] = mapped_column(BigInteger)
+    trigger: Mapped[str] = mapped_column(String(30))
+    text_source: Mapped[str] = mapped_column(String(20))
+    text_chars: Mapped[int] = mapped_column(Integer)
+    threshold: Mapped[int] = mapped_column(Integer)
+    llm_called: Mapped[bool] = mapped_column(Boolean)
+    llm_model: Mapped[str | None] = mapped_column(String(100))
+    llm_prompt: Mapped[str | None] = mapped_column(Text)
+    llm_response: Mapped[str | None] = mapped_column(Text)
+    llm_usage_log_id: Mapped[int | None] = mapped_column(BigInteger)
+    llm_error: Mapped[str | None] = mapped_column(Text)
+    tags_before: Mapped[str | None] = mapped_column(Text)
+    tags_added: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CountryTagDecision(Base):
+    """One final decision per country candidate in a detection run."""
+
+    __tablename__ = "country_tag_decisions"
+    __table_args__ = (Index("ix_country_tag_decisions_detection_run_id", "detection_run_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    detection_run_id: Mapped[int] = mapped_column(ForeignKey("country_detection_runs.id", ondelete="CASCADE"))
+    country_slug: Mapped[str] = mapped_column(String(60))
+    country_name: Mapped[str] = mapped_column(String(100))
+    mention_count: Mapped[int] = mapped_column(Integer)
+    decision: Mapped[str] = mapped_column(String(30))
+    snippets: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())

@@ -77,7 +77,8 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
            operation: str = "ai_ask", search_interpretation_log_id: int | None = None,
            arklabs_stateful: bool = False, document_id: int | None = None,
            analysis_job_id: str | None = None, analysis_run_id: int | None = None,
-           image_base64: str | None = None, image_media_type: str = "image/jpeg") -> AiResponse:
+           image_base64: str | None = None, image_media_type: str = "image/jpeg",
+           store_payload: bool = True) -> AiResponse:
 
     registry_provider = _registry_provider(model)
 
@@ -183,6 +184,22 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
     if response_format is not None and provider not in _RESPONSE_FORMAT_PROVIDERS:
         raise ValueError(f"response_format is not supported for model {model}")
 
+    def audit_payload(response_text=None, error=None):
+        try:
+            from library.llm_usage.payloads import build_payload, payload_enabled
+
+            if not store_payload or not payload_enabled():
+                return None
+            extra = {"response_format": response_format, "temperature": temperature,
+                     "max_token_count": max_token_count}
+            if image_base64 is not None:
+                extra["image"] = "omitted"
+            return build_payload(system_prompt=system_prompt, request_text=query,
+                                 response_text=response_text, error=error, request_extra=extra)
+        except (Exception, SystemExit):
+            logger.warning("Building LLM audit payload failed")
+            return None
+
     started = time.monotonic()
     try:
         ai_response = call()
@@ -191,6 +208,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
             operation=operation,
             provider=provider,
             model=model,
+            payload=audit_payload(error=str(exc)),
             success=False,
             error_code=type(exc).__name__,
             latency_ms=int((time.monotonic() - started) * 1000),
@@ -208,6 +226,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
             reported = {"reported_cost": cost, "reported_cost_currency": "USD"}
     ai_response.usage = _record_usage(
         **reported,
+        payload=audit_payload(response_text=ai_response.response_text),
         operation=operation,
         provider=provider,
         model=model,

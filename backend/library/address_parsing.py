@@ -53,7 +53,7 @@ def parse_address_text(text) -> dict:
         response = ai_ask(
             text, model=model, temperature=0.0, max_token_count=1000,
             system_prompt=ADDRESS_SYSTEM_PROMPT, response_format=ADDRESS_RESPONSE_SCHEMA,
-            operation="address_parse",
+            operation="address_parse", store_payload=False,
         )
         fields = json.loads(response.response_text)
         if not isinstance(fields, dict) or fields.keys() != empty.keys():

@@ -20,6 +20,7 @@ Free-tier keys may retain content up to 30 days — do not send private
 documents (e.g. contact data, private Obsidian notes) through this client.
 """
 
+import json
 import logging
 
 import requests
@@ -86,6 +87,34 @@ def _validate_questions(questions):
 
 
 def _request_decision(state, questions, model, key, url, service, operation):
+    captured = []
+    error = None
+    try:
+        return _request_decision_response(state, questions, model, key, url, service, operation,
+                                          capture=lambda value: captured.append(value))
+    except Exception as exc:
+        error = str(exc)
+        raise
+    finally:
+        try:
+            from library.llm_usage.payloads import build_payload, payload_enabled, store_payload_standalone
+
+            if payload_enabled():
+                raw_text = captured[0] if captured else None
+                store_payload_standalone(
+                    operation="entity_sense_decision" if "sense" in questions else "narrative_decision",
+                    provider="fabryka" if service == "fabryka" else "openrouter-decisions", model=model,
+                    payload=build_payload(
+                        system_prompt=None, request_text=json.dumps({"state": state, "questions": questions},
+                                                                   ensure_ascii=False),
+                        response_text=raw_text, error=error, request_extra={"state": state, "questions": questions},
+                    ),
+                )
+        except (Exception, SystemExit):
+            logger.warning("Decision payload audit failed")
+
+
+def _request_decision_response(state, questions, model, key, url, service, operation, capture):
     try:
         resp = observed_request(
             service=service, operation=operation,
@@ -96,6 +125,8 @@ def _request_decision(state, questions, model, key, url, service, operation):
                 timeout=REQUEST_TIMEOUT_S,
             ),
         )
+        # Preserve the complete envelope before HTTP/JSON validation, including failed responses.
+        capture(resp.text if isinstance(resp.text, str) else None)
         if resp.status_code == 429:
             raise FabrykaRateLimited(f"{service} allowance exhausted (HTTP 429)")
         if resp.status_code in (502, 503, 504):

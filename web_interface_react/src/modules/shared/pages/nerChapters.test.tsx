@@ -14,9 +14,9 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
-      return <div data-testid="panel">
+      return <div data-testid="panel" data-hide-countries={hideCountriesRow ? "yes" : "no"}>
         <button onClick={() => onEntitiesChanged?.()}>zmień encje</button>
         {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
         <button type="button" onClick={() => onShowInText?.(
@@ -329,21 +329,62 @@ it("announces the channel glossary and what it repaired in this document", async
   mockApi({ "/ner_channel_glossary/applications": {
     author: "Na Wschód od Bliskiego Wschodu",
     entries: [{ id: 1, canonical_name: "Pete Hegseth", aliases: ["He H"], fuzzy: true }],
-    applications: [{ original_text: "Hekset", replacement_text: "Hegseth", occurrences: 10 }],
+    applications: [
+      { original_text: "w Kijowie", replacement_text: "Kyiv", occurrences: 10 },
+      { original_text: "Hekset", replacement_text: "Hegseth", occurrences: 10 },
+    ],
   } });
   await open();
-  const note = await screen.findByRole("note", { name: "Słownik kanału" });
-  expect(note.textContent).toContain("Obowiązuje słownik nazw kanału „Na Wschód od Bliskiego Wschodu”");
+  const chapter = screen.getByRole("region", { name: "#1 Wstęp" });
+  const note = await within(chapter).findByRole("note", { name: "Słownik kanału" });
+  expect(note.textContent).toContain("Słownik kanału „Na Wschód od Bliskiego Wschodu”");
   expect(note.textContent).toContain("Pete Hegseth");
-  expect(note.textContent).toContain("Hekset → Hegseth ×10");
-  expect(within(note).getByRole("link", { name: /Słownik kanału/ }).getAttribute("href"))
+  // Only the phrase that occurs in this chapter is listed (one per line), with the count found here.
+  const lines = within(note).getAllByRole("listitem");
+  expect(lines).toHaveLength(1);
+  expect(lines[0].textContent).toContain("w Kijowie → Kyiv ×1");
+  expect(note.textContent).not.toContain("Hekset");
+  expect(within(note).getByRole("link", { name: /Słownik kanału →/ }).getAttribute("href"))
     .toBe("/ner-glossary?author=Na%20Wsch%C3%B3d%20od%20Bliskiego%20Wschodu");
+});
+
+const glossaryApi = { "/ner_channel_glossary/applications": {
+  author: "Kanał", entries: [{ id: 1, canonical_name: "Kyiv", aliases: [], fuzzy: false }],
+  applications: [{ original_text: "w Kijowie", replacement_text: "Kyiv", occurrences: 3 }],
+} };
+
+it("highlights a glossary phrase in the text from its button and keeps it in the address", async () => {
+  mockApi(glossaryApi);
+  await open();
+  const note = await within(screen.getByRole("region", { name: "#1 Wstęp" })).findByRole("note", { name: "Słownik kanału" });
+  expect(sentenceBlock().querySelector("mark[data-focus-mark]")).toBeNull();
+  fireEvent.click(within(note).getByRole("button", { name: /Podświetl/ }));
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
+  expect(screen.getByRole("status").textContent).toContain("w Kijowie");
+  fireEvent.click(within(note).getByRole("button", { name: /Wyczyść/ }));
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")).toBeNull());
+});
+
+it("restores the glossary highlight from the address", async () => {
+  mockApi(glossaryApi);
+  render(<MemoryRouter initialEntries={["/ner/42?glossary=w%20Kijowie"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
+  await screen.findByRole("region", { name: "#1 Wstęp" });
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
+});
+
+it("hides the document-wide countries row on a single chapter but not on the whole-document view", async () => {
+  await open();
+  expect(screen.getByTestId("panel").getAttribute("data-hide-countries")).toBe("no");
+  cleanup();
+  render(<MemoryRouter initialEntries={["/ner/42/1"]}><Routes><Route path="/ner/:id/:chapter" element={<NerChapters />} /></Routes></MemoryRouter>);
+  await screen.findByRole("region", { name: "#1 Wstęp" });
+  expect(screen.getByTestId("panel").getAttribute("data-hide-countries")).toBe("yes");
 });
 
 it("says the glossary is empty for a channel without entries and hides the note without a channel", async () => {
   mockApi({ "/ner_channel_glossary/applications": { author: "Inny kanał", entries: [], applications: [] } });
   await open();
-  expect((await screen.findByRole("note", { name: "Słownik kanału" })).textContent).toContain("jest pusty");
+  expect((await screen.findAllByRole("note", { name: "Słownik kanału" }))[0].textContent).toContain("jest pusty");
   cleanup();
   mockApi();
   await open();

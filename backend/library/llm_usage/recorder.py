@@ -170,6 +170,7 @@ def record_llm_usage(
     success: bool = True,
     error_code: str | None = None,
     latency_ms: int | None = None,
+    payload: dict | None = None,
     session_factory=get_session,
 ) -> UsageRecord:
     """Persist exactly one llm_usage_logs row for one LLM/embedding call.
@@ -230,6 +231,12 @@ def record_llm_usage(
             latency_ms=latency_ms,
         )
         session.add(log)
+        if payload is not None:
+            session.flush()
+            from library.llm_usage.payloads import store_payload
+
+            store_payload(session, usage_log_id=log.id, document_id=document_id,
+                          operation=operation, provider=provider, model=model, payload=payload)
         session.commit()
         return UsageRecord(
             usage_log_id=log.id,
