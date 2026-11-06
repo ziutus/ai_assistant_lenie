@@ -27,7 +27,9 @@ def detect_document_countries(session, doc_id: int) -> dict:
 
     # Channel euphemisms ("państwo z gwiazdką" = Izrael) are resolved on a copy of the text.
     text = apply_channel_glossary_text(session, doc_id, text)
-    detected = article_tagging.extract_countries_hybrid(text, doc.title or "")
+    audit = {}
+    tags_before = doc.tags
+    detected = article_tagging.extract_countries_hybrid(text, doc.title or "", audit=audit)
     existing = list(dict.fromkeys(t.strip() for t in (doc.tags or "").split(",") if t.strip()))
     seen = set(existing)
     added = []
@@ -38,5 +40,9 @@ def detect_document_countries(session, doc_id: int) -> dict:
             added.append(tag[5:])
     doc.tags = ",".join(existing)
     countries = countries_from_tags(doc.tags)
+    from library.country_detection_audit import record_detection
+
+    detection_id = record_detection(session, doc_id, audit, trigger="detect_button", text_source="document",
+                                    tags_before=tags_before, tags_added=added)
     session.commit()
-    return {"countries": countries, "added": added}
+    return {"countries": countries, "added": added, "detection_id": detection_id}

@@ -34,9 +34,9 @@ class FakeDoc:
 
 def test_country_tags_are_added_when_thematic_tagging_is_empty(monkeypatch):
     doc = FakeDoc()
-    monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: [])
+    monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title, audit=None: [])
     monkeypatch.setattr(
-        "library.article_tagging.extract_countries_hybrid", lambda text, title: ["kraj-sudan", "kraj-katar"],
+        "library.article_tagging.extract_countries_hybrid", lambda text, title, audit=None: ["kraj-sudan", "kraj-katar"],
     )
 
     _apply_tags(doc, "Sudan i Katar są omawiane w artykule.")
@@ -97,8 +97,8 @@ def article_env(monkeypatch, session):
         return []
 
     monkeypatch.setattr("library.article_tagging.tag_article_with_llm", fake_tag_article)
-    monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
-    monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: [])
+    monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title, audit=None: [])
+    monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title, audit=None: [])
     # Keep pipeline routing tests independent of local Vault/NER/LLM configuration.
     monkeypatch.setattr("library.entity_service.extract_entities", lambda _text: [])
     monkeypatch.setattr("library.entity_service.is_available", lambda: False)
@@ -289,7 +289,7 @@ class TestArticleMode:
 
         monkeypatch.setattr("library.article_tagging.tag_article_with_llm", fake_tag_article)
         monkeypatch.setattr(
-            "library.article_tagging.extract_countries_hybrid", lambda text, title: ["kraj-polska"],
+            "library.article_tagging.extract_countries_hybrid", lambda text, title, audit=None: ["kraj-polska"],
         )
 
         service = DocumentAnalysisService(session)
@@ -301,7 +301,7 @@ class TestArticleMode:
     def test_generates_search_terms_once_after_full_analysis(self, session, article_env, monkeypatch):
         doc = FakeDoc()
         monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
-        monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: ["NDA", "audyt umowy"])
+        monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title, audit=None: ["NDA", "audyt umowy"])
 
         DocumentAnalysisService(session).create_run(
             doc_id=42, model="test-model", mode="article", chunk_size=300,
@@ -323,9 +323,9 @@ class TestArticleMode:
         doc = FakeDoc()
         doc.tags = "kraj-niemcy"
         monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
-        monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: ["wojsko"])
+        monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title, audit=None: ["wojsko"])
         monkeypatch.setattr(
-            "library.article_tagging.extract_countries_hybrid", lambda text, title: ["kraj-niemcy", "kraj-polska"],
+            "library.article_tagging.extract_countries_hybrid", lambda text, title, audit=None: ["kraj-niemcy", "kraj-polska"],
         )
 
         service = DocumentAnalysisService(session)
@@ -363,7 +363,7 @@ class TestArticleMode:
             return ["geopolityka"]
 
         monkeypatch.setattr("library.article_tagging.tag_article_with_llm", fake_tag_article)
-        monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
+        monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title, audit=None: [])
 
         service = DocumentAnalysisService(session)
         service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=5000)

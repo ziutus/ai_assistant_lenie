@@ -714,6 +714,23 @@ def reopen_document_editing(doc_id: int):
     return {"status": "success", **result}, 200
 
 
+@app.route('/document/<int:doc_id>/country_detections', methods=['GET'])
+def country_detections_get(doc_id: int):
+    """Full country detection audit for a document, newest runs first."""
+    from library.country_detection_audit import list_detections
+
+    try:
+        limit = int(request.args.get("limit", "5"))
+        if limit <= 0:
+            raise ValueError
+    except ValueError:
+        return {"status": "error", "message": "limit must be a positive integer"}, 400
+    session = get_scoped_session()
+    if Document.get_by_id(session, doc_id) is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    return {"detections": list_detections(session, doc_id, limit=limit)}, 200
+
+
 @app.route('/document/<int:doc_id>/countries/detect', methods=['POST'])
 def detect_countries_for_document(doc_id: int):
     """Detect country tags independently of chunk analysis."""

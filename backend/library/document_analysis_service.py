@@ -466,13 +466,20 @@ def _apply_tags(doc: Document, text: str) -> None:
 
         # Channel euphemisms ("państwo z gwiazdką" = Izrael) are resolved on a copy of the text.
         country_text = apply_channel_glossary_text(session, doc.id, text)
-    country_tags = extract_countries_hybrid(country_text, doc.title or "")
+    audit = {}
+    tags_before = doc.tags
+    country_tags = extract_countries_hybrid(country_text, doc.title or "", audit=audit)
     new_tags = article_tags + country_tags
-    if not new_tags:
-        return
     existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
     existing_set = set(existing)
-    doc.tags = ",".join(existing + [t for t in new_tags if t not in existing_set])
+    if new_tags:
+        doc.tags = ",".join(existing + [t for t in new_tags if t not in existing_set])
+    if session is not None:
+        from library.country_detection_audit import record_detection
+
+        record_detection(session, doc.id, audit, trigger="analysis_run", text_source="synthesis",
+                         tags_before=tags_before,
+                         tags_added=list(dict.fromkeys(t[5:] for t in country_tags if t not in existing_set)))
 
 
 def stale_duplicate_runs(runs: list) -> list:
