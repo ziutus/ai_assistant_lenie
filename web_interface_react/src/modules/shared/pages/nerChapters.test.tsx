@@ -329,21 +329,27 @@ it("announces the channel glossary and what it repaired in this document", async
   mockApi({ "/ner_channel_glossary/applications": {
     author: "Na Wschód od Bliskiego Wschodu",
     entries: [{ id: 1, canonical_name: "Pete Hegseth", aliases: ["He H"], fuzzy: true }],
-    applications: [{ original_text: "Hekset", replacement_text: "Hegseth", occurrences: 10 }],
+    applications: [
+      { original_text: "w Kijowie", replacement_text: "Kyiv", occurrences: 10 },
+      { original_text: "Hekset", replacement_text: "Hegseth", occurrences: 10 },
+    ],
   } });
   await open();
-  const note = await screen.findByRole("note", { name: "Słownik kanału" });
-  expect(note.textContent).toContain("Obowiązuje słownik nazw kanału „Na Wschód od Bliskiego Wschodu”");
+  const chapter = screen.getByRole("region", { name: "#1 Wstęp" });
+  const note = await within(chapter).findByRole("note", { name: "Słownik kanału" });
+  expect(note.textContent).toContain("Słownik kanału „Na Wschód od Bliskiego Wschodu”");
   expect(note.textContent).toContain("Pete Hegseth");
-  expect(note.textContent).toContain("Hekset → Hegseth ×10");
-  expect(within(note).getByRole("link", { name: /Słownik kanału/ }).getAttribute("href"))
+  // Only the phrase that occurs in this chapter is listed, with the count found here (not the document total).
+  expect(note.textContent).toContain("w Kijowie → Kyiv ×1");
+  expect(note.textContent).not.toContain("Hekset");
+  expect(within(note).getByRole("link", { name: /Słownik kanału →/ }).getAttribute("href"))
     .toBe("/ner-glossary?author=Na%20Wsch%C3%B3d%20od%20Bliskiego%20Wschodu");
 });
 
 it("says the glossary is empty for a channel without entries and hides the note without a channel", async () => {
   mockApi({ "/ner_channel_glossary/applications": { author: "Inny kanał", entries: [], applications: [] } });
   await open();
-  expect((await screen.findByRole("note", { name: "Słownik kanału" })).textContent).toContain("jest pusty");
+  expect((await screen.findAllByRole("note", { name: "Słownik kanału" }))[0].textContent).toContain("jest pusty");
   cleanup();
   mockApi();
   await open();

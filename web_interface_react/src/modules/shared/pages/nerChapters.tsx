@@ -139,6 +139,39 @@ type GlossaryInfo = {
   applications: { original_text: string; replacement_text: string; occurrences: number }[];
 };
 
+// Occurrences of a glossary phrase in a chapter's sentences. The stored text is never changed (the repair is
+// applied to a copy before NER), so the original wording is still there to find.
+const countPhrase = (sentences: { text: string }[] | undefined, phrase: string) => {
+  const needle = phrase.trim().toLocaleLowerCase("pl");
+  if (!needle) return 0;
+  return (sentences ?? []).reduce((sum, sentence) => sum + sentence.text.toLocaleLowerCase("pl").split(needle).length - 1, 0);
+};
+
+const ChapterGlossary = ({ glossary, section }: { glossary: GlossaryInfo; section: Section }) => {
+  if (!glossary.author) return null;
+  const used = glossary.applications
+    .map((app) => ({ app, found: countPhrase(section.sentences, app.original_text) }))
+    .filter((row) => row.found > 0);
+  return (
+    <div role="note" aria-label="Słownik kanału"
+      style={{ marginTop: 8, fontSize: "0.85em", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 6, padding: "6px 10px" }}>
+      <strong>📖 Słownik kanału „{glossary.author}”</strong>
+      {glossary.entries.length === 0 ? <> jest pusty — poprawki transkrypcji nie obowiązują.</> : <>
+        {" "}({glossary.entries.length} nazw). Przed rozpoznawaniem encji kopia transkrypcji jest poprawiana (zapisany tekst się nie zmienia).
+        {used.length > 0
+          ? <div>W tym rozdziale użyto:{" "}
+              {used.map(({ app, found }) => `${app.original_text} → ${app.replacement_text} ×${found}`).join(", ")}.</div>
+          : <div>W tym rozdziale żadne wyrażenie ze słownika nie wymagało poprawki.</div>}
+        <details style={{ marginTop: 2 }}>
+          <summary>Nazwy w słowniku</summary>
+          {glossary.entries.map((entry) => entry.canonical_name).join(", ")}
+        </details>
+      </>}
+      {" "}<Link to={`/ner-glossary?author=${encodeURIComponent(glossary.author)}`}>Słownik kanału →</Link>
+    </div>
+  );
+};
+
 const NerChapters = () => {
   const { id, chapter } = useParams();
   const navigate = useNavigate();
@@ -520,21 +553,6 @@ const NerChapters = () => {
         Encje są zapisane dla całego dokumentu: poprawka (nazwa, usunięcie, wykluczenie, scalenie) dotyczy wszystkich
         rozdziałów. Rozdziały typu reklama, szum i źródła są pomijane przez NER (typ ustawisz w edytorze albo przyciskiem „Oznacz jako szum”, który usuwa też encje występujące tylko w tym rozdziale).
       </div>
-      {glossary?.author && (
-        <div role="note" aria-label="Słownik kanału"
-          style={{ fontSize: "0.85em", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
-          {glossary.entries.length > 0 ? <>
-            📖 Obowiązuje słownik nazw kanału „{glossary.author}” ({glossary.entries.length}:{" "}
-            {glossary.entries.map((entry) => entry.canonical_name).join(", ")}). Przed rozpoznawaniem encji kopia
-            transkrypcji jest poprawiana (zapisany tekst się nie zmienia).
-            {glossary.applications.length > 0
-              ? <> Przy ostatnim odświeżeniu poprawiono:{" "}
-                  {glossary.applications.map((app) => `${app.original_text} → ${app.replacement_text} ×${app.occurrences}`).join(", ")}.</>
-              : " Przy ostatnim odświeżeniu nic nie wymagało poprawki (albo encje nie były jeszcze odświeżone po dodaniu wpisów)."}
-          </> : <>Słownik nazw kanału „{glossary.author}” jest pusty — poprawki transkrypcji nie obowiązują.</>}
-          {" "}<Link to={`/ner-glossary?author=${encodeURIComponent(glossary.author)}`}>Słownik kanału →</Link>
-        </div>
-      )}
       {loadError && <p role="alert" style={{ color: "#a33" }}>{loadError}</p>}
       {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
@@ -733,6 +751,7 @@ const NerChapters = () => {
                               ))}
                             </div>
                           )}
+                          {glossary && <ChapterGlossary glossary={glossary} section={section} />}
                           {loadingEntities && <small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
                           {!loadingEntities && count === 0 && entityData?.has_entities !== false && (
                             <small style={{ color: "#64748b" }}>Brak encji w tym rozdziale.</small>
