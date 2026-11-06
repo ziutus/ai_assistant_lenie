@@ -29,6 +29,7 @@ from library.external_service_events import observed_request
 logger = logging.getLogger(__name__)
 
 DECISIONS_URL = "https://fabryka.ai/v1/systemone"
+OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 DEFAULT_MODEL = "basal-1.5-mini"
 REQUEST_TIMEOUT_S = 60
 MAX_QUESTIONS = 8
@@ -40,11 +41,19 @@ class FabrykaError(Exception):
 
 
 class FabrykaNotConfigured(FabrykaError):
-    """FABRYKA_API_KEY is missing."""
+    """The provider is disabled or its API key is missing."""
 
 
 class FabrykaUnexpectedResponse(FabrykaError):
     """The API answered 200 but not in a shape this client understands."""
+
+
+class FabrykaRateLimited(FabrykaError):
+    """The daily request allowance has been exhausted (HTTP 429)."""
+
+
+class FabrykaUnavailable(FabrykaError):
+    """The upstream service is temporarily unavailable."""
 
 
 def _api_key() -> str | None:
@@ -60,6 +69,14 @@ def decide(state, questions: dict[str, dict], model: str = DEFAULT_MODEL) -> dic
     without a key, ``FabrykaError`` for HTTP/transport failures, and
     ``ValueError`` for requests the API would reject with 422 anyway.
     """
+    _validate_questions(questions)
+    key = _api_key()
+    if not key:
+        raise FabrykaNotConfigured("FABRYKA_API_KEY not configured")
+    return _request_decision(state, questions, model, key, DECISIONS_URL, "fabryka", "systemone")
+
+
+def _validate_questions(questions):
     if not questions or len(questions) > MAX_QUESTIONS:
         raise ValueError(f"questions must hold 1..{MAX_QUESTIONS} entries")
     for name, q in questions.items():
@@ -67,28 +84,84 @@ def decide(state, questions: dict[str, dict], model: str = DEFAULT_MODEL) -> dic
         if not instructions or len(instructions) > MAX_INSTRUCTIONS_CHARS:
             raise ValueError(f"question {name!r}: instructions must be 1..{MAX_INSTRUCTIONS_CHARS} chars")
 
-    key = _api_key()
-    if not key:
-        raise FabrykaNotConfigured("FABRYKA_API_KEY not configured")
 
+def _request_decision(state, questions, model, key, url, service, operation):
     try:
         resp = observed_request(
-            service="fabryka", operation="systemone",
+            service=service, operation=operation,
             request_fn=lambda: requests.post(
-                DECISIONS_URL,
+                url,
                 json={"model": model, "state": state, "questions": questions},
                 headers={"Authorization": f"Bearer {key}"},
                 timeout=REQUEST_TIMEOUT_S,
             ),
         )
+        if resp.status_code == 429:
+            raise FabrykaRateLimited(f"{service} allowance exhausted (HTTP 429)")
+        if resp.status_code in (502, 503, 504):
+            raise FabrykaUnavailable(f"{service} unavailable (HTTP {resp.status_code})")
         if resp.status_code in (401, 403):
-            raise FabrykaError(f"Fabryka rejected the configured key (HTTP {resp.status_code})")
+            raise FabrykaError(f"{service} rejected the configured key (HTTP {resp.status_code})")
         resp.raise_for_status()
         return resp.json()
     except requests.RequestException as e:
-        raise FabrykaError(f"Fabryka request failed: {e}") from e
+        raise FabrykaError(f"{service} request failed: {e}") from e
     except ValueError as e:
-        raise FabrykaError(f"Fabryka returned invalid JSON: {e}") from e
+        raise FabrykaError(f"{service} returned invalid JSON: {e}") from e
+
+
+def choose(state, instructions, options, model=DEFAULT_MODEL) -> tuple[str, dict]:
+    """Return a validated choice and the unchanged answer entry.
+
+    Choice payloads are not yet documented by the upstream API. Accept named
+    labels or a probability distribution; never infer a choice from free text.
+    """
+    result = decide(state, _choice_question(instructions, options), model=model)
+    return _parse_choice(result, options)
+
+
+def _choice_question(instructions, options):
+    return {"sense": {"type": "choice", "instructions": instructions, "criteria": options}}
+
+
+def choose_openrouter(state, instructions, options, model) -> tuple[str, dict]:
+    """Return a choice and an answer copy with envelope usage for cost reporting.
+
+    The shared parser preserves the original answer; only this new API adds
+    ``usage`` from the envelope, without mutating the response.
+    """
+    from library.config_loader import load_config
+
+    config = load_config()
+    key = config.get("OPENROUTER_API_KEY")
+    enabled = str(config.get("OPENROUTER_ENABLED", False)).strip().casefold()
+    if not key or enabled in {"false", "0", "no", "off", "none", ""}:
+        raise FabrykaNotConfigured("OpenRouter disabled or OPENROUTER_API_KEY not configured")
+    questions = _choice_question(instructions, options)
+    _validate_questions(questions)
+    result = _request_decision(state, questions, model, key, OPENROUTER_DECISIONS_URL,
+                               "openrouter_decisions", "decisions")
+    selected, answer = _parse_choice(result, options)
+    return selected, {**answer, "usage": result.get("usage", {})}
+
+
+def _parse_choice(result, options):
+    answer = result.get("answers", {}).get("sense") if isinstance(result, dict) and isinstance(
+        result.get("answers"), dict
+    ) else None
+    if isinstance(answer, dict):
+        for key in ("choice", "answer", "value", "label", "selected"):
+            selected = answer.get(key)
+            if isinstance(selected, str) and selected in options:
+                return selected, answer
+        probabilities = answer.get("probabilities")
+        if isinstance(probabilities, dict) and probabilities and all(
+            key in options and isinstance(value, (float, int)) and not isinstance(value, bool)
+            and 0 <= value <= 1 for key, value in probabilities.items()
+        ):
+            return max(probabilities, key=probabilities.get), answer
+    logger.warning("Unrecognised Fabryka choice response: %s", repr(result)[:500])
+    raise FabrykaUnexpectedResponse("no valid choice found in Fabryka response")
 
 
 def yes_probability(text: str, statement: str, model: str = DEFAULT_MODEL) -> float:

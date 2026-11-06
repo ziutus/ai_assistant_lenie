@@ -200,7 +200,10 @@ kodzie (zamiast kolejnej ręcznej reguły).
 
 | T32 | Kraj odrzucony przez gazetteer krajów: brak wariantu „Republika X”, limit końcówki i niejednoznaczny pień | oficjalna nazwa z członem „Republika” nie ma wzorca, końcówka dłuższa niż 4 znaki przekracza limit `stem*`, a szeroki pień innego kraju (`dominik*`) pasuje też do pełnej nazwy (`dominikan*`), więc wynik jest niejednoznaczny i `canonical_country_name()` zwraca `None`; nazwa idzie do geokodera jak zwykłe miejsce | „Republiki Dominikańskiej”, „Dominikana” (Dominika vs Dominikana) | E047 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T33,
+| T33 | Nazwa kraju zapisana przez STT jak imię lub nazwisko | transkrypcja daje „Salvador” zamiast „Salwador”; spaCy typuje jednowyrazowe słowo jako `persName`, a rejestr osób pomija samo imię, więc nic nie rozstrzyga znaczenia z kontekstu | „Salvador walczy na Haiti”, „prezydent Salvadoru Bukele” | E048 |
+| T34 | Eufemizm kanału zamiast nazwy organizacji | autor kanału nazywa organizację omownie („siewcy pokoju” = CIA); żadna reguła nie zna tej frazy, więc nie powstaje encja organizacji | „W Wenezueli siewcy pokoju dostarczali informacje wywiadowcze…” | E050 |
+
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T35,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -743,3 +746,36 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — Dominikana: `republik* dominikansk*`, `dominikansk*`, `dominikan*`; Dominika: zamknięta lista `dominika/dominiki/dominice/dominike`. Kod napisał Codex, review i uruchomienie testów: Claude Code (230 passed, ruff czysty). Zawężenie Dominiki może pominąć rzadką odmianę (np. przymiotnik „dominicki”); wyspa występuje w tekstach rzadko.
 - **Test regresyjny:** `backend/tests/unit/test_country_gazetteer.py::TestDominikanaRegression` (zdanie z #11237; 7 testów padało bez poprawki).
 - **Status:** żywy bug naprawiony w kodzie, bez wdrożenia na NAS. Dane dok. #11237 (encja #28068) do naprawy po wdrożeniu: `POST /website_entities` albo `PATCH /website_entities/28068` z nazwą „Dominikana”, jeśli dokument ma embeddingi.
+
+### E048 — „Salvador” (STT) jako osoba oraz „Salvadorze”, „Bukele” w złych typach (dok. #11237, PR n/d, 2026-11-06)
+
+- **Typ encji:** persName, placeName
+- **Kategoria:** T33
+- **Zdanie źródłowe:** „Salvador wysłał do Haiti ponad 2500 żołnierzy i komandosów…”; „…zamiast tego prezydent Salvadoru Bukele wysłał misję ratunkową”; „…ośrodek dla terrorystów w Bukele znany jako Sesot” (transkrypcja YouTube)
+- **Objaw:** `persName` „Salvador” (4 wzmianki) obok państwa „Salwador”; „Salvadorze” jako osobne miejsce bez geokodu; „Bukele” jednocześnie osobą (z duplikatem „Bukel”) i miejscem (geokoder trafił w ulicę Nayib Bukele w Ekwadorze).
+- **Przyczyna źródłowa:** STT zapisuje kraj przez „v”, więc gazetteer krajów go nie zna, a spaCy daje `persName`. `person_context_classifier` odpowiada tylko „czy to osoba?”, nie „to państwo”. Klasyfikator kontekstu miejsc dał dla „Bukele” `place` mimo uzasadnienia „to prezydent” (sprzeczność werdykt/uzasadnienie).
+- **Poprawka:** dane (REST, 2026-11-06): „Salvador” → `to_place` „Salwador”, „Salvadorze” scalone, „Bukel” scalone z „Bukele”, miejsce „Bukele” → `to_person`. Kod (na przyszłość): `library/entity_sense_classifier.py` — kandydaci to jednowyrazowe `persName` fonetycznie bliskie nazwie JEDNEGO kraju z gazetteera, znaczenie (kraj/osoba/miasto/inne) rozstrzyga model z failoverem Basal (darmowe 10 zapytań dziennie) → OpenRouter decisions (Jev, Microsoft-Decision-1) → LLM; zamiana na kraj tylko przy pewności high/medium, błąd dostawcy nie zmienia encji.
+- **Test regresyjny:** `backend/tests/unit/test_entity_sense_classifier.py`; ocena jakości na 24 oznaczonych przypadkach: `backend/imports/evaluate_entity_sense.py`.
+- **Status:** dane naprawione na NAS; kod w PR (szkic), nie wdrożony. Pomiar na żywo 2026-11-06: Jev i Microsoft-Decision-1 po 91,7%, Mistral Small 75% (3 błędy miasto→kraj), Basal niedostępny (HTTP 503).
+
+### E049 — „Maralago Trump” jako osoba zamiast Mar-a-Lago (dok. #11237, PR n/d, 2026-11-06)
+
+- **Typ encji:** persName
+- **Kategoria:** T1
+- **Zdanie źródłowe:** „Podczas imprezy na Halloween w Maralago Trump powiedział, że Bukele poinformował go o zaginięciu personelu.”
+- **Objaw:** `persName` „Maralago Trump” z fałszywą osobą w rejestrze (`manual_review`).
+- **Przyczyna źródłowa:** spaCy skleja STT-owe „Maralago” (Mar-a-Lago) ze słowem „Trump” w jeden span osoby.
+- **Poprawka:** dane — `to_place` „Mar-a-Lago” (osoba usunięta z rejestru). Geokoder trafił poprawnie („Mar-A-Lago National Historical Landmark”, Palm Beach), ale `is_plausible_match` odrzucił go (próg 0,75 na długim opisie OSM), więc wpis w `geocode_cache` (#1794) ustawiono ręcznie na `resolved=true` i podpięto do encji.
+- **Test regresyjny:** brak — poprawka danych. Luka w kodzie (próg podobieństwa wobec długich opisów OSM) zgłoszona do osobnej decyzji.
+- **Status:** tylko dane bez zmiany kodu; wzmianka „Trump” po „Maralago” nie liczy się już do osoby Trump.
+
+### E050 — „siewcy pokoju” = CIA (eufemizm kanału) (dok. #11237, PR n/d, 2026-11-06)
+
+- **Typ encji:** orgName (brakująca)
+- **Kategoria:** T34
+- **Zdanie źródłowe:** „W Wenezueli siewcy pokoju dostarczali informacje wywiadowcze, które doprowadziły do czerwcowego ataku USA…”
+- **Objaw:** w panelu nie było encji organizacji; fraza zwykły tekst.
+- **Przyczyna źródłowa:** omówienie kanału „Na Wschód od Bliskiego Wschodu” (jak „państwo z gwiazdką” = Izrael); żadna reguła go nie znała.
+- **Poprawka:** dane — wpis #13 w `ner_channel_glossary` (kanał „Na Wschód od Bliskiego Wschodu”, kanoniczna nazwa „CIA”, 8 form fleksyjnych, `fuzzy` wyłączone) i odświeżenie NER; wynik: `orgName` „CIA” (wariant „siewcy pokoju”) powiązana z organizacją #594.
+- **Test regresyjny:** brak — poprawka danych; zapisana w glosariuszu kanału.
+- **Status:** tylko dane bez zmiany kodu. Ryzyko: fraza użyta dosłownie w innym filmie kanału też zostanie zamieniona na CIA.

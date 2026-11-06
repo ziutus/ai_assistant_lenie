@@ -396,6 +396,21 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         groups,
         document_id,
     )
+    # Resolve country senses before the person verdicts remove their groups.
+    from library.entity_sense_classifier import apply_country_sense
+
+    sense_results = apply_country_sense(groups, text, getattr(doc, "title", None) or "", document_id)
+    if sense_results:
+        session.add_all([
+            NerContextClassification(
+                document_id=document_id, entity_type="persName", entity_text=result["entity_text"],
+                predicted_class="country" if result["sense"] == "kraj" else result["sense"],
+                confidence=result["confidence"], rationale=result["rationale"],
+                context_excerpt=result["context"][:2000], model=result["provider"][:100],
+                dropped=result["dropped"],
+            )
+            for result in sense_results
+        ])
     if classifications:
         session.add_all([
             NerContextClassification(

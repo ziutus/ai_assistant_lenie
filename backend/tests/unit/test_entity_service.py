@@ -270,7 +270,9 @@ class TestChannelGlossaryInRefresh:
             return [{"text": "Hegseth", "label": "persName", "lemma": "Hegseth"},
                     {"text": "Hegseth", "label": "persName", "lemma": "Hegseth"}]
 
-        with patch("library.entity_service.extract_entities", side_effect=fake_extract):
+        with patch("library.entity_service.extract_entities", side_effect=fake_extract), patch(
+            "library.person_context_classifier.classify_single_word_person_candidates", return_value=[],
+        ):
             rows = refresh_document_entities(session, 10872, "Hekset mówił. Potem Hexeta odpowiedział.")
 
         assert sent["text"] == "Hegseth mówił. Potem Hegseth odpowiedział."
