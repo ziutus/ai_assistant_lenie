@@ -197,13 +197,14 @@ kodzie (zamiast kolejnej ręcznej reguły).
 
 | T30 | Nazwa kraju odrzucona przez filtr POS | Root poprawnego spanu kraju ma błędny POS, więc wzmianka znika przed kanonikalizacją z gazetteera | „Sri Lanki”, root „Sri” z `POS=X` | E043 |
 | T31 | Miejsce zbieżne z imieniem rozpoznane jako osoba | nazwa miejsca zaczyna się od imienia („Karolina Północna”), spaCy typuje ją jako `persName` ze zepsutym lematem (męski „Północny”); relabel „gazetteer miast → miejsce” obejmował tylko `orgName`, a rejestr osób utrwalał fałszywe osoby | „Karolina Północna / Południowa” (stany USA) | E046 |
+| T35 | Wykluczenie etnonimu kasuje cały kraj | reguła `ner_exclusions` na etnonim (`Amerykanin`, `placeName`, global) pasowała do lematu włączonego do grupy kraju przez `demonym_patterns`, więc `refresh_document_entities` usuwał całą grupę „Stany Zjednoczone” razem z wzmiankami nazwy kraju | „…na łaskę Stanów Zjednoczonych…” + „Amerykanie” (dok. #11237) | E051 |
 
 | T32 | Kraj odrzucony przez gazetteer krajów: brak wariantu „Republika X”, limit końcówki i niejednoznaczny pień | oficjalna nazwa z członem „Republika” nie ma wzorca, końcówka dłuższa niż 4 znaki przekracza limit `stem*`, a szeroki pień innego kraju (`dominik*`) pasuje też do pełnej nazwy (`dominikan*`), więc wynik jest niejednoznaczny i `canonical_country_name()` zwraca `None`; nazwa idzie do geokodera jak zwykłe miejsce | „Republiki Dominikańskiej”, „Dominikana” (Dominika vs Dominikana) | E047 |
 
 | T33 | Nazwa kraju zapisana przez STT jak imię lub nazwisko | transkrypcja daje „Salvador” zamiast „Salwador”; spaCy typuje jednowyrazowe słowo jako `persName`, a rejestr osób pomija samo imię, więc nic nie rozstrzyga znaczenia z kontekstu | „Salvador walczy na Haiti”, „prezydent Salvadoru Bukele” | E048 |
 | T34 | Eufemizm kanału zamiast nazwy organizacji | autor kanału nazywa organizację omownie („siewcy pokoju” = CIA); żadna reguła nie zna tej frazy, więc nie powstaje encja organizacji | „W Wenezueli siewcy pokoju dostarczali informacje wywiadowcze…” | E050 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T35,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T36,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -735,6 +736,28 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — relabel obejmuje `persName`; seed `city_gazetteer._CITY_DATA` dostał „Karolina Północna” (`karolin* polnocn*`) i „Karolina Południowa” (`karolin* poludniow*`). Kod napisał Codex, review i sprawdzenie, że test pada bez poprawki: Claude Code.
 - **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestStateTaggedAsPerson` (zdanie z #11237; kontrola, że „Karolina Kowalska” i „Karolina” zostają osobami), `test_city_gazetteer.py::test_carolina_states_doc_11237`.
 - **Status:** żywy bug naprawiony w kodzie (PR #998), backend wdrożony na NAS z gałęzi PR. Dok. #11237 odświeżony przez `POST /website_entities` (bez embeddingów): dwie encje `placeName` „Karolina Północna” (5 wzmianek, geocode 1705) i „Karolina Południowa” (3, geocode 1751) z wszystkimi odmianami jako wariantami, wiersze `persName` zniknęły; linki `document_persons` 1859/1860 odpięte przez `PATCH /document_persons/<id>` (`reject`). Fałszywe osoby „Tilis Karolina Północny” (id 838) i „Karolina Południowy” (id 916) zostają w rejestrze, bo linkują do nich dok. 9358, 10873, 10874, 11137, 11230, 11234 — te dokumenty mają ten sam błąd i czekają na odświeżenie NER. Tagi `miejsce-karolina-*` nie powstały od razu: etap `verify_places` tego dokumentu padał (przed wdrożeniem i po nim) na osobnej kolizji unikalności „Salvadór”/„Salwador” (T12), nie na Karolinie. Naprawa danych: `POST /document/11237/places/merge` (26304 → 26305, „Salwador” 4 wzmianki), ponowne odświeżenie NER — zadanie `done`, tagi `miejsce-karolina-polnocna` i `-poludniowa` są. Te same naprawy (odświeżenie NER + `reject` starych linków `document_persons`, bo odświeżenie ich nie usuwa) w dok. 9358, 11137, 11230, 11234; osoba „Karolina Południowy” (id 916) usunięta jako osierocona. Dok. 10873 i 10874 mają embeddingi (odświeżenie wymaga `reopen_editing`, które je kasuje), więc nadal mają `persName` „Karolina Północny” i osobę id 838 „Tilis Karolina Północny”. Uwaga poboczna: w dok. 11234 powstało miejsce „Main Karolinie Północnej” (spaCy skleja „Main” z miejscem, osobny przypadek).
+
+### E051 — „Stany Zjednoczone” znikają, zostaje samo „Stany” (dok. #11237, PR n/d, 2026-11-05)
+
+- **Typ encji:** placeName
+- **Kategoria:** T35
+- **Zdanie źródłowe:** „…No więc aby ograniczyć to zagrożenie, Stany Zjednoczone i inne mocarstwa zawarły w 2015 roku porozumienie.” oraz „…zdani na łaskę Stanów Zjednoczonych…” (transkrypcja YouTube, 18 wzmianek pełnej nazwy + „USA” i „Amerykanie”)
+- **Objaw:** na `/ner/11237/6` jest miejsce „Stany” (4 wzmianki, wariant „Stanach”, geocode 274), a „Stany Zjednoczone” nie ma w ogóle. Audyt `document_relationship_removals` pokazuje, że przy każdym odświeżeniu zapisywane było tylko „Stany”.
+- **Przyczyna źródłowa:** `aggregate_entities_detailed` włącza do grupy „Stany Zjednoczone” także „USA” i etnonimy („Amerykanie”, „Amerykanów”), więc `raw_lemmas` grupy zawierają `Amerykanin`. Reguła `ner_exclusions` #13 (`Amerykanin`, `placeName`, global, 2026-08-20, sprzed `demonym_patterns`) pasowała do tego lematu w `is_excluded()` i `refresh_document_entities` usuwał całą grupę. Samo „w Stanach” tworzy osobną grupę bez etnonimu, więc przeżyło. Żywy bug kodu, nie stare dane.
+- **Poprawka:** kod — `ner_client.aggregate_entities_detailed` zapisuje wewnętrznie pochodzenie wzmianek kraju (`country_mentions`, flaga etnonimu); `entity_service.refresh_document_entities` przy wykluczeniu pasującym wyłącznie przez wzmianki etnonimowe usuwa tylko te wzmianki (licznik, warianty, `raw_lemmas`), a grupę kasuje tylko, gdy pasuje nazwa kraju, wariant niebędący etnonimem albo nic nie zostaje. Kod napisał Codex, review i sprawdzenie, że test pada bez poprawki: Claude Code. Reguła #13 bez zmian. Dane: odświeżenie NER dok. #11237 po wdrożeniu.
+- **Test regresyjny:** `backend/tests/unit/test_entity_service.py::TestRefreshDocumentEntities::test_doc_11237_demonym_exclusion_preserves_country` (zdania z #11237; kontrole: wykluczenie „USA” i „Stany Zjednoczone” nadal kasuje grupę, same etnonimy bez nazwy kraju nadal znikają).
+- **Status:** żywy bug naprawiony w kodzie (PR #999), backend wdrożony na NAS z gałęzi PR (2026-11-05). Dok. #11237 odświeżony przez `POST /website_entities`: `placeName` „Stany Zjednoczone” (21 wzmianek, wariant „Amerykanów” zostaje, bo spaCy daje mu inny lemat niż `Amerykanin`) obok „Stany” (4). Otwarte: 8 dokumentów ma „Stany” bez „Stany Zjednoczone” (możliwy ten sam skutek), nie sprawdzano ich.
+
+### E052 — „odesłać do Jerozolimy” (= zabić) znów jako miejsce, tym razem eufemizm kanału (dok. #11237, PR n/d, 2026-11-05)
+
+- **Typ encji:** placeName
+- **Kategoria:** T29 — nazwa miejsca w związku frazeologicznym / eufemizmie (klasyfikator kontekstu pomylił się mimo reguły w prompcie)
+- **Zdanie źródłowe:** „…ataki Stanów Zjednoczonych na Karaibach i Pacyfiku odesłały do Jerozolimy prawie 250 osób…”, „Do Jerozolimy odesłano co najmniej 20 bojowników…”, „…po odesłaniu do Jerozolimy lub schwytaniu…”, „…11000 osób odeszło na drogę do Jerozolimy…” (transkrypcja YouTube; jedyna dosłowna wzmianka: „w Instytucie Hartmana w Jerozolimie”)
+- **Objaw:** encja `Jerozolima` miała 6 wzmianek, geocode 14, werdykt `place` / `high`; pięć z sześciu wzmianek znaczy „zabić”.
+- **Przyczyna źródłowa:** werdykt `place_context_classifier` zapada raz na encję (nie na wzmiankę), a Bielik uznał „odesłano bojowników” za konkretne miejsce mimo przykładu w prompcie. Encja mieszana (1 wzmianka dosłowna, 5 eufemizmów) nie ma poprawnej jednej etykiety. Eufemizm jest cechą kanału „Na Wschód od Bliskiego Wschodu” (jak „państwo z gwiazdką” = Izrael).
+- **Poprawka:** dane — dwa wpisy `ner_channel_glossary` (id 11 → „zabić”: formy czasownikowe „odesłać/odesłano/odsyłają… do Jerozolimy”; id 12 → „zabicie”: „odesłaniu/odesłanie… do Jerozolimy”, „na drogę do Jerozolimy”), `fuzzy=false`, limit 20 fraz na wpis, dosłowne dopasowanie z uwzględnieniem wielkości liter, więc nowa odmiana wymaga dopisania frazy. Zamiana działa tylko na kopii tekstu przed NER. Potem odświeżenie NER dok. #11237.
+- **Test regresyjny:** brak — czysto danowa poprawka, wpisy w `ner_channel_glossary` dokumentują przypadek.
+- **Status:** tylko dane bez zmiany kodu. Po odświeżeniu: `Jerozolimie` (1 wzmianka, geocode 826 w Jerozolimie); glosariusz zastosował 5 zamian. Uwaga: nazwa encji została w miejscowniku („Jerozolimie”), bo spaCy nie lematyzuje pojedynczej wzmianki — kosmetyka, do ewentualnego wpisu `kind=city` w `/ner_gazetteer`.
 
 ### E047 — „Republiki Dominikańskiej” nie rozpoznana jako państwo Dominikana (dok. #11237, PR n/d, 2026-11-06)
 

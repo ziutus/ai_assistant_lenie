@@ -534,11 +534,19 @@ class TestAggregateNormalization:
                 "count": 2,
                 "variants": ["Amerykanów", "Stany Zjednoczone"],
                 "raw_lemmas": ["Amerykanów", "Stany Zjednoczone"],
+                "country_mentions": {
+                    ("Amerykanów", "Amerykanów", True): 1,
+                    ("Stany Zjednoczone", "Stany Zjednoczone", False): 1,
+                },
             },
             ("placeName", "Izrael"): {
                 "count": 2,
                 "variants": ["Izraelczyków", "Izrael"],
                 "raw_lemmas": ["Izraelczyków", "Izrael"],
+                "country_mentions": {
+                    ("Izraelczyków", "Izraelczyków", True): 1,
+                    ("Izrael", "Izrael", False): 1,
+                },
             },
         }
 
@@ -580,7 +588,10 @@ class TestAggregateNormalization:
     def test_exact_demonym_keeps_surface_variant(self):
         entities = [{"text": "Turcy", "label": "placeName", "lemma": "Turk", "pos": "NOUN"}]
         assert aggregate_entities_detailed(entities) == {
-            ("placeName", "Turcja"): {"count": 1, "variants": ["Turcy"], "raw_lemmas": ["Turk"]},
+            ("placeName", "Turcja"): {
+                "count": 1, "variants": ["Turcy"], "raw_lemmas": ["Turk"],
+                "country_mentions": {("Turcy", "Turk", True): 1},
+            },
         }
 
     def test_lowercase_legacy_country_forms_are_rejected(self):

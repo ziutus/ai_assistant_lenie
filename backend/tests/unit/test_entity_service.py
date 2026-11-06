@@ -161,6 +161,46 @@ class TestRefreshDocumentEntities:
             rows = refresh_document_entities(session, 42, "Turcy")
         assert rows == []
 
+    @pytest.mark.parametrize("excluded_term", ["Amerykanin", "Amerykanie", "USA", "Stany Zjednoczone"])
+    @pytest.mark.parametrize("country_mentions", [True, False])
+    def test_doc_11237_demonym_exclusion_preserves_country(self, excluded_term, country_mentions):
+        # Source sentences from doc #11237; spaCy mangles the inflected country lemma.
+        text = (
+            "No więc aby ograniczyć to zagrożenie, Stany Zjednoczone i inne mocarstwa "
+            "zawarły w 2015 roku porozumienie. ...zdani na łaskę Stanów Zjednoczonych... "
+            "USA. Amerykanie ... Amerykanów ..."
+        )
+        mentions = [("Amerykanie", "Amerykanin"), ("Amerykanów", "Amerykanin")]
+        if country_mentions:
+            mentions = [
+                ("Stany Zjednoczone", "Stany Zjednoczone"),
+                ("Stanów Zjednoczonych", "Stany zjednoczyć"),
+                ("USA", "USA"),
+            ] + mentions
+        raw = [{"text": surface, "lemma": lemma, "label": "placeName", "pos": "PROPN"}
+               for surface, lemma in mentions]
+        session = _session_with_exclusions([
+            NerExclusion(entity_text=excluded_term, entity_type="placeName", scope="global"),
+        ])
+        with patch("library.entity_service.extract_entities", return_value=raw), \
+             patch("library.ner_corrections.apply_ner_corrections") as corrections:
+            rows = refresh_document_entities(session, 11237, text)
+
+        if excluded_term == "Stany Zjednoczone" or (excluded_term == "USA" and country_mentions):
+            assert rows == []
+        elif excluded_term == "Amerykanin" and not country_mentions:
+            assert rows == []
+        else:
+            assert len(rows) == 1
+            row = rows[0]
+            assert (row.entity_type, row.entity_text) == ("placeName", "Stany Zjednoczone")
+            remaining = [(surface, lemma) for surface, lemma in mentions
+                         if excluded_term not in (surface, lemma)]
+            assert row.mention_count == len(remaining)
+            assert row.variants == [surface for surface, _ in remaining]
+            group = corrections.call_args.args[2][("placeName", "Stany Zjednoczone")]
+            assert set(group["raw_lemmas"]) == {lemma for _, lemma in remaining}
+
     def test_author_exclusion_applies_only_to_matching_author(self):
         exclusions = [NerExclusion(entity_text="Tusk", entity_type="*", scope="author",
                                    author="Good Times Bad Times")]
