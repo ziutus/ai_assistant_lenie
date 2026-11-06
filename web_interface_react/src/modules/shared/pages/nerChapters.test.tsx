@@ -339,11 +339,37 @@ it("announces the channel glossary and what it repaired in this document", async
   const note = await within(chapter).findByRole("note", { name: "Słownik kanału" });
   expect(note.textContent).toContain("Słownik kanału „Na Wschód od Bliskiego Wschodu”");
   expect(note.textContent).toContain("Pete Hegseth");
-  // Only the phrase that occurs in this chapter is listed, with the count found here (not the document total).
-  expect(note.textContent).toContain("w Kijowie → Kyiv ×1");
+  // Only the phrase that occurs in this chapter is listed (one per line), with the count found here.
+  const lines = within(note).getAllByRole("listitem");
+  expect(lines).toHaveLength(1);
+  expect(lines[0].textContent).toContain("w Kijowie → Kyiv ×1");
   expect(note.textContent).not.toContain("Hekset");
   expect(within(note).getByRole("link", { name: /Słownik kanału →/ }).getAttribute("href"))
     .toBe("/ner-glossary?author=Na%20Wsch%C3%B3d%20od%20Bliskiego%20Wschodu");
+});
+
+const glossaryApi = { "/ner_channel_glossary/applications": {
+  author: "Kanał", entries: [{ id: 1, canonical_name: "Kyiv", aliases: [], fuzzy: false }],
+  applications: [{ original_text: "w Kijowie", replacement_text: "Kyiv", occurrences: 3 }],
+} };
+
+it("highlights a glossary phrase in the text from its button and keeps it in the address", async () => {
+  mockApi(glossaryApi);
+  await open();
+  const note = await within(screen.getByRole("region", { name: "#1 Wstęp" })).findByRole("note", { name: "Słownik kanału" });
+  expect(sentenceBlock().querySelector("mark[data-focus-mark]")).toBeNull();
+  fireEvent.click(within(note).getByRole("button", { name: /Podświetl/ }));
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
+  expect(screen.getByRole("status").textContent).toContain("w Kijowie");
+  fireEvent.click(within(note).getByRole("button", { name: /Wyczyść/ }));
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")).toBeNull());
+});
+
+it("restores the glossary highlight from the address", async () => {
+  mockApi(glossaryApi);
+  render(<MemoryRouter initialEntries={["/ner/42?glossary=w%20Kijowie"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
+  await screen.findByRole("region", { name: "#1 Wstęp" });
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
 });
 
 it("says the glossary is empty for a channel without entries and hides the note without a channel", async () => {
