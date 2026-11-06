@@ -348,3 +348,44 @@ def test_document_payloads_requires_authentication(db):
     app = Flask(__name__)
     app.register_blueprint(llm_cost_routes.bp)
     assert app.test_client().get("/document/42/llm_payloads").status_code == 401
+
+
+@pytest.mark.parametrize("entry_point", ["detect_document_countries", "apply_tags", "apply_tags_with_run"])
+def test_country_detection_attaches_document_to_usage_and_payload(db, monkeypatch, entry_point):
+    from library.db.models import Document
+    from library.document_analysis_service import _apply_tags
+    from library.document_countries import detect_document_countries
+    from library.llm_usage.context import current_usage_context, llm_usage_context
+
+    doc = SimpleNamespace(id=42, title="Article", text_md=None, text="Haiti.", tags="topic")
+    monkeypatch.setattr(Document, "get_by_id", lambda *args: doc)
+    monkeypatch.setattr("library.entity_service.apply_channel_glossary_text", lambda session, doc_id, value: value)
+    monkeypatch.setattr("library.country_detection_audit.record_detection", Mock(return_value=1))
+    monkeypatch.setattr("library.article_tagging._tagging_model", lambda: MODEL)
+    monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda *args: [])
+
+    def fake_ai_ask(query, *, model, operation, **kwargs):
+        usage = recorder.record_llm_usage(
+            operation=operation, provider="cloudferro", model=model,
+            payload=build(request_text=query, response_text="Haiti"),
+        )
+        return SimpleNamespace(response_text="Haiti", usage=usage)
+
+    ask = Mock(side_effect=fake_ai_ask)
+    monkeypatch.setattr(ai, "ai_ask", ask)
+    run_id = 91 if entry_point == "apply_tags_with_run" else None
+    job_id = "test-job" if run_id else None
+    with llm_usage_context(analysis_job_id=job_id, analysis_run_id=run_id):
+        if entry_point == "detect_document_countries":
+            assert detect_document_countries(db, doc.id)["added"] == ["haiti"]
+        else:
+            _apply_tags(doc, doc.text)
+        assert current_usage_context() == (None, job_id, run_id)
+    ask.assert_called_once()
+    assert ask.call_args.kwargs["operation"] == "infrastructure_relevance"
+    usage = db.scalar(select(LlmUsageLog))
+    payload = db.scalar(select(LlmCallPayload))
+    assert usage.document_id == payload.document_id == doc.id
+    assert usage.analysis_run_id == run_id and usage.analysis_job_id == job_id
+    assert payload.usage_log_id == usage.id and payload.response_text == "Haiti"
+    assert "kraj-haiti" in doc.tags

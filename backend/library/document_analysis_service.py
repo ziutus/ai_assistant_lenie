@@ -451,6 +451,7 @@ def _apply_tags(doc: Document, text: str) -> None:
     from sqlalchemy.orm import object_session
 
     from library.article_tagging import extract_countries_hybrid, tag_article_with_llm
+    from library.llm_usage.context import current_usage_context, llm_usage_context
 
     article_tags = tag_article_with_llm(text, doc.title or "")
     # Country detection has its own cheap gazetteer prescreen.  It must not be
@@ -468,7 +469,9 @@ def _apply_tags(doc: Document, text: str) -> None:
         country_text = apply_channel_glossary_text(session, doc.id, text)
     audit = {}
     tags_before = doc.tags
-    country_tags = extract_countries_hybrid(country_text, doc.title or "", audit=audit)
+    _, usage_job_id, usage_run_id = current_usage_context()
+    with llm_usage_context(document_id=doc.id, analysis_job_id=usage_job_id, analysis_run_id=usage_run_id):
+        country_tags = extract_countries_hybrid(country_text, doc.title or "", audit=audit)
     new_tags = article_tags + country_tags
     existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
     existing_set = set(existing)

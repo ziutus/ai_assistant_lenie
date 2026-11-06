@@ -3,6 +3,7 @@
 from library import article_tagging
 from library.country_gazetteer import slug_to_name
 from library.db.models import Document
+from library.llm_usage.context import llm_usage_context
 
 
 def countries_from_tags(tags: str | None) -> list[dict[str, str]]:
@@ -29,7 +30,8 @@ def detect_document_countries(session, doc_id: int) -> dict:
     text = apply_channel_glossary_text(session, doc_id, text)
     audit = {}
     tags_before = doc.tags
-    detected = article_tagging.extract_countries_hybrid(text, doc.title or "", audit=audit)
+    with llm_usage_context(document_id=doc_id):
+        detected = article_tagging.extract_countries_hybrid(text, doc.title or "", audit=audit)
     existing = list(dict.fromkeys(t.strip() for t in (doc.tags or "").split(",") if t.strip()))
     seen = set(existing)
     added = []
