@@ -1448,6 +1448,63 @@ class TestOrganizationRenameSyncsSource:
         assert resp.get_json()["existing_organization_id"] == 281
 
 
+class TestOrganizationLinks:
+    """PATCH /organizations/<id> `links` — the same [{url, label}] list persons have (Wikipedia etc.)."""
+
+    @staticmethod
+    def _patch(client, body, links=None):
+        from library.db.models import Organization
+
+        organization = Organization(id=1639, canonical_name="NATO", links=links or [])
+        session = MagicMock()
+        session.get.return_value = organization
+        session.scalar.return_value = None
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/organizations/1639", json=body, headers=API_HEADERS)
+        return resp, organization, session
+
+    def test_links_are_saved_trimmed_and_deduplicated(self, client):
+        wiki = "https://pl.wikipedia.org/wiki/NATO"
+        resp, organization, session = self._patch(client, {"links": [
+            {"url": f"  {wiki} ", "label": " Wikipedia "}, {"url": wiki, "label": "dubel"}, "https://www.nato.int",
+        ]})
+
+        assert resp.status_code == 200
+        expected = [{"url": wiki, "label": "Wikipedia"}, {"url": "https://www.nato.int", "label": ""}]
+        assert organization.links == expected
+        assert resp.get_json()["links"] == expected
+        session.commit.assert_called_once()
+
+    def test_empty_list_or_null_clears_the_links(self, client):
+        for body in ({"links": []}, {"links": None}):
+            resp, organization, _ = self._patch(
+                client, body, links=[{"url": "https://pl.wikipedia.org/wiki/NATO", "label": "Wikipedia"}])
+            assert resp.status_code == 200
+            assert organization.links == []
+
+    def test_links_untouched_when_the_key_is_absent(self, client):
+        kept = [{"url": "https://pl.wikipedia.org/wiki/NATO", "label": "Wikipedia"}]
+        resp, organization, _ = self._patch(client, {"description": "Sojusz"}, links=kept)
+
+        assert resp.status_code == 200
+        assert organization.links == kept
+
+    @pytest.mark.parametrize("links", [
+        [{"url": "javascript:alert(1)"}],
+        [{"url": ""}],
+        [{"url": "https://ok.example", "label": 5}],
+        "https://pl.wikipedia.org/wiki/NATO",
+        [{"url": f"https://example.com/{n}"} for n in range(200)],
+    ])
+    def test_invalid_links_answer_400_and_change_nothing(self, client, links):
+        resp, organization, session = self._patch(client, {"links": links, "description": "nie zapisuj"})
+
+        assert resp.status_code == 400
+        assert organization.links == []
+        assert organization.description is None
+        session.commit.assert_not_called()
+
+
 class TestOrganizationMergePreview:
     @staticmethod
     def _get(client, query, *, preview=None, error=None):

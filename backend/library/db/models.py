@@ -2589,6 +2589,8 @@ class Organization(Base):
     latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     website: Mapped[str | None] = mapped_column(Text)
+    # External pages about the organization: [{"url": "https://…", "label": "Wikipedia"}] (same shape as Person.links).
+    links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     # Vault-relative path of the Obsidian note describing the organization.
     obsidian_note_path: Mapped[str | None] = mapped_column(Text)
     # The imported obsidian_note Document holding the full note; wins over the path,
