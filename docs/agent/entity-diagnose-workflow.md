@@ -33,6 +33,8 @@ brakuje, dopytaj zanim zaczniesz.
 
 ## Etap 1: zbierz dowody (wspólne dla wszystkich typów)
 
+Zapytanie i surową odpowiedź modelu dla wywołania odczytasz przez `GET /llm_usage/<id>/payload` (klucz user/service). `usage_log_id` to `id` w `llm_usage_logs`, dostępne też jako `response.usage.usage_log_id`; historia `/llm_costs?document_id=...` wskazuje dostępność przez `has_payload`. `payload: null` oznacza brak zachowanego audytu (np. retencję albo wyłączenie zapisu).
+
 Połącz się z bazą NAS przez psql (`docs/CICD/NAS_Deployment.md`,
 `psql -h 192.168.200.7 -p 5434 -U postgres -d lenie-ai`).
 

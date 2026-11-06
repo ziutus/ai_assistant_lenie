@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import axios from "axios";
@@ -75,5 +75,46 @@ describe("LlmCosts provider breakdown", () => {
     renderPage();
     await screen.findByText("Podsumowanie");
     expect(screen.queryByText("Koszt per dostawca")).toBeNull();
+  });
+});
+
+describe("LLM call payload", () => {
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
+  const call = { id: 42, document_id: 12, called_at: "2026-11-06T12:00:00Z", operation: "country_tagging", provider: "openai", model: "model", cost_status: "known", success: true, has_payload: true };
+  function setup(payload: unknown = { request_text: "Zapytanie testowe", response_text: "Odpowiedź testowa", system_prompt: "System testowy", request_extra: { temperature: 0 }, request_truncated: true, error: "Błąd modelu" }, fail = false) {
+    vi.mocked(axios.get).mockImplementation(async (url) => {
+      if (String(url).endsWith("/payload")) {
+        if (fail) throw { response: { status: 404 }, config: { method: "get", url } };
+        return { data: { payload } };
+      }
+      return { data: { ...report, calls: [call, { ...call, id: 43, has_payload: false }, { ...call, id: 44, has_payload: undefined }] } };
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ balance: { status: "not_configured" } }) })));
+    return render(<AuthorizationContext.Provider value={auth}><MemoryRouter initialEntries={["/llm-costs?document_id=12"]}><LlmCosts /></MemoryRouter></AuthorizationContext.Provider>);
+  }
+  it("offers preview only for saved payloads and fetches lazily with truncation and JSON", async () => {
+    setup();
+    const button = await screen.findByRole("button", { name: "Podgląd" });
+    expect(screen.getAllByText(/Brak zapisanej treści tego wywołania/)).toHaveLength(2);
+    expect(vi.mocked(axios.get).mock.calls.some(([url]) => String(url).includes("/payload"))).toBe(false);
+    fireEvent.click(button);
+    expect(await screen.findByText("Zapis obcięty (limit pola)")).toBeTruthy();
+    expect(screen.getByText("Zapytanie testowe")).toBeTruthy();
+    expect(screen.getByText("Odpowiedź testowa")).toBeTruthy();
+    expect(screen.getByText("System testowy")).toBeTruthy();
+    expect(screen.getByText(/"temperature": 0/)).toBeTruthy();
+    expect(screen.getByText("Błąd modelu")).toBeTruthy();
+    expect(axios.get).toHaveBeenCalledWith("http://api.test/llm_usage/42/payload", { headers: { "x-api-key": "user-key" } });
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.queryByText("Zapis obcięty (limit pola)")).toBeNull());
+  });
+  it("handles payload removed by retention", async () => {
+    setup(null); fireEvent.click(await screen.findByRole("button", { name: "Podgląd" }));
+    await waitFor(() => expect(screen.getAllByText(/Brak zapisanej treści tego wywołania/)).toHaveLength(3));
+  });
+  it("shows request error and target URL", async () => {
+    setup(null, true); fireEvent.click(await screen.findByRole("button", { name: "Podgląd" }));
+    expect(await screen.findByText(/Nie udało się pobrać treści wywołania LLM:/, { selector: "p" })).toBeTruthy();
+    expect(screen.getByText(/Żądanie: GET.*llm_usage\/42\/payload/)).toBeTruthy();
   });
 });

@@ -236,7 +236,15 @@ This is the *reverse* direction from `Document.obsidian_note_paths`/`DocumentChu
 
 ### LLM Abstraction (`ai.py`)
 
-Entry point: `ai_ask(query, model, temperature, max_token_count, top_p, *, system_prompt=None, response_format=None, operation="ai_ask", search_interpretation_log_id=None) → AiResponse`
+**Request/response audit.** `llm_usage/payloads.py` stores `llm_call_payloads` for `ai_ask(..., store_payload=True)` calls, including provider exceptions. The payload links to `llm_usage_logs` in the same transaction through a savepoint: a failed payload insert leaves usage accounting intact. System prompt, user prompt, raw response and error are limited to 200,000 characters each; `request_truncated` covers prompt fields and `response_truncated` covers response/error. `request_extra` holds JSON generation parameters (invalid JSON metadata is omitted); images are represented only by `image: "omitted"`, never image bytes/base64. `LLM_PAYLOAD_STORE` defaults to true; false disables capture. `LLM_PAYLOAD_RETENTION_DAYS` defaults to 30 (invalid/nonpositive values use 30); `worker.execute`'s `retention_sweep` deletes expired payloads and reports `llm_payloads`, without deleting usage logs. Configuration failure uses defaults and cannot terminate a call.
+
+Private contact photos (`contact_photo_description`, `contact_photo_classification`), postal addresses (`address_parse`), command messages (`intent_parsing`) and WhatsApp profiles (`whatsapp_neighbor_profile`) explicitly use `store_payload=False`. Knowledge-library documents, including notes, remain audited. Search query parsing and recipe photo matching remain enabled; recipe images are omitted. Embeddings are excluded. Fabryka/Basal and OpenRouter Decisions capture the complete raw HTTP JSON envelope in their shared client, with state/questions and failures, using an independent session (`usage_log_id=null`, operation `entity_sense_decision` or `narrative_decision`); entity classification supplies its document context before reducing the result to sense/confidence.
+
+`GET /llm_usage/<id>/payload` (user/service key) returns usage metadata and the retained payload, or `payload: null` after opt-out/expiration; a missing usage row returns 404. Dates are ISO strings and cost amounts are Decimal strings. `/llm_costs?document_id=...` includes `has_payload` per call, fetched in one bulk query.
+
+`GET /document/<int:doc_id>/llm_payloads?operation=&limit=20&offset=0` (user/service key) lists all retained payloads of a document, including standalone decisions with `usage_log_id=null`. It returns `{payloads, total}` with full payload fields and ISO dates, newest first (creation date, then id descending). A nonempty `operation` matches exactly; `total` is the matching count before pagination. Limit is 1–100, offset is a nonnegative 64-bit integer; invalid pagination returns 400 and an unknown document returns 404.
+
+Entry point: `ai_ask(query, model, temperature, max_token_count, top_p, *, system_prompt=None, response_format=None, operation="ai_ask", search_interpretation_log_id=None, store_payload=True) → AiResponse`
 
 Supported models:
 - **OpenAI**: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-mini

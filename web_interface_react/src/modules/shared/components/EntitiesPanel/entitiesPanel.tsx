@@ -1,4 +1,5 @@
 import React from "react";
+import CountryDetectionHistory from "../CountryDetectionHistory/countryDetectionHistory";
 import "./entitiesPanel.css";
 import axios from "axios";
 import { Link } from "react-router-dom";
@@ -562,6 +563,7 @@ const EntitiesPanel = ({
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [isDetectingCountries, setIsDetectingCountries] = React.useState(false);
+  const [detectionId, setDetectionId] = React.useState<number>();
   const [isProposingGeopolitics, setIsProposingGeopolitics] = React.useState(false);
   const [fetchedCountries, setFetchedCountries] = React.useState<CountryTag[]>([]);
   const countries = providedCountries ?? fetchedCountries;
@@ -795,6 +797,7 @@ const EntitiesPanel = ({
         `${apiUrl}/document/${docId}/countries/detect`, {}, { headers: jsonHeaders },
       );
       setFetchedCountries(response.data.countries);
+      setDetectionId(response.data.detection_id);
       setMessage(response.data.added.length > 0
         ? `Dodano państw: ${response.data.added.length}.` : "Nie wykryto nowych państw.");
       onEntitiesChanged?.();
@@ -2057,6 +2060,7 @@ const EntitiesPanel = ({
           </button>
         )}
       </div>
+      {docId && <CountryDetectionHistory docId={docId} apiUrl={apiUrl} apiKey={apiKey} detectionId={detectionId} />}
       {nerUnavailableAt && (
         <div style={{
           marginTop: 8, padding: 8, background: "#fff7ed", border: "1px solid #fdba74",

@@ -3166,6 +3166,37 @@ class LlmPricing(Base):
         )
 
 
+class LlmCallPayload(Base):
+    """Expiring request/response audit; usage accounting survives payload deletion."""
+
+    __tablename__ = "llm_call_payloads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    usage_log_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("llm_usage_logs.id", ondelete="SET NULL"),
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="SET NULL"),
+    )
+    operation: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(100))
+    system_prompt: Mapped[str | None] = mapped_column(Text)
+    request_text: Mapped[str | None] = mapped_column(Text)
+    response_text: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    request_extra: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    request_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    response_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_llm_call_payloads_usage_log_id", "usage_log_id"),
+        Index("ix_llm_call_payloads_document_created", "document_id", "created_at"),
+        Index("ix_llm_call_payloads_created_at", "created_at"),
+    )
+
+
 class LlmUsageLog(Base):
     """One record per LLM/embedding call, independent of provider and model.
 

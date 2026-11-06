@@ -256,7 +256,7 @@ def test_openrouter_exact_cost_or_catalog_estimate(value, extra):
             patched_recorder(side_effect=lambda **kw: record_llm_usage(**kw, session_factory=factory)) as recorder:
         response = ai_ask("q", "openrouter/openai/gpt-4o-mini")
     recorder.assert_called_once()
-    assert len(factory.added) == 1
+    assert len(factory.added) == 2
     log = factory.added[0]
     valid = type(value) in (int, float) and Decimal(str(value)).is_finite() and value >= 0
     assert log.cost_status == ("reported" if valid else "estimated")

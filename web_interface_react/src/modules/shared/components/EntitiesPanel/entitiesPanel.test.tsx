@@ -21,6 +21,21 @@ const openMenu = async () => {
   fireEvent.click(screen.getByRole("button", { name: place.text }));
 };
 
+it("keeps country history with hidden country chips and refreshes after detection", async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: url.includes("country_detections")
+    ? { detections: [] } : url.endsWith("enrichment_job") ? { job: null }
+    : { entities: { persName: [], orgName: [], geogName: [], placeName: [] } } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: { countries: [], added: [], detection_id: 99 } });
+  render(<MemoryRouter><EntitiesPanel docId={10753} hideCountriesRow /></MemoryRouter>);
+  const historyCalls = () => vi.mocked(axios.get).mock.calls.filter(([url]) => url.includes("country_detections"));
+  expect(historyCalls()).toHaveLength(0);
+  fireEvent.click(screen.getByText("Dlaczego te państwa? (historia wykrywania)"));
+  await screen.findByText("Brak zapisanej historii wykrywania państw dla tego dokumentu.");
+  expect(historyCalls()).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Wykryj państwa" }));
+  await waitFor(() => expect(historyCalls()).toHaveLength(2));
+});
+
 it("shows the full proposal and confirms it without edit mode", async () => {
   const proposed = { id: 7, text: "Huty", count: 4, verified: false, place_verification_status: "needs_review",
     proposed_geocode_id: 17, proposed_display_name: "Huti, obwód lwowski, Ukraina", proposed_lat: 49, proposed_lon: 24 };

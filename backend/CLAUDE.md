@@ -58,6 +58,10 @@ Flask + Flask-CORS application exposing 23 REST API endpoints. **Version**: 0.3.
 
 ### API Endpoints
 
+LLM audit: `GET /llm_usage/<int:usage_id>/payload` requires a user/service API key and returns `{usage, payload}` (ISO dates, Decimal amounts as strings). A missing usage row is 404; opted-out or expired payloads are `null`. `GET /llm_costs?document_id=...` adds `has_payload: bool` to every call in its history using one bulk lookup. Payloads expire independently of cost history; see [LLM Abstraction](library/CLAUDE.md#llm-abstraction-aipy) for configuration and privacy exclusions.
+
+`GET /document/<int:doc_id>/llm_payloads?operation=&limit=20&offset=0` (user/service key) returns `{payloads, total}` for all retained document payloads, including Basal/OpenRouter decisions with `usage_log_id: null`. Each entry contains its id, nullable usage id, operation, provider, model, ISO creation date and full payload fields. Results are newest first (creation date, then id descending); a nonempty `operation` filters by exact match. `total` counts matching rows before pagination. Limit is 1–100 (default 20), offset is a nonnegative 64-bit integer (default 0); invalid pagination returns 400, an unknown document returns 404.
+
 | Category | Endpoints |
 |----------|----------|
 | **Feed review reasons** | `GET/POST /feed_review_reasons`, `PATCH/DELETE /feed_review_reasons/<code>` — editable skip-reason catalog; service-key writes, usage counts, protected system reasons. |
