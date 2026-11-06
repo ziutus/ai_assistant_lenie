@@ -97,6 +97,6 @@ def test_unconfirmed_abbreviation_keeps_ner_group(monkeypatch):
 
 
 def test_hybrid_country_tags_include_confirmed_abbreviation(llm, monkeypatch):
-    monkeypatch.setattr(article_tagging, "_extract_countries_from_gazetteer", lambda text, title: ["kraj-polska"])
+    monkeypatch.setattr(article_tagging, "_extract_countries_from_gazetteer", lambda text, title, audit=None: ["kraj-polska"])
     tags = article_tagging.extract_countries_hybrid(TEXT, "Kobalt")
     assert tags == ["kraj-polska", country_tag_for("Demokratyczna Republika Konga")]

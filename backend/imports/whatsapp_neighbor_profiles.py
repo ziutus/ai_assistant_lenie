@@ -222,7 +222,7 @@ def _call_llm_json(query: str, system_prompt: str, model: str, label: str, max_t
                 temperature=0.4,
                 max_token_count=max_token_count,
                 system_prompt=system_prompt,
-                operation="whatsapp_neighbor_profile",
+                operation="whatsapp_neighbor_profile", store_payload=False,
             )
         except Exception as exc:
             logger.warning("LLM call failed for %s (attempt %d): %s", label, attempt, exc)

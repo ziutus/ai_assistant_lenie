@@ -1571,9 +1571,10 @@ class TestDocumentCountries:
             "countries": [{"slug": "polska", "name_pl": "Polska"},
                           {"slug": "niemcy", "name_pl": "Niemcy"}],
             "added": ["niemcy"],
+            "detection_id": None,
         }
         assert doc.tags == "topic,kraj-polska,miejsce-aden,kraj-niemcy"
-        extract.assert_called_once_with(expected_text, "")
+        extract.assert_called_once_with(expected_text, "", audit={})
         session.commit.assert_called_once()
 
     @pytest.mark.parametrize("case,status", [("missing", 404), ("empty", 400), ("whitespace", 400)])

@@ -486,187 +486,190 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
     "tagged": [tags]}. Countries and already-linked entities are skipped, so
     repeat runs only pay for new names.
     """
-    entities = (
-        session.query(DocumentEntity)
-        .filter(
-            DocumentEntity.document_id == doc.id,
-            DocumentEntity.entity_type.in_(PLACE_ENTITY_TYPES),
+    from library.llm_usage.context import document_usage_context
+
+    with document_usage_context(doc.id):
+        entities = (
+            session.query(DocumentEntity)
+            .filter(
+                DocumentEntity.document_id == doc.id,
+                DocumentEntity.entity_type.in_(PLACE_ENTITY_TYPES),
+            )
+            .all()
         )
-        .all()
-    )
 
-    checked = 0
-    resolved_names: list[str] = []
-    # Human corrections/merges must survive enrichment as well as NER refresh:
-    # canonicalization and context classification can otherwise rename/retype them.
-    for ent in entities:
-        if ent.relevance == "figurative":
-            remove_orphaned_tag(session, doc, ent)
-            continue
-        if ent.place_verification_status == "confirmed":
-            add_place_tag(doc, ent)
-    candidates = [ent for ent in entities if ent.source != "manual" and ent.relevance != "figurative"
-                  and ent.place_verification_status != "confirmed" and not _is_country(ent.entity_text)]
-    for index, ent in enumerate(candidates, start=1):
-        place_needs_review(ent)
-        if progress_callback is not None:
-            progress_callback(index, len(candidates))
-        resolved_name = ent.entity_text
-        if ent.geocode_id is None:
-            ent.geocode = _get_or_create_geocode(session, ent.entity_text)
-            if not ent.geocode.resolved:
-                fixed = _retry_after_stripping_country(session, ent.entity_text)
-                if fixed is not None:
-                    # Do not rename the row here.  A clean mention of the
-                    # recovered place may already be present in this document
-                    # (doc #9394 has both "Al-Faszir" and the broken
-                    # "Al-Faszirze Emiraty").  Renaming before
-                    # _canonicalize_and_merge_places() gets a query-triggered
-                    # autoflush and violates the unique document/type/text
-                    # constraint before that later phase can merge the rows.
-                    # The resolved geocode carries the canonical display name;
-                    # canonicalization below will merge and rename safely.
-                    resolved_name, ent.geocode = fixed
-            checked += 1
-        if ent.geocode is not None and ent.geocode.resolved:
-            resolved_names.append(resolved_name)
-
-    candidates = _canonicalize_and_merge_places(session, candidates)
-
-    # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
-    groups: dict[str, dict] = {}
-    entity_by_canonical: dict[str, DocumentEntity] = {}
-    # entity_text -> entity, for candidates the geocoder never resolved at all
-    # (a real place the geocoder just doesn't have, OR a government-seat name
-    # used metonymically — geocode_aliases.py can't fix the latter, since
-    # there IS no single correct place to alias it to).
-    unresolved_by_text: dict[str, DocumentEntity] = {}
-    for ent in candidates:
-        if place_needs_review(ent):
-            continue
-        if ent.geocode is not None and ent.geocode.resolved:
-            canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
-            group = groups.setdefault(canonical, {"mentions": 0, "surface": ent.entity_text, "surface_mentions": 0})
-            group.setdefault("variants", []).extend(ent.variants or [])
-            mentions = ent.mention_count or 1
-            group["mentions"] += mentions
-            if mentions > group["surface_mentions"]:
-                group["surface"] = ent.entity_text
-                group["surface_mentions"] = mentions
-            entity_by_canonical[canonical] = ent  # canonicalized above, entity_text == canonical
-        else:
-            unresolved_by_text.setdefault(ent.entity_text, ent)
-
-    tagged: list[str] = []
-    if groups:
-        from library.place_context_classifier import classify_place_context_candidates
-
-        context_results = classify_place_context_candidates(text, doc.title or "", groups, doc.id)
-        if context_results:
-            from library.db.models import NerContextClassification
-
-            session.add_all([
-                NerContextClassification(
-                    document_id=doc.id,
-                    entity_type="placeName",
-                    entity_text=result["entity_text"],
-                    predicted_class=result["predicted_class"],
-                    confidence=result["confidence"],
-                    rationale=result["rationale"],
-                    context_excerpt=result["context"][:2000],
-                    model=result["model"],
-                    dropped=result["dropped"],
-                )
-                for result in context_results
-            ])
-            dropped_names = [result["key"] for result in context_results if result["dropped"]]
-            for name in dropped_names:
-                groups.pop(name, None)
-            if dropped_names:
-                logger.info(
-                    "Context verification dropped %d non-place mentions for doc %s: %s",
-                    len(dropped_names), doc.id, dropped_names,
-                )
-            for result in context_results:
-                ent = entity_by_canonical.get(result["key"])
-                if (result["predicted_class"] == "not_place" and result["dropped"]
-                        and not result["organization"] and ent is not None
-                        and ent.place_verification_status != "confirmed" and ent.source != "manual"):
-                    ent.place_verification_status = "rejected"
-                    ent.place_review_reason = "context_not_place"
-                if not result["organization"]:
-                    continue
-                if ent is not None:
-                    _reclassify_as_organization(session, doc, ent)
-
-        confirmed = [name for name, g in groups.items() if g["mentions"] >= AUTO_CONFIRM_MENTIONS]
-        # The LLM searches the text for mention snippets, so it gets the surface
-        # form (present in the text), and confirmations map back to canonical.
-        llm_surfaces = {g["surface"]: name for name, g in groups.items() if g["mentions"] < AUTO_CONFIRM_MENTIONS}
-        if llm_surfaces:
-            from library.article_tagging import confirm_places_with_llm
-
-            confirmed += [
-                llm_surfaces[s]
-                for s in confirm_places_with_llm(text, doc.title or "", list(llm_surfaces))
-                if s in llm_surfaces
-            ]
-        existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
-        existing_set = set(existing)
-        for name in confirmed:
-            if place_needs_review(entity_by_canonical[name]):
+        checked = 0
+        resolved_names: list[str] = []
+        # Human corrections/merges must survive enrichment as well as NER refresh:
+        # canonicalization and context classification can otherwise rename/retype them.
+        for ent in entities:
+            if ent.relevance == "figurative":
+                remove_orphaned_tag(session, doc, ent)
                 continue
-            tag = f"miejsce-{_slugify(name)}"
-            if tag and tag not in existing_set:
-                tagged.append(tag)
-                existing_set.add(tag)
-        if tagged:
-            doc.tags = ",".join(existing + tagged)
+            if ent.place_verification_status == "confirmed":
+                add_place_tag(doc, ent)
+        candidates = [ent for ent in entities if ent.source != "manual" and ent.relevance != "figurative"
+                      and ent.place_verification_status != "confirmed" and not _is_country(ent.entity_text)]
+        for index, ent in enumerate(candidates, start=1):
+            place_needs_review(ent)
+            if progress_callback is not None:
+                progress_callback(index, len(candidates))
+            resolved_name = ent.entity_text
+            if ent.geocode_id is None:
+                ent.geocode = _get_or_create_geocode(session, ent.entity_text)
+                if not ent.geocode.resolved:
+                    fixed = _retry_after_stripping_country(session, ent.entity_text)
+                    if fixed is not None:
+                        # Do not rename the row here.  A clean mention of the
+                        # recovered place may already be present in this document
+                        # (doc #9394 has both "Al-Faszir" and the broken
+                        # "Al-Faszirze Emiraty").  Renaming before
+                        # _canonicalize_and_merge_places() gets a query-triggered
+                        # autoflush and violates the unique document/type/text
+                        # constraint before that later phase can merge the rows.
+                        # The resolved geocode carries the canonical display name;
+                        # canonicalization below will merge and rename safely.
+                        resolved_name, ent.geocode = fixed
+                checked += 1
+            if ent.geocode is not None and ent.geocode.resolved:
+                resolved_names.append(resolved_name)
 
-    if unresolved_by_text:
-        from library.place_context_classifier import classify_place_context_candidates
+        candidates = _canonicalize_and_merge_places(session, candidates)
 
-        unresolved_groups = {
-            text_: {"surface": text_, "variants": ent.variants or []} for text_, ent in unresolved_by_text.items()
-        }
-        unresolved_results = classify_place_context_candidates(text, doc.title or "", unresolved_groups, doc.id)
-        if unresolved_results:
-            from library.db.models import NerContextClassification
+        # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
+        groups: dict[str, dict] = {}
+        entity_by_canonical: dict[str, DocumentEntity] = {}
+        # entity_text -> entity, for candidates the geocoder never resolved at all
+        # (a real place the geocoder just doesn't have, OR a government-seat name
+        # used metonymically — geocode_aliases.py can't fix the latter, since
+        # there IS no single correct place to alias it to).
+        unresolved_by_text: dict[str, DocumentEntity] = {}
+        for ent in candidates:
+            if place_needs_review(ent):
+                continue
+            if ent.geocode is not None and ent.geocode.resolved:
+                canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
+                group = groups.setdefault(canonical, {"mentions": 0, "surface": ent.entity_text, "surface_mentions": 0})
+                group.setdefault("variants", []).extend(ent.variants or [])
+                mentions = ent.mention_count or 1
+                group["mentions"] += mentions
+                if mentions > group["surface_mentions"]:
+                    group["surface"] = ent.entity_text
+                    group["surface_mentions"] = mentions
+                entity_by_canonical[canonical] = ent  # canonicalized above, entity_text == canonical
+            else:
+                unresolved_by_text.setdefault(ent.entity_text, ent)
 
-            session.add_all([
-                NerContextClassification(
-                    document_id=doc.id,
-                    entity_type="placeName",
-                    entity_text=result["entity_text"],
-                    predicted_class=result["predicted_class"],
-                    confidence=result["confidence"],
-                    rationale=result["rationale"],
-                    context_excerpt=result["context"][:2000],
-                    model=result["model"],
-                    dropped=result["dropped"],
-                )
-                for result in unresolved_results
-            ])
-            for result in unresolved_results:
-                ent = unresolved_by_text.get(result["key"])
-                if (result["predicted_class"] == "not_place" and result["dropped"]
-                        and not result["organization"] and ent is not None
-                        and ent.place_verification_status != "confirmed" and ent.source != "manual"):
-                    ent.place_verification_status = "rejected"
-                    ent.place_review_reason = "context_not_place"
-            organization_texts = [result["key"] for result in unresolved_results if result["organization"]]
-            for text_ in organization_texts:
-                ent = unresolved_by_text.get(text_)
-                if ent is not None:
-                    _reclassify_as_organization(session, doc, ent)
-            if organization_texts:
-                logger.info(
-                    "Context verification reclassified %d unresolved place(s) as organizations for doc %s: %s",
-                    len(organization_texts), doc.id, organization_texts,
-                )
+        tagged: list[str] = []
+        if groups:
+            from library.place_context_classifier import classify_place_context_candidates
 
-    logger.info(
-        "place verification doc=%s: %d geocoded, %d resolved, tags: %s",
-        doc.id, checked, len(resolved_names), tagged or "-",
-    )
-    return {"checked": checked, "resolved": resolved_names, "tagged": tagged}
+            context_results = classify_place_context_candidates(text, doc.title or "", groups, doc.id)
+            if context_results:
+                from library.db.models import NerContextClassification
+
+                session.add_all([
+                    NerContextClassification(
+                        document_id=doc.id,
+                        entity_type="placeName",
+                        entity_text=result["entity_text"],
+                        predicted_class=result["predicted_class"],
+                        confidence=result["confidence"],
+                        rationale=result["rationale"],
+                        context_excerpt=result["context"][:2000],
+                        model=result["model"],
+                        dropped=result["dropped"],
+                    )
+                    for result in context_results
+                ])
+                dropped_names = [result["key"] for result in context_results if result["dropped"]]
+                for name in dropped_names:
+                    groups.pop(name, None)
+                if dropped_names:
+                    logger.info(
+                        "Context verification dropped %d non-place mentions for doc %s: %s",
+                        len(dropped_names), doc.id, dropped_names,
+                    )
+                for result in context_results:
+                    ent = entity_by_canonical.get(result["key"])
+                    if (result["predicted_class"] == "not_place" and result["dropped"]
+                            and not result["organization"] and ent is not None
+                            and ent.place_verification_status != "confirmed" and ent.source != "manual"):
+                        ent.place_verification_status = "rejected"
+                        ent.place_review_reason = "context_not_place"
+                    if not result["organization"]:
+                        continue
+                    if ent is not None:
+                        _reclassify_as_organization(session, doc, ent)
+
+            confirmed = [name for name, g in groups.items() if g["mentions"] >= AUTO_CONFIRM_MENTIONS]
+            # The LLM searches the text for mention snippets, so it gets the surface
+            # form (present in the text), and confirmations map back to canonical.
+            llm_surfaces = {g["surface"]: name for name, g in groups.items() if g["mentions"] < AUTO_CONFIRM_MENTIONS}
+            if llm_surfaces:
+                from library.article_tagging import confirm_places_with_llm
+
+                confirmed += [
+                    llm_surfaces[s]
+                    for s in confirm_places_with_llm(text, doc.title or "", list(llm_surfaces))
+                    if s in llm_surfaces
+                ]
+            existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+            existing_set = set(existing)
+            for name in confirmed:
+                if place_needs_review(entity_by_canonical[name]):
+                    continue
+                tag = f"miejsce-{_slugify(name)}"
+                if tag and tag not in existing_set:
+                    tagged.append(tag)
+                    existing_set.add(tag)
+            if tagged:
+                doc.tags = ",".join(existing + tagged)
+
+        if unresolved_by_text:
+            from library.place_context_classifier import classify_place_context_candidates
+
+            unresolved_groups = {
+                text_: {"surface": text_, "variants": ent.variants or []} for text_, ent in unresolved_by_text.items()
+            }
+            unresolved_results = classify_place_context_candidates(text, doc.title or "", unresolved_groups, doc.id)
+            if unresolved_results:
+                from library.db.models import NerContextClassification
+
+                session.add_all([
+                    NerContextClassification(
+                        document_id=doc.id,
+                        entity_type="placeName",
+                        entity_text=result["entity_text"],
+                        predicted_class=result["predicted_class"],
+                        confidence=result["confidence"],
+                        rationale=result["rationale"],
+                        context_excerpt=result["context"][:2000],
+                        model=result["model"],
+                        dropped=result["dropped"],
+                    )
+                    for result in unresolved_results
+                ])
+                for result in unresolved_results:
+                    ent = unresolved_by_text.get(result["key"])
+                    if (result["predicted_class"] == "not_place" and result["dropped"]
+                            and not result["organization"] and ent is not None
+                            and ent.place_verification_status != "confirmed" and ent.source != "manual"):
+                        ent.place_verification_status = "rejected"
+                        ent.place_review_reason = "context_not_place"
+                organization_texts = [result["key"] for result in unresolved_results if result["organization"]]
+                for text_ in organization_texts:
+                    ent = unresolved_by_text.get(text_)
+                    if ent is not None:
+                        _reclassify_as_organization(session, doc, ent)
+                if organization_texts:
+                    logger.info(
+                        "Context verification reclassified %d unresolved place(s) as organizations for doc %s: %s",
+                        len(organization_texts), doc.id, organization_texts,
+                    )
+
+        logger.info(
+            "place verification doc=%s: %d geocoded, %d resolved, tags: %s",
+            doc.id, checked, len(resolved_names), tagged or "-",
+        )
+        return {"checked": checked, "resolved": resolved_names, "tagged": tagged}

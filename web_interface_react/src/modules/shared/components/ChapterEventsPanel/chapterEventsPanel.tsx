@@ -1,6 +1,7 @@
 import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import ChapterModelPicker, { useChapterModel } from "../ChapterModelPicker/chapterModelPicker";
 import RequestErrorDetails from "../RequestErrorDetails/requestErrorDetails";
 import SkillHint from "../SkillHint";
 import { describeRequestError, type RequestErrorInfo } from "../../utils/requestError";
@@ -179,6 +180,7 @@ export const ChapterEventsDetectButton = ({ onClick, busy }: { onClick: () => vo
  */
 const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onBusyChange }: Props) => {
   const headers = React.useMemo(() => ({ "x-api-key": apiKey }), [apiKey]);
+  const modelState = useChapterModel(apiUrl, apiKey);
   const [busy, setBusy] = React.useState(false);
   const [events, setEvents] = React.useState<EventProposal[] | null>(null);
   const [registrySources, setRegistrySources] = React.useState<RegistrySource[]>([]);
@@ -217,7 +219,11 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
     try {
       const { data } = await axios.post<{
         events: EventProposal[]; model: string; rejected_without_quote: number; rejected_without_date: number;
-      }>(`${apiUrl}/document/${docId}/chapter/${position}/detect_events`, {}, { headers, timeout: 240000 });
+      }>(
+        `${apiUrl}/document/${docId}/chapter/${position}/detect_events`,
+        modelState.model ? { model: modelState.model } : {},
+        { headers, timeout: 240000 },
+      );
       setEvents(data.events);
       const rejected = data.rejected_without_quote + data.rejected_without_date;
       setNote(`Model ${data.model}: ${data.events.length} wydarzeń`
@@ -264,6 +270,7 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
             Skill przejrzy wydarzenia tego rozdziału, sprawdzi duplikaty w rejestrze, dobierze rodzaj i kraje i po
             Twojej zgodzie doda je do rejestru wydarzeń.
           </SkillHint>
+          <ChapterModelPicker state={modelState} summary="Model wykrywania" disabled={busy} />
           {note && <p role="status" style={{ color: "#166534", margin: "4px 0" }}>{note}</p>}
           {error && (
             <div role="alert" style={{ color: "#a33" }}>

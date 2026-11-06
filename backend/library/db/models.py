@@ -22,6 +22,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
+    JSON,
     Index,
     Numeric,
     SmallInteger,
@@ -1812,6 +1813,44 @@ class DocumentTone(Base):
     intensity: Mapped[str] = mapped_column(String(10), nullable=False)
     registers: Mapped[str | None] = mapped_column(String(100))
     evidence: Mapped[str | None] = mapped_column(Text)
+    # Tone of the chapter recomputed without its outlier passages (tone_spans.recompute_core_tone); NULL until asked.
+    core_tone: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
+
+
+class DocumentToneSpan(Base):
+    """A passage that stands out from its chapter's tone (``outlier``) or carries the substance (``key``).
+
+    Found on request by ``library/tone_spans.py``; ``quote`` is verbatim text of the document. A reviewer settles
+    each one (``proposed`` → ``confirmed`` / ``rejected``) and a settled passage survives a re-detection.
+    """
+
+    __tablename__ = "document_tone_spans"
+    __table_args__ = (
+        CheckConstraint("role IN ('outlier', 'key')", name="ck_document_tone_spans_role"),
+        CheckConstraint("status IN ('proposed', 'confirmed', 'rejected')", name="ck_document_tone_spans_status"),
+        CheckConstraint(
+            "importance IS NULL OR importance BETWEEN 1 AND 3", name="ck_document_tone_spans_importance",
+        ),
+        Index("idx_document_tone_spans_document_chapter", "document_id", "chapter_position"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    chapter_position: Mapped[int | None] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    label: Mapped[str] = mapped_column(String(30), nullable=False)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    importance: Mapped[int | None] = mapped_column(SmallInteger)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, server_default="proposed")
+    model: Mapped[str | None] = mapped_column(String(120))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -3165,6 +3204,37 @@ class LlmPricing(Base):
             f"LlmPricing(id={self.id!r}, pricing_version={self.pricing_version!r}, "
             f"provider={self.provider!r}, model={self.model!r})"
         )
+
+
+class LlmCallPayload(Base):
+    """Expiring request/response audit; usage accounting survives payload deletion."""
+
+    __tablename__ = "llm_call_payloads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    usage_log_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("llm_usage_logs.id", ondelete="SET NULL"),
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="SET NULL"),
+    )
+    operation: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(100))
+    system_prompt: Mapped[str | None] = mapped_column(Text)
+    request_text: Mapped[str | None] = mapped_column(Text)
+    response_text: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    request_extra: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    request_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    response_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_llm_call_payloads_usage_log_id", "usage_log_id"),
+        Index("ix_llm_call_payloads_document_created", "document_id", "created_at"),
+        Index("ix_llm_call_payloads_created_at", "created_at"),
+    )
 
 
 class LlmUsageLog(Base):
@@ -4935,3 +5005,43 @@ class CountryRelationEvidence(Base):
 
     assessment: Mapped["CountryRelationAssessment"] = relationship(back_populates="evidence")
     event: Mapped["GeoEvent"] = relationship(lazy="joined")
+
+
+class CountryDetectionRun(Base):
+    """Country tagging input, raw LLM exchange and resulting added tags."""
+
+    __tablename__ = "country_detection_runs"
+    __table_args__ = (Index("ix_country_detection_runs_document_created", "document_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    analysis_run_id: Mapped[int | None] = mapped_column(BigInteger)
+    trigger: Mapped[str] = mapped_column(String(30))
+    text_source: Mapped[str] = mapped_column(String(20))
+    text_chars: Mapped[int] = mapped_column(Integer)
+    threshold: Mapped[int] = mapped_column(Integer)
+    llm_called: Mapped[bool] = mapped_column(Boolean)
+    llm_model: Mapped[str | None] = mapped_column(String(100))
+    llm_prompt: Mapped[str | None] = mapped_column(Text)
+    llm_response: Mapped[str | None] = mapped_column(Text)
+    llm_usage_log_id: Mapped[int | None] = mapped_column(BigInteger)
+    llm_error: Mapped[str | None] = mapped_column(Text)
+    tags_before: Mapped[str | None] = mapped_column(Text)
+    tags_added: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CountryTagDecision(Base):
+    """One final decision per country candidate in a detection run."""
+
+    __tablename__ = "country_tag_decisions"
+    __table_args__ = (Index("ix_country_tag_decisions_detection_run_id", "detection_run_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    detection_run_id: Mapped[int] = mapped_column(ForeignKey("country_detection_runs.id", ondelete="CASCADE"))
+    country_slug: Mapped[str] = mapped_column(String(60))
+    country_name: Mapped[str] = mapped_column(String(100))
+    mention_count: Mapped[int] = mapped_column(Integer)
+    decision: Mapped[str] = mapped_column(String(30))
+    snippets: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())

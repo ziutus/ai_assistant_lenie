@@ -8,6 +8,7 @@ import re
 from sqlalchemy import delete
 
 from library.ai import ai_ask
+from library.chapter_fragments import chapter_fragments, merge_fragment_reports
 from library.config_loader import load_config
 from library.db.models import DocumentTimePeriod
 from library.llm_usage.report import usage_report
@@ -17,8 +18,9 @@ from library.year_normalization import coerce_year
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIME_PERIOD_MODEL = "Bielik-11B-v3.0-Instruct"
-MAX_FRAGMENT_CHARS = 8_000
+MAX_FRAGMENT_CHARS = 8_000  # one model call; a longer chapter is split (``chapter_fragments``), never cut
 MAX_PERIODS_PER_CHAPTER = 3
+_CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 MIN_YEAR = -10_000
 MAX_YEAR = 2_100
 _CONFIDENCE_LEVELS = {"high", "medium", "low"}
@@ -129,6 +131,51 @@ def classify_fragment(fragment: str, model: str, *, document_id: int | None = No
     }
 
 
+def merge_periods(weighted: list[tuple[list[dict], int]]) -> list[dict]:
+    """One period list for a chapter from the lists of its fragments (weight = fragment length in characters).
+
+    The same label (case-insensitive) is one period: its years are widened to cover every fragment that named it,
+    the best confidence (and the evidence that goes with it) is kept. Periods are ordered by the amount of text
+    that names them, so the main period of the chapter comes first, and capped at ``MAX_PERIODS_PER_CHAPTER``.
+    A single fragment is returned unchanged.
+    """
+    if len(weighted) == 1:
+        return weighted[0][0]
+    merged: dict[str, dict] = {}
+    for periods, weight in weighted:
+        for period in periods:
+            key = period["subject_period_label"].casefold()
+            entry = merged.get(key)
+            if entry is None:
+                merged[key] = {"period": dict(period), "weight": weight, "order": len(merged)}
+                continue
+            entry["weight"] += weight
+            current = entry["period"]
+            for field, pick in (("subject_period_start_year", min), ("subject_period_end_year", max)):
+                values = [value for value in (current[field], period[field]) if value is not None]
+                current[field] = pick(values) if values else None
+            if _CONFIDENCE_RANK[period["confidence"]] > _CONFIDENCE_RANK[current["confidence"]]:
+                current["confidence"] = period["confidence"]
+                current["evidence"] = period["evidence"]
+    ranked = sorted(merged.values(), key=lambda entry: (-entry["weight"], entry["order"]))
+    return [entry["period"] for entry in ranked[:MAX_PERIODS_PER_CHAPTER]]
+
+
+def classify_chapter(text: str, model: str, *, document_id: int | None = None) -> tuple[list[dict], dict]:
+    """Classify the periods of a WHOLE chapter: one model call per fragment, merged by ``merge_periods``."""
+    fragments, skipped = chapter_fragments(text, MAX_FRAGMENT_CHARS)
+    weighted: list[tuple[list[dict], int]] = []
+    reports: list[dict] = []
+    for fragment in fragments:
+        extracted, report = classify_fragment(fragment, model, document_id=document_id)
+        reports.append(report)
+        weighted.append((extracted, len(fragment)))
+    merged_report = merge_fragment_reports(
+        reports, counters=("rejected_invalid", "invalid_json"), fragments=len(fragments), skipped=skipped,
+    )
+    return (merge_periods(weighted) if weighted else []), merged_report
+
+
 def extract_document_periods(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
     """Classify periods per reader chapter (whole document when it has no chapters)."""
     del session  # Kept in the public API for symmetry with refresh_document_periods.
@@ -136,9 +183,7 @@ def extract_document_periods(session, doc, model: str | None = None, *, chapter_
     periods: list[dict] = []
     chapter_reports: list[dict] = []
     for chapter in _chapters_for_document(doc, chapter_position):
-        extracted, report = classify_fragment(
-            chapter["text"][:MAX_FRAGMENT_CHARS], selected_model, document_id=getattr(doc, "id", None),
-        )
+        extracted, report = classify_chapter(chapter["text"], selected_model, document_id=getattr(doc, "id", None))
         for position, period in enumerate(extracted):
             periods.append({
                 "chapter_position": chapter["position"],
@@ -154,9 +199,21 @@ def extract_document_periods(session, doc, model: str | None = None, *, chapter_
     return {"model": selected_model, "periods": periods, "chapters": chapter_reports}
 
 
-def refresh_document_periods(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
-    """Replace stored periods for a document, or one explicitly selected chapter."""
+def refresh_document_periods(
+    session, doc, model: str | None = None, *, chapter_position: int | None = None, keep_previous_on_failure: bool = False,
+) -> dict:
+    """Replace stored periods for a document, or one explicitly selected chapter.
+
+    No period is a legitimate answer for a timeless text, but not when the model's JSON was unusable. With
+    ``keep_previous_on_failure`` a single-chapter refresh that found nothing AND had an invalid answer leaves the
+    stored periods alone instead of deleting them (``kept_previous`` in the result).
+    """
     result = extract_document_periods(session, doc, model, chapter_position=chapter_position)
+    failed = any(report.get("invalid_json") for report in result["chapters"])
+    if keep_previous_on_failure and not result["periods"] and failed:
+        result["rows"] = []
+        result["kept_previous"] = True
+        return result
     statement = delete(DocumentTimePeriod).where(DocumentTimePeriod.document_id == doc.id)
     if chapter_position is not None:
         statement = statement.where(DocumentTimePeriod.chapter_position == chapter_position)

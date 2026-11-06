@@ -2,11 +2,11 @@
 
 from datetime import date, datetime, time, timedelta
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import func, select
 
 from library.db.engine import get_scoped_session
-from library.db.models import Document, DocumentAnalysisJob, LlmUsageLog
+from library.db.models import Document, DocumentAnalysisJob, LlmCallPayload, LlmUsageLog
 
 bp = Blueprint("llm_costs", __name__)
 
@@ -119,10 +119,16 @@ def llm_costs():
         .order_by(func.min(LlmUsageLog.called_at).desc())
     ).all()
     calls = []
+    payload_ids = set()
     if document_id is not None:
         calls = session.scalars(
             select(LlmUsageLog).where(*filters).order_by(LlmUsageLog.called_at.desc()).limit(1000)
         ).all()
+
+    if calls:
+        payload_ids = set(session.scalars(select(LlmCallPayload.usage_log_id).where(
+            LlmCallPayload.usage_log_id.in_([row.id for row in calls]),
+        )).all())
 
     return jsonify({
         "status": "success", "from": date_from.isoformat() if date_from else None,
@@ -144,7 +150,7 @@ def llm_costs():
                       "started_at": r.started_at.isoformat() if r.started_at else None,
                       "calls": r.calls, "tokens": r.tokens, "cost": _money(r.cost)} for r in jobs],
         "calls": [{
-            "id": r.id, "document_id": r.document_id, "job_id": r.analysis_job_id,
+            "id": r.id, "has_payload": r.id in payload_ids, "document_id": r.document_id, "job_id": r.analysis_job_id,
             "run_id": r.analysis_run_id, "called_at": r.called_at.isoformat(),
             "operation": r.operation, "provider": r.provider, "model": r.model,
             "prompt_tokens": r.prompt_tokens, "completion_tokens": r.completion_tokens,
@@ -152,3 +158,66 @@ def llm_costs():
             "cost_status": r.cost_status, "success": r.success, "error_code": r.error_code,
         } for r in calls],
     })
+
+
+@bp.get("/llm_usage/<int:usage_id>/payload")
+def llm_usage_payload(usage_id):
+    """Full retained audit for one usage row; absence/expiration is payload=null."""
+    # Authentication is resolved by the application's before_request hook.
+    auth = getattr(g, "auth", None)
+    if auth is None:
+        abort(401)
+    if auth.kind not in {"user", "service"}:
+        abort(403)
+    session = get_scoped_session()
+    usage = session.get(LlmUsageLog, usage_id)
+    if usage is None:
+        abort(404)
+    row = session.scalar(select(LlmCallPayload).where(LlmCallPayload.usage_log_id == usage_id)
+                         .order_by(LlmCallPayload.id.desc()).limit(1))
+    fields = ("id", "operation", "provider", "model", "success", "error_code", "prompt_tokens",
+              "completion_tokens", "total_tokens", "cost_currency", "document_id")
+    data = {field: getattr(usage, field) for field in fields}
+    data.update(called_at=usage.called_at.isoformat(), cost_amount=_money(usage.cost_amount))
+    payload = None
+    if row is not None:
+        payload = {field: getattr(row, field) for field in (
+            "system_prompt", "request_text", "response_text", "error", "request_extra",
+            "request_truncated", "response_truncated",
+        )}
+        payload["created_at"] = row.created_at.isoformat()
+    return jsonify(usage=data, payload=payload)
+
+
+@bp.get("/document/<int:doc_id>/llm_payloads")
+def document_llm_payloads(doc_id):
+    """Retained document audits, including decisions without a usage-log row."""
+    auth = getattr(g, "auth", None)
+    if auth is None:
+        abort(401)
+    if auth.kind not in {"user", "service"}:
+        abort(403)
+    try:
+        limit = int(request.args.get("limit", "20"))
+        offset = int(request.args.get("offset", "0"))
+        if not 1 <= limit <= 100 or not 0 <= offset <= 2**63 - 1:
+            raise ValueError
+    except ValueError:
+        abort(400, "limit must be an integer from 1 to 100; offset must be a nonnegative 64-bit integer")
+
+    session = get_scoped_session()
+    if session.scalar(select(Document.id).where(Document.id == doc_id)) is None:
+        abort(404)
+    filters = [LlmCallPayload.document_id == doc_id]
+    operation = request.args.get("operation")
+    if operation:
+        filters.append(LlmCallPayload.operation == operation)
+    total = session.scalar(select(func.count()).select_from(LlmCallPayload).where(*filters))
+    rows = session.scalars(
+        select(LlmCallPayload).where(*filters)
+        .order_by(LlmCallPayload.created_at.desc(), LlmCallPayload.id.desc()).limit(limit).offset(offset)
+    ).all()
+    fields = ("id", "usage_log_id", "operation", "provider", "model", "system_prompt", "request_text",
+              "response_text", "error", "request_extra", "request_truncated", "response_truncated")
+    return jsonify(payloads=[{**{field: getattr(row, field) for field in fields},
+                              "created_at": row.created_at.isoformat()} for row in rows], total=total)

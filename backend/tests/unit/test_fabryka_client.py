@@ -93,7 +93,8 @@ def _response(status=200, body=None):
 
 @pytest.fixture(autouse=True)
 def _no_event_recording():
-    with patch("library.external_service_events.record_external_service_event"):
+    with patch("library.external_service_events.record_external_service_event"), \
+            patch("library.llm_usage.payloads.store_payload_standalone"):
         yield
 
 

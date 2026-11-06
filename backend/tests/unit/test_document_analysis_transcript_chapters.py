@@ -160,7 +160,7 @@ def transcript_env(monkeypatch, session):
     monkeypatch.setattr(das, "_synthesize", lambda sections, title, model, mode="transcript": "")
     monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: [])
     monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: [])
-    monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
+    monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title, audit=None: [])
     monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda session, doc_id, text: [])
     monkeypatch.setattr("library.place_verification.verify_document_places", lambda session, doc, text: {"resolved": [], "tagged": []})
     monkeypatch.setattr("library.person_registry.resolve_document_persons", lambda session, doc, text: {"linked": [], "skipped": []})

@@ -4,6 +4,9 @@ import { NavLink, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import OpenRouterBalance from "../components/OpenRouterBalance/openRouterBalance";
 import ProviderBalances from "../components/ProviderBalance/providerBalance";
+import LlmPayloadView, { type LlmPayload } from "../components/LlmPayloadView/llmPayloadView";
+import RequestErrorDetails from "../components/RequestErrorDetails/requestErrorDetails";
+import { describeRequestError, type RequestErrorInfo } from "../utils/requestError";
 
 type CostRow = { currency: string | null; calls: number; tokens: number; cost: string | null; unknown_calls?: number };
 type OperationRow = CostRow & { operation: string; model: string };
@@ -13,7 +16,7 @@ type AnalysisRow = CostRow & { job_id: string; run_id: number | null; started_at
 type DocumentRow = CostRow & { document_id: number | null; title: string | null };
 type CallRow = { id: number; document_id: number | null; job_id: string | null; run_id: number | null; called_at: string;
   operation: string; provider: string; model: string; prompt_tokens: number | null; completion_tokens: number | null;
-  tokens: number | null; cost: string | null; currency: string | null; cost_status: string; success: boolean; error_code: string | null };
+  tokens: number | null; cost: string | null; currency: string | null; cost_status: string; success: boolean; error_code: string | null; has_payload?: boolean };
 type Report = { totals: CostRow[]; providers?: ProviderRow[]; documents: DocumentRow[]; daily: DailyRow[]; operations: OperationRow[]; analyses: AnalysisRow[]; calls: CallRow[] };
 
 const OPERATION_LABELS: Record<string, string> = {
@@ -47,6 +50,30 @@ const providerLabel = (provider: string) => PROVIDER_LABELS[provider] ?? provide
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const money = (value: string | null, currency: string | null) => value == null ? "—" : `${Number(value).toFixed(6)} ${currency ?? "?"}`;
 
+const NO_PAYLOAD = "Brak zapisanej treści tego wywołania (starsze wywołanie, wyłączony zapis albo upłynęła retencja).";
+
+function CallPayload({ usageId, documentId }: { usageId: number; documentId: number | null }) {
+  const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [payload, setPayload] = React.useState<LlmPayload | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<RequestErrorInfo | null>(null);
+  React.useEffect(() => {
+    let active = true;
+    const startedAt = Date.now();
+    setLoading(true); setError(null);
+    axios.get<{ payload: LlmPayload | null }>(`${apiUrl}/llm_usage/${usageId}/payload`, { headers: { "x-api-key": apiKey ?? "" } })
+      .then(({ data }) => { if (active) setPayload(data.payload); })
+      .catch(err => {
+        console.error("LLM payload", err);
+        if (active) setError(describeRequestError(err, "Nie udało się pobrać treści wywołania LLM", { startedAt, context: { Dokument: documentId, Wywołanie: usageId } }));
+      }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [apiUrl, apiKey, usageId, documentId]);
+  if (loading) return <p role="status">Ładowanie treści wywołania…</p>;
+  if (error) return <div role="alert"><p>{error.summary}</p><RequestErrorDetails details={error.details} /></div>;
+  return payload ? <LlmPayloadView payload={payload} /> : <p>{NO_PAYLOAD}</p>;
+}
+
 const LlmCosts = () => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [params, setParams] = useSearchParams();
@@ -58,6 +85,7 @@ const LlmCosts = () => {
   const [report, setReport] = React.useState<Report | null>(null);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [expandedCalls, setExpandedCalls] = React.useState<Set<number>>(new Set());
 
   const requestReport = React.useCallback(async (query: Record<string, string>) => {
     setLoading(true); setError("");
@@ -152,14 +180,20 @@ const LlmCosts = () => {
         </tbody></table>
         <h3>Historia operacji LLM</h3>
         <table style={tableStyle}><thead><tr><th style={th}>Moment</th><th style={th}>Operacja</th><th style={th}>Dostawca / model</th><th style={th}>Run / job</th><th style={th}>Tokeny</th><th style={th}>Koszt</th><th style={th}>Status</th></tr></thead><tbody>
-          {report.calls.map(r => <tr key={r.id}>
+          {report.calls.map(r => <React.Fragment key={r.id}><tr>
             <td style={td}>{r.called_at.replace("T", " ").slice(0, 19)}</td><td style={td}>{r.operation}</td>
             <td style={td}>{r.provider}<br/><span style={{ color: "#64748b" }}>{r.model}</span></td>
             <td style={td}>{r.run_id != null ? `run ${r.run_id}` : "—"}{r.job_id ? <><br/><span title={r.job_id}>job {r.job_id.slice(0, 8)}</span></> : null}</td>
             <td style={td}>{r.tokens?.toLocaleString("pl") ?? "—"}<br/><span style={{ color: "#64748b" }}>{r.prompt_tokens ?? "?"} in / {r.completion_tokens ?? "?"} out</span></td>
             <td style={td}>{money(r.cost, r.currency)}<br/><span style={{ color: r.cost_status === "unknown" ? "#b45309" : "#64748b" }}>{r.cost_status}</span></td>
-            <td style={td}>{r.success ? "OK" : <span style={{ color: "#b91c1c" }}>Błąd: {r.error_code ?? "nieznany"}</span>}</td>
-          </tr>)}
+            <td style={td}>{r.success ? "OK" : <span style={{ color: "#b91c1c" }}>Błąd: {r.error_code ?? "nieznany"}</span>}
+              {r.has_payload ? <button type="button" aria-expanded={expandedCalls.has(r.id)} aria-controls={`llm-payload-${r.id}`} onClick={() => setExpandedCalls(previous => {
+                const next = new Set(previous);
+                if (next.has(r.id)) next.delete(r.id); else next.add(r.id);
+                return next;
+              })}>Podgląd</button> : <p>{NO_PAYLOAD}</p>}
+            </td>
+          </tr>{r.has_payload && expandedCalls.has(r.id) && <tr id={`llm-payload-${r.id}`}><td colSpan={7} style={td}><CallPayload usageId={r.id} documentId={r.document_id} /></td></tr>}</React.Fragment>)}
         </tbody></table>
         {!report.calls.length && <p>Brak zarejestrowanych operacji LLM dla dokumentu w tym okresie.</p>}
       </>}
