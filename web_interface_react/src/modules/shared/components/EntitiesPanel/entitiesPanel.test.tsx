@@ -735,6 +735,16 @@ it("shows document countries from GET in the editor", async () => {
   expect(screen.getByText("Państwa:")).toBeTruthy();
 });
 
+it("leaves out the document-wide countries row when hideCountriesRow is set (single-chapter review)", async () => {
+  vi.mocked(axios.get).mockResolvedValue({ data: {
+    job: null, entities: {}, countries: [{ slug: "salwador", name_pl: "Salwador" }],
+  } });
+  render(<MemoryRouter><EntitiesPanel docId={11237} hideCountriesRow /></MemoryRouter>);
+  await act(async () => {});
+  expect(screen.queryByText("Państwa:")).toBeNull();
+  expect(screen.queryByText("Salwador")).toBeNull();
+});
+
 it.each([
   { countries: [] as { slug: string; name_pl: string }[] },
   { countries: [{ slug: "niemcy", name_pl: "Niemcy" }] },

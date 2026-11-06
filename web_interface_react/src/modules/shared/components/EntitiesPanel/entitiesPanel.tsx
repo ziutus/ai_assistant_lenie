@@ -508,6 +508,7 @@ const EntitiesPanel = ({
   onBusyChange,
   onEntitiesChanged,
   countries: providedCountries,
+  hideCountriesRow = false,
   refreshKey = 0,
   chapterRenderer,
   onShowInText,
@@ -552,6 +553,10 @@ const EntitiesPanel = ({
   // list) — rendered as the first block, ahead of Osoby. When omitted, use
   // the document-level countries returned by GET /website_entities.
   countries?: CountryTag[];
+  // Single-chapter review (/ner/:id/:n) draws its own per-chapter "Państwa" row, so the document-wide row of
+  // kraj-* tags (which can name a country the chapter never mentions) is left out there. The countries are
+  // still loaded and used by the empty-state check.
+  hideCountriesRow?: boolean;
 }) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
@@ -2078,7 +2083,7 @@ const EntitiesPanel = ({
           Pełna weryfikacja encji nie powiodła się: {enrichmentJob.error || "nieznany błąd"}. Kliknij ponownie, aby spróbować jeszcze raz.
         </div>
       )}
-      {countries.length > 0 && (
+      {!hideCountriesRow && countries.length > 0 && (
         <div style={{ marginTop: "6px" }}>
           <strong>Państwa:</strong>{" "}
           {[...countries].sort((a, b) => a.name_pl.localeCompare(b.name_pl, "pl")).map((country) => (

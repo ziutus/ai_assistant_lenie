@@ -14,9 +14,9 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
-      return <div data-testid="panel">
+      return <div data-testid="panel" data-hide-countries={hideCountriesRow ? "yes" : "no"}>
         <button onClick={() => onEntitiesChanged?.()}>zmień encje</button>
         {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
         <button type="button" onClick={() => onShowInText?.(
@@ -370,6 +370,15 @@ it("restores the glossary highlight from the address", async () => {
   render(<MemoryRouter initialEntries={["/ner/42?glossary=w%20Kijowie"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
   await screen.findByRole("region", { name: "#1 Wstęp" });
   await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
+});
+
+it("hides the document-wide countries row on a single chapter but not on the whole-document view", async () => {
+  await open();
+  expect(screen.getByTestId("panel").getAttribute("data-hide-countries")).toBe("no");
+  cleanup();
+  render(<MemoryRouter initialEntries={["/ner/42/1"]}><Routes><Route path="/ner/:id/:chapter" element={<NerChapters />} /></Routes></MemoryRouter>);
+  await screen.findByRole("region", { name: "#1 Wstęp" });
+  expect(screen.getByTestId("panel").getAttribute("data-hide-countries")).toBe("yes");
 });
 
 it("says the glossary is empty for a channel without entries and hides the note without a channel", async () => {

@@ -684,6 +684,7 @@ const NerChapters = () => {
           )}
           <EntitiesPanel
             docId={id}
+            hideCountriesRow={chapterMode}
             refreshKey={panelKey}
             onShowInText={showInText}
             onDescribeEvent={setDescribing}
