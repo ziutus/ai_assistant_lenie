@@ -5,7 +5,7 @@ substance whatever the tone ("kluczowy"), found on request by library/tone_spans
 recomputed without the outlier passages.
 
 Revision ID: 7d2e9b4f1a63
-Revises: a4c8e2f6b913
+Revises: 8b6f2d9a0c41
 Create Date: 2026-11-06 13:00:00.000000
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = "7d2e9b4f1a63"
-down_revision: Union[str, None] = "a4c8e2f6b913"
+down_revision: Union[str, None] = "8b6f2d9a0c41"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
