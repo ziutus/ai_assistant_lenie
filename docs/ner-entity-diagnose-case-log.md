@@ -802,3 +802,15 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — wpis #13 w `ner_channel_glossary` (kanał „Na Wschód od Bliskiego Wschodu”, kanoniczna nazwa „CIA”, 8 form fleksyjnych, `fuzzy` wyłączone) i odświeżenie NER; wynik: `orgName` „CIA” (wariant „siewcy pokoju”) powiązana z organizacją #594.
 - **Test regresyjny:** brak — poprawka danych; zapisana w glosariuszu kanału.
 - **Status:** tylko dane bez zmiany kodu. Ryzyko: fraza użyta dosłownie w innym filmie kanału też zostanie zamieniona na CIA.
+
+
+### E053 — Kraj w dopełniaczu doklejony do nazwiska (dok. #11237, PR #TBD, 2026-11-06)
+
+- **Typ encji:** persName
+- **Kategoria:** T1 — Sklejony/uciety span NER.
+- **Zdanie źródłowe:** „No więc pierwszej reakcji prezydent Salvadoru Bukele wysłał, chciał wysłać misję ratunkową.”
+- **Objaw:** obok pięciu samodzielnych wzmianek „Bukele”/„Bukelego” powstaje osobna osoba „Salvadór Bukele” bez Wikidata (`manual_review`).
+- **Przyczyna źródłowa:** spaCy skleja kraj i nazwisko w surface „Salvadoru Bukele” z lematem „Salvadór Bukele”; gazetteer nie znał dopełniacza przez *v*, a agregacja grupowała po lemacie całej frazy. Transkrypt STT pisze „Salvadoru” przez *v*.
+- **Poprawka:** kod — pisownia przez „v” (`salvadoru*`) jest tylko w prywatnej liście używanej przez `strip_leading_oblique_country()`; publiczny gazetteer pozostaje bez zmian, ponieważ `entity_sense_classifier.candidate_country()` oddaje dokładne trafienia gazetteera innej ścieżce; nowa `strip_leading_oblique_country()` sprawdza 1–3 słowa kraju w formie nie-mianownikowej i wielkie litery reszty. `ner_client.aggregate_entities_detailed()` wymaga samodzielnej jednowyrazowej wzmianki osoby potwierdzającej resztę przez surface lub lemat, następnie skraca lemat i scala wzmianki; pełny surface zostaje w `variants`. Nie dodaje osobnej wzmianki kraju ani nie zmienia tagów `kraj-*`. Dwa bezpieczniki wynikają z kolizji z imionami: „Kuba”, „Jordan”, „Kuby” (dopełniacz imienia) pasują do gazetteera krajów. Kod napisał Codex, review i ponowne uruchomienie testów: Claude Code.
+- **Test regresyjny:** `backend/tests/unit/test_ner_client.py::TestPersonWithLeadingCountry` (cytat z #11237, scalenie i zachowanie wariantu, brak potwierdzenia, „Jordan Peterson”, „Kuby Wojewódzkiego”); `backend/tests/unit/test_country_gazetteer.py::TestStripLeadingObliqueCountry` i `TestCanonicalCountryName::test_salvador_genitive_does_not_match_given_name`.
+- **Status:** żywy bug naprawiony w kodzie (PR #TBD). Dane dok. #11237 naprawione przed wdrożeniem kodu: `POST /document/11237/persons/merge` (encja 28018 „Salvadór Bukele” → 27866 „Bukele”, 6 wzmianek, warianty zachowane); link `document_persons` 1877 przepięty na Nayiba Bukele (id 1320, Q17712353), fałszywa osoba id 1340 usunięta jako osierocona, fraza „Salvadór Bukele” jest aliasem 486. Encja miejsca „Salwador” (26305) bez zmian. Ten sam błąd mogą mieć inne dokumenty z „kraj w dopełniaczu + nazwisko” — nie sprawdzano hurtowo. To samo zdanie ma w E048 inne wady (osoba „Salvador”, miejsce „Salvadorze”, „Bukele” jako miejsce); tam sklejony span „Salvadoru Bukele” nie był przedmiotem naprawy.

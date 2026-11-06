@@ -29,6 +29,65 @@ def _response(entities):
     return resp
 
 
+class TestPersonWithLeadingCountry:
+    """Doc #11237: "No więc pierwszej reakcji prezydent Salvadoru Bukele wysłał,
+    chciał wysłać misję ratunkową."
+    """
+
+    def test_merges_country_prefix_into_standalone_surname(self):
+        entities = [
+            {"label": "persName", "text": "Salvadoru Bukele", "lemma": "Salvadór Bukele", "pos": "PROPN"},
+            {"label": "persName", "text": "Bukele", "lemma": "Bukele", "pos": "PROPN"},
+            {"label": "persName", "text": "Bukele", "lemma": "Bukele", "pos": "PROPN"},
+            {"label": "persName", "text": "Bukelego", "lemma": "Bukele", "pos": "PROPN"},
+        ]
+        result = aggregate_entities_detailed(entities)
+        assert set(result) == {("persName", "Bukele")}
+        assert result[("persName", "Bukele")]["count"] == 4
+        assert "Salvadoru Bukele" in result[("persName", "Bukele")]["variants"]
+
+    @pytest.mark.parametrize(
+        ("surface", "lemma", "standalone", "standalone_lemma"),
+        [
+            ("Salvadoru Bukelego", "Salvadór Bukele", "Bukele", "Bukele"),
+            ("Salvadoru Bukele", "Bukele", "Bukele", "Bukele"),
+            ("Salvadoru Bukele", "Salvadór Bukele", ' "Bukelego" ', ' "Bukele" '),
+            ("Salvadoru Bukele", "Salvadór Bukele", "Bukele", "Bukelego"),
+        ],
+    )
+    def test_accepts_normalized_standalone_surface_or_lemma(self, surface, lemma, standalone, standalone_lemma):
+        result = aggregate_entities_detailed([
+            {"label": "persName", "text": surface, "lemma": lemma, "pos": "PROPN"},
+            {"label": "persName", "text": standalone, "lemma": standalone_lemma, "pos": "PROPN"},
+        ])
+        assert "Salvadór Bukele" not in [name for _, name in result]
+        assert surface in result[("persName", "Bukele")]["variants"]
+
+    def test_lowercase_standalone_does_not_confirm_surname(self):
+        result = aggregate_entities_detailed([
+            {"label": "persName", "text": "Salvadoru Bukele", "lemma": "Salvadór Bukele", "pos": "PROPN"},
+            {"label": "persName", "text": "bukele", "lemma": "Bukele", "pos": "PROPN"},
+        ])
+        assert set(result) == {("persName", "Salvadór Bukele")}
+
+    @pytest.mark.parametrize(
+        ("surface", "lemma", "standalone"),
+        [
+            ("Jordan Peterson", "Jordan Peterson", "Peterson"),
+            ("Salvadoru Bukele", "Salvadór Bukele", None),
+            ("Kuby Wojewodzkiego", "Kuba Wojewodzki", None),
+        ],
+    )
+    def test_keeps_person_without_oblique_country_and_standalone_evidence(self, surface, lemma, standalone):
+        entities = [{"label": "persName", "text": surface, "lemma": lemma, "pos": "PROPN"}]
+        if standalone:
+            entities.append({"label": "persName", "text": standalone, "lemma": standalone, "pos": "PROPN"})
+        result = aggregate_entities_detailed(entities)
+        assert ("persName", lemma) in result
+        assert result[("persName", lemma)]["count"] == 1
+        assert len(result) == (2 if standalone else 1)
+
+
 class TestIsAvailable:
     def test_healthy_service_returns_true(self):
         resp = MagicMock(ok=True)
