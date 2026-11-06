@@ -95,6 +95,40 @@ class TestCanonicalCountryName:
         assert country_gazetteer.canonical_country_name("Emiraty") == "Zjednoczone Emiraty Arabskie"
 
 
+class TestDominikanaRegression:
+    """doc #11237: „…masowy eksodus do Republiki Dominikańskiej. Yyy, natomiast…”."""
+
+    @pytest.mark.parametrize(
+        "mention",
+        [
+            "Republiki Dominikańskiej",
+            "Republika Dominikańska",
+            "Dominikańskiej",
+            "Dominikańska",
+            "Dominikana",
+            "Dominikany",
+        ],
+    )
+    def test_canonical_dominikana(self, mention):
+        assert country_gazetteer.canonical_country_name(mention) == "Dominikana"
+
+    @pytest.mark.parametrize("mention", ["Dominika", "Dominiki", "Dominice", "Dominikę", "Dominiką"])
+    def test_canonical_dominika(self, mention):
+        assert country_gazetteer.canonical_country_name(mention) == "Dominika"
+
+    def test_detects_dominikana_without_dominika(self):
+        found = country_gazetteer.detect_countries("…masowy eksodus do Republiki Dominikańskiej. Yyy, natomiast…")
+        names = {country.name_pl for country in found}
+        assert "Dominikana" in names
+        assert "Dominika" not in names
+
+    @pytest.mark.parametrize("mention", ["Dominikanie", "dominikanin"])
+    def test_existing_dominikana_stem_overmatch_is_preserved(self, mention):
+        # The candidate generator already matched these non-country words.
+        found = country_gazetteer.detect_countries(mention)
+        assert "Dominikana" in {country.name_pl for country in found}
+
+
 class TestStripCountryEdge:
     """doc #9394: NER merged "Al-Faszirze" (place) with "Emiraty" (country,
     start of the next glued-on clause) into one span because the source
