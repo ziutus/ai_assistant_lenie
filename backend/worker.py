@@ -22,11 +22,13 @@ HEARTBEAT_PATH = "/tmp/lenie-worker-heartbeat"
 
 def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> dict:
     if job.type == "retention_sweep":
+        from library.llm_usage.payloads import delete_expired_llm_payloads
         from library.browse_events import delete_expired_browse_events
         from library.search.audit_repository import delete_expired_interpretations
 
         return {"browse_events": delete_expired_browse_events(),
-                "interpretations": delete_expired_interpretations()}
+                "interpretations": delete_expired_interpretations(),
+                "llm_payloads": delete_expired_llm_payloads()}
     if job.type in {"feed_check", "feed_check_all"}:
         # A manual check imports new items of auto_import feeds right away instead of waiting for feed_daily;
         # captions stay in feed_daily (one fetch takes ~45 s).

@@ -189,6 +189,7 @@ def test_document_tone_orm_model():
         "intensity",
         "registers",
         "evidence",
+        "core_tone",
         "created_at",
     }
     assert isinstance(columns["chapter_position"].type, Integer)
@@ -232,5 +233,6 @@ def test_document_tones_endpoint(monkeypatch):
             "intensity": "wysoka",
             "registers": "obraźliwy",
             "evidence": "Liczne obelgi.",
+            "core_tone": None,
         }
     ]

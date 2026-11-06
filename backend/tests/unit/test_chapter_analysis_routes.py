@@ -22,10 +22,13 @@ def client():
     return app.test_client()
 
 
+CHAPTERED = "## Pierwszy\n\ntekst pierwszego rozdziału\n\n## Drugi\n\ntekst drugiego rozdziału\n\n## Trzeci\n\ntekst"
+
+
 @pytest.fixture
 def session(monkeypatch):
     sess = MagicMock()
-    sess.get.side_effect = lambda model, pk: Document(id=5) if model is Document else None
+    sess.get.side_effect = lambda model, pk: Document(id=5, text_md=CHAPTERED) if model is Document else None
     monkeypatch.setattr(crr, "get_scoped_session", lambda: sess)
     return sess
 
@@ -124,6 +127,30 @@ def test_detect_tone_runs_one_chapter_with_the_chosen_model(client, session, mon
     assert body["report"]["fragments"] == 2
     assert "usage_log_ids" not in body["report"] and "chapter_title" not in body["report"]
     session.commit.assert_called_once()
+
+
+@pytest.mark.parametrize(("path", "module", "func"), [
+    ("detect_tone", tones, "refresh_document_tones"),
+    ("detect_time_period", time_periods, "refresh_document_periods"),
+])
+def test_an_article_without_headings_is_analysed_as_one_whole_document_row(
+    client, monkeypatch, path, module, func,
+):
+    """The reader shows such an article as chapter 1, but its rows are stored with chapter_position NULL."""
+    sess = MagicMock()
+    sess.get.side_effect = lambda model, pk: Document(id=5, text_md="Zwykły artykuł bez nagłówków.")
+    monkeypatch.setattr(crr, "get_scoped_session", lambda: sess)
+    monkeypatch.setattr(cam, "default_model", lambda s: "m")
+    seen = {}
+    monkeypatch.setattr(
+        module, func,
+        lambda session, doc, model=None, **kw: seen.update(**kw) or {"model": model, "tones": [], "periods": [], "chapters": []},
+    )
+
+    r = client.post(f"/document/5/chapter/1/{path}", json={})
+
+    assert r.status_code == 200
+    assert seen["chapter_position"] is None
 
 
 def test_detect_tone_without_a_model_uses_the_household_default(client, session, monkeypatch):

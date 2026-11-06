@@ -1,4 +1,5 @@
 import React from "react";
+import CountryDetectionHistory from "../CountryDetectionHistory/countryDetectionHistory";
 import "./entitiesPanel.css";
 import axios from "axios";
 import { Link } from "react-router-dom";
@@ -508,6 +509,7 @@ const EntitiesPanel = ({
   onBusyChange,
   onEntitiesChanged,
   countries: providedCountries,
+  hideCountriesRow = false,
   refreshKey = 0,
   chapterRenderer,
   onShowInText,
@@ -552,11 +554,16 @@ const EntitiesPanel = ({
   // list) — rendered as the first block, ahead of Osoby. When omitted, use
   // the document-level countries returned by GET /website_entities.
   countries?: CountryTag[];
+  // Single-chapter review (/ner/:id/:n) draws its own per-chapter "Państwa" row, so the document-wide row of
+  // kraj-* tags (which can name a country the chapter never mentions) is left out there. The countries are
+  // still loaded and used by the empty-state check.
+  hideCountriesRow?: boolean;
 }) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [isDetectingCountries, setIsDetectingCountries] = React.useState(false);
+  const [detectionId, setDetectionId] = React.useState<number>();
   const [isProposingGeopolitics, setIsProposingGeopolitics] = React.useState(false);
   const [fetchedCountries, setFetchedCountries] = React.useState<CountryTag[]>([]);
   const countries = providedCountries ?? fetchedCountries;
@@ -790,6 +797,7 @@ const EntitiesPanel = ({
         `${apiUrl}/document/${docId}/countries/detect`, {}, { headers: jsonHeaders },
       );
       setFetchedCountries(response.data.countries);
+      setDetectionId(response.data.detection_id);
       setMessage(response.data.added.length > 0
         ? `Dodano państw: ${response.data.added.length}.` : "Nie wykryto nowych państw.");
       onEntitiesChanged?.();
@@ -2052,6 +2060,7 @@ const EntitiesPanel = ({
           </button>
         )}
       </div>
+      {docId && <CountryDetectionHistory docId={docId} apiUrl={apiUrl} apiKey={apiKey} detectionId={detectionId} />}
       {nerUnavailableAt && (
         <div style={{
           marginTop: 8, padding: 8, background: "#fff7ed", border: "1px solid #fdba74",
@@ -2078,7 +2087,7 @@ const EntitiesPanel = ({
           Pełna weryfikacja encji nie powiodła się: {enrichmentJob.error || "nieznany błąd"}. Kliknij ponownie, aby spróbować jeszcze raz.
         </div>
       )}
-      {countries.length > 0 && (
+      {!hideCountriesRow && countries.length > 0 && (
         <div style={{ marginTop: "6px" }}>
           <strong>Państwa:</strong>{" "}
           {[...countries].sort((a, b) => a.name_pl.localeCompare(b.name_pl, "pl")).map((country) => (

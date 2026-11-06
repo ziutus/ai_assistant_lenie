@@ -1,11 +1,14 @@
 import React from "react";
 import axios from "axios";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import ChannelBadge from "../components/ChannelBadge";
 import ChapterDescriptionsPanel, { ChapterDescriptionsButton } from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import ChapterEventsPanel, { ChapterEventsDetectButton } from "../components/ChapterEventsPanel/chapterEventsPanel";
+import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
+import TonePanel from "../components/TonePanel/tonePanel";
+import ToneSpansPanel, { useToneSpans } from "../components/ToneSpansPanel/toneSpansPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistryDialog";
@@ -37,11 +40,11 @@ interface EntityResponse {
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
 const KIND_LABELS: Record<HighlightKind, string> = {
   persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Nazwy wydarzeń",
-  product: "Produkty i systemy",
+  product: "Produkty i systemy", glossary: "Słownik kanału",
 };
 const KIND_COLORS: Record<HighlightKind, string> = {
   persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a", event: "#fbcfe8",
-  product: "#ddd6fe",
+  product: "#ddd6fe", glossary: "#bae6fd",
 };
 const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event", "product"];
 
@@ -137,6 +140,60 @@ type GlossaryInfo = {
   author: string | null;
   entries: { id: number; canonical_name: string; aliases: string[]; fuzzy: boolean }[];
   applications: { original_text: string; replacement_text: string; occurrences: number }[];
+};
+
+// Occurrences of a glossary phrase in a chapter's sentences, counted with the same matcher that draws the
+// highlight (whole tokens, case-insensitive). The stored text is never changed (the repair is applied to a copy
+// before NER), so the original wording is still there to find.
+const countPhrase = (sentences: { text: string }[] | undefined, phrase: string) =>
+  (sentences ?? []).reduce((sum, sentence) => sum + splitByEntities(sentence.text, [{ kind: "glossary", label: phrase, variants: [phrase] }])
+    .filter((segment) => segment.kind).length, 0);
+
+// Same look as the other per-chapter blocks (bold label + indented list with a coloured left rule, as in
+// "Wydarzenia z datą w rozdziale"). One phrase per line, each with a button that marks it in the text; the active
+// phrase is also kept in the page address (`?glossary=`) so the highlighted view can be copied and shown.
+const ChapterGlossary = ({ glossary, section, active, onHighlight }: {
+  glossary: GlossaryInfo; section: Section; active: string | null; onHighlight: (phrase: string | null) => void;
+}) => {
+  if (!glossary.author) return null;
+  const used = glossary.applications
+    .map((app) => ({ app, found: countPhrase(section.sentences, app.original_text) }))
+    .filter((row) => row.found > 0);
+  return (
+    <div role="note" aria-label="Słownik kanału" style={{ marginTop: 6 }}>
+      <strong>Słownik kanału „{glossary.author}” — w tym rozdziale użyto{used.length > 0 ? ` (${used.length})` : ""}:</strong>
+      <div style={{ marginTop: 6, paddingLeft: 8, borderLeft: "3px solid #bae6fd" }}>
+        {glossary.entries.length === 0
+          ? <small style={{ color: "#64748b" }}>Słownik kanału jest pusty — poprawki transkrypcji nie obowiązują.</small>
+          : used.length === 0
+            ? <small style={{ color: "#64748b" }}>Żadne wyrażenie ze słownika nie wymagało poprawki w tym rozdziale.</small>
+            : <ul style={{ margin: "6px 0", paddingLeft: 18 }}>
+                {used.map(({ app, found }) => (
+                  <li key={app.original_text} style={{ marginBottom: 4 }}>
+                    <span style={active === app.original_text ? { background: KIND_COLORS.glossary, padding: "0 2px", borderRadius: 3 } : undefined}>
+                      {app.original_text}
+                    </span> → <strong>{app.replacement_text}</strong> ×{found}{" "}
+                    <button type="button" aria-pressed={active === app.original_text}
+                      title="Podświetl to wyrażenie w tekście (adres strony zapamięta wybór)"
+                      onClick={() => onHighlight(active === app.original_text ? null : app.original_text)}>
+                      🔎 {active === app.original_text ? "Wyczyść" : "Podświetl"}
+                    </button>
+                  </li>
+                ))}
+              </ul>}
+        {glossary.entries.length > 0 && (
+          <details style={{ marginTop: 2, fontSize: "0.9em" }}>
+            <summary>Nazwy w słowniku ({glossary.entries.length})</summary>
+            {glossary.entries.map((entry) => entry.canonical_name).join(", ")}
+          </details>
+        )}
+        <small>
+          Przed rozpoznawaniem encji kopia transkrypcji jest poprawiana (zapisany tekst się nie zmienia).{" "}
+          <Link to={`/ner-glossary?author=${encodeURIComponent(glossary.author)}`}>Słownik kanału →</Link>
+        </small>
+      </div>
+    </div>
+  );
 };
 
 const NerChapters = () => {
@@ -314,7 +371,7 @@ const NerChapters = () => {
   React.useEffect(() => {
     setEntityData(null);
     setEntityError(false);
-    setFocus(null);
+    setEntityFocus(null); // a `?glossary=` highlight stays in the address across chapters
     setMentionMenu(null);
     setSelectionMenu(null);
     setDescribing(null);
@@ -333,7 +390,24 @@ const NerChapters = () => {
 
   // "Podświetl w tekście" from a chip menu: that entity's mentions are marked strongly in every
   // chapter (whatever the kind filters say) and the view jumps to the first one.
-  const [focus, setFocus] = React.useState<{ kind: HighlightKind; label: string; variants: string[] } | null>(null);
+  // A channel-glossary phrase is highlighted the same way, but its state lives in the address (`?glossary=`),
+  // so the highlighted view can be copied and shown to somebody.
+  type Focus = { kind: HighlightKind; label: string; variants: string[] };
+  const [searchParams, setSearchParams] = useSearchParams();
+  const glossaryPhrase = searchParams.get("glossary");
+  const [entityFocus, setEntityFocus] = React.useState<Focus | null>(null);
+  const focus = React.useMemo<Focus | null>(
+    () => entityFocus ?? (glossaryPhrase ? { kind: "glossary", label: glossaryPhrase, variants: [glossaryPhrase] } : null),
+    [entityFocus, glossaryPhrase]);
+  const setGlossaryPhrase = (phrase: string | null) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (phrase) next.set("glossary", phrase); else next.delete("glossary");
+      return next;
+    }, { replace: true });
+  };
+  const highlightGlossary = (phrase: string | null) => { setEntityFocus(null); setGlossaryPhrase(phrase); };
+  const setFocus = (value: Focus | null) => { setEntityFocus(value); if (value || glossaryPhrase) setGlossaryPhrase(null); };
   const showInText = (item: EntityItem, kind: HighlightKind) => setFocus({
     kind, label: itemName(item), variants: [...new Set([item.text, ...(item.variants ?? []), ...(item.chapter_variants ?? [])])],
   });
@@ -384,6 +458,9 @@ const NerChapters = () => {
   // "Wykryj wydarzenia" sits in the same button bar: a click bumps the nonce, the chapter's panel runs the detection.
   const [eventsDetect, setEventsDetect] = React.useState<{ position: number; nonce: number } | null>(null);
   const [eventsBusyFor, setEventsBusyFor] = React.useState<number | null>(null);
+  // Tone passages found on request (ToneSpansPanel); one list for the whole document, filtered per chapter by the panel.
+  const [toneSpans, setToneSpans] = useToneSpans(apiUrl, apiKey, id);
+  const [toneVersion, setToneVersion] = React.useState(0);
   const describeFromText = (item: EntityItem | undefined) => (event: React.MouseEvent) => {
     // A selected fragment keeps the "add entity" menu of the surrounding text.
     if (!item || item.id === undefined || selectedFragment(window.getSelection())) return;
@@ -520,21 +597,6 @@ const NerChapters = () => {
         Encje są zapisane dla całego dokumentu: poprawka (nazwa, usunięcie, wykluczenie, scalenie) dotyczy wszystkich
         rozdziałów. Rozdziały typu reklama, szum i źródła są pomijane przez NER (typ ustawisz w edytorze albo przyciskiem „Oznacz jako szum”, który usuwa też encje występujące tylko w tym rozdziale).
       </div>
-      {glossary?.author && (
-        <div role="note" aria-label="Słownik kanału"
-          style={{ fontSize: "0.85em", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
-          {glossary.entries.length > 0 ? <>
-            📖 Obowiązuje słownik nazw kanału „{glossary.author}” ({glossary.entries.length}:{" "}
-            {glossary.entries.map((entry) => entry.canonical_name).join(", ")}). Przed rozpoznawaniem encji kopia
-            transkrypcji jest poprawiana (zapisany tekst się nie zmienia).
-            {glossary.applications.length > 0
-              ? <> Przy ostatnim odświeżeniu poprawiono:{" "}
-                  {glossary.applications.map((app) => `${app.original_text} → ${app.replacement_text} ×${app.occurrences}`).join(", ")}.</>
-              : " Przy ostatnim odświeżeniu nic nie wymagało poprawki (albo encje nie były jeszcze odświeżone po dodaniu wpisów)."}
-          </> : <>Słownik nazw kanału „{glossary.author}” jest pusty — poprawki transkrypcji nie obowiązują.</>}
-          {" "}<Link to={`/ner-glossary?author=${encodeURIComponent(glossary.author)}`}>Słownik kanału →</Link>
-        </div>
-      )}
       {loadError && <p role="alert" style={{ color: "#a33" }}>{loadError}</p>}
       {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
@@ -628,6 +690,7 @@ const NerChapters = () => {
           )}
           <EntitiesPanel
             docId={id}
+            hideCountriesRow={chapterMode}
             refreshKey={panelKey}
             onShowInText={showInText}
             onDescribeEvent={setDescribing}
@@ -692,7 +755,7 @@ const NerChapters = () => {
                                     ? { onContextMenu: describeFromText(entities.eventName?.find((item) => itemName(item) === segment.label)) }
                                     : { onClick: openMentionMenu(section.position, segment) })}
                                   style={{
-                                    cursor: segment.kind === "event" || segment.kind === "product" ? undefined : "pointer",
+                                    cursor: segment.kind === "event" || segment.kind === "product" || segment.kind === "glossary" ? undefined : "pointer",
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
                                     ...(focused ? { outline: "2px solid #d97706" } : {}),
                                   }}>{segment.text}</mark>;
@@ -716,6 +779,15 @@ const NerChapters = () => {
                             detectSignal={eventsDetect?.position === section.position ? eventsDetect.nonce : 0}
                             onBusyChange={(busy) => setEventsBusyFor((current) =>
                               busy ? section.position : current === section.position ? null : current)} />}
+                          {id && (
+                            <div aria-label={`Ton i okres rozdziału ${section.position}`}>
+                              <TimePeriodsPanel docId={id} currentChapter={section.position} />
+                              <TonePanel docId={id} currentChapter={section.position} refreshKey={toneVersion} />
+                              <ToneSpansPanel docId={id} currentChapter={section.position} compact={false}
+                                spans={toneSpans} onSpansChange={setToneSpans}
+                                onToneChanged={() => setToneVersion((current) => current + 1)} />
+                            </div>
+                          )}
                           {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>
@@ -733,6 +805,8 @@ const NerChapters = () => {
                               ))}
                             </div>
                           )}
+                          {glossary && <ChapterGlossary glossary={glossary} section={section}
+                            active={glossaryPhrase} onHighlight={highlightGlossary} />}
                           {loadingEntities && <small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
                           {!loadingEntities && count === 0 && entityData?.has_entities !== false && (
                             <small style={{ color: "#64748b" }}>Brak encji w tym rozdziale.</small>

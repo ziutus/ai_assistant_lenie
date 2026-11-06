@@ -205,3 +205,63 @@ class TestConstants:
         pytest.importorskip("unified_config_loader")
         monkeypatch.setattr("library.config_loader.load_config", lambda: {"TAGGING_MODEL": "gpt-4o-mini"})
         assert article_tagging._tagging_model() == "gpt-4o-mini"
+
+
+@pytest.mark.usefixtures("fixed_model")
+class TestCountryDetectionAudit:
+    def test_haiti_regression_11237(self, monkeypatch):
+        text = (
+            "Salvador walczy na Haiti. Otóż no dwa tygodnie temu doszło, jak państwo być może pamiętacie. "
+            "Salvador wysłał do Haiti ponad 2500 żołnierzy i komandosów, którzy patrolują teraz ulicę Stolicy. "
+            "Gangi kontrolują około 90% Port-au-Prince i kluczowe arterie komunikacyjne. "
+            "Haiti potrzebuje pomocy. Haiti walczy z gangami. Haiti czeka na wsparcie. Kolumbia komentuje."
+        )
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai(""))
+        assert "kraj-haiti" in article_tagging.extract_countries_hybrid(text, "")
+
+    def test_all_above_threshold_skips_llm(self, monkeypatch):
+        calls, audit = [], {}
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("", calls))
+        assert article_tagging.extract_countries_hybrid("Haiti. " * 5, "", audit) == ["kraj-haiti"]
+        assert calls == []
+        assert audit["llm"]["called"] is False
+        assert audit["decisions"][0]["decision"] == "auto_threshold"
+
+    @pytest.mark.parametrize("raw,decision", [("  Mars, Wenus\n", "llm_rejected"),
+                                              ("  Polska, Polska\n", "llm_confirmed"), ("", "llm_rejected")])
+    def test_boundary_and_raw_response(self, monkeypatch, raw, decision):
+        audit = {}
+        monkeypatch.setattr("library.ai.ai_ask", lambda *a, **kw: SimpleNamespace(
+            response_text=raw, usage=SimpleNamespace(usage_log_id=123)))
+        text = "Haiti. " * 5 + "Polska. " * 4
+        tags = article_tagging.extract_countries_hybrid(text, "", audit)
+        assert tags[0] == "kraj-haiti"
+        assert len(tags) == len(set(tags))
+        assert audit["llm"]["response"] == raw
+        assert audit["llm"]["usage_log_id"] == 123
+        assert "Kandydaci: Polska\n" in audit["llm"]["prompt"]
+        assert audit["text_chars"] == len(text)
+        assert [(d["mention_count"], d["decision"]) for d in audit["decisions"]] == [
+            (5, "auto_threshold"), (4, decision)]
+        assert all(d["snippets"] for d in audit["decisions"])
+
+    def test_failure_retains_threshold_country(self, monkeypatch):
+        def boom(*a, **kw):
+            raise RuntimeError("offline")
+        monkeypatch.setattr("library.ai.ai_ask", boom)
+        audit = {}
+        assert article_tagging.extract_countries_hybrid("Haiti. " * 5 + "Polska.", "", audit) == ["kraj-haiti"]
+        assert audit["llm"]["error"] == "offline"
+        assert audit["llm"]["called"] is True
+        assert audit["decisions"][1]["decision"] == "llm_error"
+
+    def test_abbreviations_have_one_decision_per_country(self, monkeypatch):
+        monkeypatch.setattr("library.country_abbreviations.confirmed_country_abbreviations",
+                            lambda *a: {"DRK": {"country": "Demokratyczna Republika Konga", "count": 2}})
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai(""))
+        audit = {}
+        tags = article_tagging.extract_countries_hybrid("DRK i DRK.", "", audit)
+        assert len(tags) == 1
+        assert len(audit["decisions"]) == 1
+        assert audit["decisions"][0]["decision"] == "abbreviation_confirmed"
+        assert audit["decisions"][0]["mention_count"] == 2

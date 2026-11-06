@@ -186,10 +186,11 @@ def confirm_person_with_llm(text: str, title: str, mention: str, candidates: lis
         return None
 
 
+COUNTRY_AUTO_CONFIRM_MENTIONS = 5
 _COUNTRY_EXCERPT_CHARS = 3000
 
 
-def extract_countries_hybrid(text: str, title: str) -> list[str]:
+def extract_countries_hybrid(text: str, title: str, audit: dict | None = None) -> list[str]:
     """Kraje z gazetteera potwierdzone przez LLM plus kraje ukryte za dwuznacznymi skrótami.
 
     Skrót wspólny z czymś innym ("DRK": Kongo albo niemiecki Czerwony Krzyż) daje tag kraju tylko
@@ -198,15 +199,31 @@ def extract_countries_hybrid(text: str, title: str) -> list[str]:
     from library.country_abbreviations import confirmed_country_abbreviations
     from library.country_gazetteer import canonical_country_name, country_tag_for
 
-    tags = _extract_countries_from_gazetteer(text, title)
-    for info in confirmed_country_abbreviations(text, title).values():
+    if audit is not None:
+        audit.update(text_chars=len(text), threshold=COUNTRY_AUTO_CONFIRM_MENTIONS,
+                     llm=dict(model=None, prompt=None, response=None, usage_log_id=None, error=None, called=False),
+                     decisions=[])
+    tags = _extract_countries_from_gazetteer(text, title, audit)
+    for abbreviation, info in confirmed_country_abbreviations(text, title).items():
         tag = country_tag_for(info["country"]) if canonical_country_name(info["country"]) else None
         if tag and tag not in tags:
             tags.append(tag)
+        if tag and audit is not None:
+            slug = tag[5:]
+            decision = next((d for d in audit["decisions"] if d["slug"] == slug), None)
+            if decision is None:
+                decision = dict(slug=slug, name_pl=canonical_country_name(info["country"]),
+                                mention_count=0, snippets=[])
+                audit["decisions"].append(decision)
+            decision["mention_count"] += info["count"]
+            decision["decision"] = "abbreviation_confirmed"
+            snippet = _mention_snippets(text, abbreviation, window=160)
+            if snippet:
+                decision["snippets"].extend(snippet.split("\n[...]\n"))
     return tags
 
 
-def _extract_countries_from_gazetteer(text: str, title: str) -> list[str]:
+def _extract_countries_from_gazetteer(text: str, title: str, audit: dict | None = None) -> list[str]:
     """Wykryj kraje: najpierw gazetteer (bez LLM), potem LLM potwierdza kandydatów.
 
     Tańsze i bardziej precyzyjne niż extract_countries_with_llm(): gazetteer
@@ -217,11 +234,20 @@ def _extract_countries_from_gazetteer(text: str, title: str) -> list[str]:
     zamiast open-ended ekstrakcji LLM nie może "wymyślić" kraju spoza listy.
     """
     from library.ai import ai_ask
-    from library.country_gazetteer import detect_countries, mention_snippets
+    from library.country_gazetteer import count_country_mentions, mention_snippets
 
-    candidates = detect_countries(f"{title}\n{text}")
+    counted = count_country_mentions(f"{title}\n{text}")
+    result = [f"kraj-{c.slug}" for c, count in counted if count >= COUNTRY_AUTO_CONFIRM_MENTIONS]
+    candidates = [c for c, count in counted if count < COUNTRY_AUTO_CONFIRM_MENTIONS]
+    if audit is not None:
+        snippets = mention_snippets(f"{title}\n{text}", [c for c, _ in counted])
+        audit["decisions"] = [dict(
+            slug=c.slug, name_pl=c.name_pl, mention_count=count,
+            decision="auto_threshold" if count >= COUNTRY_AUTO_CONFIRM_MENTIONS else "llm_rejected",
+            snippets=snippets.get(c.name_pl, []),
+        ) for c, count in counted]
     if not candidates:
-        return []
+        return result
 
     candidate_names = ", ".join(c.name_pl for c in candidates)
     # The LLM sees only the start of the text; show where countries first mentioned later are discussed.
@@ -239,18 +265,30 @@ def _extract_countries_from_gazetteer(text: str, title: str) -> list[str]:
         f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:_COUNTRY_EXCERPT_CHARS]}{later_section}"
     )
     try:
-        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150,
+        model = _tagging_model()
+        if audit is not None:
+            audit["llm"].update(model=model, prompt=prompt, called=True)
+        response = ai_ask(prompt, model=model, temperature=0.0, max_token_count=150,
                           operation="infrastructure_relevance")
+        if audit is not None:
+            audit["llm"].update(response=response.response_text,
+                                usage_log_id=getattr(getattr(response, "usage", None), "usage_log_id", None))
         raw = response.response_text.strip()
-        if not raw:
-            return []
         by_name = {c.name_pl.lower(): c.slug for c in candidates}
-        result = []
         for item in raw.split(","):
             slug = by_name.get(item.strip().lower())
             if slug and f"kraj-{slug}" not in result:
                 result.append(f"kraj-{slug}")
+        if audit is not None:
+            for decision in audit["decisions"]:
+                if decision["decision"] != "auto_threshold":
+                    decision["decision"] = "llm_confirmed" if f"kraj-{decision['slug']}" in result else "llm_rejected"
         return result
     except Exception as e:
         print(f"  OSTRZEŻENIE: potwierdzenie krajów nie powiodło się: {e}")
-        return []
+        if audit is not None:
+            audit["llm"].update(prompt=prompt, error=str(e))
+            for decision in audit["decisions"]:
+                if decision["decision"] != "auto_threshold":
+                    decision["decision"] = "llm_error"
+        return result

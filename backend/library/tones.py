@@ -236,7 +236,7 @@ def refresh_document_tones(
     alone instead of deleting it (``kept_previous`` in the result).
     """
     result = extract_document_tones(session, doc, model, chapter_position=chapter_position)
-    if keep_previous_on_failure and chapter_position is not None and not result["tones"]:
+    if keep_previous_on_failure and not result["tones"]:
         result["rows"] = []
         result["kept_previous"] = True
         return result

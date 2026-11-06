@@ -210,7 +210,7 @@ def refresh_document_periods(
     """
     result = extract_document_periods(session, doc, model, chapter_position=chapter_position)
     failed = any(report.get("invalid_json") for report in result["chapters"])
-    if keep_previous_on_failure and chapter_position is not None and not result["periods"] and failed:
+    if keep_previous_on_failure and not result["periods"] and failed:
         result["rows"] = []
         result["kept_previous"] = True
         return result

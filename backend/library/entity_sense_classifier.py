@@ -13,6 +13,7 @@ from unidecode import unidecode
 
 from library import fabryka_client
 from library.config_loader import load_config
+from library.llm_usage.context import llm_usage_context
 from library.country_gazetteer import _COUNTRY_DATA, canonical_country_name
 from library.person_context_classifier import _candidate_payloads as _person_candidates
 
@@ -188,7 +189,8 @@ class SenseProvider:
             if not self.basal_available(config):
                 return None
             try:
-                sense, raw = fabryka_client.choose(*_decision_input(candidate, context, title))
+                with llm_usage_context(document_id=document_id):
+                    sense, raw = fabryka_client.choose(*_decision_input(candidate, context, title))
                 return _decision_result(sense, raw, f"fabryka:{fabryka_client.DEFAULT_MODEL}")
             except fabryka_client.FabrykaRateLimited:
                 self.exhausted_day = _utcnow().date()
@@ -204,7 +206,9 @@ class SenseProvider:
                     or time.monotonic() < self.decision_open_until.get(model, 0)):
                 return None
             try:
-                sense, raw = fabryka_client.choose_openrouter(*_decision_input(candidate, context, title), model=model)
+                with llm_usage_context(document_id=document_id):
+                    sense, raw = fabryka_client.choose_openrouter(
+                        *_decision_input(candidate, context, title), model=model)
                 result = _decision_result(sense, raw, f"openrouter-decisions:{model}")
                 result["usage"] = raw.get("usage", {})
                 return result

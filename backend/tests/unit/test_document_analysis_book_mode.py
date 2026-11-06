@@ -112,7 +112,7 @@ def book_env(monkeypatch, session):
         das, "_synthesize", lambda sections, title, model, mode="transcript": "",
     )
     monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: [])
-    monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
+    monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title, audit=None: [])
     monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: [])
     return analyzed
 

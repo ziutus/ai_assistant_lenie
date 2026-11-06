@@ -342,7 +342,8 @@ def test_photo_migration_upgrade_and_downgrade_sql():
     from alembic.script import ScriptDirectory
 
     scripts = ScriptDirectory(str(Path(__file__).resolve().parents[2] / "alembic"))
-    assert scripts.get_heads() == ["b7e41c9a620d"]
+    assert len(scripts.get_heads()) == 1
+    assert "b7e41c9a620d" in {revision.revision for revision in scripts.walk_revisions()}
     revision = scripts.get_revision("b7e41c9a620d")
     assert revision.down_revision == "a5c27d9e4b18"
     output = StringIO()

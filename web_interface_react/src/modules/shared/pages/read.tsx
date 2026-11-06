@@ -14,6 +14,8 @@ import ChannelBadge from "../components/ChannelBadge";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
+import ToneSpansPanel, { useToneSpans } from "../components/ToneSpansPanel/toneSpansPanel";
+import { splitOutliersAroundKeys, toneSpanStyle, toneSpanToNote, visibleToneSpans } from "../utils/toneSpans";
 import RelationshipGraph, { type RelationshipGraphData } from "../components/RelationshipGraph/relationshipGraph";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import { isOpenableSourceUrl, toOpenableSourceUrl } from "../utils/sourceUrl";
@@ -609,7 +611,10 @@ function renderParagraphWithNotes(
   const timelineMatches: Match[] = timelineAnchor && timelineIndex >= 0
     ? [{ idx: timelineIndex, len: timelineAnchor.length, kind: "timeline" }]
     : [];
-  const matches = [...timelineMatches, ...noteMatches, ...entityMatches, ...describedMatches].sort((a, b) => a.idx - b.idx);
+  // A key sentence may sit inside an outlier passage; highlights cannot nest, so the outlier is cut around it.
+  const matches = splitOutliersAroundKeys(
+    [...timelineMatches, ...noteMatches, ...entityMatches, ...describedMatches].sort((a, b) => a.idx - b.idx),
+  );
   const paragraphTint = notes.find(n =>
     text.indexOf(n.anchor_quote) < 0
     && normalizeAnchorText(text).includes(normalizeAnchorText(n.anchor_quote))) ?? null;
@@ -635,11 +640,15 @@ function renderParagraphWithNotes(
     }
     const quoted = text.slice(m.idx, m.idx + m.len);
     if (m.kind === "note" && m.note) {
+      const tone = toneSpanStyle(m.note.stance);
       nodes.push(
         <mark
           key={`note-${m.note.id}-${i}`}
-          title={`${STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
-          style={{ background: "#fef08a", padding: "0 1px", cursor: "help" }}
+          className={tone ? "tone-span-highlight" : undefined}
+          title={`${tone?.icon ?? STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
+          style={tone
+            ? { background: tone.background, borderBottom: tone.underline, padding: "0 1px", cursor: "help" }
+            : { background: "#fef08a", padding: "0 1px", cursor: "help" }}
         >
           {renderInline(quoted, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
         </mark>
@@ -681,6 +690,14 @@ function renderParagraphWithNotes(
     nodes.push(...renderInline(text.slice(cursor), refs, onAnchorClick, images, wikiLinks, onWikiLinkClick));
   }
   return { nodes, paragraphTint, timelineTint, timelineFound };
+}
+
+/** Whole-paragraph tint for a note whose quote only matches after whitespace/typography normalisation. */
+function tintStyle(note: UserNote): React.CSSProperties {
+  const tone = toneSpanStyle(note.stance);
+  return tone
+    ? { background: tone.tint, borderLeft: `3px solid ${tone.tintBorder}`, paddingLeft: 8 }
+    : { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 };
 }
 
 const CALLOUT_RE = /^\[!(INFO|WARN)\]\n([\s\S]*?)\n\[!\/\1\]$/;
@@ -1013,10 +1030,10 @@ export function renderMarkdown(
           ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0", whiteSpace: "pre-line" }
           : {
               lineHeight: 1.65, margin: "14px 0", textAlign: "justify", whiteSpace: "pre-line",
-              ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
+              ...(paragraphTint ? tintStyle(paragraphTint) : {}),
               ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
             }}
-          title={paragraphTint ? `📝 ${paragraphTint.note_text}` : undefined}>
+          title={paragraphTint ? `${toneSpanStyle(paragraphTint.stance)?.icon ?? "📝"} ${paragraphTint.note_text}` : undefined}>
           {nodes}
         </p>
       );
@@ -1152,6 +1169,10 @@ const Read: React.FC = () => {
     setInformationSources(items => items.map(item => item.id === source.id ? { ...item, review_status: "approved" } : item));
   };
   const { notes, createNote, saveNoteText, deleteNote } = useUserNotes(apiUrl, id, identity);
+  // Passages a model pointed out on request (malicious remarks, key sentences): drawn like anchored notes.
+  const [toneSpans, setToneSpans] = useToneSpans(apiUrl, apiKey, id);
+  const [showToneSpans, setShowToneSpans] = React.useState(true);
+  const [toneVersion, setToneVersion] = React.useState(0);
   const [pendingNote, setPendingNote] = React.useState<PendingNote | null>(null);
   const [tagQuery, setTagQuery] = React.useState("");
   const [tagResults, setTagResults] = React.useState<UserNote[]>([]);
@@ -1753,6 +1774,13 @@ const Read: React.FC = () => {
       : notes.filter(n => n.chapter_position === position),
     [notes, position, content?.chapter_total]);
 
+  // reader notes plus the tone passages of the chapter on screen, for the highlighter
+  const renderedNotes = React.useMemo(
+    () => showToneSpans
+      ? [...chapterNotes, ...visibleToneSpans(toneSpans, position, readerCompact).map(span => toneSpanToNote(span, Number(id)))]
+      : chapterNotes,
+    [chapterNotes, showToneSpans, toneSpans, position, readerCompact, id]);
+
   // footnotes by marker — for ¹⁸ tooltips/anchors in the text
   const referencesByMarker = React.useMemo(
     () => new Map((content?.references ?? []).map(r => [r.marker, r])),
@@ -2055,7 +2083,7 @@ const Read: React.FC = () => {
           {!loading && content && !chapterViewAll && (
             <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
               {renderMarkdown(
-                content.text, chapterNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
+                content.text, renderedNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
                 imagesByPosition, handleAnchorClick, wikiLinksByTitle, entityDescriptions,
               )}
             </article>
@@ -2110,7 +2138,11 @@ const Read: React.FC = () => {
                 </h2>
                 <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
                   {renderMarkdown(
-                    ch.text, chNotes, chRefs, highlightTerms, timelineHighlight?.quote,
+                    ch.text,
+                    showToneSpans
+                      ? [...chNotes, ...visibleToneSpans(toneSpans, ch.position, false).map(span => toneSpanToNote(span, Number(id)))]
+                      : chNotes,
+                    chRefs, highlightTerms, timelineHighlight?.quote,
                     chImages, handleAnchorClick, chWikiLinks, entityDescriptions,
                   )}
                 </article>
@@ -2300,7 +2332,18 @@ const Read: React.FC = () => {
 
             <TimePeriodsPanel docId={id} currentChapter={position} />
 
-            <TonePanel docId={id} currentChapter={position} />
+            <TonePanel docId={id} currentChapter={position} refreshKey={toneVersion} />
+
+            <ToneSpansPanel
+              docId={id}
+              currentChapter={position}
+              compact={readerCompact}
+              spans={toneSpans}
+              onSpansChange={setToneSpans}
+              highlight={showToneSpans}
+              onHighlightChange={setShowToneSpans}
+              onToneChanged={() => setToneVersion(version => version + 1)}
+            />
 
             <TimelinePanel docId={id} currentChapter={position} onEventClick={handleTimelineEventClick} />
 

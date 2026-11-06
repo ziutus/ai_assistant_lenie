@@ -448,31 +448,41 @@ def _apply_tags(doc: Document, text: str) -> None:
     analysis runs (e.g. one run per book chapter) should accumulate tags
     across runs, not clobber ones set by a previous run.
     """
-    from sqlalchemy.orm import object_session
+    from library.llm_usage.context import document_usage_context
 
-    from library.article_tagging import extract_countries_hybrid, tag_article_with_llm
+    with document_usage_context(doc.id):
+        from sqlalchemy.orm import object_session
 
-    article_tags = tag_article_with_llm(text, doc.title or "")
-    # Country detection has its own cheap gazetteer prescreen.  It must not be
-    # gated by thematic tags: a failed/empty thematic classification used to
-    # hide plainly mentioned countries such as Sudan and Qatar from the reader.
-    country_text = text
-    try:
-        session = object_session(doc)
-    except Exception:  # not a mapped instance (detached stub)
-        session = None
-    if session is not None and doc.id is not None:
-        from library.entity_service import apply_channel_glossary_text
+        from library.article_tagging import extract_countries_hybrid, tag_article_with_llm
 
-        # Channel euphemisms ("państwo z gwiazdką" = Izrael) are resolved on a copy of the text.
-        country_text = apply_channel_glossary_text(session, doc.id, text)
-    country_tags = extract_countries_hybrid(country_text, doc.title or "")
-    new_tags = article_tags + country_tags
-    if not new_tags:
-        return
-    existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
-    existing_set = set(existing)
-    doc.tags = ",".join(existing + [t for t in new_tags if t not in existing_set])
+        article_tags = tag_article_with_llm(text, doc.title or "")
+        # Country detection has its own cheap gazetteer prescreen.  It must not be
+        # gated by thematic tags: a failed/empty thematic classification used to
+        # hide plainly mentioned countries such as Sudan and Qatar from the reader.
+        country_text = text
+        try:
+            session = object_session(doc)
+        except Exception:  # not a mapped instance (detached stub)
+            session = None
+        if session is not None and doc.id is not None:
+            from library.entity_service import apply_channel_glossary_text
+
+            # Channel euphemisms ("państwo z gwiazdką" = Izrael) are resolved on a copy of the text.
+            country_text = apply_channel_glossary_text(session, doc.id, text)
+        audit = {}
+        tags_before = doc.tags
+        country_tags = extract_countries_hybrid(country_text, doc.title or "", audit=audit)
+        new_tags = article_tags + country_tags
+        existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+        existing_set = set(existing)
+        if new_tags:
+            doc.tags = ",".join(existing + [t for t in new_tags if t not in existing_set])
+        if session is not None:
+            from library.country_detection_audit import record_detection
+
+            record_detection(session, doc.id, audit, trigger="analysis_run", text_source="synthesis",
+                             tags_before=tags_before,
+                             tags_added=list(dict.fromkeys(t[5:] for t in country_tags if t not in existing_set)))
 
 
 def stale_duplicate_runs(runs: list) -> list:
@@ -915,26 +925,29 @@ class DocumentAnalysisService:
         #      available (concise, already LLM-summarized), else falls back to
         #      concatenated topic summaries. Skipped for split_only: no LLM
         #      output exists yet.
-        if not proposal_only:
-            tagging_text = (
-                synthesis
-                or "\n\n".join(ts["summary"] for ts in topic_sections_data if ts["summary"])
-                # Last-resort fallback straight from per-chunk analysis (step 9) —
-                # covers cases where topic_sections_data itself ends up empty
-                # (e.g. _merge_topics returning no valid group).
-                or "\n\n".join(s["summary"] for s in sections if s["type"] == "TEMAT" and s["summary"])
-            )
-            if tagging_text:
-                log("tagging document...")
-                _apply_tags(doc, tagging_text)
-                # Search phrases are generated once.  A non-empty value may
-                # have been reviewed or written manually, so never overwrite it.
-                if not (getattr(doc, "search_terms", None) or "").strip():
-                    from library.search_terms import generate_search_terms
+        from library.llm_usage.context import document_usage_context
 
-                    terms = generate_search_terms(tagging_text, doc.title or "")
-                    if terms:
-                        doc.search_terms = ", ".join(terms)
+        if not proposal_only:
+            with document_usage_context(doc.id):
+                tagging_text = (
+                    synthesis
+                    or "\n\n".join(ts["summary"] for ts in topic_sections_data if ts["summary"])
+                    # Last-resort fallback straight from per-chunk analysis (step 9) —
+                    # covers cases where topic_sections_data itself ends up empty
+                    # (e.g. _merge_topics returning no valid group).
+                    or "\n\n".join(s["summary"] for s in sections if s["type"] == "TEMAT" and s["summary"])
+                )
+                if tagging_text:
+                    log("tagging document...")
+                    _apply_tags(doc, tagging_text)
+                    # Search phrases are generated once.  A non-empty value may
+                    # have been reviewed or written manually, so never overwrite it.
+                    if not (getattr(doc, "search_terms", None) or "").strip():
+                        from library.search_terms import generate_search_terms
+
+                        terms = generate_search_terms(tagging_text, doc.title or "")
+                        if terms:
+                            doc.search_terms = ", ".join(terms)
 
             # 11b2. Article author fallback (LLM) — article_metadata.extract_article_author()
             #       (deterministic, WP.pl only) already ran at import time; this is a
