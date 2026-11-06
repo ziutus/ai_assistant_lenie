@@ -22,9 +22,11 @@ from library.geopolitical_region_gazetteer import canonical_geopolitical_region_
 from library.historical_state_gazetteer import canonical_historical_state_name
 from library.region_gazetteer import canonical_region_name
 from library.ner_normalization import (
+    canonical_country_for_demonym_pattern,
     canonical_country_for_surface,
     is_non_place_demonym,
     is_rejected_surface_lemma_pair,
+    load_ner_normalization_rules,
     normalize_ner_text,
     strip_content_markers,
     strip_markdown_emphasis,
@@ -334,8 +336,8 @@ def aggregate_entities_detailed(
     heuristic never applies to them since it requires a multiword surface.
 
     Shape: {(entity_type, base): {"count", "variants", "raw_lemmas"}}.
-    raw_lemmas is internal metadata used to preserve ner_exclusions behavior
-    after canonicalization; it is not persisted or returned by the API.
+    raw_lemmas and optional country_mentions provenance are internal metadata
+    for ner_exclusions; neither is persisted or returned by the API.
     """
     entities, split_org_surfaces = _split_rename_org_spans(entities)
     standalone_person_keys: set[str] = set()
@@ -350,6 +352,8 @@ def aggregate_entities_detailed(
         if lemma:
             standalone_person_keys.add(lemma.casefold())
 
+    rules = load_ner_normalization_rules()
+    demonyms = {normalize_ner_text(value).casefold() for value in rules.get("demonyms", {})}
     preliminary: dict[tuple[str, str], dict] = {}
     for ent in entities:
         label = ent.get("label")
@@ -458,6 +462,7 @@ def aggregate_entities_detailed(
             key,
             {
                 "count": 0,
+                "country_mentions": Counter(),
                 "base_spellings": Counter(),
                 "base_order": [],
                 "surface_spellings": Counter(),
@@ -473,6 +478,14 @@ def aggregate_entities_detailed(
             },
         )
         group["count"] += 1
+        is_demonym = False
+        if country is not None:
+            # Follow the same closed rules and abbreviation precedence as canonicalization.
+            is_abbreviation = surface == surface.upper() and surface in rules.get("country_abbreviations", {})
+            is_demonym = not is_abbreviation and (
+                surface.casefold() in demonyms or canonical_country_for_demonym_pattern(surface) is not None
+            )
+        group["country_mentions"][(surface, lemma, is_demonym)] += 1
         for value, counter_name, order_name in (
             (base, "base_spellings", "base_order"),
             (surface, "surface_spellings", "surface_order"),
@@ -559,6 +572,7 @@ def aggregate_entities_detailed(
             key,
             {
                 "count": 0,
+                "country_mentions": Counter(),
                 "label_counts": Counter(),
                 "label_order": [],
                 "base_spellings": Counter(),
@@ -575,6 +589,7 @@ def aggregate_entities_detailed(
             },
         )
         group["count"] += source["count"]
+        group["country_mentions"].update(source["country_mentions"])
         group["label_counts"][source["label"]] += source["count"]
         if source["label"] not in group["label_order"]:
             group["label_order"].append(source["label"])
@@ -636,6 +651,9 @@ def aggregate_entities_detailed(
                 group["raw_lemma_spellings"], group["raw_lemma_order"],
             ),
         }
+        if any(is_demonym for _, _, is_demonym in group["country_mentions"]):
+            # Internal provenance only; refresh can remove individual demonym mentions.
+            result[(label, base)]["country_mentions"] = group["country_mentions"]
     return result
 
 

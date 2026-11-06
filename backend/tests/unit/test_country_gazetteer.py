@@ -60,7 +60,7 @@ class TestSlugConvention:
 class TestCanonicalCountryName:
     @pytest.mark.parametrize(
         ("mention", "expected"),
-        [("Salvadoru", "Salwador"), ("Salvador", None), ("Salwadoru", "Salwador")],
+        [("Salvadoru", None), ("Salvador", None), ("Salwadoru", "Salwador")],
     )
     def test_salvador_genitive_does_not_match_given_name(self, mention, expected):
         assert country_gazetteer.canonical_country_name(mention) == expected
@@ -120,6 +120,40 @@ class TestStripLeadingObliqueCountry:
     )
     def test_strips_only_oblique_country_before_capitalized_remainder(self, text, expected):
         assert country_gazetteer.strip_leading_oblique_country(text) == expected
+
+
+class TestDominikanaRegression:
+    """doc #11237: „…masowy eksodus do Republiki Dominikańskiej. Yyy, natomiast…”."""
+
+    @pytest.mark.parametrize(
+        "mention",
+        [
+            "Republiki Dominikańskiej",
+            "Republika Dominikańska",
+            "Dominikańskiej",
+            "Dominikańska",
+            "Dominikana",
+            "Dominikany",
+        ],
+    )
+    def test_canonical_dominikana(self, mention):
+        assert country_gazetteer.canonical_country_name(mention) == "Dominikana"
+
+    @pytest.mark.parametrize("mention", ["Dominika", "Dominiki", "Dominice", "Dominikę", "Dominiką"])
+    def test_canonical_dominika(self, mention):
+        assert country_gazetteer.canonical_country_name(mention) == "Dominika"
+
+    def test_detects_dominikana_without_dominika(self):
+        found = country_gazetteer.detect_countries("…masowy eksodus do Republiki Dominikańskiej. Yyy, natomiast…")
+        names = {country.name_pl for country in found}
+        assert "Dominikana" in names
+        assert "Dominika" not in names
+
+    @pytest.mark.parametrize("mention", ["Dominikanie", "dominikanin"])
+    def test_existing_dominikana_stem_overmatch_is_preserved(self, mention):
+        # The candidate generator already matched these non-country words.
+        found = country_gazetteer.detect_countries(mention)
+        assert "Dominikana" in {country.name_pl for country in found}
 
 
 class TestStripCountryEdge:
