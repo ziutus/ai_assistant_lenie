@@ -77,6 +77,19 @@ The noun "zdarzenie" is not used in labels. Promotion paths into the registry: a
 alias — `POST /geo_events` + the same link; an edition-specific title and an optional date go in the form, because
 "Konwencja Demokratów" is several events).
 
+### Per-chapter analyses: model choice
+
+Tone (`TonePanel`), historical period (`TimePeriodsPanel`, both in the `/read/:id` sidebar) and dated events
+(`ChapterEventsPanel`) can each be run for ONE chapter with a model the reviewer picks.
+`components/ChapterModelPicker` (`useChapterModel` + a collapsed `<details>`) lists the allowed models from
+`GET /chapter_analysis/model` with price per 1 mln tokens and context window (`modelOptionText`), greys out unavailable
+ones, warns that an external provider receives the chapter text and stores the household default
+(`PUT /chapter_analysis/model`, "Ustaw jako domyślny" / "Przywróć domyślny serwera"); the list is fetched only when the
+picker is opened and no model is sent until then (the server default applies). `components/ChapterAnalysisRunner` adds the
+run button for tone / period (`POST /document/:id/chapter/:pos/detect_tone` / `detect_time_period`), shows model, number
+of fragments and cost, and keeps the shown result when the model's answer was unusable (`kept_previous`). The panels
+now stay visible after an analysis (the controls sit in a collapsed "Oceń ten rozdział ponownie…").
+
 ### Skill hints
 
 Where a task is done by a Claude Code skill rather than by the UI, show

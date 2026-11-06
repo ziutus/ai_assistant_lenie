@@ -1,5 +1,6 @@
 import React from "react";
 import { AuthorizationContext } from "../../context/authorizationContext";
+import ChapterAnalysisRunner from "../ChapterAnalysisRunner/chapterAnalysisRunner";
 
 export interface TimePeriodItem {
   chapter_position: number | null;
@@ -100,14 +101,39 @@ const TimePeriodsPanel: React.FC<TimePeriodsPanelProps> = ({ docId, currentChapt
       (a.subject_period_start_year ?? Number.MAX_SAFE_INTEGER) - (b.subject_period_start_year ?? Number.MAX_SAFE_INTEGER));
   }, [periods, scopeChapter, currentChapter]);
 
+  const chapterHasPeriods = periods.some(period => period.chapter_position === currentChapter);
+  const runner = docId ? (
+    <details style={{ marginTop: 8 }}>
+      <summary style={{ cursor: "pointer", fontSize: "0.8em", color: "#64748b" }}>
+        {chapterHasPeriods ? "Oceń ten rozdział ponownie…" : "Oceń okres tego rozdziału…"}
+      </summary>
+      <ChapterAnalysisRunner<TimePeriodItem>
+        apiUrl={apiUrl}
+        apiKey={apiKey}
+        docId={docId}
+        position={currentChapter}
+        endpoint="detect_time_period"
+        resultKey="time_periods"
+        summary="Ocena okresu"
+        buttonLabel="⏳ Oceń okres rozdziału"
+        title="Model czyta cały rozdział (długi — we fragmentach) i zastępuje zapisane okresy tego rozdziału"
+        onResult={(result) => {
+          if (result.kept_previous) return;
+          setPeriods((current) => [...current.filter((item) => item.chapter_position !== currentChapter), ...result.items]);
+          setEnrichmentRunAt(new Date().toISOString());
+        }}
+      />
+    </details>
+  ) : null;
+
   if (periods.length === 0) {
-    if (enrichmentRunAt) return null; // genuinely analyzed, nothing to show
     return (
       <div style={{
         background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 8,
         padding: 10, marginTop: 12, fontSize: "0.82em", color: "#64748b",
       }}>
-        ⏳ ℹ️ Okres treści nie został jeszcze przeanalizowany.
+        {enrichmentRunAt ? "⏳ Brak określonego okresu dla tego dokumentu." : "⏳ ℹ️ Okres treści nie został jeszcze przeanalizowany."}
+        {runner}
       </div>
     );
   }
@@ -169,6 +195,7 @@ const TimePeriodsPanel: React.FC<TimePeriodsPanelProps> = ({ docId, currentChapt
           })}
         </div>
       )}
+      {runner}
     </div>
   );
 };

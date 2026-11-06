@@ -1,5 +1,6 @@
 import React from "react";
 import { AuthorizationContext } from "../../context/authorizationContext";
+import ChapterAnalysisRunner from "../ChapterAnalysisRunner/chapterAnalysisRunner";
 
 export interface ToneItem {
   chapter_position: number | null;
@@ -68,14 +69,38 @@ const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
       ?? null;
   }, [tones, currentChapter]);
 
+  const runner = docId ? (
+    <details style={{ marginTop: 8 }}>
+      <summary style={{ cursor: "pointer", fontSize: "0.8em", color: "#64748b" }}>
+        {tone ? "Oceń ten rozdział ponownie…" : "Oceń ton tego rozdziału…"}
+      </summary>
+      <ChapterAnalysisRunner<ToneItem>
+        apiUrl={apiUrl}
+        apiKey={apiKey}
+        docId={docId}
+        position={currentChapter}
+        endpoint="detect_tone"
+        resultKey="tones"
+        summary="Ocena tonu"
+        buttonLabel="🎭 Oceń ton rozdziału"
+        title="Model czyta cały rozdział (długi — we fragmentach) i zastępuje zapisany ton tego rozdziału"
+        onResult={(result) => {
+          if (result.kept_previous) return;
+          setTones((current) => [...current.filter((item) => item.chapter_position !== currentChapter), ...result.items]);
+          setEnrichmentRunAt(new Date().toISOString());
+        }}
+      />
+    </details>
+  ) : null;
+
   if (!tone) {
-    if (enrichmentRunAt) return null; // genuinely analyzed, nothing to show
     return (
       <div style={{
         background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 8,
         padding: 10, marginTop: 12, fontSize: "0.82em", color: "#64748b",
       }}>
-        🎭 ℹ️ Ton dokumentu nie został jeszcze przeanalizowany.
+        {enrichmentRunAt ? "🎭 Brak tonu dla tego rozdziału." : "🎭 ℹ️ Ton dokumentu nie został jeszcze przeanalizowany."}
+        {runner}
       </div>
     );
   }
@@ -122,6 +147,7 @@ const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
           {INTENSITY_DOTS[tone.intensity] ?? ""}
         </span>
       </div>
+      {runner}
     </div>
   );
 };
