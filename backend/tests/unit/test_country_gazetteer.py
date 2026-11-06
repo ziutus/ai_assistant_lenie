@@ -58,6 +58,13 @@ class TestSlugConvention:
 
 
 class TestCanonicalCountryName:
+    @pytest.mark.parametrize(
+        ("mention", "expected"),
+        [("Salvadoru", "Salwador"), ("Salvador", None), ("Salwadoru", "Salwador")],
+    )
+    def test_salvador_genitive_does_not_match_given_name(self, mention, expected):
+        assert country_gazetteer.canonical_country_name(mention) == expected
+
     @pytest.mark.parametrize("mention", ["Polska", "polska", "polski", "polskiej"])
     def test_matches_one_complete_country_mention(self, mention):
         assert country_gazetteer.canonical_country_name(mention) == "Polska"
@@ -93,6 +100,26 @@ class TestCanonicalCountryName:
 
     def test_bare_emiraty_still_matches_via_single_token_variant(self):
         assert country_gazetteer.canonical_country_name("Emiraty") == "Zjednoczone Emiraty Arabskie"
+
+
+class TestStripLeadingObliqueCountry:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Salwadoru Bukele", ("Bukele", "Salwador", 1)),
+            ("Salvadoru Bukele", ("Bukele", "Salwador", 1)),
+            ("Francji Macron", ("Macron", "Francja", 1)),
+            ("Stanow Zjednoczonych Trump", ("Trump", "Stany Zjednoczone", 2)),
+            ("Kuba Wojewodzki", None),
+            ("Jordan Peterson", None),
+            ("Salwadoru", None),
+            ("Salwadoru bukele", None),
+            ("Francji Emmanuel macron", None),
+            ("Zjednoczonych Emiratow Arabskich Trump", ("Trump", "Zjednoczone Emiraty Arabskie", 3)),
+        ],
+    )
+    def test_strips_only_oblique_country_before_capitalized_remainder(self, text, expected):
+        assert country_gazetteer.strip_leading_oblique_country(text) == expected
 
 
 class TestStripCountryEdge:

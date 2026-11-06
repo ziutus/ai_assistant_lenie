@@ -16,6 +16,7 @@ import requests
 from unidecode import unidecode
 
 from library.city_gazetteer import canonical_city_name
+from library.country_gazetteer import strip_leading_oblique_country
 from library.geo_feature_gazetteer import canonical_geo_feature_name
 from library.geopolitical_region_gazetteer import canonical_geopolitical_region_name
 from library.historical_state_gazetteer import canonical_historical_state_name
@@ -337,6 +338,18 @@ def aggregate_entities_detailed(
     after canonicalization; it is not persisted or returned by the API.
     """
     entities, split_org_surfaces = _split_rename_org_spans(entities)
+    standalone_person_keys: set[str] = set()
+    for ent in entities:
+        if ent.get("label") != "persName":
+            continue
+        surface = normalize_ner_text(strip_wrapping_quotes(ent.get("text") or ""))
+        if len(surface.split()) != 1 or surface[0].islower():
+            continue
+        lemma = normalize_ner_text(strip_wrapping_quotes(ent.get("lemma") or surface))
+        standalone_person_keys.add(surface.casefold())
+        if lemma:
+            standalone_person_keys.add(lemma.casefold())
+
     preliminary: dict[tuple[str, str], dict] = {}
     for ent in entities:
         label = ent.get("label")
@@ -373,6 +386,18 @@ def aggregate_entities_detailed(
                 lemma = surface
         if is_rejected_surface_lemma_pair(surface, lemma, pos):
             continue
+        if multiword_person:
+            stripped_country = strip_leading_oblique_country(surface)
+            if stripped_country is not None:
+                remainder, _country, taken = stripped_country
+                lemma_words = lemma.split()
+                same_word_count = len(lemma_words) == len(surface.split())
+                lemma_remainder = " ".join(lemma_words[taken:]) if same_word_count else remainder
+                if (
+                    remainder.casefold() in standalone_person_keys
+                    or (same_word_count and lemma_remainder.casefold() in standalone_person_keys)
+                ):
+                    lemma = lemma_remainder
         # spaCy sometimes tags a gazetteer place as an organization ("do Tela Avivwu")
         # or person ("Karolina Północna"); a closed-list name still denotes a place.
         if label in {"orgName", "persName"} and canonical_city_name(surface) is not None:

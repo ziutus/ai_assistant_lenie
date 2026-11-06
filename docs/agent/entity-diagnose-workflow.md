@@ -131,6 +131,7 @@ SELECT * FROM person_aliases WHERE alias ILIKE '%fragment%';
 
 | Objaw | Przyczyna | Gdzie naprawić |
 |---|---|---|
+| Kraj w dopełniaczu + nazwisko („prezydent Salvadoru Bukele”) rozpoznany jako osobna osoba | spaCy skleja kraj i nazwisko w jeden `persName`, a lemat całej frazy tworzy osobną grupę (E047, T1) | `country_gazetteer.strip_leading_oblique_country()` i `ner_client.aggregate_entities_detailed()` odcinają kraj w formie nie-mianownikowej tylko przy potwierdzeniu reszty samodzielną wzmianką osoby; pełny surface zostaje w `variants`, bez osobnej wzmianki kraju. Dane starego dokumentu: `POST /document/<id>/persons/merge` (encja z krajem → samodzielna encja nazwiska) |
 | Encja w ogóle nie trafiła do `document_persons` | Filtr jednowyrazowych wzmianek bez trafienia w Wikidata (`person_registry.py`) potraktował ją jako szum | Sprawdź czy to faktycznie osoba; jeśli tak, ale mało znana/lokalna — to oczekiwane, wpis i tak trafi do rejestru bez QID przy kolejnym wystąpieniu z pełniejszym kontekstem |
 | `confidence='manual_review'`, ktoś inny niż powinien | LLM (`confirm_person_with_llm`) źle rozstrzygnął ujednoznacznienie (kilku kandydatów w Wikidata o tym samym nazwisku) | To do ręcznej decyzji w `GET/PATCH /persons_review`, nie automatyczna reguła |
 | Ta sama osoba pod dwiema pisowniami/odmianami jako różne wpisy w `persons` | Brak aliasu łączącego formy | `POST /persons/<id>/aliases`, albo `merge_review_link()` jeśli to już przeszło przez `manual_review` |

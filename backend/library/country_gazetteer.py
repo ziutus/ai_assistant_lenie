@@ -195,7 +195,7 @@ _COUNTRY_DATA: list[tuple[str, tuple[str, ...]]] = [
     ("Gwatemala", ("gwatemal*",)),
     ("Belize", ("belize*",)),
     ("Honduras", ("hondura*",)),
-    ("Salwador", ("salwador*",)),
+    ("Salwador", ("salwador*", "salvadoru*")),
     ("Nikaragua", ("nikaragu*",)),
     ("Kostaryka", ("kostaryk*",)),
     ("Panama", ("panam*",)),
@@ -332,6 +332,19 @@ def canonical_country_name(mention: str) -> str | None:
         if any(pattern.fullmatch_with_suffix_limit(normalized) for pattern in patterns)
     }
     return next(iter(matches)) if len(matches) == 1 else None
+
+
+def strip_leading_oblique_country(text: str) -> tuple[str, str, int] | None:
+    """Return (remainder, country_name_pl, words_taken) for an oblique prefix."""
+    words = text.split()
+    for take in range(min(3, len(words) - 1), 0, -1):
+        prefix = " ".join(words[:take])
+        country = canonical_country_name(prefix)
+        if country is None or unidecode(prefix).casefold() == unidecode(country).casefold():
+            continue
+        if all(word[0].isupper() for word in words[take:]):
+            return " ".join(words[take:]), country, take
+    return None
 
 
 def strip_country_edge(text: str) -> tuple[str, str] | None:
