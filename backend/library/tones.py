@@ -15,6 +15,7 @@ from sqlalchemy import delete
 from unidecode import unidecode
 
 from library.ai import ai_ask
+from library.chapter_fragments import chapter_fragments, merge_fragment_reports
 from library.config_loader import load_config
 from library.db.models import DocumentTone
 from library.llm_usage.report import usage_report
@@ -23,7 +24,8 @@ from library.timeline_events import _chapters_for_document
 logger = logging.getLogger(__name__)
 
 DEFAULT_TONE_MODEL = "Bielik-11B-v3.0-Instruct"
-MAX_FRAGMENT_CHARS = 8_000
+MAX_FRAGMENT_CHARS = 8_000  # one model call; a longer chapter is split (``chapter_fragments``), never cut
+DOMINANT_SENTIMENT_SHARE = 0.7  # share of the text one sentiment needs, else the chapter is "mieszane"
 MAX_SECONDARY_EMOTIONS = 2
 MAX_REGISTERS = 2
 
@@ -134,6 +136,77 @@ def classify_fragment(fragment: str, model: str, *, document_id: int | None = No
     }
 
 
+def _split_labels(value: str | None) -> list[str]:
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def _top(weights: dict[str, int], limit: int) -> list[str]:
+    """Keys by descending weight; equal weights keep the order of first appearance."""
+    return sorted(weights, key=lambda key: -weights[key])[:limit]
+
+
+def merge_tones(weighted: list[tuple[dict, int]]) -> dict | None:
+    """One tone for a chapter from the tones of its fragments (weight = fragment length in characters).
+
+    The emotion is the one covering most text; the sentiment is kept when it covers at least
+    ``DOMINANT_SENTIMENT_SHARE`` of the text, otherwise it is "mieszane"; the intensity is the highest seen
+    (a short outburst still characterises the chapter); secondary emotions and registers are the most frequent
+    labels of the other fragments. A single fragment is returned unchanged.
+    """
+    if not weighted:
+        return None
+    if len(weighted) == 1:
+        return weighted[0][0]
+
+    emotion_weight: dict[str, int] = {}
+    for tone, weight in weighted:
+        emotion_weight[tone["emotion"]] = emotion_weight.get(tone["emotion"], 0) + weight
+    emotion = max(emotion_weight, key=lambda key: emotion_weight[key])  # a tie keeps the earlier fragment
+
+    others: dict[str, int] = {}
+    registers: dict[str, int] = {}
+    sentiment_weight: dict[str, int] = {}
+    for tone, weight in weighted:
+        if tone["emotion"] != emotion:
+            others[tone["emotion"]] = others.get(tone["emotion"], 0) + weight
+        for label in _split_labels(tone.get("secondary_emotions")):
+            if label != emotion:
+                others[label] = others.get(label, 0) + max(1, weight // 2)
+        for label in _split_labels(tone.get("registers")):
+            registers[label] = registers.get(label, 0) + weight
+        sentiment_weight[tone["sentiment"]] = sentiment_weight.get(tone["sentiment"], 0) + weight
+
+    total = sum(sentiment_weight.values())
+    top_sentiment = max(sentiment_weight, key=lambda key: sentiment_weight[key])
+    sentiment = top_sentiment if total and sentiment_weight[top_sentiment] / total >= DOMINANT_SENTIMENT_SHARE else "mieszane"
+    intensity = max((tone["intensity"] for tone, _ in weighted), key=INTENSITIES.index)
+    heaviest = max((item for item in weighted if item[0]["emotion"] == emotion), key=lambda item: item[1])[0]
+    return {
+        "emotion": emotion,
+        "secondary_emotions": ", ".join(_top(others, MAX_SECONDARY_EMOTIONS)) or None,
+        "sentiment": sentiment,
+        "intensity": intensity,
+        "registers": ", ".join(_top(registers, MAX_REGISTERS)) or None,
+        "evidence": heaviest.get("evidence"),
+    }
+
+
+def classify_chapter(text: str, model: str, *, document_id: int | None = None) -> tuple[dict | None, dict]:
+    """Classify the tone of a WHOLE chapter: one model call per fragment, merged by ``merge_tones``."""
+    fragments, skipped = chapter_fragments(text, MAX_FRAGMENT_CHARS)
+    weighted: list[tuple[dict, int]] = []
+    reports: list[dict] = []
+    for fragment in fragments:
+        tone, report = classify_fragment(fragment, model, document_id=document_id)
+        reports.append(report)
+        if tone is not None:
+            weighted.append((tone, len(fragment)))
+    merged_report = merge_fragment_reports(
+        reports, counters=("invalid_json", "rejected_invalid"), fragments=len(fragments), skipped=skipped,
+    )
+    return merge_tones(weighted), merged_report
+
+
 def extract_document_tones(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
     """Classify tone per reader chapter (whole document when it has no chapters)."""
     del session  # Kept in the public API for symmetry with refresh_document_tones.
@@ -141,9 +214,7 @@ def extract_document_tones(session, doc, model: str | None = None, *, chapter_po
     tones: list[dict] = []
     chapter_reports: list[dict] = []
     for chapter in _chapters_for_document(doc, chapter_position):
-        tone, report = classify_fragment(
-            chapter["text"][:MAX_FRAGMENT_CHARS], selected_model, document_id=getattr(doc, "id", None),
-        )
+        tone, report = classify_chapter(chapter["text"], selected_model, document_id=getattr(doc, "id", None))
         if tone is not None:
             tones.append({"chapter_position": chapter["position"], **tone})
         chapter_reports.append({
@@ -155,9 +226,20 @@ def extract_document_tones(session, doc, model: str | None = None, *, chapter_po
     return {"model": selected_model, "tones": tones, "chapters": chapter_reports}
 
 
-def refresh_document_tones(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
-    """Replace stored tones for a document, or one explicitly selected chapter."""
+def refresh_document_tones(
+    session, doc, model: str | None = None, *, chapter_position: int | None = None, keep_previous_on_failure: bool = False,
+) -> dict:
+    """Replace stored tones for a document, or one explicitly selected chapter.
+
+    Every analysed chapter gets exactly one tone, so an empty result means the model failed (invalid JSON, labels
+    outside the closed lists). With ``keep_previous_on_failure`` a single-chapter refresh then leaves the stored tone
+    alone instead of deleting it (``kept_previous`` in the result).
+    """
     result = extract_document_tones(session, doc, model, chapter_position=chapter_position)
+    if keep_previous_on_failure and not result["tones"]:
+        result["rows"] = []
+        result["kept_previous"] = True
+        return result
     statement = delete(DocumentTone).where(DocumentTone.document_id == doc.id)
     if chapter_position is not None:
         statement = statement.where(DocumentTone.chapter_position == chapter_position)

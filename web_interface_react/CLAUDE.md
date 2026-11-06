@@ -77,6 +77,39 @@ The noun "zdarzenie" is not used in labels. Promotion paths into the registry: a
 alias — `POST /geo_events` + the same link; an edition-specific title and an optional date go in the form, because
 "Konwencja Demokratów" is several events).
 
+### Per-chapter analyses: model choice
+
+Tone (`TonePanel`), historical period (`TimePeriodsPanel`, both in the `/read/:id` sidebar) and dated events
+(`ChapterEventsPanel`) can each be run for ONE chapter with a model the reviewer picks.
+`components/ChapterModelPicker` (`useChapterModel` + a collapsed `<details>`) lists the allowed models from
+`GET /chapter_analysis/model` with price per 1 mln tokens and context window (`modelOptionText`), greys out unavailable
+ones, warns that an external provider receives the chapter text and stores the household default
+(`PUT /chapter_analysis/model`, "Ustaw jako domyślny" / "Przywróć domyślny serwera"); the list is fetched only when the
+picker is opened and no model is sent until then (the server default applies). `components/ChapterAnalysisRunner` adds the
+run button for tone / period (`POST /document/:id/chapter/:pos/detect_tone` / `detect_time_period`), shows model, number
+of fragments and cost, and keeps the shown result when the model's answer was unusable (`kept_previous`). The panels
+now stay visible after an analysis (the controls sit in a collapsed "Oceń ten rozdział ponownie…").
+
+### Highlighted tone passages (`/read/:id`)
+
+`components/ToneSpansPanel` (sidebar, under the tone panel; collapsed "🔦 Wyróżnione fragmenty") asks a model ON REQUEST for
+passages of the chapter that stand out from its tone (⚠️, red: złośliwy, ironiczny…) and for the key sentence that
+states the substance (⭐, green), `POST /document/:id/chapter/:pos/detect_tone_spans` (same model picker as the other
+chapter analyses; `whole_document` for a short article the reader shows as one chapter). Nothing runs unasked. The
+page loads the stored passages (`useToneSpans`, `GET /document/:id/tone_spans`) and draws them through the reader's
+existing note highlighting: `utils/toneSpans.ts` turns each non-rejected passage into a synthetic note (negative id,
+stance `tone_outlier` / `tone_key`), `renderParagraphWithNotes` gives it the red/green mark, and a key sentence that
+sits INSIDE an outlier passage cuts the outlier around itself (`splitOutliersAroundKeys`) because marks cannot nest. A
+quote that only matches after typography normalisation tints the whole paragraph instead. Each listed passage has
+"✓ Potwierdź" / "✗ Odrzuć" / "↺ Cofnij" (`PATCH /tone_spans/:id`; a rejected one is dimmed and never highlighted) and
+"⚖️ Ton bez fragmentów odstających" (`POST .../core_tone`) stores the chapter's tone computed without the outliers; the
+tone panel then shows it under the main tone (`core_tone`, reloaded through its `refreshKey`). "Podświetlaj w tekście"
+switches the marks off. The same three panels (`TimePeriodsPanel`, `TonePanel`, `ToneSpansPanel`, grouped under the
+label "Ton i okres rozdziału N") sit in the right-hand column of every content chapter on `/ner/:id[/:chapter]`, under
+the dated-events block, so tone, period and passages can be judged next to the entities and events; `/ner` draws the
+sentences itself and does not highlight the passages, so the panel omits the highlighting switch there (the page owns
+one `useToneSpans` list and the `toneVersion` that reloads the tone panels).
+
 ### Skill hints
 
 Where a task is done by a Claude Code skill rather than by the UI, show

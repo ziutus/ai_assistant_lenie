@@ -252,6 +252,32 @@ in Python (LLM output with stripped diacritics is canonicalized, e.g. "srednia" 
 | `intensity` | `varchar(10) NOT NULL` | `niska`, `średnia`, or `wysoka` |
 | `registers` | `varchar(100)` | Up to 2 language registers (`formalny`, `potoczny`, `dziecinny`, `wulgarny`, `obraźliwy`, `ironiczny`), comma-separated |
 | `evidence` | `text` | One LLM sentence grounding the classification |
+| `core_tone` | `jsonb` | The chapter's tone recomputed WITHOUT its outlier passages (`tone_spans.recompute_core_tone`): the six tone fields plus `excluded` (how many passages were cut out) and `model`; `NULL` until asked, and lost when the tone is replaced |
+| `created_at` | `timestamp` | Row creation timestamp |
+
+**Index:** `(document_id, chapter_position)`.
+
+### Table: `public.document_tone_spans`
+
+Passages of a document found ON REQUEST by `library/tone_spans.py` (migration `7d2e9b4f1a63`): `role='outlier'` — the
+tone clearly differs from the rest of the chapter (a malicious remark, irony; `label` from a closed list: złośliwy,
+obraźliwy, ironiczny, wulgarny, agresywny, pogardliwy, manipulacyjny) — or `role='key'` — the sentence that states the
+substance whatever its tone, which may sit inside an outlier. `quote` is verbatim text of the document (a quote the
+model invented is dropped before storing). A reviewer settles each row (`status` `proposed` → `confirmed` /
+`rejected`); a re-detection replaces only `proposed` rows of its scope and never re-adds a settled quote.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `document_id` | `integer NOT NULL` | FK to `documents.id` (CASCADE delete) |
+| `chapter_position` | `integer` | Like `document_tones`; `NULL` for chapterless documents |
+| `role` | `varchar(10) NOT NULL` | `outlier` or `key` |
+| `label` | `varchar(30) NOT NULL` | Closed-list label for an outlier, `kluczowy` for a key passage |
+| `quote` | `text NOT NULL` | Verbatim passage; the reader finds it by exact match |
+| `note` | `text` | One model sentence of reasoning |
+| `importance` | `smallint` | 1–3, key passages only |
+| `status` | `varchar(10) NOT NULL` | `proposed` (default), `confirmed`, `rejected` |
+| `model` | `varchar(120)` | Model that proposed it |
 | `created_at` | `timestamp` | Row creation timestamp |
 
 **Index:** `(document_id, chapter_position)`.

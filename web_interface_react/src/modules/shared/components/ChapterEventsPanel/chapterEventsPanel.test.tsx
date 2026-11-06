@@ -64,6 +64,36 @@ it("detects events for this chapter only and lists the result", async () => {
   expect(screen.getByRole("status").textContent).toContain("1 wydarzeń");
 });
 
+it("sends the model chosen in the picker with the detection", async () => {
+  mocked.get.mockImplementation(async (url: string) => {
+    if (url.endsWith("/chapter_analysis/model")) {
+      return {
+        data: {
+          default_model: "Bielik-11B-v3.0-Instruct", saved: false,
+          models: [
+            { id: "Bielik-11B-v3.0-Instruct", label: "Bielik 11B v3" },
+            { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", input_price_per_million: "0.1", output_price_per_million: "0.4", currency: "USD" },
+          ],
+        },
+      };
+    }
+    return { data: { events: [] } };
+  });
+  mocked.post.mockResolvedValue({ data: { events: [proposal], model: "gemini-3.1-flash-lite", rejected_without_quote: 0, rejected_without_date: 0 } });
+  render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
+
+  const summary = await screen.findByText(/^Model wykrywania: /);
+  const details = summary.closest("details") as HTMLDetailsElement;
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+  await screen.findByRole("option", { name: /Gemini 3.1 Flash Lite/ });
+  fireEvent.change(screen.getByLabelText("Model do analizy rozdziału"), { target: { value: "gemini-3.1-flash-lite" } });
+  fireEvent.click(screen.getByRole("button", { name: /Wykryj wydarzenia/ }));
+
+  await waitFor(() => expect(mocked.post).toHaveBeenCalled());
+  expect(mocked.post.mock.calls[0][1]).toEqual({ model: "gemini-3.1-flash-lite" });
+});
+
 const withId = { ...proposal, id: 77, world_events: [] };
 
 const renderOpen = async () => {

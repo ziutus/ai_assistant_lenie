@@ -2406,6 +2406,108 @@ def document_chapter_detect_events(doc_id: int, position: int):
     })
 
 
+@bp.route("/chapter_analysis/model", methods=["GET"])
+def get_chapter_analysis_model():
+    """Models offered for the per-chapter analyses (tone, period, events) with prices, and the one in effect."""
+    from library import chapter_analysis_model as cam
+    from library.llm_model_registry import selectable_models
+
+    session = get_scoped_session()
+    return jsonify({
+        "status": "success",
+        "default_model": cam.default_model(session),
+        "saved": cam.has_saved_choice(session),
+        "models": selectable_models(cam.TASK),
+    })
+
+
+@bp.route("/chapter_analysis/model", methods=["PUT"])
+def put_chapter_analysis_model():
+    """Set the household default model (``{"model": id}``); ``{"model": null}`` restores the built-in default."""
+    from library import app_settings
+    from library import chapter_analysis_model as cam
+    from library.llm_model_registry import is_selectable
+
+    body = request.get_json(silent=True) or {}
+    if "model" not in body:
+        return jsonify({"status": "error", "message": "model is required"}), 400
+    model = body["model"]
+    if model is not None and (not isinstance(model, str) or not is_selectable(model, cam.TASK)):
+        return jsonify({"status": "error", "message": "Model is not available"}), 400
+    session = get_scoped_session()
+    app_settings.set_setting(session, cam.SETTING_KEY, model)
+    return jsonify({"status": "success", "default_model": cam.default_model(session), "saved": model is not None})
+
+
+def _detect_chapter_stage(doc_id: int, position: int, stage: str):
+    """Shared body of the one-chapter tone / period classification (``stage`` = ``tones`` | ``time_periods``).
+
+    Body: optional ``{"model": id}`` from the ``chapter_analysis`` allowlist; without it the household default.
+    Replaces the stored result of THAT chapter only, and keeps the previous one when the model's answer was unusable.
+    """
+    from library import chapter_analysis_model as cam
+    from library.chapter_fragments import resolve_chapter_scope
+    from library.llm_model_registry import is_selectable
+
+    data = request.get_json(silent=True) or {}
+    model = data.get("model")
+    if model is not None and not isinstance(model, str):
+        return jsonify({"status": "error", "message": "model must be a string"}), 400
+    if model and not is_selectable(model, cam.TASK):
+        return jsonify({"status": "error", "message": "Model is not available"}), 400
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    model = model or cam.default_model(session)
+    # An article without ## headings is stored as one whole-document row: the chapter the reader shows means that row.
+    scope = resolve_chapter_scope(doc, position)
+
+    try:
+        if stage == "tones":
+            from library.tones import refresh_document_tones
+            result = refresh_document_tones(session, doc, model, chapter_position=scope, keep_previous_on_failure=True)
+        else:
+            from library.time_periods import refresh_document_periods
+            result = refresh_document_periods(
+                session, doc, model, chapter_position=scope, keep_previous_on_failure=True,
+            )
+        session.commit()
+    except ValueError:
+        session.rollback()
+        logger.info("chapter %s refused for document %s chapter %s", stage, doc_id, position, exc_info=True)
+        return jsonify({"status": "error", "message": "Chapter not found or document has no usable text"}), 400
+    except Exception:
+        session.rollback()
+        logger.exception("chapter %s failed for document %s chapter %s", stage, doc_id, position)
+        return jsonify({"status": "error", "message": "Chapter analysis failed"}), 500
+
+    result.pop("rows", None)
+    report = (result.get("chapters") or [{}])[0]
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "chapter_position": position,
+        "model": result.get("model"),
+        stage: result.get("tones" if stage == "tones" else "periods", []),
+        "kept_previous": bool(result.get("kept_previous")),
+        "report": {key: value for key, value in report.items() if key not in ("chapter_title", "usage_log_ids")},
+    })
+
+
+@bp.route("/document/<int:doc_id>/chapter/<int:position>/detect_tone", methods=["POST"])
+def document_chapter_detect_tone(doc_id: int, position: int):
+    """Classify the emotional tone and register of ONE chapter (the whole chapter, in fragments)."""
+    return _detect_chapter_stage(doc_id, position, "tones")
+
+
+@bp.route("/document/<int:doc_id>/chapter/<int:position>/detect_time_period", methods=["POST"])
+def document_chapter_detect_time_period(doc_id: int, position: int):
+    """Classify the historical period(s) ONE chapter is about (the whole chapter, in fragments)."""
+    return _detect_chapter_stage(doc_id, position, "time_periods")
+
+
 @bp.route("/document/<int:doc_id>/time_periods", methods=["GET"])
 def document_time_periods(doc_id: int):
     """Return stored time periods, whole-document rows first, then chapter by chapter."""
@@ -2477,6 +2579,8 @@ def document_tones(doc_id: int):
                 "intensity": row.intensity,
                 "registers": row.registers,
                 "evidence": row.evidence,
+                # tone without the outlier passages (POST .../core_tone); null until asked
+                "core_tone": row.core_tone,
             }
             for row in rows
         ],

@@ -1,5 +1,6 @@
 import React from "react";
 import { AuthorizationContext } from "../../context/authorizationContext";
+import ChapterAnalysisRunner from "../ChapterAnalysisRunner/chapterAnalysisRunner";
 
 export interface ToneItem {
   chapter_position: number | null;
@@ -9,11 +10,15 @@ export interface ToneItem {
   intensity: "niska" | "średnia" | "wysoka";
   registers: string | null;
   evidence: string | null;
+  /** The chapter's tone recomputed without its outlier passages (ToneSpansPanel); null until asked. */
+  core_tone?: (Omit<ToneItem, "chapter_position" | "core_tone"> & { excluded: number; model?: string }) | null;
 }
 
 interface TonePanelProps {
   docId?: string;
   currentChapter: number;
+  /** Bump to reload the stored tones (e.g. after the tone without outliers was stored elsewhere on the page). */
+  refreshKey?: number;
 }
 
 const SENTIMENT_STYLES: Record<ToneItem["sentiment"], React.CSSProperties> = {
@@ -29,7 +34,7 @@ const INTENSITY_DOTS: Record<ToneItem["intensity"], string> = {
   wysoka: "●●●",
 };
 
-const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
+const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter, refreshKey = 0 }) => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [tones, setTones] = React.useState<ToneItem[]>([]);
   // null until refresh_document_tones has run at least once for this document
@@ -59,7 +64,7 @@ const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
       }
     })();
     return () => { cancelled = true; };
-  }, [apiUrl, apiKey, docId]);
+  }, [apiUrl, apiKey, docId, refreshKey]);
 
   // current chapter's tone; whole-document rows (null chapter) are the fallback
   const tone = React.useMemo(() => {
@@ -68,14 +73,38 @@ const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
       ?? null;
   }, [tones, currentChapter]);
 
+  const runner = docId ? (
+    <details style={{ marginTop: 8 }}>
+      <summary style={{ cursor: "pointer", fontSize: "0.8em", color: "#64748b" }}>
+        {tone ? "Oceń ten rozdział ponownie…" : "Oceń ton tego rozdziału…"}
+      </summary>
+      <ChapterAnalysisRunner<ToneItem>
+        apiUrl={apiUrl}
+        apiKey={apiKey}
+        docId={docId}
+        position={currentChapter}
+        endpoint="detect_tone"
+        resultKey="tones"
+        summary="Ocena tonu"
+        buttonLabel="🎭 Oceń ton rozdziału"
+        title="Model czyta cały rozdział (długi — we fragmentach) i zastępuje zapisany ton tego rozdziału"
+        onResult={(result) => {
+          if (result.kept_previous) return;
+          setTones((current) => [...current.filter((item) => item.chapter_position !== currentChapter), ...result.items]);
+          setEnrichmentRunAt(new Date().toISOString());
+        }}
+      />
+    </details>
+  ) : null;
+
   if (!tone) {
-    if (enrichmentRunAt) return null; // genuinely analyzed, nothing to show
     return (
       <div style={{
         background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 8,
         padding: 10, marginTop: 12, fontSize: "0.82em", color: "#64748b",
       }}>
-        🎭 ℹ️ Ton dokumentu nie został jeszcze przeanalizowany.
+        {enrichmentRunAt ? "🎭 Brak tonu dla tego rozdziału." : "🎭 ℹ️ Ton dokumentu nie został jeszcze przeanalizowany."}
+        {runner}
       </div>
     );
   }
@@ -122,6 +151,23 @@ const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
           {INTENSITY_DOTS[tone.intensity] ?? ""}
         </span>
       </div>
+      {tone.core_tone && (
+        <div
+          title={`Ocena po wyłączeniu ${tone.core_tone.excluded} fragm. odstających tonem${tone.core_tone.evidence ? ` — ${tone.core_tone.evidence}` : ""}`}
+          style={{ marginTop: 8, fontSize: "0.8em", color: "#475569" }}
+        >
+          ⚖️ Bez fragmentów odstających ({tone.core_tone.excluded}):{" "}
+          <span style={{
+            padding: "2px 8px", borderRadius: 999, fontWeight: 600, ...SENTIMENT_STYLES[tone.core_tone.sentiment],
+          }}>
+            {tone.core_tone.emotion}
+          </span>
+          <span style={{ marginLeft: 6, color: "#94a3b8", letterSpacing: 2 }}>
+            {INTENSITY_DOTS[tone.core_tone.intensity] ?? ""}
+          </span>
+        </div>
+      )}
+      {runner}
     </div>
   );
 };

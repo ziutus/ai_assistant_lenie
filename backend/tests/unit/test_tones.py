@@ -189,6 +189,7 @@ def test_document_tone_orm_model():
         "intensity",
         "registers",
         "evidence",
+        "core_tone",
         "created_at",
     }
     assert isinstance(columns["chapter_position"].type, Integer)
@@ -214,7 +215,7 @@ def test_document_tones_endpoint(monkeypatch):
     query = MagicMock()
     query.filter.return_value.order_by.return_value.all.return_value = [row]
     session = MagicMock()
-    session.get.return_value = SimpleNamespace(id=7)
+    session.get.return_value = SimpleNamespace(id=7, enrichment_run_at=None)
     session.query.return_value = query
     monkeypatch.setattr(chunk_review_routes, "get_scoped_session", lambda: session)
     app = flask.Flask(__name__)
@@ -232,5 +233,6 @@ def test_document_tones_endpoint(monkeypatch):
             "intensity": "wysoka",
             "registers": "obraźliwy",
             "evidence": "Liczne obelgi.",
+            "core_tone": None,
         }
     ]

@@ -229,7 +229,7 @@ def test_document_time_periods_endpoint(monkeypatch):
     query = MagicMock()
     query.filter.return_value.order_by.return_value.all.return_value = [row]
     session = MagicMock()
-    session.get.return_value = SimpleNamespace(id=7)
+    session.get.return_value = SimpleNamespace(id=7, enrichment_run_at=None)
     session.query.return_value = query
     monkeypatch.setattr(chunk_review_routes, "get_scoped_session", lambda: session)
     app = flask.Flask(__name__)

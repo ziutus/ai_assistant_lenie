@@ -6,6 +6,9 @@ import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../componen
 import ChannelBadge from "../components/ChannelBadge";
 import ChapterDescriptionsPanel, { ChapterDescriptionsButton } from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import ChapterEventsPanel, { ChapterEventsDetectButton } from "../components/ChapterEventsPanel/chapterEventsPanel";
+import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
+import TonePanel from "../components/TonePanel/tonePanel";
+import ToneSpansPanel, { useToneSpans } from "../components/ToneSpansPanel/toneSpansPanel";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistryDialog";
@@ -455,6 +458,9 @@ const NerChapters = () => {
   // "Wykryj wydarzenia" sits in the same button bar: a click bumps the nonce, the chapter's panel runs the detection.
   const [eventsDetect, setEventsDetect] = React.useState<{ position: number; nonce: number } | null>(null);
   const [eventsBusyFor, setEventsBusyFor] = React.useState<number | null>(null);
+  // Tone passages found on request (ToneSpansPanel); one list for the whole document, filtered per chapter by the panel.
+  const [toneSpans, setToneSpans] = useToneSpans(apiUrl, apiKey, id);
+  const [toneVersion, setToneVersion] = React.useState(0);
   const describeFromText = (item: EntityItem | undefined) => (event: React.MouseEvent) => {
     // A selected fragment keeps the "add entity" menu of the surrounding text.
     if (!item || item.id === undefined || selectedFragment(window.getSelection())) return;
@@ -773,6 +779,15 @@ const NerChapters = () => {
                             detectSignal={eventsDetect?.position === section.position ? eventsDetect.nonce : 0}
                             onBusyChange={(busy) => setEventsBusyFor((current) =>
                               busy ? section.position : current === section.position ? null : current)} />}
+                          {id && (
+                            <div aria-label={`Ton i okres rozdziału ${section.position}`}>
+                              <TimePeriodsPanel docId={id} currentChapter={section.position} />
+                              <TonePanel docId={id} currentChapter={section.position} refreshKey={toneVersion} />
+                              <ToneSpansPanel docId={id} currentChapter={section.position} compact={false}
+                                spans={toneSpans} onSpansChange={setToneSpans}
+                                onToneChanged={() => setToneVersion((current) => current + 1)} />
+                            </div>
+                          )}
                           {(countries.length > 0 || groups.length > 0) && (
                             <div aria-label="Państwa rozdziału" style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                               <strong style={{ fontSize: "0.85em" }}>Państwa:</strong>

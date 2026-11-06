@@ -1813,6 +1813,44 @@ class DocumentTone(Base):
     intensity: Mapped[str] = mapped_column(String(10), nullable=False)
     registers: Mapped[str | None] = mapped_column(String(100))
     evidence: Mapped[str | None] = mapped_column(Text)
+    # Tone of the chapter recomputed without its outlier passages (tone_spans.recompute_core_tone); NULL until asked.
+    core_tone: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
+
+
+class DocumentToneSpan(Base):
+    """A passage that stands out from its chapter's tone (``outlier``) or carries the substance (``key``).
+
+    Found on request by ``library/tone_spans.py``; ``quote`` is verbatim text of the document. A reviewer settles
+    each one (``proposed`` → ``confirmed`` / ``rejected``) and a settled passage survives a re-detection.
+    """
+
+    __tablename__ = "document_tone_spans"
+    __table_args__ = (
+        CheckConstraint("role IN ('outlier', 'key')", name="ck_document_tone_spans_role"),
+        CheckConstraint("status IN ('proposed', 'confirmed', 'rejected')", name="ck_document_tone_spans_status"),
+        CheckConstraint(
+            "importance IS NULL OR importance BETWEEN 1 AND 3", name="ck_document_tone_spans_importance",
+        ),
+        Index("idx_document_tone_spans_document_chapter", "document_id", "chapter_position"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    chapter_position: Mapped[int | None] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    label: Mapped[str] = mapped_column(String(30), nullable=False)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    importance: Mapped[int | None] = mapped_column(SmallInteger)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, server_default="proposed")
+    model: Mapped[str | None] = mapped_column(String(120))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )

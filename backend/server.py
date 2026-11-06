@@ -53,6 +53,7 @@ from library.place_routes import bp as places_bp
 from library.ner_channel_glossary_routes import bp as ner_channel_glossary_bp
 from library.obsidian_vault_routes import bp as obsidian_vault_bp
 from library.llm_model_routes import bp as llm_models_bp
+from library.tone_span_routes import bp as tone_spans_bp
 from library.feed_review_reason_routes import bp as feed_review_reasons_bp
 from library.ner_gazetteer_routes import bp as ner_gazetteer_bp
 from library.youtube_processing import process_youtube_url, parse_chapters_from_description
@@ -157,6 +158,7 @@ app.register_blueprint(whatsapp_sync_bp)
 app.register_blueprint(places_bp)
 app.register_blueprint(ner_gazetteer_bp)
 app.register_blueprint(llm_models_bp)
+app.register_blueprint(tone_spans_bp)
 app.register_blueprint(feed_review_reasons_bp)
 app.register_blueprint(ner_channel_glossary_bp)
 app.register_blueprint(obsidian_vault_bp)
