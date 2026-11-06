@@ -16,6 +16,18 @@ from library.llm_usage.report import combine_usage_reports
 MAX_FRAGMENTS_PER_CHAPTER = 12
 
 
+def resolve_chapter_scope(doc, position: int | None) -> int | None:
+    """The chapter position to store results under: ``position`` for a document with ``##`` chapters, else ``None``.
+
+    An article without H1/H2 headings has no chapters; its tone, periods and passages are stored as one
+    whole-document row (``chapter_position`` NULL), and the reader still numbers it as chapter 1. A call that names a
+    chapter of such a document therefore means the whole document.
+    """
+    from library.text_functions import detect_chapters
+
+    return position if detect_chapters((doc.text_md or doc.text or "")) else None
+
+
 def chapter_fragments(
     text: str | None, max_chars: int, max_fragments: int = MAX_FRAGMENTS_PER_CHAPTER,
 ) -> tuple[list[str], int]:

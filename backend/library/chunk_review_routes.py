@@ -2443,6 +2443,7 @@ def _detect_chapter_stage(doc_id: int, position: int, stage: str):
     Replaces the stored result of THAT chapter only, and keeps the previous one when the model's answer was unusable.
     """
     from library import chapter_analysis_model as cam
+    from library.chapter_fragments import resolve_chapter_scope
     from library.llm_model_registry import is_selectable
 
     data = request.get_json(silent=True) or {}
@@ -2457,15 +2458,17 @@ def _detect_chapter_stage(doc_id: int, position: int, stage: str):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
     model = model or cam.default_model(session)
+    # An article without ## headings is stored as one whole-document row: the chapter the reader shows means that row.
+    scope = resolve_chapter_scope(doc, position)
 
     try:
         if stage == "tones":
             from library.tones import refresh_document_tones
-            result = refresh_document_tones(session, doc, model, chapter_position=position, keep_previous_on_failure=True)
+            result = refresh_document_tones(session, doc, model, chapter_position=scope, keep_previous_on_failure=True)
         else:
             from library.time_periods import refresh_document_periods
             result = refresh_document_periods(
-                session, doc, model, chapter_position=position, keep_previous_on_failure=True,
+                session, doc, model, chapter_position=scope, keep_previous_on_failure=True,
             )
         session.commit()
     except ValueError:
@@ -2573,6 +2576,8 @@ def document_tones(doc_id: int):
                 "intensity": row.intensity,
                 "registers": row.registers,
                 "evidence": row.evidence,
+                # tone without the outlier passages (POST .../core_tone); null until asked
+                "core_tone": row.core_tone,
             }
             for row in rows
         ],

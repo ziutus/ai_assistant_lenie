@@ -90,6 +90,22 @@ run button for tone / period (`POST /document/:id/chapter/:pos/detect_tone` / `d
 of fragments and cost, and keeps the shown result when the model's answer was unusable (`kept_previous`). The panels
 now stay visible after an analysis (the controls sit in a collapsed "Oceń ten rozdział ponownie…").
 
+### Highlighted tone passages (`/read/:id`)
+
+`components/ToneSpansPanel` (sidebar, under the tone panel; collapsed "🔦 Wyróżnione fragmenty") asks a model ON REQUEST for
+passages of the chapter that stand out from its tone (⚠️, red: złośliwy, ironiczny…) and for the key sentence that
+states the substance (⭐, green), `POST /document/:id/chapter/:pos/detect_tone_spans` (same model picker as the other
+chapter analyses; `whole_document` for a short article the reader shows as one chapter). Nothing runs unasked. The
+page loads the stored passages (`useToneSpans`, `GET /document/:id/tone_spans`) and draws them through the reader's
+existing note highlighting: `utils/toneSpans.ts` turns each non-rejected passage into a synthetic note (negative id,
+stance `tone_outlier` / `tone_key`), `renderParagraphWithNotes` gives it the red/green mark, and a key sentence that
+sits INSIDE an outlier passage cuts the outlier around itself (`splitOutliersAroundKeys`) because marks cannot nest. A
+quote that only matches after typography normalisation tints the whole paragraph instead. Each listed passage has
+"✓ Potwierdź" / "✗ Odrzuć" / "↺ Cofnij" (`PATCH /tone_spans/:id`; a rejected one is dimmed and never highlighted) and
+"⚖️ Ton bez fragmentów odstających" (`POST .../core_tone`) stores the chapter's tone computed without the outliers; the
+tone panel then shows it under the main tone (`core_tone`, reloaded through its `refreshKey`). "Podświetlaj w tekście"
+switches the marks off.
+
 ### Skill hints
 
 Where a task is done by a Claude Code skill rather than by the UI, show
