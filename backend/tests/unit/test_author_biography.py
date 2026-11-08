@@ -1,10 +1,13 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from library.author_biography import (
     decide_biography_review,
     extract_trailing_author_biography,
     process_author_biography,
+    split_author_block,
 )
 from library.db.models import DocumentPerson, Person
 
@@ -14,6 +17,60 @@ BIO = (
     "w Dzienniku Łódzkim. W money.pl zajmuje się inwestycjami "
     "infrastrukturalnymi oraz transportem."
 )
+
+
+PORTAL_TAIL = """[img2: Mateusz Cieślak]\x20
+
+Newsy, wywiady, śledztwa i reportaże w Twojej skrzynce co tydzień - zawsze za darmo.
+
+Tetiana Kolesnychenko Dziennikarka
+Dziennikarka
+[img3: Tetiana Kolesnychenko]
+Tetiana Kolesnychenko Dziennikarka
+
+Dziennikarka Magazynu Wirtualnej Polski, specjalizująca się w tematyce Europy Wschodniej. Od 2022 roku relacjonuje wojnę w Ukrainie.
+Dwukrotna laureatka Nagrody im. Dariusza Fikusa za dziennikarstwo najwyższej próby (2024 i 2025), laureatka Grand Press oraz Festiwalu Wrażliwego.
+Nominowana do Nagrody im. Teresy Torańskiej oraz Melchiorów Polskiego Radia.
+
+tetiana.kolesnychenko@grupawp.plwięcej o autorze
+"""
+
+
+@pytest.mark.parametrize("separator", ["", " "])
+def test_split_author_block_document_11242(separator):
+    text = "Treść artykułu. " * 80 + "\n\n" + PORTAL_TAIL.replace(".plwięcej", f".pl{separator}więcej")
+    body, block = split_author_block(text)
+    assert body.endswith("co tydzień - zawsze za darmo.")
+    assert "[img2: Mateusz Cieślak]" in body
+    assert block.startswith("Tetiana Kolesnychenko Dziennikarka")
+    assert block.endswith("więcej o autorze")
+    assert text.startswith(body)
+
+
+@pytest.mark.parametrize("text", [
+    "Treść artykułu.\nJan Kowalski Dziennikarz",
+    "Treść artykułu.\nOpis bez nazwiska.\nx@example.pl o autorze",
+    "Jan Kowalski Dziennikarz\n" + "Dalszy akapit.\n" * 15 + "x@example.pl o autorze",
+    "W artykule dziennikarka omawia raport.\n" + "Dalszy akapit.\n" * 20 + "x@example.pl o autorze",
+    "Jan Kowalski Dziennikarz\nx@example.pl o autorze\nraz\ndwa\ntrzy\ncztery",
+    "Jan Kowalski Dziennikarz\nx@example.pl o autorze\n" + "x" * 121,
+    "Jan Kowalski Dziennikarzem\nx@example.pl o autorze",
+    "jan Kowalski Dziennikarz\nx@example.pl o autorze",
+])
+def test_split_author_block_keeps_unconfirmed_footer(text):
+    assert split_author_block(text) == (text, None)
+
+
+def test_split_author_block_accepts_image_role_and_three_short_footer_lines():
+    block = "[img3: Łukasz Żak] Łukasz Żak, rEpOrTeR\nOpis.\nx@example.pl o autorze\nraz\ndwa\ntrzy"
+    text = "Treść.\n\n" + block
+    assert split_author_block(text) == ("Treść.", block)
+
+
+def test_split_author_block_uses_last_marker_and_fifteen_nonempty_lines():
+    prefix = "Jan Kowalski Autor\nx@example.pl o autorze\n" + "Treść.\n" * 20
+    block = "Anna Maria Łucja Żak Ekspertka\n" + "\nOpis.\n" * 14 + "y@example.pl więcej o autorze"
+    assert split_author_block(prefix + block) == (prefix.rstrip(), block)
 
 
 def test_extracts_known_author_biography_from_document_tail():

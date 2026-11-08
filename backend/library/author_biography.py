@@ -11,6 +11,40 @@ from library.db.models import DocumentPerson, Person
 
 logger = logging.getLogger(__name__)
 
+_AUTHOR_BLOCK_END_RE = re.compile(
+    r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+\s*(?:więcej\s+)?o\s+autorze\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_AUTHOR_BLOCK_START_RE = re.compile(
+    r"^\s*(?:\[img\d+: [^\]]*\]\s*)?"
+    r"[A-ZĄĆĘŁŃÓŚŹŻ][^\W\d_]*(?:[-'][^\W\d_]+)*"
+    r"(?:\s+[A-ZĄĆĘŁŃÓŚŹŻ][^\W\d_]*(?:[-'][^\W\d_]+)*){1,3}"
+    r"(?:\s*,\s*|\s+)(?i:Dziennikarz|Dziennikarka|Redaktor|Redaktorka|Reporter|Reporterka|"
+    r"Autor|Autorka|Publicysta|Publicystka|Analityk|Analityczka|Ekspert|Ekspertka|"
+    r"Felietonista|Felietonistka|Korespondent|Korespondentka)\b"
+)
+
+
+def split_author_block(text: str) -> tuple[str, str | None]:
+    """Split a trailing portal author block while preserving original body offsets."""
+    markers = list(_AUTHOR_BLOCK_END_RE.finditer(text))
+    if not markers:
+        return text, None
+    marker = markers[-1]
+    trailing_lines = text[marker.end():].splitlines()
+    if trailing_lines and trailing_lines[0] == "":
+        trailing_lines = trailing_lines[1:]
+    if len(trailing_lines) > 3 or any(len(line) > 120 for line in trailing_lines):
+        return text, None
+
+    lines = list(re.finditer(r"[^\r\n]+", text[:marker.start()]))
+    nonempty_lines = [line for line in lines if line.group().strip()]
+    for line in nonempty_lines[-15:]:
+        if _AUTHOR_BLOCK_START_RE.match(line.group()):
+            return text[:line.start()].rstrip(), text[line.start():].strip()
+    return text, None
+
+
 BIO_SIGNALS_RE = re.compile(
     r"\b(jest|by\w*|prac\w*|zacz\w*|zajm\w*|specjaliz\w*|"
     r"dziennikar\w*|autor\w*|uko\w*|redakcj\w*|studiach)\b",
