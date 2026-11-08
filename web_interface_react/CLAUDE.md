@@ -239,6 +239,13 @@ event keeps counts and spellings; an event's approved description is not carried
 
 ## Architecture
 
+### Graphs
+
+Interactive graphs use **vis-network** (`vis-network/standalone`, `^10.1.2`): the `/read/:id` relationship graph is
+`components/RelationshipGraph/relationshipGraph.tsx`. Mermaid is not a dependency. [Pele](https://pele.run/)
+(Mermaid → themeable SVG, MIT) was evaluated and deferred for static diagrams — see
+[ADR-035](../docs/adr/adr-035-graph-rendering-vis-network.md) for when to revisit it.
+
 ### Provider Hierarchy
 
 ```
