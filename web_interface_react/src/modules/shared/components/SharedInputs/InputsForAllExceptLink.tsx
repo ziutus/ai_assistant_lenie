@@ -5,6 +5,7 @@ import MarkdownLineEditor from "../MarkdownLineEditor/markdownLineEditor";
 import ArticleSourceComparison from "../ArticleSourceComparison/articleSourceComparison";
 import EntitiesPanel from "../EntitiesPanel/entitiesPanel";
 import axios from "axios";
+import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 import type { ChunkForPreview } from "../../utils/chunkBoundaries";
 
@@ -159,7 +160,12 @@ const InputsForAllExceptLink = ({
       />
       {formik.values.id && (
         <section style={{ marginTop: 16, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
-          <strong>Etap 2: osoby, miejsca i organizacje</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <strong>Etap 2: osoby, miejsca i organizacje</strong>
+            <NavLink className={"button"} to={`/ner/${formik.values.id}`} style={{ fontSize: "0.85em" }}>
+              🏷️ Przegląd NER
+            </NavLink>
+          </div>
           <p style={{ margin: "5px 0 10px", color: "#475569" }}>
             Wykrywanie oraz weryfikacja encji działają w tle — możesz dalej edytować dokument.
           </p>
