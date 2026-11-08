@@ -784,6 +784,7 @@ class TestGetDocumentEntities:
             "facility": [],
             "eventName": [],
             "productName": [],
+            "conceptName": [],
         }
 
     @staticmethod
@@ -910,7 +911,7 @@ class TestGetDocumentEntities:
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
         assert get_document_entities(session, 42) == {
             "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
-            "productName": [],
+            "productName": [], "conceptName": [],
         }
 
 

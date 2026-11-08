@@ -12,14 +12,17 @@ import ToneSpansPanel, { useToneSpans } from "../components/ToneSpansPanel/toneS
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistryDialog";
+import ConceptRegistryDialog from "../components/ConceptRegistryDialog/conceptRegistryDialog";
 import RequestErrorDetails from "../components/RequestErrorDetails/requestErrorDetails";
 import { describeRequestError, type RequestErrorInfo } from "../utils/requestError";
 import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
-// Events (eventName) and products/systems (productName) are added by hand from selected text; the shared panel
-// does not draw them.
-type ChapterEntities = Partial<EntitiesByType> & { eventName?: EntityItem[]; productName?: EntityItem[] };
+// Events (eventName), products/systems (productName) and concepts (conceptName) are added by hand from selected
+// text; the shared panel does not draw them.
+type ChapterEntities = Partial<EntitiesByType> & {
+  eventName?: EntityItem[]; productName?: EntityItem[]; conceptName?: EntityItem[];
+};
 
 interface Sentence { index: number; text: string; paragraph_start?: boolean }
 interface Section {
@@ -40,13 +43,13 @@ interface EntityResponse {
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
 const KIND_LABELS: Record<HighlightKind, string> = {
   persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Nazwy wydarzeń",
-  product: "Produkty i systemy", glossary: "Słownik kanału",
+  product: "Produkty i systemy", concept: "Pojęcia i ideologie", glossary: "Słownik kanału",
 };
 const KIND_COLORS: Record<HighlightKind, string> = {
   persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a", event: "#fbcfe8",
-  product: "#ddd6fe", glossary: "#bae6fd",
+  product: "#ddd6fe", concept: "#fed7aa", glossary: "#bae6fd",
 };
-const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event", "product"];
+const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event", "product", "concept"];
 
 const isShown = (item: EntityItem) => !item.is_country && item.place_verification_status !== "rejected";
 const itemName = (item: EntityItem) => item.canonical_name ?? item.text;
@@ -64,6 +67,7 @@ function filterEntities(entities: ChapterEntities | undefined, kinds: Set<Highli
     placeName: kinds.has("place") ? (entities?.placeName ?? []).filter(keep) : [],
     eventName: kinds.has("event") ? (entities?.eventName ?? []).filter(keep) : [],
     productName: kinds.has("product") ? (entities?.productName ?? []).filter(keep) : [],
+    conceptName: kinds.has("concept") ? (entities?.conceptName ?? []).filter(keep) : [],
   };
 }
 
@@ -79,6 +83,7 @@ function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
     ...(entities.placeName ?? []).map(entry("place")),
     ...(entities.eventName ?? []).map(entry("event")),
     ...(entities.productName ?? []).map(entry("product")),
+    ...(entities.conceptName ?? []).map(entry("concept")),
   ];
 }
 
@@ -115,11 +120,11 @@ const groupHighlights = (groups: CountryGroup[]): HighlightEntry[] => groups.map
 const entityCount = (entities: ChapterEntities) =>
   (entities.persName?.length ?? 0) + (entities.orgName?.length ?? 0)
   + (entities.geogName?.length ?? 0) + (entities.placeName?.length ?? 0) + (entities.eventName?.length ?? 0)
-  + (entities.productName?.length ?? 0);
+  + (entities.productName?.length ?? 0) + (entities.conceptName?.length ?? 0);
 
 const allItems = (entities: ChapterEntities | undefined): EntityItem[] =>
   [entities?.persName, entities?.orgName, entities?.geogName, entities?.placeName, entities?.eventName,
-    entities?.productName].flatMap((items) => items ?? []);
+    entities?.productName, entities?.conceptName].flatMap((items) => items ?? []);
 
 // Entities that appear in the given chapter and in no other content (TEMAT) chapter: once the
 // chapter is marked as noise these have no mention left in the text NER is run on.
@@ -453,6 +458,9 @@ const NerChapters = () => {
   // The registry dialog of an event name ("Dodaj do rejestru wydarzeń…" in the chip menu).
   const [registering, setRegistering] = React.useState<EntityItem | null>(null);
   const closeRegistry = React.useCallback(() => setRegistering(null), []);
+  // A concept name being linked to / created in the registry of concepts.
+  const [conceptRegistering, setConceptRegistering] = React.useState<EntityItem | null>(null);
+  const closeConceptRegistry = React.useCallback(() => setConceptRegistering(null), []);
   // The chapter whose "Uzupełnij brakujące opisy" panel is open (the trigger sits in the chapter's button bar).
   const [descriptionsFor, setDescriptionsFor] = React.useState<number | null>(null);
   // "Wykryj wydarzenia" sits in the same button bar: a click bumps the nonce, the chapter's panel runs the detection.
@@ -683,6 +691,13 @@ const NerChapters = () => {
               current={registering.registry_event ? { id: registering.registry_event.id, surface: registering.registry_event.surface } : null}
               onDone={(message) => { setRegistering(null); setAddedMessage(message); setVersion((current) => current + 1); }} />
           )}
+          {conceptRegistering && (
+            <ConceptRegistryDialog key={conceptRegistering.id ?? itemName(conceptRegistering)} name={itemName(conceptRegistering)}
+              docId={id} apiUrl={apiUrl} headers={headers} onClose={closeConceptRegistry}
+              current={conceptRegistering.registry_concept
+                ? { id: conceptRegistering.registry_concept.id, surface: conceptRegistering.registry_concept.surface } : null}
+              onDone={(message) => { setConceptRegistering(null); setAddedMessage(message); setVersion((current) => current + 1); }} />
+          )}
           {selectionMenu && (
             <SelectionEntityMenu {...selectionMenu} apiUrl={apiUrl} docId={id} headers={headers} byline={doc?.byline}
               onClose={closeSelectionMenu}
@@ -695,6 +710,7 @@ const NerChapters = () => {
             onShowInText={showInText}
             onDescribeEvent={setDescribing}
             onLinkEvent={setRegistering}
+            onLinkConcept={setConceptRegistering}
             onMergeProducts={(item) => void openProductMerge(item)}
             mentionMenu={mentionMenu}
             onMentionMenuClose={closeMentionMenu}
@@ -755,7 +771,7 @@ const NerChapters = () => {
                                     ? { onContextMenu: describeFromText(entities.eventName?.find((item) => itemName(item) === segment.label)) }
                                     : { onClick: openMentionMenu(section.position, segment) })}
                                   style={{
-                                    cursor: segment.kind === "event" || segment.kind === "product" || segment.kind === "glossary" ? undefined : "pointer",
+                                    cursor: segment.kind === "event" || segment.kind === "product" || segment.kind === "concept" || segment.kind === "glossary" ? undefined : "pointer",
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
                                     ...(focused ? { outline: "2px solid #d97706" } : {}),
                                   }}>{segment.text}</mark>;

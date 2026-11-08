@@ -29,6 +29,8 @@ export interface EntityItem {
   related_organizations?: { text: string; organization_id?: number }[];
   /** Event names only: the registry event this name is linked to for this document (null = not linked). */
   registry_event?: { id: number; title: string; status: string; surface: string } | null;
+  // The registry concept a conceptName chip is linked to for this document (null = not linked yet).
+  registry_concept?: { id: number; name: string; surface: string } | null;
   // Original NER category. Required when a combined "Miejsca" chip is
   // excluded, so a placeName rule does not turn into a wildcard rule.
   entity_type?: "persName" | "orgName" | "geogName" | "placeName";
@@ -112,12 +114,14 @@ export interface EntitiesByType {
   // Added by hand from selected text (SelectionEntityMenu) or by retyping a mislabelled entity.
   eventName?: EntityItem[];
   productName?: EntityItem[];
+  // A concept or ideology ("Ciemne oświecenie"), hand-marked; its canonical entry lives in /concepts.
+  conceptName?: EntityItem[];
 }
 
-type ManualTarget = "persName" | "orgName" | "placeName" | "productName" | "eventName";
+type ManualTarget = "persName" | "orgName" | "placeName" | "productName" | "eventName" | "conceptName";
 
 // Kinds the /ner/:id page can highlight; also what "Podświetl w tekście" reports back.
-export type ShownInTextKind = "persName" | "orgName" | "place" | "event" | "product";
+export type ShownInTextKind = "persName" | "orgName" | "place" | "event" | "product" | "concept";
 
 interface PersonSearchResult {
   id: number;
@@ -348,6 +352,9 @@ export const EntityChips = ({
             {item.registry_event && (
               <span style={{ color: "#2e7d43" }} title={`W rejestrze wydarzeń: #${item.registry_event.id} ${item.registry_event.title}`}> 🔗</span>
             )}
+            {item.registry_concept && (
+              <span style={{ color: "#2e7d43" }} title={`W rejestrze pojęć: #${item.registry_concept.id} ${item.registry_concept.name}`}> 🔗</span>
+            )}
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
             {actions && actions(item)}
           </>
@@ -520,6 +527,7 @@ const EntitiesPanel = ({
   onShowInText,
   onDescribeEvent,
   onLinkEvent,
+  onLinkConcept,
   onMergeProducts,
   mentionMenu,
   onMentionMenuClose,
@@ -539,6 +547,8 @@ const EntitiesPanel = ({
   onDescribeEvent?: (item: EntityItem) => void;
   // Promotes the name of an event marked in the text to the registry of world events (link or create).
   onLinkEvent?: (item: EntityItem) => void;
+  // Promotes a concept marked in the text to the registry of concepts (link or create with a description).
+  onLinkConcept?: (item: EntityItem) => void;
   onMergeProducts?: (item: EntityItem) => void;
   // Chapter mode (the /ner/:id page): the host draws the entity groups itself, once per
   // chapter, through renderGroups(), so every chip keeps this panel's action menus and
@@ -1419,7 +1429,22 @@ const EntitiesPanel = ({
     }
   };
 
-  // Person / organization / place -> product / system (default) or named event.
+  // The name stays a concept mark in this document; only its link to the registry concept is removed.
+  const unlinkConceptName = async (item: EntityItem) => {
+    const linked = item.registry_concept;
+    if (!linked) return;
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/concepts/mentions/unlink`,
+        { name: linked.surface || item.text, concept_id: linked.id, document_id: Number(docId) }, { headers: jsonHeaders });
+      setMessage(`„${item.text}” odłączone od pojęcia #${linked.id} ${linked.name}.`);
+      await fetchEntities();
+    } catch (error: any) {
+      reportError(error, "Nie udało się odłączyć nazwy od pojęcia");
+    }
+  };
+
+  // Person / organization / place -> product / system (default), named event or concept.
   // The name stays a name in this document; only its link to the registry event is removed.
   const unlinkEventName = async (item: EntityItem) => {
     const linked = item.registry_event;
@@ -1435,13 +1460,13 @@ const EntitiesPanel = ({
     }
   };
 
-  const changeEntityToProduct = async (item: EntityItem, target: "productName" | "eventName" = "productName") => {
+  const changeEntityToProduct = async (item: EntityItem, target: "productName" | "eventName" | "conceptName" = "productName") => {
     if (item.id == null) return;
-    const noun = target === "eventName" ? "wydarzenie" : "produkt / system";
+    const noun = target === "eventName" ? "wydarzenie" : target === "conceptName" ? "pojęcie" : "produkt / system";
     setMessage("");
     try {
       const response = await axios.post(`${apiUrl}/website_entities/${item.id}/to_product`,
-        target === "eventName" ? { entity_type: target } : {}, { headers: jsonHeaders });
+        target === "productName" ? {} : { entity_type: target }, { headers: jsonHeaders });
       setMessage(`„${item.text}” zmienione na ${noun}: ${response.data.product_name}.`);
       await fetchEntities();
     } catch (error: any) {
@@ -1706,6 +1731,7 @@ const EntitiesPanel = ({
     entries.push({ label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } });
     entries.push({ label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } });
     entries.push({ label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } });
+    entries.push({ label: "Zmień na pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } });
     entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
     entries.push({ label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: "orgName" });
@@ -1739,6 +1765,7 @@ const EntitiesPanel = ({
     { label: "Zmień na organizację", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
     { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
     { label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
+    { label: "Zmień na pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
     { label: "🚫 To nie jest osoba", action: () => {
@@ -1763,6 +1790,7 @@ const EntitiesPanel = ({
     { label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } },
     { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
     { label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
+    { label: "Zmień na pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: item.entity_type! });
@@ -1771,13 +1799,16 @@ const EntitiesPanel = ({
 
   // Hand-added product / system and event chips share one menu shape with the NER chips: highlight, the
   // type changes, delete. Their own actions (merge spellings, event description) open page-owned dialogs.
-  const manualRetypeEntries = (item: EntityItem, current: "productName" | "eventName"): MenuEntry[] => [
+  const manualRetypeEntries = (item: EntityItem, current: "productName" | "eventName" | "conceptName"): MenuEntry[] => [
     { label: "Zmień na osobę", action: () => { resetFlows(); void changeManualEntityTo(item, "persName", "osobę"); } },
     { label: "Zmień na organizację", action: () => { resetFlows(); void changeManualEntityTo(item, "orgName", "organizację"); } },
     { label: "Zmień na miejsce", action: () => { resetFlows(); void changeManualEntityTo(item, "placeName", "miejsce"); } },
-    current === "productName"
-      ? { label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeManualEntityTo(item, "eventName", "wydarzenie"); } }
-      : { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeManualEntityTo(item, "productName", "produkt / system"); } },
+    ...(current !== "productName"
+      ? [{ label: "Zmień na produkt / system", action: () => { resetFlows(); void changeManualEntityTo(item, "productName", "produkt / system"); } }] : []),
+    ...(current !== "eventName"
+      ? [{ label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeManualEntityTo(item, "eventName", "wydarzenie"); } }] : []),
+    ...(current !== "conceptName"
+      ? [{ label: "Zmień na pojęcie", action: () => { resetFlows(); void changeManualEntityTo(item, "conceptName", "pojęcie"); } }] : []),
   ];
   const productMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "product"),
@@ -1797,6 +1828,17 @@ const EntitiesPanel = ({
       { label: "Odłącz od wydarzenia z rejestru", action: () => { resetFlows(); void unlinkEventName(item); } },
     ] : onLinkEvent ? [{ label: "Dodaj do rejestru wydarzeń…", action: () => { resetFlows(); onLinkEvent(item); } }] : []),
     ...manualRetypeEntries(item, "eventName"),
+    { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
+  ];
+  const conceptMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
+    ...showInTextEntry(item, "concept"),
+    ...(item.registry_concept ? [
+      { label: `🔗 W rejestrze: #${item.registry_concept.id} ${item.registry_concept.name}`,
+        to: `/concepts?id=${item.registry_concept.id}`, newTab: true },
+      ...(onLinkConcept ? [{ label: "Zmień powiązanie z rejestrem…", action: () => { resetFlows(); onLinkConcept(item); } }] : []),
+      { label: "Odłącz od pojęcia z rejestru", action: () => { resetFlows(); void unlinkConceptName(item); } },
+    ] : onLinkConcept ? [{ label: "Dodaj do rejestru pojęć…", action: () => { resetFlows(); onLinkConcept(item); } }] : []),
+    ...manualRetypeEntries(item, "conceptName"),
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
   ];
 
@@ -2002,6 +2044,7 @@ const EntitiesPanel = ({
           </>} />
         <EntityChips label={"Nazwy wydarzeń"} items={source?.eventName ?? []} menuActions={eventMenuActions} />
         <EntityChips label={"Produkty i systemy"} items={source?.productName ?? []} menuActions={productMenuActions} />
+        <EntityChips label={"Pojęcia i ideologie"} items={source?.conceptName ?? []} menuActions={conceptMenuActions} />
       </>
     );
   };

@@ -77,7 +77,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(15);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(16);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -275,7 +275,7 @@ it("offers the organization menu on a cited source, including a link to the sour
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Szukaj w Google", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
-    "Połącz z inną organizacją", "Dodaj stronę Wikipedii", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
+    "Połącz z inną organizacją", "Dodaj stronę Wikipedii", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie", "Zmień na pojęcie",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   expect(screen.getByRole("menuitem", { name: "Otwórz w rejestrze źródeł" }).getAttribute("href"))
@@ -457,7 +457,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Szukaj w Google", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
-    "Połącz z inną organizacją", "Dodaj stronę Wikipedii", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
+    "Połącz z inną organizacją", "Dodaj stronę Wikipedii", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie", "Zmień na pojęcie",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Opis organizacji" }));
@@ -542,7 +542,7 @@ it("gives product chips the shared dropdown menu with retype, merge, highlight a
   await openOrgMenu("Starlink");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Szukaj w Google", "🔎 Podświetl w tekście", "Otwórz stronę produktu", "Scal z innymi zapisami…", "Zmień na osobę", "Zmień na organizację",
-    "Zmień na miejsce", "Zmień na wydarzenie", "× Usuń encję",
+    "Zmień na miejsce", "Zmień na wydarzenie", "Zmień na pojęcie", "× Usuń encję",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Scal z innymi zapisami…" }));
   expect(onMergeProducts).toHaveBeenCalledWith(expect.objectContaining({ id: 78 }));
@@ -567,7 +567,7 @@ it("gives event chips the shared menu: description, retype to product, delete", 
   await openOrgMenu("Szczyt NATO");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Szukaj w Google", "Dodaj opis wydarzenia…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
-    "Zmień na produkt / system", "× Usuń encję",
+    "Zmień na produkt / system", "Zmień na pojęcie", "× Usuń encję",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj opis wydarzenia…" }));
   expect(onDescribeEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 77 }));
@@ -584,7 +584,7 @@ it("offers promotion of an event name to the registry only when the page can ope
   await openOrgMenu("Szczyt NATO");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Szukaj w Google", "Dodaj do rejestru wydarzeń…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
-    "Zmień na produkt / system", "× Usuń encję",
+    "Zmień na produkt / system", "Zmień na pojęcie", "× Usuń encję",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj do rejestru wydarzeń…" }));
   expect(onLinkEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 77, text: "Szczyt NATO" }));
@@ -607,7 +607,7 @@ it("marks an event name that is linked to a registry event and offers open / cha
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Szukaj w Google", "🔗 W rejestrze: #68 Krajowa Konwencja Demokratów 2024 (Chicago)", "Zmień powiązanie z rejestrem…",
     "Odłącz od wydarzenia z rejestru", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
-    "Zmień na produkt / system", "× Usuń encję",
+    "Zmień na produkt / system", "Zmień na pojęcie", "× Usuń encję",
   ]);
   const open = screen.getByRole("menuitem", { name: /W rejestrze: #68/ });
   expect(open.getAttribute("href")).toBe("/world-events?q=" + encodeURIComponent("Krajowa Konwencja Demokratów 2024 (Chicago)"));
@@ -623,6 +623,65 @@ it("unlinks an event name from the registry for this document only", async () =>
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/world_events/mentions/unlink",
     { name: "Konwencja Demokratów", event_id: 68, document_id: 11237 }, { headers: expect.any(Object) }));
   expect(await screen.findByText(/odłączone od wydarzenia #68/)).toBeTruthy();
+});
+
+const renderConcept = (props: Record<string, unknown> = {}, linked = false) => {
+  mockOrgEntities();
+  renderInRouter(<EntitiesPanel docId={11239} {...props} chapterRenderer={(renderGroups) => <>{renderGroups({
+    conceptName: [{ id: 90, text: "Ciemne oświecenie", count: 4,
+      ...(linked ? { registry_concept: { id: 5, name: "Ciemne oświecenie", surface: "Ciemne oświecenie" } } : {}) }],
+  })}</>} />);
+};
+
+it("gives concept chips a menu: registry promotion, retype to the other manual kinds, delete", async () => {
+  const onLinkConcept = vi.fn();
+  const onShowInText = vi.fn();
+  renderConcept({ onLinkConcept, onShowInText });
+  expect(screen.getByText(/Pojęcia i ideologie/)).toBeTruthy();
+  await openOrgMenu("Ciemne oświecenie");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "Szukaj w Google", "🔎 Podświetl w tekście", "Dodaj do rejestru pojęć…", "Zmień na osobę", "Zmień na organizację",
+    "Zmień na miejsce", "Zmień na produkt / system", "Zmień na wydarzenie", "× Usuń encję",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj do rejestru pojęć…" }));
+  expect(onLinkConcept).toHaveBeenCalledWith(expect.objectContaining({ id: 90, text: "Ciemne oświecenie" }));
+  await openOrgMenu("Ciemne oświecenie");
+  fireEvent.click(screen.getByRole("menuitem", { name: "🔎 Podświetl w tekście" }));
+  expect(onShowInText).toHaveBeenCalledWith(expect.objectContaining({ id: 90 }), "concept");
+});
+
+it("marks a concept linked to the registry and offers open / change / unlink", async () => {
+  const onLinkConcept = vi.fn();
+  renderConcept({ onLinkConcept }, true);
+  expect(screen.getByTitle("W rejestrze pojęć: #5 Ciemne oświecenie")).toBeTruthy();
+  await openOrgMenu("Ciemne oświecenie");
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+    "Kopiuj nazwę", "Szukaj w Google", "🔗 W rejestrze: #5 Ciemne oświecenie", "Zmień powiązanie z rejestrem…",
+    "Odłącz od pojęcia z rejestru", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
+    "Zmień na produkt / system", "Zmień na wydarzenie", "× Usuń encję",
+  ]);
+  expect(screen.getByRole("menuitem", { name: /W rejestrze: #5/ }).getAttribute("href")).toBe("/concepts?id=5");
+});
+
+it("unlinks a concept name from the registry for this document only", async () => {
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  renderConcept({}, true);
+  await openOrgMenu("Ciemne oświecenie");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Odłącz od pojęcia z rejestru" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/concepts/mentions/unlink",
+    { name: "Ciemne oświecenie", concept_id: 5, document_id: 11239 }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/odłączone od pojęcia #5/)).toBeTruthy();
+});
+
+it("changes a mis-tagged organization into a concept", async () => {
+  mockOrgEntities({ id: 31, text: "Ciemne oświecenie", count: 2, organization_id: 8 });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success", product_name: "Ciemne oświecenie" } });
+  renderInRouter(<EntitiesPanel docId={11239} />);
+  await openOrgMenu("Ciemne oświecenie");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zmień na pojęcie" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/website_entities/31/to_product",
+    { entity_type: "conceptName" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText(/zmienione na pojęcie: Ciemne oświecenie/)).toBeTruthy();
 });
 
 it("changes an organization into a named event", async () => {

@@ -19,6 +19,7 @@ import Places from "./modules/shared/pages/places";
 import WorldEvents from "./modules/shared/pages/worldEvents";
 import Geopolitics from "./modules/shared/pages/geopolitics";
 import Products from "./modules/shared/pages/products";
+import Concepts from "./modules/shared/pages/concepts";
 import ProductDetail from "./modules/shared/pages/productDetail";
 import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
@@ -118,6 +119,7 @@ function App() {
                   <Route path="/places" element={<Places />} />
                   <Route path="/world-events" element={<WorldEvents />} />
                   <Route path="/geopolitics" element={<Geopolitics />} />
+                  <Route path="/concepts" element={<Concepts />} />
                   <Route path="/products" element={<Products />} />
                   <Route path="/products/:name" element={<ProductDetail />} />
                   <Route path="/sources" element={<Sources />} />

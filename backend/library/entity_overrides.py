@@ -110,7 +110,9 @@ def convert_place_to_organization(
 
 
 # productName: a product, service or system ("Starshield", "Starlink") — a plain document-scoped manual row like eventName.
-ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName", "productName")
+# conceptName: a concept, ideology or term ("Ciemne oświecenie") — the same plain manual row; its canonical entry
+# lives in the concepts registry (library/concept_service.py), linked by (document, normalized name).
+ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName", "productName", "conceptName")
 
 
 def count_mentions(text: str | None, surface: str) -> int:
@@ -798,7 +800,7 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
                 (EntityReviewDecision.entity_type == "orgName")
                 & EntityReviewDecision.decision.in_(
                     ("organization_to_place", "organization_to_person", "transcription_error", "entity_to_product")),
-                EntityReviewDecision.entity_type.in_(("productName", "eventName"))
+                EntityReviewDecision.entity_type.in_(("productName", "eventName", "conceptName"))
                 & (EntityReviewDecision.decision == "product_to_entity"),
             ),
         )
