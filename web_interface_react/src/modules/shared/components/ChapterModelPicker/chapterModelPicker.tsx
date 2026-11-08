@@ -36,6 +36,7 @@ export const useChapterModel = (apiUrl: string, apiKey: string | undefined): Cha
   const load = React.useCallback(() => {
     if (requested.current) return;
     requested.current = true;
+    setError(null);
     setLoading(true);
     const startedAt = Date.now();
     axios.get(`${apiUrl}/chapter_analysis/model`, { headers })
@@ -113,6 +114,7 @@ const ChapterModelPicker: React.FC<PickerProps> = ({ state, summary = "Model", d
       {error && (
         <div role="alert" style={{ color: "#a33" }}>
           <p>{error.summary}</p>
+          <button type="button" disabled={loading} onClick={load}>Spróbuj ponownie</button>
           <RequestErrorDetails details={error.details} />
         </div>
       )}
