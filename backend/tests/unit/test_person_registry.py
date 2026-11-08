@@ -16,9 +16,10 @@ from library.person_registry import (  # noqa: E402
     approve_review_link,
     find_document_person,
     is_surname_mention,
-    matches_person_name,
     label_matches_mention,
+    matches_person_name,
     merge_review_link,
+    person_link_for_mention,
     reject_review_link,
     resolve_document_persons,
 )
@@ -151,6 +152,27 @@ class TestFindDocumentPerson:
 
     def test_no_match(self):
         assert find_document_person("Tusk", [_person(person_id=1, name="Elon Musk")]) is None
+
+
+class TestPersonLinkForMention:
+    @staticmethod
+    def _link(person_id, name):
+        return {"link_id": person_id * 10, "person_id": person_id, "canonical_name": name,
+                "raw_mention": name, "description": None, "wikidata_qid": None, "confidence": "alias_matched"}
+
+    def test_other_form_of_linked_person_gets_its_link(self):
+        links = [self._link(106, "Elon Musk"), self._link(1354, "Michał Zabdyr-Jamróz")]
+        assert person_link_for_mention("Musk", ["Musk"], links)["person_id"] == 106
+        assert person_link_for_mention("Zabdyra-Jamroza", [], links)["person_id"] == 1354
+
+    def test_variant_is_tried_when_the_text_does_not_match(self):
+        links = [self._link(106, "Elon Musk")]
+        assert person_link_for_mention("Elon", ["Elonem Muskiem"], links)["person_id"] == 106
+
+    def test_ambiguous_or_unknown_mention_has_no_link(self):
+        links = [self._link(2, "Donald Trump"), self._link(3, "Ivanka Trump")]
+        assert person_link_for_mention("Trump", [], links) is None
+        assert person_link_for_mention("Hornet", [], links) is None
 
 
 class TestApproveReviewLink:

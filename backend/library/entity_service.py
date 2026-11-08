@@ -710,7 +710,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     """
     from library.country_gazetteer import canonical_country_name
     from library.db.models import DocumentFacility, DocumentInformationSource, DocumentOrganization, InfraGeometry
-    from library.person_registry import get_document_persons
+    from library.person_registry import get_document_persons, person_link_for_mention
 
     rows = (
         session.query(DocumentEntity)
@@ -718,7 +718,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         .order_by(DocumentEntity.entity_text)
         .all()
     )
-    persons_by_mention = {p["raw_mention"]: p for p in get_document_persons(session, document_id)}
+    document_person_links = get_document_persons(session, document_id)
+    persons_by_mention = {p["raw_mention"]: p for p in document_person_links}
     source_links = session.scalars(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == document_id,
         DocumentInformationSource.role == "cited",
@@ -818,8 +819,12 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 for key in (event_name_key(row.entity_text), *(event_name_key(v) for v in (row.variants or [])))
                 if key in registry_events_by_key
             ), None)
-        if row.entity_type == "persName" and row.entity_text in persons_by_mention:
-            link = persons_by_mention[row.entity_text]
+        link = None
+        if row.entity_type == "persName":
+            # Exact mention first; otherwise another form of a person already linked to this document.
+            link = persons_by_mention.get(row.entity_text) or person_link_for_mention(
+                row.entity_text, row.variants, document_person_links)
+        if link is not None:
             item["link_id"] = link["link_id"]
             item["person_id"] = link["person_id"]
             item["canonical_name"] = link["canonical_name"]

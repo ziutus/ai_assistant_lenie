@@ -119,6 +119,21 @@ def find_document_person(name: str, people) -> Person | None:
     return next(iter(matches.values())) if len(matches) == 1 else None
 
 
+def person_link_for_mention(entity_text: str, variants, links: list[dict]) -> dict | None:
+    """The document's person link a persName entity belongs to when no link carries its exact text.
+
+    One link exists per (document, person) and keeps only the FIRST mention as ``raw_mention``, so the
+    other forms of the same person ("Musk", "Elona Muska", "Zabdyra-Jamroza") would show as unresolved.
+    ``links`` are ``get_document_persons()`` items; the entity text and its spelling variants are tried,
+    and only an unambiguous match (one person) counts.
+    """
+    people: dict[int, dict] = {}
+    for link in links:
+        if any(matches_person_name(form, link["canonical_name"]) for form in (entity_text, *(variants or []))):
+            people[link["person_id"]] = link
+    return next(iter(people.values())) if len(people) == 1 else None
+
+
 def _persons_linked_to_document(session, document_id: int) -> list[Person]:
     return list(
         session.query(Person)
