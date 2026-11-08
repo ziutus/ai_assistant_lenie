@@ -654,7 +654,7 @@ it("gives concept chips a menu: registry promotion, retype to the other manual k
   expect(screen.getByText(/Pojęcia i ideologie/)).toBeTruthy();
   await openOrgMenu("Ciemne oświecenie");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Kopiuj nazwę", "Szukaj w Google", "🔎 Podświetl w tekście", "Dodaj do rejestru pojęć…", "Zmień na… ▸", "× Usuń encję",
+    "Kopiuj nazwę", "Szukaj w Google", "🔎 Podświetl w tekście", "Dodaj do rejestru pojęć…", "Popraw nazwę", "Zmień na… ▸", "× Usuń encję",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj do rejestru pojęć…" }));
   expect(onLinkConcept).toHaveBeenCalledWith(expect.objectContaining({ id: 90, text: "Ciemne oświecenie" }));
@@ -670,9 +670,39 @@ it("marks a concept linked to the registry and offers open / change / unlink", a
   await openOrgMenu("Ciemne oświecenie");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
     "Kopiuj nazwę", "Szukaj w Google", "🔗 W rejestrze: #5 Ciemne oświecenie", "Zmień powiązanie z rejestrem…",
-    "Odłącz od pojęcia z rejestru", "Zmień na… ▸", "× Usuń encję",
+    "Odłącz od pojęcia z rejestru", "Popraw nazwę", "Zmień na… ▸", "× Usuń encję",
   ]);
   expect(screen.getByRole("menuitem", { name: /W rejestrze: #5/ }).getAttribute("href")).toBe("/concepts?id=5");
+});
+
+it("renames a concept in this document and refreshes entities", async () => {
+  vi.mocked(axios.patch).mockResolvedValue({ data: { status: "success" } });
+  renderConcept();
+  await openOrgMenu("Ciemne oświecenie");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  const input = screen.getByRole("textbox", { name: "Popraw nazwę pojęcia" });
+  expect((input as HTMLInputElement).value).toBe("Ciemne oświecenie");
+  const reads = vi.mocked(axios.get).mock.calls.length;
+  fireEvent.change(input, { target: { value: "Ciemne Oświecenie" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith("/website_entities/90/name",
+    { text: "Ciemne Oświecenie" }, { headers: expect.any(Object) }));
+  expect(await screen.findByText("Nazwa pojęcia została poprawiona.")).toBeTruthy();
+  expect(vi.mocked(axios.get).mock.calls.length).toBeGreaterThan(reads);
+  expect(screen.queryByRole("textbox", { name: "Popraw nazwę pojęcia" })).toBeNull();
+});
+
+it("shows the backend conflict message when renaming a concept", async () => {
+  vi.mocked(axios.patch).mockRejectedValue({ response: { status: 409,
+    data: { message: "Takie pojęcie już istnieje w tym dokumencie." } } });
+  renderConcept();
+  await openOrgMenu("Ciemne oświecenie");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Popraw nazwę pojęcia" }), { target: { value: "Inne" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zatwierdź" }));
+  expect(await screen.findByText(
+    "Nie udało się poprawić nazwy pojęcia: Takie pojęcie już istnieje w tym dokumencie."
+  )).toBeTruthy();
 });
 
 it("unlinks a concept name from the registry for this document only", async () => {

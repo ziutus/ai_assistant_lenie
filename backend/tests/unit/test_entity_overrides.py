@@ -28,6 +28,55 @@ def run(decisions, entities):
     return session, touched, stats
 
 
+@pytest.mark.parametrize("kind", ["conceptName", "eventName", "productName"])
+@pytest.mark.parametrize("chain", [False, True])
+@pytest.mark.parametrize("removal", [None, "deleted", "product_to_entity"])
+def test_replay_manual_renames_after_rebuild(kind, chain, removal):
+    from library.entity_overrides import replay_manual_added_entities
+    added = SimpleNamespace(id=1, decision="entity_added", entity_type=kind, entity_text="A",
+                            details={"surface": "Surface", "name": "A", "count": 4})
+    changes = [SimpleNamespace(id=2, decision="renamed", entity_type=kind, entity_text="A",
+                               details={"new_text": "Superseded"}),
+               SimpleNamespace(id=3, decision="renamed", entity_type=kind, entity_text="a",
+                               details={"new_text": "B"})]
+    if chain:
+        changes.append(SimpleNamespace(id=4, decision="renamed", entity_type=kind, entity_text="B",
+                                       details={"new_text": "C"}))
+    final = "C" if chain else "B"
+    if removal:
+        changes.append(SimpleNamespace(id=5, decision=removal, entity_type=kind, entity_text=final, details={}))
+    session = MagicMock()
+    session.scalars.return_value.all.side_effect = [[added], [], changes]
+    result = replay_manual_added_entities(session, 1)
+    if removal:
+        assert result == {}
+        session.add.assert_not_called()
+    else:
+        assert result == {"entity_added": 1}
+        row = session.add.call_args.args[0]
+        assert row.entity_text == final
+        assert row.variants == (["B", "A", "Surface"] if chain else ["A", "Surface"])
+        assert row.mention_count == 4 and row.source == "manual"
+
+
+def test_place_replay_ignores_concept_rename():
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session
+    from library.db.models import EntityReviewDecision
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        columns = ["id INTEGER PRIMARY KEY"] + [c.name for c in EntityReviewDecision.__table__.columns if c.name != "id"]
+        connection.execute(text(f"CREATE TABLE entity_review_decisions ({', '.join(columns)})"))
+    with Session(engine) as session:
+        session.add(EntityReviewDecision(document_id=1, entity_type="conceptName", entity_text="A",
+                                         decision="renamed", details={"new_text": "B"}))
+        session.flush()
+        assert replay_manual_place_decisions(session, 1) == {}
+    row = entity("A")
+    _, _, stats = run([decision("renamed", "A", entity_type="conceptName", new_text="B")], [row])
+    assert row.entity_text == "A" and stats["renamed"] == 0
+
+
 @pytest.mark.parametrize("deleted", [False, True])
 def test_confirmed_location_replays_on_new_id_and_later_delete_wins(deleted):
     from library.db.models import GeocodeCache

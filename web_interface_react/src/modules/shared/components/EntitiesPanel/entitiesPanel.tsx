@@ -647,6 +647,9 @@ const EntitiesPanel = ({
   const [deleteFor, setDeleteFor] = React.useState<EntityItem | null>(null);
   const [renameFor, setRenameFor] = React.useState<EntityItem | null>(null);
   const [renameText, setRenameText] = React.useState("");
+  const [manualRenameFor, setManualRenameFor] = React.useState<EntityItem | null>(null);
+  const [manualRenameText, setManualRenameText] = React.useState("");
+  const [isManualRenaming, setIsManualRenaming] = React.useState(false);
   const [isRenaming, setIsRenaming] = React.useState(false);
   const [renameFixText, setRenameFixText] = React.useState(false);
   const [isSettingRelevance, setIsSettingRelevance] = React.useState(false);
@@ -1018,6 +1021,23 @@ const EntitiesPanel = ({
       if (axios.isAxiosError(error) && error.response?.status === 404) fetchEntities();
     } finally {
       setIsSettingRelevance(false);
+    }
+  };
+
+  const handleManualRename = async () => {
+    if (manualRenameFor?.id == null || !manualRenameText.trim() || isManualRenaming) return;
+    setIsManualRenaming(true);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/website_entities/${manualRenameFor.id}/name`,
+        { text: manualRenameText.trim() }, { headers: jsonHeaders });
+      setManualRenameFor(null);
+      fetchEntities();
+      setMessage("Nazwa pojęcia została poprawiona.");
+    } catch (error) {
+      reportError(error, "Nie udało się poprawić nazwy pojęcia");
+    } finally {
+      setIsManualRenaming(false);
     }
   };
 
@@ -1650,6 +1670,7 @@ const EntitiesPanel = ({
     && (reviewReason !== "other" || Boolean(reviewComment.trim()));
 
   const resetFlows = () => {
+    setManualRenameFor(null);
     setMergeHint(null);
     setRenameFor(null);
     setToPlaceFor(null);
@@ -1847,6 +1868,9 @@ const EntitiesPanel = ({
       ...(onLinkConcept ? [{ label: "Zmień powiązanie z rejestrem…", action: () => { resetFlows(); onLinkConcept(item); } }] : []),
       { label: "Odłącz od pojęcia z rejestru", action: () => { resetFlows(); void unlinkConceptName(item); } },
     ] : onLinkConcept ? [{ label: "Dodaj do rejestru pojęć…", action: () => { resetFlows(); onLinkConcept(item); } }] : []),
+    { label: "Popraw nazwę", action: () => {
+      resetFlows(); setManualRenameFor(item); setManualRenameText(item.text);
+    } },
     ...manualRetypeEntries(item, "conceptName"),
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
   ];
@@ -2240,6 +2264,21 @@ const EntitiesPanel = ({
           <button type="button" disabled={isMergingPlace}
             onClick={() => void mergePlaces(mergeHint.source, mergeHint.target)}>Połącz</button>
           <button type="button" disabled={isMergingPlace} onClick={() => setMergeHint(null)}>Nie</button>
+        </div>
+      )}
+      {manualRenameFor && (
+        <div onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault(); event.stopPropagation(); void handleManualRename();
+          }
+        }} style={{ marginTop: 8, padding: 8, background: "#eef4ff", borderRadius: 6 }}>
+          <label>Popraw nazwę pojęcia
+            <input autoFocus value={manualRenameText} maxLength={500} disabled={isManualRenaming}
+              onChange={(event) => setManualRenameText(event.target.value)} />
+          </label>
+          <button type="button" className="button" disabled={isManualRenaming || !manualRenameText.trim()}
+            onClick={() => void handleManualRename()}>Zatwierdź</button>
+          <button type="button" disabled={isManualRenaming} onClick={() => setManualRenameFor(null)}>Anuluj</button>
         </div>
       )}
       {renameFor && (

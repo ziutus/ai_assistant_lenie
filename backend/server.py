@@ -1914,6 +1914,60 @@ def website_entities_rename(entity_id: int):
     return jsonify(status="success", entity=item, text_replacements=text_replacements, **geocoding), 200
 
 
+@app.route('/website_entities/<int:entity_id>/name', methods=['PATCH'])
+def website_entities_manual_rename(entity_id: int):
+    """Rename a document-scoped manual entity, retaining its matching surfaces."""
+    from library.db.models import DocumentEntity
+    from library.entity_review_audit import record_entity_decision
+
+    data = request.get_json(silent=True)
+    name = data.get("text") if isinstance(data, dict) else None
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 500:
+        return jsonify(status="error", message="Nazwa musi zawierać od 1 do 500 znaków."), 400
+    name = name.strip()
+    session = get_scoped_session()
+    try:
+        entity = session.get(DocumentEntity, entity_id)
+        if entity is None:
+            return jsonify(status="error", message="Nie znaleziono encji."), 404
+        labels = {"conceptName": "pojęcie", "eventName": "wydarzenie", "productName": "produkt"}
+        if entity.entity_type not in labels or entity.source != "manual":
+            return jsonify(status="error", message="Tę encję poprawia się innym sposobem."), 400
+        duplicate = session.query(DocumentEntity).filter(
+            DocumentEntity.document_id == entity.document_id,
+            DocumentEntity.entity_type == entity.entity_type,
+            DocumentEntity.entity_text == name,
+            DocumentEntity.id != entity.id,
+        ).first()
+        if duplicate is not None:
+            return jsonify(
+                status="error", message=f"Takie {labels[entity.entity_type]} już istnieje w tym dokumencie.",
+                conflict_entity={"id": duplicate.id, "text": duplicate.entity_text,
+                                 "entity_type": duplicate.entity_type},
+            ), 409
+        old_name = entity.entity_text
+        old_variants = list(entity.variants or [])
+        variants = []
+        seen = {name.casefold()}
+        for value in [old_name, *old_variants]:
+            if value.casefold() not in seen:
+                variants.append(value)
+                seen.add(value.casefold())
+        entity.entity_text = name
+        entity.variants = variants
+        record_entity_decision(
+            session, document_id=entity.document_id, document_entity_id=entity.id,
+            entity_type=entity.entity_type, entity_text=old_name, decision="renamed",
+            details={"new_text": name, "old_variants": old_variants},
+        )
+        session.commit()
+        return jsonify(status="success", entity_id=entity.id, entity_text=name, variants=variants), 200
+    except Exception:
+        session.rollback()
+        logging.exception("manual entity rename failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zapisać nazwy encji."), 500
+
+
 @app.route('/website_entities/<int:entity_id>/confirm_place', methods=['POST'])
 def website_entities_confirm_place(entity_id: int):
     """Approve a displayed geocoder proposal and durably record the selection."""
