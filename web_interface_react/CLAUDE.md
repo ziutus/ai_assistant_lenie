@@ -216,7 +216,7 @@ Reviews `DocumentAnalysisRun` / `DocumentChunk` / `DocumentTopicSection` data (`
 ### Entity chip menus
 
 All NER chips are rendered by `EntityChips` and take their actions from a `MenuEntry` dropdown built in
-`EntitiesPanel` (`menuActions`); the first entry, "Kopiuj nazwę", is added by `EntityChips` itself. **No page draws
+`EntitiesPanel` (`menuActions`); the first two entries, "Kopiuj nazwę" and "Szukaj w Google" (new tab), are added by `baseMenuEntries`; every entry with `to` opens in a new browser tab. **No page draws
 its own chip row with inline buttons** (the rule is also in [AGENTS.md](AGENTS.md)). The product and event chips were
 once the exception — a row of their own on `/ner/:id` with only `×` — which is why they lacked the type changes the
 other chips had; they now use the same menus. Actions that need a page-owned form go through a callback prop

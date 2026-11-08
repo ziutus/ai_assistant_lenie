@@ -183,6 +183,12 @@ interface MenuEntry {
   children?: MenuEntry[];
 }
 
+// First two entries of every entity menu: copy the name, then search it on Google (new tab).
+const baseMenuEntries = (text: string): MenuEntry[] => [
+  { label: "Kopiuj nazwę", action: () => void copyText(text) },
+  { label: "Szukaj w Google", to: `https://www.google.com/search?q=${encodeURIComponent(text)}`, newTab: true },
+];
+
 // Tooltip for a chip that is a cited source: "gazeta · telegraph.co.uk · opis".
 const sourceTitleOf = (item: EntityItem): string | undefined => {
   if (item.information_source_id == null) return undefined;
@@ -289,7 +295,7 @@ export const EntityChips = ({
       {alphabeticalItems.map((item) => {
         const key = `${item.entity_type ?? ""}:${item.id ?? item.text}`;
         const entries = menuActions
-          ? [{ label: "Kopiuj nazwę", action: () => void copyText(item.text) }, ...menuActions(item)]
+          ? [...baseMenuEntries(item.text), ...menuActions(item)]
           : [];
         const menuOpen = openMenu === key;
         const isResolvedPerson = item.person_id != null;
@@ -385,20 +391,12 @@ export const EntityChips = ({
                 {entries.map((entry) => {
                   const itemStyle: React.CSSProperties = { display: "block", width: "100%", textAlign: "left",
                     padding: "6px 8px", boxSizing: "border-box" };
-                  if (entry.to && entry.newTab) {
+                  if (entry.to) {
                     return (
                       <a key={entry.label} role="menuitem" href={entry.to} target="_blank" rel="noopener noreferrer"
                         onClick={() => setOpenMenu(null)} style={{ ...itemStyle, color: "inherit", textDecoration: "none" }}>
                         {entry.label}
                       </a>
-                    );
-                  }
-                  if (entry.to) {
-                    return (
-                      <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => setOpenMenu(null)}
-                        style={{ ...itemStyle, color: "inherit", textDecoration: "none" }}>
-                        {entry.label}
-                      </Link>
                     );
                   }
                   if (entry.children) {
@@ -2009,7 +2007,7 @@ const EntitiesPanel = ({
   };
 
   const mentionEntries: MenuEntry[] = !mentionMenu ? [] : [
-    { label: "Kopiuj nazwę", action: () => void copyText(mentionMenu.item.text) },
+    ...baseMenuEntries(mentionMenu.item.text),
     ...(mentionMenu.kind === "persName" ? personMenuActions(mentionMenu.item, mentionMenu.chapterPersons)
       : mentionMenu.kind === "orgName" ? organizationMenuActions(mentionMenu.item)
         : placeMenuActions(mentionMenu.item)),
@@ -2028,18 +2026,12 @@ const EntitiesPanel = ({
             top: Math.max(8, Math.min(mentionMenu.y, window.innerHeight - 320)) }}>
           <div style={{ padding: "2px 8px", fontSize: "0.8em", color: "#667" }}>{mentionMenu.item.text}</div>
           {mentionEntries.map((entry) => {
-            if (entry.to && entry.newTab) {
+            if (entry.to) {
               return (
                 <a key={entry.label} role="menuitem" href={entry.to} target="_blank" rel="noopener noreferrer"
                   onClick={() => onMentionMenuClose?.()} style={{ ...mentionItemStyle, color: "inherit", textDecoration: "none" }}>
                   {entry.label}
                 </a>
-              );
-            }
-            if (entry.to) {
-              return (
-                <Link key={entry.label} role="menuitem" to={entry.to} onClick={() => onMentionMenuClose?.()}
-                  style={{ ...mentionItemStyle, color: "inherit", textDecoration: "none" }}>{entry.label}</Link>
               );
             }
             if (entry.children) {

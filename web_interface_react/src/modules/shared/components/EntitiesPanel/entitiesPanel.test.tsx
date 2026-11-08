@@ -77,7 +77,7 @@ it("changes a place into an organization from the menu", async () => {
 it("renames a place without edit mode and refetches entities", async () => {
   render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
   await openMenu();
-  expect(screen.getAllByRole("menuitem")).toHaveLength(14);
+  expect(screen.getAllByRole("menuitem")).toHaveLength(15);
   fireEvent.click(screen.getByRole("menuitem", { name: "Popraw nazwę" }));
   const input = screen.getByRole("textbox", { name: "Popraw nazwę miejsca" });
   expect((input as HTMLInputElement).value).toBe(place.text);
@@ -274,7 +274,7 @@ it("offers the organization menu on a cited source, including a link to the sour
   await openOrgMenu();
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Kopiuj nazwę", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
+    "Kopiuj nazwę", "Szukaj w Google", "Otwórz w rejestrze źródeł", "Popraw nazwę", "Dane źródła (typ, strona, opis)",
     "Połącz z inną organizacją", "Dodaj stronę Wikipedii", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
@@ -456,7 +456,7 @@ it("an organization that is not a source gets 'Opis organizacji' and the registr
   await openOrgMenu("ONZ");
 
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Kopiuj nazwę", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
+    "Kopiuj nazwę", "Szukaj w Google", "Otwórz w rejestrze organizacji", "Popraw nazwę", "Opis organizacji",
     "Połącz z inną organizacją", "Dodaj stronę Wikipedii", "Podziel na kilka organizacji…", "To błąd transkrypcji…", "Zmień na miejsce", "Zmień na osobę", "Zmień na produkt / system", "Zmień na wydarzenie",
     "× Usuń encję", "🚫 Usuń i nie wykrywaj więcej",
   ]);
@@ -541,7 +541,7 @@ it("gives product chips the shared dropdown menu with retype, merge, highlight a
   renderManualChips({ onMergeProducts, onShowInText });
   await openOrgMenu("Starlink");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Kopiuj nazwę", "🔎 Podświetl w tekście", "Otwórz stronę produktu", "Scal z innymi zapisami…", "Zmień na osobę", "Zmień na organizację",
+    "Kopiuj nazwę", "Szukaj w Google", "🔎 Podświetl w tekście", "Otwórz stronę produktu", "Scal z innymi zapisami…", "Zmień na osobę", "Zmień na organizację",
     "Zmień na miejsce", "Zmień na wydarzenie", "× Usuń encję",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Scal z innymi zapisami…" }));
@@ -566,7 +566,7 @@ it("gives event chips the shared menu: description, retype to product, delete", 
   renderManualChips({ onDescribeEvent });
   await openOrgMenu("Szczyt NATO");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Kopiuj nazwę", "Dodaj opis wydarzenia…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
+    "Kopiuj nazwę", "Szukaj w Google", "Dodaj opis wydarzenia…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
     "Zmień na produkt / system", "× Usuń encję",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj opis wydarzenia…" }));
@@ -583,7 +583,7 @@ it("offers promotion of an event name to the registry only when the page can ope
   renderManualChips({ onLinkEvent });
   await openOrgMenu("Szczyt NATO");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Kopiuj nazwę", "Dodaj do rejestru wydarzeń…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
+    "Kopiuj nazwę", "Szukaj w Google", "Dodaj do rejestru wydarzeń…", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
     "Zmień na produkt / system", "× Usuń encję",
   ]);
   fireEvent.click(screen.getByRole("menuitem", { name: "Dodaj do rejestru wydarzeń…" }));
@@ -605,7 +605,7 @@ it("marks an event name that is linked to a registry event and offers open / cha
   expect(screen.getByTitle("W rejestrze wydarzeń: #68 Krajowa Konwencja Demokratów 2024 (Chicago)")).toBeTruthy();
   await openOrgMenu("Konwencja Demokratów");
   expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-    "Kopiuj nazwę", "🔗 W rejestrze: #68 Krajowa Konwencja Demokratów 2024 (Chicago)", "Zmień powiązanie z rejestrem…",
+    "Kopiuj nazwę", "Szukaj w Google", "🔗 W rejestrze: #68 Krajowa Konwencja Demokratów 2024 (Chicago)", "Zmień powiązanie z rejestrem…",
     "Odłącz od wydarzenia z rejestru", "Zmień na osobę", "Zmień na organizację", "Zmień na miejsce",
     "Zmień na produkt / system", "× Usuń encję",
   ]);
@@ -760,7 +760,7 @@ it("offers copying on a person chip whose menu has no other entries", async () =
   render(<EntityChips label="Osoby" menuActions={() => []}
     items={[{ text: "Paweł Kowalski", count: 1, person_id: 42, entity_type: "persName" }]} />);
   fireEvent.click(screen.getByRole("button", { name: "Paweł Kowalski" }));
-  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Kopiuj nazwę"]);
+  expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Kopiuj nazwę", "Szukaj w Google"]);
   await act(async () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Kopiuj nazwę" }));
   });
