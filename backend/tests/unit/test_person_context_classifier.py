@@ -23,6 +23,16 @@ def test_candidate_payloads_only_include_one_word_persons_with_context():
     assert "artyleryjskich" in result[0]["context"]
 
 
+def test_pseudonym_backed_by_an_explicit_cue_is_not_sent_to_the_model():
+    """„Kryminał” after „ps.” is a person by the text's own words, not a common noun to second-guess."""
+    groups = {
+        ("persName", "Kryminał"): {"variants": ["Kryminał"], "pseudonym": True},
+        ("persName", "Pocisków"): {"variants": ["Pocisków"]},
+    }
+    text = 'Andrij Osipow, ps. "Kryminał" oraz dostawy Pocisków artyleryjskich.'
+    assert [item["entity_text"] for item in _candidate_payloads(text, groups)] == ["Pocisków"]
+
+
 def test_high_confidence_not_person_is_marked_for_dropping():
     groups = {("persName", "Pocisków"): {"variants": ["Pocisków"]}}
     response = MagicMock()

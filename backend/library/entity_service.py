@@ -313,6 +313,45 @@ def _add_named_events(session, groups, text):
         logger.exception("Failed to detect named events; retaining groups")
 
 
+def _add_pseudonyms(groups, text):
+    """Add explicit pseudonyms as persons, atomically and without external lookups."""
+    from copy import deepcopy
+
+    try:
+        from library.pseudonym_detector import detect_pseudonyms
+
+        updated = deepcopy(groups)
+        for pair in detect_pseudonyms(text):
+            name = pair["pseudonym"]
+            occurrences = []
+            for match in re.finditer(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text, re.IGNORECASE):
+                surface = match.group()
+                quoted = (text[max(0, match.start() - 1):match.start()] in {'"', "„", "“", "«", "'"}
+                          and text[match.end():match.end() + 1] in {'"', "”", "»", "'"})
+                if surface[0].isupper() or quoted:
+                    occurrences.append(surface)
+            variants = list(dict.fromkeys(occurrences))
+            existing = next((key for key in updated if key[0] == "persName"
+                             and key[1].casefold() == name.casefold()), None)
+            if existing is not None:
+                group = updated[existing]
+                group["variants"] = list(dict.fromkeys([*group["variants"], *variants]))
+                group["pseudonym"] = True
+                continue
+            wrong = [key for key in updated if key[0] in {"orgName", "placeName", "geogName"}
+                     and key[1].casefold() == name.casefold()]
+            count = max([1, len(occurrences), *(updated[key]["count"] for key in wrong)])
+            for key in wrong:
+                del updated[key]
+            updated[("persName", name)] = {
+                "count": count, "variants": variants, "raw_lemmas": [name], "pseudonym": True,
+            }
+        groups.clear()
+        groups.update(updated)
+    except Exception:
+        logger.exception("Failed to detect pseudonyms; retaining groups")
+
+
 def _apply_country_abbreviations(
     groups: dict[tuple[str, str], dict], text: str, title: str, document_id: int,
 ) -> None:
@@ -415,6 +454,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         _add_place_mentions(groups, text, raw)
         _extend_places_to_registry_names(session, groups, text, raw)
         _add_named_events(session, groups, text)
+        _add_pseudonyms(groups, text)
 
         # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
         # country only when a contextual LLM check confirms it.
