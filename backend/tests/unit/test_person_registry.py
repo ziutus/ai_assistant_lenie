@@ -14,7 +14,9 @@ from library.person_registry import (  # noqa: E402
     CONFIDENCE_MANUAL_REVIEW,
     CONFIDENCE_WIKIDATA,
     approve_review_link,
+    find_document_person,
     is_surname_mention,
+    matches_person_name,
     label_matches_mention,
     merge_review_link,
     reject_review_link,
@@ -106,6 +108,51 @@ class TestIsSurnameMention:
         assert not is_surname_mention("Ew", "Donald Ew")
 
 
+class TestMatchesPersonName:
+    @pytest.mark.parametrize("mention,label", [
+        ("Musk", "Elon Musk"),
+        ("Muska", "Elon Musk"),
+        ("Elon muskiem", "Elon Musk"),          # doc 11239: lemat z małą literą
+        ("Elona Muska", "Elon Musk"),
+        ("Zabdyr-Jamróz", "Michał Zabdyr-Jamróz"),
+        ("Zabdyra-Jamroza", "Michał Zabdyr-Jamróz"),   # odmiana + bez polskich znaków
+        ("Jamroza", "Michał Zabdyr-Jamróz"),
+        ("Kowalskiego", "Jan Kowalski"),
+    ])
+    def test_accepts_forms_of_the_name(self, mention, label):
+        assert matches_person_name(mention, label) is True
+
+    @pytest.mark.parametrize("mention,label", [
+        ("Ewa", "Ewa Kopacz"),                   # samo imię nikogo nie identyfikuje
+        ("Elon", "Elon Musk"),
+        ("Nowak", "Jan Nowakowski"),             # inne nazwisko, nie odmiana
+        ("Ivanka Trump", "Donald Trump"),
+        ("Donald Trump Jr.", "Donald Trump"),    # wzmianka dłuższa niż etykieta
+        ("Ab", "Jan Ab"),
+    ])
+    def test_rejects_other_people(self, mention, label):
+        assert matches_person_name(mention, label) is False
+
+
+class TestFindDocumentPerson:
+    def test_unique_match(self):
+        musk = _person(person_id=1, name="Elon Musk")
+        trump = _person(person_id=2, name="Donald Trump")
+        assert find_document_person("Muska", [musk, trump]) is musk
+
+    def test_ambiguous_surname_returns_none(self):
+        donald = _person(person_id=2, name="Donald Trump")
+        ivanka = _person(person_id=3, name="Ivanka Trump")
+        assert find_document_person("Trump", [donald, ivanka]) is None
+
+    def test_same_person_listed_twice_is_not_ambiguous(self):
+        musk = _person(person_id=1, name="Elon Musk")
+        assert find_document_person("Musk", [musk, musk]) is musk
+
+    def test_no_match(self):
+        assert find_document_person("Tusk", [_person(person_id=1, name="Elon Musk")]) is None
+
+
 class TestApproveReviewLink:
     def test_sets_manual_confirmed(self):
         link = _review_link()
@@ -189,6 +236,82 @@ class TestMergeReviewLink:
 
 
 class TestResolveDocumentPersons:
+    @staticmethod
+    def _with_document_people(session, people):
+        """Osoby już powiązane z dokumentem (zapytanie session.query(Person).join(...).filter(...).all())."""
+        session.query.return_value.join.return_value.filter.return_value.all.return_value = people
+
+    def test_surname_resolves_to_person_already_linked_to_document(self):
+        """Doc 11239: "Musk" ma trafić do Elona Muska z tego samego dokumentu, bez Wikidaty i LLM."""
+        musk = _person(person_id=106, name="Elon Musk")
+        session = _session([_entity("Musk")])
+        self._with_document_people(session, [musk])
+
+        with patch("library.wikidata_client.search_persons") as mock_wd, \
+                patch("library.article_tagging.confirm_person_with_llm") as mock_llm:
+            result = resolve_document_persons(session, _doc(), "tekst")
+
+        mock_wd.assert_not_called()
+        mock_llm.assert_not_called()
+        assert result["linked"] == [("Musk", "Elon Musk", CONFIDENCE_ALIAS)]
+        links = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], DocumentPerson)]
+        assert [(link.person_id, link.raw_mention) for link in links] == [(106, "Musk")]
+
+    def test_hyphenated_inflected_surname_resolves_to_full_name(self):
+        zabdyr = _person(person_id=1354, name="Michał Zabdyr-Jamróz")
+        session = _session([_entity("Zabdyra-Jamroza"), _entity("Zabdyr-Jamróz")])
+        self._with_document_people(session, [zabdyr])
+
+        with patch("library.wikidata_client.search_persons") as mock_wd:
+            result = resolve_document_persons(session, _doc(), "tekst")
+
+        mock_wd.assert_not_called()
+        assert {r[1] for r in result["linked"]} == {"Michał Zabdyr-Jamróz"}
+        assert len(result["linked"]) == 2
+
+    def test_inflected_two_word_mention_resolves_to_known_person(self):
+        """Lemat „Elon muskiem” (z małą literą) to ta sama osoba co „Elon Musk”."""
+        musk = _person(person_id=106, name="Elon Musk")
+        session = _session([_entity("Elon muskiem")])
+        self._with_document_people(session, [musk])
+
+        with patch("library.wikidata_client.search_persons") as mock_wd:
+            result = resolve_document_persons(session, _doc(), "tekst")
+
+        mock_wd.assert_not_called()
+        assert result["linked"] == [("Elon muskiem", "Elon Musk", CONFIDENCE_ALIAS)]
+
+    def test_ambiguous_surname_falls_back_to_wikidata(self):
+        donald = _person(person_id=2, name="Donald Trump")
+        ivanka = _person(person_id=3, name="Ivanka Trump")
+        session = _session([_entity("Trump")])
+        self._with_document_people(session, [donald, ivanka])
+
+        with patch("library.wikidata_client.search_persons", return_value=[]) as mock_wd:
+            result = resolve_document_persons(session, _doc(), "tekst")
+
+        mock_wd.assert_called_once_with("Trump")
+        assert result["skipped"] == ["Trump"]
+
+    def test_full_names_are_resolved_before_bare_surnames(self):
+        """Kolejność wzmianek w bazie nie ma znaczenia: „Musk” przed „Elon Musk” też się łączy."""
+        session = _session([_entity("Musk"), _entity("Elon Musk")])
+        self._with_document_people(session, [])
+        candidates = [{"qid": "Q317521", "label": "Elon Musk", "description": "przedsiębiorca"}]
+
+        with patch("library.wikidata_client.search_persons", return_value=candidates) as mock_wd, \
+                patch("library.article_tagging.confirm_person_with_llm", return_value="Q317521") as mock_llm:
+            result = resolve_document_persons(session, _doc(), "tekst")
+
+        assert mock_wd.call_count == 1  # tylko pełne imię i nazwisko pyta Wikidatę
+        mock_llm.assert_called_once()
+        assert result["linked"] == [
+            ("Elon Musk", "Elon Musk", CONFIDENCE_WIKIDATA),
+            ("Musk", "Elon Musk", CONFIDENCE_ALIAS),
+        ]
+        created = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], Person)]
+        assert len(created) == 1
+
     def test_wikidata_match_creates_person_and_link(self):
         session = _session([_entity("Donald Tusk")])
         with patch("library.wikidata_client.search_persons", return_value=TUSK_CANDIDATES):

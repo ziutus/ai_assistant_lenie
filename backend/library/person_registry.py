@@ -72,6 +72,62 @@ def is_surname_mention(mention: str, label: str) -> bool:
     return last.startswith(mention_key) or mention_key.startswith(last) or "".join(label_tokens).endswith(mention_key)
 
 
+# Longest inflectional ending accepted when two name tokens are compared ("Muskiem" vs "Musk",
+# "Kowalskiego" vs "Kowalski"). A longer tail is a different surname ("Nowak" vs "Nowakowski").
+MAX_INFLECTION_SUFFIX = 3
+
+
+def _name_tokens(text: str) -> list[str]:
+    return [t for t in _strip_accents(text.lower()).replace("-", " ").split() if t]
+
+
+def _tokens_compatible(mention_token: str, label_token: str) -> bool:
+    shorter, longer = sorted((mention_token, label_token), key=len)
+    if len(shorter) < 3:
+        return mention_token == label_token
+    return longer.startswith(shorter) and len(longer) - len(shorter) <= MAX_INFLECTION_SUFFIX
+
+
+def matches_person_name(mention: str, label: str) -> bool:
+    """A mention is a (possibly inflected, possibly partial) form of a person's full name.
+
+    The mention's tokens are compared with the LAST tokens of the label, accents stripped and hyphens
+    treated as spaces: "Musk", "Muskiem", "Elon muskiem" all fit "Elon Musk"; "Zabdyra-Jamroza" fits
+    "Michał Zabdyr-Jamróz". A bare given name never fits ("Ewa" vs "Ewa Kopacz": the last token is the
+    surname), and neither does a mention longer than the label.
+    """
+    mention_tokens = _name_tokens(mention)
+    label_tokens = _name_tokens(label)
+    if not mention_tokens or len(mention_tokens) > len(label_tokens):
+        return False
+    if len(mention_tokens) == 1 and len(mention_tokens[0]) < 3:
+        return False
+    tail = label_tokens[-len(mention_tokens):]
+    return all(_tokens_compatible(m, t) for m, t in zip(mention_tokens, tail))
+
+
+def find_document_person(name: str, people) -> Person | None:
+    """The ONE person among those already linked to the document that this mention names.
+
+    Several candidates ("Trump" with Donald and Ivanka in the same document) or none → None, so the
+    caller falls back to Wikidata + LLM disambiguation instead of guessing.
+    """
+    matches: dict[int, Person] = {}
+    for person in people:
+        if matches_person_name(name, person.canonical_name):
+            matches[person.id if person.id is not None else id(person)] = person
+    return next(iter(matches.values())) if len(matches) == 1 else None
+
+
+def _persons_linked_to_document(session, document_id: int) -> list[Person]:
+    return list(
+        session.query(Person)
+        .join(DocumentPerson, DocumentPerson.person_id == Person.id)
+        .filter(DocumentPerson.document_id == document_id)
+        .all()
+    )
+
+
 def find_by_alias(session, name: str) -> Person | None:
     """Exact (case-insensitive) match on canonical name or any alias."""
     lowered = name.strip().lower()
@@ -197,8 +253,13 @@ def resolve_document_persons(
             wanted = {name.strip().casefold() for name in only_names}
             entities = [ent for ent in entities if ent.entity_text.strip().casefold() in wanted]
 
+        # Full names first, so a later "Musk" / "Zabdyra-Jamroza" can be tied to the person
+        # that "Elon Musk" / "Michał Zabdyr-Jamróz" already resolved to in this document.
+        entities = sorted(entities, key=lambda e: -len(e.entity_text.split()))
+
         linked: list[tuple[str, str, str]] = []
         skipped: list[str] = []
+        document_people: list[Person] | None = None  # loaded lazily, extended as links are made
         for index, ent in enumerate(entities, start=1):
             if progress_callback is not None:
                 progress_callback(index, len(entities))
@@ -211,6 +272,19 @@ def resolve_document_persons(
             if person is not None:
                 if _link(session, doc.id, person, name, CONFIDENCE_ALIAS):
                     linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
+                    if document_people is not None:
+                        document_people.append(person)
+                continue
+
+            # 1b. The mention is a form of someone already linked to THIS document: the surname alone
+            # ("Musk"), an inflected form ("Elon muskiem", "Zabdyra-Jamroza"). Only an unambiguous
+            # match counts; several candidates fall through to the Wikidata + LLM disambiguation.
+            if document_people is None:
+                document_people = _persons_linked_to_document(session, doc.id)
+            person = find_document_person(name, document_people)
+            if person is not None:
+                _link(session, doc.id, person, name, CONFIDENCE_ALIAS)  # no-op when already linked
+                linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
                 continue
 
             # 2. Wikidata humans + LLM context disambiguation
@@ -254,6 +328,7 @@ def resolve_document_persons(
                     _add_alias(session, person, name)
                     if _link(session, doc.id, person, name, CONFIDENCE_WIKIDATA):
                         linked.append((name, person.canonical_name, CONFIDENCE_WIKIDATA))
+                        document_people.append(person)
                     continue
 
             # 3. Junk guard: a single word that is not the surname of a Wikidata human
@@ -268,6 +343,7 @@ def resolve_document_persons(
             if person is not None:
                 if _link(session, doc.id, person, name, CONFIDENCE_MANUAL_REVIEW):
                     linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
+                    document_people.append(person)
                 continue
 
             # 5. New, unknown person (no Wikidata entry — local/less-known figure)
@@ -276,6 +352,7 @@ def resolve_document_persons(
             session.flush()
             if _link(session, doc.id, person, name, CONFIDENCE_MANUAL_REVIEW):
                 linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
+                document_people.append(person)
 
         logger.info("person resolution doc=%s: linked=%d skipped=%d", doc.id, len(linked), len(skipped))
         return {"linked": linked, "skipped": skipped}
