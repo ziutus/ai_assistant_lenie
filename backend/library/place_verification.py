@@ -597,6 +597,8 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                             and ent.place_verification_status != "confirmed" and ent.source != "manual"):
                         ent.place_verification_status = "rejected"
                         ent.place_review_reason = "context_" + result["predicted_class"]
+                        # A tag written by an earlier run (before this verdict) must not outlive the place.
+                        remove_orphaned_tag(session, doc, ent)
                     if not result["organization"]:
                         continue
                     if ent is not None:

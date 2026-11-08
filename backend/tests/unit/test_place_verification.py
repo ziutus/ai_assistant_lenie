@@ -113,6 +113,26 @@ def test_context_not_place_rejects_entity(resolved, verdict, context_not_place_r
     session.delete.assert_not_called()
 
 
+@pytest.mark.parametrize("verdict", ["not_place", "part_of_name"])
+def test_context_rejection_drops_the_stale_place_tag(verdict, context_not_place_result):
+    """doc 11239: miejsce-cambridge written by an earlier run must go once "Cambridge" is rejected."""
+    geo = _resolved_geocode("Cambridge, England")
+    ent = _entity("Cambridge", etype="placeName", geocode_id=7, geocode=geo, mention_count=1)
+    ent.source, ent.place_verification_status, ent.place_review_reason = "ner", None, None
+    ent.variants = []
+    context_not_place_result.update(key="Cambridge", entity_text="Cambridge", predicted_class=verdict)
+    session = _session_with_entities([ent])
+    doc = MagicMock(id=11239, title="", tags="miejsce-cambridge")
+    with patch("library.place_context_classifier.classify_place_context_candidates",
+               return_value=[context_not_place_result]), \
+            patch("library.place_verification.remove_orphaned_tag") as remove_tag, \
+            patch("library.article_tagging.confirm_places_with_llm"):
+        verify_document_places(session, doc, "afera Cambridge Analitica")
+
+    assert ent.place_verification_status == "rejected"
+    remove_tag.assert_called_once_with(session, doc, ent)
+
+
 @pytest.mark.parametrize("etype", ["placeName", "geogName"])
 @pytest.mark.parametrize("document_id,sentence,verdict", [
     (10756, "Ciągle myślę o tym, kiedy obudzę się z wiadomością o ataku Huti gdzieś na Zachodzie.",
