@@ -133,6 +133,23 @@ def test_context_rejection_drops_the_stale_place_tag(verdict, context_not_place_
     remove_tag.assert_called_once_with(session, doc, ent)
 
 
+def test_already_rejected_place_loses_its_stale_tag_on_a_later_run():
+    geo = _resolved_geocode("Cambridge, England")
+    ent = _entity("Cambridge", etype="placeName", geocode_id=7, geocode=geo, mention_count=1)
+    ent.source, ent.place_verification_status, ent.place_review_reason = "ner", "rejected", "context_part_of_name"
+    ent.variants = []
+    ent.relevance = "central"
+    session = _session_with_entities([ent])
+    doc = MagicMock(id=11239, title="", tags="miejsce-cambridge")
+    with patch("library.place_context_classifier.classify_place_context_candidates") as classify, \
+            patch("library.place_verification.remove_orphaned_tag") as remove_tag, \
+            patch("library.article_tagging.confirm_places_with_llm"):
+        verify_document_places(session, doc, "afera Cambridge Analitica")
+
+    remove_tag.assert_called_once_with(session, doc, ent)
+    classify.assert_not_called()
+
+
 @pytest.mark.parametrize("etype", ["placeName", "geogName"])
 @pytest.mark.parametrize("document_id,sentence,verdict", [
     (10756, "Ciągle myślę o tym, kiedy obudzę się z wiadomością o ataku Huti gdzieś na Zachodzie.",

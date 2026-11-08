@@ -508,6 +508,9 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                 continue
             if ent.place_verification_status == "confirmed":
                 add_place_tag(doc, ent)
+            elif ent.place_verification_status == "rejected":
+                # Rejected earlier (context verdict, "not a place"): a tag an older run wrote must not stay.
+                remove_orphaned_tag(session, doc, ent)
         candidates = [ent for ent in entities if ent.source != "manual" and ent.relevance != "figurative"
                       and ent.place_verification_status != "confirmed" and not _is_country(ent.entity_text)]
         for index, ent in enumerate(candidates, start=1):
