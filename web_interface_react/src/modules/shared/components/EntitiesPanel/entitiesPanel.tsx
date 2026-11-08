@@ -187,6 +187,9 @@ interface MenuEntry {
   children?: MenuEntry[];
 }
 
+const retypeSubmenu = (children: MenuEntry[]): MenuEntry[] =>
+  children.length ? [{ label: "Zmień na…", children }] : [];
+
 // First two entries of every entity menu: copy the name, then search it on Google (new tab).
 const baseMenuEntries = (text: string): MenuEntry[] => [
   { label: "Kopiuj nazwę", action: () => void copyText(text) },
@@ -1727,11 +1730,13 @@ const EntitiesPanel = ({
     });
     // NER mislabel: a place ("Tela Avivwu") or a person tagged as an organization.
     entries.push(slipEntry(item));
-    entries.push({ label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } });
-    entries.push({ label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } });
-    entries.push({ label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } });
-    entries.push({ label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } });
-    entries.push({ label: "Zmień na pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } });
+    entries.push(...retypeSubmenu([
+      { label: "Osoba", action: () => { resetFlows(); void changeOrganizationToPerson(item); } },
+      { label: "Miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
+      { label: "Produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
+      { label: "Wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
+      { label: "Pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } },
+    ]));
     entries.push({ label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } });
     entries.push({ label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: "orgName" });
@@ -1756,16 +1761,18 @@ const EntitiesPanel = ({
     } }] : []),
     { label: "Otwórz osobę w rejestrze (nowa karta, edycja)", to: item.person_id != null
       ? `/persons/${item.person_id}` : `/persons?q=${encodeURIComponent(item.text)}`, newTab: true },
-    { label: "Zmień na miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
+    ...retypeSubmenu([
+      { label: "Organizacja", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
+      { label: "Miejsce", action: () => { resetFlows(); setToPlaceFor(item); setToPlaceText(item.text); } },
+      { label: "Produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
+      { label: "Wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
+      { label: "Pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } },
+    ]),
     ...(persons.some((person) => person.id != null && person.id !== item.id)
       ? [{ label: "Połącz z inną osobą w dokumencie…", action: () => {
         resetFlows(); setPersonMergeAll(false); setPersonMergeQuery(""); setPersonMergeExtra([]);
         setPersonDocMergeFor({ item, chapter: chapterPersons });
       } }] : []),
-    { label: "Zmień na organizację", action: () => { resetFlows(); setToOrgFor(item); setToOrgText(item.text); } },
-    { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
-    { label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
-    { label: "Zmień na pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } },
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     // A transcription slip ("egzekwo" heard as "Egekwo") or any other non-person: delete + never detect again.
     { label: "🚫 To nie jest osoba", action: () => {
@@ -1786,11 +1793,13 @@ const EntitiesPanel = ({
       action: () => { resetFlows(); setWikiFor(item); setWikiText(item.wikipedia_url ?? ""); } },
     { label: "Otwórz w rejestrze miejsc", to: `/places?name=${encodeURIComponent(item.text)}` },
     slipEntry(item),
-    { label: "Zmień na organizację", action: () => { resetFlows(); void changePlaceToOrganization(item); } },
-    { label: "Zmień na osobę", action: () => { resetFlows(); void changeOrganizationToPerson(item); } },
-    { label: "Zmień na produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
-    { label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
-    { label: "Zmień na pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } },
+    ...retypeSubmenu([
+      { label: "Osoba", action: () => { resetFlows(); void changeOrganizationToPerson(item); } },
+      { label: "Organizacja", action: () => { resetFlows(); void changePlaceToOrganization(item); } },
+      { label: "Produkt / system", action: () => { resetFlows(); void changeEntityToProduct(item); } },
+      { label: "Wydarzenie", action: () => { resetFlows(); void changeEntityToProduct(item, "eventName"); } },
+      { label: "Pojęcie", action: () => { resetFlows(); void changeEntityToProduct(item, "conceptName"); } },
+    ]),
     { label: "× Usuń encję", action: () => { resetFlows(); setDeleteFor(item); } },
     { label: "🚫 Usuń i nie wykrywaj więcej", action: () => {
       resetFlows(); setExcludeFor({ item, entityType: item.entity_type! });
@@ -1799,17 +1808,17 @@ const EntitiesPanel = ({
 
   // Hand-added product / system and event chips share one menu shape with the NER chips: highlight, the
   // type changes, delete. Their own actions (merge spellings, event description) open page-owned dialogs.
-  const manualRetypeEntries = (item: EntityItem, current: "productName" | "eventName" | "conceptName"): MenuEntry[] => [
-    { label: "Zmień na osobę", action: () => { resetFlows(); void changeManualEntityTo(item, "persName", "osobę"); } },
-    { label: "Zmień na organizację", action: () => { resetFlows(); void changeManualEntityTo(item, "orgName", "organizację"); } },
-    { label: "Zmień na miejsce", action: () => { resetFlows(); void changeManualEntityTo(item, "placeName", "miejsce"); } },
+  const manualRetypeEntries = (item: EntityItem, current: "productName" | "eventName" | "conceptName"): MenuEntry[] => retypeSubmenu([
+    { label: "Osoba", action: () => { resetFlows(); void changeManualEntityTo(item, "persName", "osobę"); } },
+    { label: "Organizacja", action: () => { resetFlows(); void changeManualEntityTo(item, "orgName", "organizację"); } },
+    { label: "Miejsce", action: () => { resetFlows(); void changeManualEntityTo(item, "placeName", "miejsce"); } },
     ...(current !== "productName"
-      ? [{ label: "Zmień na produkt / system", action: () => { resetFlows(); void changeManualEntityTo(item, "productName", "produkt / system"); } }] : []),
+      ? [{ label: "Produkt / system", action: () => { resetFlows(); void changeManualEntityTo(item, "productName", "produkt / system"); } }] : []),
     ...(current !== "eventName"
-      ? [{ label: "Zmień na wydarzenie", action: () => { resetFlows(); void changeManualEntityTo(item, "eventName", "wydarzenie"); } }] : []),
+      ? [{ label: "Wydarzenie", action: () => { resetFlows(); void changeManualEntityTo(item, "eventName", "wydarzenie"); } }] : []),
     ...(current !== "conceptName"
-      ? [{ label: "Zmień na pojęcie", action: () => { resetFlows(); void changeManualEntityTo(item, "conceptName", "pojęcie"); } }] : []),
-  ];
+      ? [{ label: "Pojęcie", action: () => { resetFlows(); void changeManualEntityTo(item, "conceptName", "pojęcie"); } }] : []),
+  ]);
   const productMenuActions = (item: EntityItem): MenuEntry[] => item.id == null ? [] : [
     ...showInTextEntry(item, "product"),
     { label: "Otwórz stronę produktu", to: `/products/${encodeURIComponent(item.text)}`, newTab: true },

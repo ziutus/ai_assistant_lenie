@@ -233,6 +233,8 @@ other chips had; they now use the same menus. Actions that need a page-owned for
 | Event name | yes | person, organization, place, product, concept | "× Usuń encję" | "Dodaj opis wydarzenia…" / "Opis wydarzenia…", "Dodaj do rejestru wydarzeń…" — or, once the name is linked (`registry_event` in the item, 🔗 on the chip), "🔗 W rejestrze: #N …" (opens `/world-events`), "Zmień powiązanie z rejestrem…" (the dialog unlinks the old event first) and "Odłącz od wydarzenia z rejestru" (`POST /world_events/mentions/unlink` for this document) |
 | Country | — | — | — | none: a read-only row derived from places and `kraj-*` tags |
 
+All targets in "Change type to" live in one `Zmień na…` submenu (`retypeSubmenu`); children are the target types without the chip's own type.
+
 Retype endpoints: person/organization/place → product, event or concept `POST /website_entities/:id/to_product` (`entity_type`
 `productName` default / `eventName` / `conceptName`); product/event/concept → anything `POST /website_entities/:id/from_product`; the older
 `to_place`, `to_organization`, `to_person` (organization **or place** → person) are unchanged. A retype to product or
