@@ -110,7 +110,9 @@ def convert_place_to_organization(
 
 
 # productName: a product, service or system ("Starshield", "Starlink") — a plain document-scoped manual row like eventName.
-ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName", "productName")
+# conceptName: a concept, ideology or term ("Ciemne oświecenie") — the same plain manual row; its canonical entry
+# lives in the concepts registry (library/concept_service.py), linked by (document, normalized name).
+ADDABLE_ENTITY_TYPES = ("persName", "orgName", "placeName", "eventName", "productName", "conceptName")
 
 
 def count_mentions(text: str | None, surface: str) -> int:
@@ -191,6 +193,7 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
     ).order_by(EntityReviewDecision.id)).all()
     if not decisions:
         return {}
+    renames = {}
     entities = list(session.scalars(select(DocumentEntity).where(
         DocumentEntity.document_id == document_id, DocumentEntity.entity_type.in_(ADDABLE_ENTITY_TYPES + PLACE_TYPES),
     )).all())
@@ -200,8 +203,14 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
     for removal in session.scalars(select(EntityReviewDecision).where(
         EntityReviewDecision.document_id == document_id,
         EntityReviewDecision.decision.in_(
-            ("deleted", "rejected", "excluded_global", "excluded_author", "excluded_document", "entity_described", "product_to_entity")),
+            ("deleted", "rejected", "excluded_global", "excluded_author", "excluded_document",
+             "entity_described", "product_to_entity", "renamed")),
     ).order_by(EntityReviewDecision.id)).all():
+        if removal.decision == "renamed":
+            new_name = (removal.details or {}).get("new_text", "").strip()
+            if removal.entity_type in ("conceptName", "eventName", "productName") and new_name:
+                renames[(removal.entity_type, removal.entity_text.casefold())] = new_name
+            continue
         if removal.decision == "entity_described":
             descriptions[removal.entity_text.casefold()] = (removal.details or {}).get("description")
             continue
@@ -214,18 +223,35 @@ def replay_manual_added_entities(session, document_id: int, doc=None) -> dict:
         entity_type = decision.entity_type
         if entity_type not in ADDABLE_ENTITY_TYPES or not surface:
             continue
-        if deleted_after.get((entity_type, decision.entity_text.casefold()), 0) > (decision.id or 0):
+        name = details.get("name") or decision.entity_text
+        old_names = [decision.entity_text, name]
+        visited = set()
+        while (entity_type, name.casefold()) in renames and name.casefold() not in visited:
+            visited.add(name.casefold())
+            name = renames[(entity_type, name.casefold())]
+            old_names.append(name)
+        if any(deleted_after.get((entity_type, value.casefold()), 0) > (decision.id or 0)
+               for value in old_names):
             continue
         types = PLACE_TYPES if entity_type == "placeName" else (entity_type,)
         if _by_name_or_variant(entities, surface, types) is not None:
             continue
         row, _organization = add_manual_entity(
-            session, document_id, entity_type, surface, details.get("name") or decision.entity_text,
+            session, document_id, entity_type, surface, name,
             details.get("count") or 1, entities,
         )
         added.append(row)
+        if visited:
+            variants = []
+            seen = {name.casefold()}
+            for value in [*reversed(old_names[:-1]), *(row.variants or [])]:
+                if value.casefold() not in seen:
+                    variants.append(value)
+                    seen.add(value.casefold())
+            row.variants = variants
         if row.entity_type in ("eventName", "productName") and row.description is None:
-            row.description = descriptions.get(row.entity_text.casefold())
+            row.description = next((descriptions[value.casefold()] for value in reversed(old_names)
+                                    if value.casefold() in descriptions), None)
     if doc is not None:
         from library.country_gazetteer import canonical_country_name
         from library.place_verification import geocode_single_place
@@ -729,6 +755,8 @@ def apply_decisions(session, decisions, entities: list[DocumentEntity]) -> tuple
                 touched[id(part_row)] = part_row
             stats["split"] = stats.get("split", 0) + 1
         elif decision.decision == "renamed":
+            if decision.entity_type not in PLACE_TYPES:
+                continue
             new_name = (details.get("new_text") or "").strip()
             row = _by_name_or_variant(entities, decision.entity_text, PLACE_TYPES)
             if not new_name or row is None or row.entity_text.casefold() == new_name.casefold():
@@ -798,7 +826,7 @@ def replay_manual_place_decisions(session, document_id: int, doc=None) -> dict:
                 (EntityReviewDecision.entity_type == "orgName")
                 & EntityReviewDecision.decision.in_(
                     ("organization_to_place", "organization_to_person", "transcription_error", "entity_to_product")),
-                EntityReviewDecision.entity_type.in_(("productName", "eventName"))
+                EntityReviewDecision.entity_type.in_(("productName", "eventName", "conceptName"))
                 & (EntityReviewDecision.decision == "product_to_entity"),
             ),
         )

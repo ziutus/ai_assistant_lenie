@@ -13,6 +13,7 @@ import re
 from collections import Counter
 
 from sqlalchemy import delete, func, select, update
+from unidecode import unidecode
 
 from library.db.models import (
     Document,
@@ -239,6 +240,79 @@ def _add_place_mentions(groups: dict[tuple[str, str], dict], text: str, raw: lis
                 group["variants"].append(surface)
 
 
+def _extend_places_to_registry_names(session, groups, text, raw):
+    """Promote place fragments to registry organization names, atomically."""
+    from copy import deepcopy
+
+    from library.named_event_detector import capitalized_word_ends
+    from library.organization_registry import find_organization_by_phrase
+
+    try:
+        updated = deepcopy(groups)
+        seen = set()
+        for mention in raw:
+            if mention.get("label") not in {"geogName", "placeName"}:
+                continue
+            start, end = mention.get("start"), mention.get("end")
+            if not isinstance(start, int) or not isinstance(end, int) or not 0 <= start < end <= len(text):
+                continue
+            if (start, end) in seen:
+                continue
+            seen.add((start, end))
+            forms = {str(mention.get(field) or "").casefold() for field in ("text", "lemma")}
+            key = next((key for key, group in updated.items()
+                        if key[0] in {"placeName", "geogName"} and forms.intersection(
+                            value.casefold() for value in
+                            [key[1], *group.get("variants", []), *group.get("raw_lemmas", [])])), None)
+            if key is None:
+                continue
+            for phrase_end in reversed(capitalized_word_ends(text, end, 2)):
+                phrase = text[start:phrase_end]
+                organization = find_organization_by_phrase(session, phrase)
+                if organization is None:
+                    continue
+                updated[key]["count"] -= 1
+                if updated[key]["count"] <= 0:
+                    del updated[key]
+                name = organization.canonical_name
+                group = updated.setdefault(("orgName", name), {"count": 0, "variants": [], "raw_lemmas": []})
+                group["count"] += 1
+                if phrase.casefold() != name.casefold() and phrase not in group["variants"]:
+                    group["variants"].append(phrase)
+                if name not in group["raw_lemmas"]:
+                    group["raw_lemmas"].append(name)
+                break
+        groups.clear()
+        groups.update(updated)
+    except Exception:
+        logger.exception("Failed to extend place mentions to organization names; retaining groups")
+
+
+def _add_named_events(session, groups, text):
+    """Fold detected event mentions into groups without partial updates on failure."""
+    from copy import deepcopy
+
+    from library.named_event_detector import detect_named_events
+    from library.organization_registry import find_organization_by_phrase
+
+    try:
+        def lookup(phrase):
+            organization = find_organization_by_phrase(session, phrase)
+            return (organization.canonical_name, organization.id) if organization is not None else None
+
+        events = detect_named_events(text, lookup)
+        updated = deepcopy(groups)
+        for name, event in events.items():
+            group = updated.setdefault(("eventName", name), {"count": 0, "variants": [], "raw_lemmas": []})
+            group["count"] += event["count"]
+            group["variants"] = list(dict.fromkeys([*group["variants"], *event["variants"]]))
+            group["raw_lemmas"] = list(dict.fromkeys([*group["raw_lemmas"], name]))
+        groups.clear()
+        groups.update(updated)
+    except Exception:
+        logger.exception("Failed to detect named events; retaining groups")
+
+
 def _apply_country_abbreviations(
     groups: dict[tuple[str, str], dict], text: str, title: str, document_id: int,
 ) -> None:
@@ -339,6 +413,8 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         # Places spaCy never reports (lowercase "królewca", the adjective-only
         # "obwód kaliningradzki", "przesmyk suwalski"): a closed, text-grounded list.
         _add_place_mentions(groups, text, raw)
+        _extend_places_to_registry_names(session, groups, text, raw)
+        _add_named_events(session, groups, text)
 
         # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
         # country only when a contextual LLM check confirms it.
@@ -710,7 +786,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     """
     from library.country_gazetteer import canonical_country_name
     from library.db.models import DocumentFacility, DocumentInformationSource, DocumentOrganization, InfraGeometry
-    from library.person_registry import get_document_persons
+    from library.person_registry import get_document_persons, person_link_for_mention
 
     rows = (
         session.query(DocumentEntity)
@@ -718,7 +794,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         .order_by(DocumentEntity.entity_text)
         .all()
     )
-    persons_by_mention = {p["raw_mention"]: p for p in get_document_persons(session, document_id)}
+    document_person_links = get_document_persons(session, document_id)
+    persons_by_mention = {p["raw_mention"]: p for p in document_person_links}
     source_links = session.scalars(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == document_id,
         DocumentInformationSource.role == "cited",
@@ -754,6 +831,18 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             registry_events_by_key[link.name_key] = {
                 "id": event.id, "title": event.title, "status": event.status, "surface": link.surface,
             }
+    registry_concepts_by_key: dict[str, dict] = {}
+    if any(r.entity_type == "conceptName" for r in rows):
+        from library.db.models import Concept, ConceptMentionLink
+
+        for link, concept in session.execute(
+            select(ConceptMentionLink, Concept)
+            .join(Concept, Concept.id == ConceptMentionLink.concept_id)
+            .where(ConceptMentionLink.document_id == document_id, ConceptMentionLink.status == "confirmed")
+        ).all():
+            registry_concepts_by_key[link.name_key] = {
+                "id": concept.id, "name": concept.name, "surface": link.surface,
+            }
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
     pipelines_by_query: dict[str, InfraGeometry] = {}
@@ -767,7 +856,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
 
     grouped: dict[str, list[dict]] = {
         "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
-        "productName": [],
+        "productName": [], "conceptName": [],
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
@@ -818,8 +907,19 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 for key in (event_name_key(row.entity_text), *(event_name_key(v) for v in (row.variants or [])))
                 if key in registry_events_by_key
             ), None)
-        if row.entity_type == "persName" and row.entity_text in persons_by_mention:
-            link = persons_by_mention[row.entity_text]
+        if row.entity_type == "conceptName":
+            # The registry concept this name was linked to FOR THIS DOCUMENT (null = not linked yet).
+            item["registry_concept"] = next((
+                registry_concepts_by_key[key]
+                for key in (event_name_key(row.entity_text), *(event_name_key(v) for v in (row.variants or [])))
+                if key in registry_concepts_by_key
+            ), None)
+        link = None
+        if row.entity_type == "persName":
+            # Exact mention first; otherwise another form of a person already linked to this document.
+            link = persons_by_mention.get(row.entity_text) or person_link_for_mention(
+                row.entity_text, row.variants, document_person_links)
+        if link is not None:
             item["link_id"] = link["link_id"]
             item["person_id"] = link["person_id"]
             item["canonical_name"] = link["canonical_name"]
@@ -851,6 +951,16 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 if wikipedia:
                     item["wikipedia_url"] = wikipedia
         grouped.setdefault(row.entity_type, []).append(item)
+    for event in grouped["eventName"]:
+        event_name = unidecode(event["text"]).casefold()
+        related = [
+            {"text": org["text"], **({"organization_id": org["organization_id"]}
+                                   if "organization_id" in org else {})}
+            for org in grouped["orgName"]
+            if org["text"] and unidecode(org["text"]).casefold() in event_name
+        ]
+        if related:
+            event["related_organizations"] = related
     for link in facilities:
         facility = link.facility
         grouped["facility"].append({

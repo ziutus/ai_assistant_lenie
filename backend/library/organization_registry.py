@@ -10,8 +10,10 @@ Wikidata/LLM disambiguation, no fuzzy auto-merge. A merge decision made once
 
 import logging
 import re
+from difflib import SequenceMatcher
 
 from sqlalchemy import func, select
+from unidecode import unidecode
 
 from library.db.models import (
     DocumentOrganization,
@@ -29,6 +31,34 @@ CONFIDENCE_CANONICAL_MATCHED = "canonical_matched"
 CONFIDENCE_MANUAL_CONFIRMED = "manual_confirmed"
 CONFIDENCE_NEEDS_REVIEW = "needs_review"
 CONFIDENCE_CONTEXT_LLM_MATCHED = "context_llm_matched"
+INFLECTION_ENDINGS = frozenset({"a", "u", "e", "y", "i", "ie", "em", "om", "ow", "owi", "iem", "ami", "ach"})
+
+
+def find_inflected_base_organization(session, name: str) -> Organization | None:
+    """Resolve a one-word inflection only when all matching bases identify one organization."""
+    if len(name) < 5 or "." in name or any(char.isspace() for char in name):
+        return None
+    normalized = unidecode(name).lower()
+    first = name[:4].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = first + "%"
+    organizations = session.execute(
+        select(Organization).where(Organization.canonical_name.ilike(pattern, escape="\\"))
+    ).scalars().all()
+    aliases = session.execute(
+        select(OrganizationAlias).where(OrganizationAlias.alias.ilike(pattern, escape="\\"))
+    ).scalars().all()
+    candidates = [(org.canonical_name, org) for org in organizations]
+    candidates.extend((alias.alias, alias.organization) for alias in aliases)
+    matches = {}
+    for base, org in candidates:
+        if len(base) < 4 or "." in base or any(char.isspace() for char in base):
+            continue
+        base = unidecode(base).lower()
+        if len(base) >= 4 and normalized.startswith(base) and normalized[len(base):] in INFLECTION_ENDINGS:
+            matches[org.id] = org
+            if len(matches) > 1:
+                return None
+    return next(iter(matches.values()), None)
 
 
 class AliasConflictError(Exception):
@@ -43,6 +73,38 @@ class AliasConflictError(Exception):
 def normalize_alias(value: str) -> str:
     """NFC + strip + casefold — no diacritic stripping, no fuzzy folding."""
     return normalize_ner_text(value).casefold()
+
+
+def find_organization_by_phrase(session, phrase: str, *, min_ratio: float = 0.9) -> Organization | None:
+    """Read-only fuzzy lookup of multi-word names with a shared first word."""
+    def normalized(value):
+        return " ".join(unidecode(value).lower().replace("-", " ").split())
+
+    words = phrase.split()
+    if len(words) < 2:
+        return None
+    first = words[0].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = first + " %"
+    organizations = session.execute(
+        select(Organization).where(Organization.canonical_name.ilike(pattern, escape="\\"))
+    ).scalars().all()
+    aliases = session.execute(
+        select(OrganizationAlias).where(OrganizationAlias.alias.ilike(pattern, escape="\\"))
+    ).scalars().all()
+    candidates = [(org.canonical_name, org) for org in organizations]
+    candidates.extend((alias.alias, alias.organization) for alias in aliases)
+    scores = {}
+    for name, org in candidates:
+        if len(name.split()) < 2:
+            continue
+        ratio = SequenceMatcher(None, normalized(phrase), normalized(name)).ratio()
+        if ratio >= min_ratio and (org.id not in scores or ratio > scores[org.id][0]):
+            scores[org.id] = (ratio, org)
+    if not scores:
+        return None
+    best = max(score for score, _ in scores.values())
+    winners = [org for score, org in scores.values() if score == best]
+    return winners[0] if len(winners) == 1 else None
 
 
 def ambiguous_alias_candidates(session, alias: str) -> list[OrganizationAmbiguousAlias]:
@@ -262,6 +324,14 @@ def resolve_or_create(session, canonical_name: str, variants: list[str] | None =
                 if organization is not None:
                     break
         confidence = CONFIDENCE_CANONICAL_MATCHED
+
+    if organization is None:
+        try:
+            organization = find_inflected_base_organization(session, canonical_name)
+        except Exception:
+            logger.exception("organization inflection lookup failed for %r", canonical_name)
+        if organization is not None:
+            confidence = CONFIDENCE_ALIAS_MATCHED
 
     if organization is None:
         organization = Organization(canonical_name=canonical_name)

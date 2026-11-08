@@ -41,6 +41,7 @@ from library.contact_routes import bp as contact_bp
 from library.document_links_routes import bp as document_links_bp
 from library.geopolitics_routes import bp as geopolitics_bp
 from library.world_events_routes import bp as world_events_bp
+from library.concept_routes import bp as concepts_bp
 from library.project_card_routes import bp as project_cards_bp
 from library.recipe_routes import bp as recipes_bp
 from library.topic_routes import bp as topics_bp
@@ -147,6 +148,7 @@ app.register_blueprint(contact_bp)
 app.register_blueprint(document_links_bp)
 app.register_blueprint(geopolitics_bp)
 app.register_blueprint(world_events_bp)
+app.register_blueprint(concepts_bp)
 app.register_blueprint(project_cards_bp)
 app.register_blueprint(recipes_bp)
 app.register_blueprint(topics_bp)
@@ -1912,6 +1914,60 @@ def website_entities_rename(entity_id: int):
     return jsonify(status="success", entity=item, text_replacements=text_replacements, **geocoding), 200
 
 
+@app.route('/website_entities/<int:entity_id>/name', methods=['PATCH'])
+def website_entities_manual_rename(entity_id: int):
+    """Rename a document-scoped manual entity, retaining its matching surfaces."""
+    from library.db.models import DocumentEntity
+    from library.entity_review_audit import record_entity_decision
+
+    data = request.get_json(silent=True)
+    name = data.get("text") if isinstance(data, dict) else None
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 500:
+        return jsonify(status="error", message="Nazwa musi zawierać od 1 do 500 znaków."), 400
+    name = name.strip()
+    session = get_scoped_session()
+    try:
+        entity = session.get(DocumentEntity, entity_id)
+        if entity is None:
+            return jsonify(status="error", message="Nie znaleziono encji."), 404
+        labels = {"conceptName": "pojęcie", "eventName": "wydarzenie", "productName": "produkt"}
+        if entity.entity_type not in labels or entity.source != "manual":
+            return jsonify(status="error", message="Tę encję poprawia się innym sposobem."), 400
+        duplicate = session.query(DocumentEntity).filter(
+            DocumentEntity.document_id == entity.document_id,
+            DocumentEntity.entity_type == entity.entity_type,
+            DocumentEntity.entity_text == name,
+            DocumentEntity.id != entity.id,
+        ).first()
+        if duplicate is not None:
+            return jsonify(
+                status="error", message=f"Takie {labels[entity.entity_type]} już istnieje w tym dokumencie.",
+                conflict_entity={"id": duplicate.id, "text": duplicate.entity_text,
+                                 "entity_type": duplicate.entity_type},
+            ), 409
+        old_name = entity.entity_text
+        old_variants = list(entity.variants or [])
+        variants = []
+        seen = {name.casefold()}
+        for value in [old_name, *old_variants]:
+            if value.casefold() not in seen:
+                variants.append(value)
+                seen.add(value.casefold())
+        entity.entity_text = name
+        entity.variants = variants
+        record_entity_decision(
+            session, document_id=entity.document_id, document_entity_id=entity.id,
+            entity_type=entity.entity_type, entity_text=old_name, decision="renamed",
+            details={"new_text": name, "old_variants": old_variants},
+        )
+        session.commit()
+        return jsonify(status="success", entity_id=entity.id, entity_text=name, variants=variants), 200
+    except Exception:
+        session.rollback()
+        logging.exception("manual entity rename failed for entity %s", entity_id)
+        return jsonify(status="error", message="Nie udało się zapisać nazwy encji."), 500
+
+
 @app.route('/website_entities/<int:entity_id>/confirm_place', methods=['POST'])
 def website_entities_confirm_place(entity_id: int):
     """Approve a displayed geocoder proposal and durably record the selection."""
@@ -2191,8 +2247,8 @@ def website_entities_to_product(entity_id: int):
     data = request.get_json(silent=True) or {}
     new_text = data.get('text')
     target_type = data.get('entity_type') or "productName"
-    if target_type not in ("productName", "eventName"):
-        return jsonify(status="error", message="entity_type musi być productName lub eventName."), 400
+    if target_type not in ("productName", "eventName", "conceptName"):
+        return jsonify(status="error", message="entity_type musi być productName, eventName lub conceptName."), 400
     if new_text is not None and (not isinstance(new_text, str) or not new_text.strip() or len(new_text) > 500):
         return jsonify(status="error", message="Nieprawidłowa nazwa."), 400
     session = get_scoped_session()
@@ -2253,17 +2309,18 @@ def website_entities_from_product(entity_id: int):
 
     data = request.get_json(silent=True) or {}
     entity_type, new_text = data.get('entity_type'), data.get('text')
-    if entity_type not in ("persName", "orgName", "placeName", "productName", "eventName"):
+    if entity_type not in ("persName", "orgName", "placeName", "productName", "eventName", "conceptName"):
         return jsonify(status="error", message="entity_type musi być persName, orgName, placeName, "
-                       "productName lub eventName."), 400
+                       "productName, eventName lub conceptName."), 400
     if new_text is not None and (not isinstance(new_text, str) or not new_text.strip() or len(new_text) > 200):
         return jsonify(status="error", message="Nieprawidłowa nazwa."), 400
     session = get_scoped_session()
     product = session.get(DocumentEntity, entity_id)
     if product is None:
         return jsonify(status="error", message="Nie znaleziono encji."), 404
-    if product.entity_type not in ("productName", "eventName"):
-        return jsonify(status="error", message="Encja nie jest produktem / systemem ani wydarzeniem."), 400
+    if product.entity_type not in ("productName", "eventName", "conceptName"):
+        return jsonify(status="error",
+                       message="Encja nie jest produktem / systemem, wydarzeniem ani pojęciem."), 400
     if entity_type == product.entity_type:
         return jsonify(status="error", message="Encja już ma ten typ."), 400
     source_type = product.entity_type
@@ -2781,7 +2838,7 @@ def document_entities_add_mention(document_id: int):
     """Add an entity from a fragment of the text a reviewer selected (context menu on /ner/:id).
 
     Body: {"text": "kaliningradzkiej enklawy",
-    "entity_type": "persName"|"orgName"|"placeName"|"eventName"|"productName", "name": "Obwód Kaliningradzki"?}. ``text`` must occur in the document; ``name`` is the canonical
+    "entity_type": "persName"|"orgName"|"placeName"|"eventName"|"productName"|"conceptName", "name": "Obwód Kaliningradzki"?}. ``text`` must occur in the document; ``name`` is the canonical
     name (default: the text) — an existing same-named entity gets the mentions and the surface form added.
     A fragment that already is an entity (or one of its surface forms) answers 409 with that entity: use
     its own menu to retype it. A place is geocoded once (a country gets its ``kraj-*`` tag), an organization
@@ -2805,7 +2862,8 @@ def document_entities_add_mention(document_id: int):
         return jsonify(status="error", message="Nieprawidłowa nazwa."), 400
     if entity_type not in ADDABLE_ENTITY_TYPES:
         return jsonify(
-            status="error", message="entity_type musi być persName, orgName, placeName, eventName lub productName."), 400
+            status="error",
+            message="entity_type musi być persName, orgName, placeName, eventName, productName lub conceptName."), 400
     surface = " ".join(surface.split())
     name = " ".join(name.split()) if name else None
     session = get_scoped_session()
@@ -2842,6 +2900,18 @@ def document_entities_add_mention(document_id: int):
         session.rollback()
         logging.exception("Adding %s %r to document %s failed", entity_type, surface, document_id)
         return jsonify(status="error", message="Nie udało się dodać encji."), 500
+    registry_concept_id = None
+    if entity_type == "conceptName":
+        # A concept that already owns exactly this name is linked at once; anything else stays a suggestion.
+        try:
+            from library.concept_service import auto_link_mention
+
+            registry_concept_id = auto_link_mention(
+                session, document_id, row.entity_text, user_id=getattr(getattr(g, "auth", None), "user_id", None))
+            session.commit()
+        except Exception:
+            session.rollback()
+            logging.exception("Auto-linking concept %r in document %s failed", row.entity_text, document_id)
     linked = []
     if entity_type == "persName":
         try:
@@ -2853,7 +2923,7 @@ def document_entities_add_mention(document_id: int):
             logging.exception("Person resolution after adding %r to document %s failed", row.entity_text, document_id)
     return jsonify(status="success", entity_id=row.id, entity_type=row.entity_type, entity_text=row.entity_text,
                    mention_count=row.mention_count, organization_id=getattr(organization, "id", None),
-                   linked=linked), 201
+                   linked=linked, registry_concept_id=registry_concept_id), 201
 
 
 @app.route('/website_entities/<int:entity_id>/split_place', methods=['POST'])

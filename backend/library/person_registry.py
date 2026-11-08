@@ -72,6 +72,77 @@ def is_surname_mention(mention: str, label: str) -> bool:
     return last.startswith(mention_key) or mention_key.startswith(last) or "".join(label_tokens).endswith(mention_key)
 
 
+# Longest inflectional ending accepted when two name tokens are compared ("Muskiem" vs "Musk",
+# "Kowalskiego" vs "Kowalski"). A longer tail is a different surname ("Nowak" vs "Nowakowski").
+MAX_INFLECTION_SUFFIX = 3
+
+
+def _name_tokens(text: str) -> list[str]:
+    return [t for t in _strip_accents(text.lower()).replace("-", " ").split() if t]
+
+
+def _tokens_compatible(mention_token: str, label_token: str) -> bool:
+    shorter, longer = sorted((mention_token, label_token), key=len)
+    if len(shorter) < 3:
+        return mention_token == label_token
+    return longer.startswith(shorter) and len(longer) - len(shorter) <= MAX_INFLECTION_SUFFIX
+
+
+def matches_person_name(mention: str, label: str) -> bool:
+    """A mention is a (possibly inflected, possibly partial) form of a person's full name.
+
+    The mention's tokens are compared with the LAST tokens of the label, accents stripped and hyphens
+    treated as spaces: "Musk", "Muskiem", "Elon muskiem" all fit "Elon Musk"; "Zabdyra-Jamroza" fits
+    "Michał Zabdyr-Jamróz". A bare given name never fits ("Ewa" vs "Ewa Kopacz": the last token is the
+    surname), and neither does a mention longer than the label.
+    """
+    mention_tokens = _name_tokens(mention)
+    label_tokens = _name_tokens(label)
+    if not mention_tokens or len(mention_tokens) > len(label_tokens):
+        return False
+    if len(mention_tokens) == 1 and len(mention_tokens[0]) < 3:
+        return False
+    tail = label_tokens[-len(mention_tokens):]
+    return all(_tokens_compatible(m, t) for m, t in zip(mention_tokens, tail))
+
+
+def find_document_person(name: str, people) -> Person | None:
+    """The ONE person among those already linked to the document that this mention names.
+
+    Several candidates ("Trump" with Donald and Ivanka in the same document) or none → None, so the
+    caller falls back to Wikidata + LLM disambiguation instead of guessing.
+    """
+    matches: dict[int, Person] = {}
+    for person in people:
+        if matches_person_name(name, person.canonical_name):
+            matches[person.id if person.id is not None else id(person)] = person
+    return next(iter(matches.values())) if len(matches) == 1 else None
+
+
+def person_link_for_mention(entity_text: str, variants, links: list[dict]) -> dict | None:
+    """The document's person link a persName entity belongs to when no link carries its exact text.
+
+    One link exists per (document, person) and keeps only the FIRST mention as ``raw_mention``, so the
+    other forms of the same person ("Musk", "Elona Muska", "Zabdyra-Jamroza") would show as unresolved.
+    ``links`` are ``get_document_persons()`` items; the entity text and its spelling variants are tried,
+    and only an unambiguous match (one person) counts.
+    """
+    people: dict[int, dict] = {}
+    for link in links:
+        if any(matches_person_name(form, link["canonical_name"]) for form in (entity_text, *(variants or []))):
+            people[link["person_id"]] = link
+    return next(iter(people.values())) if len(people) == 1 else None
+
+
+def _persons_linked_to_document(session, document_id: int) -> list[Person]:
+    return list(
+        session.query(Person)
+        .join(DocumentPerson, DocumentPerson.person_id == Person.id)
+        .filter(DocumentPerson.document_id == document_id)
+        .all()
+    )
+
+
 def find_by_alias(session, name: str) -> Person | None:
     """Exact (case-insensitive) match on canonical name or any alias."""
     lowered = name.strip().lower()
@@ -171,6 +242,62 @@ def _link(session, document_id: int, person: Person, raw_mention: str, confidenc
     return True
 
 
+def merge_entities_of_same_person(session, document_id: int) -> list[tuple[str, str]]:
+    """Fold the persName entity rows of one document that resolve to the same person into one row.
+
+    NER gives a separate row per lemma ("Michał Zabdyr-Jamróz", "Zabdyr-Jamróz", "Zabdyra-Jamroza"), so one
+    person showed up as several chips. Rows are grouped by the person they resolve to (the link whose
+    ``raw_mention`` is the row's text, else an unambiguous name match — the same rule the entity view uses).
+    In a group of two or more the row spelled like the canonical name survives (else the most mentioned
+    one, renamed to the canonical name unless that would collide); the others fold into it — counts are
+    summed, their texts and spellings become variants, so highlighting keeps working. ``source='manual'``
+    rows are never folded away. Idempotent: a merged document has one row per person. Returns
+    ``[(folded text, surviving text)]``; the caller owns the transaction.
+    """
+    from library.entity_service import merge_document_entities
+
+    entities = (
+        session.query(DocumentEntity)
+        .filter(DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "persName")
+        .all()
+    )
+    links = get_document_persons(session, document_id)
+    link_by_mention = {link["raw_mention"].casefold(): link for link in links}
+
+    groups: dict[int, list[DocumentEntity]] = {}
+    for entity in entities:
+        link = link_by_mention.get(entity.entity_text.casefold()) or person_link_for_mention(
+            entity.entity_text, entity.variants, links)
+        if link is not None:
+            groups.setdefault(link["person_id"], []).append(entity)
+
+    canonical_by_person = {link["person_id"]: link["canonical_name"] for link in links}
+    taken_texts = {entity.entity_text.casefold() for entity in entities}
+    merged: list[tuple[str, str]] = []
+    for person_id, group in groups.items():
+        if len(group) < 2:
+            continue
+        canonical = canonical_by_person[person_id]
+        target = next((e for e in group if e.entity_text.casefold() == canonical.casefold()), None)
+        if target is None:
+            target = max(group, key=lambda e: ((e.mention_count or 0), len(e.entity_text)))
+            if target.source != "manual" and canonical.casefold() not in taken_texts:
+                old_text = target.entity_text
+                taken_texts.discard(old_text.casefold())
+                taken_texts.add(canonical.casefold())
+                target.variants = list(dict.fromkeys([old_text, *(target.variants or [])]))
+                target.entity_text = canonical
+        for source in group:
+            if source is target or source.source == "manual":
+                continue
+            merge_document_entities(source, target, target_source=target.source)
+            merged.append((source.entity_text, target.entity_text))
+            session.delete(source)
+    if merged:
+        session.flush()
+    return merged
+
+
 def resolve_document_persons(
     session, doc, text: str, progress_callback=None, only_names: list[str] | None = None,
 ) -> dict:
@@ -197,8 +324,13 @@ def resolve_document_persons(
             wanted = {name.strip().casefold() for name in only_names}
             entities = [ent for ent in entities if ent.entity_text.strip().casefold() in wanted]
 
+        # Full names first, so a later "Musk" / "Zabdyra-Jamroza" can be tied to the person
+        # that "Elon Musk" / "Michał Zabdyr-Jamróz" already resolved to in this document.
+        entities = sorted(entities, key=lambda e: -len(e.entity_text.split()))
+
         linked: list[tuple[str, str, str]] = []
         skipped: list[str] = []
+        document_people: list[Person] | None = None  # loaded lazily, extended as links are made
         for index, ent in enumerate(entities, start=1):
             if progress_callback is not None:
                 progress_callback(index, len(entities))
@@ -211,6 +343,19 @@ def resolve_document_persons(
             if person is not None:
                 if _link(session, doc.id, person, name, CONFIDENCE_ALIAS):
                     linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
+                    if document_people is not None:
+                        document_people.append(person)
+                continue
+
+            # 1b. The mention is a form of someone already linked to THIS document: the surname alone
+            # ("Musk"), an inflected form ("Elon muskiem", "Zabdyra-Jamroza"). Only an unambiguous
+            # match counts; several candidates fall through to the Wikidata + LLM disambiguation.
+            if document_people is None:
+                document_people = _persons_linked_to_document(session, doc.id)
+            person = find_document_person(name, document_people)
+            if person is not None:
+                _link(session, doc.id, person, name, CONFIDENCE_ALIAS)  # no-op when already linked
+                linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
                 continue
 
             # 2. Wikidata humans + LLM context disambiguation
@@ -254,6 +399,7 @@ def resolve_document_persons(
                     _add_alias(session, person, name)
                     if _link(session, doc.id, person, name, CONFIDENCE_WIKIDATA):
                         linked.append((name, person.canonical_name, CONFIDENCE_WIKIDATA))
+                        document_people.append(person)
                     continue
 
             # 3. Junk guard: a single word that is not the surname of a Wikidata human
@@ -268,6 +414,7 @@ def resolve_document_persons(
             if person is not None:
                 if _link(session, doc.id, person, name, CONFIDENCE_MANUAL_REVIEW):
                     linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
+                    document_people.append(person)
                 continue
 
             # 5. New, unknown person (no Wikidata entry — local/less-known figure)
@@ -276,9 +423,23 @@ def resolve_document_persons(
             session.flush()
             if _link(session, doc.id, person, name, CONFIDENCE_MANUAL_REVIEW):
                 linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
+                document_people.append(person)
 
-        logger.info("person resolution doc=%s: linked=%d skipped=%d", doc.id, len(linked), len(skipped))
-        return {"linked": linked, "skipped": skipped}
+        # One chip per person: fold the rows of the same person. Cosmetic, so a failure only rolls back
+        # its own savepoint and never costs the links made above. A single converted mention
+        # (only_names) leaves the rest of the document alone.
+        merged: list[tuple[str, str]] = []
+        if only_names is None:
+            try:
+                with session.begin_nested():
+                    merged = merge_entities_of_same_person(session, doc.id)
+            except Exception:
+                logger.exception("merging entities of the same person failed for document %s", doc.id)
+                merged = []
+
+        logger.info("person resolution doc=%s: linked=%d skipped=%d merged=%d",
+                    doc.id, len(linked), len(skipped), len(merged))
+        return {"linked": linked, "skipped": skipped, "merged": merged}
 
 
 def list_manual_review(session) -> list[dict]:

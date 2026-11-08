@@ -10,6 +10,76 @@ pytest.importorskip("flask")
 API_HEADERS = {"x-api-key": "test-api-key"}
 
 
+@pytest.mark.parametrize("kind", ["conceptName", "eventName", "productName"])
+@pytest.mark.parametrize("name,variants", [(" New ", ["Old", "Surface"]), ("OLD", ["Surface", "New"])])
+def test_manual_entity_rename(client, kind, name, variants):
+    from library.db.models import DocumentEntity
+    row = DocumentEntity(id=90, document_id=1, entity_type=kind, entity_text="Old", source="manual",
+                         variants=["Surface", "surface", "New"], mention_count=4, description="Description")
+    session = MagicMock()
+    session.get.return_value = row
+    session.query.return_value.filter.return_value.first.return_value = None
+    with patch("server.get_scoped_session", return_value=session), patch(
+        "library.entity_review_audit.record_entity_decision"
+    ) as audit:
+        response = client.patch("/website_entities/90/name", json={"text": name}, headers=API_HEADERS)
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "success", "entity_id": 90,
+                                   "entity_text": name.strip(), "variants": variants}
+    assert row.entity_text == name.strip()
+    assert row.variants == variants
+    assert row.mention_count == 4 and row.description == "Description"
+    audit.assert_called_once_with(
+        session, document_id=1, document_entity_id=90, entity_type=kind, entity_text="Old", decision="renamed",
+        details={"new_text": name.strip(), "old_variants": ["Surface", "surface", "New"]},
+    )
+    session.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("text", [None, 12, "", "  ", "a" * 501])
+def test_manual_entity_rename_invalid_name(client, text):
+    response = client.patch("/website_entities/90/name", json={"text": text}, headers=API_HEADERS)
+    assert response.status_code == 400
+    assert response.get_json()["message"] == "Nazwa musi zawierać od 1 do 500 znaków."
+
+
+@pytest.mark.parametrize("case,status", [("place", 400), ("ner", 400), ("missing", 404), ("failure", 500)])
+def test_manual_entity_rename_rejected_or_rolled_back(client, case, status):
+    from library.db.models import DocumentEntity
+    row = DocumentEntity(id=90, document_id=1, entity_type="placeName" if case == "place" else "conceptName",
+                         entity_text="Old", source="ner" if case == "ner" else "manual")
+    session = MagicMock()
+    session.get.return_value = None if case == "missing" else row
+    session.query.return_value.filter.return_value.first.return_value = None
+    if case == "failure":
+        session.commit.side_effect = RuntimeError("database failure")
+    with patch("server.get_scoped_session", return_value=session):
+        response = client.patch("/website_entities/90/name", json={"text": "New"}, headers=API_HEADERS)
+    assert response.status_code == status
+    if case == "failure":
+        session.rollback.assert_called_once()
+    else:
+        session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("kind,label", [("conceptName", "pojęcie"), ("eventName", "wydarzenie"),
+                                        ("productName", "produkt")])
+def test_manual_entity_rename_duplicate(client, kind, label):
+    from library.db.models import DocumentEntity
+    row = DocumentEntity(id=90, document_id=1, entity_type=kind, entity_text="Old", source="manual")
+    duplicate = DocumentEntity(id=91, document_id=1, entity_type=kind, entity_text="New", source="manual")
+    session = MagicMock()
+    session.get.return_value = row
+    session.query.return_value.filter.return_value.first.return_value = duplicate
+    with patch("server.get_scoped_session", return_value=session):
+        response = client.patch("/website_entities/90/name", json={"text": "New"}, headers=API_HEADERS)
+    assert response.status_code == 409
+    assert response.get_json()["conflict_entity"] == {"id": 91, "text": "New", "entity_type": kind}
+    assert response.get_json()["message"] == f"Takie {label} już istnieje w tym dokumencie."
+    assert row.entity_text == "Old"
+    session.commit.assert_not_called()
+
+
 @pytest.mark.parametrize("case,expected", [("success", 200), ("missing", 404), ("no_proposal", 409),
                                            ("not_place", 400), ("selected", 200), ("rollback", 500)])
 def test_confirm_place(client, case, expected):
