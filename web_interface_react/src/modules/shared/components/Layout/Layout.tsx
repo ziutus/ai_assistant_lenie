@@ -147,6 +147,9 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         <NavLink to="/products" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           Produkty i systemy
         </NavLink>
+        <NavLink to="/concepts" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          Pojęcia i ideologie
+        </NavLink>
         <NavLink
           to="/contacts"
           className={({ isActive }) =>

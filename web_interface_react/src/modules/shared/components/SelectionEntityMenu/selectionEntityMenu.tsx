@@ -2,7 +2,7 @@ import React from "react";
 import axios from "axios";
 import { copyText } from "../../utils/copyText";
 
-export type AddableEntityType = "persName" | "orgName" | "placeName" | "eventName" | "productName";
+export type AddableEntityType = "persName" | "orgName" | "placeName" | "eventName" | "productName" | "conceptName";
 
 const CHOICES: { type: AddableEntityType; label: string }[] = [
   { type: "persName", label: "👤 Osoba" },
@@ -10,6 +10,7 @@ const CHOICES: { type: AddableEntityType; label: string }[] = [
   { type: "placeName", label: "📍 Miejsce" },
   { type: "eventName", label: "📅 Wydarzenie" },
   { type: "productName", label: "🛰️ Produkt / system" },
+  { type: "conceptName", label: "💡 Pojęcie / ideologia" },
 ];
 
 // The text a reviewer selected, normalized like the backend does (one line, single spaces) and

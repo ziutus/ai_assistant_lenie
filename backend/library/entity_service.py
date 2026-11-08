@@ -754,6 +754,18 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             registry_events_by_key[link.name_key] = {
                 "id": event.id, "title": event.title, "status": event.status, "surface": link.surface,
             }
+    registry_concepts_by_key: dict[str, dict] = {}
+    if any(r.entity_type == "conceptName" for r in rows):
+        from library.db.models import Concept, ConceptMentionLink
+
+        for link, concept in session.execute(
+            select(ConceptMentionLink, Concept)
+            .join(Concept, Concept.id == ConceptMentionLink.concept_id)
+            .where(ConceptMentionLink.document_id == document_id, ConceptMentionLink.status == "confirmed")
+        ).all():
+            registry_concepts_by_key[link.name_key] = {
+                "id": concept.id, "name": concept.name, "surface": link.surface,
+            }
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
     pipelines_by_query: dict[str, InfraGeometry] = {}
@@ -767,7 +779,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
 
     grouped: dict[str, list[dict]] = {
         "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [], "eventName": [],
-        "productName": [],
+        "productName": [], "conceptName": [],
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
@@ -817,6 +829,13 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 registry_events_by_key[key]
                 for key in (event_name_key(row.entity_text), *(event_name_key(v) for v in (row.variants or [])))
                 if key in registry_events_by_key
+            ), None)
+        if row.entity_type == "conceptName":
+            # The registry concept this name was linked to FOR THIS DOCUMENT (null = not linked yet).
+            item["registry_concept"] = next((
+                registry_concepts_by_key[key]
+                for key in (event_name_key(row.entity_text), *(event_name_key(v) for v in (row.variants or [])))
+                if key in registry_concepts_by_key
             ), None)
         if row.entity_type == "persName" and row.entity_text in persons_by_mention:
             link = persons_by_mention[row.entity_text]

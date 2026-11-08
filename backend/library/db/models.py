@@ -5045,3 +5045,70 @@ class CountryTagDecision(Base):
     decision: Mapped[str] = mapped_column(String(30))
     snippets: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Concept(Base):
+    """A concept, ideology or term worth remembering ("Ciemne oświecenie"): the canonical registry entry that
+    manual ``conceptName`` mentions of documents are linked to (``ConceptMentionLink``)."""
+
+    __tablename__ = "concepts"
+    __table_args__ = (CheckConstraint("trim(name) <> ''", name="ck_concepts_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    aliases: Mapped[list["ConceptAlias"]] = relationship(
+        back_populates="concept", cascade="all, delete-orphan", order_by="ConceptAlias.id"
+    )
+
+
+class ConceptAlias(Base):
+    """A name a concept is known by. ``name_key`` is the identity (NFC, spaces, casefold); ``search_key`` folds
+    accents and punctuation for trigram search and carries no identity."""
+
+    __tablename__ = "concept_aliases"
+    __table_args__ = (
+        UniqueConstraint("concept_id", "name_key", name="uq_concept_aliases"),
+        CheckConstraint("name_key <> ''", name="ck_concept_aliases_key"),
+        Index("idx_concept_aliases_name_key", "name_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    concept_id: Mapped[int] = mapped_column(ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False)
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+    name_key: Mapped[str] = mapped_column(Text, nullable=False)
+    search_key: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    concept: Mapped["Concept"] = relationship(back_populates="aliases")
+
+
+class ConceptMentionLink(Base):
+    """The reader's decision that a ``conceptName`` mention of a document means a registry concept.
+
+    ``document_entities`` rows are rebuilt on every NER refresh, so the decision is keyed by (document,
+    normalized name), not by the row. ``rejected`` is remembered so the same suggestion is not made again.
+    """
+
+    __tablename__ = "concept_mention_links"
+    __table_args__ = (
+        UniqueConstraint("document_id", "name_key", "concept_id", name="uq_concept_mention_links"),
+        CheckConstraint("status IN ('confirmed', 'rejected')", name="ck_concept_mention_links_status"),
+        Index("idx_concept_mention_links_concept", "concept_id", "status"),
+        Index("idx_concept_mention_links_name", "name_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    name_key: Mapped[str] = mapped_column(Text, nullable=False)
+    surface: Mapped[str] = mapped_column(Text, nullable=False)
+    concept_id: Mapped[int] = mapped_column(ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="confirmed")
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decided_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
