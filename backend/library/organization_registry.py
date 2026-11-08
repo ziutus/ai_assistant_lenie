@@ -31,6 +31,34 @@ CONFIDENCE_CANONICAL_MATCHED = "canonical_matched"
 CONFIDENCE_MANUAL_CONFIRMED = "manual_confirmed"
 CONFIDENCE_NEEDS_REVIEW = "needs_review"
 CONFIDENCE_CONTEXT_LLM_MATCHED = "context_llm_matched"
+INFLECTION_ENDINGS = frozenset({"a", "u", "e", "y", "i", "ie", "em", "om", "ow", "owi", "iem", "ami", "ach"})
+
+
+def find_inflected_base_organization(session, name: str) -> Organization | None:
+    """Resolve a one-word inflection only when all matching bases identify one organization."""
+    if len(name) < 5 or "." in name or any(char.isspace() for char in name):
+        return None
+    normalized = unidecode(name).lower()
+    first = name[:4].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = first + "%"
+    organizations = session.execute(
+        select(Organization).where(Organization.canonical_name.ilike(pattern, escape="\\"))
+    ).scalars().all()
+    aliases = session.execute(
+        select(OrganizationAlias).where(OrganizationAlias.alias.ilike(pattern, escape="\\"))
+    ).scalars().all()
+    candidates = [(org.canonical_name, org) for org in organizations]
+    candidates.extend((alias.alias, alias.organization) for alias in aliases)
+    matches = {}
+    for base, org in candidates:
+        if len(base) < 4 or "." in base or any(char.isspace() for char in base):
+            continue
+        base = unidecode(base).lower()
+        if len(base) >= 4 and normalized.startswith(base) and normalized[len(base):] in INFLECTION_ENDINGS:
+            matches[org.id] = org
+            if len(matches) > 1:
+                return None
+    return next(iter(matches.values()), None)
 
 
 class AliasConflictError(Exception):
@@ -296,6 +324,14 @@ def resolve_or_create(session, canonical_name: str, variants: list[str] | None =
                 if organization is not None:
                     break
         confidence = CONFIDENCE_CANONICAL_MATCHED
+
+    if organization is None:
+        try:
+            organization = find_inflected_base_organization(session, canonical_name)
+        except Exception:
+            logger.exception("organization inflection lookup failed for %r", canonical_name)
+        if organization is not None:
+            confidence = CONFIDENCE_ALIAS_MATCHED
 
     if organization is None:
         organization = Organization(canonical_name=canonical_name)
