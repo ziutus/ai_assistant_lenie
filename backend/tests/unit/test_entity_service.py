@@ -42,6 +42,32 @@ def _session_with_exclusions(exclusions):
     return session
 
 
+class TestPseudonyms:
+    @pytest.mark.parametrize("kind,count", [(None, 2), ("orgName", 5), ("placeName", 5), ("geogName", 5),
+                                           ("persName", 5)])
+    def test_add_or_retype(self, kind, count):
+        from library.entity_service import _add_pseudonyms
+
+        groups = {(kind, "Kryminał"): {"count": 5, "variants": [], "raw_lemmas": ["Kryminał"]}} if kind else {}
+        _add_pseudonyms(groups, 'Andrij Osipow ps. "Kryminał". Kryminał wrócił; kryminał i Kryminałowi.')
+        assert groups == {("persName", "Kryminał"): {
+            "count": count, "variants": ["Kryminał"], "raw_lemmas": ["Kryminał"], "pseudonym": True,
+        }}
+
+    def test_failure_is_atomic(self):
+        from copy import deepcopy
+
+        from library.entity_service import _add_pseudonyms
+
+        groups = {("persName", "Lis"): {"count": 1, "variants": [], "raw_lemmas": ["Lis"]}}
+        before = deepcopy(groups)
+        with patch("library.pseudonym_detector.detect_pseudonyms", return_value=[
+            {"pseudonym": "Lis"}, {"invalid": "pair"},
+        ]):
+            _add_pseudonyms(groups, 'Jan Nowak ps. "Lis"')
+        assert groups == before
+
+
 class TestRegistryNameExtensions:
     @pytest.mark.parametrize("protected", [None, "manual", "excluded"])
     def test_refresh_detects_events_and_honors_existing_protections(self, protected):

@@ -114,7 +114,9 @@ def find_document_person(name: str, people) -> Person | None:
     """
     matches: dict[int, Person] = {}
     for person in people:
-        if matches_person_name(name, person.canonical_name):
+        if matches_person_name(name, person.canonical_name) or (
+            len(name.split()) == 1 and any(name.casefold() == alias.alias.casefold() for alias in person.aliases)
+        ):
             matches[person.id if person.id is not None else id(person)] = person
     return next(iter(matches.values())) if len(matches) == 1 else None
 
@@ -129,7 +131,9 @@ def person_link_for_mention(entity_text: str, variants, links: list[dict]) -> di
     """
     people: dict[int, dict] = {}
     for link in links:
-        if any(matches_person_name(form, link["canonical_name"]) for form in (entity_text, *(variants or []))):
+        if any(matches_person_name(form, link["canonical_name"]) or (
+            len(form.split()) == 1 and any(form.casefold() == alias.casefold() for alias in link.get("aliases", []))
+        ) for form in (entity_text, *(variants or []))):
             people[link["person_id"]] = link
     return next(iter(people.values())) if len(people) == 1 else None
 
@@ -309,6 +313,14 @@ def resolve_document_persons(
     """
     from library.llm_usage.context import document_usage_context
 
+    try:
+        from library.pseudonym_detector import detect_pseudonyms
+
+        pseudonyms = {pair["pseudonym"].casefold(): pair["person"] for pair in detect_pseudonyms(text)}
+    except Exception:
+        logger.exception("Failed to detect pseudonyms for document %s", doc.id)
+        pseudonyms = {}
+
     with document_usage_context(doc.id):
         from library.wikidata_client import search_persons
 
@@ -346,6 +358,22 @@ def resolve_document_persons(
                     if document_people is not None:
                         document_people.append(person)
                 continue
+
+            if name.casefold() in pseudonyms:
+                if document_people is None:
+                    document_people = _persons_linked_to_document(session, doc.id)
+                # The detector may take a capitalized sentence-initial word ("Zginął Andrija Osipowa") into the
+                # name, so shorter tails of it (down to two words) are tried as well.
+                words = pseudonyms[name.casefold()].split()
+                person = next((
+                    found for start in range(0, max(len(words) - 1, 1))
+                    if (found := find_document_person(" ".join(words[start:]), document_people)) is not None
+                ), None)
+                if person is not None:
+                    _link(session, doc.id, person, name, CONFIDENCE_ALIAS)
+                    linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
+                    _add_alias(session, person, name)
+                    continue
 
             # 1b. The mention is a form of someone already linked to THIS document: the surname alone
             # ("Musk"), an inflected form ("Elon muskiem", "Zabdyra-Jamroza"). Only an unambiguous
@@ -556,6 +584,7 @@ def get_document_persons(session, document_id: int) -> list[dict]:
             "description": r.person.description,
             "wikidata_qid": r.person.wikidata_qid,
             "confidence": r.confidence,
+            "aliases": [alias.alias for alias in r.person.aliases],
         }
         for r in rows
     ]
