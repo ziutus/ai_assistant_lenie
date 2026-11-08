@@ -216,7 +216,7 @@ def test_truncated_json_batch_is_split_and_every_candidate_gets_a_verdict():
     jerusalem = next(result for result in results if result["key"] == "Jerozolima")
     assert jerusalem["predicted_class"] == "not_place"
     assert jerusalem["dropped"] is True
-    assert sentence in jerusalem["context"]
+    assert sentence.replace("Jerozolimy", "[[Jerozolimy]]") in jerusalem["context"]
 
 
 def test_single_candidate_with_unparseable_json_is_dropped_without_raising():
@@ -226,6 +226,28 @@ def test_single_candidate_with_unparseable_json_is_dropped_without_raising():
     ):
         result = classify_place_context_candidates("odsyła do Jerozolimy cywilów", "", groups, 11137)
     assert result == []
+
+
+def test_part_of_name_confidence_following_and_full_name():
+    for confidence, dropped in [("high", True), ("medium", False)]:
+        response = MagicMock(response_text=json.dumps({"results": [{
+            "id": 0, "class": "part_of_name", "confidence": confidence,
+            "rationale": "Fragment nazwy.", "full_name": "Cambridge Analytica",
+        }]}))
+        with patch("library.place_context_classifier._model", return_value="test"), patch(
+            "library.ai.ai_ask", return_value=response,
+        ) as ask:
+            result = classify_place_context_candidates(
+                "afera Cambridge Analitica. Kolejne zdanie", "", {"Cambridge": {}}, 11239,
+            )[0]
+        assert result["dropped"] is dropped
+        assert result["organization"] is False
+        assert result["rationale"].endswith("[pełna nazwa: Cambridge Analytica]")
+        items = json.loads(ask.call_args.args[0].split("DANE JSON:\n")[1])
+        assert items[0]["following"] == " Analitica"
+        assert "[[Cambridge]] Analitica" in items[0]["context"]
+        schema = ask.call_args.kwargs["response_format"]["json_schema"]["schema"]
+        assert "full_name" in schema["properties"]["results"]["items"]["required"]
 
 
 def test_no_candidates_short_circuits_without_llm_call():

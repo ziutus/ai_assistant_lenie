@@ -592,11 +592,11 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                     )
                 for result in context_results:
                     ent = entity_by_canonical.get(result["key"])
-                    if (result["predicted_class"] == "not_place" and result["dropped"]
+                    if (result["predicted_class"] in {"not_place", "part_of_name"} and result["dropped"]
                             and not result["organization"] and ent is not None
                             and ent.place_verification_status != "confirmed" and ent.source != "manual"):
                         ent.place_verification_status = "rejected"
-                        ent.place_review_reason = "context_not_place"
+                        ent.place_review_reason = "context_" + result["predicted_class"]
                     if not result["organization"]:
                         continue
                     if ent is not None:
@@ -652,11 +652,11 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                 ])
                 for result in unresolved_results:
                     ent = unresolved_by_text.get(result["key"])
-                    if (result["predicted_class"] == "not_place" and result["dropped"]
+                    if (result["predicted_class"] in {"not_place", "part_of_name"} and result["dropped"]
                             and not result["organization"] and ent is not None
                             and ent.place_verification_status != "confirmed" and ent.source != "manual"):
                         ent.place_verification_status = "rejected"
-                        ent.place_review_reason = "context_not_place"
+                        ent.place_review_reason = "context_" + result["predicted_class"]
                 organization_texts = [result["key"] for result in unresolved_results if result["organization"]]
                 for text_ in organization_texts:
                     ent = unresolved_by_text.get(text_)

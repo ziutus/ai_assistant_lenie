@@ -10,8 +10,10 @@ Wikidata/LLM disambiguation, no fuzzy auto-merge. A merge decision made once
 
 import logging
 import re
+from difflib import SequenceMatcher
 
 from sqlalchemy import func, select
+from unidecode import unidecode
 
 from library.db.models import (
     DocumentOrganization,
@@ -43,6 +45,38 @@ class AliasConflictError(Exception):
 def normalize_alias(value: str) -> str:
     """NFC + strip + casefold — no diacritic stripping, no fuzzy folding."""
     return normalize_ner_text(value).casefold()
+
+
+def find_organization_by_phrase(session, phrase: str, *, min_ratio: float = 0.9) -> Organization | None:
+    """Read-only fuzzy lookup of multi-word names with a shared first word."""
+    def normalized(value):
+        return " ".join(unidecode(value).lower().replace("-", " ").split())
+
+    words = phrase.split()
+    if len(words) < 2:
+        return None
+    first = words[0].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = first + " %"
+    organizations = session.execute(
+        select(Organization).where(Organization.canonical_name.ilike(pattern, escape="\\"))
+    ).scalars().all()
+    aliases = session.execute(
+        select(OrganizationAlias).where(OrganizationAlias.alias.ilike(pattern, escape="\\"))
+    ).scalars().all()
+    candidates = [(org.canonical_name, org) for org in organizations]
+    candidates.extend((alias.alias, alias.organization) for alias in aliases)
+    scores = {}
+    for name, org in candidates:
+        if len(name.split()) < 2:
+            continue
+        ratio = SequenceMatcher(None, normalized(phrase), normalized(name)).ratio()
+        if ratio >= min_ratio and (org.id not in scores or ratio > scores[org.id][0]):
+            scores[org.id] = (ratio, org)
+    if not scores:
+        return None
+    best = max(score for score, _ in scores.values())
+    winners = [org for score, org in scores.values() if score == best]
+    return winners[0] if len(winners) == 1 else None
 
 
 def ambiguous_alias_candidates(session, alias: str) -> list[OrganizationAmbiguousAlias]:

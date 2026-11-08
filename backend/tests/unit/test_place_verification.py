@@ -68,7 +68,7 @@ def context_not_place_result():
 
 
 @pytest.mark.parametrize("resolved", [False, True])
-@pytest.mark.parametrize("verdict", ["not_place", "organization", "low_confidence"])
+@pytest.mark.parametrize("verdict", ["not_place", "part_of_name", "organization", "low_confidence"])
 def test_context_not_place_rejects_entity(resolved, verdict, context_not_place_result):
     geo = _resolved_geocode("Izraelczyków") if resolved else MagicMock(resolved=False)
     ent = _entity("Izraelczyków", etype="placeName", geocode_id=7, geocode=geo, mention_count=3)
@@ -80,6 +80,8 @@ def test_context_not_place_rejects_entity(resolved, verdict, context_not_place_r
         context_not_place_result.update(predicted_class="organization", organization=True)
     elif verdict == "low_confidence":
         context_not_place_result.update(confidence="low", dropped=False)
+    elif verdict == "part_of_name":
+        context_not_place_result.update(predicted_class="part_of_name")
     with patch("library.place_context_classifier.classify_place_context_candidates",
                return_value=[context_not_place_result]) as classify, patch(
         "library.place_verification._reclassify_as_organization"
@@ -87,9 +89,9 @@ def test_context_not_place_rejects_entity(resolved, verdict, context_not_place_r
         summary = verify_document_places(session, doc, CONTEXT_NOT_PLACE_SENTENCE)
         classify.assert_called_once()
         assert classify.call_args.args[0] == CONTEXT_NOT_PLACE_SENTENCE
-        if verdict == "not_place":
+        if verdict in {"not_place", "part_of_name"}:
             assert ent.place_verification_status == "rejected"
-            assert ent.place_review_reason == "context_not_place"
+            assert ent.place_review_reason == "context_" + verdict
             assert summary["tagged"] == []
             assert doc.tags == ""
             # A hybrid rerun must neither classify nor tag the rejected row again.

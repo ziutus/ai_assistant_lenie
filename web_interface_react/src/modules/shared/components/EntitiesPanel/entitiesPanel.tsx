@@ -26,6 +26,7 @@ export interface EntityItem {
   count: number;
   // Reviewer-approved description (eventName entities only).
   description?: string | null;
+  related_organizations?: { text: string; organization_id?: number }[];
   /** Event names only: the registry event this name is linked to for this document (null = not linked). */
   registry_event?: { id: number; title: string; status: string; surface: string } | null;
   // Original NER category. Required when a combined "Miejsca" chip is
@@ -361,14 +362,17 @@ export const EntityChips = ({
                 border: isDimmed ? "1px solid #7ba3d08c" : "1px solid #7ba3d0" } : {}),
               ...(item.relevance && item.relevance !== "central" ? { background: undefined, border: undefined } : {}),
             }}
-            title={(item.relevance && item.relevance !== "central"
+            title={[(item.relevance && item.relevance !== "central"
               ? RELEVANCE_OPTIONS.find((option) => option.value === item.relevance)?.title : undefined)
               ?? historicalTitle ?? personTitle
               ?? sourceTitleOf(item)
               ?? item.organization_description
               ?? facilityTitle
               ?? (item.place_verification_status === "needs_review" ? "Wymaga potwierdzenia" : undefined)
-              ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
+              ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined),
+              item.related_organizations?.length
+                ? `Powiązane: ${item.related_organizations.map((org) => org.text).join(", ")}` : undefined,
+            ].filter(Boolean).join("\n") || undefined}
           >
             {isDimmed ? <span style={{ opacity: 0.55 }}>{chipContent}</span> : chipContent}
             {menuOpen && entries.length > 0 && (

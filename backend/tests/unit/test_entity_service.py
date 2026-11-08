@@ -42,6 +42,115 @@ def _session_with_exclusions(exclusions):
     return session
 
 
+class TestRegistryNameExtensions:
+    @pytest.mark.parametrize("protected", [None, "manual", "excluded"])
+    def test_refresh_detects_events_and_honors_existing_protections(self, protected):
+        exclusion = MagicMock(entity_text="afera Watergate", entity_type="eventName", scope="global")
+        session = _session_with_exclusions([exclusion] if protected == "excluded" else [])
+        session.query.return_value.filter.return_value.all.return_value = (
+            [MagicMock(entity_type="eventName", entity_text="afera Watergate", variants=[])]
+            if protected == "manual" else []
+        )
+        with patch("library.entity_service.extract_entities", return_value=[
+            {"text": "Watergate", "lemma": "Watergate", "label": "placeName"},
+        ]):
+            rows = refresh_document_entities(session, 42, "aferą Watergate")
+        events = [row for row in rows if row.entity_type == "eventName"]
+        assert len(events) == (0 if protected else 1)
+        if events:
+            assert events[0].entity_text == "afera Watergate"
+            assert events[0].variants == ["aferą Watergate"]
+
+    def test_unmatched_registry_phrase_leaves_groups_unchanged(self):
+        from copy import deepcopy
+
+        from library.entity_service import _extend_places_to_registry_names
+
+        groups = {("placeName", "Cambridge"): {"count": 1, "variants": [], "raw_lemmas": []}}
+        before = deepcopy(groups)
+        with patch("library.organization_registry.find_organization_by_phrase", return_value=None):
+            _extend_places_to_registry_names(MagicMock(), groups, "Cambridge Unknown", [
+                {"text": "Cambridge", "label": "placeName", "start": 0, "end": 9},
+            ])
+        assert groups == before
+
+    @pytest.mark.parametrize("suffix,canonical", [
+        ("Analitica", "Cambridge Analytica"), ("University", "Cambridge University"),
+    ])
+    @pytest.mark.parametrize("count", [1, 3])
+    def test_place_extension(self, suffix, canonical, count):
+        from library.entity_service import _extend_places_to_registry_names
+
+        text = f"(afera Cambridge {suffix})"
+        start = text.index("Cambridge")
+        groups = {("placeName", "cambridge"): {"count": count, "variants": ["Cambridge"], "raw_lemmas": []}}
+        raw = [{"text": "Cambridge", "lemma": "cambridge", "label": "placeName",
+                "start": start, "end": start + len("Cambridge")}]
+        with patch("library.organization_registry.find_organization_by_phrase",
+                   return_value=MagicMock(canonical_name=canonical)) as lookup:
+            _extend_places_to_registry_names(MagicMock(), groups, text, raw)
+        lookup.assert_called_once()
+        assert groups[("orgName", canonical)] == {
+            "count": 1, "variants": [f"Cambridge {suffix}"] if suffix == "Analitica" else [],
+            "raw_lemmas": [canonical],
+        }
+        if count == 1:
+            assert ("placeName", "cambridge") not in groups
+        else:
+            assert groups[("placeName", "cambridge")]["count"] == 2
+
+    @pytest.mark.parametrize("text", ["w Cambridge w Anglii", "Cambridge. University", "Cambridge  University"])
+    def test_no_extension_across_lowercase_punctuation_or_extra_space(self, text):
+        from copy import deepcopy
+
+        from library.entity_service import _extend_places_to_registry_names
+
+        groups = {("placeName", "Cambridge"): {"count": 1, "variants": [], "raw_lemmas": []}}
+        before = deepcopy(groups)
+        start = text.index("Cambridge")
+        with patch("library.organization_registry.find_organization_by_phrase") as lookup:
+            _extend_places_to_registry_names(MagicMock(), groups, text, [
+                {"text": "Cambridge", "label": "placeName", "start": start, "end": start + 9},
+            ])
+        assert groups == before
+        lookup.assert_not_called()
+
+    def test_longest_first_and_failure_after_success_is_atomic(self):
+        from copy import deepcopy
+
+        from library.entity_service import _extend_places_to_registry_names
+
+        text = "Cambridge Alpha Beta; Cambridge University"
+        groups = {("geogName", "Cambridge"): {"count": 2, "variants": [], "raw_lemmas": []}}
+        before = deepcopy(groups)
+        raw = [{"text": "Cambridge", "label": "geogName", "start": start, "end": start + 9}
+               for start in (0, text.rindex("Cambridge"))]
+        with patch("library.organization_registry.find_organization_by_phrase", side_effect=[
+            None, MagicMock(canonical_name="Cambridge Alpha"), RuntimeError("offline"),
+        ]) as lookup:
+            _extend_places_to_registry_names(MagicMock(), groups, text, raw)
+        assert [call.args[1] for call in lookup.call_args_list] == [
+            "Cambridge Alpha Beta", "Cambridge Alpha", "Cambridge University",
+        ]
+        assert groups == before
+
+    def test_named_events_merge_and_fail_open(self):
+        from copy import deepcopy
+
+        from library.entity_service import _add_named_events
+
+        groups = {("eventName", "afera Watergate"): {
+            "count": 1, "variants": ["Afera Watergate"], "raw_lemmas": ["afera Watergate"],
+        }}
+        _add_named_events(MagicMock(), groups, "aferą Watergate")
+        assert groups[("eventName", "afera Watergate")]["count"] == 2
+        assert groups[("eventName", "afera Watergate")]["variants"] == ["Afera Watergate", "aferą Watergate"]
+        before = deepcopy(groups)
+        with patch("library.organization_registry.find_organization_by_phrase", side_effect=RuntimeError("offline")):
+            _add_named_events(MagicMock(), groups, "afera Watergate, afera Cambridge Analitica")
+        assert groups == before
+
+
 class TestRefreshDocumentEntities:
     def test_temporal_candidates_keep_type_position_and_context(self):
         text = "Wstęp. 17 września 1939 rozpoczęła się wojna o godzinie 4:45."
@@ -598,6 +707,26 @@ class TestIsExcluded:
 
 
 class TestGetDocumentEntities:
+    @pytest.mark.parametrize("source", ["ner", "manual"])
+    @pytest.mark.parametrize("linked", [False, True])
+    def test_event_related_organizations(self, source, linked):
+        event = self._event_row("afera Lodz Analytica")
+        event.source = source
+        org = self._event_row("ŁÓDŹ Analytica")
+        org.entity_type, org.id = "orgName", 78
+        session = self._event_session([event, org, self._event_row("afera Watergate")], [])
+        link = MagicMock(document_entity_id=78, organization_id=1239)
+        link.organization.links = []
+        session.scalars.side_effect = lambda statement: MagicMock(**{
+            "all.return_value": [link] if linked and "document_organizations" in str(statement) else [],
+        })
+        events = get_document_entities(session, 42)["eventName"]
+        expected = {"text": "ŁÓDŹ Analytica"}
+        if linked:
+            expected["organization_id"] = 1239
+        assert events[0]["related_organizations"] == [expected]
+        assert "related_organizations" not in events[1]
+
     def test_needs_review_exposes_proposal_without_accepted_coordinates(self):
         from library.db.models import DocumentEntity, GeocodeCache
         row = DocumentEntity(id=7, entity_type="placeName", entity_text="Huty", mention_count=4,
