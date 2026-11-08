@@ -18,6 +18,7 @@ from library.person_registry import (  # noqa: E402
     is_surname_mention,
     label_matches_mention,
     matches_person_name,
+    merge_entities_of_same_person,
     merge_review_link,
     person_link_for_mention,
     reject_review_link,
@@ -173,6 +174,81 @@ class TestPersonLinkForMention:
         links = [self._link(2, "Donald Trump"), self._link(3, "Ivanka Trump")]
         assert person_link_for_mention("Trump", [], links) is None
         assert person_link_for_mention("Hornet", [], links) is None
+
+
+class TestMergeEntitiesOfSamePerson:
+    @staticmethod
+    def _row(text, count=1, variants=(), source="ner"):
+        from types import SimpleNamespace
+        return SimpleNamespace(entity_text=text, mention_count=count, variants=list(variants),
+                               source=source, geocode_id=None)
+
+    @staticmethod
+    def _link(person_id, canonical, raw_mention):
+        return {"link_id": person_id * 10, "person_id": person_id, "canonical_name": canonical,
+                "raw_mention": raw_mention, "description": None, "wikidata_qid": None,
+                "confidence": "alias_matched"}
+
+    def _run(self, rows, links):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.all.return_value = rows
+        with patch("library.person_registry.get_document_persons", return_value=links):
+            merged = merge_entities_of_same_person(session, 11239)
+        deleted = [c.args[0] for c in session.delete.call_args_list]
+        return merged, deleted
+
+    def test_forms_of_one_person_fold_into_the_canonical_row(self):
+        full = self._row("Michał Zabdyr-Jamróz", 4, ["Michał Zabdyr-Jamróz"])
+        short = self._row("Zabdyr-Jamróz", 2, ["Zabdyr-Jamróz"])
+        genitive = self._row("Zabdyra-Jamroza", 1, ["Zabdyra-Jamroza"])
+        merged, deleted = self._run(
+            [short, full, genitive], [self._link(1354, "Michał Zabdyr-Jamróz", "Michał Zabdyr-Jamróz")])
+
+        assert deleted == [short, genitive]
+        assert full.mention_count == 7
+        assert set(full.variants) >= {"Zabdyr-Jamróz", "Zabdyra-Jamroza"}
+        assert sorted(merged) == [("Zabdyr-Jamróz", "Michał Zabdyr-Jamróz"),
+                                  ("Zabdyra-Jamroza", "Michał Zabdyr-Jamróz")]
+
+    def test_survivor_is_renamed_to_canonical_when_no_row_has_that_name(self):
+        """„Elon muskiem” / „Elona Muska” / „Musk” → jeden chip „Elon Musk”."""
+        a = self._row("Elon muskiem", 1, ["Elonem Muskiem"])
+        b = self._row("Elona Muska", 1, ["Elona Muska"])
+        c = self._row("Musk", 1, ["Musk"])
+        merged, deleted = self._run([a, b, c], [self._link(106, "Elon Musk", "Elon muskiem")])
+
+        assert a.entity_text == "Elon Musk"
+        assert a.mention_count == 3
+        assert {"Elon muskiem", "Elona Muska", "Musk", "Elonem Muskiem"} <= set(a.variants)
+        assert deleted == [b, c]
+
+    def test_ambiguous_surname_is_left_alone(self):
+        donald = self._row("Donald Trump")
+        ivanka = self._row("Ivanka Trump")
+        bare = self._row("Trump", 4)
+        merged, deleted = self._run(
+            [donald, ivanka, bare],
+            [self._link(49, "Donald Trump", "Donald Trump"), self._link(648, "Ivanka Trump", "Ivanka Trump")])
+
+        assert merged == [] and deleted == []
+        assert bare.mention_count == 4
+
+    def test_manual_rows_are_not_folded_away_and_one_row_per_person_is_a_noop(self):
+        full = self._row("Peter Thiel", 2)
+        manual = self._row("Thiel", 1, source="manual")
+        merged, deleted = self._run([full, manual], [self._link(1356, "Peter Thiel", "Peter Thiel")])
+        assert deleted == [] and merged == []
+
+        merged, deleted = self._run([self._row("Nick Land")], [self._link(1355, "Nick Land", "Nick Land")])
+        assert merged == [] and deleted == []
+
+    def test_row_spelled_like_the_canonical_name_wins_even_with_fewer_mentions(self):
+        inflected = self._row("Elon muskiem", 5)
+        exact = self._row("Elon Musk", 1)
+        merged, deleted = self._run([inflected, exact], [self._link(106, "Elon Musk", "Elon Musk")])
+
+        assert deleted == [inflected]
+        assert exact.entity_text == "Elon Musk" and exact.mention_count == 6
 
 
 class TestApproveReviewLink:

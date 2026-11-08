@@ -242,6 +242,62 @@ def _link(session, document_id: int, person: Person, raw_mention: str, confidenc
     return True
 
 
+def merge_entities_of_same_person(session, document_id: int) -> list[tuple[str, str]]:
+    """Fold the persName entity rows of one document that resolve to the same person into one row.
+
+    NER gives a separate row per lemma ("Michał Zabdyr-Jamróz", "Zabdyr-Jamróz", "Zabdyra-Jamroza"), so one
+    person showed up as several chips. Rows are grouped by the person they resolve to (the link whose
+    ``raw_mention`` is the row's text, else an unambiguous name match — the same rule the entity view uses).
+    In a group of two or more the row spelled like the canonical name survives (else the most mentioned
+    one, renamed to the canonical name unless that would collide); the others fold into it — counts are
+    summed, their texts and spellings become variants, so highlighting keeps working. ``source='manual'``
+    rows are never folded away. Idempotent: a merged document has one row per person. Returns
+    ``[(folded text, surviving text)]``; the caller owns the transaction.
+    """
+    from library.entity_service import merge_document_entities
+
+    entities = (
+        session.query(DocumentEntity)
+        .filter(DocumentEntity.document_id == document_id, DocumentEntity.entity_type == "persName")
+        .all()
+    )
+    links = get_document_persons(session, document_id)
+    link_by_mention = {link["raw_mention"].casefold(): link for link in links}
+
+    groups: dict[int, list[DocumentEntity]] = {}
+    for entity in entities:
+        link = link_by_mention.get(entity.entity_text.casefold()) or person_link_for_mention(
+            entity.entity_text, entity.variants, links)
+        if link is not None:
+            groups.setdefault(link["person_id"], []).append(entity)
+
+    canonical_by_person = {link["person_id"]: link["canonical_name"] for link in links}
+    taken_texts = {entity.entity_text.casefold() for entity in entities}
+    merged: list[tuple[str, str]] = []
+    for person_id, group in groups.items():
+        if len(group) < 2:
+            continue
+        canonical = canonical_by_person[person_id]
+        target = next((e for e in group if e.entity_text.casefold() == canonical.casefold()), None)
+        if target is None:
+            target = max(group, key=lambda e: ((e.mention_count or 0), len(e.entity_text)))
+            if target.source != "manual" and canonical.casefold() not in taken_texts:
+                old_text = target.entity_text
+                taken_texts.discard(old_text.casefold())
+                taken_texts.add(canonical.casefold())
+                target.variants = list(dict.fromkeys([old_text, *(target.variants or [])]))
+                target.entity_text = canonical
+        for source in group:
+            if source is target or source.source == "manual":
+                continue
+            merge_document_entities(source, target, target_source=target.source)
+            merged.append((source.entity_text, target.entity_text))
+            session.delete(source)
+    if merged:
+        session.flush()
+    return merged
+
+
 def resolve_document_persons(
     session, doc, text: str, progress_callback=None, only_names: list[str] | None = None,
 ) -> dict:
@@ -369,8 +425,21 @@ def resolve_document_persons(
                 linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
                 document_people.append(person)
 
-        logger.info("person resolution doc=%s: linked=%d skipped=%d", doc.id, len(linked), len(skipped))
-        return {"linked": linked, "skipped": skipped}
+        # One chip per person: fold the rows of the same person. Cosmetic, so a failure only rolls back
+        # its own savepoint and never costs the links made above. A single converted mention
+        # (only_names) leaves the rest of the document alone.
+        merged: list[tuple[str, str]] = []
+        if only_names is None:
+            try:
+                with session.begin_nested():
+                    merged = merge_entities_of_same_person(session, doc.id)
+            except Exception:
+                logger.exception("merging entities of the same person failed for document %s", doc.id)
+                merged = []
+
+        logger.info("person resolution doc=%s: linked=%d skipped=%d merged=%d",
+                    doc.id, len(linked), len(skipped), len(merged))
+        return {"linked": linked, "skipped": skipped, "merged": merged}
 
 
 def list_manual_review(session) -> list[dict]:
