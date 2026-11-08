@@ -96,6 +96,8 @@ def _candidate_payloads(text: str, groups: dict) -> list[dict]:
     for (entity_type, entity_text), group in groups.items():
         if entity_type != "persName" or len(entity_text.split()) != 1:
             continue
+        if group.get("pseudonym"):
+            continue  # backed by an explicit cue ("ps. „X”"), not a guess to be second-guessed by the model
         terms = list(dict.fromkeys([*group.get("variants", []), entity_text]))
         snippets = _snippets(text, terms)
         if snippets:

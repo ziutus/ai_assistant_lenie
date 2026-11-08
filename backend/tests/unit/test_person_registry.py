@@ -137,6 +137,14 @@ class TestMatchesPersonName:
 
 
 class TestFindDocumentPerson:
+    def test_exact_alias_and_ambiguity(self):
+        person = Person(id=1, canonical_name="Andrij Osipow", aliases=[PersonAlias(alias="Kryminał")])
+        other = Person(id=2, canonical_name="Jan Nowak", aliases=[PersonAlias(alias="Kryminał")])
+        assert find_document_person("KRYMINAŁ", [person]) is person
+        assert find_document_person("Kryminal", [person]) is None
+        assert find_document_person("Kryminałowi", [person]) is None
+        assert find_document_person("Kryminał", [person, other]) is None
+
     def test_unique_match(self):
         musk = _person(person_id=1, name="Elon Musk")
         trump = _person(person_id=2, name="Donald Trump")
@@ -156,6 +164,24 @@ class TestFindDocumentPerson:
 
 
 class TestPersonLinkForMention:
+    def test_document_links_include_alias_texts(self):
+        from library.person_registry import get_document_persons
+
+        person = Person(id=1, canonical_name="Andrij Osipow", aliases=[PersonAlias(alias="Kryminał")])
+        link = DocumentPerson(id=1, document_id=42, person_id=1, person=person,
+                              raw_mention="Andrij Osipow", confidence=CONFIDENCE_ALIAS)
+        session = MagicMock()
+        session.query.return_value.filter.return_value.all.return_value = [link]
+        assert get_document_persons(session, 42)[0]["aliases"] == ["Kryminał"]
+
+    def test_aliases(self):
+        link = {**self._link(1, "Andrij Osipow"), "aliases": ["Kryminał"]}
+        assert person_link_for_mention("KRYMINAŁ", [], [link]) is link
+        assert person_link_for_mention("Kryminałowi", [], [link]) is None
+        assert person_link_for_mention("unknown", ["Kryminał"], [link]) is link
+        other = {**self._link(2, "Jan Nowak"), "aliases": ["Kryminał"]}
+        assert person_link_for_mention("Kryminał", [], [link, other]) is None
+
     @staticmethod
     def _link(person_id, name):
         return {"link_id": person_id * 10, "person_id": person_id, "canonical_name": name,
@@ -177,6 +203,16 @@ class TestPersonLinkForMention:
 
 
 class TestMergeEntitiesOfSamePerson:
+    def test_pseudonym_folds_into_full_name(self):
+        full = self._row("Andrij Osipow", 2)
+        nickname = self._row("Kryminał", 3)
+        link = {**self._link(1, "Andrij Osipow", "Andrij Osipow"), "aliases": ["Kryminał"]}
+        merged, deleted = self._run([full, nickname], [link])
+        assert merged == [("Kryminał", "Andrij Osipow")]
+        assert deleted == [nickname]
+        assert full.mention_count == 5
+        assert "Kryminał" in full.variants
+
     @staticmethod
     def _row(text, count=1, variants=(), source="ner"):
         from types import SimpleNamespace
@@ -334,6 +370,52 @@ class TestMergeReviewLink:
 
 
 class TestResolveDocumentPersons:
+    @pytest.mark.parametrize("explicit", [True, False])
+    def test_pseudonym_resolves_without_network(self, explicit):
+        person = Person(id=1, canonical_name="Andrij Osipow",
+                        aliases=[] if explicit else [PersonAlias(alias="Kryminał")])
+        session = _session([_entity("Kryminał")])
+        self._with_document_people(session, [person])
+        text = 'Andrija Osipowa, ps. „Kryminał”' if explicit else "Andrij Osipow. Kryminał wrócił."
+        with patch("library.wikidata_client.search_persons") as wd, \
+                patch("library.article_tagging.confirm_person_with_llm") as llm:
+            result = resolve_document_persons(session, _doc(), text, only_names=["Kryminał"])
+        wd.assert_not_called()
+        llm.assert_not_called()
+        assert result["linked"] == [("Kryminał", "Andrij Osipow", CONFIDENCE_ALIAS)]
+        assert [a.alias for a in person.aliases] == ["Kryminał"]
+        if explicit:
+            assert any(isinstance(c.args[0], PersonAlias) for c in session.add.call_args_list)
+
+    def test_pseudonym_after_a_capitalized_sentence_initial_word(self):
+        """„Zginął Andrija Osipowa, ps. „Kryminał””: the detector's name starts with the verb, the person still resolves."""
+        person = Person(id=1, canonical_name="Andrij Osipow", aliases=[])
+        session = _session([_entity("Kryminał")])
+        self._with_document_people(session, [person])
+        with patch("library.wikidata_client.search_persons") as wd:
+            result = resolve_document_persons(session, _doc(), 'Zginął Andrija Osipowa, ps. „Kryminał”',
+                                              only_names=["Kryminał"])
+        wd.assert_not_called()
+        assert result["linked"] == [("Kryminał", "Andrij Osipow", CONFIDENCE_ALIAS)]
+
+    def test_pseudonym_without_document_person_falls_back(self):
+        session = _session([_entity("Kryminał")])
+        self._with_document_people(session, [])
+        with patch("library.wikidata_client.search_persons", return_value=[]) as wd:
+            result = resolve_document_persons(session, _doc(), 'Andrij Osipow ps. "Kryminał"',
+                                              only_names=["Kryminał"])
+        wd.assert_called_once_with("Kryminał")
+        assert result["skipped"] == ["Kryminał"]
+
+    def test_detector_failure_falls_back(self):
+        session = _session([_entity("Kryminał")])
+        self._with_document_people(session, [])
+        with patch("library.pseudonym_detector.detect_pseudonyms", side_effect=RuntimeError), \
+                patch("library.wikidata_client.search_persons", return_value=[]) as wd:
+            result = resolve_document_persons(session, _doc(), "text", only_names=["Kryminał"])
+        wd.assert_called_once_with("Kryminał")
+        assert result["skipped"] == ["Kryminał"]
+
     @staticmethod
     def _with_document_people(session, people):
         """Osoby już powiązane z dokumentem (zapytanie session.query(Person).join(...).filter(...).all())."""
