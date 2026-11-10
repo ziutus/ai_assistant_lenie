@@ -187,6 +187,9 @@ def confirm_person_with_llm(text: str, title: str, mention: str, candidates: lis
 
 
 COUNTRY_AUTO_CONFIRM_MENTIONS = 5
+# Countries whose name is also a common given name (Kuba = Jakub): never confirmed by the mention count
+# alone, they always go through the LLM relevance check.
+COUNTRIES_REQUIRING_CONFIRMATION = frozenset({"Kuba"})
 _COUNTRY_EXCERPT_CHARS = 3000
 
 
@@ -237,13 +240,17 @@ def _extract_countries_from_gazetteer(text: str, title: str, audit: dict | None 
     from library.country_gazetteer import count_country_mentions, mention_snippets
 
     counted = count_country_mentions(f"{title}\n{text}")
-    result = [f"kraj-{c.slug}" for c, count in counted if count >= COUNTRY_AUTO_CONFIRM_MENTIONS]
-    candidates = [c for c, count in counted if count < COUNTRY_AUTO_CONFIRM_MENTIONS]
+
+    def is_auto_confirmed(c, count):
+        return count >= COUNTRY_AUTO_CONFIRM_MENTIONS and c.name_pl not in COUNTRIES_REQUIRING_CONFIRMATION
+
+    result = [f"kraj-{c.slug}" for c, count in counted if is_auto_confirmed(c, count)]
+    candidates = [c for c, count in counted if not is_auto_confirmed(c, count)]
     if audit is not None:
         snippets = mention_snippets(f"{title}\n{text}", [c for c, _ in counted])
         audit["decisions"] = [dict(
             slug=c.slug, name_pl=c.name_pl, mention_count=count,
-            decision="auto_threshold" if count >= COUNTRY_AUTO_CONFIRM_MENTIONS else "llm_rejected",
+            decision="auto_threshold" if is_auto_confirmed(c, count) else "llm_rejected",
             snippets=snippets.get(c.name_pl, []),
         ) for c, count in counted]
     if not candidates:

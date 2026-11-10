@@ -199,7 +199,9 @@ _COUNTRY_DATA: list[tuple[str, tuple[str, ...]]] = [
     ("Nikaragua", ("nikaragu*",)),
     ("Kostaryka", ("kostaryk*",)),
     ("Panama", ("panam*",)),
-    ("Kuba", ("kub*",)),
+    # Exact forms only: kub* matched Kubernetes/kubectl/kubek; kube is deliberately absent
+    # because it is both the folded accusative "Kubę" and the Kubernetes shorthand.
+    ("Kuba", ("kuba", "kuby", "kubie", "kuban*")),
     ("Jamajka", ("jamajk*",)),
     ("Haiti", ("haiti", "haitansk*")),
     ("Dominikana", ("republik* dominikansk*", "dominikansk*", "dominikan*")),
