@@ -313,6 +313,52 @@ def _add_named_events(session, groups, text):
         logger.exception("Failed to detect named events; retaining groups")
 
 
+def _merge_lemma_split_places(groups: dict[tuple[str, str], dict]) -> list[tuple[str, str]]:
+    """Fold a place group into another one that already lists its name as a surface variant.
+
+    spaCy sometimes leaves one inflected mention unlemmatized ("Adenu", "Teksasu", "Mekki"),
+    so it becomes a group of its own next to the properly lemmatized "Aden"/"Teksas"/"Mekka"
+    whose `variants` already contain exactly that spelling. Left alone the split group is
+    geocoded separately and can land on an unrelated village. Only same-type groups are merged;
+    the group with more mentions survives. Returns the keys that were folded away.
+    """
+    removed: list[tuple[str, str]] = []
+    keys = sorted(
+        (key for key in groups if key[0] in {"placeName", "geogName"}),
+        key=lambda key: (groups[key]["count"], key[1]),
+    )
+    for source_key in keys:
+        if source_key in removed:
+            continue
+        name = source_key[1].casefold()
+        target_key = next(
+            (
+                key for key in reversed(keys)
+                if key != source_key and key[0] == source_key[0] and key not in removed
+                and name in {value.casefold() for value in groups[key].get("variants", [])}
+            ),
+            None,
+        )
+        if target_key is None:
+            continue
+        source, target = groups[source_key], groups[target_key]
+        target["count"] += source["count"]
+        known = {value.casefold() for value in target.get("variants", [])}
+        for value in [source_key[1], *source.get("variants", [])]:
+            if value.casefold() not in known and value.casefold() != target_key[1].casefold():
+                target.setdefault("variants", []).append(value)
+                known.add(value.casefold())
+        if source.get("raw_lemmas"):
+            lemmas = target.setdefault("raw_lemmas", [])
+            lemmas.extend(value for value in source["raw_lemmas"] if value not in lemmas)
+        if source.get("country_mentions"):
+            mentions = target.setdefault("country_mentions", Counter())
+            mentions.update(source["country_mentions"])
+        del groups[source_key]
+        removed.append(source_key)
+    return removed
+
+
 def _add_pseudonyms(groups, text):
     """Add explicit pseudonyms as persons, atomically and without external lookups."""
     from copy import deepcopy
@@ -535,6 +581,10 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         from library.ner_corrections import apply_ner_corrections
 
         apply_ner_corrections(session, document_id, groups, getattr(doc, "byline", None))
+
+        folded_places = _merge_lemma_split_places(groups)
+        if folded_places:
+            logger.info("NER place lemma splits folded for doc %s: %s", document_id, [k[1] for k in folded_places])
 
         # spaCy occasionally labels a capitalized common noun as persName. Verify
         # only ambiguous one-word candidates with cheap, batched Bielik calls.
