@@ -827,3 +827,15 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — `COUNTRY_AUTO_CONFIRM_MENTIONS = 5` potwierdza kraj przed filtrem LLM; pozostali kandydaci przechodzą dotychczasowy prompt. Audyt `country_detection_runs` / `country_tag_decisions` zapisuje liczniki, fragmenty, decyzje, pełny prompt i odpowiedź, błędy i identyfikator użycia; dostęp przez `GET /document/<id>/country_detections`.
 - **Test regresyjny:** `test_article_tagging.py::TestCountryDetectionAudit` — Haiti z transkrypcji przy pustej odpowiedzi LLM, granica 4/5, pominięcie LLM i audyt błędów; `test_country_detection_audit.py` — zapis, izolacja awarii, ścieżki wywołań i endpoint.
 - **Status:** kod wdrożony na NAS 2026-11-06 (backend z gałęzi PR #1003, migracja `1f312d5ec5a8`); dane #11237 naprawione ponownym „Wykryj państwa” (`detection_id` 1): dodane Haiti, Kolumbia, Palestyna oraz kraje z pojedynczymi wzmiankami potwierdzone przez LLM (Hiszpania, Dania, Burkina Faso, Kuba, Dominikana, Brazylia, Argentyna). Audyt zapisał pełny prompt (10 327 znaków), surową odpowiedź Bielika i 25 decyzji. Obserwacja: po zawężeniu promptu do kandydatów poniżej progu (17 krajów) model potwierdził 15 z 16 z nich, także przy 1 wzmiance, więc filtr „wyraźnie omawiane” nie odsiewa przelotnych wzmianek; do osobnej decyzji (np. dolna granica wzmianek).
+
+
+### E055 — „do Jerozolimy odeszło 75 osób” (= zginęło) jako miejsce, kolejna forma eufemizmu kanału (dok. #11238, PR n/d, 2026-11-10)
+
+- **Typ encji:** placeName
+- **Kategoria:** T29 — nazwa miejsca w związku frazeologicznym / eufemizmie (klasyfikator kontekstu pomylił się mimo reguły w prompcie)
+- **Zdanie źródłowe:** „…Między innymi na ataki wiem poincji szabła, w którym do Jerozolimy odeszło 75 osób to w Akademii Bezpieczeństwa, a ponad 200 osób zostało rannych.” (transkrypcja YouTube; fragment zniekształcony przez STT, ale sens to „zginęło 75 osób”)
+- **Objaw:** w rozdziale 8 (`/ner/11238/8`) encja `Jerozolima` (id 30038, 1 wzmianka, geocode 14) jako miejsce; Bielik w 6 przebiegach dał `place` / `high`.
+- **Przyczyna źródłowa:** słownik kanału „Na Wschód od Bliskiego Wschodu” (E052) znał tylko formy „odesłać/odsyła/na drogę do Jerozolimy”, a nie „do Jerozolimy odeszło”. Aliasy glosariusza są dosłowne (`fuzzy=false`), więc nowa fraza wymaga nowego aliasu; reguła w prompcie `place_context_classifier` nie wystarcza (E042, E052).
+- **Poprawka:** dane — nowy wpis `ner_channel_glossary` id 16 (kanoniczne „zginąć”, 6 aliasów: „do Jerozolimy odeszło/odeszli/odeszły” i „odeszło/odeszli/odeszły do Jerozolimy”), bo wpis 11 ma już komplet 20 aliasów (limit). Potem `POST /website_entities` (dok. #11238 bez embeddingów, bez 409).
+- **Test regresyjny:** brak — czysto danowa poprawka, wpis w `ner_channel_glossary` dokumentuje przypadek.
+- **Status:** tylko dane bez zmiany kodu. Po odświeżeniu encji `Jerozolima` nie ma, nie ma tagu `miejsce-jerozolima`, `ner_glossary_applications` pokazuje 1 zamianę wpisu 16. Ryzyko: kanał może mieć dalsze formy eufemizmu (np. „odeszli do Jerozolimy” w innym szyku); dopisywać przy kolejnych zgłoszeniach.
