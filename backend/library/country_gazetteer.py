@@ -199,7 +199,9 @@ _COUNTRY_DATA: list[tuple[str, tuple[str, ...]]] = [
     ("Nikaragua", ("nikaragu*",)),
     ("Kostaryka", ("kostaryk*",)),
     ("Panama", ("panam*",)),
-    ("Kuba", ("kub*",)),
+    # Exact forms only: kub* matched Kubernetes/kubectl/kubek; kube is deliberately absent
+    # because it is both the folded accusative "Kubę" and the Kubernetes shorthand.
+    ("Kuba", ("kuba", "kuby", "kubie", "kuban*")),
     ("Jamajka", ("jamajk*",)),
     ("Haiti", ("haiti", "haitansk*")),
     ("Dominikana", ("republik* dominikansk*", "dominikansk*", "dominikan*")),
@@ -253,6 +255,8 @@ class CountryPattern:
     regex: re.Pattern
     fixed_chars: int
     stem_tokens: int
+    # characters before the `*` of the LAST token, None when that token is an exact word
+    last_stem_len: int | None = None
 
     def fullmatch_with_suffix_limit(self, mention: str) -> bool:
         """Match a complete mention while allowing at most 4 chars per stem suffix."""
@@ -273,20 +277,52 @@ def _compile_variant(variant: str) -> CountryPattern:
     parts = []
     fixed_chars = 0
     stem_tokens = 0
+    last_stem_len = None
     for token in variant.split():
         if token.endswith("*"):
             fixed = token[:-1]
             parts.append(r"\b" + re.escape(fixed) + r"\w*")
             fixed_chars += len(fixed)
             stem_tokens += 1
+            last_stem_len = len(fixed)
         else:
             parts.append(r"\b" + re.escape(token) + r"\b")
             fixed_chars += len(token)
+            last_stem_len = None
     return CountryPattern(
         regex=re.compile(r"[\s-]+".join(parts)),
         fixed_chars=fixed_chars,
         stem_tokens=stem_tokens,
+        last_stem_len=last_stem_len,
     )
+
+
+# A stem matches any ending (`\w*`): "afganistan*" catches Afganistanem and afgańskiego, but also
+# "Afganistanopodobny" (a comparison) or "afganistanizacja" (a process) — words ABOUT something
+# else that happen to start with the country's stem. Such a word is not a mention of the country.
+# A length limit on the ending cannot tell them apart (the stems are short: "rosj*" must accept
+# "rosyjskich"), so only these derivational markers, searched in the ending after the stem, count.
+_DERIVED_ENDING = re.compile(r"podobn|izacj|izowa|centryczn")
+
+
+def _is_derived_word(pattern: CountryPattern, matched: str) -> bool:
+    """True when the ending after the pattern's last stem carries a derivational marker."""
+    if pattern.last_stem_len is None:
+        return False
+    last_word = re.split(r"[\s-]+", matched)[-1]
+    return _DERIVED_ENDING.search(last_word[pattern.last_stem_len:]) is not None
+
+
+def _valid_spans(pattern: CountryPattern, text: str, start: int = 0) -> list[tuple[int, int]]:
+    """Spans of `pattern` in a folded text that are real mentions (not derived words).
+
+    The one filter behind detect_countries(), count_country_mentions() and mention_snippets().
+    """
+    return [
+        match.span()
+        for match in pattern.regex.finditer(text, start)
+        if not _is_derived_word(pattern, match.group())
+    ]
 
 
 @lru_cache(maxsize=1)
@@ -427,10 +463,7 @@ def mention_snippets(
     for entry, patterns in _compiled_countries():
         if entry.slug not in wanted:
             continue
-        spans = sorted(
-            span for pattern in patterns for match in pattern.regex.finditer(folded, start)
-            if pattern.fullmatch_with_suffix_limit(match.group()) for span in [match.span()]
-        )
+        spans = sorted(span for pattern in patterns for span in _valid_spans(pattern, folded, start))
         snippets: list[str] = []
         last_end = -1
         for begin, end in spans:
@@ -457,7 +490,7 @@ def detect_countries(text: str) -> list[CountryEntry]:
     found = [
         entry
         for entry, patterns in _compiled_countries()
-        if any(pattern.regex.search(normalized) for pattern in patterns)
+        if any(_valid_spans(pattern, normalized) for pattern in patterns)
     ]
     return sorted(found, key=lambda e: e.name_pl)
 
@@ -467,7 +500,7 @@ def count_country_mentions(text: str) -> list[tuple[CountryEntry, int]]:
     normalized = unidecode(text).lower()
     counted = []
     for entry, patterns in _compiled_countries():
-        total = sum(len(pattern.regex.findall(normalized)) for pattern in patterns)
+        total = sum(len(_valid_spans(pattern, normalized)) for pattern in patterns)
         if total:
             counted.append((entry, total))
     return sorted(counted, key=lambda item: (-item[1], item[0].name_pl))
