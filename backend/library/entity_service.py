@@ -426,6 +426,46 @@ def _apply_country_abbreviations(
             group["variants"].append(abbreviation)
 
 
+def _apply_state_descriptors(
+    groups: dict[tuple[str, str], dict], text: str, title: str, document_id: int,
+) -> None:
+    """Count "królestwo"/"sułtanat"/"księstwo" as a mention of the fitting country named in the same chapter.
+
+    The model must confirm the pair (see library/state_descriptor_countries.py); the descriptor
+    stays a surface form of the country's `placeName` group, and the mentions are taken away from a
+    NER group of the same spelling ("Królestwo" typed as organization or place). Fails open.
+    """
+    from library.state_descriptor_countries import confirmed_state_descriptors
+
+    try:
+        confirmed = confirmed_state_descriptors(text, title, document_id)
+    except Exception:  # noqa: BLE001 — a classifier failure must never fail the entity refresh
+        logger.warning("State descriptor step failed for document %s", document_id, exc_info=True)
+        return
+    for country, info in confirmed.items():
+        remaining = info["count"]
+        for key in [key for key in groups if key[0] in {"orgName", "placeName", "geogName"}
+                    and key[1].casefold() in {variant.casefold() for variant in info["variants"]}]:
+            taken = min(remaining, groups[key]["count"])
+            groups[key]["count"] -= taken
+            if groups[key]["count"] <= 0:
+                del groups[key]
+        existing_key = next(
+            (key for key in groups if key[0] in {"placeName", "geogName"} and key[1].casefold() == country.casefold()),
+            None,
+        )
+        if existing_key is None:
+            groups[("placeName", country)] = {
+                "count": info["count"], "variants": list(info["variants"]), "raw_lemmas": [country],
+            }
+            continue
+        group = groups[existing_key]
+        group["count"] += info["count"]
+        for variant in info["variants"]:
+            if variant not in group["variants"]:
+                group["variants"].append(variant)
+
+
 def refresh_document_entities(session, document_id: int, text: str) -> list[DocumentEntity]:
     """Run NER on text and replace the document's rows in document_entities.
 
@@ -505,6 +545,8 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
         # country only when a contextual LLM check confirms it.
         _apply_country_abbreviations(groups, text, getattr(doc, "title", None) or "", document_id)
+        # "Królestwo" after "Arabia Saudyjska" in the same chapter is that country (model-confirmed).
+        _apply_state_descriptors(groups, text, getattr(doc, "title", None) or "", document_id)
 
         merged_orgs = merge_compound_org_names(
             strip_content_markers(strip_markdown_emphasis(text)), groups,
