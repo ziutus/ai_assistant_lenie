@@ -71,6 +71,10 @@ class TestCanonicalCityName:
     def test_carolina_states_doc_11237(self, mention, canonical):
         assert city_gazetteer.canonical_city_name(mention) == canonical
 
+    @pytest.mark.parametrize("mention", ["Texas", "Texasu", "Teksas", "Teksasie", "Teksasu"])
+    def test_texas_english_and_polish_spelling_doc_11238(self, mention):
+        assert city_gazetteer.canonical_city_name(mention) == "Teksas"
+
     @pytest.mark.parametrize("mention", ["Karolina Kowalska", "Karolina", "w Karolinie Północnej"])
     def test_carolina_requires_a_complete_state_name(self, mention):
         assert city_gazetteer.canonical_city_name(mention) is None

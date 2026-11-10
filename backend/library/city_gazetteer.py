@@ -66,6 +66,9 @@ _CITY_DATA: list[tuple[str, tuple[str, ...]]] = [
     ("Luizjana", ("luizjan*", "luisian*")),
     # doc #11237: spaCy tags these US states as persName with mangled adjective
     # lemmas, or keeps the locative form that sends the geocoder to a street.
+    # doc #11238: the English spelling "Texas" was tagged orgName (a new, empty organization),
+    # while the Polish "Teksas" is a placeName; both name the US state.
+    ("Teksas", ("teksas*", "texas*")),
     ("Karolina Północna", ("karolin* polnocn*",)),
     ("Karolina Południowa", ("karolin* poludniow*",)),
     # doc #10872: the Polish name of the city; a capitalized "Królewiec" that spaCy
