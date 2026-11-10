@@ -3,10 +3,27 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import type React from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import EntitiesPanel, { EntityChips } from "./entitiesPanel";
+import EntitiesPanel, { EntityChips, placeMentionMenu } from "./entitiesPanel";
 
 vi.mock("axios");
 afterEach(cleanup);
+
+describe("placeMentionMenu", () => {
+  it("opens below the click point when the menu fits", () => {
+    expect(placeMentionMenu(100, 300, 800)).toEqual({ top: 100, maxHeight: 692 });
+  });
+  it("opens upwards near the bottom edge so the whole menu stays on screen", () => {
+    const placed = placeMentionMenu(750, 400, 800);
+    expect(placed.top).toBe(350);
+    expect(placed.top + 400).toBeLessThanOrEqual(800 - 8);
+  });
+  it("scrolls inside the window when it fits nowhere", () => {
+    const placed = placeMentionMenu(300, 2000, 600);
+    expect(placed.maxHeight).toBeLessThanOrEqual(600 - 16);
+    expect(placed.top).toBeGreaterThanOrEqual(8);
+  });
+});
+
 const place = { id: 7, text: "Jemenu Północnego", count: 2 };
 beforeEach(() => {
   vi.resetAllMocks();

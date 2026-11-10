@@ -176,6 +176,17 @@ const chipActionStyle: React.CSSProperties = {
   lineHeight: 1,
 };
 
+// Vertical placement of a floating menu opened at `y`: below the point when it fits, otherwise above
+// when there is more room there; `maxHeight` makes it scroll instead of leaving the window.
+export function placeMentionMenu(y: number, contentHeight: number, viewportHeight: number): { top: number; maxHeight: number } {
+  const margin = 8;
+  const below = viewportHeight - y - margin;
+  const above = y - margin;
+  if (contentHeight <= below || below >= above) return { top: Math.max(margin, y), maxHeight: Math.max(below, 80) };
+  const height = Math.min(contentHeight, above);
+  return { top: Math.max(margin, y - height), maxHeight: above };
+}
+
 interface MenuEntry {
   label: string;
   action?: () => void;
@@ -677,6 +688,16 @@ const EntitiesPanel = ({
   // Floating action menu of a mention clicked in the host's text (see the mentionMenu prop).
   const [openMentionSub, setOpenMentionSub] = React.useState<string | null>(null);
   const mentionMenuRef = React.useRef<HTMLDivElement>(null);
+  // Real placement of that menu: measured from its content so it never runs off the bottom of the
+  // window (a mention at the end of a long text is clicked near the bottom edge); it opens upwards
+  // when there is more room above and scrolls inside when it fits nowhere.
+  const [mentionPlace, setMentionPlace] = React.useState<{ top: number; maxHeight: number } | null>(null);
+  React.useLayoutEffect(() => {
+    const el = mentionMenuRef.current;
+    if (!mentionMenu || !el) { setMentionPlace(null); return; }
+    const place = placeMentionMenu(mentionMenu.y, el.scrollHeight + 2, window.innerHeight);
+    setMentionPlace((prev) => (prev && prev.top === place.top && prev.maxHeight === place.maxHeight ? prev : place));
+  }, [mentionMenu, openMentionSub]);
   React.useEffect(() => {
     if (!mentionMenu) return;
     setOpenMentionSub(null);
@@ -2095,11 +2116,11 @@ const EntitiesPanel = ({
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
       {mentionMenu && mentionEntries.length > 0 && (
         <div role="menu" ref={mentionMenuRef} aria-label={`Działania: ${mentionMenu.item.text}`}
-          style={{ position: "fixed", zIndex: 30, minWidth: 230, maxWidth: "calc(100vw - 16px)", maxHeight: "70vh",
+          style={{ position: "fixed", zIndex: 30, minWidth: 230, maxWidth: "calc(100vw - 16px)", maxHeight: mentionPlace?.maxHeight ?? "70vh",
             overflowY: "auto", padding: 4, background: "white", border: "1px solid #b9c8de", borderRadius: 6,
             boxShadow: "0 2px 8px #0003",
             left: Math.max(8, Math.min(mentionMenu.x, window.innerWidth - 250)),
-            top: Math.max(8, Math.min(mentionMenu.y, window.innerHeight - 320)) }}>
+            top: mentionPlace?.top ?? Math.max(8, mentionMenu.y) }}>
           <div style={{ padding: "2px 8px", fontSize: "0.8em", color: "#667" }}>{mentionMenu.item.text}</div>
           {mentionEntries.map((entry) => {
             if (entry.to) {
