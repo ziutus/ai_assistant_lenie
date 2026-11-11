@@ -9,6 +9,7 @@ import ChapterEventsPanel, { ChapterEventsDetectButton } from "../components/Cha
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
 import ToneSpansPanel, { useToneSpans } from "../components/ToneSpansPanel/toneSpansPanel";
+import { type GlossaryInfo, glossaryHint, glossarySwaps, GLOSSARY_UNDERLINE } from "../utils/channelGlossary";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistryDialog";
@@ -141,11 +142,6 @@ const chapterTitle = (section: Section) => (section.is_preamble || section.posit
   ? "Wstęp (przed pierwszym rozdziałem)"
   : `#${section.position} ${section.title}`);
 
-type GlossaryInfo = {
-  author: string | null;
-  entries: { id: number; canonical_name: string; aliases: string[]; fuzzy: boolean }[];
-  applications: { original_text: string; replacement_text: string; occurrences: number }[];
-};
 
 // Occurrences of a glossary phrase in a chapter's sentences, counted with the same matcher that draws the
 // highlight (whole tokens, case-insensitive). The stored text is never changed (the repair is applied to a copy
@@ -157,8 +153,9 @@ const countPhrase = (sentences: { text: string }[] | undefined, phrase: string) 
 // Same look as the other per-chapter blocks (bold label + indented list with a coloured left rule, as in
 // "Wydarzenia z datą w rozdziale"). One phrase per line, each with a button that marks it in the text; the active
 // phrase is also kept in the page address (`?glossary=`) so the highlighted view can be copied and shown.
-const ChapterGlossary = ({ glossary, section, active, onHighlight }: {
+const ChapterGlossary = ({ glossary, section, active, onHighlight, showOriginal, onShowOriginal }: {
   glossary: GlossaryInfo; section: Section; active: string | null; onHighlight: (phrase: string | null) => void;
+  showOriginal: boolean; onShowOriginal: (value: boolean) => void;
 }) => {
   if (!glossary.author) return null;
   const used = glossary.applications
@@ -186,6 +183,10 @@ const ChapterGlossary = ({ glossary, section, active, onHighlight }: {
                   </li>
                 ))}
               </ul>}
+        <label style={{ display: "block", marginTop: 4 }}>
+          <input type="checkbox" checked={showOriginal} onChange={(event) => onShowOriginal(event.target.checked)} />
+          {" "}Pokaż oryginalny tekst (bez podmiany ze słownika)
+        </label>
         {glossary.entries.length > 0 && (
           <details style={{ marginTop: 2, fontSize: "0.9em" }}>
             <summary>Nazwy w słowniku ({glossary.entries.length})</summary>
@@ -253,6 +254,18 @@ const NerChapters = () => {
 
   // The channel's name glossary (speech-to-text repairs applied before NER) and what it changed here.
   const [glossary, setGlossary] = React.useState<GlossaryInfo | null>(null);
+  // The text shows the glossary name instead of the author's wording; this switch brings the original back.
+  const [showOriginal, setShowOriginal] = React.useState(false);
+  const glossaryHighlights = React.useMemo(() => {
+    if (!glossary || showOriginal) return { entries: [] as HighlightEntry[], hints: new Map<string, { canonical: string; hint: string }>() };
+    const hints = new Map<string, { canonical: string; hint: string }>();
+    const entries = glossarySwaps(glossary).map((swap) => {
+      const hint = glossaryHint(glossary, swap, doc?.document_type);
+      hints.set(swap.original.toLowerCase(), { canonical: swap.canonical, hint });
+      return { kind: "glossary" as const, label: swap.canonical, variants: [swap.original], hint, substitute: swap.canonical };
+    });
+    return { entries, hints };
+  }, [glossary, showOriginal, doc?.document_type]);
   React.useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -761,11 +774,17 @@ const NerChapters = () => {
                             <span>
                               {splitByEntities(sentence.text, [
                                 ...(focus ? [{ kind: focus.kind, label: focus.label, variants: focus.variants }] : []),
-                                ...highlightEntries(entities), ...countryHighlights,
+                                ...highlightEntries(entities), ...countryHighlights, ...glossaryHighlights.entries,
                               ]).map((segment, index) => {
                                 if (!segment.kind) return <React.Fragment key={index}>{segment.text}</React.Fragment>;
+                                // Glossary wording is shown as the glossary name (also inside an entity chip).
+                                const swapped = glossaryHighlights.hints.get(segment.text.toLowerCase());
                                 const focused = focus !== null && segment.kind === focus.kind && segment.label === focus.label;
-                                return <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})${segment.hint ? ` — ${segment.hint}` : ""}`}
+                                const title = [
+                                  segment.substitute ? "" : `${segment.label} (${KIND_LABELS[segment.kind]})${segment.hint ? ` — ${segment.hint}` : ""}`,
+                                  swapped?.hint ?? "",
+                                ].filter(Boolean).join(" — ");
+                                return <mark key={index} title={title}
                                   {...(focused ? { "data-focus-mark": "" } : {})}
                                   {...(segment.kind === "event"
                                     ? { onContextMenu: describeFromText(entities.eventName?.find((item) => itemName(item) === segment.label)) }
@@ -773,8 +792,9 @@ const NerChapters = () => {
                                   style={{
                                     cursor: segment.kind === "event" || segment.kind === "product" || segment.kind === "concept" || segment.kind === "glossary" ? undefined : "pointer",
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
+                                    ...(swapped && segment.kind !== "glossary" ? { borderBottom: GLOSSARY_UNDERLINE } : {}),
                                     ...(focused ? { outline: "2px solid #d97706" } : {}),
-                                  }}>{segment.text}</mark>;
+                                  }}>{swapped ? swapped.canonical : segment.text}</mark>;
                               })}{" "}
                             </span>
                             </React.Fragment>
@@ -822,7 +842,8 @@ const NerChapters = () => {
                             </div>
                           )}
                           {glossary && <ChapterGlossary glossary={glossary} section={section}
-                            active={glossaryPhrase} onHighlight={highlightGlossary} />}
+                            active={glossaryPhrase} onHighlight={highlightGlossary}
+                            showOriginal={showOriginal} onShowOriginal={setShowOriginal} />}
                           {loadingEntities && <small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
                           {!loadingEntities && count === 0 && entityData?.has_entities !== false && (
                             <small style={{ color: "#64748b" }}>Brak encji w tym rozdziale.</small>

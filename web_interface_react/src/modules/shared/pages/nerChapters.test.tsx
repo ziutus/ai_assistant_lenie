@@ -382,13 +382,29 @@ const glossaryApi = { "/ner_channel_glossary/applications": {
   applications: [{ original_text: "w Kijowie", replacement_text: "Kyiv", occurrences: 3 }],
 } };
 
+it("shows the glossary name in the text with a tooltip naming the original, and can show the original", async () => {
+  mockApi({
+    "/website_get": { title: "Film testowy", document_type: "youtube", byline: "Kanał" },
+    ...glossaryApi,
+  });
+  await open();
+  const note = await within(screen.getByRole("region", { name: "#1 Wstęp" })).findByRole("note", { name: "Słownik kanału" });
+  await waitFor(() => expect(sentenceBlock().textContent).not.toContain("w Kijowie"));
+  const mark = Array.from(sentenceBlock().querySelectorAll("mark")).find((node) => node.textContent === "Kyiv") as HTMLElement;
+  expect(mark).toBeTruthy();
+  expect(mark.title).toContain("Ze słownika kanału „Kanał”");
+  expect(mark.title).toContain("w tekście stoi „w Kijowie”, czytane jako „Kyiv”");
+  fireEvent.click(within(note).getByLabelText(/Pokaż oryginalny tekst/));
+  await waitFor(() => expect(sentenceBlock().textContent).toContain("w Kijowie"));
+});
+
 it("highlights a glossary phrase in the text from its button and keeps it in the address", async () => {
   mockApi(glossaryApi);
   await open();
   const note = await within(screen.getByRole("region", { name: "#1 Wstęp" })).findByRole("note", { name: "Słownik kanału" });
   expect(sentenceBlock().querySelector("mark[data-focus-mark]")).toBeNull();
   fireEvent.click(within(note).getByRole("button", { name: /Podświetl/ }));
-  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("Kyiv"));
   expect(screen.getByRole("status").textContent).toContain("w Kijowie");
   fireEvent.click(within(note).getByRole("button", { name: /Wyczyść/ }));
   await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")).toBeNull());
@@ -398,7 +414,7 @@ it("restores the glossary highlight from the address", async () => {
   mockApi(glossaryApi);
   render(<MemoryRouter initialEntries={["/ner/42?glossary=w%20Kijowie"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
   await screen.findByRole("region", { name: "#1 Wstęp" });
-  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("Kyiv"));
 });
 
 it("hides the document-wide countries row on a single chapter but not on the whole-document view", async () => {
@@ -481,6 +497,53 @@ it("fixes a single word in this document only: no rule is stored", async () => {
   ));
   expect(axios.post).not.toHaveBeenCalledWith("/transcript_corrections", expect.anything(), expect.anything());
   expect(await screen.findByText(/Poprawiono „Hutni” → „Huti”/)).toBeTruthy();
+});
+
+it("puts Kopiuj first in the selection menu", async () => {
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Rzymianie" } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  expect(screen.getAllByRole("menuitem")[0].textContent).toBe("📋 Kopiuj");
+});
+
+it("adds the selected spelling to the channel glossary", async () => {
+  mockApi({ "/website_get": { title: "Film testowy", document_type: "youtube", byline: "Kanał X" } });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Rzymianie" } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  const menu = screen.getByRole("menu", { name: "Dodaj encję z zaznaczenia" });
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "📖 Do słownika kanału" }));
+  fireEvent.change(within(menu).getByLabelText("Nazwa w słowniku"), { target: { value: "Żydzi" } });
+  fireEvent.click(within(menu).getByRole("button", { name: "📖 Dodaj do słownika" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    "/ner_channel_glossary",
+    { author: "Kanał X", canonical_name: "Żydzi", aliases: ["Rzymianie"], fuzzy: false },
+    { headers: { "x-api-key": "test-key" } },
+  ));
+  expect(await screen.findByText(/Dodano do słownika kanału „Kanał X”: „Rzymianie” → „Żydzi”/)).toBeTruthy();
+});
+
+it("appends a second spelling to the existing glossary entry", async () => {
+  mockApi({
+    "/website_get": { title: "Film testowy", document_type: "youtube", byline: "Kanał X" },
+    "/ner_channel_glossary": { entries: [{ id: 7, canonical_name: "Żydzi", aliases: ["Rzymianie"], fuzzy: false }] },
+  });
+  vi.mocked(axios.post).mockRejectedValue(Object.assign(new Error("409"), {
+    isAxiosError: true, response: { status: 409, data: {} },
+  }));
+  vi.mocked(axios.isAxiosError).mockReturnValue(true);
+  vi.mocked(axios.patch).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Rzymian" } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  const menu = screen.getByRole("menu", { name: "Dodaj encję z zaznaczenia" });
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "📖 Do słownika kanału" }));
+  fireEvent.change(within(menu).getByLabelText("Nazwa w słowniku"), { target: { value: "żydzi" } });
+  fireEvent.click(within(menu).getByRole("button", { name: "📖 Dodaj do słownika" }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    "/ner_channel_glossary/7", { aliases: ["Rzymianie", "Rzymian"] }, { headers: { "x-api-key": "test-key" } },
+  ));
 });
 
 it("copies the selected fragment from the context menu", async () => {
