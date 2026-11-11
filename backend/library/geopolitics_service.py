@@ -58,27 +58,10 @@ AXES: dict[str, dict] = {
         },
     },
 }
-# Dictionaries (tables geo_event_roles / geo_event_kinds, seeded by migration c7e2b5a9d814); kept in step by a test.
+# Roles are mirrored from the geo_event_roles table (kept in step by a test). The event KINDS are not mirrored
+# anywhere in code: they live only in geo_event_kinds (library/geo_event_kind_store.py).
 ROLES = ("actor", "target", "affected", "location", "host", "organizer", "winner", "subject")
 PERSON_FORBIDDEN_ROLES = ("location",)
-EVENT_KINDS = (
-    "election",
-    "summit",
-    "diplomatic",
-    "agreement",
-    "sanctions",
-    "conflict",
-    "exercise",
-    "protest",
-    "disaster",
-    "health",
-    "outage",
-    "cyber",
-    "product_launch",
-    "corporate",
-    "market",
-    "other",
-)
 PARTICIPANT_TYPES = ("country", "organization", "person")
 DATE_PRECISIONS = ("day", "month", "year")
 STATUSES = ("proposed", "confirmed", "rejected")
@@ -230,9 +213,12 @@ def resolve_country(session, ref) -> Country:
 # --- events ------------------------------------------------------------------
 
 
-def validate_kind(kind) -> str:
-    if kind not in EVENT_KINDS:
-        raise GeopoliticsError(f"kind must be one of: {', '.join(EVENT_KINDS)}")
+def validate_kind(kind, session=None) -> str:
+    from library.geo_event_kind_store import kind_codes
+
+    codes = kind_codes(session)
+    if kind not in codes:
+        raise GeopoliticsError(f"kind must be one of: {', '.join(codes)}")
     return kind
 
 
@@ -351,7 +337,7 @@ def create_event(
         raise GeopoliticsError("title is required")
     if status not in STATUSES:
         raise GeopoliticsError("invalid status")
-    kind = validate_kind(kind)
+    kind = validate_kind(kind, session)
     date_value, precision = parse_optional_date(event_date)
     if date_precision and date_value is not None:
         if date_precision not in DATE_PRECISIONS:
@@ -434,7 +420,7 @@ def update_event(session, event: GeoEvent, *, expected_version: int | None = Non
     if "description" in changes:
         event.description = normalize_text(changes["description"]) or None
     if "kind" in changes:
-        event.kind = validate_kind(changes["kind"])
+        event.kind = validate_kind(changes["kind"], session)
     if "event_date" in changes:
         event.event_date, event.date_precision = parse_optional_date(changes["event_date"])
     if "event_date_end" in changes:
@@ -642,7 +628,7 @@ def list_events(
             raise GeopoliticsError("invalid status")
         query = query.where(GeoEvent.status == status)
     if kind:
-        query = query.where(GeoEvent.kind == validate_kind(kind))
+        query = query.where(GeoEvent.kind == validate_kind(kind, session))
     if country_id is not None:
         query = query.where(
             GeoEvent.id.in_(select(GeoEventParticipant.event_id).where(GeoEventParticipant.country_id == country_id))

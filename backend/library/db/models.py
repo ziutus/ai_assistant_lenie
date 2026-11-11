@@ -4727,6 +4727,7 @@ class GeoEventKind(Base):
 
     code: Mapped[str] = mapped_column(String(30), primary_key=True)
     label: Mapped[str] = mapped_column(String(80), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100", default=100)
 
 
 class GeoEventRole(Base):
