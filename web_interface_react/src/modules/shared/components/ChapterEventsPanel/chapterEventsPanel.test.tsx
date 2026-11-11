@@ -21,7 +21,7 @@ it("loads saved proposals of the chapter when opened", async () => {
 
   expect(await screen.findByText(/Atak na Polskę/)).toBeTruthy();
   expect(mocked.get).toHaveBeenCalledWith(
-    "http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2 } }),
+    "http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2, include_ignored: 1 } }),
   );
 });
 
@@ -155,7 +155,7 @@ it("is always expanded: loads the chapter's proposals on its own, with a bold la
   const label = screen.getByText(/^Wydarzenia z datą w rozdziale \(1\):$/);
   expect(label.tagName).toBe("STRONG");
   expect(screen.queryByRole("button", { name: /Wydarzenia z datą w rozdziale/ })).toBeNull();
-  expect(mocked.get).toHaveBeenCalledWith("http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2 } }));
+  expect(mocked.get).toHaveBeenCalledWith("http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2, include_ignored: 1 } }));
 });
 
 it("runs the detection when the host bumps detectSignal and has no button of its own then", async () => {
@@ -174,6 +174,109 @@ it("runs the detection when the host bumps detectSignal and has no button of its
   expect(mocked.post.mock.calls[0][0]).toBe("http://api/document/5/chapter/2/detect_events");
   expect(onBusyChange).toHaveBeenCalledWith(true);
   expect(onBusyChange).toHaveBeenLastCalledWith(false);
+});
+
+const studyProposal = {
+  id: 91, world_events: [], date_text: "2015", event_date: "2015-01-01", event_date_end: "2015-12-31",
+  description: "Badanie Sherry Towers i współautorów na temat efektu zarażania przemocą po masowych atakach.",
+  anchor_quote: "badanie Towers",
+};
+
+it("turns a publication into an information source and removes it from the list", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [studyProposal] } });
+  mocked.post.mockResolvedValue({ data: { status: "success", name: "Towers i in. (2015)", created: true } });
+  render(
+    <MemoryRouter>
+      <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: /To źródło, nie wydarzenie/ }));
+  const name = screen.getByLabelText(/Nazwa źródła/) as HTMLInputElement;
+  expect(name.value.startsWith("Badanie Sherry Towers")).toBe(true);
+  fireEvent.change(name, { target: { value: "Towers i in. (2015)" } });
+  fireEvent.change(screen.getByLabelText(/Rodzaj źródła/), { target: { value: "study" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zamień na źródło" }));
+
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Towers i in. (2015)"));
+  expect(mocked.post).toHaveBeenCalledWith(
+    "http://api/document_events/91/to_information_source",
+    { name: "Towers i in. (2015)", source_type: "study", role: "cited" },
+    expect.anything(),
+  );
+  expect(screen.queryByText(/Badanie Sherry Towers i współautorów/)).toBeNull();
+});
+
+const pirates = {
+  id: 55, world_events: [], date_text: "XIX wieku", event_date: "1801-01-01", event_date_end: "1900-12-31",
+  description: "Okres, w którym używany był symbol piratów.", anchor_quote: "To jest symbol XIX wieku",
+};
+
+it("ignores a proposal that is no event, hides it and lets the reviewer restore it", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [pirates] } });
+  mocked.post.mockResolvedValue({ data: { status: "success", id: 55, ignored: true } });
+  render(
+    <MemoryRouter>
+      <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: /Ignoruj/ }));
+
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Zignorowano"));
+  expect(mocked.post).toHaveBeenCalledWith("http://api/document_events/55/ignore", { ignored: true }, expect.anything());
+  // hidden from the list, listed under "Zignorowane"
+  expect(screen.queryByRole("button", { name: /Ignoruj/ })).toBeNull();
+  expect(screen.getByText(/Zignorowane \(1\)/)).toBeTruthy();
+  expect(screen.getByText(/Brak zapisanych propozycji/)).toBeTruthy();
+
+  mocked.post.mockResolvedValue({ data: { status: "success", id: 55, ignored: false } });
+  fireEvent.click(screen.getByRole("button", { name: /Przywróć/ }));
+
+  await waitFor(() => expect(screen.getByRole("button", { name: /Ignoruj/ })).toBeTruthy());
+  expect(mocked.post).toHaveBeenLastCalledWith("http://api/document_events/55/ignore", { ignored: false }, expect.anything());
+  expect(screen.queryByText(/Zignorowane \(/)).toBeNull();
+});
+
+it("keeps dismissed proposals through a new detection and reports how many fragments it skipped", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [{ ...pirates, ignored: true }] } });
+  mocked.post.mockResolvedValue({
+    data: { events: [proposal], model: "m1", rejected_without_quote: 0, rejected_without_date: 0, skipped_ignored: 1 },
+  });
+  render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
+  await screen.findByText(/Zignorowane \(1\)/);
+
+  fireEvent.click(screen.getByRole("button", { name: /Wykryj wydarzenia/ }));
+
+  await waitFor(() => expect(screen.getByText(/Atak na Polskę/)).toBeTruthy());
+  expect(screen.getByText(/Zignorowane \(1\)/)).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toContain("pominięto 1 zignorowanych");
+});
+
+it("does not offer the source conversion for an entry already in the registry", async () => {
+  mocked.get.mockResolvedValue({
+    data: { events: [{ ...studyProposal, world_events: [{ id: 3, title: "Wydarzenie" }] }] },
+  });
+  render(
+    <MemoryRouter>
+      <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
+    </MemoryRouter>,
+  );
+
+  await screen.findByText(/Badanie Sherry Towers/);
+  expect(screen.queryByRole("button", { name: /To źródło, nie wydarzenie/ })).toBeNull();
+});
+
+it("tells how many publications the detection stored as information sources", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [] } });
+  mocked.post.mockResolvedValue({
+    data: { events: [proposal], model: "m1", rejected_without_quote: 0, rejected_without_date: 0, publications_as_sources: 2 },
+  });
+  render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: /Wykryj wydarzenia/ }));
+
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 publikacji zapisano jako źródła"));
 });
 
 it("exports the detect button for hosts that keep it among their own buttons", () => {
