@@ -1058,8 +1058,8 @@ def person_update(person_id: int):
         from library.wikidata_client import normalize_wikipedia_url
         try:
             wikipedia_url = normalize_wikipedia_url(data['wikipedia_url'])
-        except ValueError as exc:
-            return {"status": "error", "message": str(exc)}, 400
+        except ValueError:
+            return {"status": "error", "message": "Adres Wikipedii ma postać https://pl.wikipedia.org/wiki/Tytuł."}, 400
     aliases = data.get('aliases')
     if aliases is not None and not (isinstance(aliases, list) and all(isinstance(a, str) for a in aliases)):
         return {"status": "error", "message": "Aliasy muszą być listą tekstów."}, 400
@@ -3500,8 +3500,8 @@ def organization_update(organization_id: int):
         from library.wikidata_client import normalize_wikipedia_url
         try:
             wikipedia_url = normalize_wikipedia_url(data['wikipedia_url'])
-        except ValueError as exc:
-            return {"status": "error", "message": str(exc)}, 400
+        except ValueError:
+            return {"status": "error", "message": "Adres Wikipedii ma postać https://pl.wikipedia.org/wiki/Tytuł."}, 400
     rename_result = None
     if 'canonical_name' in data:
         new_name = (data.get('canonical_name') or "").strip()
