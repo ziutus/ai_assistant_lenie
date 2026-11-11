@@ -1,7 +1,8 @@
 """Flask blueprint: the world-events registry views and named-event mention decisions (ADR-034).
 
 Endpoints (x-api-key required via the global before_request; writes are blocked for read_only keys there):
-  GET  /geo_event_kinds, /geo_event_roles            — dictionaries with Polish labels
+  GET  /geo_event_kinds, /geo_event_roles            — dictionaries with Polish labels (kinds: DB table only)
+  POST /geo_event_kinds                              — {code, label, sort_order?}: add a kind, service key
   GET  /world_events?q=&kind=&status=&country=&with_countries=&limit=&offset=
                                                      — canonical events with the documents that mention them
   GET  /world_events/unlinked?q=&limit=&offset=      — named-event mentions not linked to any event, with suggestions
@@ -18,9 +19,10 @@ import logging
 from flask import Blueprint, g, jsonify, request
 
 from library.db.engine import get_scoped_session
+from library.db.models import GeoEventKind
+from library.geo_event_kind_store import bust_cache, check_kind, list_kinds
 from library.geopolitics_service import GeopoliticsError, event_to_dict, resolve_country
 from library.world_events_service import (
-    KIND_LABELS,
     ROLE_LABELS,
     create_event_from_mention,
     find_events_by_name,
@@ -76,7 +78,37 @@ def _flag(name: str) -> bool | None:
 
 @bp.route("/geo_event_kinds", methods=["GET"])
 def get_event_kinds():
-    return jsonify({"status": "success", "kinds": [{"code": c, "label": label} for c, label in KIND_LABELS.items()]})
+    """The kinds come only from the ``geo_event_kinds`` table (offline seed when it cannot be read)."""
+    kinds = list_kinds(get_scoped_session())
+    return jsonify(
+        {"status": "success", "kinds": [{"code": k.code, "label": k.label, "sort_order": k.sort_order} for k in kinds]}
+    )
+
+
+@bp.route("/geo_event_kinds", methods=["POST"])
+def add_event_kind():
+    """Add a kind without a deploy (service key): ``{code, label, sort_order?}``."""
+    if getattr(getattr(g, "auth", None), "kind", None) != "service":
+        return jsonify({"status": "error", "message": "Dodanie typu wydarzenia wymaga klucza service"}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"status": "error", "message": "Wymagany obiekt JSON"}), 400
+    values, problem = check_kind(
+        code=data.get("code"), label=data.get("label"), sort_order=data.get("sort_order", 100)
+    )
+    if problem:
+        return jsonify({"status": "error", "message": problem}), 400
+    session = get_scoped_session()
+    if session.get(GeoEventKind, values["code"]) is not None:
+        return jsonify({"status": "error", "message": "Typ o tym kodzie już istnieje"}), 409
+    try:
+        session.add(GeoEventKind(**values))
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    bust_cache()
+    return jsonify({"status": "success", "kind": values}), 201
 
 
 @bp.route("/geo_event_roles", methods=["GET"])

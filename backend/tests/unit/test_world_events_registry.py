@@ -15,6 +15,7 @@ from flask import Flask
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
+from library import geo_event_kind_store as kind_store
 from library import geopolitics_routes as geo_routes
 from library import geopolitics_service as svc
 from library import world_events_routes as we_routes
@@ -24,6 +25,7 @@ from library.db.models import (
     CountryRelationAssessment,
     CountryRelationEvidence,
     GeoEvent,
+    GeoEventKind,
     GeoEventMentionLink,
 )
 from tests.unit.geo_sqlite_support import (
@@ -107,13 +109,52 @@ def test_dictionaries_match_the_migration_seed():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     later = importlib.util.spec_from_file_location(
-        "terror_kind_migration", path.with_name("e5b8d2f6a173_event_kind_terror_attack.py")
+        "kind_order_migration", path.with_name("e5b8d2f6a173_event_kind_terror_attack.py")
     )
     later_module = importlib.util.module_from_spec(later)
     later.loader.exec_module(later_module)
-    assert {**dict(module._KINDS), later_module._NEW_KIND[0]: later_module._NEW_KIND[1]} == world.KIND_LABELS
+    # The code-side seed (an offline fallback only) must equal what the migrations put in the table.
+    expected = {**dict(module._KINDS), "terror_attack": "Atak terrorystyczny"}
+    assert {k.code: k.label for k in kind_store.SEED_KINDS} == expected
+    assert {k.code: k.sort_order for k in kind_store.SEED_KINDS} == later_module._ORDER
     assert dict(module._ROLES) == world.ROLE_LABELS
-    assert tuple(world.KIND_LABELS) == svc.EVENT_KINDS and tuple(world.ROLE_LABELS) == svc.ROLES
+    assert tuple(world.ROLE_LABELS) == svc.ROLES
+
+
+def test_kinds_are_read_from_the_database_not_from_code(session):
+    session.add(GeoEventKind(code="trial", label="Proces sądowy", sort_order=55))
+    session.commit()
+    assert "trial" not in [k.code for k in kind_store.SEED_KINDS]
+    assert svc.validate_kind("trial", session) == "trial"
+    assert [k.code for k in kind_store.list_kinds(session)].index("trial") == 5  # ordered by sort_order (55): after sanctions, before conflict
+    with pytest.raises(svc.GeopoliticsError):
+        svc.validate_kind("nonexistent", session)
+    assert make(session, "Proces X", kind="trial").kind == "trial"
+
+
+def test_adding_a_kind_over_http_needs_a_service_key(session, monkeypatch):
+    monkeypatch.setattr(we_routes, "get_scoped_session", lambda: session)
+    kind_store.bust_cache()
+    app = Flask(__name__)
+    app.register_blueprint(we_routes.bp)
+    auth = {"kind": "user"}
+
+    @app.before_request
+    def _auth():
+        from flask import g
+        from types import SimpleNamespace
+
+        g.auth = SimpleNamespace(kind=auth["kind"])
+
+    http = app.test_client()
+    body = {"code": "trial", "label": "Proces sądowy", "sort_order": 55}
+    assert http.post("/geo_event_kinds", json=body).status_code == 403
+    auth["kind"] = "service"
+    assert http.post("/geo_event_kinds", json={"code": "Bad Code", "label": "x"}).status_code == 400
+    assert http.post("/geo_event_kinds", json=body).status_code == 201
+    assert http.post("/geo_event_kinds", json=body).status_code == 409
+    kinds = http.get("/geo_event_kinds").get_json()["kinds"]
+    assert {"code": "trial", "label": "Proces sądowy", "sort_order": 55} in kinds
 
 
 # --- events without country, without date ----------------------------------------------------------------------
@@ -525,7 +566,8 @@ def test_a_timeline_entry_can_back_an_existing_event_from_another_document(sessi
 
 def test_dictionaries_over_http(client):
     kinds = client.get("/geo_event_kinds").get_json()["kinds"]
-    assert {"code": "election", "label": "Wybory"} in kinds and len(kinds) == 17
+    assert {"code": "election", "label": "Wybory", "sort_order": 10} in kinds and len(kinds) == 17
+    assert {"code": "terror_attack", "label": "Atak terrorystyczny", "sort_order": 65} in kinds
     assert {"code": "host", "label": "gospodarz"} in client.get("/geo_event_roles").get_json()["roles"]
 
 
