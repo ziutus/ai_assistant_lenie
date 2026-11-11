@@ -1736,6 +1736,9 @@ class DocumentEvent(Base):
     sort_year: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     anchor_quote: Mapped[str | None] = mapped_column(Text)
+    # Set when the reader dismissed the proposal ("not an event"): hidden from the list and kept so that a new
+    # detection does not bring the same passage back.
+    ignored_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )

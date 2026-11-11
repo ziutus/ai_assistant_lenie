@@ -931,6 +931,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     source_links = session.scalars(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == document_id,
         DocumentInformationSource.role == "cited",
+        DocumentInformationSource.review_status != "rejected",
     )).all()
     sources_by_name = {}
     for link in source_links:

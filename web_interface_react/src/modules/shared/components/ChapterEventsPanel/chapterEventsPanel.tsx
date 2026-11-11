@@ -4,12 +4,15 @@ import { Link } from "react-router-dom";
 import ChapterModelPicker, { useChapterModel } from "../ChapterModelPicker/chapterModelPicker";
 import RequestErrorDetails from "../RequestErrorDetails/requestErrorDetails";
 import SkillHint from "../SkillHint";
+import { SOURCE_ROLES, SOURCE_TYPES } from "../ChapterSourcesPanel/sourceOptions";
 import { describeRequestError, type RequestErrorInfo } from "../../utils/requestError";
 
 interface RegistryRef { id: number; title: string }
 
 interface EventProposal {
   id?: number;
+  /** The reader dismissed it ("not an event"): hidden from the list, kept so a new detection leaves it out. */
+  ignored?: boolean;
   world_events?: RegistryRef[];
   date_text: string;
   event_date: string | null;
@@ -147,25 +150,6 @@ const PromoteForm = ({ apiUrl, headers, event, onDone, onCancel }: PromoteProps)
   );
 };
 
-const SOURCE_TYPES: { code: string; label: string }[] = [
-  { code: "study", label: "badanie / artykuł naukowy" },
-  { code: "book", label: "książka" },
-  { code: "report", label: "raport" },
-  { code: "institution", label: "instytucja" },
-  { code: "agency", label: "agencja" },
-  { code: "newspaper", label: "gazeta" },
-  { code: "portal", label: "portal" },
-  { code: "database", label: "baza danych" },
-  { code: "other", label: "inne" },
-];
-
-const SOURCE_ROLES: { code: string; label: string }[] = [
-  { code: "cited", label: "cytowane w tekście" },
-  { code: "data_source", label: "źródło danych" },
-  { code: "original_reporting", label: "pierwotne ustalenia" },
-  { code: "republication", label: "przedruk" },
-];
-
 /** First sentence of the wording, cut at a word before 120 characters (the server does the same when no name is sent). */
 export const defaultSourceName = (description: string): string => {
   const text = description.replace(/\s+/g, " ").trim().replace(/\.$/, "");
@@ -270,6 +254,8 @@ interface Props {
   detectSignal?: number;
   /** Tells the host whether a detection is running (to show "Wykrywam…" on its button). */
   onBusyChange?: (busy: boolean) => void;
+  /** Called when the document's information sources changed here (an entry became a source, or a detection stored some). */
+  onSourcesChanged?: () => void;
 }
 
 const DETECT_TITLE = "Model szuka w tym rozdziale wydarzeń z datą; wynik zastępuje wcześniejsze propozycje tego rozdziału";
@@ -288,7 +274,9 @@ export const ChapterEventsDetectButton = ({ onClick, busy }: { onClick: () => vo
  * timeline. Nothing is turned into a named-event entity automatically; a proposal can be promoted by hand to the
  * registry of world events ("➕ Do rejestru wydarzeń", `PromoteForm`).
  */
-const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onBusyChange }: Props) => {
+const ChapterEventsPanel = ({
+  apiUrl, apiKey, docId, position, detectSignal, onBusyChange, onSourcesChanged,
+}: Props) => {
   const headers = React.useMemo(() => ({ "x-api-key": apiKey }), [apiKey]);
   const modelState = useChapterModel(apiUrl, apiKey);
   const [busy, setBusy] = React.useState(false);
@@ -303,6 +291,26 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
     setEvents((current) => (current ?? []).filter((item) => item.id !== eventId));
     setConvertingToSource(null);
     setNote(`Zamieniono na źródło informacji: „${name}”. Wpis zniknął z listy wydarzeń.`);
+    onSourcesChanged?.();
+  };
+
+  // A proposal that is no event ("XIX wieku — okres użycia symbolu piratów"): hidden now and left out by later
+  // detections of this chapter (`POST /document_events/:id/ignore`); restorable from the "Zignorowane" section.
+  const setIgnored = async (item: EventProposal, ignored: boolean) => {
+    if (item.id == null) return;
+    setError(null);
+    const startedAt = Date.now();
+    try {
+      await axios.post(`${apiUrl}/document_events/${item.id}/ignore`, { ignored }, { headers });
+      setEvents((current) => (current ?? []).map((entry) => (entry.id === item.id ? { ...entry, ignored } : entry)));
+      setNote(ignored
+        ? `Zignorowano: „${item.description}”. Kolejne wykrywanie nie pokaże tego fragmentu; cofniesz to w sekcji „Zignorowane”.`
+        : `Przywrócono: „${item.description}”.`);
+    } catch (err) {
+      setError(describeRequestError(err, ignored ? "Ignorowanie wpisu" : "Przywracanie wpisu", {
+        startedAt, context: { wpis: item.id },
+      }));
+    }
   };
 
   const markPromoted = (eventId: number, registry: RegistryRef) => {
@@ -317,7 +325,8 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
   const load = async () => {
     try {
       const { data } = await axios.get<{ events: EventProposal[]; registry_sources?: RegistrySource[] }>(
-        `${apiUrl}/document/${docId}/events`, { headers, params: { chapter_position: position } },
+        `${apiUrl}/document/${docId}/events`,
+        { headers, params: { chapter_position: position, include_ignored: 1 } },
       );
       setEvents(Array.isArray(data?.events) ? data.events : []);
       setRegistrySources(Array.isArray(data?.registry_sources) ? data.registry_sources : []);
@@ -336,14 +345,16 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
     try {
       const { data } = await axios.post<{
         events: EventProposal[]; model: string; rejected_without_quote: number; rejected_without_date: number;
-        publications_as_sources?: number;
+        publications_as_sources?: number; skipped_ignored?: number;
       }>(
         `${apiUrl}/document/${docId}/chapter/${position}/detect_events`,
         modelState.model ? { model: modelState.model } : {},
         { headers, timeout: 240000 },
       );
-      setEvents(data.events);
+      // The new proposals replace the earlier ones of this chapter; dismissed ones are kept (the server leaves them).
+      setEvents((current) => [...(current ?? []).filter((entry) => entry.ignored), ...data.events]);
       const publications = data.publications_as_sources ?? 0;
+      if (publications > 0) onSourcesChanged?.();
       const rejected = data.rejected_without_quote + data.rejected_without_date;
       setNote(`Model ${data.model}: ${data.events.length} wydarzeń`
         + (rejected > 0
@@ -351,6 +362,7 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
         + (publications > 0
           ? `; ${publications} publikacji zapisano jako źródła informacji do potwierdzenia, bo to nie wydarzenia`
           : "")
+        + ((data.skipped_ignored ?? 0) > 0 ? `; pominięto ${data.skipped_ignored} zignorowanych fragmentów` : "")
         + ".");
     } catch (err) {
       setError(describeRequestError(err, `Wykrywanie wydarzeń w rozdziale ${position}`, {
@@ -374,11 +386,14 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
   // Only a change of `busy` is reported (the host usually passes a fresh callback on every render).
   React.useEffect(() => { onBusyChange?.(busy); }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const shown = (events ?? []).filter((entry) => !entry.ignored);
+  const dismissed = (events ?? []).filter((entry) => entry.ignored);
+
   return (
     <div style={{ marginTop: 6 }}>
       {/* Same look as the label of the "Nazwy wydarzeń" chip row. */}
       <strong>
-        Wydarzenia z datą w rozdziale{events && events.length + registrySources.length > 0 ? ` (${events.length + registrySources.length})` : ""}:
+        Wydarzenia z datą w rozdziale{events && shown.length + registrySources.length > 0 ? ` (${shown.length + registrySources.length})` : ""}:
       </strong>
       {(
         <div style={{ marginTop: 6, paddingLeft: 8, borderLeft: "3px solid #fbcfe8" }}>
@@ -400,7 +415,7 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
               <RequestErrorDetails details={error.details} />
             </div>
           )}
-          {events !== null && events.length === 0 && registrySources.length === 0 && !busy && (
+          {events !== null && shown.length === 0 && registrySources.length === 0 && !busy && (
             <small style={{ color: "#64748b" }}>Brak zapisanych propozycji wydarzeń dla tego rozdziału.</small>
           )}
           {registrySources.length > 0 && (
@@ -421,9 +436,9 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
               </ul>
             </div>
           )}
-          {events !== null && events.length > 0 && (
+          {events !== null && shown.length > 0 && (
             <ul style={{ margin: "6px 0", paddingLeft: 18 }}>
-              {events.map((event, index) => (
+              {shown.map((event, index) => (
                 <li key={event.id ?? `${event.date_text}-${index}`} style={{ marginBottom: 4 }}>
                   <strong>{event.date_text}</strong>
                   {event.event_date && (
@@ -464,9 +479,35 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
                       onDone={(name) => markConvertedToSource(event.id as number, name)}
                       onCancel={() => setConvertingToSource(null)} />
                   )}
+                  {event.id != null && (event.world_events ?? []).length === 0 && (
+                    <>
+                      {" "}
+                      <button type="button" onClick={() => void setIgnored(event, true)}
+                        title="To nie jest wydarzenie: ukryj je i nie pokazuj przy kolejnym wykrywaniu tego rozdziału">
+                        🚫 Ignoruj
+                      </button>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
+          )}
+          {dismissed.length > 0 && (
+            <details style={{ margin: "6px 0" }}>
+              <summary style={{ cursor: "pointer", color: "#64748b" }}>Zignorowane ({dismissed.length})</summary>
+              <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
+                {dismissed.map((event) => (
+                  <li key={event.id} style={{ marginBottom: 4, color: "#64748b" }}>
+                    <strong>{event.date_text}</strong>{" — "}{event.description}
+                    {" "}
+                    <button type="button" onClick={() => void setIgnored(event, false)}
+                      title="Pokaż ten wpis z powrotem na liście wydarzeń">
+                      ↺ Przywróć
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </div>
       )}

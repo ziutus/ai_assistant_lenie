@@ -21,7 +21,7 @@ it("loads saved proposals of the chapter when opened", async () => {
 
   expect(await screen.findByText(/Atak na Polskę/)).toBeTruthy();
   expect(mocked.get).toHaveBeenCalledWith(
-    "http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2 } }),
+    "http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2, include_ignored: 1 } }),
   );
 });
 
@@ -154,7 +154,7 @@ it("is always expanded: loads the chapter's proposals on its own, with a bold la
   const label = screen.getByText(/^Wydarzenia z datą w rozdziale \(1\):$/);
   expect(label.tagName).toBe("STRONG");
   expect(screen.queryByRole("button", { name: /Wydarzenia z datą w rozdziale/ })).toBeNull();
-  expect(mocked.get).toHaveBeenCalledWith("http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2 } }));
+  expect(mocked.get).toHaveBeenCalledWith("http://api/document/5/events", expect.objectContaining({ params: { chapter_position: 2, include_ignored: 1 } }));
 });
 
 it("runs the detection when the host bumps detectSignal and has no button of its own then", async () => {
@@ -204,6 +204,52 @@ it("turns a publication into an information source and removes it from the list"
     expect.anything(),
   );
   expect(screen.queryByText(/Badanie Sherry Towers i współautorów/)).toBeNull();
+});
+
+const pirates = {
+  id: 55, world_events: [], date_text: "XIX wieku", event_date: "1801-01-01", event_date_end: "1900-12-31",
+  description: "Okres, w którym używany był symbol piratów.", anchor_quote: "To jest symbol XIX wieku",
+};
+
+it("ignores a proposal that is no event, hides it and lets the reviewer restore it", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [pirates] } });
+  mocked.post.mockResolvedValue({ data: { status: "success", id: 55, ignored: true } });
+  render(
+    <MemoryRouter>
+      <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: /Ignoruj/ }));
+
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Zignorowano"));
+  expect(mocked.post).toHaveBeenCalledWith("http://api/document_events/55/ignore", { ignored: true }, expect.anything());
+  // hidden from the list, listed under "Zignorowane"
+  expect(screen.queryByRole("button", { name: /Ignoruj/ })).toBeNull();
+  expect(screen.getByText(/Zignorowane \(1\)/)).toBeTruthy();
+  expect(screen.getByText(/Brak zapisanych propozycji/)).toBeTruthy();
+
+  mocked.post.mockResolvedValue({ data: { status: "success", id: 55, ignored: false } });
+  fireEvent.click(screen.getByRole("button", { name: /Przywróć/ }));
+
+  await waitFor(() => expect(screen.getByRole("button", { name: /Ignoruj/ })).toBeTruthy());
+  expect(mocked.post).toHaveBeenLastCalledWith("http://api/document_events/55/ignore", { ignored: false }, expect.anything());
+  expect(screen.queryByText(/Zignorowane \(/)).toBeNull();
+});
+
+it("keeps dismissed proposals through a new detection and reports how many fragments it skipped", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [{ ...pirates, ignored: true }] } });
+  mocked.post.mockResolvedValue({
+    data: { events: [proposal], model: "m1", rejected_without_quote: 0, rejected_without_date: 0, skipped_ignored: 1 },
+  });
+  render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
+  await screen.findByText(/Zignorowane \(1\)/);
+
+  fireEvent.click(screen.getByRole("button", { name: /Wykryj wydarzenia/ }));
+
+  await waitFor(() => expect(screen.getByText(/Atak na Polskę/)).toBeTruthy());
+  expect(screen.getByText(/Zignorowane \(1\)/)).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toContain("pominięto 1 zignorowanych");
 });
 
 it("does not offer the source conversion for an entry already in the registry", async () => {

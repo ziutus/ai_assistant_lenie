@@ -543,10 +543,46 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
     }
 
 
+_MIN_PASSAGE_OVERLAP = 20
+
+
+def passage_key(value: str | None) -> str:
+    """Whitespace-, case- and typography-insensitive form of a quoted passage."""
+    return _normalize_quote_typography(value or "").casefold()
+
+
+def is_ignored_passage(event: dict, ignored_passages: list[str]) -> bool:
+    """True when a new proposal quotes a passage the reader dismissed (same text, or one contains the other).
+
+    The model cuts the same sentence differently from run to run, so equality is not enough; a containment of at
+    least ``_MIN_PASSAGE_OVERLAP`` characters counts as the same passage.
+    """
+    quote = passage_key(event.get("anchor_quote") or event.get("description"))
+    if not quote:
+        return False
+    for ignored in ignored_passages:
+        if not ignored:
+            continue
+        if quote == ignored:
+            return True
+        shorter, longer = sorted((quote, ignored), key=len)
+        if len(shorter) >= _MIN_PASSAGE_OVERLAP and shorter in longer:
+            return True
+    return False
+
+
 def refresh_document_events(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
     """Replace stored derived events for a document, or one explicitly selected chapter."""
     result = extract_document_events(session, doc, model, chapter_position=chapter_position)
-    statement = delete(DocumentEvent).where(DocumentEvent.document_id == doc.id)
+    # Proposals the reader dismissed stay as they are, and a new proposal about the same passage is not stored again.
+    ignored = session.scalars(select(DocumentEvent).where(
+        DocumentEvent.document_id == doc.id, DocumentEvent.ignored_at.is_not(None),
+    )).all()
+    ignored_passages = [passage_key(row.anchor_quote or row.description) for row in ignored]
+    kept = [event for event in result["events"] if not is_ignored_passage(event, ignored_passages)]
+    result["skipped_ignored"] = len(result["events"]) - len(kept)
+    result["events"] = kept
+    statement = delete(DocumentEvent).where(DocumentEvent.document_id == doc.id, DocumentEvent.ignored_at.is_(None))
     if chapter_position is not None:
         statement = statement.where(DocumentEvent.chapter_position == chapter_position)
     session.execute(statement)

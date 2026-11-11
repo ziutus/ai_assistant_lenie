@@ -12,6 +12,7 @@ it is a source of information (``information_sources`` + ``document_information_
 A conversion is an explicit decision, so the new link is ``approved``: the automatic source refresh never removes it.
 """
 
+import datetime
 import logging
 
 from sqlalchemy import select
@@ -137,6 +138,20 @@ def convert_document_event_to_source(
         "role": role,
         "created": created,
     }
+
+
+def set_document_event_ignored(session, document_event_id: int, ignored: bool) -> dict:
+    """Dismiss a timeline proposal that is no event, or restore it.
+
+    The row stays (``ignored_at``): the list hides it and `timeline_events.refresh_document_events` neither deletes
+    it nor stores a new proposal quoting the same passage, so the dismissal survives a re-detection.
+    """
+    row = session.get(DocumentEvent, document_event_id)
+    if row is None:
+        raise GeopoliticsError("Wpis osi czasu nie istnieje", 404)
+    row.ignored_at = datetime.datetime.now() if ignored else None
+    session.flush()
+    return {"id": row.id, "ignored": row.ignored_at is not None, "document_id": row.document_id}
 
 
 DETECTED_METHOD = "timeline_publication"

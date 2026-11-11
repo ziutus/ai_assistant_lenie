@@ -12,6 +12,8 @@ Endpoints (x-api-key required via the global before_request; writes are blocked 
   POST /world_events/mentions/unlink                 — {name, event_id, document_id?}
   POST /world_events/from_mention                    — {name, kind?, event_date?, description?}: create + link
   POST /document_events/<id>/to_world_event          — {event_id?, title?, kind?}: timeline entry -> event / source
+  POST /document_events/<id>/ignore                  — {ignored?: true}: dismiss a proposal that is no event (false
+                                                       restores it); a re-detection keeps it hidden
   POST /document_events/<id>/to_information_source   — {name?, source_type?, role?}: the entry is a publication
                                                        (study, report, book), so it becomes an approved information
                                                        source of the document and leaves the timeline
@@ -24,7 +26,7 @@ from flask import Blueprint, g, jsonify, request
 from library.db.engine import get_scoped_session
 from library.db.models import GeoEventKind
 from library.geo_event_kind_store import bust_cache, check_kind, list_kinds
-from library.document_event_sources import convert_document_event_to_source
+from library.document_event_sources import convert_document_event_to_source, set_document_event_ignored
 from library.geopolitics_service import GeopoliticsError, event_to_dict, resolve_country
 from library.world_events_service import (
     ROLE_LABELS,
@@ -261,6 +263,20 @@ def timeline_entry_to_event(document_event_id: int):
         return _error(exc)
     session.refresh(event)
     return jsonify({"status": "success", "created": created, "event": event_to_dict(event)}), 201 if created else 200
+
+
+@bp.route("/document_events/<int:document_event_id>/ignore", methods=["POST"])
+def timeline_entry_ignore(document_event_id: int):
+    """Dismiss a timeline proposal that is no event (or bring it back with ``{"ignored": false}``)."""
+    session = get_scoped_session()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = set_document_event_ignored(session, document_event_id, bool(data.get("ignored", True)))
+        session.commit()
+    except GeopoliticsError as exc:
+        session.rollback()
+        return _error(exc)
+    return jsonify({"status": "success", **result}), 200
 
 
 @bp.route("/document_events/<int:document_event_id>/to_information_source", methods=["POST"])
