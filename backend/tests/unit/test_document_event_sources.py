@@ -102,32 +102,85 @@ def test_events_that_merely_mention_a_publication_are_kept(text):
     assert not timeline_events.is_publication_statement(text)
 
 
-def test_prompt_tells_the_model_a_publication_is_not_an_event():
+def test_prompt_asks_the_model_to_type_every_entry_and_to_mark_publications_as_sources():
     prompt = timeline_events._timeline_prompt("Fragment tekstu.")
 
-    assert "Nie wyodrębniaj publikacji jako wydarzeń" in prompt
+    assert '"type": "source"' in prompt and '"type": "event"' in prompt
     assert "opublikowano badanie" in prompt
 
 
-def test_a_publication_the_model_returns_anyway_is_dropped_and_counted(monkeypatch):
-    fragment = f"{TOWERS} W 2018 roku w Parkland zginęło 17 osób."
-    raw = json.dumps([
-        {"date_text": "2015", "description": TOWERS, "quote": TOWERS},
-        {"date_text": "2018", "description": "W Parkland zginęło 17 osób.",
-         "quote": "W 2018 roku w Parkland zginęło 17 osób."},
-    ])
+def _stub_model(monkeypatch, items):
     usage = SimpleNamespace(
         usage_log_id=1, total_tokens=1,
         cost=SimpleNamespace(total_cost=None, currency=None, status=SimpleNamespace(value="unknown")),
     )
     monkeypatch.setattr(
-        timeline_events, "ai_ask", lambda *_a, **_k: SimpleNamespace(response_text=raw, usage=usage),
+        timeline_events, "ai_ask",
+        lambda *_a, **_k: SimpleNamespace(response_text=json.dumps(items), usage=usage),
     )
+
+
+def test_a_publication_is_kept_as_a_source_not_dropped(monkeypatch):
+    fragment = f"{TOWERS} W 2018 roku w Parkland zginęło 17 osób."
+    _stub_model(monkeypatch, [
+        {"type": "event", "date_text": "2015", "description": TOWERS, "quote": TOWERS},  # mislabelled by the model
+        {"type": "event", "date_text": "2018", "description": "W Parkland zginęło 17 osób.",
+         "quote": "W 2018 roku w Parkland zginęło 17 osób."},
+    ])
 
     events, report = timeline_events.extract_fragment_events(fragment, 1, "model")
 
     assert [event["description"] for event in events] == ["W Parkland zginęło 17 osób."]
-    assert report["rejected_publication"] == 1
+    assert report["publications"] == 1
+    assert report["sources"][0]["description"] == TOWERS and report["sources"][0]["chapter_position"] == 1
+
+
+def test_an_entry_the_model_types_as_source_needs_no_date(monkeypatch):
+    fragment = "Wyniki pokazuje praca Kowalskiego z Uniwersytetu Warszawskiego."
+    _stub_model(monkeypatch, [{
+        "type": "source", "date_text": "", "description": "Praca Kowalskiego z Uniwersytetu Warszawskiego",
+        "quote": "praca Kowalskiego z Uniwersytetu Warszawskiego",
+    }])
+
+    events, report = timeline_events.extract_fragment_events(fragment, None, "model")
+
+    assert events == [] and report["publications"] == 1 and report["rejected_without_date"] == 0
+
+
+def test_an_entry_the_model_types_as_event_stays_an_event(monkeypatch):
+    fragment = "W 2018 roku w Parkland zginęło 17 osób."
+    _stub_model(monkeypatch, [{
+        "type": "event", "date_text": "2018", "description": "W Parkland zginęło 17 osób.", "quote": fragment,
+    }])
+
+    events, report = timeline_events.extract_fragment_events(fragment, 1, "model")
+
+    assert len(events) == 1 and report["publications"] == 0
+
+
+def test_detected_publications_are_stored_for_review_and_never_duplicated(session):
+    items = [{"description": TOWERS, "anchor_quote": "badanie Towers", "chapter_position": 1}]
+
+    first = des.save_detected_publications(session, 1, items)
+    second = des.save_detected_publications(session, 1, items)
+    session.commit()
+
+    assert len(first) == 1 and second == []
+    link = session.scalar(select(DocumentInformationSource))
+    assert (link.review_status, link.extraction_method, link.role) == ("needs_review", "timeline_publication", "cited")
+    assert session.scalar(select(InformationSource)).source_type == "study"
+
+
+def test_an_approved_link_is_not_downgraded_by_a_new_detection(session):
+    add_document_event(session, 10, 1, TOWERS, "2015-01-01", precision="year")
+    session.commit()
+    result = des.convert_document_event_to_source(session, 10, name=des.default_source_name(TOWERS))
+    session.commit()
+
+    saved = des.save_detected_publications(session, 1, [{"description": TOWERS, "anchor_quote": "x"}])
+
+    assert saved == []
+    assert session.get(DocumentInformationSource, result["link_id"]).review_status == "approved"
 
 
 # --- one timeline entry -> an information source ------------------------------------------------------------

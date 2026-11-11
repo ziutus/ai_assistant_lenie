@@ -220,16 +220,16 @@ it("does not offer the source conversion for an entry already in the registry", 
   expect(screen.queryByRole("button", { name: /To źródło, nie wydarzenie/ })).toBeNull();
 });
 
-it("tells how many publications the detection left out", async () => {
+it("tells how many publications the detection stored as information sources", async () => {
   mocked.get.mockResolvedValue({ data: { events: [] } });
   mocked.post.mockResolvedValue({
-    data: { events: [proposal], model: "m1", rejected_without_quote: 0, rejected_without_date: 0, rejected_publication: 2 },
+    data: { events: [proposal], model: "m1", rejected_without_quote: 0, rejected_without_date: 0, publications_as_sources: 2 },
   });
   render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
 
   fireEvent.click(await screen.findByRole("button", { name: /Wykryj wydarzenia/ }));
 
-  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 publikacji"));
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 publikacji zapisano jako źródła"));
 });
 
 it("exports the detect button for hosts that keep it among their own buttons", () => {

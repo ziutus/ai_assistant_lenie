@@ -417,9 +417,11 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
     """Refresh automatic provenance links without deleting human approvals."""
     from library.relationship_audit import audit_removals
 
+    # Publications the timeline extractor found are not derived by this refresh, so it must not wipe them.
     removable = session.execute(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == doc.id,
         DocumentInformationSource.review_status != "approved",
+        DocumentInformationSource.extraction_method != "timeline_publication",
     )).scalars().all()
     audit_removals(session, doc.id, "information_source", "llm_refresh", removable, lambda row: {
         "source_id": row.source_id, "role": row.role, "raw_mention": row.raw_mention,

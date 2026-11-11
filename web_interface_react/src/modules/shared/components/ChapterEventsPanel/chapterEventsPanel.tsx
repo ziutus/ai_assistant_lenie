@@ -336,19 +336,20 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
     try {
       const { data } = await axios.post<{
         events: EventProposal[]; model: string; rejected_without_quote: number; rejected_without_date: number;
-        rejected_publication?: number;
+        publications_as_sources?: number;
       }>(
         `${apiUrl}/document/${docId}/chapter/${position}/detect_events`,
         modelState.model ? { model: modelState.model } : {},
         { headers, timeout: 240000 },
       );
       setEvents(data.events);
-      const publications = data.rejected_publication ?? 0;
-      const rejected = data.rejected_without_quote + data.rejected_without_date + publications;
+      const publications = data.publications_as_sources ?? 0;
+      const rejected = data.rejected_without_quote + data.rejected_without_date;
       setNote(`Model ${data.model}: ${data.events.length} wydarzeń`
         + (rejected > 0
-          ? ` (odrzucone: ${data.rejected_without_quote} bez cytatu, ${data.rejected_without_date} bez daty`
-            + (publications > 0 ? `, ${publications} publikacji, które są źródłami, nie wydarzeniami` : "") + ")"
+          ? ` (odrzucone: ${data.rejected_without_quote} bez cytatu, ${data.rejected_without_date} bez daty)` : "")
+        + (publications > 0
+          ? `; ${publications} publikacji zapisano jako źródła informacji do potwierdzenia, bo to nie wydarzenia`
           : "")
         + ".");
     } catch (err) {

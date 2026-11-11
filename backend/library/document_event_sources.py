@@ -139,6 +139,47 @@ def convert_document_event_to_source(
     }
 
 
+DETECTED_METHOD = "timeline_publication"
+
+
+def save_detected_publications(session, document_id: int, items: list[dict]) -> list[str]:
+    """Store publications the timeline extractor found as information sources awaiting review.
+
+    The model labelled them ``source`` (or the sentence check recognised a publication): they are not events, but
+    they are not noise either. Each becomes a ``cited`` source of the document with ``review_status`` ``needs_review``;
+    a link that already exists (approved by hand, or from an earlier run) is left as it is. Returns the names saved.
+    """
+    saved: list[str] = []
+    for item in items:
+        name = default_source_name(item.get("description") or "")[:MAX_NAME_LENGTH]
+        if not name:
+            continue
+        source = _get_or_create_source(
+            session, {"canonical_name": name, "raw_mention": name, "source_type": DEFAULT_SOURCE_TYPE, "domain": None},
+        )
+        exists = session.scalar(select(DocumentInformationSource.id).where(
+            DocumentInformationSource.document_id == document_id,
+            DocumentInformationSource.source_id == source.id,
+            DocumentInformationSource.role == DEFAULT_ROLE,
+        ))
+        if exists is not None:
+            continue
+        session.add(DocumentInformationSource(
+            document_id=document_id,
+            source_id=source.id,
+            role=DEFAULT_ROLE,
+            raw_mention=name,
+            source_url=None,
+            evidence_excerpt=normalize_text(item.get("anchor_quote") or "") or None,
+            confidence=70,
+            extraction_method=DETECTED_METHOD,
+            review_status="needs_review",
+        ))
+        saved.append(name)
+    session.flush()
+    return saved
+
+
 def _registry_event_is_removable(session, event: GeoEvent) -> str | None:
     """Why a registry event may NOT be turned into sources, or None when nothing depends on it."""
     if event.status != "proposed":
