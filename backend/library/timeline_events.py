@@ -328,6 +328,41 @@ def split_timeline_fragments(text: str, max_chars: int = MAX_FRAGMENT_CHARS) -> 
     return fragments
 
 
+# A publication is a source of information, not an event of the world: "w 2015 roku opublikowano badanie X"
+# says when a study appeared, while the events it describes (and their dates) are what the timeline needs.
+# Studies and books are recorded as information sources (`information_provenance`) instead.
+PUBLICATION_RULE = """Nie wyodrębniaj publikacji jako wydarzeń: ukazania się badania, artykułu naukowego, pracy
+naukowej, książki ani analizy. To źródła informacji, a nie wydarzenia ze świata. Jeśli tekst pisze
+"w 2015 roku opublikowano badanie o masowych strzelaninach", pomiń datę publikacji; wyodrębnij tylko wydarzenia,
+które badanie opisuje, o ile tekst podaje ich daty. Wynik badania ("badanie wykazało, że...") bez daty zdarzenia
+też nie jest wydarzeniem. Raport, ustawę lub dokument wyodrębnij tylko wtedy, gdy jego opublikowanie samo wywołało
+skutki opisane w tekście (np. dymisję, protesty)."""
+
+# Statements the model still returns although the rule above forbids them. The check is deliberately narrow:
+# scientific work and books only (the publication of a report or a law may itself be an event), and either a
+# sentence that opens with such a noun and says what it is about / shows / was published, or one that says a
+# publication appeared. "Po opublikowaniu badania wybuchły protesty" (an event that follows a study) is kept.
+_PUBLICATION_NOUN = (
+    r"(?:badani[ae]|studium|metaanaliz\w*|artyku[łl]\s+naukow\w*|prac[aey]\s+naukow\w*|"
+    r"publikacj\w*\s+naukow\w*|ksi[ąa][żz]k\w*)"
+)
+_PUBLISHED_VERB = (
+    r"(?:opublikowano|opublikowa[łl]\w*|ukaza[łl]\w*\s+si[ęe]|zosta[łl]\w*\s+opublikowan\w*|wydano)"
+)
+_PUBLICATION_STATEMENT_RE = re.compile(
+    rf"^\W*(?:(?:w\s+)?\d{{4}}\s*(?:r\.?|roku)?\W*)?{_PUBLICATION_NOUN}\b[^.]{{0,200}}?"
+    r"\b(?:opublikowa\w*|ukaza\w*|wydan\w*|przedstawi\w*|prezentuj\w*|wykaza\w*|pokaza\w*|wskazuj\w*|"
+    r"przeprowadz\w*|na\s+temat|dotycz\w*|poświęcon\w*)"
+    rf"|^[^.]{{0,50}}?\b{_PUBLISHED_VERB}\b\s+(?:\w+\s+){{0,3}}?{_PUBLICATION_NOUN}\b",
+    re.IGNORECASE,
+)
+
+
+def is_publication_statement(description: str) -> bool:
+    """True for a description that only reports that a study, report or book appeared."""
+    return bool(_PUBLICATION_STATEMENT_RE.search(" ".join((description or "").split())))
+
+
 def _timeline_prompt(
     fragment: str,
     temporal_hints: list[dict] | None = None,
@@ -352,6 +387,8 @@ opisywać wydarzenie i NER może się mylić.
     )
     return f"""Przeanalizuj poniższy fragment dokumentu i wyodrębnij wyłącznie wydarzenia opisywane w tekście,
 którym tekst przypisuje datę albo okres. Nie dodawaj wiedzy zewnętrznej ani nie zgaduj dat.
+
+{PUBLICATION_RULE}
 {hints}
 {reference}
 
@@ -385,7 +422,7 @@ def extract_fragment_events(
         document_id=document_id,
     )
     events: list[dict] = []
-    rejected_quote = rejected_date = 0
+    rejected_quote = rejected_date = rejected_publication = 0
     candidates, invalid_json = _parse_events_response(response.response_text)
     for candidate in candidates:
         date_text = str(candidate.get("date_text") or "").strip()
@@ -393,6 +430,9 @@ def extract_fragment_events(
         quote = str(candidate.get("quote") or "").strip()
         if not description or not _quote_is_grounded(quote, fragment):
             rejected_quote += 1
+            continue
+        if is_publication_statement(description):
+            rejected_publication += 1
             continue
         normalized_date = normalize_date_text(date_text, reference_date)
         if normalized_date is None:
@@ -408,6 +448,7 @@ def extract_fragment_events(
     return events, {
         "rejected_without_quote": rejected_quote,
         "rejected_without_date": rejected_date,
+        "rejected_publication": rejected_publication,
         "invalid_json": int(invalid_json),
         "ner_hint_count": len(temporal_hints or []),
         **usage_report(response.usage).as_dict(),
@@ -475,6 +516,7 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
             "events": len(chapter_events),
             "rejected_without_quote": sum(r["rejected_without_quote"] for r in fragment_reports),
             "rejected_without_date": sum(r["rejected_without_date"] for r in fragment_reports),
+            "rejected_publication": sum(r.get("rejected_publication", 0) for r in fragment_reports),
             "invalid_json": sum(r["invalid_json"] for r in fragment_reports),
             "ner_hint_count": sum(r.get("ner_hint_count", 0) for r in fragment_reports),
             **combine_usage_reports(fragment_reports),

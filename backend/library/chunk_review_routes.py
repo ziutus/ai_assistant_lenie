@@ -2402,6 +2402,7 @@ def document_chapter_detect_events(doc_id: int, position: int):
         "events": [{**_event_to_dict(row), "world_events": []} for row in rows],
         "rejected_without_quote": report.get("rejected_without_quote", 0),
         "rejected_without_date": report.get("rejected_without_date", 0),
+        "rejected_publication": report.get("rejected_publication", 0),
         "invalid_json": report.get("invalid_json", 0),
     })
 

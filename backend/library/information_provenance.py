@@ -206,12 +206,15 @@ Rozróżnij role:
 - cited: źródło jest cytowane lub przywołane,
 - republication: tekst jest przedrukiem lub opracowaniem materiału źródła,
 - data_source: raport, urząd, badanie albo baza dostarczająca dane.
+Konkretne badanie, raport lub publikację naukową (np. „badanie Sherry Towers i in.”) wpisz jako źródło
+z source_type "study" (badanie, artykuł naukowy, praca), "report" (raport instytucji lub firmy) albo "book".
+Nazwa takiego źródła to autorzy i/lub tytuł, a nie rok ani nazwa czasopisma.
 
 Ujednolicaj nazwy (np. WSJ -> The Wall Street Journal), ale raw_mention zachowaj tak jak w tekście.
 evidence_excerpt musi być dokładnym, krótkim cytatem z tekstu potwierdzającym relację.
 Zwróć wyłącznie JSON:
 [{{"canonical_name":"...", "raw_mention":"...", "role":"original_reporting|cited|republication|data_source",
-   "source_type":"newspaper|portal|agency|institution|report|database|other",
+   "source_type":"newspaper|portal|agency|institution|report|study|book|database|other",
    "domain":null, "evidence_excerpt":"...", "confidence":0}}]
 Pomiń niepewne pozycje poniżej confidence 60. Nie dopowiadaj domen ani URL-i.
 

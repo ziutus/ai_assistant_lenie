@@ -11,6 +11,9 @@ Endpoints (x-api-key required via the global before_request; writes are blocked 
   POST /world_events/mentions/unlink                 — {name, event_id, document_id?}
   POST /world_events/from_mention                    — {name, kind?, event_date?, description?}: create + link
   POST /document_events/<id>/to_world_event          — {event_id?, title?, kind?}: timeline entry -> event / source
+  POST /document_events/<id>/to_information_source   — {name?, source_type?, role?}: the entry is a publication
+                                                       (study, report, book), so it becomes an approved information
+                                                       source of the document and leaves the timeline
 """
 
 import logging
@@ -18,6 +21,7 @@ import logging
 from flask import Blueprint, g, jsonify, request
 
 from library.db.engine import get_scoped_session
+from library.document_event_sources import convert_document_event_to_source
 from library.geopolitics_service import GeopoliticsError, event_to_dict, resolve_country
 from library.world_events_service import (
     KIND_LABELS,
@@ -225,3 +229,23 @@ def timeline_entry_to_event(document_event_id: int):
         return _error(exc)
     session.refresh(event)
     return jsonify({"status": "success", "created": created, "event": event_to_dict(event)}), 201 if created else 200
+
+
+@bp.route("/document_events/<int:document_event_id>/to_information_source", methods=["POST"])
+def timeline_entry_to_information_source(document_event_id: int):
+    """The entry only reports a publication (a study, report, book): it is a source, not a world event."""
+    session = get_scoped_session()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = convert_document_event_to_source(
+            session,
+            document_event_id,
+            name=data.get("name"),
+            source_type=data.get("source_type"),
+            role=data.get("role"),
+        )
+        session.commit()
+    except GeopoliticsError as exc:
+        session.rollback()
+        return _error(exc)
+    return jsonify({"status": "success", **result}), 201 if result["created"] else 200

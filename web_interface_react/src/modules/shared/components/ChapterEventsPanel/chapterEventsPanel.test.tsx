@@ -175,6 +175,63 @@ it("runs the detection when the host bumps detectSignal and has no button of its
   expect(onBusyChange).toHaveBeenLastCalledWith(false);
 });
 
+const studyProposal = {
+  id: 91, world_events: [], date_text: "2015", event_date: "2015-01-01", event_date_end: "2015-12-31",
+  description: "Badanie Sherry Towers i współautorów na temat efektu zarażania przemocą po masowych atakach.",
+  anchor_quote: "badanie Towers",
+};
+
+it("turns a publication into an information source and removes it from the list", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [studyProposal] } });
+  mocked.post.mockResolvedValue({ data: { status: "success", name: "Towers i in. (2015)", created: true } });
+  render(
+    <MemoryRouter>
+      <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: /To źródło, nie wydarzenie/ }));
+  const name = screen.getByLabelText(/Nazwa źródła/) as HTMLInputElement;
+  expect(name.value.startsWith("Badanie Sherry Towers")).toBe(true);
+  fireEvent.change(name, { target: { value: "Towers i in. (2015)" } });
+  fireEvent.change(screen.getByLabelText(/Rodzaj źródła/), { target: { value: "study" } });
+  fireEvent.click(screen.getByRole("button", { name: "Zamień na źródło" }));
+
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Towers i in. (2015)"));
+  expect(mocked.post).toHaveBeenCalledWith(
+    "http://api/document_events/91/to_information_source",
+    { name: "Towers i in. (2015)", source_type: "study", role: "cited" },
+    expect.anything(),
+  );
+  expect(screen.queryByText(/Badanie Sherry Towers i współautorów/)).toBeNull();
+});
+
+it("does not offer the source conversion for an entry already in the registry", async () => {
+  mocked.get.mockResolvedValue({
+    data: { events: [{ ...studyProposal, world_events: [{ id: 3, title: "Wydarzenie" }] }] },
+  });
+  render(
+    <MemoryRouter>
+      <ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />
+    </MemoryRouter>,
+  );
+
+  await screen.findByText(/Badanie Sherry Towers/);
+  expect(screen.queryByRole("button", { name: /To źródło, nie wydarzenie/ })).toBeNull();
+});
+
+it("tells how many publications the detection left out", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [] } });
+  mocked.post.mockResolvedValue({
+    data: { events: [proposal], model: "m1", rejected_without_quote: 0, rejected_without_date: 0, rejected_publication: 2 },
+  });
+  render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: /Wykryj wydarzenia/ }));
+
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 publikacji"));
+});
+
 it("exports the detect button for hosts that keep it among their own buttons", () => {
   const onClick = vi.fn();
   render(<ChapterEventsDetectButton onClick={onClick} />);

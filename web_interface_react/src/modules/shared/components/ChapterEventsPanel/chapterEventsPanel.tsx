@@ -147,6 +147,116 @@ const PromoteForm = ({ apiUrl, headers, event, onDone, onCancel }: PromoteProps)
   );
 };
 
+const SOURCE_TYPES: { code: string; label: string }[] = [
+  { code: "study", label: "badanie / artykuł naukowy" },
+  { code: "book", label: "książka" },
+  { code: "report", label: "raport" },
+  { code: "institution", label: "instytucja" },
+  { code: "agency", label: "agencja" },
+  { code: "newspaper", label: "gazeta" },
+  { code: "portal", label: "portal" },
+  { code: "database", label: "baza danych" },
+  { code: "other", label: "inne" },
+];
+
+const SOURCE_ROLES: { code: string; label: string }[] = [
+  { code: "cited", label: "cytowane w tekście" },
+  { code: "data_source", label: "źródło danych" },
+  { code: "original_reporting", label: "pierwotne ustalenia" },
+  { code: "republication", label: "przedruk" },
+];
+
+/** First sentence of the wording, cut at a word before 120 characters (the server does the same when no name is sent). */
+export const defaultSourceName = (description: string): string => {
+  const text = description.replace(/\s+/g, " ").trim().replace(/\.$/, "");
+  if (text.length <= 120) return text;
+  const cut = text.slice(0, 120);
+  const space = cut.lastIndexOf(" ");
+  return space > 0 ? cut.slice(0, space) : cut;
+};
+
+interface SourceFormProps {
+  apiUrl: string;
+  headers: Record<string, string>;
+  event: EventProposal;
+  onDone: (name: string) => void;
+  onCancel: () => void;
+}
+
+/**
+ * "To źródło, nie wydarzenie": a study, report or book the LLM took for an event ("w 2015 roku opublikowano badanie…")
+ * becomes an approved information source of the document (`POST /document_events/:id/to_information_source`) and leaves
+ * the timeline. The name is the reviewer's to correct; nothing is written before "Zamień na źródło".
+ */
+const SourceForm = ({ apiUrl, headers, event, onDone, onCancel }: SourceFormProps) => {
+  const [name, setName] = React.useState(defaultSourceName(event.description));
+  const [sourceType, setSourceType] = React.useState("study");
+  const [role, setRole] = React.useState("cited");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<RequestErrorInfo | null>(null);
+
+  const canSubmit = !busy && event.id != null && name.trim() !== "";
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    const startedAt = Date.now();
+    try {
+      const { data } = await axios.post<{ name: string }>(
+        `${apiUrl}/document_events/${event.id}/to_information_source`,
+        { name: name.trim(), source_type: sourceType, role },
+        { headers },
+      );
+      onDone(data.name ?? name.trim());
+    } catch (err) {
+      setError(describeRequestError(err, "Zamiana wpisu na źródło informacji", {
+        startedAt, context: { wpis: event.id },
+      }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ margin: "4px 0 8px", padding: 8, border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc" }}>
+      <p style={{ margin: "0 0 6px", color: "#475569" }}>
+        Publikacja (badanie, książka, raport) jest źródłem informacji, a nie wydarzeniem ze świata. Wpis zniknie z tej
+        listy i trafi do źródeł informacji tego dokumentu.
+      </p>
+      <label style={{ display: "block", marginBottom: 6 }}>
+        Nazwa źródła (autorzy i/lub tytuł)
+        <input type="text" value={name} maxLength={200} style={{ width: "100%", padding: "4px 6px" }}
+          onChange={(e) => setName(e.target.value)} />
+      </label>
+      <label style={{ display: "block", marginBottom: 6 }}>
+        Rodzaj źródła{" "}
+        <select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
+          {SOURCE_TYPES.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
+        </select>
+      </label>
+      <label style={{ display: "block", marginBottom: 6 }}>
+        Rola w dokumencie{" "}
+        <select value={role} onChange={(e) => setRole(e.target.value)}>
+          {SOURCE_ROLES.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}
+        </select>
+      </label>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" disabled={!canSubmit} onClick={() => void submit()}>
+          {busy ? "⏳ Zapisuję…" : "Zamień na źródło"}
+        </button>
+        <button type="button" disabled={busy} onClick={onCancel}>Anuluj</button>
+      </div>
+      {error && (
+        <div role="alert" style={{ color: "#a33" }}>
+          <p>{error.summary}</p>
+          <RequestErrorDetails details={error.details} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface Props {
   apiUrl: string;
   apiKey: string;
@@ -187,6 +297,13 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
   const [note, setNote] = React.useState("");
   const [error, setError] = React.useState<RequestErrorInfo | null>(null);
   const [promoting, setPromoting] = React.useState<number | null>(null);
+  const [convertingToSource, setConvertingToSource] = React.useState<number | null>(null);
+
+  const markConvertedToSource = (eventId: number, name: string) => {
+    setEvents((current) => (current ?? []).filter((item) => item.id !== eventId));
+    setConvertingToSource(null);
+    setNote(`Zamieniono na źródło informacji: „${name}”. Wpis zniknął z listy wydarzeń.`);
+  };
 
   const markPromoted = (eventId: number, registry: RegistryRef) => {
     setEvents((current) => (current ?? []).map((item) => (
@@ -219,16 +336,20 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
     try {
       const { data } = await axios.post<{
         events: EventProposal[]; model: string; rejected_without_quote: number; rejected_without_date: number;
+        rejected_publication?: number;
       }>(
         `${apiUrl}/document/${docId}/chapter/${position}/detect_events`,
         modelState.model ? { model: modelState.model } : {},
         { headers, timeout: 240000 },
       );
       setEvents(data.events);
-      const rejected = data.rejected_without_quote + data.rejected_without_date;
+      const publications = data.rejected_publication ?? 0;
+      const rejected = data.rejected_without_quote + data.rejected_without_date + publications;
       setNote(`Model ${data.model}: ${data.events.length} wydarzeń`
         + (rejected > 0
-          ? ` (odrzucone: ${data.rejected_without_quote} bez cytatu, ${data.rejected_without_date} bez daty)` : "")
+          ? ` (odrzucone: ${data.rejected_without_quote} bez cytatu, ${data.rejected_without_date} bez daty`
+            + (publications > 0 ? `, ${publications} publikacji, które są źródłami, nie wydarzeniami` : "") + ")"
+          : "")
         + ".");
     } catch (err) {
       setError(describeRequestError(err, `Wykrywanie wydarzeń w rozdziale ${position}`, {
@@ -327,6 +448,20 @@ const ChapterEventsPanel = ({ apiUrl, apiKey, docId, position, detectSignal, onB
                     <PromoteForm apiUrl={apiUrl} headers={headers} event={event}
                       onDone={(registry) => markPromoted(event.id as number, registry)}
                       onCancel={() => setPromoting(null)} />
+                  )}
+                  {event.id != null && convertingToSource !== event.id && (event.world_events ?? []).length === 0 && (
+                    <>
+                      {" "}
+                      <button type="button" onClick={() => setConvertingToSource(event.id ?? null)}
+                        title="To badanie, książka lub raport, a nie wydarzenie ze świata: zapisz je jako źródło informacji dokumentu">
+                        📚 To źródło, nie wydarzenie
+                      </button>
+                    </>
+                  )}
+                  {event.id != null && convertingToSource === event.id && (
+                    <SourceForm apiUrl={apiUrl} headers={headers} event={event}
+                      onDone={(name) => markConvertedToSource(event.id as number, name)}
+                      onCancel={() => setConvertingToSource(null)} />
                   )}
                 </li>
               ))}
