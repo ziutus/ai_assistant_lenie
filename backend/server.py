@@ -41,6 +41,7 @@ from library.contact_routes import bp as contact_bp
 from library.document_links_routes import bp as document_links_bp
 from library.geopolitics_routes import bp as geopolitics_bp
 from library.world_events_routes import bp as world_events_bp
+from library.document_sources_routes import bp as document_sources_bp
 from library.concept_routes import bp as concepts_bp
 from library.project_card_routes import bp as project_cards_bp
 from library.recipe_routes import bp as recipes_bp
@@ -148,6 +149,7 @@ app.register_blueprint(contact_bp)
 app.register_blueprint(document_links_bp)
 app.register_blueprint(geopolitics_bp)
 app.register_blueprint(world_events_bp)
+app.register_blueprint(document_sources_bp)
 app.register_blueprint(concepts_bp)
 app.register_blueprint(project_cards_bp)
 app.register_blueprint(recipes_bp)
@@ -1329,9 +1331,11 @@ def document_information_sources(doc_id: int):
     session = get_scoped_session()
     if session.get(Document, doc_id) is None:
         return {"status": "error", "message": "Document not found"}, 404
-    links = session.scalars(select(DocumentInformationSource).where(
-        DocumentInformationSource.document_id == doc_id
-    ).order_by(DocumentInformationSource.role, DocumentInformationSource.id)).all()
+    query = select(DocumentInformationSource).where(DocumentInformationSource.document_id == doc_id)
+    # A link the reviewer rejected stays in the table (so a re-detection does not re-propose it) but is not listed.
+    if request.args.get("include_rejected") not in ("1", "true", "yes"):
+        query = query.where(DocumentInformationSource.review_status != "rejected")
+    links = session.scalars(query.order_by(DocumentInformationSource.role, DocumentInformationSource.id)).all()
     from library.db.models import DocumentSourceRelationship
     approved_relationships = session.scalars(select(DocumentSourceRelationship).where(
         DocumentSourceRelationship.document_id == doc_id,
@@ -1344,6 +1348,7 @@ def document_information_sources(doc_id: int):
         "canonical_name": link.source.canonical_name,
         "source_type": link.source.source_type,
         "domain": link.source.domain,
+        "organization_id": link.source.organization_id,
         "role": link.role,
         "raw_mention": link.raw_mention,
         "source_url": link.source_url,

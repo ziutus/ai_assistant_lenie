@@ -299,6 +299,7 @@ def test_document_event_orm_model():
         "sort_year",
         "description",
         "anchor_quote",
+        "ignored_at",
         "created_at",
     }
     assert isinstance(columns["event_date"].type, Date)
@@ -322,7 +323,8 @@ def test_document_events_endpoint(monkeypatch):
         anchor_quote="W 1997 wydarzenie.",
     )
     query = MagicMock()
-    query.filter.return_value.order_by.return_value.all.return_value = [row]
+    # document filter, then the filter that hides dismissed proposals
+    query.filter.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
     session = MagicMock()
     session.get.return_value = SimpleNamespace(id=7, enrichment_run_at=None)
     session.query.return_value = query
@@ -345,5 +347,6 @@ def test_document_events_endpoint(monkeypatch):
             "description": "Wydarzenie.",
             "anchor_quote": "W 1997 wydarzenie.",
             "chapter_position": 2,
+            "ignored": False,
         }
     ]
