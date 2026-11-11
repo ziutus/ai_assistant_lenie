@@ -425,7 +425,7 @@ const ChapterEventsPanel = ({
                 {registrySources.map((source) => (
                   <li key={source.id} style={{ marginBottom: 4 }}>
                     <span style={{ color: "#166534" }}>✓ </span>
-                    <Link to={`/world-events?q=${encodeURIComponent(source.event.title)}`}>#{source.event.id} {source.event.title}</Link>
+                    <Link to={`/world-events?q=${encodeURIComponent(source.event.title)}`} target="_blank" rel="noopener noreferrer">#{source.event.id} {source.event.title}</Link>
                     <small style={{ color: "#64748b" }}>
                       {" "}({source.event.event_date ?? "bez daty"}, {STATUS_LABEL[source.event.status] ?? source.event.status}
                       {source.stance === "disputes" ? ", przeczy" : ""})
@@ -451,7 +451,7 @@ const ChapterEventsPanel = ({
                   {(event.world_events ?? []).map((registry) => (
                     <div key={registry.id} style={{ fontSize: "0.85em", color: "#166534" }}>
                       ✓ W rejestrze wydarzeń:{" "}
-                      <Link to={`/world-events?q=${encodeURIComponent(registry.title)}`}>#{registry.id} {registry.title}</Link>
+                      <Link to={`/world-events?q=${encodeURIComponent(registry.title)}`} target="_blank" rel="noopener noreferrer">#{registry.id} {registry.title}</Link>
                     </div>
                   ))}
                   {event.id != null && promoting !== event.id && (

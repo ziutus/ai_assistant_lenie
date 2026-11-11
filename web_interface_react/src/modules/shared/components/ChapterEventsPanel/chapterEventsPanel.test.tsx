@@ -44,6 +44,7 @@ it("lists registry events that cite the chapter even without a timeline proposal
 
   const link = await screen.findByRole("link", { name: /#57 Rozstrzygnięcie władzy w Izraelu/ });
   expect(link.getAttribute("href")).toBe("/world-events?q=Rozstrzygni%C4%99cie%20w%C5%82adzy%20w%20Izraelu");
+  expect(link.getAttribute("target")).toBe("_blank");
   expect(screen.getByText(/propozycja/)).toBeTruthy();
   expect(screen.getByText(/wybrano przewodniczącego Knesetu/)).toBeTruthy();
   expect(screen.queryByText(/Brak zapisanych propozycji/)).toBeNull();
