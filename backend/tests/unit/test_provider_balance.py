@@ -144,3 +144,69 @@ class TestRoutes:
     def test_reader_key_cannot_write(self, monkeypatch):
         client, _ = self._client(monkeypatch, kind="reader")
         assert client.put("/provider_balances/cloudferro", json={"amount": 1}).status_code == 403
+
+
+class TestCreditEntries:
+    @pytest.fixture(autouse=True)
+    def _fresh_cache(self):
+        pb._credits_cache.clear()
+        yield
+        pb._credits_cache.clear()
+
+    def test_firecrawl_with_a_plan(self, monkeypatch):
+        monkeypatch.setattr("library.web_search_client.firecrawl_credits", lambda: {"remaining": 80, "plan": 100})
+        entry = pb.firecrawl_balance()
+        assert (entry["provider"], entry["source"], entry["unit"], entry["status"]) == (
+            "firecrawl", "api", "kredytów", "ok")
+        assert (entry["remaining"], entry["limit"], entry["spent_since"]) == (80.0, 100.0, 20.0)
+        assert entry["low"] is False and entry["exhausted"] is False
+
+    def test_firecrawl_warns_at_a_fifth_of_the_plan_and_flags_exhaustion(self, monkeypatch):
+        monkeypatch.setattr("library.web_search_client.firecrawl_credits", lambda: {"remaining": 20, "plan": 100})
+        assert pb.firecrawl_balance()["low"] is True
+        pb._credits_cache.clear()
+        monkeypatch.setattr("library.web_search_client.firecrawl_credits", lambda: {"remaining": 0, "plan": 100})
+        entry = pb.firecrawl_balance()
+        assert entry["exhausted"] is True and entry["low"] is False
+
+    def test_serper_reports_credits_without_a_plan(self, monkeypatch):
+        monkeypatch.setattr("library.web_search_client.serper_account", lambda: {"credits_left": 1700})
+        entry = pb.serper_balance()
+        assert entry["remaining"] == 1700.0 and entry["limit"] is None and entry["low"] is False
+
+    def test_missing_key_is_not_configured(self, monkeypatch):
+        from library.web_search_client import WebSearchUnavailable
+
+        def boom():
+            raise WebSearchUnavailable("brak konfiguracji")
+
+        monkeypatch.setattr("library.web_search_client.serper_account", boom)
+        assert pb.serper_balance()["status"] == "not_configured"
+
+    def test_provider_failure_is_unavailable_and_leaks_nothing(self, monkeypatch):
+        def boom():
+            raise RuntimeError("secret-token")
+
+        monkeypatch.setattr("library.web_search_client.firecrawl_credits", boom)
+        entry = pb.firecrawl_balance()
+        assert entry["status"] == "unavailable" and "secret" not in str(entry)
+
+    def test_an_unreadable_answer_is_unavailable(self, monkeypatch):
+        monkeypatch.setattr("library.web_search_client.firecrawl_credits", lambda: {"remaining": None, "plan": 100})
+        assert pb.firecrawl_balance()["status"] == "unavailable"
+
+    def test_answer_is_cached_for_a_minute(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr("library.web_search_client.serper_account",
+                            lambda: calls.append(1) or {"credits_left": 5})
+        pb.serper_balance()
+        pb.serper_balance()
+        assert len(calls) == 1
+
+    def test_all_balances_lists_every_provider(self, monkeypatch):
+        monkeypatch.setattr(pb, "openrouter_balance", lambda: {"provider": "openrouter"})
+        monkeypatch.setattr(pb, "firecrawl_balance", lambda: {"provider": "firecrawl"})
+        monkeypatch.setattr(pb, "serper_balance", lambda: {"provider": "serper"})
+        monkeypatch.setattr(pb, "estimated_balance", lambda _s, provider: {"provider": provider})
+        assert [b["provider"] for b in pb.all_balances(MagicMock())] == [
+            "openrouter", "firecrawl", "serper", "cloudferro"]
