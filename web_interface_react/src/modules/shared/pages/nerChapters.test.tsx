@@ -483,6 +483,53 @@ it("fixes a single word in this document only: no rule is stored", async () => {
   expect(await screen.findByText(/Poprawiono „Hutni” → „Huti”/)).toBeTruthy();
 });
 
+it("puts Kopiuj first in the selection menu", async () => {
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Rzymianie" } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  expect(screen.getAllByRole("menuitem")[0].textContent).toBe("📋 Kopiuj");
+});
+
+it("adds the selected spelling to the channel glossary", async () => {
+  mockApi({ "/website_get": { title: "Film testowy", document_type: "youtube", byline: "Kanał X" } });
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Rzymianie" } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  const menu = screen.getByRole("menu", { name: "Dodaj encję z zaznaczenia" });
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "📖 Do słownika kanału" }));
+  fireEvent.change(within(menu).getByLabelText("Nazwa w słowniku"), { target: { value: "Żydzi" } });
+  fireEvent.click(within(menu).getByRole("button", { name: "📖 Dodaj do słownika" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    "/ner_channel_glossary",
+    { author: "Kanał X", canonical_name: "Żydzi", aliases: ["Rzymianie"], fuzzy: false },
+    { headers: { "x-api-key": "test-key" } },
+  ));
+  expect(await screen.findByText(/Dodano do słownika kanału „Kanał X”: „Rzymianie” → „Żydzi”/)).toBeTruthy();
+});
+
+it("appends a second spelling to the existing glossary entry", async () => {
+  mockApi({
+    "/website_get": { title: "Film testowy", document_type: "youtube", byline: "Kanał X" },
+    "/ner_channel_glossary": { entries: [{ id: 7, canonical_name: "Żydzi", aliases: ["Rzymianie"], fuzzy: false }] },
+  });
+  vi.mocked(axios.post).mockRejectedValue(Object.assign(new Error("409"), {
+    isAxiosError: true, response: { status: 409, data: {} },
+  }));
+  vi.mocked(axios.isAxiosError).mockReturnValue(true);
+  vi.mocked(axios.patch).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Rzymian" } as Selection);
+  fireEvent.contextMenu(sentenceBlock());
+  const menu = screen.getByRole("menu", { name: "Dodaj encję z zaznaczenia" });
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "📖 Do słownika kanału" }));
+  fireEvent.change(within(menu).getByLabelText("Nazwa w słowniku"), { target: { value: "żydzi" } });
+  fireEvent.click(within(menu).getByRole("button", { name: "📖 Dodaj do słownika" }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    "/ner_channel_glossary/7", { aliases: ["Rzymianie", "Rzymian"] }, { headers: { "x-api-key": "test-key" } },
+  ));
+});
+
 it("copies the selected fragment from the context menu", async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
