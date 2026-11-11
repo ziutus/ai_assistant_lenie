@@ -1,7 +1,7 @@
 """wikipedia_url on persons and organizations
 
 Revision ID: e8b2f6a1c473
-Revises: d4a7c1e9b835
+Revises: f4a9c2e7b681
 Create Date: 2026-11-11 00:00:00.000000
 
 A dedicated address of the Wikipedia article about a person / organization (next to ``persons.wikidata_qid``),
@@ -14,7 +14,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "e8b2f6a1c473"
-down_revision: Union[str, None] = "d4a7c1e9b835"
+down_revision: Union[str, None] = "f4a9c2e7b681"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
