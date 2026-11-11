@@ -68,6 +68,7 @@ EVENT_KINDS = (
     "agreement",
     "sanctions",
     "conflict",
+    "terror_attack",
     "exercise",
     "protest",
     "disaster",

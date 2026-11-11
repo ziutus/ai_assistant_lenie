@@ -106,7 +106,12 @@ def test_dictionaries_match_the_migration_seed():
     spec = importlib.util.spec_from_file_location("registry_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert dict(module._KINDS) == world.KIND_LABELS
+    later = importlib.util.spec_from_file_location(
+        "terror_kind_migration", path.with_name("e5b8d2f6a173_event_kind_terror_attack.py")
+    )
+    later_module = importlib.util.module_from_spec(later)
+    later.loader.exec_module(later_module)
+    assert {**dict(module._KINDS), later_module._NEW_KIND[0]: later_module._NEW_KIND[1]} == world.KIND_LABELS
     assert dict(module._ROLES) == world.ROLE_LABELS
     assert tuple(world.KIND_LABELS) == svc.EVENT_KINDS and tuple(world.ROLE_LABELS) == svc.ROLES
 
@@ -520,7 +525,7 @@ def test_a_timeline_entry_can_back_an_existing_event_from_another_document(sessi
 
 def test_dictionaries_over_http(client):
     kinds = client.get("/geo_event_kinds").get_json()["kinds"]
-    assert {"code": "election", "label": "Wybory"} in kinds and len(kinds) == 16
+    assert {"code": "election", "label": "Wybory"} in kinds and len(kinds) == 17
     assert {"code": "host", "label": "gospodarz"} in client.get("/geo_event_roles").get_json()["roles"]
 
 

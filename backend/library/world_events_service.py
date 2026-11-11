@@ -44,6 +44,7 @@ KIND_LABELS = {
     "agreement": "Umowa / traktat",
     "sanctions": "Sankcje",
     "conflict": "Konflikt zbrojny",
+    "terror_attack": "Atak terrorystyczny",
     "exercise": "Ćwiczenia wojskowe",
     "protest": "Protesty / niepokoje",
     "disaster": "Katastrofa / klęska żywiołowa",
