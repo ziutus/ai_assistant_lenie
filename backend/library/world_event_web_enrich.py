@@ -16,7 +16,7 @@ from library.geopolitics_service import GeopoliticsError, event_to_dict, parse_e
 from library.llm_model_registry import is_selectable, model_details, selectable_models
 from library.llm_usage.pricing import estimate_cost
 from library.llm_usage.report import usage_report
-from library.world_events_service import KIND_LABELS
+from library.geo_event_kind_store import kind_codes, list_kinds
 
 TASK = "world_event_web_enrich"
 SETTING_KEY = "world_event_web_enrich_model"
@@ -32,7 +32,7 @@ RESPONSE_SCHEMA = {
             "additionalProperties": False,
             "properties": {
                 "description": {"type": ["string", "null"]},
-                "kind": {"type": "string", "enum": list(KIND_LABELS)},
+                "kind": {"type": "string"},
                 "event_date": {"type": ["string", "null"]},
                 "event_date_end": {"type": ["string", "null"]},
                 "is_ongoing": {"type": "boolean"},
@@ -85,9 +85,10 @@ def _event(session, event_id):
     return event_to_dict(event, with_documents=False)
 
 
-def _prompt(event, sources, pages):
+def _prompt(session, event, sources, pages):
+    kinds = {kind.code: kind.label for kind in list_kinds(session)}
     return PROMPT + json.dumps(
-        {"event": event, "kinds": KIND_LABELS, "sources": sources, "pages": pages}, ensure_ascii=False
+        {"event": event, "kinds": kinds, "sources": sources, "pages": pages}, ensure_ascii=False
     )
 
 
@@ -95,7 +96,7 @@ def estimate(session, event_id, *, model, scrape_pages, step="wikipedia"):
     _check_step(step)
     event = _event(session, event_id)
     context_chars = 1800 if step == "wikipedia" else 8 * 500 + scrape_pages * 6000
-    tokens = math.ceil((len(_prompt(event, [], [])) + context_chars) / 4)
+    tokens = math.ceil((len(_prompt(session, event, [], [])) + context_chars) / 4)
     details = model_details(model, TASK) or {}
     cost = estimate_cost(
         pricing_mode="per_token",
@@ -144,7 +145,7 @@ def _validate(session, data, texts, rejected):
     if isinstance(data.get("description"), str):
         proposal["description"] = data["description"][:600]
     if "kind" in data:
-        if isinstance(data["kind"], str) and data["kind"] in KIND_LABELS:
+        if isinstance(data["kind"], str) and data["kind"] in kind_codes(session):
             proposal["kind"] = data["kind"]
         else:
             rejected["bad_kind"] += 1
@@ -269,7 +270,7 @@ def enrich(session, event_id, *, model, scrape_pages=2, user_id, step="wikipedia
             }
         )
     response = ai_ask(
-        _prompt(event, sources, pages),
+        _prompt(session, event, sources, pages),
         model=model,
         temperature=0.1,
         max_token_count=OUTPUT_TOKENS,
