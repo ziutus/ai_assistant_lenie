@@ -1,6 +1,8 @@
 import React from "react";
 import axios from "axios";
+import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import ProviderBalances from "../components/ProviderBalance/providerBalance";
 
 type Dependency = {
   id: string;
@@ -72,6 +74,13 @@ const ServiceStatus = () => {
     <p style={{ color: "#475569" }}>
       Status bazuje na rzeczywistych wywołaniach usług (LLM, embeddingi, Webshare, napisy YouTube) z wybranego okna; nie wykonuje płatnych zapytań kontrolnych. Czasy są lokalne ({localTimezone}).
     </p>
+    <section aria-label="Salda i limity płatnych usług" style={{ marginTop: 14, padding: 16, border: "1px solid #cbd5e1", borderRadius: 8 }}>
+      <strong>Salda i limity płatnych usług</strong>
+      <p style={{ color: "#475569", margin: "4px 0" }}>
+        Stan kredytów odczytany u dostawców (Firecrawl, Serper, OpenRouter) lub oszacowany (CloudFerro). Koszty modeli LLM: <NavLink to="/llm-costs">Koszty LLM</NavLink>.
+      </p>
+      <ProviderBalances showAll />
+    </section>
     <label>Okno <select value={windowMinutes} onChange={(event) => setWindowMinutes(Number(event.target.value))}>
       {WINDOWS.map((option) => <option key={option.minutes} value={option.minutes}>{option.label}</option>)}
     </select></label>

@@ -39,8 +39,53 @@ describe("ProviderBalanceView", () => {
   });
 });
 
+const credits = (overrides: Partial<ProviderBalanceInfo> = {}): ProviderBalanceInfo => ({
+  provider: "firecrawl", name: "Firecrawl", source: "api", unit: "kredytów", status: "ok", remaining: 1234,
+  limit: 3000, low: false, exhausted: false, ...overrides,
+});
+
+describe("ProviderBalanceView (balances reported by the provider)", () => {
+  afterEach(() => cleanup());
+
+  it("shows credits left of the plan as whole numbers", () => {
+    render(<ProviderBalanceView balance={credits()} />);
+    expect(screen.getByRole("status").textContent).toMatch(/Firecrawl: zostało 1\D?234 kredytów z 3\D?000 kredytów/);
+  });
+
+  it("warns when low and when used up, never showing a negative amount", () => {
+    const { rerender } = render(<ProviderBalanceView balance={credits({ remaining: 400, low: true })} />);
+    expect(screen.getByRole("status").textContent).toContain("mało");
+    rerender(<ProviderBalanceView balance={credits({ remaining: -3, exhausted: true })} />);
+    const text = screen.getByRole("status").textContent ?? "";
+    expect(text).toMatch(/zostało 0 kredytów/);
+    expect(text).toContain("wyczerpane");
+  });
+
+  it("states the problem instead of a number when there is none", () => {
+    const { container, rerender } = render(<ProviderBalanceView balance={credits({ status: "not_configured", remaining: null })} />);
+    expect(container.textContent).toContain("Firecrawl: brak klucza API");
+    rerender(<ProviderBalanceView balance={credits({ status: "unavailable", remaining: null })} />);
+    expect(container.textContent).toContain("nie udało się odczytać salda");
+  });
+
+  it("says so when an OpenRouter key has no spending limit", () => {
+    render(<ProviderBalanceView balance={credits({ provider: "openrouter", name: "OpenRouter", unit: "USD", remaining: null, limit: null, spent_since: 3.5 })} />);
+    expect(screen.getByRole("status").textContent).toMatch(/OpenRouter: klucz bez limitu \(zużyto 3,50 USD\)/);
+  });
+});
+
 describe("ProviderBalances", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  it("with showAll lists the provider-reported balances too, and offers the form only for estimated ones", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200, json: async () => ({ balances: [credits(), cloudferro()] }),
+    })));
+    render(<ProviderBalances showAll />);
+    await waitFor(() => expect(screen.getAllByRole("status")).toHaveLength(2));
+    expect(screen.getByText(/Firecrawl: zostało/)).toBeTruthy();
+    expect(screen.getAllByText(/Ustaw saldo/)).toHaveLength(1);
+  });
 
   it("lists only hand-entered balances and saves a new base with PUT", async () => {
     const openrouter: ProviderBalanceInfo = { ...cloudferro(), provider: "openrouter", name: "OpenRouter", source: "api", unit: "USD" };
