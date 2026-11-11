@@ -116,8 +116,9 @@ def _web_enrich(event_id, *, estimate_only):
         return jsonify(result)
     except GeopoliticsError as exc:
         return _error(exc)
-    except WebSearchUnavailable as exc:
-        return jsonify({"status": "error", "message": str(exc)}), 503
+    except WebSearchUnavailable:
+        logger.warning("web search provider unavailable")
+        return jsonify({"status": "error", "message": "Wyszukiwarka internetowa jest niedostępna (brak klucza lub błąd dostawcy)"}), 503
 
 
 @bp.route("/geo_events/<int:event_id>/web_enrich/estimate", methods=["POST"])
