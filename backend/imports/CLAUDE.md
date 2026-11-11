@@ -487,6 +487,18 @@ python imports/strip_onet_google_promo_backfill.py --apply
 python imports/strip_onet_google_promo_backfill.py --apply --include-analyzed --id 10752
 ```
 
+### `backfill_person_wikipedia_url.py`
+
+Fills `persons.wikipedia_url` from the Wikidata sitelinks (Polish Wikipedia first, English as fallback) for persons that have a `wikidata_qid` and no address yet; a hand-entered address is never overwritten. Asks Wikidata for 50 ids per request and pauses between batches, so run it in small portions (`--limit`). Dry-run by default.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, writes only with `--apply`.
+
+```bash
+cd backend
+python imports/backfill_person_wikipedia_url.py                    # dry-run (default)
+python imports/backfill_person_wikipedia_url.py --apply --limit 200
+```
+
 ### `organization_descriptions_backfill.py`
 
 One-off backfill for `Organization.description` (global organization registry, `library/db/models.py`) — shown as a tooltip and ℹ️ marker on organization chips in the reader (`EntitiesPanel.tsx`/`read.tsx`, `GET /website_entities`'s `organization_description` field). For each organization missing a description, asks the tagging LLM (`TAGGING_MODEL` config, default Bielik) for one short Polish sentence; skips (never guesses) an organization the model answers "NIEZNANA" for, so an ambiguous/obscure name doesn't get a wrong tooltip shown to every future reader. New organizations resolved after this backfill (or edited by a human) can also get their `description` set directly via `PATCH /organizations/<id>` from the reader's "Edytuj" mode.

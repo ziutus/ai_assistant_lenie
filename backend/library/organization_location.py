@@ -305,7 +305,7 @@ def absorb_organization(session, source: Organization, target: Organization) -> 
         target.headquarters_address = source.headquarters_address
         target.latitude = source.latitude
         target.longitude = source.longitude
-    for field in ("website", "obsidian_note_path", "primary_note_document_id"):
+    for field in ("website", "wikipedia_url", "obsidian_note_path", "primary_note_document_id"):
         if getattr(target, field) is None:
             setattr(target, field, getattr(source, field))
     # External links: the target's own come first, the source's new URLs are appended.

@@ -415,6 +415,7 @@ def resolve_document_persons(
                         person = Person(
                             canonical_name=chosen["label"],
                             wikidata_qid=qid,
+                            wikipedia_url=chosen.get("wikipedia_url"),
                             description=chosen["description"] or None,
                         )
                         session.add(person)
@@ -422,6 +423,8 @@ def resolve_document_persons(
                     else:
                         if person.wikidata_qid is None:
                             person.wikidata_qid = qid
+                        if not person.wikipedia_url and chosen.get("wikipedia_url"):
+                            person.wikipedia_url = chosen["wikipedia_url"]
                         if not person.description and chosen["description"]:
                             person.description = chosen["description"]
                     _add_alias(session, person, name)
@@ -488,6 +491,7 @@ def list_manual_review(session) -> list[dict]:
             "canonical_name": r.person.canonical_name,
             "description": r.person.description,
             "wikidata_qid": r.person.wikidata_qid,
+            "wikipedia_url": r.person.wikipedia_url,
             "aliases": [a.alias for a in r.person.aliases],
             "raw_mention": r.raw_mention,
             "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -583,6 +587,7 @@ def get_document_persons(session, document_id: int) -> list[dict]:
             "canonical_name": r.person.canonical_name,
             "description": r.person.description,
             "wikidata_qid": r.person.wikidata_qid,
+            "wikipedia_url": r.person.wikipedia_url,
             "confidence": r.confidence,
             "aliases": [alias.alias for alias in r.person.aliases],
         }

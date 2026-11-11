@@ -10,6 +10,8 @@ See docs/person-ner-plan.md and docs/ner-integration-plan.md (stage 4).
 """
 
 import logging
+import re
+from urllib.parse import urlparse
 
 import requests
 
@@ -21,6 +23,64 @@ USER_AGENT = "lenie-ai/0.3 (https://www.lenie-ai.eu; krzysztof@itsnap.eu) person
 
 HUMAN_QID = "Q5"
 MAX_CANDIDATES = 5
+
+# Wikipedia editions tried in order when a QID has several sitelinks (Polish first - the reader is Polish).
+WIKIPEDIA_SITES = ("plwiki", "enwiki")
+_WIKIPEDIA_HOST = re.compile(r"[a-z]{2,3}(?:-[a-z]{2,8})?(?:\.m)?\.wikipedia\.org")
+
+
+def normalize_wikipedia_url(raw) -> str | None:
+    """Validate a Wikipedia article address; empty -> None. Raises ValueError with a Polish message.
+
+    Only ``http(s)://<lang>.wikipedia.org/wiki/<title>`` is accepted (checked on the parsed host, not by
+    substring), and the result is always https.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ValueError("Adres Wikipedii musi być tekstem.")
+    url = raw.strip()
+    if not url:
+        return None
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if (parsed.scheme not in ("http", "https") or not _WIKIPEDIA_HOST.fullmatch(host)
+            or not parsed.path.startswith("/wiki/") or len(parsed.path) <= len("/wiki/") or len(url) > 500):
+        raise ValueError("Adres Wikipedii ma postać https://pl.wikipedia.org/wiki/Tytuł.")
+    return parsed._replace(scheme="https", fragment="").geturl()
+
+
+def _wikipedia_url_from_entity(entity: dict) -> str | None:
+    sitelinks = entity.get("sitelinks") or {}
+    for site in WIKIPEDIA_SITES:
+        url = (sitelinks.get(site) or {}).get("url")
+        if url:
+            try:
+                return normalize_wikipedia_url(url)
+            except ValueError:
+                continue
+    return None
+
+
+def wikipedia_urls_for_qids(qids: list[str]) -> dict[str, str]:
+    """{qid: Wikipedia article URL} for the QIDs that have a pl/en article (one batched request per 50).
+
+    Missing articles and any failure simply leave the QID out - the address is an enhancement."""
+    result: dict[str, str] = {}
+    unique = [q for q in dict.fromkeys(qids) if re.fullmatch(r"Q\d{1,12}", q or "")]
+    for start in range(0, len(unique), 50):
+        batch = unique[start:start + 50]
+        data = _get({"action": "wbgetentities", "ids": "|".join(batch), "props": "sitelinks/urls",
+                     "sitefilter": "|".join(WIKIPEDIA_SITES)})
+        for qid, entity in ((data or {}).get("entities") or {}).items():
+            url = _wikipedia_url_from_entity(entity) if isinstance(entity, dict) else None
+            if url:
+                result[qid] = url
+    return result
+
+
+def wikipedia_url_for_qid(qid: str) -> str | None:
+    return wikipedia_urls_for_qids([qid]).get(qid)
 
 
 def _get(params: dict) -> dict | None:
@@ -87,7 +147,8 @@ def search_persons(name: str, language: str = "pl") -> list[dict]:
     entities = _get({
         "action": "wbgetentities",
         "ids": "|".join(qids),
-        "props": "labels|descriptions",
+        "props": "labels|descriptions|sitelinks/urls",
+        "sitefilter": "|".join(WIKIPEDIA_SITES),
         "languages": f"{language}|en",
     })
     if not entities:
@@ -99,5 +160,6 @@ def search_persons(name: str, language: str = "pl") -> list[dict]:
         entity = entity_map.get(qid, {})
         label = _text_in_language(entity.get("labels", {}), language) or name
         description = _text_in_language(entity.get("descriptions", {}), language)
-        results.append({"qid": qid, "label": label, "description": description})
+        results.append({"qid": qid, "label": label, "description": description,
+                        "wikipedia_url": _wikipedia_url_from_entity(entity)})
     return results

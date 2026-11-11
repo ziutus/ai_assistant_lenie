@@ -35,6 +35,7 @@ export interface PersonItem {
   uuid: string;
   canonical_name: string;
   wikidata_qid: string | null;
+  wikipedia_url?: string | null;
   description: string | null;
   long_description?: string | null;
   links?: PersonLink[];
@@ -77,7 +78,7 @@ const CONFIDENCE_LABELS: Record<string, string> = {
   manual_review: "? do weryfikacji",
 };
 
-export const PersonHeader = ({ person }: { person: Pick<PersonItem, "canonical_name" | "description" | "wikidata_qid"> & { aliases?: string[]; kind?: string | null; role?: string | null; sources?: PersonSource[] } }) => (
+export const PersonHeader = ({ person }: { person: Pick<PersonItem, "canonical_name" | "description" | "wikidata_qid" | "wikipedia_url"> & { aliases?: string[]; kind?: string | null; role?: string | null; sources?: PersonSource[] } }) => (
   <div style={{ display: "inline-block", verticalAlign: "top" }}>
     <strong>{person.canonical_name}</strong>
     {person.kind === "public" && (
@@ -93,6 +94,17 @@ export const PersonHeader = ({ person }: { person: Pick<PersonItem, "canonical_n
         style={{ marginLeft: 8, fontSize: "0.85em", color: "#0369a1" }}
       >
         {person.wikidata_qid}
+      </a>
+    )}
+    {person.wikipedia_url && (
+      <a
+        href={person.wikipedia_url}
+        target="_blank"
+        rel="noreferrer"
+        title="Artykuł w Wikipedii"
+        style={{ marginLeft: 8, fontSize: "0.85em", color: "#0369a1" }}
+      >
+        📖 Wikipedia
       </a>
     )}
     {person.description && <span style={{ marginLeft: 8, color: "#667" }}>{person.description}</span>}
@@ -124,6 +136,7 @@ const Persons = () => {
   const [person, setPerson] = React.useState<
     {
       canonical_name: string; description: string | null; long_description?: string | null; wikidata_qid: string | null;
+      wikipedia_url?: string | null;
       links?: PersonLink[]; aliases?: string[]; kind?: string | null; role?: string | null;
       obsidian_note_path?: string | null; sources?: PersonSource[];
     } | null
@@ -132,7 +145,7 @@ const Persons = () => {
   // and whether this is a public figure the user follows (with what they are known for).
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState({
-    name: "", description: "", long_description: "", qid: "", aliases: "", links: [] as PersonLink[],
+    name: "", description: "", long_description: "", qid: "", wikipediaUrl: "", aliases: "", links: [] as PersonLink[],
     isPublic: false, role: "", note: "",
   });
   // "Add a public person" form on the list page.
@@ -211,6 +224,7 @@ const Persons = () => {
     if (!person) return;
     setDraft({
       name: person.canonical_name, description: person.description ?? "", qid: person.wikidata_qid ?? "",
+      wikipediaUrl: person.wikipedia_url ?? "",
       aliases: (person.aliases ?? []).join("\n"),
       long_description: person.long_description ?? "", links: (person.links ?? []).map((link) => ({ ...link })),
       isPublic: person.kind === "public", role: person.role ?? "", note: person.obsidian_note_path ?? "",
@@ -245,6 +259,7 @@ const Persons = () => {
     try {
       const response = await axios.patch(`${apiUrl}/persons/${id}`, {
         canonical_name: draft.name.trim(), description: draft.description, wikidata_qid: draft.qid.trim(),
+        wikipedia_url: draft.wikipediaUrl.trim(),
         long_description: draft.long_description,
         kind: draft.isPublic ? "public" : "", role: draft.role.trim(), obsidian_note_path: draft.note.trim(),
         links: draft.links.filter((link) => link.url.trim()).map((link) => ({ url: link.url.trim(), label: link.label.trim() })),
@@ -417,6 +432,11 @@ const Persons = () => {
               <label>Identyfikator Wikidata (np. Q12345, puste = brak)
                 <input value={draft.qid} style={{ width: "100%" }}
                   onChange={(e) => setDraft({ ...draft, qid: e.target.value })} />
+              </label>
+              <label>Artykuł w Wikipedii (https://pl.wikipedia.org/wiki/…; po zmianie identyfikatora Wikidata uzupełni się sam)
+                <input type="url" value={draft.wikipediaUrl} style={{ width: "100%" }}
+                  placeholder="https://pl.wikipedia.org/wiki/…"
+                  onChange={(e) => setDraft({ ...draft, wikipediaUrl: e.target.value })} />
               </label>
               <label>Aliasy (jeden w wierszu)
                 <textarea rows={4} value={draft.aliases} style={{ width: "100%" }}
