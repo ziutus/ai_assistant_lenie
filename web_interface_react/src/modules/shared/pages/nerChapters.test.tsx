@@ -382,13 +382,29 @@ const glossaryApi = { "/ner_channel_glossary/applications": {
   applications: [{ original_text: "w Kijowie", replacement_text: "Kyiv", occurrences: 3 }],
 } };
 
+it("shows the glossary name in the text with a tooltip naming the original, and can show the original", async () => {
+  mockApi({
+    "/website_get": { title: "Film testowy", document_type: "youtube", byline: "Kanał" },
+    ...glossaryApi,
+  });
+  await open();
+  const note = await within(screen.getByRole("region", { name: "#1 Wstęp" })).findByRole("note", { name: "Słownik kanału" });
+  await waitFor(() => expect(sentenceBlock().textContent).not.toContain("w Kijowie"));
+  const mark = Array.from(sentenceBlock().querySelectorAll("mark")).find((node) => node.textContent === "Kyiv") as HTMLElement;
+  expect(mark).toBeTruthy();
+  expect(mark.title).toContain("Ze słownika kanału „Kanał”");
+  expect(mark.title).toContain("w tekście stoi „w Kijowie”, czytane jako „Kyiv”");
+  fireEvent.click(within(note).getByLabelText(/Pokaż oryginalny tekst/));
+  await waitFor(() => expect(sentenceBlock().textContent).toContain("w Kijowie"));
+});
+
 it("highlights a glossary phrase in the text from its button and keeps it in the address", async () => {
   mockApi(glossaryApi);
   await open();
   const note = await within(screen.getByRole("region", { name: "#1 Wstęp" })).findByRole("note", { name: "Słownik kanału" });
   expect(sentenceBlock().querySelector("mark[data-focus-mark]")).toBeNull();
   fireEvent.click(within(note).getByRole("button", { name: /Podświetl/ }));
-  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("Kyiv"));
   expect(screen.getByRole("status").textContent).toContain("w Kijowie");
   fireEvent.click(within(note).getByRole("button", { name: /Wyczyść/ }));
   await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")).toBeNull());
@@ -398,7 +414,7 @@ it("restores the glossary highlight from the address", async () => {
   mockApi(glossaryApi);
   render(<MemoryRouter initialEntries={["/ner/42?glossary=w%20Kijowie"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
   await screen.findByRole("region", { name: "#1 Wstęp" });
-  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("w Kijowie"));
+  await waitFor(() => expect(sentenceBlock().querySelector("mark[data-focus-mark]")?.textContent).toBe("Kyiv"));
 });
 
 it("hides the document-wide countries row on a single chapter but not on the whole-document view", async () => {

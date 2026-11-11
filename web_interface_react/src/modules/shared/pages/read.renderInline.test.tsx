@@ -85,6 +85,32 @@ describe("renderMarkdown — single line breaks within a paragraph", () => {
   });
 });
 
+describe("renderMarkdown — channel glossary", () => {
+  const described = {
+    terms: [], descriptionByTerm: new Map<string, string>(),
+    glossary: {
+      terms: ["Rzymianie"],
+      byTerm: new Map([["rzymianie", { canonical: "Żydzi", hint: "Ze słownika kanału „X”: w tekście stoi „Rzymianie”, czytane jako „Żydzi”." }]]),
+    },
+  };
+
+  it("shows the glossary name in its own mark with a tooltip naming the original", () => {
+    const { container } = render(
+      <MemoryRouter><div>{renderMarkdown("Wtedy Rzymianie przyszli.", [], undefined, undefined, null,
+        undefined, undefined, undefined, described)}</div></MemoryRouter>);
+    const mark = container.querySelector("mark.glossary-substitution") as HTMLElement;
+    expect(mark.textContent).toBe("Żydzi");
+    expect(mark.title).toContain("w tekście stoi „Rzymianie”");
+    expect(container.textContent).toBe("Wtedy Żydzi przyszli.");
+  });
+
+  it("leaves the text alone without a glossary", () => {
+    const { container } = render(
+      <MemoryRouter><div>{renderMarkdown("Wtedy Rzymianie przyszli.", [])}</div></MemoryRouter>);
+    expect(container.textContent).toBe("Wtedy Rzymianie przyszli.");
+  });
+});
+
 describe("renderMarkdown — heading not sharing a blank line with the text below", () => {
   it("keeps a follow-on line out of the <h_> and renders it as its own block", () => {
     const { container } = render(
