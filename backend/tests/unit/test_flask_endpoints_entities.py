@@ -1290,7 +1290,7 @@ class TestPersonUpdate:
         session.commit.assert_not_called()
 
     def test_updates_descriptions_and_links(self, client):
-        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid="Q37181", kind=None, role=None, obsidian_note_path=None)
+        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid="Q37181", wikipedia_url=None, kind=None, role=None, obsidian_note_path=None)
         session = MagicMock()
         session.get.return_value = person
         body = {
@@ -1314,7 +1314,7 @@ class TestPersonUpdate:
         session.commit.assert_called_once()
 
     def test_empty_string_clears_description(self, client):
-        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid=None, description=None, links=[],
+        person = MagicMock(id=5, canonical_name="Lula", wikidata_qid=None, wikipedia_url=None, description=None, links=[],
                            kind=None, role=None, obsidian_note_path=None)
         session = MagicMock()
         session.get.return_value = person
@@ -1325,7 +1325,7 @@ class TestPersonUpdate:
         assert person.long_description is None
 
     def test_public_person_fields_are_saved_and_validated(self, client):
-        person = MagicMock(id=5, canonical_name="Szewko", wikidata_qid=None, links=[], kind=None, role=None,
+        person = MagicMock(id=5, canonical_name="Szewko", wikidata_qid=None, wikipedia_url=None, links=[], kind=None, role=None,
                            obsidian_note_path=None, description=None, long_description=None, aliases=[])
         session = MagicMock()
         session.get.return_value = person
@@ -1728,3 +1728,96 @@ def test_refresh_filters_chapter_types(client, types, expected):
         refresh.assert_not_called()
         session.commit.assert_not_called()
     enqueue.assert_not_called()
+
+
+class TestWikipediaUrl:
+    """`wikipedia_url` on persons (PATCH /persons/<id>) and organizations (PATCH /organizations/<id>)."""
+
+    @staticmethod
+    def _patch_person(client, body, **person_kwargs):
+        defaults = dict(id=5, canonical_name="Lula", wikidata_qid=None, wikipedia_url=None, links=[], kind=None,
+                        description=None, long_description=None,
+                        role=None, obsidian_note_path=None, aliases=[])
+        person = MagicMock(**{**defaults, **person_kwargs})
+        session = MagicMock()
+        session.get.return_value = person
+        session.execute.return_value.scalars.return_value.first.return_value = None
+        with patch("server.get_scoped_session", return_value=session), \
+                patch("library.knowledge_sources.sources_for_persons", return_value={}):
+            resp = client.patch("/persons/5", json=body, headers=API_HEADERS)
+        return resp, person
+
+    def test_person_address_is_saved_as_https(self, client):
+        resp, person = self._patch_person(client, {"wikipedia_url": "http://pl.wikipedia.org/wiki/Lula"})
+        assert resp.status_code == 200
+        assert person.wikipedia_url == "https://pl.wikipedia.org/wiki/Lula"
+        assert resp.get_json()["person"]["wikipedia_url"] == "https://pl.wikipedia.org/wiki/Lula"
+
+    def test_person_foreign_address_is_rejected_before_any_write(self, client):
+        resp, person = self._patch_person(client, {"wikipedia_url": "https://evil.example/wiki/Lula"})
+        assert resp.status_code == 400
+        assert person.wikipedia_url is None
+
+    def test_person_empty_address_clears_it(self, client):
+        resp, person = self._patch_person(
+            client, {"wikipedia_url": ""}, wikipedia_url="https://pl.wikipedia.org/wiki/Lula")
+        assert resp.status_code == 200
+        assert person.wikipedia_url is None
+
+    def test_new_qid_fills_the_address_from_wikidata(self, client):
+        with patch("library.wikidata_client.wikipedia_url_for_qid",
+                   return_value="https://pl.wikipedia.org/wiki/Lula") as lookup:
+            resp, person = self._patch_person(client, {"wikidata_qid": "Q37181"})
+        assert resp.status_code == 200
+        lookup.assert_called_once_with("Q37181")
+        assert person.wikipedia_url == "https://pl.wikipedia.org/wiki/Lula"
+
+    def test_new_qid_without_article_keeps_the_existing_address(self, client):
+        with patch("library.wikidata_client.wikipedia_url_for_qid", return_value=None):
+            _, person = self._patch_person(
+                client, {"wikidata_qid": "Q37181"}, wikipedia_url="https://pl.wikipedia.org/wiki/Hand")
+        assert person.wikipedia_url == "https://pl.wikipedia.org/wiki/Hand"
+
+    def test_explicit_address_wins_over_the_wikidata_lookup(self, client):
+        with patch("library.wikidata_client.wikipedia_url_for_qid") as lookup:
+            _, person = self._patch_person(
+                client, {"wikidata_qid": "Q37181", "wikipedia_url": "https://en.wikipedia.org/wiki/Lula"})
+        lookup.assert_not_called()
+        assert person.wikipedia_url == "https://en.wikipedia.org/wiki/Lula"
+
+    def test_unchanged_qid_does_not_call_wikidata(self, client):
+        with patch("library.wikidata_client.wikipedia_url_for_qid") as lookup:
+            self._patch_person(client, {"wikidata_qid": "Q37181"}, wikidata_qid="Q37181")
+        lookup.assert_not_called()
+
+    @staticmethod
+    def _patch_org(client, body, **kwargs):
+        from library.db.models import Organization
+
+        organization = Organization(id=1639, canonical_name="NATO", links=[], **kwargs)
+        session = MagicMock()
+        session.get.return_value = organization
+        session.scalar.return_value = None
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/organizations/1639", json=body, headers=API_HEADERS)
+        return resp, organization, session
+
+    def test_organization_address_saved_and_returned(self, client):
+        resp, organization, session = self._patch_org(
+            client, {"wikipedia_url": " https://pl.wikipedia.org/wiki/NATO "})
+        assert resp.status_code == 200
+        assert organization.wikipedia_url == "https://pl.wikipedia.org/wiki/NATO"
+        assert resp.get_json()["wikipedia_url"] == "https://pl.wikipedia.org/wiki/NATO"
+        session.commit.assert_called_once()
+
+    def test_organization_foreign_address_is_a_400_with_no_write(self, client):
+        resp, organization, session = self._patch_org(client, {"wikipedia_url": "https://nato.int/wiki/NATO"})
+        assert resp.status_code == 400
+        assert organization.wikipedia_url is None
+        session.commit.assert_not_called()
+
+    def test_organization_address_untouched_when_key_absent(self, client):
+        resp, organization, _ = self._patch_org(
+            client, {"description": "Sojusz"}, wikipedia_url="https://pl.wikipedia.org/wiki/NATO")
+        assert resp.status_code == 200
+        assert organization.wikipedia_url == "https://pl.wikipedia.org/wiki/NATO"

@@ -391,6 +391,19 @@ python imports/fix_duplicate_analysis_runs.py --apply    # write changes
 python imports/fix_duplicate_analysis_runs.py --id 9245  # single document
 ```
 
+### `review_publication_events.py`
+
+One-off review of publications that were stored as world events: a sentence such as "w 2015 roku opublikowano badanie Towers i in." is a source of information, not an event (the timeline extractor now skips such statements, `timeline_events.is_publication_statement()`). Finds timeline entries (`document_events`) and registry events (`geo_events`) that only report a study or a book and moves them to information sources through `library/document_event_sources.py`: a timeline entry becomes an approved `cited` source of its document and leaves the timeline; a registry event becomes sources of the documents that cite it and is set to `rejected` (never revived by a repeated report) — only when nothing depends on it (still `proposed`, kind `other`, no participants, no assessment resting on it). Anything else is listed under SKIPPED with the reason, for a human. Dry-run executes nothing and rolls back.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+```bash
+cd backend
+PYTHONPATH=. python -X utf8 imports/review_publication_events.py            # dry-run (default)
+PYTHONPATH=. python -X utf8 imports/review_publication_events.py --apply
+PYTHONPATH=. python -X utf8 imports/review_publication_events.py --limit 50
+```
+
 ### `reattribute_facebook_facts.py`
 
 One-off repair for Facebook-derived contact facts that were saved through `PATCH /contacts/<id>` after the sourced-fact layer landed: that endpoint records every value as a pinned `user_manual` assertion, so the values look like the owner's own input. Finds `user_manual` assertions of `birthday`/`gender`/`current_city`/`hometown` written by one `asserted_by` identity (`api-key:<id>` for the key the skill ran with — never a `user:<id>` from the web UI) since `--since`, re-labels them to `--source` (default `facebook`) and releases the manual pin via `contact_facts_service.reassign_assertion_source()`. The selected value and the Contact columns are untouched; only provenance changes, so later claims from better sources can compete normally.
@@ -472,6 +485,18 @@ cd backend
 python imports/strip_onet_google_promo_backfill.py                              # dry-run (default)
 python imports/strip_onet_google_promo_backfill.py --apply
 python imports/strip_onet_google_promo_backfill.py --apply --include-analyzed --id 10752
+```
+
+### `backfill_person_wikipedia_url.py`
+
+Fills `persons.wikipedia_url` from the Wikidata sitelinks (Polish Wikipedia first, English as fallback) for persons that have a `wikidata_qid` and no address yet; a hand-entered address is never overwritten. Asks Wikidata for 50 ids per request and pauses between batches, so run it in small portions (`--limit`). Dry-run by default.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, writes only with `--apply`.
+
+```bash
+cd backend
+python imports/backfill_person_wikipedia_url.py                    # dry-run (default)
+python imports/backfill_person_wikipedia_url.py --apply --limit 200
 ```
 
 ### `organization_descriptions_backfill.py`

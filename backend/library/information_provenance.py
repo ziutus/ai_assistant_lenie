@@ -206,12 +206,15 @@ Rozróżnij role:
 - cited: źródło jest cytowane lub przywołane,
 - republication: tekst jest przedrukiem lub opracowaniem materiału źródła,
 - data_source: raport, urząd, badanie albo baza dostarczająca dane.
+Konkretne badanie, raport lub publikację naukową (np. „badanie Sherry Towers i in.”) wpisz jako źródło
+z source_type "study" (badanie, artykuł naukowy, praca), "report" (raport instytucji lub firmy) albo "book".
+Nazwa takiego źródła to autorzy i/lub tytuł, a nie rok ani nazwa czasopisma.
 
 Ujednolicaj nazwy (np. WSJ -> The Wall Street Journal), ale raw_mention zachowaj tak jak w tekście.
 evidence_excerpt musi być dokładnym, krótkim cytatem z tekstu potwierdzającym relację.
 Zwróć wyłącznie JSON:
 [{{"canonical_name":"...", "raw_mention":"...", "role":"original_reporting|cited|republication|data_source",
-   "source_type":"newspaper|portal|agency|institution|report|database|other",
+   "source_type":"newspaper|portal|agency|institution|report|study|book|database|other",
    "domain":null, "evidence_excerpt":"...", "confidence":0}}]
 Pomiń niepewne pozycje poniżej confidence 60. Nie dopowiadaj domen ani URL-i.
 
@@ -414,9 +417,11 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
     """Refresh automatic provenance links without deleting human approvals."""
     from library.relationship_audit import audit_removals
 
+    # Publications the timeline extractor found are not derived by this refresh, so it must not wipe them.
     removable = session.execute(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == doc.id,
         DocumentInformationSource.review_status != "approved",
+        DocumentInformationSource.extraction_method != "timeline_publication",
     )).scalars().all()
     audit_removals(session, doc.id, "information_source", "llm_refresh", removable, lambda row: {
         "source_id": row.source_id, "role": row.role, "raw_mention": row.raw_mention,

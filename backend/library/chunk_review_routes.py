@@ -2243,6 +2243,9 @@ def document_events(doc_id: int):
         abort(404, f"Document {doc_id} not found")
 
     query = session.query(DocumentEvent).filter(DocumentEvent.document_id == doc_id)
+    # Dismissed proposals are hidden; ``include_ignored=1`` lists them too (the panel's "Zignorowane" section).
+    if request.args.get("include_ignored") not in ("1", "true", "yes"):
+        query = query.filter(DocumentEvent.ignored_at.is_(None))
     chapter_filter = request.args.get("chapter_position", type=int)
     if chapter_filter is not None:
         query = query.filter(DocumentEvent.chapter_position == chapter_filter)
@@ -2355,6 +2358,7 @@ def _event_to_dict(row) -> dict:
         "description": row.description,
         "anchor_quote": row.anchor_quote,
         "chapter_position": row.chapter_position,
+        "ignored": getattr(row, "ignored_at", None) is not None,
     }
 
 
@@ -2402,6 +2406,9 @@ def document_chapter_detect_events(doc_id: int, position: int):
         "events": [{**_event_to_dict(row), "world_events": []} for row in rows],
         "rejected_without_quote": report.get("rejected_without_quote", 0),
         "rejected_without_date": report.get("rejected_without_date", 0),
+        "publications_as_sources": report.get("publications", 0),
+        "skipped_ignored": result.get("skipped_ignored", 0),
+        "publication_sources": result.get("publication_names", []),
         "invalid_json": report.get("invalid_json", 0),
     })
 

@@ -10,6 +10,7 @@ from flask import Blueprint, abort, g, jsonify, request
 from library import knowledge_sources
 from library.db.engine import get_scoped_session
 from library.db.models import DiscoverySource, Person
+from library.wikidata_client import normalize_wikipedia_url
 
 bp = Blueprint("public_persons", __name__)
 
@@ -24,7 +25,8 @@ def _writer():
 def _person_dict(session, person: Person) -> dict:
     return {
         "id": person.id, "uuid": person.uuid, "canonical_name": person.canonical_name,
-        "wikidata_qid": person.wikidata_qid, "description": person.description,
+        "wikidata_qid": person.wikidata_qid, "wikipedia_url": person.wikipedia_url,
+        "description": person.description,
         "long_description": person.long_description, "links": person.links or [],
         "aliases": [alias.alias for alias in person.aliases],
         **knowledge_sources.person_fields(person),
@@ -55,6 +57,7 @@ def create_person():
     try:
         fields = knowledge_sources.validate_person_fields(body)
         links = normalize_person_links(body["links"]) if "links" in body else []
+        wikipedia_url = normalize_wikipedia_url(body.get("wikipedia_url"))
     except ValueError as exc:
         abort(400, str(exc))
     aliases = body.get("aliases") or []
@@ -65,7 +68,7 @@ def create_person():
             abort(400, f"{text_field} must be a string")
     person = Person(
         canonical_name=name.strip(), description=(body.get("description") or "").strip() or None,
-        long_description=(body.get("long_description") or "").strip() or None, links=links, **fields,
+        long_description=(body.get("long_description") or "").strip() or None, links=links, wikipedia_url=wikipedia_url, **fields,
     )
     session.add(person)
     session.flush()

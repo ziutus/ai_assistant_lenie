@@ -6,6 +6,7 @@ import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../componen
 import ChannelBadge from "../components/ChannelBadge";
 import ChapterDescriptionsPanel, { ChapterDescriptionsButton } from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import ChapterEventsPanel, { ChapterEventsDetectButton } from "../components/ChapterEventsPanel/chapterEventsPanel";
+import ChapterSourcesPanel from "../components/ChapterSourcesPanel/chapterSourcesPanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
 import ToneSpansPanel, { useToneSpans } from "../components/ToneSpansPanel/toneSpansPanel";
@@ -479,6 +480,7 @@ const NerChapters = () => {
   // "Wykryj wydarzenia" sits in the same button bar: a click bumps the nonce, the chapter's panel runs the detection.
   const [eventsDetect, setEventsDetect] = React.useState<{ position: number; nonce: number } | null>(null);
   const [eventsBusyFor, setEventsBusyFor] = React.useState<number | null>(null);
+  const [sourcesVersion, setSourcesVersion] = React.useState(0);
   // Tone passages found on request (ToneSpansPanel); one list for the whole document, filtered per chapter by the panel.
   const [toneSpans, setToneSpans] = useToneSpans(apiUrl, apiKey, id);
   const [toneVersion, setToneVersion] = React.useState(0);
@@ -814,7 +816,11 @@ const NerChapters = () => {
                             position={section.position}
                             detectSignal={eventsDetect?.position === section.position ? eventsDetect.nonce : 0}
                             onBusyChange={(busy) => setEventsBusyFor((current) =>
-                              busy ? section.position : current === section.position ? null : current)} />}
+                              busy ? section.position : current === section.position ? null : current)}
+                            onSourcesChanged={() => setSourcesVersion((current) => current + 1)} />}
+                          {id && <ChapterSourcesPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
+                            chapterText={(section.sentences ?? []).map((sentence) => sentence.text).join(" ")}
+                            refreshKey={sourcesVersion} />}
                           {id && (
                             <div aria-label={`Ton i okres rozdziału ${section.position}`}>
                               <TimePeriodsPanel docId={id} currentChapter={section.position} />

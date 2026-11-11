@@ -41,6 +41,7 @@ from library.contact_routes import bp as contact_bp
 from library.document_links_routes import bp as document_links_bp
 from library.geopolitics_routes import bp as geopolitics_bp
 from library.world_events_routes import bp as world_events_bp
+from library.document_sources_routes import bp as document_sources_bp
 from library.concept_routes import bp as concepts_bp
 from library.project_card_routes import bp as project_cards_bp
 from library.recipe_routes import bp as recipes_bp
@@ -148,6 +149,7 @@ app.register_blueprint(contact_bp)
 app.register_blueprint(document_links_bp)
 app.register_blueprint(geopolitics_bp)
 app.register_blueprint(world_events_bp)
+app.register_blueprint(document_sources_bp)
 app.register_blueprint(concepts_bp)
 app.register_blueprint(project_cards_bp)
 app.register_blueprint(recipes_bp)
@@ -946,7 +948,7 @@ def persons_search():
         "persons": [
             {
                 "id": p.id, "uuid": p.uuid, "canonical_name": p.canonical_name,
-                "wikidata_qid": p.wikidata_qid, "description": p.description,
+                "wikidata_qid": p.wikidata_qid, "wikipedia_url": p.wikipedia_url, "description": p.description,
                 "long_description": p.long_description, "links": p.links or [],
                 "aliases": [a.alias for a in p.aliases],
                 **knowledge_sources.person_fields(p), "sources": sources.get(p.id, []),
@@ -1002,6 +1004,7 @@ def person_documents():
         "status": "success",
         "person": {"id": person.id, "canonical_name": person.canonical_name,
                    "description": person.description, "wikidata_qid": person.wikidata_qid,
+                   "wikipedia_url": person.wikipedia_url,
                    "long_description": person.long_description, "links": person.links or [],
                    "aliases": [a.alias for a in person.aliases],
                    **knowledge_sources.person_fields(person),
@@ -1052,6 +1055,13 @@ def person_update(person_id: int):
         qid = qid.strip() if isinstance(qid, str) else qid
         if qid and not (isinstance(qid, str) and re.fullmatch(r"Q\d{1,12}", qid)):
             return {"status": "error", "message": "Identyfikator Wikidata ma postać Q123."}, 400
+    wikipedia_url = None
+    if 'wikipedia_url' in data:
+        from library.wikidata_client import normalize_wikipedia_url
+        try:
+            wikipedia_url = normalize_wikipedia_url(data['wikipedia_url'])
+        except ValueError:
+            return {"status": "error", "message": "Adres Wikipedii ma postać https://pl.wikipedia.org/wiki/Tytuł."}, 400
     aliases = data.get('aliases')
     if aliases is not None and not (isinstance(aliases, list) and all(isinstance(a, str) for a in aliases)):
         return {"status": "error", "message": "Aliasy muszą być listą tekstów."}, 400
@@ -1083,7 +1093,14 @@ def person_update(person_id: int):
         if links is not None:
             person.links = links
         if 'wikidata_qid' in data:
+            qid_changed = (qid or None) != person.wikidata_qid
             person.wikidata_qid = qid or None
+            if qid and qid_changed and 'wikipedia_url' not in data:
+                # A new Wikidata id: take the article address from its sitelinks (fail-soft, no address = unchanged).
+                from library.wikidata_client import wikipedia_url_for_qid
+                person.wikipedia_url = wikipedia_url_for_qid(qid) or person.wikipedia_url
+        if 'wikipedia_url' in data:
+            person.wikipedia_url = wikipedia_url
         if aliases is not None:
             keep = {a.strip().lower() for a in aliases if a.strip()}
             for existing in list(person.aliases):
@@ -1102,7 +1119,8 @@ def person_update(person_id: int):
     return jsonify({"status": "success", "person": {
         "id": person.id, "canonical_name": person.canonical_name, "description": person.description,
         "long_description": person.long_description, "links": person.links or [],
-        "wikidata_qid": person.wikidata_qid, "aliases": [a.alias for a in person.aliases],
+        "wikidata_qid": person.wikidata_qid, "wikipedia_url": person.wikipedia_url,
+        "aliases": [a.alias for a in person.aliases],
         **knowledge_sources.person_fields(person),
         "sources": knowledge_sources.sources_for_persons(session, [person.id]).get(person.id, [])}}), 200
 
@@ -1313,9 +1331,11 @@ def document_information_sources(doc_id: int):
     session = get_scoped_session()
     if session.get(Document, doc_id) is None:
         return {"status": "error", "message": "Document not found"}, 404
-    links = session.scalars(select(DocumentInformationSource).where(
-        DocumentInformationSource.document_id == doc_id
-    ).order_by(DocumentInformationSource.role, DocumentInformationSource.id)).all()
+    query = select(DocumentInformationSource).where(DocumentInformationSource.document_id == doc_id)
+    # A link the reviewer rejected stays in the table (so a re-detection does not re-propose it) but is not listed.
+    if request.args.get("include_rejected") not in ("1", "true", "yes"):
+        query = query.where(DocumentInformationSource.review_status != "rejected")
+    links = session.scalars(query.order_by(DocumentInformationSource.role, DocumentInformationSource.id)).all()
     from library.db.models import DocumentSourceRelationship
     approved_relationships = session.scalars(select(DocumentSourceRelationship).where(
         DocumentSourceRelationship.document_id == doc_id,
@@ -1328,6 +1348,7 @@ def document_information_sources(doc_id: int):
         "canonical_name": link.source.canonical_name,
         "source_type": link.source.source_type,
         "domain": link.source.domain,
+        "organization_id": link.source.organization_id,
         "role": link.role,
         "raw_mention": link.raw_mention,
         "source_url": link.source_url,
@@ -3289,6 +3310,7 @@ def _organization_location_fields(organization) -> dict:
         "latitude": float(organization.latitude) if organization.latitude is not None else None,
         "longitude": float(organization.longitude) if organization.longitude is not None else None,
         "website": organization.website,
+        "wikipedia_url": organization.wikipedia_url,
         "links": organization.links or [],
         "obsidian_note_path": organization.obsidian_note_path,
         "primary_note_document_id": organization.primary_note_document_id,
@@ -3478,6 +3500,13 @@ def organization_update(organization_id: int):
     if 'links' in data:
         from library import tool_links
         cleaned_links = tool_links.clean_links(data.get('links') if data.get('links') is not None else [])
+    wikipedia_url = None
+    if 'wikipedia_url' in data:
+        from library.wikidata_client import normalize_wikipedia_url
+        try:
+            wikipedia_url = normalize_wikipedia_url(data['wikipedia_url'])
+        except ValueError:
+            return {"status": "error", "message": "Adres Wikipedii ma postać https://pl.wikipedia.org/wiki/Tytuł."}, 400
     rename_result = None
     if 'canonical_name' in data:
         new_name = (data.get('canonical_name') or "").strip()
@@ -3515,6 +3544,8 @@ def organization_update(organization_id: int):
             setattr(organization, field, (data.get(field) or "").strip() or None)
     if cleaned_links is not None:
         organization.links = cleaned_links
+    if 'wikipedia_url' in data:
+        organization.wikipedia_url = wikipedia_url
     if 'primary_note_document_id' in data:
         from library.db.models import Document
         raw_note_id = data.get('primary_note_document_id')

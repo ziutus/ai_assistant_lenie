@@ -83,7 +83,13 @@ Drop and say why when it is:
 - **noise and advertising inside a `TEMAT` chapter**: a sponsor read-out ("ten odcinek jest sponsorowany…"), a
   promo or discount code, a call to subscribe or support the channel, a product pitch, "czytaj także" lists, a
   newsletter or cookie banner, footnote/bibliography lists, or an event named only as part of an advertisement
-  ("promocja do 30 listopada"). The date in an ad is not a world event.
+  ("promocja do 30 listopada"). The date in an ad is not a world event;
+- **a publication**: "w 2015 roku opublikowano badanie…", the appearance of a study, a scientific article or a book.
+  That is a source of information, not an event of the world. Do not add it to the registry; list it under the
+  dropped entries as "źródło, nie wydarzenie" and, when it is a stored timeline proposal, mention that the reader can
+  turn it into an information source with "📚 To źródło, nie wydarzenie" on `/ner` (or
+  `POST /document_events/<id>/to_information_source`). Add the events the study DESCRIBES (with their own dates)
+  instead. A report or a law whose publication itself caused consequences (a resignation, protests) stays an event.
 
 When two quotes describe one occurrence, keep one (the clearest quote). Mind the caps: a chapter rarely holds more
 than 10-15 real events; prefer fewer, solid ones to a long speculative list.

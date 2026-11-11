@@ -1736,6 +1736,9 @@ class DocumentEvent(Base):
     sort_year: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     anchor_quote: Mapped[str | None] = mapped_column(Text)
+    # Set when the reader dismissed the proposal ("not an event"): hidden from the list and kept so that a new
+    # detection does not bring the same passage back.
+    ignored_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -2406,6 +2409,8 @@ class Person(Base):
     )
     canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
     wikidata_qid: Mapped[str | None] = mapped_column(String(20), unique=True)
+    # Wikipedia article about the person (https://<lang>.wikipedia.org/wiki/...); filled from the Wikidata sitelinks.
+    wikipedia_url: Mapped[str | None] = mapped_column(Text)
     # short description: tooltip on every mention in the reader
     description: Mapped[str | None] = mapped_column(Text)
     # long description: shown only on the person page (/persons/:id)
@@ -2589,6 +2594,8 @@ class Organization(Base):
     latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     website: Mapped[str | None] = mapped_column(Text)
+    # Wikipedia article about the organization (https://<lang>.wikipedia.org/wiki/...); entered by hand.
+    wikipedia_url: Mapped[str | None] = mapped_column(Text)
     # External pages about the organization: [{"url": "https://…", "label": "Wikipedia"}] (same shape as Person.links).
     links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     # Vault-relative path of the Obsidian note describing the organization.
@@ -4727,6 +4734,7 @@ class GeoEventKind(Base):
 
     code: Mapped[str] = mapped_column(String(30), primary_key=True)
     label: Mapped[str] = mapped_column(String(80), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100", default=100)
 
 
 class GeoEventRole(Base):
