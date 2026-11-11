@@ -34,6 +34,7 @@ interface OrganizationDetail {
   latitude: number | null;
   longitude: number | null;
   website: string | null;
+  wikipedia_url?: string | null;
   // External pages about the organization (Wikipedia, ...), the same {url, label} list persons have.
   links?: PersonLink[];
   obsidian_note_path: string | null;
@@ -191,6 +192,7 @@ const Organizations = () => {
   const [newCountryNote, setNewCountryNote] = React.useState("");
   const [editAddress, setEditAddress] = React.useState("");
   const [editWebsite, setEditWebsite] = React.useState("");
+  const [editWikipediaUrl, setEditWikipediaUrl] = React.useState("");
   const [editLinks, setEditLinks] = React.useState<PersonLink[]>([]);
   const [editNotePath, setEditNotePath] = React.useState("");
   const [aliases, setAliases] = React.useState<OrganizationAlias[]>([]);
@@ -301,6 +303,7 @@ const Organizations = () => {
       setEditType(orgResponse.data.organization_type ?? "");
       setEditAddress(orgResponse.data.headquarters_address ?? "");
       setEditWebsite(orgResponse.data.website ?? "");
+      setEditWikipediaUrl(orgResponse.data.wikipedia_url ?? "");
       setEditLinks((orgResponse.data.links ?? []).map((link: PersonLink) => ({ ...link })));
       setEditNotePath(orgResponse.data.obsidian_note_path ?? "");
       setDocuments(docsResponse.data.documents ?? []);
@@ -443,6 +446,7 @@ const Organizations = () => {
       const response = await axios.patch(`${apiUrl}/organizations/${organization.id}`, {
         description: editDescription, organization_type: editType,
         headquarters_address: editAddress, website: editWebsite, obsidian_note_path: editNotePath,
+        wikipedia_url: editWikipediaUrl.trim(),
         // Rows left empty in the form are dropped, like on the person page.
         links: editLinks.filter((link) => link.url.trim())
           .map((link) => ({ url: link.url.trim(), label: link.label.trim() })),
@@ -456,6 +460,7 @@ const Organizations = () => {
         latitude: response.data.latitude,
         longitude: response.data.longitude,
         website: response.data.website,
+        wikipedia_url: response.data.wikipedia_url,
         links: response.data.links ?? [],
         obsidian_note_path: response.data.obsidian_note_path,
         primary_note_document_id: response.data.primary_note_document_id,
@@ -649,6 +654,14 @@ const Organizations = () => {
                 onChange={(e) => setEditWebsite(e.target.value)}
                 style={{ padding: "6px 10px" }}
               />
+              <input
+                type="url"
+                value={editWikipediaUrl}
+                placeholder="Artykuł w Wikipedii (https://pl.wikipedia.org/wiki/…)"
+                aria-label="Artykuł w Wikipedii"
+                onChange={(e) => setEditWikipediaUrl(e.target.value)}
+                style={{ padding: "6px 10px" }}
+              />
               <div>
                 Linki (np. Wikipedia)
                 {editLinks.map((link, index) => (
@@ -681,7 +694,7 @@ const Organizations = () => {
           )}
 
           {!isEditing && (organization.headquarters_address || organization.website || organization.obsidian_note_path
-            || !!organization.links?.length) && (
+            || organization.wikipedia_url || !!organization.links?.length) && (
             <div style={{ marginTop: 10, fontSize: "0.9em", color: "#334155" }}>
               {organization.headquarters_address && <div>🏢 Siedziba: {organization.headquarters_address}</div>}
               {!!organization.links?.length && (
@@ -693,6 +706,11 @@ const Organizations = () => {
                       <a href={link.url} target="_blank" rel="noopener noreferrer" style={{ color: "#0369a1" }}>{linkLabel(link)}</a>
                     </span>
                   ))}
+                </div>
+              )}
+              {organization.wikipedia_url && (
+                <div data-testid="organization-wikipedia">
+                  📖 <a href={organization.wikipedia_url} target="_blank" rel="noopener noreferrer">Wikipedia</a>
                 </div>
               )}
               {organization.website && (

@@ -1057,6 +1057,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             item["canonical_name"] = link["canonical_name"]
             item["person_description"] = link["description"]
             item["wikidata_qid"] = link["wikidata_qid"]
+            if link.get("wikipedia_url"):
+                item["wikipedia_url"] = link["wikipedia_url"]
             item["confidence"] = link["confidence"]
         if row.entity_type == "orgName":
             source_link = next((
@@ -1079,7 +1081,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["organization_description"] = organization_link.organization.description
                 links = organization_link.organization.links or []
                 item["organization_links"] = links
-                wikipedia = _wikipedia_url_from_links(links)
+                wikipedia = organization_link.organization.wikipedia_url or _wikipedia_url_from_links(links)
                 if wikipedia:
                     item["wikipedia_url"] = wikipedia
         grouped.setdefault(row.entity_type, []).append(item)
