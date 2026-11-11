@@ -204,6 +204,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T33 | Nazwa kraju zapisana przez STT jak imię lub nazwisko | transkrypcja daje „Salvador” zamiast „Salwador”; spaCy typuje jednowyrazowe słowo jako `persName`, a rejestr osób pomija samo imię, więc nic nie rozstrzyga znaczenia z kontekstu | „Salvador walczy na Haiti”, „prezydent Salvadoru Bukele” | E048 |
 | T34 | Eufemizm kanału zamiast nazwy organizacji | autor kanału nazywa organizację omownie („siewcy pokoju” = CIA); żadna reguła nie zna tej frazy, więc nie powstaje encja organizacji | „W Wenezueli siewcy pokoju dostarczali informacje wywiadowcze…” | E050 |
 | T36 | Filtr istotności kraju na próbce tekstu | LLM widzi początek i krótkie fragmenty, bez liczby wzmianek; może odrzucić szeroko omawiany kraj, a brak audytu uniemożliwia odtworzenie odpowiedzi | Haiti / Kolumbia (dok. #11237) | E054 |
+| T37 | Data w roli nazwy wydarzenia | fraza „D miesiąca” bez roku („11 września”) oznacza w tekście znane wydarzenie, ale trafia tylko do `ner_temporal_candidates` jako zwykła data; kod nie odróżnia terminu kalendarzowego od nazwy zdarzenia, a reguła po przyimku pomyliłaby się na prawdziwych datach | „Po 11 września ze względu na masową inwigilację…” | E055 |
 
 Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T36,
 ...) zamiast naciągać istniejącą.
@@ -827,3 +828,15 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — `COUNTRY_AUTO_CONFIRM_MENTIONS = 5` potwierdza kraj przed filtrem LLM; pozostali kandydaci przechodzą dotychczasowy prompt. Audyt `country_detection_runs` / `country_tag_decisions` zapisuje liczniki, fragmenty, decyzje, pełny prompt i odpowiedź, błędy i identyfikator użycia; dostęp przez `GET /document/<id>/country_detections`.
 - **Test regresyjny:** `test_article_tagging.py::TestCountryDetectionAudit` — Haiti z transkrypcji przy pustej odpowiedzi LLM, granica 4/5, pominięcie LLM i audyt błędów; `test_country_detection_audit.py` — zapis, izolacja awarii, ścieżki wywołań i endpoint.
 - **Status:** kod wdrożony na NAS 2026-11-06 (backend z gałęzi PR #1003, migracja `1f312d5ec5a8`); dane #11237 naprawione ponownym „Wykryj państwa” (`detection_id` 1): dodane Haiti, Kolumbia, Palestyna oraz kraje z pojedynczymi wzmiankami potwierdzone przez LLM (Hiszpania, Dania, Burkina Faso, Kuba, Dominikana, Brazylia, Argentyna). Audyt zapisał pełny prompt (10 327 znaków), surową odpowiedź Bielika i 25 decyzji. Obserwacja: po zawężeniu promptu do kandydatów poniżej progu (17 krajów) model potwierdził 15 z 16 z nich, także przy 1 wzmiance, więc filtr „wyraźnie omawiane” nie odsiewa przelotnych wzmianek; do osobnej decyzji (np. dolna granica wzmianek).
+
+
+### E055 — „11 września” jako zwykła data zamiast nazwy wydarzenia (dok. #11251, PR n/d, 2026-11-11)
+
+- **Typ encji:** brak encji (data); docelowo `eventName`.
+- **Kategoria:** T37 — data w roli nazwy wydarzenia.
+- **Zdanie źródłowe:** „Po 11 września ze względu na masową inwigilację przez służby kanałów łączności elektronicznej jest wskazany po prostu na porażki.”
+- **Objaw:** fraza nie jest encją; istnieje tylko jako kandydat daty `ner_temporal_candidates` (id 3219, `date`, lemat „11 wrzesień”, bez roku). Rejestr wydarzeń nie miał zamachów z 11 września 2001. W bazie jest 18 kandydatów z „11 września” / „11.09”.
+- **Przyczyna źródłowa:** `entity_service._temporal_candidate_rows()` zapisuje każdą datę ze spaCy i z `COMPACT_DATE_RE` jako kandydata; nie ma kategorii „data jako nazwa wydarzenia”. Samej frazy nie da się odróżnić od zwykłej daty (w tym samym dokumencie „12 sierpnia 2024 roku”, „20 kwietnia”), więc reguła po przyimku („Po/Przed D miesiąca”) byłaby heurystyką „na zapas”. Nie sprawdzono, co dalej czyta `ner_temporal_candidates` (oś czasu, okresy czasowe czy tylko przegląd).
+- **Poprawka:** dane — `POST /document/11251/entities/add_mention` (`eventName`, nazwa „Zamachy z 11 września 2001”, encja 30677, wariant „11 września”); `POST /geo_events` (wydarzenie 73, `kind=other`, data 2001-09-11, aliasy „11 września”, „9/11”, „zamachy z 11 września”, źródło: powyższe zdanie, status `proposed`); `POST /world_events/mentions/link` (link `geo_event_mention_links` 3, `confirmed`). Kod bez zmian. Kolejny dokument z „11 września” wymaga już tylko zaznaczenia wzmianki, bo alias jest w rejestrze.
+- **Test regresyjny:** brak — czysto danowa poprawka; wydarzenie 73 i jego aliasy dokumentują przypadek.
+- **Status:** tylko dane bez zmiany kodu. Ewentualny kod (przycisk „to jest wydarzenie” przy kandydacie daty w panelu przeglądu) odłożony do chwili, gdy takich przypadków będzie więcej.
