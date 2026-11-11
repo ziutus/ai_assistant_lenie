@@ -37,6 +37,99 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("world_events", __name__)
 
 
+@bp.route("/web_search/credits", methods=["GET"])
+def web_search_credits():
+    from library import web_search_client as client
+
+    result = {}
+    for name, call, empty in (
+        ("serper", client.serper_account, {"credits_left": None}),
+        ("firecrawl", client.firecrawl_credits, {"remaining": None, "plan": None}),
+    ):
+        try:
+            result[name] = call()
+        except Exception:
+            result[name] = {**empty, "error": "Nie można odczytać pozostałych kredytów"}
+    return jsonify(result)
+
+
+@bp.route("/geo_events/web_enrich/model", methods=["GET", "PUT"])
+def web_enrich_model():
+    from library import app_settings, world_event_web_enrich as service
+    from library.llm_model_registry import is_selectable, selectable_models
+
+    session = get_scoped_session()
+    if request.method == "PUT":
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or "model" not in body:
+            return _error(GeopoliticsError("Podaj model"))
+        model = body["model"]
+        if model is not None and (not isinstance(model, str) or not is_selectable(model, service.TASK)):
+            return _error(GeopoliticsError("Niedostępny model"))
+        app_settings.set_setting(session, service.SETTING_KEY, model)
+    return jsonify(
+        {
+            "default_model": service.default_model(session),
+            "saved": app_settings.get_setting(session, service.SETTING_KEY) is not None,
+            "models": selectable_models(service.TASK),
+        }
+    )
+
+
+def _web_enrich(event_id, *, estimate_only):
+    from library import world_event_web_enrich as service
+    from library.llm_model_registry import is_selectable
+    from library.web_search_client import WebSearchUnavailable
+
+    session = get_scoped_session()
+    try:
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            raise GeopoliticsError("Oczekiwano obiektu JSON")
+        step = body.get("step", "wikipedia")
+        service._check_step(step)
+        with_wikipedia = body.get("with_wikipedia", False)
+        if not isinstance(with_wikipedia, bool):
+            raise GeopoliticsError("with_wikipedia musi być wartością logiczną")
+        pages = body.get("scrape_pages", 2)
+        if type(pages) is not int or not 0 <= pages <= 4:
+            raise GeopoliticsError("Liczba stron musi być liczbą całkowitą od 0 do 4")
+        model = body.get("model")
+        if model is None:
+            model = service.default_model(session)
+        if not isinstance(model, str) or not is_selectable(model, service.TASK):
+            raise GeopoliticsError("Niedostępny model")
+        if estimate_only:
+            result = service.estimate(session, event_id, model=model, scrape_pages=pages, step=step)
+        else:
+            result = service.enrich(
+                session,
+                event_id,
+                model=model,
+                scrape_pages=pages,
+                user_id=_user_id(),
+                step=step,
+                with_wikipedia=with_wikipedia,
+            )
+        return jsonify(result)
+    except GeopoliticsError as exc:
+        return _error(exc)
+    except WebSearchUnavailable as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 503
+
+
+@bp.route("/geo_events/<int:event_id>/web_enrich/estimate", methods=["POST"])
+def estimate_web_enrich(event_id):
+    return _web_enrich(event_id, estimate_only=True)
+
+
+@bp.route("/geo_events/<int:event_id>/web_enrich", methods=["POST"])
+def run_web_enrich(event_id):
+    return _web_enrich(event_id, estimate_only=False)
+
+
 @bp.errorhandler(Exception)
 def _unexpected_error(exc):
     """JSON for an unexpected failure (class name only, details in the log), so the browser shows a reason."""
