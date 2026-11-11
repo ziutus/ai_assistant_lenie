@@ -320,7 +320,7 @@ class TestGetOrCreateGeocodeAliasFallback:
             "lat": "13.6", "lon": "25.3", "class": "place", "type": "city", "importance": 0.4,
         }
 
-        def fake_geocode(query):
+        def fake_geocode(query, *, raise_on_failure=False):
             return sudan_city if query == "El Fasher" else cairo_alley
 
         with patch("library.place_verification.geocode", side_effect=fake_geocode):
@@ -344,7 +344,7 @@ class TestGetOrCreateGeocodeAliasFallback:
             with patch("library.place_verification.is_plausible_match", return_value=False):
                 row = _get_or_create_geocode(session, "Cieśnina Ormuz")
 
-        mock_geocode.assert_called_once_with("Cieśnina Ormuz")  # alias never attempted
+        mock_geocode.assert_called_once_with("Cieśnina Ormuz", raise_on_failure=True)  # alias never attempted
         assert row.resolved is False
 
     def test_successful_polish_query_never_tries_alias(self):
@@ -355,7 +355,7 @@ class TestGetOrCreateGeocodeAliasFallback:
             with patch("library.place_verification.is_plausible_match", return_value=True):
                 row = _get_or_create_geocode(session, "Al-Faszir")
 
-        mock_geocode.assert_called_once_with("Al-Faszir")
+        mock_geocode.assert_called_once_with("Al-Faszir", raise_on_failure=True)
         assert row.resolved is True
         assert row.display_name == "Al-Faszir, Sudan Zachodni, Sudan"
 
@@ -414,7 +414,7 @@ class TestGetOrCreateGeocodeGeopoliticalRegion:
         with patch("library.place_verification.geocode", return_value=None) as mock_geocode:
             _get_or_create_geocode(session, "Warszawa")
 
-        mock_geocode.assert_called_once_with("Warszawa")
+        mock_geocode.assert_called_once_with("Warszawa", raise_on_failure=True)
 
 
 class TestGetOrCreateGeocodeCountryHintFallback:
@@ -443,7 +443,7 @@ class TestGetOrCreateGeocodeCountryHintFallback:
             "lat": "12.65", "lon": "32.23", "class": "boundary", "type": "administrative",
         }
 
-        def fake_geocode(query, countrycodes=None):
+        def fake_geocode(query, countrycodes=None, *, raise_on_failure=False):
             if countrycodes == "sd":
                 return sudan_city
             return czech_castle
@@ -468,7 +468,7 @@ class TestGetOrCreateGeocodeCountryHintFallback:
             with patch("library.place_verification.is_plausible_match", return_value=False):
                 row = _get_or_create_geocode(session, "Cieśnina Ormuz")
 
-        mock_geocode.assert_called_once_with("Cieśnina Ormuz")  # country hint never attempted
+        mock_geocode.assert_called_once_with("Cieśnina Ormuz", raise_on_failure=True)  # country hint never attempted
         assert row.resolved is False
 
 
@@ -498,7 +498,7 @@ class TestRetryAfterStrippingCountry:
         assert result is not None
         remainder, row = result
         assert remainder == "Al-Faszir"  # canonicalized via city_gazetteer, not the raw "Al-Faszirze"
-        mock_geocode.assert_called_once_with("Al-Faszir")
+        mock_geocode.assert_called_once_with("Al-Faszir", raise_on_failure=True)
         assert row.resolved is True
 
     def test_strips_country_canonicalizes_remainder_via_region_gazetteer(self):
@@ -515,7 +515,7 @@ class TestRetryAfterStrippingCountry:
         assert result is not None
         remainder, row = result
         assert remainder == "Kordofan Północny"  # canonicalized via region_gazetteer
-        mock_geocode.assert_called_once_with("Kordofan Północny")
+        mock_geocode.assert_called_once_with("Kordofan Północny", raise_on_failure=True)
         assert row.resolved is True
 
     def test_no_country_edge_returns_none(self):
@@ -590,7 +590,7 @@ class TestVerifyDocumentPlaces:
             "lat": "13.6", "lon": "25.3", "class": "place", "type": "city", "importance": 0.4,
         }
 
-        def fake_geocode(query):
+        def fake_geocode(query, *, raise_on_failure=False):
             return None if query == "Al-Faszirze Emiraty" else hit
 
         with patch("library.place_verification._is_country", return_value=False):
@@ -618,7 +618,7 @@ class TestVerifyDocumentPlaces:
             "lat": "13.6", "lon": "25.3", "class": "place", "type": "city", "importance": 0.4,
         }
 
-        def fake_geocode(query):
+        def fake_geocode(query, *, raise_on_failure=False):
             return None if query == "Al-Faszirze Emiraty" else hit
 
         with patch("library.place_verification._is_country", return_value=False):
@@ -1097,3 +1097,86 @@ class TestReclassifyAsOrganizationExistingLink:
         session.delete.assert_called_once_with(place)
         assert linked_row.mention_count == 3
         assert linked_row.variants == []  # casing-only difference is not kept as a variant
+
+
+@pytest.mark.parametrize("stage", ["query", "alias", "hint"])
+def test_unavailable_is_not_cached_and_next_refresh_retries(stage):
+    """Regression: doc #11251, Kraków, geocode_cache id 168."""
+    from library.locationiq_client import GeocodeUnavailable
+
+    session = _session_with_entities([])
+    failures = [GeocodeUnavailable("offline")] if stage == "query" else [None, GeocodeUnavailable("offline")]
+    hit = {"display_name": "Kraków, Polska", "class": "place", "lat": "50", "lon": "20"}
+    with patch("library.place_verification.geocode", side_effect=failures + [hit]) as lookup, \
+            patch("library.place_verification.geocode_alias", return_value="Cracow" if stage == "alias" else None), \
+            patch("library.place_verification.geocode_country_hint", return_value="pl" if stage == "hint" else None):
+        assert _get_or_create_geocode(session, "Kraków") is None
+        session.add.assert_not_called()
+        session.flush.assert_not_called()
+        row = _get_or_create_geocode(session, "Kraków")
+    assert row.resolved is True
+    session.add.assert_called_once_with(row)
+    assert all(call.kwargs["raise_on_failure"] for call in lookup.call_args_list)
+
+
+def test_clean_miss_is_cached():
+    session = _session_with_entities([])
+    with patch("library.place_verification.geocode", return_value=None):
+        row = _get_or_create_geocode(session, "Kraków")
+    assert row.resolved is False
+    assert row.raw is None
+    session.add.assert_called_once_with(row)
+
+
+def test_country_retry_survives_unavailable():
+    with patch("library.place_verification._get_or_create_geocode", return_value=None):
+        assert _retry_after_stripping_country(MagicMock(), "Al-Faszirze Emiraty") is None
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_single_place_unavailable_preserves_link(existing):
+    geo = _resolved_geocode("Kraków") if existing else None
+    ent = _entity("Kraków", geocode=geo, geocode_id=168 if existing else None)
+    doc = MagicMock(tags="topic")
+    with patch("library.place_verification._get_or_create_geocode", return_value=None):
+        assert geocode_single_place(MagicMock(), doc, ent)["geocoded"] is False
+    assert ent.geocode is geo
+    assert ent.geocode_id == (168 if existing else None)
+    assert doc.tags == "topic"
+
+
+def test_document_unavailable_stays_retryable_without_classification():
+    ent = _entity("Kraków")
+    ent.source, ent.place_verification_status, ent.variants = "ner", None, []
+    session = _session_with_entities([ent])
+    doc = MagicMock(id=11251, title="", tags="")
+    with patch("library.place_verification._get_or_create_geocode", return_value=None), \
+            patch("library.place_context_classifier.classify_place_context_candidates") as classify:
+        assert verify_document_places(session, doc, "Kraków")["tagged"] == []
+    assert ent.geocode is None
+    assert ent.geocode_id is None
+    assert doc.tags == ""
+    classify.assert_not_called()
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_negative_cache_repair_preserves_id_and_stops_on_failure(apply):
+    from imports.regeocode_negative_cache import repair
+    from library.locationiq_client import GeocodeUnavailable
+
+    rows = [GeocodeCache(id=i, query=f"city{i}", resolved=False, raw=None) for i in (168, 169, 170)]
+    session = MagicMock()
+    session.query.return_value.filter.return_value.order_by.return_value.all.return_value = rows
+    session.get.side_effect = rows
+    with patch("imports.regeocode_negative_cache.resolve_geocode", side_effect=[
+        {"resolved": True, "raw": {"display_name": "city168"}}, GeocodeUnavailable("offline"),
+    ]) as resolve, patch("imports.regeocode_negative_cache.time.sleep"):
+        summary = repair(session, apply=apply)
+    assert summary == {"checked": 2, "newly resolved": 1, "still unresolved (clean miss)": 0, "failed": 1}
+    assert resolve.call_count == 2
+    assert rows[0].id == 168
+    assert rows[0].resolved is apply
+    assert rows[1].resolved is False
+    assert session.commit.call_count == int(apply)
+    session.add.assert_not_called()
+    assert str(session.query.return_value.filter.call_args.args[0]) == "raw::text = 'null' AND NOT resolved"

@@ -35,7 +35,7 @@ class TestGeocodeAlias:
         with patch("library.place_verification.geocode", return_value=hit) as mock_geocode:
             row = _get_or_create_geocode(session, "Kaliningrad")
 
-        assert mock_geocode.call_args_list == [call("Kaliningrad"), call("Królewiec")]
+        assert mock_geocode.call_args_list == [call("Kaliningrad", raise_on_failure=True), call("Królewiec", raise_on_failure=True)]
         assert row.resolved is True
         assert row.query == "Kaliningrad"
         assert row.display_name == "Kaliningrad, Obwód królewiecki, Rosja"
