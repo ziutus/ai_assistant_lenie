@@ -206,7 +206,10 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T36 | Filtr istotności kraju na próbce tekstu | LLM widzi początek i krótkie fragmenty, bez liczby wzmianek; może odrzucić szeroko omawiany kraj, a brak audytu uniemożliwia odtworzenie odpowiedzi | Haiti / Kolumbia (dok. #11237) | E054 |
 | T37 | Data w roli nazwy wydarzenia | fraza „D miesiąca” bez roku („11 września”) oznacza w tekście znane wydarzenie, ale trafia tylko do `ner_temporal_candidates` jako zwykła data; kod nie odróżnia terminu kalendarzowego od nazwy zdarzenia, a reguła po przyimku pomyliłaby się na prawdziwych datach | „Po 11 września ze względu na masową inwigilację…” | E055 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T36,
+| T38 | Awaria geokodera zapisana jako trwały brak trafienia | `geocode()` zwracał `None` zarówno dla czystego braku trafienia (404), jak i dla awarii (timeout, 429, 5xx, brak klucza); `_get_or_create_geocode()` cache'owało każde `None` jako `resolved=false` i nigdy nie pytało ponownie | „Kraków”, „Katowice”, „Łódź”, „Lublin” bez potwierdzenia (cache z 2026-07-13) | E056 |
+| T39 | Przypadek zależny bez mianownika w tekście tworzy nowy wpis rejestru organizacji | gdy dokument ma tylko formy zależne, `aggregate_entities_detailed` bierze formę powierzchniową (ścieżka nr 2), a rejestr dopasowuje tylko dokładnie po aliasie, więc każda nowa odmiana to osobna organizacja; do tego starsze wpisy mają zepsuty lemat jako `canonical_name`, a span ucięty na łączniku („Al-”) i człon rodzajowy („Grupa”) tworzą kolejne wpisy | „Departamentowi Sprawiedliwości” obok „departament sprawiedliwość”; „Polską Partię Socjalistyczną”; „Al-”, „Grupa Al-Kaidy” obok „Al-Kaida” | E057 |
+
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T40,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -840,3 +843,26 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — `POST /document/11251/entities/add_mention` (`eventName`, nazwa „Zamachy z 11 września 2001”, encja 30677, wariant „11 września”); `POST /geo_events` (wydarzenie 73, `kind=other`, data 2001-09-11, aliasy „11 września”, „9/11”, „zamachy z 11 września”, źródło: powyższe zdanie, status `proposed`); `POST /world_events/mentions/link` (link `geo_event_mention_links` 3, `confirmed`). Kod bez zmian. Kolejny dokument z „11 września” wymaga już tylko zaznaczenia wzmianki, bo alias jest w rejestrze.
 - **Test regresyjny:** brak — czysto danowa poprawka; wydarzenie 73 i jego aliasy dokumentują przypadek.
 - **Status:** tylko dane bez zmiany kodu. Ewentualny kod (przycisk „to jest wydarzenie” przy kandydacie daty w panelu przeglądu) odłożony do chwili, gdy takich przypadków będzie więcej.
+
+### E056 — „Kraków” bez potwierdzenia geokodera: awaria zapisana jako brak trafienia (dok. #11251, PR #1019, 2026-11-11)
+
+- **Typ encji:** placeName
+- **Kategoria:** T38 — awaria geokodera zapisana jako trwały brak trafienia.
+- **Zdanie źródłowe:** „Będziemy rozmawiali o zamachu w Krakowie oczywiście i o tym, co po tym zamachu.”
+- **Objaw:** chip „Kraków” (8 wzmianek) w `/ner/11251` bez potwierdzenia geokodera.
+- **Przyczyna źródłowa:** `geocode_cache` id 168, `resolved=false`, `raw=null`, utworzony 2026-07-13 w przebiegu, w którym Berlin, Gdańsk i Poznań rozwiązały się poprawnie, a Katowice, Łódź i Lublin padły tak samo. `locationiq_client.geocode()` nie odróżniał awarii od braku trafienia, a `place_verification._get_or_create_geocode()` zapisywał każde `None` jako negatywny wpis i nigdy nie ponawiał. Wniosek o awarii przejściowej jest z wzorca (log `external_service_events` z tej daty nie istnieje).
+- **Poprawka:** oba — kod: `geocode(raise_on_failure=True)` rzuca `GeocodeUnavailable`, tylko 404 i pusta lista są brakiem trafienia; `_get_or_create_geocode()` nie zapisuje cache przy awarii, a trzej wywołujący zostawiają encję nierozwiązaną do następnego odświeżenia (`resolve_geocode()` jest wspólne z naprawą). Dane: `imports/regeocode_negative_cache.py --apply` w kontenerze backendu na 518 wpisach `raw=null`, ID bez zmian: 28 nowo rozwiązanych (m.in. Kraków, Katowice, Łódź, Lublin, Kielce, Wilno, Wiedeń, Gaza), 490 nadal bez trafienia (głównie szum typu „Amerykanin”), 0 awarii. Wśród rozwiązanych są też wątpliwe (`kraj`, `Finów`, `Turków`, `Bobra`, `Modlina` — etnonimy i rzeczowniki, które geokoder dopasował do miejscowości); ten sam skutek miałby pierwszy udany przebieg. Encja 30499 zatwierdzona przez `PATCH /website_entities/30499` (ta sama nazwa), tag `miejsce-krakow` dodany.
+- **Test regresyjny:** `backend/tests/unit/test_place_verification.py` (awaria nie zapisuje cache, kolejne wywołanie zapisuje wpis; czysty brak trafienia jest nadal cache'owany; trzej wywołujący przeżywają `None`), `backend/tests/unit/test_locationiq_client.py` (`raise_on_failure`).
+- **Status:** żywy bug naprawiony w kodzie (PR #1019, wdrożony na NAS 2026-11-11) oraz dane naprawione. Migawka wierszy sprzed naprawy: lokalnie w katalogu zadania (518 wierszy `id, query, resolved, created_at`).
+
+
+### E057 — „Departamentowi Sprawiedliwości”, „Al-”, „Grupa Al-Kaidy”, „Polską Partię Socjalistyczną” jako osobne organizacje (dok. #11251, PR n/d, 2026-11-11)
+
+- **Typ encji:** orgName
+- **Kategoria:** T39 — przypadek zależny bez mianownika w tekście tworzy nowy wpis rejestru organizacji (z T2/T11 dla starego wpisu i T1/T9 dla „Al-”).
+- **Zdanie źródłowe:** „…nakazał Departamentowi Sprawiedliwości, uwaga, zbadanie osób…”; „Pamiętamy Polską Partię Socjalistyczną Józefa Piłsudskiego…”; „Grupa Al-Kaidy, która kiedyś planowała zamach w Londynie…”; „…znam się całkiem nieźle i na Al-Kaidzie…”
+- **Objaw:** obok „departament sprawiedliwość” (org 146, zepsuty lemat z 2026-07-30) powstała org 1691 „Departamentowi Sprawiedliwości”; obok „Al-Kaida” (org 853) powstały org 1689 „Grupa Al-Kaidy” i org 1682 „Al-”; nazwa partii została w bierniku (org 1679).
+- **Przyczyna źródłowa:** w dokumencie nie ma mianownika tych nazw, więc ścieżka nr 2 w `ner_client.aggregate_entities_detailed` (forma powierzchniowa zamiast zepsutego lematu) zostawia formę zależną jako nazwę, a rejestr (`organization_registry`) dopasowuje tylko dokładnie po aliasie, więc każda nowa odmiana tworzy nową organizację. Org 146 ma `canonical_name` ze starego, zepsutego lematu. „Al-” to najprawdopodobniej ucięty span z „Al-Kaidzie” (nie sprawdzono surowego wyniku `ner_service`).
+- **Poprawka:** tylko dane: `PATCH /organizations/146` (`Departament Sprawiedliwości`), `POST /organizations/1691/merge` → 146; aliasy `Al-Kaidy`, `Al-Kaidzie`, `Al-Kaidę` (org 853), `POST /organizations/1689/merge` → 853; „Al-” scalone w dokumencie (`make_global_alias=false`, żeby „Al-” nie stało się aliasem globalnym); osierocone wiersze encji po scaleniach w rejestrze usunięte i wzmianki dodane przez `add_mention` pod właściwą nazwą (Departament 6 wzmianek, Al-Kaida 3); `PATCH /organizations/1679` → `Polska Partia Socjalistyczna`. Org 372 „partia Socjalistycznej” to hiszpańska PSOE (dok. #9375), więc NIE została scalona z PPS i nadal ma zepsutą nazwę.
+- **Test regresyjny:** brak — czysto danowa poprawka. Nie zmieniano kodu rejestru ani agregacji (rejestr celowo dopasowuje tylko dokładnie, `docs/organization-ner-alias-plan.md`).
+- **Status:** tylko dane bez zmiany kodu. Znane ryzyko pozostaje: każda nowa odmiana nazwy występująca w dokumencie tylko w przypadku zależnym utworzy nowy wpis rejestru; opcja automatycznego łączenia odmian wymaga osobnej decyzji. Liczba wzmianek „Al-Kaida” (3) jest zaniżona względem tekstu (4).

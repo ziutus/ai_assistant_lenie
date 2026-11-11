@@ -130,3 +130,33 @@ class TestGeocode:
             with patch("library.locationiq_client._api_key", return_value="pk.test"):
                 geocode("Kijów")
         assert "countrycodes" not in mock_get.call_args.kwargs["params"]
+
+
+@pytest.mark.parametrize("failure", ["request", "500", "429", "key", "json"])
+@pytest.mark.parametrize("strict", [False, True])
+def test_failure_contract(failure, strict):
+    from library.locationiq_client import GeocodeUnavailable
+
+    response = _response()
+    if failure in {"500", "429"}:
+        response.status_code = int(failure)
+        response.raise_for_status.side_effect = requests.HTTPError(failure)
+    if failure == "json":
+        response.json.side_effect = ValueError("invalid JSON")
+    with patch("library.locationiq_client._api_key", return_value=None if failure == "key" else "test"), \
+            patch("library.locationiq_client.time.sleep"), \
+            patch("library.locationiq_client.requests.get", return_value=response,
+                  side_effect=requests.RequestException("offline") if failure == "request" else None):
+        if strict:
+            with pytest.raises(GeocodeUnavailable):
+                geocode("Kraków", raise_on_failure=True)
+        else:
+            assert geocode("Kraków") is None
+
+
+@pytest.mark.parametrize("status", [200, 404])
+def test_strict_clean_miss(status):
+    with patch("library.locationiq_client._api_key", return_value="test"), \
+            patch("library.locationiq_client.time.sleep"), \
+            patch("library.locationiq_client.requests.get", return_value=_response(status=status, body=[])):
+        assert geocode("Kraków", raise_on_failure=True) is None

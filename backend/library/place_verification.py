@@ -21,7 +21,10 @@ Countries are skipped entirely — they already have the kraj-* pipeline
 (country_gazetteer + extract_countries_hybrid) and the map highlights them
 from those tags; geocoding them here would only burn API quota.
 
-When a geocode fails, `_retry_after_stripping_country()` checks whether it
+Only completed geocode results (including clean misses) are cached. Temporary
+failures leave entities unchanged and are retried on the next refresh.
+
+When a geocode has no plausible match, `_retry_after_stripping_country()` checks whether it
 failed because NER merged the place with an adjacent country mention across
 missing punctuation (country_gazetteer.strip_country_edge — doc #9394's
 "Al-Faszirze Emiraty"). If so, the country is split off and the remaining
@@ -61,7 +64,7 @@ from library.geocode_aliases import geocode_alias, geocode_country_hint
 from library.generic_place_names import match_generic_place_name
 from library.geopolitical_region_gazetteer import geopolitical_region_centroid
 from library.historical_state_gazetteer import historical_state
-from library.locationiq_client import canonical_place_name, geocode, is_plausible_match
+from library.locationiq_client import GeocodeUnavailable, canonical_place_name, geocode, is_plausible_match
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +112,39 @@ def _relabel_alias_hit(canonical_query: str, hit: dict) -> dict:
     return {**hit, "display_name": relabeled}
 
 
-def _get_or_create_geocode(session, query: str) -> GeocodeCache:
-    """Cache-through geocoding: one live API call ever per distinct query string.
+def resolve_geocode(query: str) -> dict:
+    """Resolve query, alias and country hint into cache fields, or raise GeocodeUnavailable.
+
+    Shared by cache creation and in-place repair; performs no database writes.
+    """
+    hit = geocode(query, raise_on_failure=True)
+    resolved = hit is not None and is_plausible_match(query, hit)
+    if not resolved:
+        alias = geocode_alias(query)
+        if alias is not None:
+            alias_hit = geocode(alias, raise_on_failure=True)
+            if alias_hit is not None and is_plausible_match(alias, alias_hit):
+                hit, resolved = _relabel_alias_hit(query, alias_hit), True
+    if not resolved:
+        country_code = geocode_country_hint(query)
+        if country_code is not None:
+            hint_hit = geocode(query, countrycodes=country_code, raise_on_failure=True)
+            if hint_hit is not None and is_plausible_match(query, hint_hit):
+                hit, resolved = hint_hit, True
+    return dict(
+        resolved=resolved,
+        display_name=hit.get("display_name") if hit else None,
+        lat=hit.get("lat") if hit else None,
+        lon=hit.get("lon") if hit else None,
+        osm_class=hit.get("class") if hit else None,
+        osm_type=hit.get("type") if hit else None,
+        importance=hit.get("importance") if hit else None,
+        raw=hit,
+    )
+
+
+def _get_or_create_geocode(session, query: str) -> GeocodeCache | None:
+    """Cache completed geocoding results; return None without writing on failure.
 
     When the Polish query's hit fails the match-quality check, retry once
     through geocode_aliases.geocode_alias() — the English/OSM transliteration
@@ -176,31 +210,12 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
     if row is not None:
         return row
 
-    hit = geocode(query)
-    resolved = hit is not None and is_plausible_match(query, hit)
-    if not resolved:
-        alias = geocode_alias(query)
-        if alias is not None:
-            alias_hit = geocode(alias)
-            if alias_hit is not None and is_plausible_match(alias, alias_hit):
-                hit, resolved = _relabel_alias_hit(query, alias_hit), True
-    if not resolved:
-        country_code = geocode_country_hint(query)
-        if country_code is not None:
-            hint_hit = geocode(query, countrycodes=country_code)
-            if hint_hit is not None and is_plausible_match(query, hint_hit):
-                hit, resolved = hint_hit, True
-    row = GeocodeCache(
-        query=query,
-        resolved=resolved,
-        display_name=hit.get("display_name") if hit else None,
-        lat=hit.get("lat") if hit else None,
-        lon=hit.get("lon") if hit else None,
-        osm_class=hit.get("class") if hit else None,
-        osm_type=hit.get("type") if hit else None,
-        importance=hit.get("importance") if hit else None,
-        raw=hit,
-    )
+    try:
+        fields = resolve_geocode(query)
+    except GeocodeUnavailable:
+        logger.warning("Geocoder unavailable for %r; leaving cache unchanged", query)
+        return None
+    row = GeocodeCache(query=query, **fields)
     session.add(row)
     session.flush()  # assign id so entities can reference it
     return row
@@ -233,7 +248,7 @@ def _retry_after_stripping_country(session, entity_text: str) -> tuple[str, Geoc
         or remainder
     )
     row = _get_or_create_geocode(session, canonical_remainder)
-    if not row.resolved:
+    if row is None or not row.resolved:
         return None
     return canonical_remainder, row
 
@@ -272,14 +287,14 @@ def add_place_tag(doc, entity: DocumentEntity) -> str | None:
 def geocode_single_place(session, doc, entity: DocumentEntity, selected_geocode=None) -> dict:
     """Geocode a manually confirmed place without changing its name or running LLMs."""
     result = {"geocoded": False, "same_place_entity": None}
-    entity.geocode = None
-    entity.geocode_id = None
     if selected_geocode is not None:
         row = selected_geocode
     else:
         try:
             with session.begin_nested():
                 row = _get_or_create_geocode(session, entity.entity_text)
+                if row is None:
+                    return result
                 if not row.resolved:
                     retry = _retry_after_stripping_country(session, entity.entity_text)
                     if retry is not None:
@@ -287,7 +302,7 @@ def geocode_single_place(session, doc, entity: DocumentEntity, selected_geocode=
         except Exception:
             logger.exception("Single-place geocoding failed for entity %s", entity.id)
             return result
-    if not row.resolved:
+    if row is None or not row.resolved:
         return result
 
     entity.geocode = row
@@ -513,13 +528,19 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                 remove_orphaned_tag(session, doc, ent)
         candidates = [ent for ent in entities if ent.source != "manual" and ent.relevance != "figurative"
                       and ent.place_verification_status != "confirmed" and not _is_country(ent.entity_text)]
+        unavailable_ids = set()
         for index, ent in enumerate(candidates, start=1):
             place_needs_review(ent)
             if progress_callback is not None:
                 progress_callback(index, len(candidates))
             resolved_name = ent.entity_text
             if ent.geocode_id is None:
-                ent.geocode = _get_or_create_geocode(session, ent.entity_text)
+                row = _get_or_create_geocode(session, ent.entity_text)
+                if row is None:
+                    checked += 1
+                    unavailable_ids.add(id(ent))
+                    continue
+                ent.geocode = row
                 if not ent.geocode.resolved:
                     fixed = _retry_after_stripping_country(session, ent.entity_text)
                     if fixed is not None:
@@ -537,6 +558,7 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
             if ent.geocode is not None and ent.geocode.resolved:
                 resolved_names.append(resolved_name)
 
+        candidates = [ent for ent in candidates if id(ent) not in unavailable_ids]
         candidates = _canonicalize_and_merge_places(session, candidates)
 
         # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
