@@ -24,12 +24,13 @@ logger = logging.getLogger(__name__)
 # when an OpenRouter model is selected; document classification stays on Bielik.
 _TASKS = {
     "organization_description", "tool_tags", "content_group_suggestion", "transcript_chapters", "geopolitics",
+    "world_event_web_enrich",
     "chapter_analysis",  # tone, historical period and dated events of one chapter (library/chapter_analysis_model.py)
 }
 
 # Tasks whose answer must be structured JSON: models that cannot honour a JSON-schema ``response_format`` are not
 # offered (and, where it is known without a network call, not accepted) for them.
-_STRUCTURED_OUTPUT_TASKS = {"content_group_suggestion"}
+_STRUCTURED_OUTPUT_TASKS = {"content_group_suggestion", "world_event_web_enrich"}
 
 _OPENROUTER_PREFIX = "openrouter/"
 PRICE_SOURCE_OPENROUTER = "openrouter_api"
