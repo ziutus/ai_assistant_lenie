@@ -7,15 +7,17 @@ environment remains the NAS Compose stack (`infra/docker/compose.nas.yaml`).
 ## Layout
 
 ```
-base/               distribution-neutral manifests (namespace `lenie`), grouped by resource type
+base/               distribution-neutral manifests (namespace `lenie`), one directory per service
   namespace.yaml
-  workloads/        StatefulSet (Postgres, PVC via volumeClaimTemplates), Deployments (backend, frontend)
-  networking/       Services (headless for Postgres, ClusterIP for the rest)
-  jobs/             the Alembic migration Job
+  postgres/         headless Service + StatefulSet (PVC via volumeClaimTemplates)
+  migrate/          the Alembic migration Job
+  backend/          Service + Deployment
+  frontend/         Service + Deployment
 overlays/kubeadm/   what differs per cluster: image registry, StorageClass, Ingress, Secret
 ```
 
-`base/kustomization.yaml` lists every file by path, so a new manifest is one new line there. Ingress, Secret and
+Each service directory has its own `kustomization.yaml`, and `base/kustomization.yaml` references the directories
+(a base made of bases). Build one service alone, e.g. `kubectl kustomize base/backend`. Ingress, Secret and
 StorageClass live in the overlay on purpose — they are cluster-specific.
 
 `overlays/k0s/` is planned over the same `base/` (after the exam).
