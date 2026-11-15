@@ -3,7 +3,13 @@ kind: Kustomization
 namespace: lenie
 resources:
   - namespace.yaml
-  - postgres.yaml
-  - migrate-job.yaml
-  - backend.yaml
-  - frontend.yaml
+  # workloads/ — Deployments and the StatefulSet (the PVC comes from its volumeClaimTemplates)
+  - workloads/postgres-statefulset.yaml
+  - workloads/backend-deployment.yaml
+  - workloads/frontend-deployment.yaml
+  # networking/ — Services
+  - networking/postgres-service.yaml
+  - networking/backend-service.yaml
+  - networking/frontend-service.yaml
+  # jobs/ — one-off tasks
+  - jobs/migrate-job.yaml
