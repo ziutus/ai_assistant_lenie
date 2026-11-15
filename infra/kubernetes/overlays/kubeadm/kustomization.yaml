@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ingress.yaml
+
+# Rewrite image names to a registry reachable from the nodes (edit newName/newTag).
+images:
+  - {name: lenie-ai-db, newName: registry.example.lan:5000/lenie-ai-db, newTag: latest}
+  - {name: lenie-ai-server, newName: registry.example.lan:5000/lenie-ai-server, newTag: latest}
+  - {name: lenie-ai-frontend, newName: registry.example.lan:5000/lenie-ai-frontend, newTag: latest}
+
+# Real values: copy lenie.env.example to lenie.env (git-ignored).
+secretGenerator:
+  - name: lenie-env
+    envs: [lenie.env]
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Pick the cluster's StorageClass for the database volume (check `kubectl get sc`).
+patches:
+  - target: {kind: StatefulSet, name: lenie-ai-db}
+    patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: local-path

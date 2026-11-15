@@ -1,0 +1,25 @@
+# Jobs are immutable: delete it before re-applying with a new image
+# (kubectl -n lenie delete job lenie-migrate). The repository has independent
+# Alembic branches, so upgrade every head (same as compose.nas.yaml).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lenie-migrate
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.37
+          command: ["sh", "-c", "until nc -z lenie-ai-db 5432; do sleep 2; done"]
+      containers:
+        - name: migrate
+          image: lenie-ai-server
+          command: ["/app/.venv/bin/alembic", "-c", "/app/alembic.ini", "upgrade", "heads"]
+          envFrom:
+            - secretRef: {name: lenie-env}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}

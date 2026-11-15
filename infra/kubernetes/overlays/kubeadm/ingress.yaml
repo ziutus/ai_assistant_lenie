@@ -1,0 +1,23 @@
+# Requires an Ingress controller (e.g. ingress-nginx) installed in the cluster.
+# Two hosts, because the SPA calls the API at a separate, user-configured base
+# URL (see web_interface_react/src/modules/shared/services/storage.ts) and the
+# backend routes have no /api prefix. Add both names to DNS or /etc/hosts.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lenie
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: lenie.k8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: lenie-ai-frontend, port: {number: 80}}}
+    - host: api.lenie.k8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: lenie-ai-server, port: {number: 5000}}}

@@ -1,0 +1,3 @@
+# Secrets for secretGenerator — real values never go to git; copy *.env.example.
+*.env
+!*.env.example
