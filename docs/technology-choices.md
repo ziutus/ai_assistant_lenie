@@ -283,7 +283,7 @@ All run as one-off tools via `uvx` — not installed in project venv.
 
 ### Kubernetes (Kustomize + Helm) — removed 2026-07-22
 
-Was used for a GKE deployment (`infra/kubernetes/`), stale relative to the current NAS-first architecture (predated MinIO/Vault/`ner_service`/storage abstraction). Archived at git tag `archive/infra-kubernetes`.
+Was used for a GKE deployment (`infra/kubernetes/`), stale relative to the current NAS-first architecture (predated MinIO/Vault/`ner_service`/storage abstraction). Archived at git tag `archive/infra-kubernetes`. A new, much smaller Kustomize setup (learning environment for CKA, not a deployment target) lives in `infra/kubernetes/` since 2026-11-15 — see [ADR-036](./adr/adr-036-kubernetes-cka-learning-environment.md).
 
 ### Terraform — removed 2026-07-22
 

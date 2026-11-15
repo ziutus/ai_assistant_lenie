@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lenie-ai-db
+  labels: {app: lenie-ai-db}
+spec:
+  clusterIP: None
+  selector: {app: lenie-ai-db}
+  ports:
+    - {name: postgres, port: 5432}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: lenie-ai-db
+spec:
+  serviceName: lenie-ai-db
+  replicas: 1
+  selector:
+    matchLabels: {app: lenie-ai-db}
+  template:
+    metadata:
+      labels: {app: lenie-ai-db}
+    spec:
+      containers:
+        - name: postgres
+          image: lenie-ai-db
+          ports:
+            - {name: postgres, containerPort: 5432}
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: lenie-env, key: POSTGRESQL_PASSWORD}
+          resources:
+            requests: {cpu: 250m, memory: 768Mi}
+            limits: {memory: 2Gi}
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 10
+          volumeMounts:
+            # Same mount point as compose.nas.yaml (PostgreSQL 18 layout).
+            - {name: data, mountPath: /var/lib/postgresql}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: {storage: 10Gi}
