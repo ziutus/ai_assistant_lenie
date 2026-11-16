@@ -30,6 +30,7 @@ import json
 import logging
 import re
 import threading
+import time
 import uuid
 from collections import Counter
 from datetime import date, datetime
@@ -93,6 +94,38 @@ def _update_analysis_job(job_id: str, **values) -> None:
         session.close()
 
 
+_ANALYSIS_COORDINATOR_LOCK_KEY = 92440017
+_ANALYSIS_ELECTION_RETRY_SECONDS = 10
+
+
+def _elect_analysis_coordinator(session_factory, *, sleep=time.sleep, retry_seconds=None):
+    """Return the session holding the coordinator advisory lock, or None.
+
+    None means another process already owns the lock. A database error (for
+    example "the database system is starting up" right after a NAS reboot) is
+    retried until the database answers: giving up there would leave the queue
+    without any consumer until the next backend restart, because
+    start_analysis_worker() never starts a second thread. The returned session
+    must stay open — the lock lives as long as its connection.
+    """
+    delay = _ANALYSIS_ELECTION_RETRY_SECONDS if retry_seconds is None else retry_seconds
+    while True:
+        coordinator = session_factory()
+        try:
+            is_owner = coordinator.scalar(
+                sa_text("SELECT pg_try_advisory_lock(:key)"), {"key": _ANALYSIS_COORDINATOR_LOCK_KEY}
+            )
+        except Exception:
+            coordinator.close()
+            logger.exception("analysis queue coordinator election failed; retrying in %s s", delay)
+            sleep(delay)
+            continue
+        if not is_owner:
+            coordinator.close()
+            return None
+        return coordinator
+
+
 def _analysis_worker() -> None:
     """Process persistent analysis jobs sequentially."""
     from library.db.engine import get_session
@@ -101,15 +134,8 @@ def _analysis_worker() -> None:
     # Flask's debug reloader (and a future multi-worker WSGI deployment) may
     # import this module in more than one process. A session-level PostgreSQL
     # advisory lock elects exactly one queue coordinator across all of them.
-    coordinator = get_session()
-    try:
-        is_owner = coordinator.scalar(sa_text("SELECT pg_try_advisory_lock(92440017)"))
-    except Exception:
-        coordinator.close()
-        logger.exception("analysis queue coordinator election failed")
-        return
-    if not is_owner:
-        coordinator.close()
+    coordinator = _elect_analysis_coordinator(get_session)
+    if coordinator is None:
         logger.info("analysis queue worker inactive; another process owns the coordinator lock")
         return
     logger.info("analysis queue coordinator lock acquired")
