@@ -151,14 +151,18 @@ def validate_one_off(*, pattern, replacement) -> None:
         raise TranscriptCorrectionValidationError("pattern i replacement muszą się różnić")
 
 
-def replace_phrase(text: str, pattern: str, replacement: str) -> tuple[str, int]:
-    """Literal, case-insensitive, whole-word replacement; the first letter follows the matched case."""
+def replace_phrase(text: str, pattern: str, replacement: str, *, adapt_case: bool = True) -> tuple[str, int]:
+    """Literal, case-insensitive, whole-word replacement; the first letter follows the matched case.
+
+    ``adapt_case=False`` inserts the replacement verbatim: region rules name proper nouns, and ASR often
+    writes them in lowercase ("huti"), so the stored capitalisation must win.
+    """
     regex = r"(?<!\w)" + r"\s+".join(re.escape(part) for part in pattern.split()) + r"(?!\w)"
 
     def replace(match):
         result = replacement
         first = match.group()[0]
-        if result and first.casefold() == result[0].casefold():
+        if adapt_case and result and first.casefold() == result[0].casefold():
             result = (result[0].upper() if first.isupper() else result[0].lower()) + result[1:]
         return result
 
@@ -187,7 +191,7 @@ def correct_text(text: str, author, rules, countries=None) -> tuple[str, list[tu
                 continue
             if rule.author and normalize_author(author) != normalize_author(rule.author):
                 continue
-        text, count = replace_phrase(text, rule.pattern, rule.replacement)
+        text, count = replace_phrase(text, rule.pattern, rule.replacement, adapt_case=rule.scope != "region")
         if count:
             hits.append((rule.id, count))
     return text, hits

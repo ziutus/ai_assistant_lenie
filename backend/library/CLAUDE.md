@@ -443,7 +443,13 @@ get the document's `kraj-*` tags (`country_slugs_from_tags(doc.tags)`); without 
 so the ingestion hook (a document has no tags yet) never applies them. `POST /transcript_corrections/apply`
 takes the countries from the document's tags and echoes them as `countries`; `GET /transcript_corrections`
 accepts `country_slug`. Intended order: import → country detection → region rules (literal ones; phonetic
-proposals need human approval) → NER. Applying never rebuilds existing chunks or embeddings.
+proposals need human approval) → NER. Applying never rebuilds existing chunks or embeddings. A region rule
+inserts its replacement **verbatim** (`replace_phrase(..., adapt_case=False)`): the rules name proper nouns and
+ASR writes them in lowercase ("huti" → "Huti"); global/channel rules still copy the matched first-letter case.
+Region dictionaries live in `data/region_corrections/<kraj-slug>.json` (reviewable, one file per country; the
+starter one is `kraj-jemen.json`, built from doc #11263) and are loaded by `imports/seed_region_corrections.py`
+(dry-run by default, `--apply` inserts only missing rules, never changes existing ones). A document is only
+affected when it carries the `kraj-*` tag — run country detection (`POST /document/<id>/countries/detect`) first.
 
 `youtube_processing._store_transcript_text` is the ingestion hook for captions
 (with or without chapters, including language mismatch) and completed AssemblyAI
