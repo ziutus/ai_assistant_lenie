@@ -278,7 +278,15 @@ export default function ChapterBoundariesPanel({ docId, disabled = false, defaul
                   <label>Tytuł nowego rozdziału <input autoFocus maxLength={200} value={split.title} disabled={blocked}
                     onChange={event => setSplit({ ...split, title: event.target.value })} /></label>
                   <label>Typ nowego rozdziału <select value={split.chapterType} disabled={blocked}
-                    onChange={event => setSplit({ ...split, chapterType: event.target.value as ChapterType })}>
+                    onChange={event => {
+                      const chapterType = event.target.value as ChapterType;
+                      const defaultTitle = (section.title + " (cd.)").slice(0, 200);
+                      // Ad/noise chapters get the type name as title; a title the reviewer typed himself is kept.
+                      const untouched = split.title === defaultTitle || split.title === typeLabels.REKLAMA || split.title === typeLabels.SZUM;
+                      const title = !untouched ? split.title
+                        : chapterType === "REKLAMA" || chapterType === "SZUM" ? typeLabels[chapterType] : defaultTitle;
+                      setSplit({ ...split, chapterType, title });
+                    }}>
                     {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select></label>
                   <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
