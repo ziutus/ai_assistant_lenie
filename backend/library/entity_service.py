@@ -313,6 +313,39 @@ def _add_named_events(session, groups, text):
         logger.exception("Failed to detect named events; retaining groups")
 
 
+def _add_named_vessels(groups, text):
+    """Retype vessel mentions atomically while preserving unrelated person mentions."""
+    from copy import deepcopy
+
+    from library.named_vessel_detector import detect_named_vessels
+
+    try:
+        vessels = detect_named_vessels(text)
+        updated = deepcopy(groups)
+
+        def normalized(value):
+            return " ".join(value.split()).casefold()
+
+        for name, vessel in vessels.items():
+            group = updated.setdefault(("productName", name), {"count": 0, "variants": [], "raw_lemmas": []})
+            group["count"] += vessel["count"]
+            group["variants"] = list(dict.fromkeys([*group["variants"], *vessel["variants"]]))
+            group["raw_lemmas"] = [name]
+            phrases = {normalized(vessel["phrase"])}
+            phrases.update(normalized(surface.split(maxsplit=1)[1]) for surface in vessel["variants"])
+            for key, candidate in list(updated.items()):
+                if key[0] not in {"persName", "orgName", "placeName", "geogName"}:
+                    continue
+                if any(normalized(value) in phrases for value in [key[1], *candidate.get("variants", [])]):
+                    candidate["count"] = max(0, candidate["count"] - vessel["count"])
+                    if candidate["count"] == 0:
+                        del updated[key]
+        groups.clear()
+        groups.update(updated)
+    except Exception:
+        logger.exception("Failed to detect named vessels; retaining groups")
+
+
 def _merge_lemma_split_places(groups: dict[tuple[str, str], dict]) -> list[tuple[str, str]]:
     """Fold a place group into another one that already lists its name as a surface variant.
 
@@ -580,6 +613,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         _add_place_mentions(groups, text, raw)
         _extend_places_to_registry_names(session, groups, text, raw)
         _add_named_events(session, groups, text)
+        _add_named_vessels(groups, text)
         _add_pseudonyms(groups, text)
 
         # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
