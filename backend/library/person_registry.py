@@ -302,6 +302,18 @@ def merge_entities_of_same_person(session, document_id: int) -> list[tuple[str, 
     return merged
 
 
+def _territory_people(session, doc) -> list[dict]:
+    """People tied to the document's countries/regions; empty (and fail-soft) without territory tags."""
+    try:
+        from library.person_territories import persons_for_territories, territories_of_tags
+
+        territories = territories_of_tags(getattr(doc, "tags", None))
+        return persons_for_territories(session, territories) if territories else []
+    except Exception:
+        logger.exception("territory people lookup failed for document %s", getattr(doc, "id", None))
+        return []
+
+
 def resolve_document_persons(
     session, doc, text: str, progress_callback=None, only_names: list[str] | None = None,
 ) -> dict:
@@ -343,6 +355,7 @@ def resolve_document_persons(
         linked: list[tuple[str, str, str]] = []
         skipped: list[str] = []
         document_people: list[Person] | None = None  # loaded lazily, extended as links are made
+        territory_people: list[dict] | None = None  # people tied to the document's countries, lazily
         for index, ent in enumerate(entities, start=1):
             if progress_callback is not None:
                 progress_callback(index, len(entities))
@@ -386,6 +399,22 @@ def resolve_document_persons(
                 linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
                 continue
 
+            # 1c. The mention fits exactly ONE person tied to the document's countries/regions
+            # (person_territories): "Hadi" in a Yemen text is Abd Rabu Mansur Hadi.
+            if territory_people is None:
+                territory_people = _territory_people(session, doc)
+            if territory_people:
+                from library.person_territory_match import find_territory_person
+
+                found = find_territory_person(name, territory_people)
+                person = session.get(Person, found["id"]) if found else None
+                if person is not None:
+                    if _link(session, doc.id, person, name, CONFIDENCE_ALIAS):
+                        _add_alias(session, person, name)
+                        linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
+                        document_people.append(person)
+                    continue
+
             # 2. Wikidata humans + LLM context disambiguation
             candidates = search_persons(name)
             if len(name.split()) < 2:
@@ -394,7 +423,14 @@ def resolve_document_persons(
             if candidates:
                 from library.article_tagging import confirm_person_with_llm
 
-                qid = confirm_person_with_llm(text, doc.title or "", name, candidates)
+                # Namesakes: exactly one candidate is a known person of the document's territory
+                qid = None
+                if territory_people:
+                    from library.person_territory_match import pick_wikidata_by_territory
+
+                    qid = pick_wikidata_by_territory(candidates, territory_people)
+                if not qid:
+                    qid = confirm_person_with_llm(text, doc.title or "", name, candidates)
                 if qid:
                     chosen = next(c for c in candidates if c["qid"] == qid)
                     if not label_matches_mention(name, chosen["label"]):
@@ -430,6 +466,19 @@ def resolve_document_persons(
                     _add_alias(session, person, name)
                     if _link(session, doc.id, person, name, CONFIDENCE_WIKIDATA):
                         linked.append((name, person.canonical_name, CONFIDENCE_WIKIDATA))
+                        document_people.append(person)
+                    continue
+
+            # 2b. A mangled name (speech-to-text slip) that sounds like exactly one person of the document's
+            # territory: only a proposal, queued for review like a fuzzy match.
+            if territory_people:
+                from library.person_territory_match import find_mangled_territory_person
+
+                found = find_mangled_territory_person(name, territory_people)
+                person = session.get(Person, found["id"]) if found else None
+                if person is not None:
+                    if _link(session, doc.id, person, name, CONFIDENCE_MANUAL_REVIEW):
+                        linked.append((name, person.canonical_name, CONFIDENCE_MANUAL_REVIEW))
                         document_people.append(person)
                     continue
 
