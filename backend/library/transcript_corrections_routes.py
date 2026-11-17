@@ -4,14 +4,14 @@ import datetime
 from collections import Counter
 
 from flask import Blueprint, abort, g, jsonify, request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from library.db.engine import get_scoped_session
-from library.db.models import Document, TranscriptCorrection
+from library.db.models import Document, TranscriptCorrection, TranscriptCorrectionApplication
 from library.transcript_corrections import (
-    TranscriptCorrectionValidationError, _bump_hit_counts, bust_cache, correct_text, country_slugs_from_tags,
-    load_active_rules, normalize_author, replace_phrase, validate_one_off, validate_rule,
+    TranscriptCorrectionValidationError, _bump_hit_counts, bust_cache, correct_text_detailed,
+    country_slugs_from_tags, load_active_rules, normalize_author, replace_phrase, validate_one_off, validate_rule,
 )
 
 bp = Blueprint("transcript_corrections", __name__)
@@ -79,13 +79,29 @@ def list_rules():
             abort(400, "active musi być 0 lub 1")
         query = query.where(TranscriptCorrection.active.is_(request.args["active"] == "1"))
     if "scope" in request.args:
-        query = query.where(TranscriptCorrection.scope == request.args["scope"])
+        scopes = [scope.strip() for scope in request.args["scope"].split(",") if scope.strip()]
+        query = query.where(TranscriptCorrection.scope == scopes[0] if len(scopes) == 1
+                            else TranscriptCorrection.scope.in_(scopes))
     if "author" in request.args:
         query = query.where(TranscriptCorrection.author == normalize_author(request.args["author"]))
     if "country_slug" in request.args:
         query = query.where(TranscriptCorrection.country_slug == request.args["country_slug"].strip().casefold())
-    rules = get_scoped_session().scalars(query).all()
-    return jsonify({"status": "success", "rules": [_serialize(rule) for rule in rules]})
+    session = get_scoped_session()
+    # Optional pagination (the dictionary page); without limit every rule is returned as before.
+    if "limit" in request.args or "offset" in request.args:
+        try:
+            limit = int(request.args.get("limit", 50))
+            offset = int(request.args.get("offset", 0))
+        except ValueError:
+            abort(400, "limit i offset muszą być liczbami całkowitymi")
+        if not 1 <= limit <= 200 or offset < 0:
+            abort(400, "limit musi być 1–200, a offset nieujemny")
+        total = session.scalar(select(func.count()).select_from(query.order_by(None).subquery()))
+        rules = session.scalars(query.limit(limit).offset(offset)).all()
+        return jsonify({"status": "success", "total": total, "limit": limit, "offset": offset,
+                        "rules": [_serialize(rule) for rule in rules]})
+    rules = session.scalars(query).all()
+    return jsonify({"status": "success", "total": len(rules), "rules": [_serialize(rule) for rule in rules]})
 
 
 @bp.post("/transcript_corrections")
@@ -149,6 +165,62 @@ def _snippet(before, after):
     return {"before": before[start:index + 100], "after": after[start:index + 100]}
 
 
+def _record_applications(session, document_id, changes) -> None:
+    """Audit what really changed: one row per (rule, original wording, replacement, chapter)."""
+    for (rule_id, original, replacement, chapter), count in Counter(changes).items():
+        session.add(TranscriptCorrectionApplication(
+            document_id=document_id, rule_id=rule_id or None, original_text=original,
+            replacement_text=replacement, chapter_position=chapter, occurrences=count,
+        ))
+
+
+@bp.get("/document/<int:document_id>/transcript_corrections")
+def document_corrections(document_id):
+    """What the stored dictionaries did to this document, and what they would still change."""
+    from library.country_gazetteer import slug_to_name
+
+    session = get_scoped_session()
+    doc = session.get(Document, document_id)
+    if doc is None:
+        abort(404, "Nie znaleziono dokumentu")
+    countries = country_slugs_from_tags(doc.tags)
+    rows = session.execute(
+        select(TranscriptCorrectionApplication, TranscriptCorrection.scope, TranscriptCorrection.country_slug)
+        .outerjoin(TranscriptCorrection, TranscriptCorrection.id == TranscriptCorrectionApplication.rule_id)
+        .where(TranscriptCorrectionApplication.document_id == document_id)
+        .order_by(TranscriptCorrectionApplication.chapter_position, TranscriptCorrectionApplication.id)
+    ).all()
+    merged = {}
+    for application, scope, country_slug in rows:
+        key = (application.rule_id, application.original_text, application.replacement_text,
+               application.chapter_position)
+        entry = merged.setdefault(key, {
+            "rule_id": application.rule_id, "scope": scope, "country_slug": country_slug,
+            "original_text": application.original_text, "replacement_text": application.replacement_text,
+            "chapter_position": application.chapter_position, "occurrences": 0, "applied_at": None,
+        })
+        entry["occurrences"] += application.occurrences
+        entry["applied_at"] = application.applied_at.isoformat() if application.applied_at else None
+    rules = load_active_rules(session=session)
+    by_country = Counter()
+    for rule in rules:
+        if rule.scope != "region" or (rule.country_slug or "") not in countries:
+            continue
+        if rule.author and normalize_author(rule.author) != normalize_author(doc.byline):
+            continue
+        by_country[rule.country_slug] += 1
+    pending = len(correct_text_detailed(doc.text or "", doc.byline, rules, countries)[2])
+    return jsonify({
+        "status": "success", "document_id": document_id, "author": doc.byline,
+        "applications": list(merged.values()),
+        "dictionaries": [
+            {"country_slug": slug, "country_name": slug_to_name(slug.removeprefix("kraj-")), "rules": count}
+            for slug, count in sorted(by_country.items())
+        ],
+        "pending_changes": pending,
+    })
+
+
 @bp.post("/transcript_corrections/apply")
 def apply_rules():
     _require_writer()
@@ -177,6 +249,7 @@ def apply_rules():
     countries = country_slugs_from_tags(doc.tags)
     hits = Counter()
     fields = {}
+    changes = []
     for field in ("text", "text_md"):
         before = getattr(doc, field)
         if not before:
@@ -185,13 +258,17 @@ def apply_rules():
             after, count = replace_phrase(before, data["pattern"].strip(), data["replacement"])
             field_hits = [(0, count)] if count else []
         else:
-            after, field_hits = correct_text(before, doc.byline, rules, countries)
+            after, field_hits, field_changes = correct_text_detailed(before, doc.byline, rules, countries)
+            if field == "text":  # text_md repeats the same words; count them once
+                changes = field_changes
         hits.update(dict(field_hits))
         fields[field] = {"hits": [{"rule_id": rule_id, "count": count} for rule_id, count in field_hits],
                          "changed": before != after, "snippet": _snippet(before, after) if before != after else None}
         if not dry_run and before != after:
             setattr(doc, field, after)
     if not dry_run:
+        if not one_off:
+            _record_applications(session, document_id, changes)
         _commit(session)
         if not one_off:
             _bump_hit_counts(list(hits.items()))
