@@ -37,10 +37,12 @@ it("lists what the dictionary changed in THIS chapter, merged per wording and mo
   show(info());
   const note = screen.getByRole("note", { name: "Słownik regionu" });
   expect(note.textContent).toContain("Słownik regionu „Jemen” — w tym rozdziale zastosowano (2):");
-  const lines = within(note).getAllByRole("listitem").map((item) => item.textContent);
+  const list = within(note).getByRole("list", { name: "Zmiany słownika regionu w tym rozdziale" });
+  const lines = within(list).getAllByRole("listitem").map((item) => item.textContent);
   // two rows of the same wording (14 + 1) are one line
   expect(lines).toEqual(["Tais → Taiz ×16", "huti → Huti ×15"]);
-  expect(note.textContent).not.toContain("Marip");
+  // another chapter's change is in the document-wide list below, not in this chapter's list
+  expect(list.textContent).not.toContain("Marip");
 });
 
 it("says so when the chapter was not changed and links to the dictionary page", () => {
@@ -99,6 +101,43 @@ it("can skip the entity refresh and reports a failed save without calling it don
   expect((await screen.findByRole("alert")).textContent).toBe("Brak uprawnień");
   expect(onChanged).not.toHaveBeenCalled();
   expect(vi.mocked(axios.post).mock.calls.some(([url]) => String(url).endsWith("/website_entities"))).toBe(false);
+});
+
+it("shows what each country's dictionary changed in the whole document, with the chapters", () => {
+  show(info());
+  const note = screen.getByRole("note", { name: "Słownik regionu" });
+  const summary = within(note).getByText(/Słowniki regionów dokumentu \(1\)/);
+  expect(summary.textContent).toContain("Jemen: 33 zmian w dokumencie");
+  const group = within(note).getByRole("group", { name: "Słownik regionu Jemen" });
+  expect(group.textContent).toContain("16 reguł, zmian w całym dokumencie: 33");
+  expect(within(group).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    "Tais → Taiz ×16 (rozdz. 2)", "huti → Huti ×15 (rozdz. 2)", "Marip → Marib ×2 (rozdz. 5)",
+  ]);
+});
+
+it("lists the chapters of a change that happened in several, and calls chapter 0 the introduction", () => {
+  show(info({ applications: [
+    { rule_id: 2, scope: "region", country_slug: "kraj-jemen", original_text: "Tais", replacement_text: "Taiz",
+      chapter_position: 4, occurrences: 1, applied_at: null },
+    { rule_id: 2, scope: "region", country_slug: "kraj-jemen", original_text: "Tais", replacement_text: "Taiz",
+      chapter_position: 0, occurrences: 2, applied_at: null },
+    { rule_id: 2, scope: "region", country_slug: "kraj-jemen", original_text: "Tais", replacement_text: "Taiz",
+      chapter_position: 2, occurrences: 3, applied_at: null },
+  ] }));
+  const group = within(screen.getByRole("note", { name: "Słownik regionu" })).getByRole("group", { name: "Słownik regionu Jemen" });
+  expect(within(group).getByRole("listitem").textContent).toBe("Tais → Taiz ×6 (rozdz. wstęp, 2, 4)");
+});
+
+it("says a dictionary changed nothing yet, and still lists a country known only from old audit rows", () => {
+  show(info({ applications: [] }));
+  const group = screen.getByRole("group", { name: "Słownik regionu Jemen" });
+  expect(group.textContent).toContain("Ten słownik nie zmienił jeszcze tekstu tego dokumentu.");
+  cleanup();
+  show(info({ dictionaries: [], applications: [
+    { rule_id: null, scope: null, country_slug: "kraj-iran", original_text: "Tehran", replacement_text: "Teheran",
+      chapter_position: 2, occurrences: 1, applied_at: null },
+  ] }));
+  expect(screen.getByRole("group", { name: "Słownik regionu iran" }).textContent).toContain("Tehran → Teheran ×1 (rozdz. 2)");
 });
 
 it("offers nothing to apply when the dictionary has no pending changes", () => {

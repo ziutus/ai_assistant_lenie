@@ -363,12 +363,16 @@ it("shows what the region dictionary rewrote in each chapter, next to the channe
   const first = screen.getByRole("region", { name: "#1 Wstęp" });
   const note = await within(first).findByRole("note", { name: "Słownik regionu" });
   expect(note.textContent).toContain("Słownik regionu „Jemen” — w tym rozdziale zastosowano (1):");
-  expect(within(note).getByRole("listitem").textContent).toBe("Tais → Taiz ×3");
+  const list = within(note).getByRole("list", { name: "Zmiany słownika regionu w tym rozdziale" });
+  expect(within(list).getByRole("listitem").textContent).toBe("Tais → Taiz ×3");
   // another chapter only sees its own changes
   const third = screen.getByRole("region", { name: "#3 Pusty" });
   const thirdNote = await within(third).findByRole("note", { name: "Słownik regionu" });
-  expect(thirdNote.textContent).toContain("Marip → Marib");
-  expect(thirdNote.textContent).not.toContain("Tais");
+  const thirdList = within(thirdNote).getByRole("list", { name: "Zmiany słownika regionu w tym rozdziale" });
+  expect(thirdList.textContent).toContain("Marip → Marib");
+  expect(thirdList.textContent).not.toContain("Tais");
+  // the collapsed list of the whole document still tells where the other change happened
+  expect(thirdNote.textContent).toContain("Tais → Taiz ×3 (rozdz. 1)");
 });
 
 it("draws no region dictionary note for a document of no dictionary country", async () => {

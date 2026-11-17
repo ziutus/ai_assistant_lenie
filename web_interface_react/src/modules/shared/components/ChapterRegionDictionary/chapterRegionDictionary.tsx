@@ -1,7 +1,7 @@
 import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
-import { changesInChapter, regionLabel, type RegionDictionaryInfo } from "../../utils/regionDictionary";
+import { changesInChapter, regionLabel, summaryByCountry, type RegionDictionaryInfo } from "../../utils/regionDictionary";
 
 // "Słownik regionu „Jemen” — w tym rozdziale zastosowano (N):" — the twin of the channel-glossary note on /ner/:id.
 // The channel glossary repairs a COPY of the text for NER; the region dictionary rewrites the stored transcript
@@ -35,6 +35,7 @@ const ChapterRegionDictionary = ({ documentId, position, info, apiUrl, apiKey, o
 
   if (!info) return null;
   const lines = changesInChapter(info, position);
+  const summaries = summaryByCountry(info);
   if (info.dictionaries.length === 0 && info.applications.length === 0) return null;
 
   const headers = { "x-api-key": apiKey, "Content-Type": "application/json" };
@@ -83,17 +84,39 @@ const ChapterRegionDictionary = ({ documentId, position, info, apiUrl, apiKey, o
       <div style={{ marginTop: 6, paddingLeft: 8, borderLeft: "3px solid #bbf7d0" }}>
         {lines.length === 0
           ? <small style={{ color: "#64748b" }}>Słownik regionu nie zmieniał tego rozdziału.</small>
-          : <ul style={{ margin: "6px 0", paddingLeft: 18 }}>
+          : <ul aria-label="Zmiany słownika regionu w tym rozdziale" style={{ margin: "6px 0", paddingLeft: 18 }}>
               {lines.map((line) => (
                 <li key={`${line.original}→${line.replacement}`} style={{ marginBottom: 4 }}>
                   {line.original} → <strong>{line.replacement}</strong> ×{line.occurrences}
                 </li>
               ))}
             </ul>}
-        {info.dictionaries.length > 0 && (
+        {summaries.length > 0 && (
           <details style={{ marginTop: 2, fontSize: "0.9em" }}>
-            <summary>Słowniki regionów dokumentu ({info.dictionaries.length})</summary>
-            {info.dictionaries.map((dictionary) => `${dictionary.country_name ?? dictionary.country_slug}: ${dictionary.rules} reguł`).join("; ")}
+            <summary>
+              Słowniki regionów dokumentu ({summaries.length})
+              {" — "}{summaries.map((summary) => `${summary.name}: ${summary.total} zmian w dokumencie`).join("; ")}
+            </summary>
+            {summaries.map((summary) => (
+              <div key={summary.country_slug} role="group" aria-label={`Słownik regionu ${summary.name}`} style={{ marginTop: 4 }}>
+                <strong>{summary.name}</strong>
+                <small style={{ color: "#64748b" }}>
+                  {" "}— {summary.rules > 0 ? `${summary.rules} reguł, ` : ""}zmian w całym dokumencie: {summary.total}
+                </small>
+                {summary.changes.length === 0
+                  ? <div><small style={{ color: "#64748b" }}>Ten słownik nie zmienił jeszcze tekstu tego dokumentu.</small></div>
+                  : <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
+                      {summary.changes.map((line) => (
+                        <li key={`${line.original}→${line.replacement}`}>
+                          {line.original} → <strong>{line.replacement}</strong> ×{line.occurrences}
+                          <small style={{ color: "#64748b" }}>
+                            {" "}(rozdz. {line.chapters.map((chapter) => (chapter === 0 ? "wstęp" : String(chapter))).join(", ")})
+                          </small>
+                        </li>
+                      ))}
+                    </ul>}
+              </div>
+            ))}
           </details>
         )}
         {info.pending_changes > 0 && (
