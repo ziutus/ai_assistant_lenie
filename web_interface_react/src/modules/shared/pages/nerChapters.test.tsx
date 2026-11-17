@@ -348,6 +348,38 @@ it("marks one entity's mentions strongly after \"Podświetl w tekście\", even w
   expect(document.querySelector("[data-focus-mark]")).toBeNull();
 });
 
+it("shows what the region dictionary rewrote in each chapter, next to the channel glossary", async () => {
+  mockApi({ "/document/42/transcript_corrections": {
+    status: "success", author: "Kanał", pending_changes: 0,
+    dictionaries: [{ country_slug: "kraj-jemen", country_name: "Jemen", rules: 16 }],
+    applications: [
+      { rule_id: 2, scope: "region", country_slug: "kraj-jemen", original_text: "Tais", replacement_text: "Taiz",
+        chapter_position: 1, occurrences: 3, applied_at: null },
+      { rule_id: 2, scope: "region", country_slug: "kraj-jemen", original_text: "Marip", replacement_text: "Marib",
+        chapter_position: 3, occurrences: 1, applied_at: null },
+    ],
+  } });
+  await open();
+  const first = screen.getByRole("region", { name: "#1 Wstęp" });
+  const note = await within(first).findByRole("note", { name: "Słownik regionu" });
+  expect(note.textContent).toContain("Słownik regionu „Jemen” — w tym rozdziale zastosowano (1):");
+  const list = within(note).getByRole("list", { name: "Zmiany słownika regionu w tym rozdziale" });
+  expect(within(list).getByRole("listitem").textContent).toBe("Tais → Taiz ×3");
+  // another chapter only sees its own changes
+  const third = screen.getByRole("region", { name: "#3 Pusty" });
+  const thirdNote = await within(third).findByRole("note", { name: "Słownik regionu" });
+  const thirdList = within(thirdNote).getByRole("list", { name: "Zmiany słownika regionu w tym rozdziale" });
+  expect(thirdList.textContent).toContain("Marip → Marib");
+  expect(thirdList.textContent).not.toContain("Tais");
+  // the collapsed list of the whole document still tells where the other change happened
+  expect(thirdNote.textContent).toContain("Tais → Taiz ×3 (rozdz. 1)");
+});
+
+it("draws no region dictionary note for a document of no dictionary country", async () => {
+  await open();
+  expect(screen.queryByRole("note", { name: "Słownik regionu" })).toBeNull();
+});
+
 it("shows the channel name next to the document title", async () => {
   mockApi({ "/website_get": { title: "Film testowy", document_type: "youtube", byline: "Na Wschód od Bliskiego Wschodu" } });
   await open();

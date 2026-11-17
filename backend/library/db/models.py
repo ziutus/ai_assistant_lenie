@@ -1500,6 +1500,26 @@ class TranscriptCorrection(Base):
     last_hit_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
 
+class TranscriptCorrectionApplication(Base):
+    """Audit row: what a stored correction rule really changed in one document's transcript.
+
+    The corrected text no longer contains the original wording, so this is the only record of it — it feeds the
+    "Słownik regionu" panel on /ner/:id (chapter-local counts, "before -> after").
+    """
+
+    __tablename__ = "transcript_correction_applications"
+    __table_args__ = (Index("ix_transcript_correction_applications_document", "document_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    rule_id: Mapped[int | None] = mapped_column(ForeignKey("transcript_corrections.id", ondelete="SET NULL"))
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    replacement_text: Mapped[str] = mapped_column(Text, nullable=False)
+    chapter_position: Mapped[int] = mapped_column(nullable=False, server_default=sa_text("0"))
+    occurrences: Mapped[int] = mapped_column(nullable=False, server_default=sa_text("1"))
+    applied_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class CleanupRule(Base):
     """Reguła usuwania linii z artykułu wraz z pochodzeniem i licznikiem trafień."""
 

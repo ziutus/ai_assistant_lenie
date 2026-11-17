@@ -6,11 +6,13 @@ import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../componen
 import ChannelBadge from "../components/ChannelBadge";
 import ChapterDescriptionsPanel, { ChapterDescriptionsButton } from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import ChapterEventsPanel, { ChapterEventsDetectButton } from "../components/ChapterEventsPanel/chapterEventsPanel";
+import ChapterRegionDictionary from "../components/ChapterRegionDictionary/chapterRegionDictionary";
 import ChapterSourcesPanel from "../components/ChapterSourcesPanel/chapterSourcesPanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
 import ToneSpansPanel, { useToneSpans } from "../components/ToneSpansPanel/toneSpansPanel";
 import { type GlossaryInfo, glossaryHint, glossarySwaps, GLOSSARY_UNDERLINE } from "../utils/channelGlossary";
+import type { RegionDictionaryInfo } from "../utils/regionDictionary";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistryDialog";
@@ -275,6 +277,26 @@ const NerChapters = () => {
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [id, apiUrl, headers, chapterMode ? 0 : version]);
+
+  // The region dictionary (stored correction rules of the document's countries) and what it changed in the text.
+  const [regionInfo, setRegionInfo] = React.useState<RegionDictionaryInfo | null>(null);
+  // Bumped only after the dictionary rewrote the text — entity edits must not refetch it.
+  const [regionVersion, setRegionVersion] = React.useState(0);
+  React.useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    axios.get<RegionDictionaryInfo>(`${apiUrl}/document/${id}/transcript_corrections`, { headers })
+      .then((response) => {
+        if (cancelled) return;
+        const data = (response.data ?? {}) as Partial<RegionDictionaryInfo>;
+        setRegionInfo({
+          author: data.author ?? null, applications: data.applications ?? [],
+          dictionaries: data.dictionaries ?? [], pending_changes: data.pending_changes ?? 0,
+        });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [id, apiUrl, headers, regionVersion]);
 
   const refreshChapters = async (preferredPosition: number) => {
     if (chapterMode) {
@@ -850,7 +872,10 @@ const NerChapters = () => {
                           {glossary && <ChapterGlossary glossary={glossary} section={section}
                             active={glossaryPhrase} onHighlight={highlightGlossary}
                             showOriginal={showOriginal} onShowOriginal={setShowOriginal} />}
-                          {loadingEntities && <small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
+                          {id && <ChapterRegionDictionary documentId={id} position={section.position} info={regionInfo}
+                            apiUrl={apiUrl} apiKey={apiKey ?? ""}
+                            onChanged={() => { setRegionVersion((current) => current + 1); void refreshChapters(section.position); }} />}
+                          {loadingEntities &&<small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
                           {!loadingEntities && count === 0 && entityData?.has_entities !== false && (
                             <small style={{ color: "#64748b" }}>Brak encji w tym rozdziale.</small>
                           )}

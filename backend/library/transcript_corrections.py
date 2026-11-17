@@ -151,11 +151,13 @@ def validate_one_off(*, pattern, replacement) -> None:
         raise TranscriptCorrectionValidationError("pattern i replacement muszą się różnić")
 
 
-def replace_phrase(text: str, pattern: str, replacement: str, *, adapt_case: bool = True) -> tuple[str, int]:
+def replace_phrase(text: str, pattern: str, replacement: str, *, adapt_case: bool = True,
+                   on_match=None) -> tuple[str, int]:
     """Literal, case-insensitive, whole-word replacement; the first letter follows the matched case.
 
     ``adapt_case=False`` inserts the replacement verbatim: region rules name proper nouns, and ASR often
     writes them in lowercase ("huti"), so the stored capitalisation must win.
+    ``on_match(start, surface, result)`` is called for every match (offset in the text being replaced).
     """
     regex = r"(?<!\w)" + r"\s+".join(re.escape(part) for part in pattern.split()) + r"(?!\w)"
 
@@ -164,9 +166,19 @@ def replace_phrase(text: str, pattern: str, replacement: str, *, adapt_case: boo
         first = match.group()[0]
         if adapt_case and result and first.casefold() == result[0].casefold():
             result = (result[0].upper() if first.isupper() else result[0].lower()) + result[1:]
+        if on_match is not None:
+            on_match(match.start(), match.group(), result)
         return result
 
     return re.subn(regex, replace, text, flags=re.IGNORECASE)
+
+
+_HEADING = re.compile(r"(?m)^## ")
+
+
+def chapter_position(text: str, offset: int) -> int:
+    """Reader/NER chapter number of a character offset: 0 = before the first ``##`` heading, then 1, 2, ..."""
+    return sum(1 for m in _HEADING.finditer(text, 0, max(offset, 0) + 3) if m.start() <= offset)
 
 
 def correct_text(text: str, author, rules, countries=None) -> tuple[str, list[tuple[int, int]]]:
@@ -175,7 +187,17 @@ def correct_text(text: str, author, rules, countries=None) -> tuple[str, list[tu
     ``countries`` is the set of ``kraj-<slug>`` tags of the document. A ``region`` rule fires only when its
     country is in it (and, when the rule names a channel, the author matches); without it region rules are skipped.
     """
+    corrected, hits, _changes = correct_text_detailed(text, author, rules, countries)
+    return corrected, hits
+
+
+def correct_text_detailed(text: str, author, rules, countries=None):
+    """``correct_text`` plus the list of REAL changes: ``(rule_id, original, replacement, chapter)``.
+
+    A match whose text already equals the replacement ("Huti" for the rule huti -> Huti) is a hit but not a change.
+    """
     hits = []
+    changes = []
     countries = {c.casefold() for c in countries or ()}
     for rule in sorted(rules, key=lambda r: (-len(r.pattern.strip()), r.id)):
         try:
@@ -191,10 +213,17 @@ def correct_text(text: str, author, rules, countries=None) -> tuple[str, list[tu
                 continue
             if rule.author and normalize_author(author) != normalize_author(rule.author):
                 continue
-        text, count = replace_phrase(text, rule.pattern, rule.replacement, adapt_case=rule.scope != "region")
+        before = text
+
+        def record(start, surface, result, rule=rule, before=before):
+            if surface != result:
+                changes.append((rule.id, surface, result, chapter_position(before, start)))
+
+        text, count = replace_phrase(text, rule.pattern, rule.replacement, adapt_case=rule.scope != "region",
+                                     on_match=record)
         if count:
             hits.append((rule.id, count))
-    return text, hits
+    return text, hits, changes
 
 
 def _bump_hit_counts(hits, *, session=None) -> None:

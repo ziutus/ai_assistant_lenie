@@ -451,6 +451,18 @@ starter one is `kraj-jemen.json`, built from doc #11263) and are loaded by `impo
 (dry-run by default, `--apply` inserts only missing rules, never changes existing ones). A document is only
 affected when it carries the `kraj-*` tag — run country detection (`POST /document/<id>/countries/detect`) first.
 
+**What a dictionary changed** (table `transcript_correction_applications`, migration `d2b7e4a9c351`). The corrected
+text no longer holds the original wording, so a persisting `POST /transcript_corrections/apply` (not a dry run, not a
+one-off pattern) writes one audit row per `(rule, original wording, replacement, chapter)` with the number of REAL
+changes — a match whose text already equals the replacement ("Huti" for `huti` → `Huti`) is a hit, not a change
+(`correct_text_detailed()`; `chapter_position()` numbers chapters like `/ner/:id`: 0 before the first `##`).
+`GET /document/<id>/transcript_corrections` returns `applications` (merged per rule/wording/chapter, with `scope` and
+`country_slug`), `dictionaries` (`[{country_slug, country_name, rules}]` — active region rules of the document's
+`kraj-*` tags, respecting a channel narrowing) and `pending_changes` (real changes a new apply would still make); the
+"Słownik regionu" panel on `/ner/:id` reads it. `GET /transcript_corrections` also takes `limit` (1–200) / `offset`
+and answers `total` (without `limit` it still returns every rule), `scope` accepts a comma list (`global,author`).
+Tests: `test_transcript_corrections_applications.py`.
+
 `youtube_processing._store_transcript_text` is the ingestion hook for captions
 (with or without chapters, including language mismatch) and completed AssemblyAI
 jobs. It corrects text and any existing text_md before persistence; raw transcripts
