@@ -58,7 +58,8 @@ def test_place_resolution(calls, monkeypatch):
     entity.geocode = GeocodeCache(id=1, resolved=True, display_name="Paris", query="Paris")
     session = MagicMock()
     session.query.return_value.filter.return_value.all.return_value = [entity]
-    monkeypatch.setattr("library.place_verification._canonicalize_and_merge_places", lambda s, rows: rows)
+    monkeypatch.setattr("library.place_verification._canonicalize_and_merge_places",
+                        lambda s, rows, existing=(): rows)
     monkeypatch.setattr("library.place_context_classifier.classify_place_context_candidates", lambda *a: [])
     with llm_usage_context(analysis_job_id="job", analysis_run_id=91):
         verify_document_places(session, SimpleNamespace(id=42, title="Title", tags=""), "Paris is a city.")

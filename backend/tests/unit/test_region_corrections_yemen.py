@@ -42,6 +42,14 @@ def fix(text):
     ("o marszu na sanę, wielkiej ofensywie", "o marszu na Sanę, wielkiej ofensywie"),
     ("odzyskiwał razem z nimi sane, więc", "odzyskiwał razem z nimi Sanę, więc"),
     ("nad Yemenu", "nad Jemenu"),
+    ("nad regionem Medyny, Kuti zaprzeczają ten oskarżeni", "nad regionem Medyny, Huti zaprzeczają ten oskarżeni"),
+    ("bo jednak atak na Aden. Aten to jest duże miasto", "bo jednak atak na Aden. Aden to jest duże miasto"),
+    ("w tym 41 nalotów na Marib, Aljafi i Taiz", "w tym 41 nalotów na Marib, Al-Dżauf i Taiz"),
+    ("w prowincji Lachć w południowo-zachodnim Jemenie", "w prowincji Lahdż w południowo-zachodnim Jemenie"),
+    ("do obozu dla uchodźców Haras w prowincji", "do obozu dla uchodźców Al-Charaz w prowincji"),
+    ("rzecznik koalicji Turki, almaliki informował", "rzecznik koalicji Turki al-Maliki informował"),
+    ("wyspę przy Cieślinie Bab al-Mandab oraz", "wyspę przy Cieśninie Bab al-Mandab oraz"),
+    ("nie mówię Janbu albo nie mówię Jan Bu, więc", "nie mówię Janbu albo nie mówię Janbu, więc"),
 ])
 def test_real_fragments(source, expected):
     assert fix(source) == expected
