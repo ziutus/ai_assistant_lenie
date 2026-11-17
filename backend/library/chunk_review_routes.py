@@ -2411,7 +2411,7 @@ def document_chapter_detect_events(doc_id: int, position: int):
         model = run.model if run else None
 
     try:
-        result = refresh_document_events(session, doc, model or None, chapter_position=position)
+        result = refresh_document_events(session, doc, model or None, chapter_position=position, editor_numbering=True)
         session.commit()
     except ValueError:
         session.rollback()

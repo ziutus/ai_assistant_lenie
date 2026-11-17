@@ -47,8 +47,8 @@ def test_detects_only_the_requested_chapter_and_returns_proposals(client, monkey
     monkeypatch.setattr(crr, "_latest_run_for_document", lambda s, d: None)
     seen = {}
 
-    def fake_refresh(sess, document, model=None, *, chapter_position=None):
-        seen.update(model=model, chapter_position=chapter_position)
+    def fake_refresh(sess, document, model=None, *, chapter_position=None, editor_numbering=False):
+        seen.update(model=model, chapter_position=chapter_position, editor_numbering=editor_numbering)
         return {
             "model": "m1", "rows": [_row()],
             "chapters": [{"rejected_without_quote": 1, "rejected_without_date": 2, "invalid_json": 0}],
@@ -60,7 +60,7 @@ def test_detects_only_the_requested_chapter_and_returns_proposals(client, monkey
 
     body = r.get_json()
     assert r.status_code == 200
-    assert seen == {"model": "m1", "chapter_position": 2}
+    assert seen == {"model": "m1", "chapter_position": 2, "editor_numbering": True}
     assert body["events"][0]["date_text"] == "1 września 1939"
     assert body["events"][0]["event_date"] == "1939-09-01"
     assert body["rejected_without_quote"] == 1 and body["rejected_without_date"] == 2
