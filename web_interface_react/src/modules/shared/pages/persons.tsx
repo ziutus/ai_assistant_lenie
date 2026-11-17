@@ -3,6 +3,7 @@ import axios from "axios";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination } from "../components/Pagination/pagination";
+import PersonTerritories from "../components/PersonTerritories/personTerritories";
 
 // Person registry browser (NER stage 4): fuzzy search over persons/aliases
 // (GET /persons?q=) and the person -> documents view (GET /person_documents).
@@ -448,6 +449,7 @@ const Persons = () => {
               </div>
             </div>
           )}
+          {!editing && <PersonTerritories personId={Number(id)} apiUrl={apiUrl} apiKey={apiKey ?? ""} />}
           <h3 style={{ margin: "12px 0 6px" }}>Artykuły autora ({authoredDocuments.length})</h3>
           {!authoredDocuments.length && <div style={{ color: "#667" }}>Brak dokumentów oznaczonych jako autorstwa tej osoby.</div>}
           <ul style={{ listStyle: "none", padding: 0 }}>
