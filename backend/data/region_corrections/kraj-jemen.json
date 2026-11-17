@@ -25,6 +25,7 @@
     {"pattern": "obozu dla uchodźców Haras", "replacement": "obozu dla uchodźców Al-Charaz", "note": "ASR: obóz Al-Charaz w prowincji Lahdz"},
     {"pattern": "Turki, almaliki", "replacement": "Turki al-Maliki", "note": "ASR: rzecznik koalicji, Turki al-Maliki"},
     {"pattern": "Cieślinie", "replacement": "Cieśninie", "note": "ASR: 'w Cieslinie Bab al-Mandab'"},
-    {"pattern": "Jan Bu", "replacement": "Janbu", "note": "ASR: port Janbu (Yanbu); the speaker explains the pronunciation"}
+    {"pattern": "Jan Bu", "replacement": "Janbu", "note": "ASR: port Janbu (Yanbu); the speaker explains the pronunciation"},
+    {"pattern": "Rose", "replacement": "Rijad", "note": "ASR: 'natomiast Rose w 2022 roku przerwal walki' = Riyadh (Saudi-led coalition stopped operations 30.03.2022, UN truce 2.04.2022); verified against news sources"}
   ]
 }
