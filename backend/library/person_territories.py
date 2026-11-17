@@ -204,7 +204,7 @@ def persons_for_territories(session, territories: set[tuple[str, str]], on: date
             continue
         entry = people.setdefault(person.id, {
             "id": person.id, "canonical_name": person.canonical_name, "role": person.role,
-            "kind": person.kind, "ties": [],
+            "kind": person.kind, "wikidata_qid": person.wikidata_qid, "ties": [],
         })
         entry["ties"].append(_tie_dict(tie))
     if people:
