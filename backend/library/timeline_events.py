@@ -469,7 +469,35 @@ def extract_fragment_events(
     }
 
 
-def _chapters_for_document(doc, selected_position: int | None = None) -> list[dict]:
+def _editor_chapter(doc, position: int) -> dict:
+    """One chapter numbered like ``/ner/:id`` does: preamble = 0, each ``##`` chapter 1, 2, ...
+
+    An article without ``##`` headings is one preamble section, so chapter 0 is the whole text.
+    """
+    from library.transcript_chapter_boundaries import parse_sections
+
+    text = doc.text or doc.text_md or ""
+    if not text.strip():
+        raise ValueError("document has no usable text")
+    number = 0
+    for section in parse_sections(text):
+        if section.heading:
+            number += 1
+        elif not section.body.strip():
+            continue
+        if number == position:
+            if not section.body.strip():
+                raise ValueError(f"chapter {position} is empty")
+            title = section.heading.lstrip("# ").strip() or doc.title or "Dokument"
+            return {"position": position, "title": title, "text": section.body}
+    raise ValueError(f"chapter {position} not found")
+
+
+def _chapters_for_document(
+    doc, selected_position: int | None = None, *, editor_numbering: bool = False,
+) -> list[dict]:
+    if editor_numbering and selected_position is not None:
+        return [_editor_chapter(doc, selected_position)]
     text = doc.text_md or doc.text or ""
     if not text.strip():
         raise ValueError("document has no usable text")
@@ -491,7 +519,9 @@ def _chapters_for_document(doc, selected_position: int | None = None) -> list[di
     ]
 
 
-def extract_document_events(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
+def extract_document_events(
+    session, doc, model: str | None = None, *, chapter_position: int | None = None, editor_numbering: bool = False,
+) -> dict:
     """Extract events without mutating the session; return events and per-chapter reports."""
     selected_model = model or load_config().get("TIMELINE_MODEL") or DEFAULT_TIMELINE_MODEL
     temporal_candidates = []
@@ -508,7 +538,7 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
     if reference_date is None:
         ingested_at = getattr(doc, "ingested_at", None)
         reference_date = ingested_at.date() if isinstance(ingested_at, datetime.datetime) else ingested_at
-    for chapter in _chapters_for_document(doc, chapter_position):
+    for chapter in _chapters_for_document(doc, chapter_position, editor_numbering=editor_numbering):
         chapter_events: list[dict] = []
         fragment_reports: list[dict] = []
         for fragment in split_timeline_fragments(chapter["text"]):
@@ -571,9 +601,17 @@ def is_ignored_passage(event: dict, ignored_passages: list[str]) -> bool:
     return False
 
 
-def refresh_document_events(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
-    """Replace stored derived events for a document, or one explicitly selected chapter."""
-    result = extract_document_events(session, doc, model, chapter_position=chapter_position)
+def refresh_document_events(
+    session, doc, model: str | None = None, *, chapter_position: int | None = None, editor_numbering: bool = False,
+) -> dict:
+    """Replace stored derived events for a document, or one explicitly selected chapter.
+
+    ``editor_numbering`` reads ``chapter_position`` as the ``/ner/:id`` editor does (preamble = 0) and stores the
+    rows under that number, which is what ``GET /document/<id>/events?chapter_position=`` filters by.
+    """
+    result = extract_document_events(
+        session, doc, model, chapter_position=chapter_position, editor_numbering=editor_numbering,
+    )
     # Proposals the reader dismissed stay as they are, and a new proposal about the same passage is not stored again.
     ignored = session.scalars(select(DocumentEvent).where(
         DocumentEvent.document_id == doc.id, DocumentEvent.ignored_at.is_not(None),

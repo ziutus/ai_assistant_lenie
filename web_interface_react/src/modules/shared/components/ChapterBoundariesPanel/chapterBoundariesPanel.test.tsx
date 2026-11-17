@@ -91,6 +91,23 @@ it.each([
   expect(screen.getByRole("link", { name: "/chunks/42" }).getAttribute("href")).toBe("/chunks/42");
 });
 
+it("renames an untouched split title to the ad/noise type and keeps a title typed by hand", async () => {
+  await open();
+  const chapter = await expand(1);
+  fireEvent.click(within(row(chapter, 3)).getByRole("button", { name: /Podziel tutaj/ }));
+  const input = screen.getByLabelText("Tytuł nowego rozdziału") as HTMLInputElement;
+  const type = screen.getByLabelText("Typ nowego rozdziału");
+  fireEvent.change(type, { target: { value: "REKLAMA" } });
+  expect(input.value).toBe("Reklama");
+  fireEvent.change(type, { target: { value: "SZUM" } });
+  expect(input.value).toBe("Szum");
+  fireEvent.change(type, { target: { value: "TEMAT" } });
+  expect(input.value).toBe("Temat 1 (cd.)");
+  fireEvent.change(input, { target: { value: "Własny tytuł" } });
+  fireEvent.change(type, { target: { value: "REKLAMA" } });
+  expect(input.value).toBe("Własny tytuł");
+});
+
 it("opens a split title, submits with Enter without submitting the page form, and re-expands shifted chapters", async () => {
   const { onSaved, onFormSubmit } = await open();
   const chapter = await expand(1);
