@@ -1462,18 +1462,25 @@ class DocumentRemovedLine(Base):
 
 
 class TranscriptCorrection(Base):
-    """Human-curated literal phrase corrections applied when STT text arrives."""
+    """Human-curated literal phrase corrections applied when STT text arrives.
+
+    ``scope`` ``region`` binds a rule to a country (``country_slug`` = ``kraj-<slug>`` tag of the
+    document, optionally narrowed to one channel through ``author``); only such rules may be a single word.
+    """
 
     __tablename__ = "transcript_corrections"
     __table_args__ = (
-        CheckConstraint("scope IN ('global', 'author')", name="ck_transcript_corrections_scope"),
+        CheckConstraint("scope IN ('global', 'author', 'region')", name="ck_transcript_corrections_scope"),
         CheckConstraint(
-            "(scope = 'global' AND author IS NULL) OR "
-            "(scope = 'author' AND author IS NOT NULL AND trim(author) <> '')",
+            "(scope = 'global' AND author IS NULL AND country_slug IS NULL) OR "
+            "(scope = 'author' AND author IS NOT NULL AND trim(author) <> '' AND country_slug IS NULL) OR "
+            "(scope = 'region' AND country_slug IS NOT NULL AND trim(country_slug) <> '' "
+            "AND (author IS NULL OR trim(author) <> ''))",
             name="ck_transcript_corrections_author",
         ),
         Index("uq_transcript_corrections_pattern_scope_author",
-              sa_text("lower(pattern)"), "scope", sa_text("coalesce(author, '')"), unique=True),
+              sa_text("lower(pattern)"), "scope", sa_text("coalesce(author, '')"),
+              sa_text("coalesce(country_slug, '')"), unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1481,6 +1488,7 @@ class TranscriptCorrection(Base):
     replacement: Mapped[str] = mapped_column(Text, nullable=False)
     scope: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'global'"))
     author: Mapped[str | None] = mapped_column(Text)
+    country_slug: Mapped[str | None] = mapped_column(String(100))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
     note: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str | None] = mapped_column(String(100))
