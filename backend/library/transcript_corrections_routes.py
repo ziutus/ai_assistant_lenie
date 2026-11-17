@@ -10,12 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from library.db.engine import get_scoped_session
 from library.db.models import Document, TranscriptCorrection
 from library.transcript_corrections import (
-    TranscriptCorrectionValidationError, _bump_hit_counts, bust_cache, correct_text,
+    TranscriptCorrectionValidationError, _bump_hit_counts, bust_cache, correct_text, country_slugs_from_tags,
     load_active_rules, normalize_author, replace_phrase, validate_one_off, validate_rule,
 )
 
 bp = Blueprint("transcript_corrections", __name__)
-_MATCH_FIELDS = ("pattern", "replacement", "scope", "author")
+_MATCH_FIELDS = ("pattern", "replacement", "scope", "author", "country_slug")
 
 
 def _require_service() -> None:
@@ -55,6 +55,8 @@ def _values(data, rule=None):
     validate_rule(**values)
     values["pattern"] = values["pattern"].strip()
     values["author"] = normalize_author(values["author"])
+    if isinstance(values["country_slug"], str):
+        values["country_slug"] = values["country_slug"].strip().casefold()
     return values
 
 
@@ -80,6 +82,8 @@ def list_rules():
         query = query.where(TranscriptCorrection.scope == request.args["scope"])
     if "author" in request.args:
         query = query.where(TranscriptCorrection.author == normalize_author(request.args["author"]))
+    if "country_slug" in request.args:
+        query = query.where(TranscriptCorrection.country_slug == request.args["country_slug"].strip().casefold())
     rules = get_scoped_session().scalars(query).all()
     return jsonify({"status": "success", "rules": [_serialize(rule) for rule in rules]})
 
@@ -169,6 +173,8 @@ def apply_rules():
         rules = []
     else:
         rules = load_active_rules(session=session)
+    # A region rule fires only for the countries the document is tagged with (kraj-<slug>).
+    countries = country_slugs_from_tags(doc.tags)
     hits = Counter()
     fields = {}
     for field in ("text", "text_md"):
@@ -179,7 +185,7 @@ def apply_rules():
             after, count = replace_phrase(before, data["pattern"].strip(), data["replacement"])
             field_hits = [(0, count)] if count else []
         else:
-            after, field_hits = correct_text(before, doc.byline, rules)
+            after, field_hits = correct_text(before, doc.byline, rules, countries)
         hits.update(dict(field_hits))
         fields[field] = {"hits": [{"rule_id": rule_id, "count": count} for rule_id, count in field_hits],
                          "changed": before != after, "snippet": _snippet(before, after) if before != after else None}
@@ -190,4 +196,5 @@ def apply_rules():
         if not one_off:
             _bump_hit_counts(list(hits.items()))
     return jsonify({"status": "success", "document_id": document_id, "dry_run": dry_run, "fields": fields,
+                    "countries": sorted(countries),
                     "hits": [{"rule_id": rule_id, "count": count} for rule_id, count in sorted(hits.items())]})

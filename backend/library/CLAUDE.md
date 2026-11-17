@@ -435,6 +435,22 @@ The first replacement letter follows the matched case when it is the same letter
 Active rules have a 60-second cache; CRUD writes bust that cache. Hit counts and
 last-hit timestamps are recorded best-effort.
 
+**Region scope** (`scope='region'`, `country_slug` = a `kraj-<slug>` tag of a known country, optional `author`
+narrowing the rule to one channel; migration `c9d4a7e2b158`). The country tag narrows the context enough to
+allow a **single-word** pattern (min. one word of 3 letters), which global and channel rules still refuse. A
+region rule fires only when `correct_text(..., countries)` / `apply_transcript_corrections(..., countries=)`
+get the document's `kraj-*` tags (`country_slugs_from_tags(doc.tags)`); without them region rules stay silent,
+so the ingestion hook (a document has no tags yet) never applies them. `POST /transcript_corrections/apply`
+takes the countries from the document's tags and echoes them as `countries`; `GET /transcript_corrections`
+accepts `country_slug`. Intended order: import → country detection → region rules (literal ones; phonetic
+proposals need human approval) → NER. Applying never rebuilds existing chunks or embeddings. A region rule
+inserts its replacement **verbatim** (`replace_phrase(..., adapt_case=False)`): the rules name proper nouns and
+ASR writes them in lowercase ("huti" → "Huti"); global/channel rules still copy the matched first-letter case.
+Region dictionaries live in `data/region_corrections/<kraj-slug>.json` (reviewable, one file per country; the
+starter one is `kraj-jemen.json`, built from doc #11263) and are loaded by `imports/seed_region_corrections.py`
+(dry-run by default, `--apply` inserts only missing rules, never changes existing ones). A document is only
+affected when it carries the `kraj-*` tag — run country detection (`POST /document/<id>/countries/detect`) first.
+
 `youtube_processing._store_transcript_text` is the ingestion hook for captions
 (with or without chapters, including language mismatch) and completed AssemblyAI
 jobs. It corrects text and any existing text_md before persistence; raw transcripts

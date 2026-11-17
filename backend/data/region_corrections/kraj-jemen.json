@@ -1,0 +1,22 @@
+{
+  "country_slug": "kraj-jemen",
+  "note": "Starter dictionary for Yemen (doc #11263, channel 'Na Wschod od Bliskiego Wschodu'). Region rules insert the replacement verbatim, so proper nouns get their capital letter back.",
+  "rules": [
+    {"pattern": "Hutik", "replacement": "Huti", "note": "ASR: 'wielka Wiktoria Hutik'"},
+    {"pattern": "Hutin", "replacement": "Huti", "note": "ASR: 'ze strony Hutin'"},
+    {"pattern": "Hutli", "replacement": "Huti", "note": "ASR: 'razem z Hutli'"},
+    {"pattern": "Chut i", "replacement": "Huti", "note": "ASR: 'Chut i ta cala...'"},
+    {"pattern": "huti", "replacement": "Huti", "note": "ASR writes the movement's name in lowercase"},
+    {"pattern": "hutich", "replacement": "Hutich", "note": "lowercase genitive"},
+    {"pattern": "Mari Tais", "replacement": "Marib, Taiz", "note": "two cities glued together"},
+    {"pattern": "Tais", "replacement": "Taiz", "note": "city of Taiz"},
+    {"pattern": "Marip", "replacement": "Marib", "note": "city of Marib"},
+    {"pattern": "Bapel Mandep", "replacement": "Bab al-Mandab", "note": "strait"},
+    {"pattern": "Bappel Mandep", "replacement": "Bab al-Mandab", "note": "strait"},
+    {"pattern": "Bappelmande", "replacement": "Bab al-Mandab", "note": "strait, glued"},
+    {"pattern": "zatokiadeńskiej", "replacement": "Zatoki Adeńskiej", "note": "two words glued"},
+    {"pattern": "sanę", "replacement": "Sanę", "note": "capital Sanaa, accusative, lowercase"},
+    {"pattern": "sane", "replacement": "Sanę", "note": "capital Sanaa, accusative without the ogonek"},
+    {"pattern": "Yemenu", "replacement": "Jemenu", "note": "English spelling slip"}
+  ]
+}
