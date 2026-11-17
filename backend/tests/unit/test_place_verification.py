@@ -968,6 +968,37 @@ class TestCanonicalizeAndMergePlaces:
         assert ent.source == "geocoded"
         session.delete.assert_not_called()
 
+    def test_a_canonical_name_held_by_a_row_outside_the_candidates_is_merged_not_renamed(self):
+        """Doc #11263: the country row 'Bahrajn' (no geocode, not a candidate) already holds the canonical spelling
+        that 'Bahrajin' geocodes to; renaming violated the (document, type, text) key and failed verify_places."""
+        country = _entity("Bahrajn", etype="placeName", geocode=None, mention_count=2)
+        country.variants = ["Bahrajn", "Bachrain"]
+        country.source = "ner"
+        typo = _entity("Bahrajin", etype="placeName",
+                       geocode=_resolved_geocode("Bahrajn, Bahrajn"), mention_count=1)
+        typo.variants = ["Bahrajinu"]
+        typo.geocode_id = 1858
+        session = self._session()
+
+        survivors = _canonicalize_and_merge_places(session, [typo], existing=[country, typo])
+
+        assert survivors == []
+        assert country.mention_count == 3
+        assert set(country.variants) == {"Bahrajn", "Bachrain", "Bahrajin", "Bahrajinu"}
+        assert country.geocode_id is None and country.source == "ner"
+        session.delete.assert_called_once_with(typo)
+
+    def test_a_clash_with_another_type_is_not_a_clash(self):
+        other_type = _entity("Zatoka Perska", etype="orgName", geocode=None)
+        ent = _entity("Zatoki Perskiej", etype="geogName", geocode=_resolved_geocode("Zatoka Perska"), mention_count=4)
+        ent.variants = ["Zatoki Perskiej"]
+        session = self._session()
+
+        survivors = _canonicalize_and_merge_places(session, [ent], existing=[other_type, ent])
+
+        assert survivors == [ent] and ent.entity_text == "Zatoka Perska"
+        session.delete.assert_not_called()
+
     def test_unresolved_entities_are_left_untouched(self):
         ent = _entity("Nibylandia", geocode=MagicMock(resolved=False))
         session = self._session()

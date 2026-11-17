@@ -436,7 +436,9 @@ def _reclassify_as_organization(session, doc, ent: DocumentEntity) -> None:
     ))
 
 
-def _canonicalize_and_merge_places(session, candidates: list[DocumentEntity]) -> list[DocumentEntity]:
+def _canonicalize_and_merge_places(
+    session, candidates: list[DocumentEntity], existing: list[DocumentEntity] | tuple = (),
+) -> list[DocumentEntity]:
     """Rename entity_text to the geocoder's canonical spelling and physically
     merge document_entities rows that converge on the same canonical place
     (Faza 3 of docs/ner-multiword-place-display-names, see tmp/ plan).
@@ -484,6 +486,18 @@ def _canonicalize_and_merge_places(session, candidates: list[DocumentEntity]) ->
             merge_document_entities(row, target, target_source="geocoded")
             session.delete(row)
         if target.entity_text != canonical:
+            # A row spelled like the canonical form may already exist OUTSIDE the candidates (a country, a row held
+            # for review): (document, type, text) is unique, so renaming would abort the whole stage
+            # (doc #11263: "Bahrajinu" geocoded to Bahrain while the country row "Bahrajn" existed). Fold into it.
+            clash = next((other for other in existing
+                          if other not in rows and other.entity_type == target.entity_type
+                          and other.entity_text == canonical), None)
+            if clash is not None:
+                geocode_before = clash.geocode_id
+                merge_document_entities(target, clash, target_source=clash.source or "ner")
+                clash.geocode_id = geocode_before  # a country keeps no place geocode
+                session.delete(target)
+                continue
             target.entity_text = canonical
             target.source = "geocoded"
         survivors.append(target)
@@ -559,7 +573,7 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                 resolved_names.append(resolved_name)
 
         candidates = [ent for ent in candidates if id(ent) not in unavailable_ids]
-        candidates = _canonicalize_and_merge_places(session, candidates)
+        candidates = _canonicalize_and_merge_places(session, candidates, existing=entities)
 
         # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
         groups: dict[str, dict] = {}
