@@ -120,6 +120,23 @@ def canonical_geopolitical_region_name(mention: str) -> str | None:
     return next(iter(matches)) if len(matches) == 1 else None
 
 
+def geopolitical_region_slug(name_pl: str) -> str:
+    """"Bliski Wschód" -> "bliski-wschod": the slug of the ``miejsce-<slug>`` tag a document gets for the region
+    (same convention as place_verification._slugify and the ``kraj-*`` slugs)."""
+    return re.sub(r"[^a-z0-9]+", "-", unidecode(name_pl).lower()).strip("-")
+
+
+def known_geopolitical_regions() -> list[dict]:
+    """Every macro-region of the closed list: ``[{"slug": "bliski-wschod", "name_pl": "Bliski Wschód"}]``."""
+    return [{"slug": geopolitical_region_slug(name_pl), "name_pl": name_pl}
+            for name_pl, _variants, _lat, _lon in _GEOPOLITICAL_REGION_DATA]
+
+
+def geopolitical_region_name(slug: str) -> str | None:
+    """The Polish name of a region slug, or None when the slug is not on the list."""
+    return next((region["name_pl"] for region in known_geopolitical_regions() if region["slug"] == slug), None)
+
+
 def geopolitical_region_centroid(canonical_name: str) -> tuple[float, float] | None:
     """The approximate (lat, lon) for an already-canonicalized region name.
 

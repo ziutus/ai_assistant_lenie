@@ -1500,6 +1500,34 @@ class TranscriptCorrection(Base):
     last_hit_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
 
+class PersonTerritory(Base):
+    """A country or a geopolitical macro-region a person is tied to, with the kind of tie.
+
+    ``kind`` = ``country`` (``slug`` like the organization ties: ``jemen``, the slug of the ``kraj-<slug>`` tag) or
+    ``region`` (``slug`` like ``bliski-wschod``, the slug of the ``miejsce-<slug>`` tag of
+    library/geopolitical_region_gazetteer.py). ``relation``: citizen_of | holds_office_in | active_in | linked_to;
+    one person may hold several rows, even for one territory (a citizen who also held office there). The optional
+    ``valid_from`` / ``valid_to`` date a role ("rzecznik od 2026", "prezydent do 2012").
+    """
+
+    __tablename__ = "person_territories"
+    __table_args__ = (
+        UniqueConstraint("person_id", "kind", "slug", "relation", name="uq_person_territories_tie"),
+        CheckConstraint("kind IN ('country', 'region')", name="ck_person_territories_kind"),
+        Index("ix_person_territories_territory", "kind", "slug"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    relation: Mapped[str] = mapped_column(String(20), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    valid_from: Mapped[datetime.date | None] = mapped_column(Date)
+    valid_to: Mapped[datetime.date | None] = mapped_column(Date)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
 class TranscriptCorrectionApplication(Base):
     """Audit row: what a stored correction rule really changed in one document's transcript.
 
