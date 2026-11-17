@@ -466,6 +466,46 @@ def _apply_state_descriptors(
                 group["variants"].append(variant)
 
 
+def _fold_form(value: str) -> str:
+    return unidecode(value or "").strip().casefold()
+
+
+def _drop_persons_named_like_places(groups: dict) -> list[str]:
+    """Fold a one-word persName into the place group that has the same spelling in the same document.
+
+    spaCy tags one word differently from sentence to sentence ("Marib" 3x person, 3x place in doc #11263) and the
+    person branch then reaches Wikidata for a namesake ("Zayd ibn marib"). When the person group has no more
+    mentions than the place group, the document talks about the place: its mentions and spellings move to the place
+    group and the person group disappears before anything is resolved or stored. A full name (two or more words)
+    is never touched, and a person that is mentioned more often than the place is kept.
+    """
+    place_by_form: dict[str, tuple] = {}
+    for key, group in groups.items():
+        if key[0] in PLACE_TYPES:
+            for form in (key[1], *group.get("variants", [])):
+                place_by_form.setdefault(_fold_form(form), key)
+    dropped = []
+    for key in list(groups):
+        if key[0] != "persName":
+            continue
+        group = groups[key]
+        forms = [key[1], *group.get("variants", [])]
+        if any(len(form.split()) > 1 for form in forms):
+            continue
+        target_key = next((place_by_form[folded] for folded in map(_fold_form, forms) if folded in place_by_form), None)
+        if target_key is None or group["count"] > groups[target_key]["count"]:
+            continue
+        target = groups[target_key]
+        target["count"] += group["count"]
+        for field in ("variants", "raw_lemmas"):
+            known = {value.casefold() for value in target.get(field, [])}
+            target.setdefault(field, []).extend(
+                value for value in group.get(field, []) if value.casefold() not in known)
+        del groups[key]
+        dropped.append(key[1])
+    return dropped
+
+
 def refresh_document_entities(session, document_id: int, text: str) -> list[DocumentEntity]:
     """Run NER on text and replace the document's rows in document_entities.
 
@@ -547,6 +587,9 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         _apply_country_abbreviations(groups, text, getattr(doc, "title", None) or "", document_id)
         # "Królestwo" after "Arabia Saudyjska" in the same chapter is that country (model-confirmed).
         _apply_state_descriptors(groups, text, getattr(doc, "title", None) or "", document_id)
+        # "Marib" tagged as a person in some sentences and as a place in others is the place.
+        for dropped in _drop_persons_named_like_places(groups):
+            logger.info("NER dropped persName %r: the same spelling is a place in doc %s", dropped, document_id)
 
         merged_orgs = merge_compound_org_names(
             strip_content_markers(strip_markdown_emphasis(text)), groups,
@@ -1142,6 +1185,15 @@ def inflected_phrases(name: str, text: str) -> list[str]:
     ))
 
 
+_WORD_END = r"(?!\w)"
+
+
+def _is_acronym(needle: str) -> bool:
+    """Two or more capital letters, optionally with digits or hyphens (NATO, GRU, UNHCR)."""
+    letters = [char for char in needle if char.isalpha()]
+    return len(letters) >= 2 and all(char.isupper() for char in letters) and " " not in needle
+
+
 def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[str, list[dict]]:
     """Subset of get_document_entities() output actually mentioned in text.
 
@@ -1179,7 +1231,12 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
             if not needles:
                 continue
 
-            alternatives = "|".join(f"(?P<v{i}>{re.escape(needle)})" for i, needle in enumerate(needles))
+            # An acronym ("NATO") is matched as a whole word, in capitals only: the legacy word-start prefix
+            # fallback for rows without variants counted "Natomiast" as NATO (doc #11263: NATO x17, none real).
+            alternatives = "|".join(
+                f"(?P<v{i}>{re.escape(needle)}{_WORD_END if _is_acronym(needle) else ''})"
+                for i, needle in enumerate(needles)
+            )
             right_boundary = r"(?!\w)" if variants else ""
             pattern = re.compile(rf"(?<!\w)(?:{alternatives}){right_boundary}", re.IGNORECASE)
 
@@ -1190,6 +1247,8 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
                 needle = needles[variant_index]
                 matched_text = match.group(0)
                 if needle[0].isupper() and not matched_text[0].isupper():
+                    continue
+                if _is_acronym(needle) and matched_text != needle:
                     continue
                 matched_variant_indexes.add(variant_index)
                 local_count += 1
