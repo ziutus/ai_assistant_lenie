@@ -50,6 +50,7 @@ def fix(text):
     ("rzecznik koalicji Turki, almaliki informował", "rzecznik koalicji Turki al-Maliki informował"),
     ("wyspę przy Cieślinie Bab al-Mandab oraz", "wyspę przy Cieśninie Bab al-Mandab oraz"),
     ("nie mówię Janbu albo nie mówię Jan Bu, więc", "nie mówię Janbu albo nie mówię Janbu, więc"),
+    ("Yyy natomiast Rose w 2022 roku przerwał walki.", "Yyy natomiast Rijad w 2022 roku przerwał walki."),
 ])
 def test_real_fragments(source, expected):
     assert fix(source) == expected
