@@ -33,6 +33,24 @@ COUNTRY_TAG = "kraj-"
 REGION_TAG = "miejsce-"
 
 
+class TerritoryError(ValueError):
+    """A tie that cannot be stored. ``code`` is one of ``ERROR_MESSAGES``; the REST layer answers with that fixed
+    text, never with the exception's own message."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+ERROR_MESSAGES = {
+    "kind": "kind must be country or region",
+    "slug": "unknown country or region slug",
+    "relation": "relation must be one of citizen_of, holds_office_in, active_in, linked_to",
+    "date_format": "valid_from and valid_to must be ISO dates (YYYY-MM-DD)",
+    "date_order": "valid_to must not be earlier than valid_from",
+}
+
+
 def territory_name(kind: str, slug: str) -> str | None:
     """The Polish name of a territory, or None when the slug is not a known country / macro-region."""
     if kind == "country":
@@ -55,7 +73,7 @@ def _parse_date(value, field: str) -> datetime.date | None:
     try:
         return datetime.date.fromisoformat(str(value))
     except ValueError as exc:
-        raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD)") from exc
+        raise TerritoryError("date_format", f"{field} must be an ISO date (YYYY-MM-DD)") from exc
 
 
 def _tie_dict(row: PersonTerritory) -> dict:
@@ -89,15 +107,15 @@ def add_territory(session, person_id: int, kind: str, slug: str, relation: str, 
     are given. Raises ValueError for an unknown kind / slug / relation or a reversed date range.
     """
     if kind not in KINDS:
-        raise ValueError(f"kind must be one of {', '.join(KINDS)}")
+        raise TerritoryError("kind", f"kind must be one of {', '.join(KINDS)}")
     slug = (slug or "").strip().lower()
     if territory_name(kind, slug) is None:
-        raise ValueError(f"unknown {kind} slug: {slug!r}")
+        raise TerritoryError("slug", f"unknown {kind} slug: {slug!r}")
     if relation not in RELATIONS:
-        raise ValueError(f"relation must be one of {', '.join(RELATIONS)}")
+        raise TerritoryError("relation", f"relation must be one of {', '.join(RELATIONS)}")
     start, end = _parse_date(valid_from, "valid_from"), _parse_date(valid_to, "valid_to")
     if start and end and end < start:
-        raise ValueError("valid_to must not be earlier than valid_from")
+        raise TerritoryError("date_order", "valid_to must not be earlier than valid_from")
     note = (note or "").strip() or None
 
     row = session.execute(select(PersonTerritory).where(

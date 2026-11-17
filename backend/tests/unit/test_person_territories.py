@@ -193,6 +193,18 @@ class TestRoutes:
         assert api.post("/persons/999/territories", json=body).status_code == 404
         assert api.post("/persons/2/territories", data="x", content_type="text/plain").status_code == 400
 
+    def test_validation_errors_answer_a_fixed_text_not_the_exception_message(self, api):
+        # the slug is echoed in the service exception ("unknown country slug: 'zzz'"), but never in the answer
+        response = api.post("/persons/1/territories", json={"kind": "country", "slug": "zzz", "relation": "citizen_of"})
+        assert response.status_code == 400
+        assert response.get_json()["message"] == svc.ERROR_MESSAGES["slug"] and "zzz" not in response.get_data(as_text=True)
+        for body, code in (({"kind": "planet", "slug": "jemen", "relation": "citizen_of"}, "kind"),
+                           ({"kind": "country", "slug": "jemen", "relation": "friend"}, "relation"),
+                           ({"kind": "country", "slug": "jemen", "relation": "citizen_of", "valid_from": "x"}, "date_format"),
+                           ({"kind": "country", "slug": "jemen", "relation": "citizen_of",
+                             "valid_from": "2012-01-02", "valid_to": "2012-01-01"}, "date_order")):
+            assert api.post("/persons/1/territories", json=body).get_json()["message"] == svc.ERROR_MESSAGES[code]
+
     def test_writes_need_a_user_or_service_key(self, api):
         body = {"kind": "country", "slug": "jemen", "relation": "citizen_of"}
         assert api.post("/persons/1/territories", json=body, headers={"X-Kind": "read_only"}).status_code == 403

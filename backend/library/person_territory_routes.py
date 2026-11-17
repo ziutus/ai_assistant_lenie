@@ -63,9 +63,10 @@ def add_person_territory(person_id: int):
             session, person_id, data.get("kind"), data.get("slug"), data.get("relation"),
             note=data.get("note"), valid_from=data.get("valid_from"), valid_to=data.get("valid_to"))
         session.commit()
-    except ValueError as exc:
+    except person_territories.TerritoryError as exc:
         session.rollback()
-        return jsonify({"status": "error", "message": str(exc)}), 400
+        # a fixed text per error code, never the exception's own message
+        return jsonify({"status": "error", "message": person_territories.ERROR_MESSAGES.get(exc.code, "invalid tie")}), 400
     except Exception:
         session.rollback()
         logger.exception("person territory add failed for %s", person_id)
