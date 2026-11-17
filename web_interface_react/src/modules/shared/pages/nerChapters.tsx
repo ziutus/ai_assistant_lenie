@@ -598,6 +598,25 @@ const NerChapters = () => {
   const selectedIndex = sections.findIndex((section) => section.position === position);
   const previous = sections[selectedIndex - 1];
   const next = selectedIndex >= 0 ? sections[selectedIndex + 1] : undefined;
+  // Whole-document / single-chapter switch drawn in the entities panel header. "Rozdział" opens the first content
+  // chapter (or the first section) when no chapter is selected.
+  const firstChapter = chapters.find((item) => item.type === "TEMAT")?.section.position ?? sections[0]?.position;
+  const scopeLinkStyle = (active: boolean): React.CSSProperties => ({
+    padding: "2px 10px", border: "1px solid #94a3b8", borderRadius: 4, textDecoration: "none",
+    background: active ? "#e0e7ff" : "#fff", fontWeight: active ? "bold" : undefined,
+  });
+  const scopeSwitch = (
+    <span role="group" aria-label="Zakres widoku" style={{ display: "inline-flex", gap: 4, marginLeft: "auto" }}>
+      <Link to={`/ner/${id}`} aria-current={chapterMode ? undefined : "page"} style={scopeLinkStyle(!chapterMode)}>
+        Cały dokument
+      </Link>
+      {chapterMode
+        ? <Link to={`/ner/${id}/${position}`} aria-current="page" style={scopeLinkStyle(true)}>Rozdział {position}</Link>
+        : firstChapter !== undefined
+          ? <Link to={`/ner/${id}/${firstChapter}`} style={scopeLinkStyle(false)}>Rozdział</Link>
+          : null}
+    </span>
+  );
   const editorPath = `/${doc?.document_type || "youtube"}/${id}`;
   const scrollTo = (position: number) => (event: React.MouseEvent) => {
     event.preventDefault();
@@ -721,6 +740,7 @@ const NerChapters = () => {
           <EntitiesPanel
             docId={id}
             hideCountriesRow={chapterMode}
+            headerExtra={scopeSwitch}
             refreshKey={panelKey}
             onShowInText={showInText}
             onDescribeEvent={setDescribing}
