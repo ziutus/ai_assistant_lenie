@@ -1,0 +1,21 @@
+{
+  "note": "Gazetteer additions for Yemen and the Red Sea theatre (doc #11263, chapter 2). Pattern forms are what the transcript shows (inflected, diacritics folded); geocode aliases are bare OSM/English names, because a country-qualified alias fails is_plausible_match().",
+  "source_document_id": 11263,
+  "entries": [
+    {"kind": "city", "name_pl": "Sana", "patterns": ["sana", "sany", "sanie", "sane"], "note": "capital Sana'a; spaCy lemma 'Sac' for 'Sanie' was geocoded to Sac County, Iowa"},
+    {"kind": "city", "name_pl": "Hodejda", "patterns": ["hodejd*"], "note": "port of Al Hudaydah"},
+    {"kind": "city", "name_pl": "Janbu", "patterns": ["janbu", "janb", "jan bu"], "note": "Red Sea port Yanbu (Saudi Arabia); was geocoded to Chad"},
+    {"kind": "city", "name_pl": "Zubab", "patterns": ["zubab*"], "note": "Dhubab, town and airfield at Bab al-Mandab"},
+    {"kind": "city", "name_pl": "Al-Dżauf", "patterns": ["al dzauf*"], "note": "Al Jawf governorate"},
+    {"kind": "city", "name_pl": "Lahdż", "patterns": ["lahdz*"], "note": "Lahij governorate"},
+    {"kind": "city", "name_pl": "Al-Charaz", "patterns": ["al charaz*"], "note": "Al Kharaz refugee camp (Lahij)"},
+    {"kind": "city", "name_pl": "Bab al-Mandab", "patterns": ["bab al", "bab al mandab*"], "note": "strait; NER cut the name at the hyphen ('Bab al-') and it was geocoded to Al-Bab, Syria"},
+    {"kind": "geocode_alias", "name_pl": "Hodejda", "geocode_alias": "Al Hudaydah"},
+    {"kind": "geocode_alias", "name_pl": "Janbu", "geocode_alias": "Yanbu"},
+    {"kind": "geocode_alias", "name_pl": "Zubab", "geocode_alias": "Dhubab"},
+    {"kind": "geocode_alias", "name_pl": "Al-Dżauf", "geocode_alias": "Al Jawf"},
+    {"kind": "geocode_alias", "name_pl": "Lahdż", "geocode_alias": "Lahij"},
+    {"kind": "geocode_alias", "name_pl": "Al-Charaz", "geocode_alias": "Al Kharaz"},
+    {"kind": "geocode_alias", "name_pl": "Bab al-Mandab", "geocode_alias": "Bab-el-Mandeb"}
+  ]
+}

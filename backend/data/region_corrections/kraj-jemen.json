@@ -17,6 +17,14 @@
     {"pattern": "zatokiadeńskiej", "replacement": "Zatoki Adeńskiej", "note": "two words glued"},
     {"pattern": "sanę", "replacement": "Sanę", "note": "capital Sanaa, accusative, lowercase"},
     {"pattern": "sane", "replacement": "Sanę", "note": "capital Sanaa, accusative without the ogonek"},
-    {"pattern": "Yemenu", "replacement": "Jemenu", "note": "English spelling slip"}
+    {"pattern": "Yemenu", "replacement": "Jemenu", "note": "English spelling slip"},
+    {"pattern": "Kuti", "replacement": "Huti", "note": "ASR: 'Kuti zaprzeczaja' (rzecznik koalicji)"},
+    {"pattern": "Aten", "replacement": "Aden", "note": "ASR: 'Aten to jest duze miasto' (a place named Athens does not occur in Yemen coverage)"},
+    {"pattern": "Aljafi", "replacement": "Al-Dżauf", "note": "ASR: 'naloty na Marib, Aljafi i Taiz' (prowincja Al-Dzauf)"},
+    {"pattern": "Lachć", "replacement": "Lahdż", "note": "ASR: 'w prowincji Lachc' (prowincja Lahdz)"},
+    {"pattern": "obozu dla uchodźców Haras", "replacement": "obozu dla uchodźców Al-Charaz", "note": "ASR: obóz Al-Charaz w prowincji Lahdz"},
+    {"pattern": "Turki, almaliki", "replacement": "Turki al-Maliki", "note": "ASR: rzecznik koalicji, Turki al-Maliki"},
+    {"pattern": "Cieślinie", "replacement": "Cieśninie", "note": "ASR: 'w Cieslinie Bab al-Mandab'"},
+    {"pattern": "Jan Bu", "replacement": "Janbu", "note": "ASR: port Janbu (Yanbu); the speaker explains the pronunciation"}
   ]
 }
