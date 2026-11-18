@@ -485,6 +485,24 @@ replacement, `validate_one_off()` / `replace_phrase()`): stored rules are not lo
 hit statistic is written, a single word is allowed, the report shows `rule_id` 0. This is the
 "Tylko ten dokument" option of the `/ner/:id` menu.
 
+**Spellcheck proposals** (`transcript_spellcheck.py` / `transcript_spellcheck_routes.py`, task `transcript_spellcheck`
+in `llm_model_registry`, household default in `app_settings` key `transcript_spellcheck_model`). Finds the speech-to-text
+slips nobody wrote a rule for ("spóromyśliwiec" = "spór o myśliwiec"): Morfeusz 2 (`morfeusz2`, SGJP; tag `ign` =
+unknown word, wheels for Windows and manylinux x86_64, verified on `python:3.11-slim`) lists the words it cannot
+analyse, and only those, with ±90 characters of context, go to the model (batches of 25, at most 80 suspects per
+request). Skipped before the model: capitalized words (names, sentence starts), fillers (`y`, `yyy`, `hym`), words
+under 4 letters and unknown words that occur 4+ times (a term, not a slip); the counts are returned as `skipped`.
+Every answer is validated, never trusted: the replacement must be 1–4 plain words, at least 0.6 similar to the
+original (letters, spaces ignored) and EVERY word of it must be known to Morfeusz, so an invented word is rejected
+(`rejected` by reason: `unknown_word`, `too_different`, `not_words`, `unchanged`, `no_proposal`, `missing_answer`,
+`unparseable_answer`). A dictionary cannot see a slip that produced another VALID word ("mur" heard as "mój").
+REST: `POST /document/<id>/transcript_spellcheck` (`youtube`/`movie` only; body `{"model"?, "dry_run"?}`; `dry_run`
+lists the suspects and calls no model; otherwise `proposals` `[{original, replacement, confidence, count, context}]`,
+`rejected`, `skipped`, `usage`; 503 `dictionary_unavailable`, 502 `model_call_failed`) and `GET/PUT
+/transcript_spellcheck/model`. It stores nothing: an approved proposal is applied with the existing one-document
+`POST /transcript_corrections/apply` (`pattern` + `replacement`). Each call is one `llm_usage_logs` row with operation
+`transcript_spellcheck` and the document id (payload audited). Tests: `tests/unit/test_transcript_spellcheck.py`.
+
 Headerless YouTube/movie transcripts support AI chapter proposals through POST /document/<id>/suggest_chapters (dry-run model planning without generation) and explicit POST /document/<id>/apply_chapters. Models select sentence indexes and Polish titles only; lossless insertion shares the chapter editor splitter, checks embeddings, active analysis and optional text SHA-256, and initializes chapter types. The transcript_chapters allowlist and /transcript_chapters/model household setting gate providers; unknown context limits block generation. Suggestions record transcript_chapter_suggestion usage and never persist text; chapter application updates Document.text, like manual chapter splits.
 
 ## WhatsApp group snapshots
