@@ -866,3 +866,15 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** tylko dane: `PATCH /organizations/146` (`Departament Sprawiedliwości`), `POST /organizations/1691/merge` → 146; aliasy `Al-Kaidy`, `Al-Kaidzie`, `Al-Kaidę` (org 853), `POST /organizations/1689/merge` → 853; „Al-” scalone w dokumencie (`make_global_alias=false`, żeby „Al-” nie stało się aliasem globalnym); osierocone wiersze encji po scaleniach w rejestrze usunięte i wzmianki dodane przez `add_mention` pod właściwą nazwą (Departament 6 wzmianek, Al-Kaida 3); `PATCH /organizations/1679` → `Polska Partia Socjalistyczna`. Org 372 „partia Socjalistycznej” to hiszpańska PSOE (dok. #9375), więc NIE została scalona z PPS i nadal ma zepsutą nazwę.
 - **Test regresyjny:** brak — czysto danowa poprawka. Nie zmieniano kodu rejestru ani agregacji (rejestr celowo dopasowuje tylko dokładnie, `docs/organization-ner-alias-plan.md`).
 - **Status:** tylko dane bez zmiany kodu. Znane ryzyko pozostaje: każda nowa odmiana nazwy występująca w dokumencie tylko w przypadku zależnym utworzy nowy wpis rejestru; opcja automatycznego łączenia odmian wymaga osobnej decyzji. Liczba wzmianek „Al-Kaida” (3) jest zaniżona względem tekstu (4).
+
+
+### E058 — „do Jerozolimy odeszło 75 osób” (= zginęło) jako miejsce, kolejna forma eufemizmu kanału (dok. #11238, PR n/d, 2026-11-10)
+
+- **Typ encji:** placeName
+- **Kategoria:** T29 — nazwa miejsca w związku frazeologicznym / eufemizmie (klasyfikator kontekstu pomylił się mimo reguły w prompcie)
+- **Zdanie źródłowe:** „…Między innymi na ataki wiem poincji szabła, w którym do Jerozolimy odeszło 75 osób to w Akademii Bezpieczeństwa, a ponad 200 osób zostało rannych.” (transkrypcja YouTube; fragment zniekształcony przez STT, ale sens to „zginęło 75 osób”)
+- **Objaw:** w rozdziale 8 (`/ner/11238/8`) encja `Jerozolima` (id 30038, 1 wzmianka, geocode 14) jako miejsce; Bielik w 6 przebiegach dał `place` / `high`.
+- **Przyczyna źródłowa:** słownik kanału „Na Wschód od Bliskiego Wschodu” (E052) znał tylko formy „odesłać/odsyła/na drogę do Jerozolimy”, a nie „do Jerozolimy odeszło”. Aliasy glosariusza są dosłowne (`fuzzy=false`), więc nowa fraza wymaga nowego aliasu; reguła w prompcie `place_context_classifier` nie wystarcza (E042, E052).
+- **Poprawka:** dane — nowy wpis `ner_channel_glossary` id 16 (kanoniczne „zginąć”, 6 aliasów: „do Jerozolimy odeszło/odeszli/odeszły” i „odeszło/odeszli/odeszły do Jerozolimy”), bo wpis 11 ma już komplet 20 aliasów (limit). Potem `POST /website_entities` (dok. #11238 bez embeddingów, bez 409).
+- **Test regresyjny:** brak — czysto danowa poprawka, wpis w `ner_channel_glossary` dokumentuje przypadek.
+- **Status:** tylko dane bez zmiany kodu. Po odświeżeniu encji `Jerozolima` nie ma, nie ma tagu `miejsce-jerozolima`, `ner_glossary_applications` pokazuje 1 zamianę wpisu 16. Ryzyko: kanał może mieć dalsze formy eufemizmu (np. „odeszli do Jerozolimy” w innym szyku); dopisywać przy kolejnych zgłoszeniach.
