@@ -26,6 +26,7 @@ import {
   loadReaderSidebarVisible, saveReaderSidebarVisible,
   loadReaderObsidianPanelVisible, saveReaderObsidianPanelVisible,
 } from "../services/storage";
+import { type GlossaryInfo, glossaryHint, glossarySwaps, GLOSSARY_COLOR } from "../utils/channelGlossary";
 import styles from "./read.module.css";
 
 // Lazy-loaded: leaflet (~150 kB) should not land in the main bundle for users
@@ -509,10 +510,13 @@ export function renderInline(
 interface EntityDescriptions {
   terms: string[];
   descriptionByTerm: Map<string, string>; // key: term.toLowerCase()
+  // Channel glossary: the author's wording shown as the glossary name (key: wording.toLowerCase()).
+  glossary?: { terms: string[]; byTerm: Map<string, { canonical: string; hint: string }> };
 }
 
 function buildEntityDescriptions(
   persons: EntityItem[], organizations: EntityItem[], facilities: EntityItem[],
+  glossary?: GlossaryInfo | null, documentType?: string | null,
 ): EntityDescriptions {
   const terms: string[] = [];
   const descriptionByTerm = new Map<string, string>();
@@ -533,7 +537,16 @@ function buildEntityDescriptions(
           .join(" ")
       : undefined,
   ));
-  return { terms, descriptionByTerm };
+  const swaps = glossary ? glossarySwaps(glossary) : [];
+  if (!glossary || !swaps.length) return { terms, descriptionByTerm };
+  return {
+    terms, descriptionByTerm,
+    glossary: {
+      terms: swaps.map(swap => swap.original),
+      byTerm: new Map(swaps.map(swap => [swap.original.toLowerCase(),
+        { canonical: swap.canonical, hint: glossaryHint(glossary, swap, documentType) }])),
+    },
+  };
 }
 
 // All complete-token occurrences of the given terms. Terms are matched
@@ -595,7 +608,8 @@ function renderParagraphWithNotes(
   described?: EntityDescriptions,
   onWikiLinkClick?: (targetId: number) => void,
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null; timelineTint: boolean; timelineFound: boolean } {
-  type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline" | "described"; note?: UserNote; description?: string };
+  type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline" | "described" | "glossary"; note?: UserNote; description?: string;
+    canonical?: string };
   const noteMatches: Match[] = notes
     .map(n => ({ note: n, idx: text.indexOf(n.anchor_quote), len: n.anchor_quote.length, kind: "note" as const }))
     .filter(m => m.idx >= 0);
@@ -607,13 +621,19 @@ function renderParagraphWithNotes(
         description: described.descriptionByTerm.get(text.slice(m.idx, m.idx + m.len).toLowerCase()),
       })).filter(m => m.description)
     : [];
+  const glossaryMatches: Match[] = described?.glossary
+    ? findEntityMatches(text, described.glossary.terms).flatMap(m => {
+        const swap = described.glossary!.byTerm.get(text.slice(m.idx, m.idx + m.len).toLowerCase());
+        return swap ? [{ ...m, kind: "glossary" as const, description: swap.hint, canonical: swap.canonical }] : [];
+      })
+    : [];
   const timelineIndex = timelineAnchor ? text.indexOf(timelineAnchor) : -1;
   const timelineMatches: Match[] = timelineAnchor && timelineIndex >= 0
     ? [{ idx: timelineIndex, len: timelineAnchor.length, kind: "timeline" }]
     : [];
   // A key sentence may sit inside an outlier passage; highlights cannot nest, so the outlier is cut around it.
   const matches = splitOutliersAroundKeys(
-    [...timelineMatches, ...noteMatches, ...entityMatches, ...describedMatches].sort((a, b) => a.idx - b.idx),
+    [...timelineMatches, ...noteMatches, ...glossaryMatches, ...entityMatches, ...describedMatches].sort((a, b) => a.idx - b.idx),
   );
   const paragraphTint = notes.find(n =>
     text.indexOf(n.anchor_quote) < 0
@@ -661,6 +681,18 @@ function renderParagraphWithNotes(
           style={{ background: "#fed7aa", padding: "0 1px" }}
         >
           {renderInline(quoted, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
+        </mark>
+      );
+    } else if (m.kind === "glossary") {
+      // The author's wording is replaced by the glossary name; the stored text keeps the original.
+      nodes.push(
+        <mark
+          key={`gloss-${i}`}
+          className="glossary-substitution"
+          title={m.description}
+          style={{ background: GLOSSARY_COLOR, padding: "0 1px", cursor: "help" }}
+        >
+          {m.canonical}
         </mark>
       );
     } else if (m.kind === "described") {
@@ -1065,6 +1097,9 @@ const Read: React.FC = () => {
   const [documentType, setDocumentType] = React.useState<string | null>(null);
   const [docTitle, setDocTitle] = React.useState<string | null>(null);
   const [docChannel, setDocChannel] = React.useState<string | null>(null);
+  // Channel glossary: the text shows the glossary name instead of the author's wording unless switched off.
+  const [glossary, setGlossary] = React.useState<GlossaryInfo | null>(null);
+  const [showOriginalWording, setShowOriginalWording] = React.useState(false);
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
   const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
   const [personItems, setPersonItems] = React.useState<EntityItem[]>([]);
@@ -1296,6 +1331,18 @@ const Read: React.FC = () => {
       } catch { /* The readiness panel is optional reader metadata. */ }
     })();
   }, [apiUrl, id, apiKey, entitiesEditVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The channel glossary (author's wording -> the name the author means), shown in the text instead of the wording.
+  React.useEffect(() => {
+    setGlossary(null);
+    if (!id) return;
+    let cancelled = false;
+    fetch(`${apiUrl}/ner_channel_glossary/applications?document_id=${id}`, { headers })
+      .then(r => r.json())
+      .then(data => { if (!cancelled && data.status === "success") setGlossary(data); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // verified NER places (stage 3) → point markers on the country map
   const fetchEntities = React.useCallback(async () => {
@@ -1818,8 +1865,9 @@ const Read: React.FC = () => {
   // Surface forms with a stored profile are rendered as a dotted-underline
   // hover tooltip directly on the chapter text.
   const entityDescriptions = React.useMemo(
-    () => buildEntityDescriptions(shownPersons, shownOrganizations, shownFacilities),
-    [shownPersons, shownOrganizations, shownFacilities],
+    () => buildEntityDescriptions(shownPersons, shownOrganizations, shownFacilities,
+      showOriginalWording ? null : glossary, documentType),
+    [shownPersons, shownOrganizations, shownFacilities, glossary, showOriginalWording, documentType],
   );
   const shownPlaceItems = (scoped ? scoped.placeItems : placeItems)
     .filter(item => item.relevance !== "figurative" && item.place_verification_status !== "rejected");
@@ -1884,6 +1932,14 @@ const Read: React.FC = () => {
           {docTitle ? docTitle : `Czytelnik — dokument #${id}`}
         </h2>
         <ChannelBadge channel={docChannel} />
+        {glossary && glossarySwaps(glossary).length > 0 && (
+          <label style={{ fontSize: "0.85em", color: "#475569" }}
+            title="Tekst pokazuje nazwy ze słownika w miejscu słów autora. Do zaznaczania cytatów w notatkach włącz oryginał.">
+            <input type="checkbox" checked={showOriginalWording}
+              onChange={(event) => setShowOriginalWording(event.target.checked)} />
+            {" "}Oryginalne słowa autora
+          </label>
+        )}
         {docQuality && (
           <span
             title={qualityTooltip(docQuality)}

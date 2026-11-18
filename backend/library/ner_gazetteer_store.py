@@ -124,13 +124,20 @@ def validate_entry(*, kind, name_pl, patterns=None, geocode_alias=None) -> dict:
         pattern = unidecode(raw).strip().lower()
         if not pattern or _PATTERN_RE.fullmatch(pattern) is None:
             raise GazetteerValidationError(f"Wzorzec {raw!r}: dozwolone tylko a-z, 0-9, spacja, '-' i '*'")
-        for token in pattern.split():
+        tokens = pattern.split()
+        for token in tokens:
             if "*" in token[:-1] or token == "*":
                 raise GazetteerValidationError(f"Wzorzec {raw!r}: '*' może stać tylko na końcu członu")
-            if len(token.rstrip("*")) < MIN_STEM_LENGTH:
+            # A stem ("tel*") must be long enough not to swallow unrelated words; a fixed token may be short
+            # ("al" in "Al-Dżauf", "bu" in "Jan Bu") as long as the whole pattern is anchored by a longer one.
+            if token.endswith("*") and len(token.rstrip("*")) < MIN_STEM_LENGTH:
                 raise GazetteerValidationError(
                     f"Wzorzec {raw!r}: człon musi mieć co najmniej {MIN_STEM_LENGTH} znaki przed '*'"
                 )
+        if not any(len(token.rstrip("*")) >= MIN_STEM_LENGTH for token in tokens):
+            raise GazetteerValidationError(
+                f"Wzorzec {raw!r}: potrzebny co najmniej jeden człon z {MIN_STEM_LENGTH} lub więcej znakami"
+            )
         normalized.append(pattern)
     from library.city_gazetteer import compile_variant
 

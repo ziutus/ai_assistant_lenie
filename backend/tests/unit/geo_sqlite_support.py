@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from library import geopolitics_service as svc
 from library.db.engine import Base
+from library.geo_event_kind_store import SEED_KINDS
 from library.db.models import (
     Country,
     CountryRelationAssessment,
@@ -57,8 +58,11 @@ def create_schema(engine) -> None:
         for model in UNTYPED:
             columns = ["id INTEGER PRIMARY KEY"] + [c.name for c in model.__table__.columns if c.name != "id"]
             conn.execute(text(f"CREATE TABLE {model.__tablename__} ({', '.join(columns)})"))
-        for code in svc.EVENT_KINDS:
-            conn.execute(text("INSERT INTO geo_event_kinds (code, label) VALUES (:c, :c)"), {"c": code})
+        for kind in SEED_KINDS:
+            conn.execute(
+                text("INSERT INTO geo_event_kinds (code, label, sort_order) VALUES (:c, :l, :o)"),
+                {"c": kind.code, "l": kind.label, "o": kind.sort_order},
+            )
         for code in svc.ROLES:
             conn.execute(text("INSERT INTO geo_event_roles (code, label) VALUES (:c, :c)"), {"c": code})
 

@@ -40,6 +40,9 @@ interface Props {
 const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClose, onAdded }: Props) => {
   const [name, setName] = React.useState(text);
   const [fixing, setFixing] = React.useState(false);
+  // "Do słownika kanału": the selected spelling becomes an alias of a name in the channel glossary.
+  const [glossaryMode, setGlossaryMode] = React.useState(false);
+  const [glossaryName, setGlossaryName] = React.useState("");
   const [replacement, setReplacement] = React.useState(text);
   const [channelOnly, setChannelOnly] = React.useState(false);
   // Replace in this document only: no stored rule, so even a single word is allowed.
@@ -117,6 +120,51 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
     }
   };
 
+  // Stores the selected spelling as an alias of `glossaryName` in the channel glossary (ner_channel_glossary):
+  // applied to a copy of the text before NER, so a word the author uses in a special sense (YouTube
+  // algorithm workarounds: "Rzymianie" for Jews) reads as the intended name. A second spelling of the
+  // same name is appended to the existing entry. Takes effect on the next entity refresh.
+  const addToGlossary = async () => {
+    if (busy) return;
+    const canonical = glossaryName.trim();
+    if (!canonical) {
+      setError("Wpisz nazwę, którą ma oznaczać zaznaczona fraza.");
+      return;
+    }
+    if (text.length < 3) {
+      setError("Fraza w słowniku musi mieć co najmniej 3 znaki.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      try {
+        await axios.post(`${apiUrl}/ner_channel_glossary`,
+          { author: channel, canonical_name: canonical, aliases: [text], fuzzy: false }, { headers });
+      } catch (failure) {
+        if (!(axios.isAxiosError(failure) && failure.response?.status === 409)) throw failure;
+        // The channel already has this name: add the spelling to that entry.
+        const listed = await axios.get(`${apiUrl}/ner_channel_glossary`, { headers, params: { author: channel } });
+        const existing = (listed.data.entries ?? []).find(
+          (entry: { canonical_name: string }) => entry.canonical_name.toLowerCase() === canonical.toLowerCase());
+        if (!existing) throw failure;
+        const aliases: string[] = existing.aliases ?? [];
+        if (!aliases.includes(text)) {
+          await axios.patch(`${apiUrl}/ner_channel_glossary/${existing.id}`, { aliases: [...aliases, text] }, { headers });
+        }
+      }
+      onAdded(`Dodano do słownika kanału „${channel}”: „${text}” → „${canonical}”. Odśwież encje dokumentu (ponowne wykrywanie), aby zadziałało.`);
+    } catch (failure) {
+      const data = axios.isAxiosError(failure) ? failure.response?.data : undefined;
+      if (axios.isAxiosError(failure) && failure.response?.status === 403) {
+        setError("Ten klucz API nie może zapisywać słownika kanału.");
+      } else {
+        setError(data?.message ?? "Nie udało się dodać do słownika kanału.");
+      }
+      setBusy(false);
+    }
+  };
+
   const add = async (entityType: AddableEntityType) => {
     if (busy) return;
     setBusy(true);
@@ -147,7 +195,24 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
         border: "1px solid #94a3b8", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: "0.9em",
       }}>
       <div style={{ marginBottom: 6 }}>Zaznaczono: <strong>„{text}”</strong></div>
-      {fixing ? (
+      {glossaryMode ? (
+        <>
+          <label style={{ display: "block", marginBottom: 8 }}>
+            Oznacza (nazwa w słowniku)
+            <input type="text" value={glossaryName} aria-label="Nazwa w słowniku" maxLength={200} autoFocus
+              placeholder="np. Żydzi" onChange={(event) => setGlossaryName(event.target.value)}
+              style={{ width: "100%", boxSizing: "border-box" }} />
+          </label>
+          <p style={{ margin: "0 0 8px", color: "#475569" }}>
+            W słowniku kanału „{channel}” fraza „{text}” będzie czytana jako ta nazwa przy wykrywaniu encji
+            (tekst transkrypcji się nie zmienia). Dodaj osobno każdą odmianę (np. „Rzymian”, „Rzymianie”).
+          </p>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button type="button" disabled={busy} onClick={() => void addToGlossary()}>📖 Dodaj do słownika</button>
+            <button type="button" disabled={busy} onClick={() => setGlossaryMode(false)}>Wstecz</button>
+          </div>
+        </>
+      ) : fixing ? (
         <>
           <label style={{ display: "block", marginBottom: 8 }}>
             Poprawna wersja
@@ -182,6 +247,7 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
               onChange={(event) => setName(event.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
           </label>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <button type="button" role="menuitem" onClick={() => void copy()}>📋 Kopiuj</button>
             {CHOICES.map((choice) => (
               <button key={choice.type} type="button" role="menuitem" disabled={busy || !name.trim()}
                 onClick={() => void add(choice.type)}>{choice.label}</button>
@@ -189,8 +255,12 @@ const SelectionEntityMenu = ({ x, y, text, apiUrl, docId, headers, byline, onClo
             <button type="button" role="menuitem" onClick={() => { setError(""); setFixing(true); }}>
               ✏️ Popraw błąd w transkrypcji
             </button>
+            {channel && (
+              <button type="button" role="menuitem" onClick={() => { setError(""); setGlossaryMode(true); }}>
+                📖 Do słownika kanału
+              </button>
+            )}
             <button type="button" role="menuitem" onClick={searchGoogle}>🔍 Szukaj w Google</button>
-            <button type="button" role="menuitem" onClick={() => void copy()}>📋 Kopiuj</button>
             <button type="button" onClick={onClose}>Anuluj</button>
           </div>
         </>

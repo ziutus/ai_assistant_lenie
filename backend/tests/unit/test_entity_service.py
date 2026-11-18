@@ -177,6 +177,70 @@ class TestRegistryNameExtensions:
         assert groups == before
 
 
+class TestNamedVessels:
+    @pytest.mark.parametrize("kind", ["persName", "orgName", "placeName", "geogName"])
+    @pytest.mark.parametrize("count", [1, 3])
+    def test_retype_and_preserve_other_mentions(self, kind, count):
+        from library.entity_service import _add_named_vessels
+
+        groups = {(kind, "Teodor Rooswelt"): {"count": count, "variants": [], "raw_lemmas": ["Teodor Rooswelt"]}}
+        _add_named_vessels(groups, "Mamy już lotniskowiec Teodor Rooswelt.")
+        assert groups[("productName", "lotniskowiec Teodor Rooswelt")] == {
+            "count": 1,
+            "variants": ["lotniskowiec Teodor Rooswelt"],
+            "raw_lemmas": ["lotniskowiec Teodor Rooswelt"],
+        }
+        if count == 1:
+            assert (kind, "Teodor Rooswelt") not in groups
+        else:
+            assert groups[(kind, "Teodor Rooswelt")]["count"] == 2
+
+    def test_variant_match_subtracts_once_and_keeps_text_name(self):
+        from library.entity_service import _add_named_vessels
+
+        groups = {
+            ("persName", "Theodore Roosevelt"): {
+                "count": 3,
+                "variants": ["TEODORA\u00a0 ROOSWELTA", "Teodora Rooswelta"],
+                "raw_lemmas": [],
+            }
+        }
+        _add_named_vessels(groups, "lotniskowca Teodora Rooswelta")
+        assert groups[("persName", "Theodore Roosevelt")]["count"] == 2
+        assert ("productName", "lotniskowiec Teodora Rooswelta") in groups
+
+    @pytest.mark.parametrize("broken", [None, {"invalid": {}}])
+    def test_failure_is_atomic(self, broken):
+        from copy import deepcopy
+
+        from library.entity_service import _add_named_vessels
+
+        groups = {("persName", "Teodor Rooswelt"): {"count": 1, "variants": [], "raw_lemmas": []}}
+        before = deepcopy(groups)
+        with patch(
+            "library.named_vessel_detector.detect_named_vessels",
+            return_value=broken,
+            side_effect=RuntimeError("offline") if broken is None else None,
+        ):
+            _add_named_vessels(groups, "lotniskowiec Teodor Rooswelt")
+        assert groups == before
+
+    @pytest.mark.parametrize("excluded", [False, True])
+    def test_refresh_persists_vessels_and_honors_exclusions(self, excluded):
+        exclusion = MagicMock(entity_text="lotniskowiec Teodor Rooswelt", entity_type="productName", scope="global")
+        session = _session_with_exclusions([exclusion] if excluded else [])
+        with patch(
+            "library.entity_service.extract_entities",
+            return_value=[
+                {"text": "Teodor Rooswelt", "lemma": "Teodor Rooswelt", "label": "persName"},
+            ],
+        ):
+            rows = refresh_document_entities(session, 42, "lotniskowiec Teodor Rooswelt")
+        assert [(row.entity_type, row.entity_text, row.mention_count) for row in rows] == (
+            [] if excluded else [("productName", "lotniskowiec Teodor Rooswelt", 1)]
+        )
+
+
 class TestRefreshDocumentEntities:
     def test_temporal_candidates_keep_type_position_and_context(self):
         text = "Wstęp. 17 września 1939 rozpoczęła się wojna o godzinie 4:45."

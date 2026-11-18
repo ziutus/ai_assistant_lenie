@@ -158,7 +158,8 @@ def canonical_city_name(mention: str) -> str | None:
     surface normalization without treating an arbitrary fragment as the
     entity.
     """
-    normalized = unidecode(mention).strip().lower()
+    # A trailing hyphen is a tokenizer artifact ("Bab al-Mandab" is cut after "Bab al-"), never part of a name.
+    normalized = unidecode(mention).strip(" \t-").lower()
     if not normalized:
         return None
     matches = {

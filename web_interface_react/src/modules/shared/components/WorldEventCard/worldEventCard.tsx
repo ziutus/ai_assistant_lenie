@@ -1,6 +1,7 @@
 import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import WorldEventWebEnrichDialog from "../WorldEventWebEnrichDialog/worldEventWebEnrichDialog";
 
 // One registry event (ADR-034): dates, kind, names (aliases), participants of three kinds, the documents that
 // talk about it. The card owns its small writes and asks the page to reload afterwards.
@@ -61,6 +62,7 @@ interface Props {
 
 const WorldEventCard = ({ event, kinds, roles, countries, apiUrl, headers, onChanged, onMessage }: Props) => {
   const [editing, setEditing] = React.useState(false);
+  const [enriching, setEnriching] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [form, setForm] = React.useState({
     title: event.title, description: event.description ?? "", kind: event.kind, event_date: event.event_date ?? "",
@@ -169,6 +171,7 @@ const WorldEventCard = ({ event, kinds, roles, countries, apiUrl, headers, onCha
       )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+        <button type="button" className="button" onClick={() => setEnriching(true)}>🌐 Uzupełnij z internetu</button>
         {event.status === "proposed" && <>
           <button type="button" className="button" disabled={busy}
             onClick={() => run(() => axios.patch(url, { status: "confirmed" }, { headers }))}>Zatwierdź</button>
@@ -178,6 +181,8 @@ const WorldEventCard = ({ event, kinds, roles, countries, apiUrl, headers, onCha
         <button type="button" className="button" onClick={() => setEditing(!editing)}>{editing ? "Zamknij edycję" : "Edytuj"}</button>
       </div>
 
+      {enriching && <WorldEventWebEnrichDialog event={event} kinds={kinds} apiUrl={apiUrl} headers={headers}
+        onClose={() => setEnriching(false)} onChanged={onChanged} />}
       {editing && (
         <div style={{ marginTop: 8, padding: 8, background: "#f8fafc", borderRadius: 6 }}>
           <form onSubmit={save} aria-label="Edycja wydarzenia" style={{ display: "grid", gap: 6 }}>

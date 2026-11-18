@@ -283,6 +283,49 @@ def test_refresh_uses_replace_semantics(monkeypatch):
     assert result["rows"] == [row]
 
 
+class TestEditorChapterNumbering:
+    """/ner/:id numbers chapters with the preamble as 0; detect_events must use the same numbers."""
+
+    @staticmethod
+    def _doc(text):
+        return SimpleNamespace(text=text, text_md=None, title="Tytuł")
+
+    def test_preamble_is_chapter_zero(self):
+        doc = self._doc("Wstęp tekstu.\n\n## Pierwszy\nTreść jeden.\n\n## Drugi\nTreść dwa.\n")
+
+        chapters = timeline_events._chapters_for_document(doc, 0, editor_numbering=True)
+
+        assert chapters == [{"position": 0, "title": "Tytuł", "text": "Wstęp tekstu.\n\n"}]
+
+    def test_h2_chapters_are_not_shifted_by_the_preamble(self):
+        doc = self._doc("Wstęp tekstu.\n\n## Pierwszy\nTreść jeden.\n\n## Drugi\nTreść dwa.\n")
+
+        first = timeline_events._chapters_for_document(doc, 1, editor_numbering=True)[0]
+        second = timeline_events._chapters_for_document(doc, 2, editor_numbering=True)[0]
+
+        assert first["title"] == "Pierwszy" and "Treść jeden." in first["text"]
+        assert second["title"] == "Drugi" and "Treść dwa." in second["text"]
+
+    def test_article_without_headings_is_chapter_zero(self):
+        doc = self._doc("Cały artykuł bez nagłówków.")
+
+        chapters = timeline_events._chapters_for_document(doc, 0, editor_numbering=True)
+
+        assert chapters[0]["position"] == 0 and chapters[0]["text"] == "Cały artykuł bez nagłówków."
+
+    def test_unknown_chapter_raises(self):
+        doc = self._doc("## Jedyny\nTreść.\n")
+
+        with pytest.raises(ValueError):
+            timeline_events._chapters_for_document(doc, 3, editor_numbering=True)
+
+    def test_without_the_flag_numbering_is_unchanged(self):
+        doc = self._doc("Wstęp.\n\n## Pierwszy\nTreść.\n")
+
+        with pytest.raises(ValueError):
+            timeline_events._chapters_for_document(doc, 0)
+
+
 def test_document_event_orm_model():
     mapper = inspect(DocumentEvent)
     columns = mapper.mapper.columns
@@ -299,6 +342,7 @@ def test_document_event_orm_model():
         "sort_year",
         "description",
         "anchor_quote",
+        "ignored_at",
         "created_at",
     }
     assert isinstance(columns["event_date"].type, Date)
@@ -322,7 +366,8 @@ def test_document_events_endpoint(monkeypatch):
         anchor_quote="W 1997 wydarzenie.",
     )
     query = MagicMock()
-    query.filter.return_value.order_by.return_value.all.return_value = [row]
+    # document filter, then the filter that hides dismissed proposals
+    query.filter.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
     session = MagicMock()
     session.get.return_value = SimpleNamespace(id=7, enrichment_run_at=None)
     session.query.return_value = query
@@ -345,5 +390,6 @@ def test_document_events_endpoint(monkeypatch):
             "description": "Wydarzenie.",
             "anchor_quote": "W 1997 wydarzenie.",
             "chapter_position": 2,
+            "ignored": False,
         }
     ]

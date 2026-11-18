@@ -1,0 +1,11 @@
+# Headless Service (clusterIP: None): gives the StatefulSet pod a stable DNS name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: lenie-ai-db
+  labels: {app: lenie-ai-db}
+spec:
+  clusterIP: None
+  selector: {app: lenie-ai-db}
+  ports:
+    - {name: postgres, port: 5432}

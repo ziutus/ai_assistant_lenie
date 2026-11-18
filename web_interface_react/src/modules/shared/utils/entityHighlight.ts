@@ -11,6 +11,8 @@ export interface HighlightEntry {
   label: string;
   // Extra tooltip line, e.g. the member countries of a group of states.
   hint?: string;
+  // Text shown instead of the matched wording (channel glossary: "Rzymianie" is displayed as "Żydzi").
+  substitute?: string;
 }
 
 export interface HighlightSegment {
@@ -18,6 +20,7 @@ export interface HighlightSegment {
   kind?: HighlightKind;
   label?: string;
   hint?: string;
+  substitute?: string;
 }
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -49,7 +52,7 @@ export function splitByEntities(text: string, entries: HighlightEntry[]): Highli
     if (needleIsCapitalised && !mentionIsCapitalised) continue;
     const start = match.index ?? 0;
     if (start > last) segments.push({ text: text.slice(last, start) });
-    segments.push({ text: match[0], kind: found.entry.kind, label: found.entry.label, hint: found.entry.hint });
+    segments.push({ text: match[0], kind: found.entry.kind, label: found.entry.label, hint: found.entry.hint, substitute: found.entry.substitute });
     last = start + match[0].length;
   }
   if (last < text.length) segments.push({ text: text.slice(last) });

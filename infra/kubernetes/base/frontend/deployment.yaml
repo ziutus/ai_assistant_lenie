@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lenie-ai-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: lenie-ai-frontend}
+  template:
+    metadata:
+      labels: {app: lenie-ai-frontend}
+    spec:
+      containers:
+        - name: nginx
+          image: lenie-ai-frontend
+          ports:
+            - {name: http, containerPort: 80}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}

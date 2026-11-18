@@ -1462,18 +1462,25 @@ class DocumentRemovedLine(Base):
 
 
 class TranscriptCorrection(Base):
-    """Human-curated literal phrase corrections applied when STT text arrives."""
+    """Human-curated literal phrase corrections applied when STT text arrives.
+
+    ``scope`` ``region`` binds a rule to a country (``country_slug`` = ``kraj-<slug>`` tag of the
+    document, optionally narrowed to one channel through ``author``); only such rules may be a single word.
+    """
 
     __tablename__ = "transcript_corrections"
     __table_args__ = (
-        CheckConstraint("scope IN ('global', 'author')", name="ck_transcript_corrections_scope"),
+        CheckConstraint("scope IN ('global', 'author', 'region')", name="ck_transcript_corrections_scope"),
         CheckConstraint(
-            "(scope = 'global' AND author IS NULL) OR "
-            "(scope = 'author' AND author IS NOT NULL AND trim(author) <> '')",
+            "(scope = 'global' AND author IS NULL AND country_slug IS NULL) OR "
+            "(scope = 'author' AND author IS NOT NULL AND trim(author) <> '' AND country_slug IS NULL) OR "
+            "(scope = 'region' AND country_slug IS NOT NULL AND trim(country_slug) <> '' "
+            "AND (author IS NULL OR trim(author) <> ''))",
             name="ck_transcript_corrections_author",
         ),
         Index("uq_transcript_corrections_pattern_scope_author",
-              sa_text("lower(pattern)"), "scope", sa_text("coalesce(author, '')"), unique=True),
+              sa_text("lower(pattern)"), "scope", sa_text("coalesce(author, '')"),
+              sa_text("coalesce(country_slug, '')"), unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1481,6 +1488,7 @@ class TranscriptCorrection(Base):
     replacement: Mapped[str] = mapped_column(Text, nullable=False)
     scope: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'global'"))
     author: Mapped[str | None] = mapped_column(Text)
+    country_slug: Mapped[str | None] = mapped_column(String(100))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
     note: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str | None] = mapped_column(String(100))
@@ -1490,6 +1498,54 @@ class TranscriptCorrection(Base):
     )
     hit_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
     last_hit_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+
+class PersonTerritory(Base):
+    """A country or a geopolitical macro-region a person is tied to, with the kind of tie.
+
+    ``kind`` = ``country`` (``slug`` like the organization ties: ``jemen``, the slug of the ``kraj-<slug>`` tag) or
+    ``region`` (``slug`` like ``bliski-wschod``, the slug of the ``miejsce-<slug>`` tag of
+    library/geopolitical_region_gazetteer.py). ``relation``: citizen_of | holds_office_in | active_in | linked_to;
+    one person may hold several rows, even for one territory (a citizen who also held office there). The optional
+    ``valid_from`` / ``valid_to`` date a role ("rzecznik od 2026", "prezydent do 2012").
+    """
+
+    __tablename__ = "person_territories"
+    __table_args__ = (
+        UniqueConstraint("person_id", "kind", "slug", "relation", name="uq_person_territories_tie"),
+        CheckConstraint("kind IN ('country', 'region')", name="ck_person_territories_kind"),
+        Index("ix_person_territories_territory", "kind", "slug"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    relation: Mapped[str] = mapped_column(String(20), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    valid_from: Mapped[datetime.date | None] = mapped_column(Date)
+    valid_to: Mapped[datetime.date | None] = mapped_column(Date)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class TranscriptCorrectionApplication(Base):
+    """Audit row: what a stored correction rule really changed in one document's transcript.
+
+    The corrected text no longer contains the original wording, so this is the only record of it — it feeds the
+    "Słownik regionu" panel on /ner/:id (chapter-local counts, "before -> after").
+    """
+
+    __tablename__ = "transcript_correction_applications"
+    __table_args__ = (Index("ix_transcript_correction_applications_document", "document_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    rule_id: Mapped[int | None] = mapped_column(ForeignKey("transcript_corrections.id", ondelete="SET NULL"))
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    replacement_text: Mapped[str] = mapped_column(Text, nullable=False)
+    chapter_position: Mapped[int] = mapped_column(nullable=False, server_default=sa_text("0"))
+    occurrences: Mapped[int] = mapped_column(nullable=False, server_default=sa_text("1"))
+    applied_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
 class CleanupRule(Base):
@@ -1736,6 +1792,9 @@ class DocumentEvent(Base):
     sort_year: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     anchor_quote: Mapped[str | None] = mapped_column(Text)
+    # Set when the reader dismissed the proposal ("not an event"): hidden from the list and kept so that a new
+    # detection does not bring the same passage back.
+    ignored_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -2406,6 +2465,8 @@ class Person(Base):
     )
     canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
     wikidata_qid: Mapped[str | None] = mapped_column(String(20), unique=True)
+    # Wikipedia article about the person (https://<lang>.wikipedia.org/wiki/...); filled from the Wikidata sitelinks.
+    wikipedia_url: Mapped[str | None] = mapped_column(Text)
     # short description: tooltip on every mention in the reader
     description: Mapped[str | None] = mapped_column(Text)
     # long description: shown only on the person page (/persons/:id)
@@ -2589,6 +2650,8 @@ class Organization(Base):
     latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     website: Mapped[str | None] = mapped_column(Text)
+    # Wikipedia article about the organization (https://<lang>.wikipedia.org/wiki/...); entered by hand.
+    wikipedia_url: Mapped[str | None] = mapped_column(Text)
     # External pages about the organization: [{"url": "https://…", "label": "Wikipedia"}] (same shape as Person.links).
     links: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     # Vault-relative path of the Obsidian note describing the organization.
@@ -4727,6 +4790,7 @@ class GeoEventKind(Base):
 
     code: Mapped[str] = mapped_column(String(30), primary_key=True)
     label: Mapped[str] = mapped_column(String(80), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100", default=100)
 
 
 class GeoEventRole(Base):

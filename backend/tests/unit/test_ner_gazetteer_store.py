@@ -88,6 +88,9 @@ class TestValidation:
         {"kind": "city", "name_pl": "Teksas", "patterns": None},
         {"kind": "city", "name_pl": "Teksas", "patterns": ["a*"]},
         {"kind": "city", "name_pl": "Teksas", "patterns": ["*"]},
+        {"kind": "city", "name_pl": "Teksas", "patterns": ["al"]},          # nothing anchors the pattern
+        {"kind": "city", "name_pl": "Teksas", "patterns": ["al bu"]},
+        {"kind": "city", "name_pl": "Teksas", "patterns": ["al* dzauf"]},   # a short STEM is still unsafe
         {"kind": "city", "name_pl": "Teksas", "patterns": ["te*xas"]},
         {"kind": "city", "name_pl": "Teksas", "patterns": ["tek.*"]},
         {"kind": "city", "name_pl": "Teksas", "patterns": ["abc*"] * 9},
@@ -102,10 +105,11 @@ class TestValidation:
 
 class TestCityGazetteerMerge:
     def test_database_entry_extends_canonicalization(self, monkeypatch):
-        assert city_gazetteer.canonical_city_name("Teksasie") is None
-        provide(monkeypatch, [GazetteerEntry("city", "Teksas", ("teksas*",))])
+        # (the seed knows "Teksas" since doc #11237, so the test uses a name the seed has never seen)
+        assert city_gazetteer.canonical_city_name("Nowolandii") is None
+        provide(monkeypatch, [GazetteerEntry("city", "Nowoland", ("nowoland*",))])
         store.invalidate_cache()
-        assert city_gazetteer.canonical_city_name("Teksasie") == "Teksas"
+        assert city_gazetteer.canonical_city_name("Nowolandii") == "Nowoland"
 
     def test_database_pattern_extends_seed_name(self, monkeypatch):
         provide(monkeypatch, [GazetteerEntry("city", "luizjana", ("luzjan*",))])
@@ -145,3 +149,20 @@ class TestGeocodeAliasMerge:
     def test_unknown_name_returns_none(self, monkeypatch):
         provide(monkeypatch, [])
         assert geocode_aliases.geocode_alias("Nigdzie") is None
+
+
+class TestShortFixedTokens:
+    """'Al-Dżauf', 'Jan Bu', 'Bab al-': short fixed tokens are fine when a longer token anchors the pattern."""
+
+    @pytest.mark.parametrize("pattern", ["al dzauf*", "jan bu", "bab al", "bab al mandab*"])
+    def test_accepts_anchored_patterns(self, pattern):
+        assert validate_entry(kind="city", name_pl="X", patterns=[pattern])["patterns"] == [pattern]
+
+    def test_hyphenated_mention_matches_through_the_database_entry(self, monkeypatch):
+        provide(monkeypatch, [GazetteerEntry("city", "Al-Dżauf", ("al dzauf*",)),
+                              GazetteerEntry("city", "Bab al-Mandab", ("bab al", "bab al mandab*"))])
+        store.invalidate_cache()
+        assert city_gazetteer.canonical_city_name("Al-Dżaufie") == "Al-Dżauf"
+        assert city_gazetteer.canonical_city_name("Bab al-") == "Bab al-Mandab"
+        assert city_gazetteer.canonical_city_name("Bab al-Mandab") == "Bab al-Mandab"
+        assert city_gazetteer.canonical_city_name("Bab") is None

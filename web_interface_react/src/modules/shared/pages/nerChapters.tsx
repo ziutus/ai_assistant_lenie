@@ -6,9 +6,13 @@ import EntitiesPanel, { type EntitiesByType, type EntityItem } from "../componen
 import ChannelBadge from "../components/ChannelBadge";
 import ChapterDescriptionsPanel, { ChapterDescriptionsButton } from "../components/ChapterDescriptionsPanel/chapterDescriptionsPanel";
 import ChapterEventsPanel, { ChapterEventsDetectButton } from "../components/ChapterEventsPanel/chapterEventsPanel";
+import ChapterRegionDictionary from "../components/ChapterRegionDictionary/chapterRegionDictionary";
+import ChapterSourcesPanel from "../components/ChapterSourcesPanel/chapterSourcesPanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
 import ToneSpansPanel, { useToneSpans } from "../components/ToneSpansPanel/toneSpansPanel";
+import { type GlossaryInfo, glossaryHint, glossarySwaps, GLOSSARY_UNDERLINE } from "../utils/channelGlossary";
+import type { RegionDictionaryInfo } from "../utils/regionDictionary";
 import SelectionEntityMenu, { selectedFragment } from "../components/SelectionEntityMenu/selectionEntityMenu";
 import EventDescriptionDialog from "../components/EventDescriptionDialog/eventDescriptionDialog";
 import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistryDialog";
@@ -141,11 +145,6 @@ const chapterTitle = (section: Section) => (section.is_preamble || section.posit
   ? "Wstęp (przed pierwszym rozdziałem)"
   : `#${section.position} ${section.title}`);
 
-type GlossaryInfo = {
-  author: string | null;
-  entries: { id: number; canonical_name: string; aliases: string[]; fuzzy: boolean }[];
-  applications: { original_text: string; replacement_text: string; occurrences: number }[];
-};
 
 // Occurrences of a glossary phrase in a chapter's sentences, counted with the same matcher that draws the
 // highlight (whole tokens, case-insensitive). The stored text is never changed (the repair is applied to a copy
@@ -157,8 +156,9 @@ const countPhrase = (sentences: { text: string }[] | undefined, phrase: string) 
 // Same look as the other per-chapter blocks (bold label + indented list with a coloured left rule, as in
 // "Wydarzenia z datą w rozdziale"). One phrase per line, each with a button that marks it in the text; the active
 // phrase is also kept in the page address (`?glossary=`) so the highlighted view can be copied and shown.
-const ChapterGlossary = ({ glossary, section, active, onHighlight }: {
+const ChapterGlossary = ({ glossary, section, active, onHighlight, showOriginal, onShowOriginal }: {
   glossary: GlossaryInfo; section: Section; active: string | null; onHighlight: (phrase: string | null) => void;
+  showOriginal: boolean; onShowOriginal: (value: boolean) => void;
 }) => {
   if (!glossary.author) return null;
   const used = glossary.applications
@@ -186,6 +186,10 @@ const ChapterGlossary = ({ glossary, section, active, onHighlight }: {
                   </li>
                 ))}
               </ul>}
+        <label style={{ display: "block", marginTop: 4 }}>
+          <input type="checkbox" checked={showOriginal} onChange={(event) => onShowOriginal(event.target.checked)} />
+          {" "}Pokaż oryginalny tekst (bez podmiany ze słownika)
+        </label>
         {glossary.entries.length > 0 && (
           <details style={{ marginTop: 2, fontSize: "0.9em" }}>
             <summary>Nazwy w słowniku ({glossary.entries.length})</summary>
@@ -253,6 +257,18 @@ const NerChapters = () => {
 
   // The channel's name glossary (speech-to-text repairs applied before NER) and what it changed here.
   const [glossary, setGlossary] = React.useState<GlossaryInfo | null>(null);
+  // The text shows the glossary name instead of the author's wording; this switch brings the original back.
+  const [showOriginal, setShowOriginal] = React.useState(false);
+  const glossaryHighlights = React.useMemo(() => {
+    if (!glossary || showOriginal) return { entries: [] as HighlightEntry[], hints: new Map<string, { canonical: string; hint: string }>() };
+    const hints = new Map<string, { canonical: string; hint: string }>();
+    const entries = glossarySwaps(glossary).map((swap) => {
+      const hint = glossaryHint(glossary, swap, doc?.document_type);
+      hints.set(swap.original.toLowerCase(), { canonical: swap.canonical, hint });
+      return { kind: "glossary" as const, label: swap.canonical, variants: [swap.original], hint, substitute: swap.canonical };
+    });
+    return { entries, hints };
+  }, [glossary, showOriginal, doc?.document_type]);
   React.useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -261,6 +277,26 @@ const NerChapters = () => {
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [id, apiUrl, headers, chapterMode ? 0 : version]);
+
+  // The region dictionary (stored correction rules of the document's countries) and what it changed in the text.
+  const [regionInfo, setRegionInfo] = React.useState<RegionDictionaryInfo | null>(null);
+  // Bumped only after the dictionary rewrote the text — entity edits must not refetch it.
+  const [regionVersion, setRegionVersion] = React.useState(0);
+  React.useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    axios.get<RegionDictionaryInfo>(`${apiUrl}/document/${id}/transcript_corrections`, { headers })
+      .then((response) => {
+        if (cancelled) return;
+        const data = (response.data ?? {}) as Partial<RegionDictionaryInfo>;
+        setRegionInfo({
+          author: data.author ?? null, applications: data.applications ?? [],
+          dictionaries: data.dictionaries ?? [], pending_changes: data.pending_changes ?? 0,
+        });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [id, apiUrl, headers, regionVersion]);
 
   const refreshChapters = async (preferredPosition: number) => {
     if (chapterMode) {
@@ -466,6 +502,7 @@ const NerChapters = () => {
   // "Wykryj wydarzenia" sits in the same button bar: a click bumps the nonce, the chapter's panel runs the detection.
   const [eventsDetect, setEventsDetect] = React.useState<{ position: number; nonce: number } | null>(null);
   const [eventsBusyFor, setEventsBusyFor] = React.useState<number | null>(null);
+  const [sourcesVersion, setSourcesVersion] = React.useState(0);
   // Tone passages found on request (ToneSpansPanel); one list for the whole document, filtered per chapter by the panel.
   const [toneSpans, setToneSpans] = useToneSpans(apiUrl, apiKey, id);
   const [toneVersion, setToneVersion] = React.useState(0);
@@ -761,11 +798,17 @@ const NerChapters = () => {
                             <span>
                               {splitByEntities(sentence.text, [
                                 ...(focus ? [{ kind: focus.kind, label: focus.label, variants: focus.variants }] : []),
-                                ...highlightEntries(entities), ...countryHighlights,
+                                ...highlightEntries(entities), ...countryHighlights, ...glossaryHighlights.entries,
                               ]).map((segment, index) => {
                                 if (!segment.kind) return <React.Fragment key={index}>{segment.text}</React.Fragment>;
+                                // Glossary wording is shown as the glossary name (also inside an entity chip).
+                                const swapped = glossaryHighlights.hints.get(segment.text.toLowerCase());
                                 const focused = focus !== null && segment.kind === focus.kind && segment.label === focus.label;
-                                return <mark key={index} title={`${segment.label} (${KIND_LABELS[segment.kind]})${segment.hint ? ` — ${segment.hint}` : ""}`}
+                                const title = [
+                                  segment.substitute ? "" : `${segment.label} (${KIND_LABELS[segment.kind]})${segment.hint ? ` — ${segment.hint}` : ""}`,
+                                  swapped?.hint ?? "",
+                                ].filter(Boolean).join(" — ");
+                                return <mark key={index} title={title}
                                   {...(focused ? { "data-focus-mark": "" } : {})}
                                   {...(segment.kind === "event"
                                     ? { onContextMenu: describeFromText(entities.eventName?.find((item) => itemName(item) === segment.label)) }
@@ -773,8 +816,9 @@ const NerChapters = () => {
                                   style={{
                                     cursor: segment.kind === "event" || segment.kind === "product" || segment.kind === "concept" || segment.kind === "glossary" ? undefined : "pointer",
                                     background: focused ? "#fde047" : KIND_COLORS[segment.kind], padding: "0 2px", borderRadius: 3,
+                                    ...(swapped && segment.kind !== "glossary" ? { borderBottom: GLOSSARY_UNDERLINE } : {}),
                                     ...(focused ? { outline: "2px solid #d97706" } : {}),
-                                  }}>{segment.text}</mark>;
+                                  }}>{swapped ? swapped.canonical : segment.text}</mark>;
                               })}{" "}
                             </span>
                             </React.Fragment>
@@ -794,7 +838,11 @@ const NerChapters = () => {
                             position={section.position}
                             detectSignal={eventsDetect?.position === section.position ? eventsDetect.nonce : 0}
                             onBusyChange={(busy) => setEventsBusyFor((current) =>
-                              busy ? section.position : current === section.position ? null : current)} />}
+                              busy ? section.position : current === section.position ? null : current)}
+                            onSourcesChanged={() => setSourcesVersion((current) => current + 1)} />}
+                          {id && <ChapterSourcesPanel apiUrl={apiUrl} apiKey={apiKey ?? ""} docId={id}
+                            chapterText={(section.sentences ?? []).map((sentence) => sentence.text).join(" ")}
+                            refreshKey={sourcesVersion} />}
                           {id && (
                             <div aria-label={`Ton i okres rozdziału ${section.position}`}>
                               <TimePeriodsPanel docId={id} currentChapter={section.position} />
@@ -822,8 +870,12 @@ const NerChapters = () => {
                             </div>
                           )}
                           {glossary && <ChapterGlossary glossary={glossary} section={section}
-                            active={glossaryPhrase} onHighlight={highlightGlossary} />}
-                          {loadingEntities && <small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
+                            active={glossaryPhrase} onHighlight={highlightGlossary}
+                            showOriginal={showOriginal} onShowOriginal={setShowOriginal} />}
+                          {id && <ChapterRegionDictionary documentId={id} position={section.position} info={regionInfo}
+                            apiUrl={apiUrl} apiKey={apiKey ?? ""}
+                            onChanged={() => { setRegionVersion((current) => current + 1); void refreshChapters(section.position); }} />}
+                          {loadingEntities &&<small style={{ color: "#64748b" }}>Wczytuję encje…</small>}
                           {!loadingEntities && count === 0 && entityData?.has_entities !== false && (
                             <small style={{ color: "#64748b" }}>Brak encji w tym rozdziale.</small>
                           )}

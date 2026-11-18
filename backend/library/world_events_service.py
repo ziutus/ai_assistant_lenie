@@ -37,24 +37,6 @@ from library.geopolitics_service import (
     search_key,
 )
 
-KIND_LABELS = {
-    "election": "Wybory",
-    "summit": "Szczyt / spotkanie",
-    "diplomatic": "Dyplomacja",
-    "agreement": "Umowa / traktat",
-    "sanctions": "Sankcje",
-    "conflict": "Konflikt zbrojny",
-    "exercise": "Ćwiczenia wojskowe",
-    "protest": "Protesty / niepokoje",
-    "disaster": "Katastrofa / klęska żywiołowa",
-    "health": "Zdrowie / pandemia",
-    "outage": "Awaria / incydent techniczny",
-    "cyber": "Cyberatak / luka w zabezpieczeniach",
-    "product_launch": "Premiera produktu",
-    "corporate": "Wydarzenie korporacyjne",
-    "market": "Rynki / finanse",
-    "other": "Inne",
-}
 ROLE_LABELS = {
     "actor": "sprawca",
     "target": "cel",

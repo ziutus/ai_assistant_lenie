@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lenie
+# One directory per service, each with its own kustomization.yaml
+# (build one alone with: kubectl kustomize base/backend).
+resources:
+  - namespace.yaml
+  - postgres
+  - migrate
+  - backend
+  - frontend

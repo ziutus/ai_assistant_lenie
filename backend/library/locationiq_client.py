@@ -102,8 +102,15 @@ def is_plausible_match(query: str, hit: dict) -> bool:
     return _name_similarity(query, display_name) >= MIN_NAME_SIMILARITY
 
 
-def geocode(query: str, countrycodes: str | None = None) -> dict | None:
+class GeocodeUnavailable(Exception):
+    """The geocoder could not complete a query; this is not a cacheable miss."""
+
+
+def geocode(query: str, countrycodes: str | None = None, *, raise_on_failure: bool = False) -> dict | None:
     """Geocode a place name. Returns the raw first hit, or None on miss/failure.
+
+    With `raise_on_failure=True`, failures raise GeocodeUnavailable; only clean
+    misses (404 or an empty list) return None. Default behavior is unchanged.
 
     `countrycodes` (ISO 3166-1 alpha-2, e.g. "sd") biases LocationIQ's ranking
     toward that country without touching the query text — appending a country
@@ -119,6 +126,8 @@ def geocode(query: str, countrycodes: str | None = None) -> dict | None:
     key = _api_key()
     if not key:
         logger.warning("LOCATIONIQ_API_KEY not configured — place verification disabled")
+        if raise_on_failure:
+            raise GeocodeUnavailable("LOCATIONIQ_API_KEY not configured")
         return None
 
     wait = MIN_REQUEST_INTERVAL_S - (time.monotonic() - _last_request_at)
@@ -150,10 +159,16 @@ def geocode(query: str, countrycodes: str | None = None) -> dict | None:
             return None
         resp.raise_for_status()
         hits = resp.json()
-        return hits[0] if isinstance(hits, list) and hits else None
+        if not isinstance(hits, list) or (hits and not isinstance(hits[0], dict)):
+            raise ValueError("Unexpected geocoder response shape")
+        return hits[0] if hits else None
     except requests.RequestException as e:
         logger.warning("LocationIQ request failed for %r: %s", query, e)
+        if raise_on_failure:
+            raise GeocodeUnavailable(f"LocationIQ request failed for {query!r}") from e
         return None
     except ValueError as e:
         logger.warning("LocationIQ returned invalid JSON for %r: %s", query, e)
+        if raise_on_failure:
+            raise GeocodeUnavailable(f"LocationIQ returned invalid JSON for {query!r}") from e
         return None

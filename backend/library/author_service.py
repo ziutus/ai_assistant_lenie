@@ -156,4 +156,5 @@ def get_document_authors(session, document_id: int) -> list[dict]:
         "description": person.description,
         "confidence": link.confidence,
         "wikidata_qid": person.wikidata_qid,
+        "wikipedia_url": person.wikipedia_url,
     } for link, person in rows]

@@ -328,6 +328,45 @@ def split_timeline_fragments(text: str, max_chars: int = MAX_FRAGMENT_CHARS) -> 
     return fragments
 
 
+# A publication is a source of information, not an event of the world: "w 2015 roku opublikowano badanie X"
+# says when a study appeared, while the events it describes (and their dates) are what the timeline needs.
+# Studies and books are recorded as information sources (`information_provenance`) instead.
+PUBLICATION_RULE = """Każdemu obiektowi nadaj "type": "event" (wydarzenie ze świata) albo "source" (źródło informacji).
+Ukazanie się badania, artykułu naukowego, pracy naukowej, książki lub analizy to "source", a nie wydarzenie. Przykład:
+"w 2015 roku opublikowano badanie o masowych strzelaninach" -> "type": "source" (w "description" podaj autorów i/lub
+tytuł badania), a wydarzenia, które badanie opisuje, o ile tekst podaje ich daty, to osobne obiekty "type": "event".
+Wynik badania ("badanie wykazało, że...") bez daty zdarzenia też jest "source". Raport, ustawę lub dokument oznacz jako
+"event" tylko wtedy, gdy jego opublikowanie samo wywołało skutki opisane w tekście (np. dymisję, protesty). Dla "source"
+data jest opcjonalna."""
+
+# Statements the model still returns although the rule above forbids them. The check is deliberately narrow:
+# scientific work and books only (the publication of a report or a law may itself be an event), and either a
+# sentence that opens with such a noun and says what it is about / shows / was published, or one that says a
+# publication appeared. "Po opublikowaniu badania wybuchły protesty" (an event that follows a study) is kept.
+_PUBLICATION_NOUN = (
+    r"(?:badani[ae]|studium|metaanaliz\w*|artyku[łl]\s+naukow\w*|prac[aey]\s+naukow\w*|"
+    r"publikacj\w*\s+naukow\w*|ksi[ąa][żz]k\w*)"
+)
+_PUBLISHED_VERB = (
+    r"(?:opublikowano|opublikowa[łl]\w*|ukaza[łl]\w*\s+si[ęe]|zosta[łl]\w*\s+opublikowan\w*|wydano)"
+)
+_PUBLICATION_STATEMENT_RE = re.compile(
+    rf"^\W*(?:(?:w\s+)?\d{{4}}\s*(?:r\.?|roku)?\W*)?{_PUBLICATION_NOUN}\b[^.]{{0,200}}?"
+    r"\b(?:opublikowa\w*|ukaza\w*|wydan\w*|przedstawi\w*|prezentuj\w*|wykaza\w*|pokaza\w*|wskazuj\w*|"
+    r"przeprowadz\w*|na\s+temat|dotycz\w*|poświęcon\w*)"
+    rf"|^[^.]{{0,50}}?\b{_PUBLISHED_VERB}\b\s+(?:\w+\s+){{0,3}}?{_PUBLICATION_NOUN}\b",
+    re.IGNORECASE,
+)
+
+
+_SOURCE_TYPE_WORDS = {"source", "zrodlo", "źródło", "publication", "publikacja"}
+
+
+def is_publication_statement(description: str) -> bool:
+    """True for a description that only reports that a study, report or book appeared."""
+    return bool(_PUBLICATION_STATEMENT_RE.search(" ".join((description or "").split())))
+
+
 def _timeline_prompt(
     fragment: str,
     temporal_hints: list[dict] | None = None,
@@ -352,12 +391,14 @@ opisywać wydarzenie i NER może się mylić.
     )
     return f"""Przeanalizuj poniższy fragment dokumentu i wyodrębnij wyłącznie wydarzenia opisywane w tekście,
 którym tekst przypisuje datę albo okres. Nie dodawaj wiedzy zewnętrznej ani nie zgaduj dat.
+
+{PUBLICATION_RULE}
 {hints}
 {reference}
 
 Zwróć WYŁĄCZNIE poprawny JSON: listę obiektów:
 [
-  {{"date_text": "oryginalny zapis daty z tekstu", "description": "jedno rzeczowe zdanie",
+  {{"type": "event lub source", "date_text": "oryginalny zapis daty z tekstu", "description": "jedno rzeczowe zdanie",
     "quote": "dokładny krótki cytat z fragmentu, maksymalnie około 200 znaków"}}
 ]
 
@@ -385,6 +426,7 @@ def extract_fragment_events(
         document_id=document_id,
     )
     events: list[dict] = []
+    sources: list[dict] = []
     rejected_quote = rejected_date = 0
     candidates, invalid_json = _parse_events_response(response.response_text)
     for candidate in candidates:
@@ -393,6 +435,17 @@ def extract_fragment_events(
         quote = str(candidate.get("quote") or "").strip()
         if not description or not _quote_is_grounded(quote, fragment):
             rejected_quote += 1
+            continue
+        # The model says what the entry is; the sentence check catches a publication it labelled an event. Such an
+        # entry is not dropped: it is kept as an information source (stored for review by the caller).
+        declared = str(candidate.get("type") or "").strip().casefold()
+        if declared in _SOURCE_TYPE_WORDS or is_publication_statement(description):
+            sources.append({
+                "chapter_position": chapter_position,
+                "date_text": date_text,
+                "description": description,
+                "anchor_quote": quote,
+            })
             continue
         normalized_date = normalize_date_text(date_text, reference_date)
         if normalized_date is None:
@@ -408,13 +461,43 @@ def extract_fragment_events(
     return events, {
         "rejected_without_quote": rejected_quote,
         "rejected_without_date": rejected_date,
+        "publications": len(sources),
+        "sources": sources,
         "invalid_json": int(invalid_json),
         "ner_hint_count": len(temporal_hints or []),
         **usage_report(response.usage).as_dict(),
     }
 
 
-def _chapters_for_document(doc, selected_position: int | None = None) -> list[dict]:
+def _editor_chapter(doc, position: int) -> dict:
+    """One chapter numbered like ``/ner/:id`` does: preamble = 0, each ``##`` chapter 1, 2, ...
+
+    An article without ``##`` headings is one preamble section, so chapter 0 is the whole text.
+    """
+    from library.transcript_chapter_boundaries import parse_sections
+
+    text = doc.text or doc.text_md or ""
+    if not text.strip():
+        raise ValueError("document has no usable text")
+    number = 0
+    for section in parse_sections(text):
+        if section.heading:
+            number += 1
+        elif not section.body.strip():
+            continue
+        if number == position:
+            if not section.body.strip():
+                raise ValueError(f"chapter {position} is empty")
+            title = section.heading.lstrip("# ").strip() or doc.title or "Dokument"
+            return {"position": position, "title": title, "text": section.body}
+    raise ValueError(f"chapter {position} not found")
+
+
+def _chapters_for_document(
+    doc, selected_position: int | None = None, *, editor_numbering: bool = False,
+) -> list[dict]:
+    if editor_numbering and selected_position is not None:
+        return [_editor_chapter(doc, selected_position)]
     text = doc.text_md or doc.text or ""
     if not text.strip():
         raise ValueError("document has no usable text")
@@ -436,7 +519,9 @@ def _chapters_for_document(doc, selected_position: int | None = None) -> list[di
     ]
 
 
-def extract_document_events(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
+def extract_document_events(
+    session, doc, model: str | None = None, *, chapter_position: int | None = None, editor_numbering: bool = False,
+) -> dict:
     """Extract events without mutating the session; return events and per-chapter reports."""
     selected_model = model or load_config().get("TIMELINE_MODEL") or DEFAULT_TIMELINE_MODEL
     temporal_candidates = []
@@ -447,12 +532,13 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
             .order_by(NerTemporalCandidate.char_start, NerTemporalCandidate.id)
         ).all())
     events: list[dict] = []
+    publication_sources: list[dict] = []
     chapter_reports: list[dict] = []
     reference_date = getattr(doc, "published_on", None)
     if reference_date is None:
         ingested_at = getattr(doc, "ingested_at", None)
         reference_date = ingested_at.date() if isinstance(ingested_at, datetime.datetime) else ingested_at
-    for chapter in _chapters_for_document(doc, chapter_position):
+    for chapter in _chapters_for_document(doc, chapter_position, editor_numbering=editor_numbering):
         chapter_events: list[dict] = []
         fragment_reports: list[dict] = []
         for fragment in split_timeline_fragments(chapter["text"]):
@@ -467,6 +553,7 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
                 temporal_hints=temporal_hints, reference_date=reference_date,
             )
             chapter_events.extend(extracted)
+            publication_sources.extend(report.get("sources", []))
             fragment_reports.append(report)
         events.extend(chapter_events)
         chapter_reports.append({
@@ -475,17 +562,65 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
             "events": len(chapter_events),
             "rejected_without_quote": sum(r["rejected_without_quote"] for r in fragment_reports),
             "rejected_without_date": sum(r["rejected_without_date"] for r in fragment_reports),
+            "publications": sum(r.get("publications", 0) for r in fragment_reports),
             "invalid_json": sum(r["invalid_json"] for r in fragment_reports),
             "ner_hint_count": sum(r.get("ner_hint_count", 0) for r in fragment_reports),
             **combine_usage_reports(fragment_reports),
         })
-    return {"model": selected_model, "events": events, "chapters": chapter_reports}
+    return {
+        "model": selected_model, "events": events, "publication_sources": publication_sources,
+        "chapters": chapter_reports,
+    }
 
 
-def refresh_document_events(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
-    """Replace stored derived events for a document, or one explicitly selected chapter."""
-    result = extract_document_events(session, doc, model, chapter_position=chapter_position)
-    statement = delete(DocumentEvent).where(DocumentEvent.document_id == doc.id)
+_MIN_PASSAGE_OVERLAP = 20
+
+
+def passage_key(value: str | None) -> str:
+    """Whitespace-, case- and typography-insensitive form of a quoted passage."""
+    return _normalize_quote_typography(value or "").casefold()
+
+
+def is_ignored_passage(event: dict, ignored_passages: list[str]) -> bool:
+    """True when a new proposal quotes a passage the reader dismissed (same text, or one contains the other).
+
+    The model cuts the same sentence differently from run to run, so equality is not enough; a containment of at
+    least ``_MIN_PASSAGE_OVERLAP`` characters counts as the same passage.
+    """
+    quote = passage_key(event.get("anchor_quote") or event.get("description"))
+    if not quote:
+        return False
+    for ignored in ignored_passages:
+        if not ignored:
+            continue
+        if quote == ignored:
+            return True
+        shorter, longer = sorted((quote, ignored), key=len)
+        if len(shorter) >= _MIN_PASSAGE_OVERLAP and shorter in longer:
+            return True
+    return False
+
+
+def refresh_document_events(
+    session, doc, model: str | None = None, *, chapter_position: int | None = None, editor_numbering: bool = False,
+) -> dict:
+    """Replace stored derived events for a document, or one explicitly selected chapter.
+
+    ``editor_numbering`` reads ``chapter_position`` as the ``/ner/:id`` editor does (preamble = 0) and stores the
+    rows under that number, which is what ``GET /document/<id>/events?chapter_position=`` filters by.
+    """
+    result = extract_document_events(
+        session, doc, model, chapter_position=chapter_position, editor_numbering=editor_numbering,
+    )
+    # Proposals the reader dismissed stay as they are, and a new proposal about the same passage is not stored again.
+    ignored = session.scalars(select(DocumentEvent).where(
+        DocumentEvent.document_id == doc.id, DocumentEvent.ignored_at.is_not(None),
+    )).all()
+    ignored_passages = [passage_key(row.anchor_quote or row.description) for row in ignored]
+    kept = [event for event in result["events"] if not is_ignored_passage(event, ignored_passages)]
+    result["skipped_ignored"] = len(result["events"]) - len(kept)
+    result["events"] = kept
+    statement = delete(DocumentEvent).where(DocumentEvent.document_id == doc.id, DocumentEvent.ignored_at.is_(None))
     if chapter_position is not None:
         statement = statement.where(DocumentEvent.chapter_position == chapter_position)
     session.execute(statement)
@@ -495,6 +630,12 @@ def refresh_document_events(session, doc, model: str | None = None, *, chapter_p
     ]
     session.add_all(rows)
     result["rows"] = rows
+    # A publication the model found is not an event: it is stored as an information source awaiting review.
+    from library.document_event_sources import save_detected_publications
+
+    result["publication_names"] = save_detected_publications(session, doc.id, result.get("publication_sources", []))
     doc.enrichment_run_at = datetime.datetime.now()
-    logger.info("timeline doc=%s: extracted %d events", doc.id, len(rows))
+    logger.info(
+        "timeline doc=%s: extracted %d events, %d publications", doc.id, len(rows), len(result["publication_names"]),
+    )
     return result

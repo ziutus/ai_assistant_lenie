@@ -30,6 +30,7 @@ import json
 import logging
 import re
 import threading
+import time
 import uuid
 from collections import Counter
 from datetime import date, datetime
@@ -93,6 +94,38 @@ def _update_analysis_job(job_id: str, **values) -> None:
         session.close()
 
 
+_ANALYSIS_COORDINATOR_LOCK_KEY = 92440017
+_ANALYSIS_ELECTION_RETRY_SECONDS = 10
+
+
+def _elect_analysis_coordinator(session_factory, *, sleep=time.sleep, retry_seconds=None):
+    """Return the session holding the coordinator advisory lock, or None.
+
+    None means another process already owns the lock. A database error (for
+    example "the database system is starting up" right after a NAS reboot) is
+    retried until the database answers: giving up there would leave the queue
+    without any consumer until the next backend restart, because
+    start_analysis_worker() never starts a second thread. The returned session
+    must stay open — the lock lives as long as its connection.
+    """
+    delay = _ANALYSIS_ELECTION_RETRY_SECONDS if retry_seconds is None else retry_seconds
+    while True:
+        coordinator = session_factory()
+        try:
+            is_owner = coordinator.scalar(
+                sa_text("SELECT pg_try_advisory_lock(:key)"), {"key": _ANALYSIS_COORDINATOR_LOCK_KEY}
+            )
+        except Exception:
+            coordinator.close()
+            logger.exception("analysis queue coordinator election failed; retrying in %s s", delay)
+            sleep(delay)
+            continue
+        if not is_owner:
+            coordinator.close()
+            return None
+        return coordinator
+
+
 def _analysis_worker() -> None:
     """Process persistent analysis jobs sequentially."""
     from library.db.engine import get_session
@@ -101,15 +134,8 @@ def _analysis_worker() -> None:
     # Flask's debug reloader (and a future multi-worker WSGI deployment) may
     # import this module in more than one process. A session-level PostgreSQL
     # advisory lock elects exactly one queue coordinator across all of them.
-    coordinator = get_session()
-    try:
-        is_owner = coordinator.scalar(sa_text("SELECT pg_try_advisory_lock(92440017)"))
-    except Exception:
-        coordinator.close()
-        logger.exception("analysis queue coordinator election failed")
-        return
-    if not is_owner:
-        coordinator.close()
+    coordinator = _elect_analysis_coordinator(get_session)
+    if coordinator is None:
         logger.info("analysis queue worker inactive; another process owns the coordinator lock")
         return
     logger.info("analysis queue coordinator lock acquired")
@@ -2243,6 +2269,9 @@ def document_events(doc_id: int):
         abort(404, f"Document {doc_id} not found")
 
     query = session.query(DocumentEvent).filter(DocumentEvent.document_id == doc_id)
+    # Dismissed proposals are hidden; ``include_ignored=1`` lists them too (the panel's "Zignorowane" section).
+    if request.args.get("include_ignored") not in ("1", "true", "yes"):
+        query = query.filter(DocumentEvent.ignored_at.is_(None))
     chapter_filter = request.args.get("chapter_position", type=int)
     if chapter_filter is not None:
         query = query.filter(DocumentEvent.chapter_position == chapter_filter)
@@ -2355,6 +2384,7 @@ def _event_to_dict(row) -> dict:
         "description": row.description,
         "anchor_quote": row.anchor_quote,
         "chapter_position": row.chapter_position,
+        "ignored": getattr(row, "ignored_at", None) is not None,
     }
 
 
@@ -2381,7 +2411,7 @@ def document_chapter_detect_events(doc_id: int, position: int):
         model = run.model if run else None
 
     try:
-        result = refresh_document_events(session, doc, model or None, chapter_position=position)
+        result = refresh_document_events(session, doc, model or None, chapter_position=position, editor_numbering=True)
         session.commit()
     except ValueError:
         session.rollback()
@@ -2402,6 +2432,9 @@ def document_chapter_detect_events(doc_id: int, position: int):
         "events": [{**_event_to_dict(row), "world_events": []} for row in rows],
         "rejected_without_quote": report.get("rejected_without_quote", 0),
         "rejected_without_date": report.get("rejected_without_date", 0),
+        "publications_as_sources": report.get("publications", 0),
+        "skipped_ignored": result.get("skipped_ignored", 0),
+        "publication_sources": result.get("publication_names", []),
         "invalid_json": report.get("invalid_json", 0),
     })
 

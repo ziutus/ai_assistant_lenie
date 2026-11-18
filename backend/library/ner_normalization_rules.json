@@ -20,7 +20,8 @@
     ],
     "Stany Zjednoczone": [
       "amerykan(?:in|ina|inowi|inem|inie|ie|ow|om|ami|ach)",
-      "amerykan(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+      "amerykan(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)",
+      "amerykansk(?:i|a|ie|iego|iej|iemu|im|ich|imi|a)|amerykansc(?:y)"
     ],
     "Algieria": [
       "algier(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
@@ -48,7 +49,8 @@
     ],
     "Arabia Saudyjska": [
       "saudyj(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
-      "saudyj(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)"
+      "saudyj(?:ka|ki|ke|ko|ce|ek|kom|kami|kach)",
+      "saud(?:owie|ow|om|ami|ach|owa)"
     ],
     "Syria": [
       "syryj(?:czyk|czyka|czykowi|czykiem|czyku|czycy|czykow|czykom|czykami|czykach)",
