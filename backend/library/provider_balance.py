@@ -2,7 +2,8 @@
 
 Two sources, told apart by ``source``:
 
-* ``api`` - the provider reports it itself (OpenRouter, ``api/openrouter/openrouter_key.py``).
+* ``api`` - the provider reports it itself (OpenRouter, ``api/openrouter/openrouter_key.py``; Firecrawl and Serper
+  credits, ``web_search_client.py``).
 * ``estimated`` - the provider has no usable billing API (CloudFerro: the wallet is visible only in the customer
   panel and in a "balance is low" e-mail). The owner types the last known balance and its date; the estimate is that
   balance minus what ``llm_usage_logs`` priced for the provider since then. Nothing outside Lenie's own LLM and
@@ -16,12 +17,21 @@ dangerous at another.
 from __future__ import annotations
 
 import datetime
+import logging
+import time
 from decimal import Decimal
 
 from sqlalchemy import func, select
 
 from library import app_settings
 from library.db.models import LlmUsageLog
+
+logger = logging.getLogger(__name__)
+
+CREDIT_UNIT = "kredytów"  # Firecrawl and Serper bill in credits, not money
+CREDITS_LOW_SHARE = 0.2  # amber when this share of the plan or less is left
+CREDITS_CACHE_TTL_S = 60
+_credits_cache: dict[str, tuple[float, dict]] = {}
 
 SETTING_PREFIX = "provider_balance:"
 DEFAULT_WARN_DAYS = 14
@@ -144,5 +154,61 @@ def openrouter_balance() -> dict:
             "has_limit": has_limit}
 
 
+def _count(value) -> float | None:
+    return None if isinstance(value, bool) or not isinstance(value, (int, float)) else float(value)
+
+
+def _cached(key: str, build, now: float | None = None) -> dict:
+    """One provider answer for ``CREDITS_CACHE_TTL_S`` seconds: the credit endpoints are free, but the page that shows
+    them is opened often and every call is a network round trip."""
+    now = time.monotonic() if now is None else now
+    hit = _credits_cache.get(key)
+    if hit is not None and now - hit[0] < CREDITS_CACHE_TTL_S:
+        return hit[1]
+    value = build()
+    _credits_cache[key] = (now, value)
+    return value
+
+
+def _credit_entry(provider: str, name: str, fetch, read) -> dict:
+    """``read(data)`` returns ``(remaining, plan)`` credits from the provider's answer. A missing key is
+    ``not_configured``, any other failure is ``unavailable`` (details only in the log, never in the response)."""
+    from library.web_search_client import WebSearchUnavailable
+
+    entry = {"provider": provider, "name": name, "source": "api", "unit": CREDIT_UNIT}
+    try:
+        remaining, plan = read(fetch())
+    except WebSearchUnavailable:
+        return {**entry, "status": "not_configured"}
+    except Exception:
+        logger.warning("Could not read %s credits", provider, exc_info=True)
+        return {**entry, "status": "unavailable"}
+    if remaining is None:
+        return {**entry, "status": "unavailable"}
+    has_plan = plan is not None and plan > 0
+    return {**entry, "status": "ok", "remaining": remaining, "limit": plan if has_plan else None,
+            "spent_since": round(plan - remaining, 2) if has_plan else None, "days_left": None,
+            "low": has_plan and 0 < remaining <= plan * CREDITS_LOW_SHARE, "exhausted": remaining <= 0,
+            "has_limit": has_plan}
+
+
+def firecrawl_balance() -> dict:
+    from library import web_search_client
+
+    return _cached("firecrawl", lambda: _credit_entry(
+        "firecrawl", "Firecrawl", web_search_client.firecrawl_credits,
+        lambda data: (_count(data.get("remaining")), _count(data.get("plan")))))
+
+
+def serper_balance() -> dict:
+    """Serper reports only the credits left, not the plan, so there is no ``limit`` and no ``low`` warning."""
+    from library import web_search_client
+
+    return _cached("serper", lambda: _credit_entry(
+        "serper", "Serper", web_search_client.serper_account,
+        lambda data: (_count(data.get("credits_left")), None)))
+
+
 def all_balances(session) -> list[dict]:
-    return [openrouter_balance(), *(estimated_balance(session, provider) for provider in ESTIMATED_PROVIDERS)]
+    return [openrouter_balance(), firecrawl_balance(), serper_balance(),
+            *(estimated_balance(session, provider) for provider in ESTIMATED_PROVIDERS)]

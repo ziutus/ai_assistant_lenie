@@ -6,15 +6,43 @@ export type ProviderBalanceInfo = {
   status: "ok" | "not_configured" | "unavailable";
   remaining?: number | null; days_left?: number | null; low?: boolean; exhausted?: boolean;
   base_amount?: number; as_of?: string; fixed_monthly?: number; warn_days?: number; daily_burn?: number;
-  spent_since?: number; unpriced_rows?: number;
+  spent_since?: number; unpriced_rows?: number; limit?: number | null; has_limit?: boolean;
 };
 
+const CREDITS = "kredytów";
+
 const amount = (value: number, unit: string) =>
-  `${value.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${unit}`;
+  unit === CREDITS
+    ? `${Math.round(value).toLocaleString("pl-PL")} ${unit}`
+    : `${value.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${unit}`;
+
+/** A balance the provider reports itself (OpenRouter spending limit, Firecrawl/Serper credits). */
+function ApiBalanceView({ balance }: { balance: ProviderBalanceInfo }) {
+  const style = { fontSize: ".85rem" } as const;
+  if (balance.status === "not_configured") {
+    return <span role="status" style={{ ...style, color: "#64748b" }}>{balance.name}: brak klucza API</span>;
+  }
+  if (balance.status === "unavailable") {
+    return <span role="status" style={{ ...style, color: "#64748b" }}>{balance.name}: nie udało się odczytać salda</span>;
+  }
+  if (balance.remaining == null) {
+    return <span role="status" style={{ ...style, color: "#475569" }}>
+      {balance.name}: klucz bez limitu{balance.spent_since != null ? ` (zużyto ${amount(balance.spent_since, balance.unit)})` : ""}
+    </span>;
+  }
+  const warn = Boolean(balance.low || balance.exhausted);
+  return <span role="status" style={{ ...style, color: balance.exhausted ? "#991b1b" : warn ? "#92400e" : "#475569", fontWeight: warn ? 600 : 400 }}>
+    {balance.name}: zostało {amount(Math.max(balance.remaining, 0), balance.unit)}
+    {balance.limit != null && <> z {amount(balance.limit, balance.unit)}</>}
+    {balance.exhausted && <> · wyczerpane</>}
+    {balance.low && !balance.exhausted && <> · mało</>}
+  </span>;
+}
 
 /** Balance of a provider that has no billing API: the owner's last entered balance minus priced usage since. */
 export function ProviderBalanceView({ balance }: { balance: ProviderBalanceInfo | null | undefined }) {
   if (balance === undefined) return null; // not loaded yet
+  if (balance !== null && balance.source === "api") return <ApiBalanceView balance={balance} />;
   if (balance === null || balance.status === "unavailable") {
     return <span style={{ color: "#64748b", fontSize: ".85rem" }}>Saldo: brak danych</span>;
   }
@@ -57,8 +85,10 @@ function BalanceForm({ balance, onSave }: { balance: ProviderBalanceInfo; onSave
   </form>;
 }
 
-/** Hand-entered balances (providers without a billing API), each with a collapsed form to correct the base. */
-export default function ProviderBalances({ refreshKey = 0 }: { refreshKey?: number }) {
+/** Hand-entered balances (providers without a billing API), each with a collapsed form to correct the base.
+ *  With `showAll` the balances the providers report themselves (OpenRouter, Firecrawl, Serper) are listed too —
+ *  `/llm-costs` leaves them out because it shows OpenRouter on its own line. */
+export default function ProviderBalances({ refreshKey = 0, showAll = false }: { refreshKey?: number; showAll?: boolean }) {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [balances, setBalances] = React.useState<ProviderBalanceInfo[] | null | undefined>(undefined);
   const headers = React.useMemo(() => ({ "x-api-key": apiKey ?? "", "Content-Type": "application/json" }), [apiKey]);
@@ -91,13 +121,13 @@ export default function ProviderBalances({ refreshKey = 0 }: { refreshKey?: numb
 
   if (balances === undefined) return null;
   if (balances === null) return <ProviderBalanceView balance={null} />;
-  return <>{balances.filter((entry) => entry.source === "estimated").map((entry) => (
+  return <>{balances.filter((entry) => showAll || entry.source === "estimated").map((entry) => (
     <div key={entry.provider} style={{ marginTop: 4 }}>
       <ProviderBalanceView balance={entry} />
-      <details style={{ marginTop: 2 }}>
+      {entry.source === "estimated" && <details style={{ marginTop: 2 }}>
         <summary style={{ cursor: "pointer", fontSize: ".8rem", color: "#64748b" }}>Ustaw saldo {entry.name}</summary>
         <BalanceForm balance={entry} onSave={save(entry.provider)} />
-      </details>
+      </details>}
     </div>
   ))}</>;
 }
