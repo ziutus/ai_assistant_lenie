@@ -1,0 +1,11 @@
+{
+  "country_slug": "kraj-republika-zielonego-przyladka",
+  "note": "Starter dictionary for Cape Verde (doc #11263, chapter about the presidential election, channel 'Na Wschod od Bliskiego Wschodu'). Region rules insert the replacement verbatim.",
+  "rules": [
+    {"pattern": "Hosą Hosem Mario Navesem", "replacement": "José Marią Nevesem", "note": "ASR: 'z prezydentem Hosa Hosem Mario Navesem' = instrumental of the president José Maria Neves"},
+    {"pattern": "Praja", "replacement": "Praia", "note": "ASR: the capital Praia ('burmistrza stolicy, który się nazywa Praja')"},
+    {"pattern": "Carvalio", "replacement": "Carvalho", "note": "ASR: 'Francisco Carvalio' = Francisco Carvalho, the mayor of Praia named prime minister"},
+    {"pattern": "Zielonego Przyjęcia Przylądka", "replacement": "Zielonego Przylądka", "note": "ASR: 'Republiki Zielonego Przyjecia Przylatka'"},
+    {"pattern": "Zielonego Przylątka", "replacement": "Zielonego Przylądka", "note": "ASR: missing ogonek / wrong vowel"}
+  ]
+}
