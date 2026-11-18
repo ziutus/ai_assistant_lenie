@@ -14,9 +14,10 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow, headerExtra }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
       return <div data-testid="panel" data-hide-countries={hideCountriesRow ? "yes" : "no"}>
+        {headerExtra}
         <button onClick={() => onEntitiesChanged?.()}>zmień encje</button>
         {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
         <button type="button" onClick={() => onShowInText?.(
@@ -747,6 +748,20 @@ it("refetches only scoped entities after a panel edit without reloading sentence
     ["/document/42/chapter_entities", { headers: { "x-api-key": "test-key" }, params: { position: 1 } }],
   ]);
   expect(screen.getAllByRole("region")).toHaveLength(1);
+});
+
+it("offers a whole-document / chapter switch in the panel header", async () => {
+  await open();
+  const group = screen.getByRole("group", { name: "Zakres widoku" });
+  expect(within(group).getByRole("link", { name: "Cały dokument" }).getAttribute("aria-current")).toBe("page");
+  expect(within(group).getByRole("link", { name: "Rozdział" }).getAttribute("href")).toMatch(/^\/ner\/42\/\d+$/);
+});
+
+it("switch in single-chapter mode marks the chapter and links back to the whole document", async () => {
+  await openChapter(2);
+  const group = screen.getByRole("group", { name: "Zakres widoku" });
+  expect(within(group).getByRole("link", { name: "Cały dokument" }).getAttribute("href")).toBe("/ner/42");
+  expect(within(group).getByRole("link", { name: "Rozdział 2" }).getAttribute("aria-current")).toBe("page");
 });
 
 it("links each card in the all-chapters view to chapter mode", async () => {

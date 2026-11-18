@@ -536,6 +536,7 @@ const EntitiesPanel = ({
   onEntitiesChanged,
   countries: providedCountries,
   hideCountriesRow = false,
+  headerExtra,
   refreshKey = 0,
   chapterRenderer,
   onShowInText,
@@ -587,6 +588,8 @@ const EntitiesPanel = ({
   // kraj-* tags (which can name a country the chapter never mentions) is left out there. The countries are
   // still loaded and used by the empty-state check.
   hideCountriesRow?: boolean;
+  // Page-owned controls drawn at the end of the header row (e.g. the whole-document / single-chapter switch on /ner/:id).
+  headerExtra?: React.ReactNode;
 }) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
@@ -2174,6 +2177,7 @@ const EntitiesPanel = ({
             {editMode ? "Zakończ edycję" : "Edytuj"}
           </button>
         )}
+        {headerExtra}
       </div>
       {docId && <CountryDetectionHistory docId={docId} apiUrl={apiUrl} apiKey={apiKey} detectionId={detectionId} />}
       {nerUnavailableAt && (
