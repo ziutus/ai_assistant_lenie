@@ -486,7 +486,10 @@ hit statistic is written, a single word is allowed, the report shows `rule_id` 0
 "Tylko ten dokument" option of the `/ner/:id` menu.
 
 **Spellcheck proposals** (`transcript_spellcheck.py` / `transcript_spellcheck_routes.py`, task `transcript_spellcheck`
-in `llm_model_registry`, household default in `app_settings` key `transcript_spellcheck_model`). Finds the speech-to-text
+in `llm_model_registry`, household default in `app_settings` key `transcript_spellcheck_model`; built-in default
+`Bielik-11B-v3.0-Instruct`, then Mistral Small 3.2 on OpenRouter, then the first available model — on the 66 suspects of
+doc #11263 Bielik gave about 20 usable fixes out of 36 proposals, Mistral fewer and more invented words; the model's
+`confidence` is `high` even for wrong answers, so never apply a proposal without a human). Finds the speech-to-text
 slips nobody wrote a rule for ("spóromyśliwiec" = "spór o myśliwiec"): Morfeusz 2 (`morfeusz2`, SGJP; tag `ign` =
 unknown word, wheels for Windows and manylinux x86_64, verified on `python:3.11-slim`) lists the words it cannot
 analyse, and only those, with ±90 characters of context, go to the model (batches of 25, at most 80 suspects per

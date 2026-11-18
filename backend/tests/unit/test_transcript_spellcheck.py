@@ -60,6 +60,31 @@ class TestValidateReplacement:
         assert sc.validate_replacement("spóromyśliwiec", value, analyser=A) == reason
 
 
+class TestDefaultModel:
+    MISTRAL = "openrouter/mistralai/mistral-small-3.2-24b-instruct"
+
+    def _default(self, monkeypatch, ids, saved=None):
+        monkeypatch.setattr(sc.llm_model_registry, "selectable_models",
+                            lambda task: [{"id": i, "available": True} for i in ids])
+        monkeypatch.setattr(sc.llm_model_registry, "is_selectable", lambda model, task: model in ids)
+        monkeypatch.setattr(sc.app_settings, "get_setting", lambda session, key: saved)
+        return sc.default_model(None)
+
+    def test_bielik_is_preferred_over_mistral(self, monkeypatch):
+        assert self._default(monkeypatch, ["gpt-4o-mini", self.MISTRAL, sc.PREFERRED_MODEL]) == sc.PREFERRED_MODEL
+
+    def test_mistral_when_bielik_is_missing(self, monkeypatch):
+        assert self._default(monkeypatch, ["gpt-4o-mini", self.MISTRAL]) == self.MISTRAL
+
+    def test_first_available_as_last_resort_and_none_when_empty(self, monkeypatch):
+        assert self._default(monkeypatch, ["gpt-4o-mini"]) == "gpt-4o-mini"
+        assert self._default(monkeypatch, []) is None
+
+    def test_saved_choice_wins_while_selectable(self, monkeypatch):
+        assert self._default(monkeypatch, [sc.PREFERRED_MODEL, self.MISTRAL], saved=self.MISTRAL) == self.MISTRAL
+        assert self._default(monkeypatch, [sc.PREFERRED_MODEL], saved="retired-model") == sc.PREFERRED_MODEL
+
+
 class TestParseAnswer:
     def test_fenced_and_prose_around_json(self):
         raw = 'Oto wynik:\n```json\n{"corrections":[{"id":0,"replacement":"x","confidence":"high"}]}\n```'

@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 TASK = "transcript_spellcheck"
 SETTING_KEY = "transcript_spellcheck_model"
+PREFERRED_MODEL = "Bielik-11B-v3.0-Instruct"
 
 _LETTERS = "A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż"
 _WORD = re.compile(rf"[{_LETTERS}]+(?:-[{_LETTERS}]+)*")
@@ -112,10 +113,12 @@ def default_model(session):
     if isinstance(saved, str) and llm_model_registry.is_selectable(saved, TASK):
         return saved
     ids = [item["id"] for item in llm_model_registry.selectable_models(TASK) if item["available"]]
-    preferred = "openrouter/mistralai/mistral-small-3.2-24b-instruct"
-    if preferred in ids:
-        return preferred
-    return next((item for item in ids if "bielik" not in item.lower()), ids[0] if ids else None)
+    # Bielik beat Mistral Small 3.2 on the same 66 suspects of doc #11263 (about 20 of 36 usable fixes against
+    # more invented words), so it is the built-in choice; Mistral is the fallback, then whatever is available.
+    for preferred in (PREFERRED_MODEL, "openrouter/mistralai/mistral-small-3.2-24b-instruct"):
+        if preferred in ids:
+            return preferred
+    return ids[0] if ids else None
 
 
 SYSTEM_PROMPT = (
