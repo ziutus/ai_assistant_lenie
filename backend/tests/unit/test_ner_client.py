@@ -212,6 +212,66 @@ class TestExtractEntities:
                     extract_entities_strict("x" * (MAX_TEXT_CHARS + 500))
 
 
+def _extract_one(text, surface, lemma, label="orgName"):
+    start = text.index(surface)
+    entity = {"text": surface, "lemma": lemma, "label": label, "start": start, "end": start + len(surface),
+              "pos": "PROPN"}
+    with patch("library.ner_client.requests.post", return_value=_response([entity])):
+        with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+            return extract_entities(text)[0]
+
+
+class TestHyphenatedCompassSpan:
+    """Doc #11263: spaCy cut "Azji Południowo-wschodniej" right before the hyphen."""
+
+    def test_asean_full_name_keeps_the_hyphenated_tail(self):
+        text = "Szczyt Stowarzyszenia Narodów Azji Południowo-wschodniej odbędzie się w Manili."
+        result = _extract_one(text, "Stowarzyszenia Narodów Azji Południowo",
+                              "stowarzyszenie Narodów Azji Południowo")
+        assert result["text"] == "Stowarzyszenia Narodów Azji Południowo-wschodniej"
+        assert result["lemma"] == "stowarzyszenie Narodów Azji Południowo-wschodniej"
+        assert text[result["start"]:result["end"]] == result["text"]
+
+    @pytest.mark.parametrize("label", ["placeName", "geogName", "orgName"])
+    @pytest.mark.parametrize("surface,tail", [
+        ("Morzu Południowo", "-chińskim"), ("Azji Południowo", "-wschodniej"), ("Afryki Północno", "-zachodniej"),
+        ("Ameryce Środkowo", "-Wschodniej"), ("Europie Zachodnio", "-wschodniej"),
+    ])
+    def test_extends_every_compass_head_and_label(self, label, surface, tail):
+        text = f"Mówił o {surface}{tail} regionie."
+        result = _extract_one(text, surface, surface, label)
+        assert result["text"] == surface + tail
+        assert result["end"] == text.index(surface) + len(surface + tail)
+
+    @pytest.mark.parametrize("text,surface", [
+        ("Azji Południowo wschodniej.", "Azji Południowo"),   # no hyphen
+        ("Azji Południowo - wschodniej.", "Azji Południowo"),  # spaced dash is not a compound
+        ("Azji Południowo-", "Azji Południowo"),               # nothing after the hyphen
+        ("Azji Południowo-2025", "Azji Południowo"),           # digits are not a word tail
+        ("Nowy-Jork", "Nowy"),                                 # not a compass head
+        ("Korea-Południowa", "Korea"),                          # head before the hyphen is not on the list
+    ])
+    def test_leaves_other_spans_untouched(self, text, surface):
+        entity = _extract_one(text, surface, surface, "placeName")
+        assert entity["text"] == surface
+        assert entity["end"] == text.index(surface) + len(surface)
+
+    def test_unrelated_lemma_is_not_extended(self):
+        text = "Azji Południowo-wschodniej"
+        result = _extract_one(text, "Azji Południowo", "Azja")
+        assert result["text"] == "Azji Południowo-wschodniej"
+        assert result["lemma"] == "Azja"
+
+    def test_aggregation_groups_the_extended_name(self):
+        text = "Stowarzyszenia Narodów Azji Południowo-wschodniej zebrało się."
+        result = _extract_one(text, "Stowarzyszenia Narodów Azji Południowo",
+                              "stowarzyszenie Narodów Azji Południowo")
+        groups = aggregate_entities_detailed([result])
+        assert ("orgName", "stowarzyszenie Narodów Azji Południowo-wschodniej") in groups or any(
+            key[0] == "orgName" and key[1].endswith("Południowo-wschodniej") for key in groups
+        )
+
+
 class TestTruncatedCountrySpan:
     def test_afp_sentence_merges_saudi_arabia_mentions(self):
         text = (

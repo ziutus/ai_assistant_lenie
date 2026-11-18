@@ -83,6 +83,32 @@ def _extend_country_span(entity: dict, window: str) -> dict:
     return entity
 
 
+# Compass combining forms that spaCy cuts off from the rest of a hyphenated name:
+# "Azji Południowo-wschodniej" arrives as the entity "Azji Południowo" (doc #11263), so
+# "Stowarzyszenia Narodów Azji Południowo-wschodniej" never reached the organization registry.
+# A closed list on purpose (like _COUNTRY_SPAN_EXTENSIONS): extend it only with a measured case.
+_HYPHEN_COMPOUND_HEADS = frozenset({"poludniowo", "polnocno", "wschodnio", "zachodnio", "srodkowo"})
+_HYPHEN_TAIL = re.compile(r"-[^\W\d_]+")
+
+
+def _extend_hyphenated_span(entity: dict, window: str) -> dict:
+    """Take the lower-case word after the hyphen into an entity cut right before it."""
+    start, end = entity.get("start"), entity.get("end")
+    if not isinstance(start, int) or not isinstance(end, int) or not 0 <= start < end <= len(window):
+        return entity
+    surface = entity.get("text") or ""
+    words = surface.split()
+    if not words or unidecode(words[-1]).lower() not in _HYPHEN_COMPOUND_HEADS:
+        return entity
+    tail = _HYPHEN_TAIL.match(window, end)
+    if tail is None:
+        return entity
+    lemma = entity.get("lemma") or ""
+    # The lemma keeps the same cut ("... Azji Południowo"): continue it with the hyphenated word.
+    extended_lemma = lemma + tail.group(0) if lemma.casefold().endswith(words[-1].casefold()) else lemma
+    return {**entity, "text": surface + tail.group(0), "lemma": extended_lemma, "end": tail.end()}
+
+
 def _service_url() -> str:
     from library.config_loader import load_config
     return (load_config().get("NER_SERVICE_URL") or DEFAULT_NER_SERVICE_URL).rstrip("/")
@@ -161,7 +187,9 @@ def _extract_entities(text: str, *, strict: bool) -> list[dict]:
             entities = resp.json().get("entities", [])
             if not isinstance(entities, list):
                 raise ValueError("NER service returned unexpected payload shape")
-            collected.extend(_extend_country_span(entity, window) for entity in entities)
+            collected.extend(
+                _extend_country_span(_extend_hyphenated_span(entity, window), window) for entity in entities
+            )
         except (requests.RequestException, ValueError) as exc:
             message = f"NER extraction failed in window {window_index}: {exc}"
             if strict:
