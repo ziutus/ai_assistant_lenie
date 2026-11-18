@@ -219,6 +219,46 @@ def _bound_source(session, organization_id: int) -> InformationSource | None:
     return session.scalar(select(InformationSource).where(InformationSource.organization_id == organization_id))
 
 
+def organization_entity_in_document(
+    session, document_id: int, organization_id: int, *, exclude_entity_id: int | None = None,
+) -> DocumentEntity | None:
+    """The ``orgName`` row of a document that is already linked to the organization, if any.
+
+    Merging an entity into an organization the document already mentions must fold the two rows:
+    renaming the source row to the organization's name would collide with the existing one
+    (unique ``document_id, entity_type, entity_text``; doc #11263: "Stowarzyszenia Narodów Azji
+    Południowo-wschodniej" into ASEAN answered HTTP 500).
+    """
+    stmt = (
+        select(DocumentEntity)
+        .join(DocumentOrganization, DocumentOrganization.document_entity_id == DocumentEntity.id)
+        .where(
+            DocumentEntity.document_id == document_id,
+            DocumentEntity.entity_type == "orgName",
+            DocumentOrganization.organization_id == organization_id,
+        )
+        .order_by(DocumentEntity.id)
+        .limit(1)
+    )
+    if exclude_entity_id is not None:
+        stmt = stmt.where(DocumentEntity.id != exclude_entity_id)
+    return session.scalar(stmt)
+
+
+def organization_entity_named(
+    session, document_id: int, entity_text: str, *, exclude_entity_id: int | None = None,
+) -> DocumentEntity | None:
+    """The ``orgName`` row of a document spelled exactly ``entity_text`` (resolved or not), if any."""
+    stmt = select(DocumentEntity).where(
+        DocumentEntity.document_id == document_id,
+        DocumentEntity.entity_type == "orgName",
+        DocumentEntity.entity_text == entity_text,
+    ).limit(1)
+    if exclude_entity_id is not None:
+        stmt = stmt.where(DocumentEntity.id != exclude_entity_id)
+    return session.scalar(stmt)
+
+
 def merge_organizations(session, source_id: int, target_id: int, *, make_global_alias: bool = True) -> dict:
     """``organization_registry.merge()`` plus what it does not know about: information sources and entity names.
 
