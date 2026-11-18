@@ -358,7 +358,7 @@ def _clean_lines_onet(lines: list[str], rules=(), host=None, hit_ids=None) -> li
 # Jedyny bezpieczny sygnał: akapit bezpośrednio poprzedzający linię
 # "x@grupawp.pl o autorze" — treść artykułu nigdy nie kończy się tuż przed
 # tym markerem, więc usunięcie poprzedzającego go akapitu nie tnie realnej treści.
-_AUTHOR_EMAIL_RE = re.compile(r'^[\w.+-]+@grupawp\.pl\s*o autorze$', re.IGNORECASE)
+_AUTHOR_EMAIL_RE = re.compile(r'^[\w.+-]+@grupawp\.pl\s*(?:więcej\s+)?o autorze$', re.IGNORECASE)
 
 
 def _remove_author_bio_paragraph(lines: list[str]) -> list[str]:

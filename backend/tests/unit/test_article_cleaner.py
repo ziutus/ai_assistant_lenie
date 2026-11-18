@@ -6,6 +6,7 @@ Pure-function tests on synthetic markdown fixtures, no DB/LLM/network.
 import datetime
 
 from library.article_cleaner import (
+    _AUTHOR_EMAIL_RE,
     _clean_lines_money,
     _clean_lines_onet,
     _clean_lines_ithardware,
@@ -28,6 +29,12 @@ LONG_PARAGRAPH = (
     "To jest długi akapit właściwej treści artykułu, który ma zdecydowanie ponad "
     "osiemdziesiąt znaków i powinien zostać zachowany po czyszczeniu."
 )
+
+
+def test_author_email_marker_accepts_optional_more_label():
+    for marker in ("x@grupawp.pl o autorze", "x@grupawp.pl więcej o autorze", "x@grupawp.plwięcej o autorze"):
+        assert _AUTHOR_EMAIL_RE.fullmatch(marker)
+    assert not _AUTHOR_EMAIL_RE.fullmatch("x@grupawp.pl więcej informacji")
 
 
 class TestStripImageMarkers:
