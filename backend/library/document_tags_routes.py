@@ -20,8 +20,21 @@ MAX_TAG_LENGTH = 100
 MAX_TAGS_PER_REQUEST = 50
 
 
+# A fixed text per error code: the response never carries text built from an exception (CodeQL py/stack-trace-exposure).
+_MESSAGES = {
+    "tag_not_text": "Tag musi być tekstem",
+    "tag_empty": "Tag nie może być pusty",
+    "tag_comma": "Tag nie może zawierać przecinka",
+    "tag_too_long": f"Tag może mieć najwyżej {MAX_TAG_LENGTH} znaków",
+    "list_not_list": "add i remove muszą być listami tagów",
+    "list_too_long": f"add i remove mogą mieć najwyżej {MAX_TAGS_PER_REQUEST} tagów",
+}
+
+
 class _BadRequest(ValueError):
-    pass
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
 
 
 def _require_writer() -> None:
@@ -32,23 +45,23 @@ def _require_writer() -> None:
 def normalize_tag(value) -> str:
     """One tag as stored: trimmed, lower case, inner whitespace collapsed; never empty, never a comma."""
     if not isinstance(value, str):
-        raise _BadRequest("Tag musi być tekstem")
+        raise _BadRequest("tag_not_text")
     tag = " ".join(value.split()).lower()
     if not tag:
-        raise _BadRequest("Tag nie może być pusty")
+        raise _BadRequest("tag_empty")
     if "," in tag:
-        raise _BadRequest("Tag nie może zawierać przecinka")
+        raise _BadRequest("tag_comma")
     if len(tag) > MAX_TAG_LENGTH:
-        raise _BadRequest(f"Tag może mieć najwyżej {MAX_TAG_LENGTH} znaków")
+        raise _BadRequest("tag_too_long")
     return tag
 
 
 def _tag_list(data: dict, key: str) -> list[str]:
     raw = data.get(key, [])
     if not isinstance(raw, list):
-        raise _BadRequest(f"{key} musi być listą tagów")
+        raise _BadRequest("list_not_list")
     if len(raw) > MAX_TAGS_PER_REQUEST:
-        raise _BadRequest(f"{key} może mieć najwyżej {MAX_TAGS_PER_REQUEST} tagów")
+        raise _BadRequest("list_too_long")
     return list(dict.fromkeys(normalize_tag(item) for item in raw))
 
 
@@ -82,7 +95,7 @@ def patch_document_tags(doc_id: int):
     try:
         add, remove = _tag_list(data, "add"), _tag_list(data, "remove")
     except _BadRequest as exc:
-        return jsonify(status="error", message=str(exc)), 400
+        return jsonify(status="error", message=_MESSAGES.get(exc.code, "Nieprawidłowe tagi")), 400
     if not add and not remove:
         return jsonify(status="error", message="Podaj co najmniej jeden tag w add lub remove"), 400
     overlap = sorted(set(add) & set(remove))

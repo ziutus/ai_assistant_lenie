@@ -76,6 +76,18 @@ def test_invalid_requests_are_rejected_without_touching_the_document(api, payloa
     session.commit.assert_not_called()
 
 
+@pytest.mark.parametrize("payload,message", [
+    ({"add": ["a,b"]}, "Tag nie może zawierać przecinka"),
+    ({"add": [" "]}, "Tag nie może być pusty"),
+    ({"add": [1]}, "Tag musi być tekstem"),
+    ({"add": "tag"}, "add i remove muszą być listami tagów"),
+])
+def test_validation_answers_a_fixed_text_per_error(api, payload, message):
+    """The text is a constant per error code, never built from the exception (CodeQL py/stack-trace-exposure)."""
+    body = api[0].patch("/document/11263/tags", json=payload).get_json()
+    assert body == {"status": "error", "message": message}
+
+
 def test_non_object_body_is_rejected(api):
     assert api[0].patch("/document/11263/tags", json=["a"]).status_code == 400
 
