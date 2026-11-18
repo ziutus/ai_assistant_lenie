@@ -48,6 +48,7 @@ from library.project_card_routes import bp as project_cards_bp
 from library.recipe_routes import bp as recipes_bp
 from library.topic_routes import bp as topics_bp
 from library.cleanup_rules_routes import bp as cleanup_rules_bp
+from library.document_tags_routes import bp as document_tags_bp
 from library.transcript_corrections_routes import bp as transcript_corrections_bp
 from library.whatsapp_groups_routes import bp as whatsapp_groups_bp
 from library.chat_routes import bp as chat_bp
@@ -158,6 +159,7 @@ app.register_blueprint(recipes_bp)
 app.register_blueprint(topics_bp)
 app.register_blueprint(cleanup_rules_bp)
 app.register_blueprint(transcript_corrections_bp)
+app.register_blueprint(document_tags_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(whatsapp_groups_bp)
 app.register_blueprint(whatsapp_sync_bp)
