@@ -186,7 +186,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T20 | Nazwisko odmieniane przymiotnikowo odrzucone przez filtr POS | spaCy oznacza jednowyrazowe nazwisko typu -owa/-ewa/-ski jako `ADJ`, a agregacja odrzuca jednowyrazowe `persName` o POS innym niż `NOUN`/`PROPN` | „Zacharowa”, „Zacharowej”, „Kowalskiej” | E033 |
 | T21 | Miejsce, którego spaCy nie zgłasza w ogóle | nazwa małą literą („królewca”) albo tylko przymiotnik w roli nazwy („obwód kaliningradzki”, „przesmyk suwalski”); żaden gazetteer nie ma czego kanonizować | „królewca”, „obwód kaliningradzki”, „przesmyk suwalski”, „enklawę Kaliningradu” | E034, E038 |
 | T22 | Błąd transkrypcji rozpoznany jako osoba | automatyczne tłumaczenie dźwięku zapisuje zwrot jako nazwę własną; nie ma tabeli poprawek transkrypcji | „Egekwo” (zamiast „ex aequo”) | E035 |
-| T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036 |
+| T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036, E060 |
 | T24 | Miasto oznaczone przez spaCy jako organizacja | rzadka pisownia + odmiana („Tela Avivwu”) nie przypomina niczego znanego, więc model typuje ją jako `orgName` | „Tela Avivwu” → Tel Awiw | E037 |
 | T25 | Błąd STT w tekście źródłowym (pisownia/odmiana frazy) | transkrypcja zapisuje frazę w złej formie gramatycznej, a tekst trafia bez zmian do czytnika i NER; dotyczy tekstu, nie encji | „pięto Achillesa” zamiast „pięta Achillesa” | E038 |
 | T26 | Reguły NER z obrazu przesłonięte starą kopią w wolumenie | plik reguł w `data/` jest ukryty pod wolumenem `lenie-ai-data` (`/app/data`) ze starą kopią, więc nowy kod czyta stare dane i wzorce z repo nie działają na produkcji | „Polacy”, „Algierczycy” jako osobne miejsca | E039 |
@@ -196,7 +196,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T29 | Nazwa miejsca w związku frazeologicznym / eufemizmie, plus ucięta paczka klasyfikatora | nazwa miejsca jest tylko elementem zwrotu („odsyła do Jerozolimy” = zabija), a klasyfikator kontekstu nie ma takiej reguły; dodatkowo paczka 20 kandydatów przekraczała limit odpowiedzi, JSON się uciął i cała paczka zachowała encje bez werdyktów (fail-open) | „odsyła do Jerozolimy niewinnych cywilów” | E042 |
 
 | T30 | Nazwa kraju odrzucona przez filtr POS | Root poprawnego spanu kraju ma błędny POS, więc wzmianka znika przed kanonikalizacją z gazetteera | „Sri Lanki”, root „Sri” z `POS=X` | E043 |
-| T31 | Miejsce zbieżne z imieniem rozpoznane jako osoba | nazwa miejsca zaczyna się od imienia („Karolina Północna”), spaCy typuje ją jako `persName` ze zepsutym lematem (męski „Północny”); relabel „gazetteer miast → miejsce” obejmował tylko `orgName`, a rejestr osób utrwalał fałszywe osoby | „Karolina Północna / Południowa” (stany USA) | E046 |
+| T31 | Miejsce zbieżne z imieniem rozpoznane jako osoba | nazwa miejsca zaczyna się od imienia („Karolina Północna”), spaCy typuje ją jako `persName` ze zepsutym lematem (męski „Północny”); relabel „gazetteer miast → miejsce” obejmował tylko `orgName`, a rejestr osób utrwalał fałszywe osoby | „Karolina Północna / Południowa” (stany USA) | E046, E059 |
 | T35 | Wykluczenie etnonimu kasuje cały kraj | reguła `ner_exclusions` na etnonim (`Amerykanin`, `placeName`, global) pasowała do lematu włączonego do grupy kraju przez `demonym_patterns`, więc `refresh_document_entities` usuwał całą grupę „Stany Zjednoczone” razem z wzmiankami nazwy kraju | „…na łaskę Stanów Zjednoczonych…” + „Amerykanie” (dok. #11237) | E051 |
 
 | T32 | Kraj odrzucony przez gazetteer krajów: brak wariantu „Republika X”, limit końcówki i niejednoznaczny pień | oficjalna nazwa z członem „Republika” nie ma wzorca, końcówka dłuższa niż 4 znaki przekracza limit `stem*`, a szeroki pień innego kraju (`dominik*`) pasuje też do pełnej nazwy (`dominikan*`), więc wynik jest niejednoznaczny i `canonical_country_name()` zwraca `None`; nazwa idzie do geokodera jak zwykłe miejsce | „Republiki Dominikańskiej”, „Dominikana” (Dominika vs Dominikana) | E047 |
@@ -878,3 +878,26 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — nowy wpis `ner_channel_glossary` id 16 (kanoniczne „zginąć”, 6 aliasów: „do Jerozolimy odeszło/odeszli/odeszły” i „odeszło/odeszli/odeszły do Jerozolimy”), bo wpis 11 ma już komplet 20 aliasów (limit). Potem `POST /website_entities` (dok. #11238 bez embeddingów, bez 409).
 - **Test regresyjny:** brak — czysto danowa poprawka, wpis w `ner_channel_glossary` dokumentuje przypadek.
 - **Status:** tylko dane bez zmiany kodu. Po odświeżeniu encji `Jerozolima` nie ma, nie ma tagu `miejsce-jerozolima`, `ner_glossary_applications` pokazuje 1 zamianę wpisu 16. Ryzyko: kanał może mieć dalsze formy eufemizmu (np. „odeszli do Jerozolimy” w innym szyku); dopisywać przy kolejnych zgłoszeniach.
+
+
+### E059 — „Gagauzję” (region w Mołdawii) jako osoba (dok. #11263, PR n/d, 2026-11-18)
+
+- **Typ encji:** persName (docelowo placeName)
+- **Kategoria:** T31 — miejsce zbieżne z imieniem rozpoznane jako osoba (tu: region autonomiczny, nie miasto).
+- **Zdanie źródłowe:** „…przekształcenie państwa w federację obejmującą Mołdawię właściwą, Nadniestrze i Gagauzję. Jeśli chodzi o Nadniestrze i Gagałuzje to prawo do… referendów niepodległościowych…”
+- **Objaw:** w `/ner/11263` encja 33177 „Gagauzja” (wariant „Gagauzję”, 1 wzmianka) jako osoba; użytkownik pytał, czy to nie miejsce w Gruzji. To autonomia w Mołdawii (geokoder: „Gagauzja, Mołdawia”). Druga wzmianka „Gagałuzje” (błąd STT) nie dała żadnej encji.
+- **Przyczyna źródłowa:** spaCy bierze odmienioną formę za imię żeńskie. Relabel „gazetteer miast → miejsce” w `ner_client.aggregate_entities_detailed` (E046) nie ma wpisu dla Gagauzji; w `ner_gazetteer_entries` nie było nic o tej nazwie, a w `document_persons` nie było linku, więc rejestr osób jej nie przyjął, ale wiersz encji został.
+- **Poprawka:** dane — `POST /ner_gazetteer` (id 23, `kind=city`, `Gagauzja`, wzorce `gagauz*`, `gagaluz*`; działa po ≤60 s bez deployu, ADR-029), `POST /website_entities/33177/to_place` (nowa encja 33260 `placeName`, geocode 1892 „Gagauzja, Mołdawia”, tag `miejsce-gagauzja`; `kraj-moldawia` był już w dokumencie).
+- **Test regresyjny:** brak — czysto danowa poprawka; wpis w gazetteerze dokumentuje przypadek. Nie sprawdzono na świeżym odświeżeniu NER, czy relabel `kind=city` faktycznie przemianuje „Gagauzję” (dokument ma tylko ręczną poprawkę).
+- **Status:** tylko dane bez zmiany kodu.
+
+### E060 — „Build” zamiast „Bild” (błąd STT nazwy gazety) jako osobna organizacja i „Bild” jako osoba (dok. #11263, PR n/d, 2026-11-18)
+
+- **Typ encji:** orgName, persName
+- **Kategoria:** T23 — rozsypane warianty jednej nazwy przez błędy transkrypcji kanału.
+- **Zdanie źródłowe:** „…z doniesień niemieckiego dziennika Build.”; „…ani build później…”; „…o czym pisał Bild. Tak, po pierwsze Bild…”
+- **Objaw:** encje 33088 `orgName` „Bild” (2), 33129 `orgName` „Build” (1) i 33167 `persName` „Bild” (1); w rejestrze org 1566 „Build” (2 dokumenty, utworzona 2026-11-02) obok org 1787 „Bild”.
+- **Przyczyna źródłowa:** auto-napisy zapisują nazwę niemieckiej gazety raz jako angielskie „Build”; każda pisownia dostaje własny wpis rejestru. Jednowyrazowe „Bild” spaCy typuje raz jako organizację, raz jako osobę. W `transcript_corrections` ani w `ner_channel_glossary` nie było reguły.
+- **Poprawka:** dane — `POST /website_entities/33167/transcription_error` i `…/33129/transcription_error` z `correct_name=Bild` (liczniki zsumowane w 33088 do 4, warianty „Build”/„Bild”, dopisany alias glosariusza kanału „Na Wschód od Bliskiego Wschodu”); `POST /organizations/1566/merge` → 1787 z `make_global_alias=false` (zwykły alias globalny „Build” zamieniałby każde „Build”, np. konferencję Microsoftu, w gazetę); jednorazowa zamiana w tekście `POST /transcript_corrections/apply` (`Build`→`Bild`, tylko ten dokument, 4 trafienia). Zamiast globalnego `ner_exclusions` dla osoby „Bild” użyto `transcription_error`, żeby nie tracić wzmianek.
+- **Test regresyjny:** brak — czysto danowa poprawka. Trwałej reguły `transcript_corrections` nie dodano: walidator odrzuca jednowyrazowe wzorce, a alias glosariusza pokrywa ten kanał w NER.
+- **Status:** tylko dane bez zmiany kodu. Zapis w dokumencie zmienił `text`; rozdziały, chunki i embeddingi nie były przebudowywane (dokument nie miał embeddingów).
