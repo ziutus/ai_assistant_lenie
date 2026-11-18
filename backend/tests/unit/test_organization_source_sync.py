@@ -273,6 +273,47 @@ def test_merging_organizations_without_sources_only_renames_entities(fake_regist
     assert row.entity_text == "Zjednoczone Emiraty Arabskie" and row.variants == ["Emiraty"]
 
 
+class RecordingSession(FakeSession):
+    """FakeSession that keeps the statements it was asked, to check what the helpers query."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.statements = []
+
+    def scalar(self, stmt):
+        self.statements.append(str(stmt))
+        return super().scalar(stmt)
+
+
+def test_entity_of_an_organization_already_mentioned_in_the_document_is_found():
+    """doc #11263: ASEAN already had its own row, so merging "Stowarzyszenia ..." into it must fold the rows."""
+    row = entity("ASEAN", document_id=11263)
+    session = RecordingSession(scalar=[row])
+
+    found = sync.organization_entity_in_document(session, 11263, 323, exclude_entity_id=33835)
+
+    assert found is row
+    sql = session.statements[0]
+    assert "document_organizations.organization_id" in sql and "document_entities.document_id" in sql
+    assert "document_entities.entity_type" in sql and "document_entities.id !=" in sql
+
+
+def test_entity_of_an_organization_without_a_row_in_the_document_is_none():
+    session = RecordingSession(scalar=[None])
+
+    assert sync.organization_entity_in_document(session, 11263, 323) is None
+    assert "document_entities.id !=" not in session.statements[0]
+
+
+def test_unresolved_row_with_the_canonical_name_is_reported_as_a_clash():
+    row = entity("ASEAN", document_id=11263)
+    session = RecordingSession(scalar=[row, None])
+
+    assert sync.organization_entity_named(session, 11263, "ASEAN", exclude_entity_id=1) is row
+    assert sync.organization_entity_named(session, 11263, "Inna") is None
+    assert "document_entities.entity_text" in session.statements[0]
+
+
 def test_merging_validates_its_arguments(fake_registry_merge):
     _, _, objects = two_orgs()
     with pytest.raises(LookupError):
