@@ -58,6 +58,22 @@ right-hand column, above the chips: "Uzupełnij brakujące opisy", "Wykryj wydar
 whole chapter width. A skipped (ad/noise/source) chapter has no right-hand column, so it keeps only its merge buttons
 in the header row. A new chapter-level button goes into `renderChapterBar`, not into the header.
 
+### Transcript spellcheck panel (`/ner/:id`)
+
+`components/TranscriptSpellcheckPanel` (a collapsed `CollapsibleSection` "Błędy transkrypcji (słownik + model)" under the page
+header, shown only for `youtube`/`movie` documents) finds speech-to-text slips such as "spóromyśliwiec" with the backend
+`POST /document/:id/transcript_spellcheck` (Morfeusz dictionary + a model, default Bielik; see `backend/library/CLAUDE.md`).
+Nothing calls the API until the section is opened (then `GET /transcript_spellcheck/model` loads the model list, shown
+with `modelOptionText`, external-provider warning, "Ustaw jako domyślny" / "Przywróć domyślny serwera" via `PUT`).
+"Znajdź podejrzane słowa" is a `dry_run` preview (no model call: suspects and what was skipped), "Zaproponuj poprawki"
+asks the model. Proposals come back UNCHECKED — the model's `confidence` is `high` even for wrong answers — with an
+editable replacement, the context with the word marked, "Odrzuć" (local) and "Zaznacz wszystkie". "Zastosuj zaznaczone (N)"
+needs an in-place two-step confirmation, then sends the rows one by one to `POST /transcript_corrections/apply`
+(`document_id` as a number, `dry_run: false`, `pattern` + `replacement`: a one-document replacement, no rule stored) and
+stops at the first failure, keeping the remaining rows ticked; `onApplied` reloads the chapters and the entity panel once
+(entities and chunks are NOT rebuilt). Errors go through `describeRequestError` / `RequestErrorDetails`. Tests:
+`transcriptSpellcheckPanel.test.tsx`, plus a visibility test in `nerChapters.test.tsx`.
+
 ### Vocabulary of events
 
 Four different things were once all called "zdarzenia"/"wydarzenia". The UI keeps them apart; do not reuse a label

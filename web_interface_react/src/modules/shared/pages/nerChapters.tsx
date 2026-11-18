@@ -1,4 +1,5 @@
 import React from "react";
+import TranscriptSpellcheckPanel from "../components/TranscriptSpellcheckPanel/transcriptSpellcheckPanel";
 import axios from "axios";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
@@ -657,6 +658,8 @@ const NerChapters = () => {
         {" · "}<Link to={`/chunks/${id}`}>Chunki →</Link>
         {" · "}<Link to={`/read/${id}`}>Czytnik</Link>
       </div>
+      {(doc?.document_type === "youtube" || doc?.document_type === "movie") &&
+        <TranscriptSpellcheckPanel key={id} docId={id} onApplied={() => { setPanelKey((c) => c + 1); setVersion((c) => c + 1); }} />}
       <div style={{ fontSize: "0.85em", color: "#64748b", marginBottom: 10 }}>
         Encje są zapisane dla całego dokumentu: poprawka (nazwa, usunięcie, wykluczenie, scalenie) dotyczy wszystkich
         rozdziałów. Rozdziały typu reklama, szum i źródła są pomijane przez NER (typ ustawisz w edytorze albo przyciskiem „Oznacz jako szum”, który usuwa też encje występujące tylko w tym rozdziale).
