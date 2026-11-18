@@ -92,6 +92,17 @@ async function open() {
 beforeEach(() => { vi.resetAllMocks(); mockApi(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it("shows spellcheck for youtube and movie, but not webpage documents", async () => {
+  for (const document_type of ["youtube", "movie", "webpage"]) {
+    mockApi({ "/website_get": { title: "Film testowy", document_type } });
+    await open();
+    await screen.findByText("Film testowy");
+    expect(Boolean(screen.queryByText("Błędy transkrypcji (słownik + model)"))).toBe(document_type !== "webpage");
+    expect(vi.mocked(axios.get).mock.calls.some(([url]) => url.endsWith("/transcript_spellcheck/model"))).toBe(false);
+    cleanup();
+  }
+});
+
 it("offers tone, period and highlighted passages in the right column of each content chapter", async () => {
   const toneRow = {
     chapter_position: 1, emotion: "gniewny", secondary_emotions: null, sentiment: "negatywne",
