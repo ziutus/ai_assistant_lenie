@@ -1,7 +1,7 @@
 import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
-import { changesInChapter, regionLabel, summaryByCountry, type RegionDictionaryInfo } from "../../utils/regionDictionary";
+import { changesInChapter, formatChapterNumbers, regionLabel, summaryByCountry, type PendingDictionaryChange, type RegionDictionaryInfo } from "../../utils/regionDictionary";
 
 // "Słownik regionu „Jemen” — w tym rozdziale zastosowano (N):" — the twin of the channel-glossary note on /ner/:id.
 // The channel glossary repairs a COPY of the text for NER; the region dictionary rewrites the stored transcript
@@ -27,6 +27,8 @@ const errorText = (failure: unknown, fallback: string) => {
 
 const ChapterRegionDictionary = ({ documentId, position, info, apiUrl, apiKey, onChanged }: Props) => {
   const [preview, setPreview] = React.useState<Preview>(null);
+  const [changes, setChanges] = React.useState<PendingDictionaryChange[] | null>(null);
+  const [selectedRuleIds, setSelectedRuleIds] = React.useState<number[]>([]);
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [refreshEntities, setRefreshEntities] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
@@ -47,6 +49,9 @@ const ChapterRegionDictionary = ({ documentId, position, info, apiUrl, apiKey, o
         { document_id: Number(documentId), dry_run: true }, { headers });
       const snippet = response.data?.fields?.text?.snippet as { before: string; after: string } | null | undefined;
       setPreview(snippet ?? null);
+      const pending = Array.isArray(response.data?.changes) ? response.data.changes as PendingDictionaryChange[] : null;
+      setChanges(pending);
+      setSelectedRuleIds(pending?.map((change) => change.rule_id) ?? []);
       setPreviewOpen(true);
     } catch (failure) {
       setError(errorText(failure, "Nie udało się przygotować podglądu poprawek."));
@@ -56,16 +61,22 @@ const ChapterRegionDictionary = ({ documentId, position, info, apiUrl, apiKey, o
   };
 
   const save = async () => {
+    if (busy || (changes !== null ? selectedRuleIds.length === 0 : !preview)) return;
+    const subset = changes !== null && selectedRuleIds.length < changes.length;
     setBusy(true); setError(""); setMessage("");
     try {
       await axios.post(`${apiUrl}/transcript_corrections/apply`,
-        { document_id: Number(documentId), dry_run: false }, { headers });
+        { document_id: Number(documentId), dry_run: false, ...(subset ? { rule_ids: selectedRuleIds } : {}) }, { headers });
       if (refreshEntities) {
         await axios.post(`${apiUrl}/website_entities`, new URLSearchParams({ id: documentId }),
           { headers: { "x-api-key": apiKey }, timeout: 150000 });
       }
       setPreviewOpen(false);
-      setMessage(refreshEntities
+      setMessage(subset
+        ? `Zapisano ${selectedRuleIds.length} z ${changes.length} zmian w tekście. Pozostałe czekają na zastosowanie.${refreshEntities
+          ? " Encje odświeżone."
+          : " Odśwież encje („Wykryj osoby i miejsca”), żeby je uwzględnić."}`
+        : refreshEntities
         ? "Poprawki zapisane w tekście, encje odświeżone."
         : "Poprawki zapisane w tekście. Odśwież encje („Wykryj osoby i miejsca”), żeby je uwzględnić.");
       onChanged();
@@ -110,7 +121,7 @@ const ChapterRegionDictionary = ({ documentId, position, info, apiUrl, apiKey, o
                         <li key={`${line.original}→${line.replacement}`}>
                           {line.original} → <strong>{line.replacement}</strong> ×{line.occurrences}
                           <small style={{ color: "#64748b" }}>
-                            {" "}(rozdz. {line.chapters.map((chapter) => (chapter === 0 ? "wstęp" : String(chapter))).join(", ")})
+                            {" "}(rozdz. {formatChapterNumbers(line.chapters)})
                           </small>
                         </li>
                       ))}
@@ -129,15 +140,46 @@ const ChapterRegionDictionary = ({ documentId, position, info, apiUrl, apiKey, o
         )}
         {previewOpen && (
           <div role="group" aria-label="Podgląd poprawek słownika regionu" style={{ marginTop: 6, padding: 8, background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 6 }}>
-            <small>Podgląd (nic jeszcze nie zapisano). Zmiana dotyczy całego dokumentu, nie tylko tego rozdziału; pierwsza zmiana:</small>
-            {preview
-              ? <pre style={{ whiteSpace: "pre-wrap", margin: "4px 0" }}>{`przed: …${preview.before}…\npo:    …${preview.after}…`}</pre>
-              : <p style={{ margin: "4px 0" }}>Brak zmian do zapisania.</p>}
+            <small>Podgląd (nic jeszcze nie zapisano). Zapis dotyczy całego dokumentu, nie tylko tego rozdziału.</small>
+            {changes !== null
+              ? changes.length > 0
+                ? <>
+                    <div>
+                      <button type="button" disabled={busy} onClick={() => setSelectedRuleIds(changes.map((change) => change.rule_id))}>Zaznacz wszystkie</button>{" "}
+                      <button type="button" disabled={busy} onClick={() => setSelectedRuleIds([])}>Odznacz wszystkie</button>
+                    </div>
+                    <ul aria-label="Oczekujące zmiany słownika regionu">
+                      {changes.map((change) => (
+                        <li key={change.rule_id}>
+                          <input type="checkbox" aria-label={`Zapisz zmianę ${change.pattern} → ${change.replacement}`}
+                            disabled={busy} checked={selectedRuleIds.includes(change.rule_id)}
+                            onChange={(event) => setSelectedRuleIds((selected) => event.target.checked
+                              ? [...selected, change.rule_id]
+                              : selected.filter((id) => id !== change.rule_id))} />
+                          {change.wordings.map((wording) => (
+                            <div key={`${wording.original}→${wording.replacement}`}>
+                              {wording.original} → <strong>{wording.replacement}</strong> ×{wording.occurrences}
+                            </div>
+                          ))}
+                          <small>(rozdz. {formatChapterNumbers(change.chapters)})</small>
+                        </li>
+                      ))}
+                    </ul>
+                    {selectedRuleIds.length === 0 && <p>Zaznacz co najmniej jedną zmianę.</p>}
+                  </>
+                : <p style={{ margin: "4px 0" }}>Brak zmian do zapisania.</p>
+              : preview
+                ? <><small> Pierwsza zmiana:</small><pre style={{ whiteSpace: "pre-wrap", margin: "4px 0" }}>{`przed: …${preview.before}…\npo:    …${preview.after}…`}</pre></>
+                : <p style={{ margin: "4px 0" }}>Brak zmian do zapisania.</p>}
             <label style={{ display: "block", marginBottom: 6 }}>
               <input type="checkbox" checked={refreshEntities} onChange={(event) => setRefreshEntities(event.target.checked)} />
               {" "}Odśwież encje po zapisie (może potrwać do 2 minut)
             </label>
-            <button type="button" disabled={busy || !preview} onClick={save}>Zapisz zmiany w tekście</button>{" "}
+            {changes !== null
+              ? changes.length > 0 && <button type="button" disabled={busy || selectedRuleIds.length === 0} onClick={save}>
+                  Zapisz wybrane zmiany ({selectedRuleIds.length} z {changes.length})
+                </button>
+              : <button type="button" disabled={busy || !preview} onClick={save}>Zapisz zmiany w tekście</button>}{" "}
             <button type="button" disabled={busy} onClick={() => setPreviewOpen(false)}>Anuluj</button>
             <div><small style={{ color: "#64748b" }}>Chunki i embeddingi nie są przebudowywane.</small></div>
           </div>

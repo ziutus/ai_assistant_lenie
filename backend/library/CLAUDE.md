@@ -465,6 +465,15 @@ changes — a match whose text already equals the replacement ("Huti" for `huti`
 and answers `total` (without `limit` it still returns every rule), `scope` accepts a comma list (`global,author`).
 Tests: `test_transcript_corrections_applications.py`.
 
+**Choosing which pending changes to save.** `POST /transcript_corrections/apply` (stored rules, no `pattern`) also answers
+`changes`: the REAL changes grouped per rule — `{rule_id, scope, country_slug, pattern, replacement, occurrences, chapters,
+wordings: [{original, replacement, occurrences}]}`, chapters numbered like `/ner/:id` (0 = before the first `##`), sorted by
+first chapter then rule id; a no-op match is not listed. With `dry_run: true` it is the review list; the optional
+`rule_ids` (a non-empty list of up to 500 positive integers, 400 otherwise, and 400 together with a one-off `pattern`)
+limits the run to those rules, so the reviewer can save part of the list and leave the rest pending (an unknown or
+inactive id simply matches nothing). Audit rows are written only for the rules that ran. The `pending_changes` count of
+`GET /document/<id>/transcript_corrections` counts matches, not rules. Tests: `test_transcript_corrections_applications.py`.
+
 `youtube_processing._store_transcript_text` is the ingestion hook for captions
 (with or without chapters, including language mismatch) and completed AssemblyAI
 jobs. It corrects text and any existing text_md before persistence; raw transcripts
