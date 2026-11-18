@@ -369,6 +369,46 @@ def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> st
     return tag
 
 
+def _supported_place_slugs(entities) -> set[str]:
+    """Slugs of the miejsce-* tags the given LIVE place entities justify.
+
+    A tag is supported by the entity's own name or, once resolved, by the geocoder's canonical spelling —
+    the two forms verify_document_places()/add_place_tag() write. Surface variants never support a tag
+    ("Manili" next to "Manila" must not keep miejsce-manili alive). Figurative, rejected and held-for-review
+    places justify nothing, exactly as they never get a tag in the first place.
+    """
+    slugs: set[str] = set()
+    for ent in entities:
+        if ent.entity_type not in PLACE_ENTITY_TYPES or ent.relevance == "figurative":
+            continue
+        if ent.place_verification_status in ("needs_review", "rejected"):
+            continue
+        slugs.add(_slugify(ent.entity_text or ""))
+        geo = ent.geocode
+        if geo is not None and geo.resolved:
+            slugs.add(_slugify(canonical_place_name(ent.entity_text, geo.display_name or "")))
+    slugs.discard("")
+    return slugs
+
+
+def prune_unsupported_place_tags(doc, entities) -> list[str]:
+    """Drop miejsce-* tags that no live place entity of the document justifies; returns the removed tags.
+
+    NER refresh rebuilds the entity rows and verify_document_places() only ADDS tags, so a tag written for a
+    name that no longer exists ("Manili" after the text was corrected to "Manila", doc #11263) stayed forever.
+    miejsce-* tags are derived data — reopen_editing() already clears all of them — so this keeps them in step.
+    Nothing is pruned for a document without place entities (an empty extraction must not wipe the tags).
+    """
+    if not entities:
+        return []
+    tags = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+    supported = _supported_place_slugs(entities)
+    stale = [t for t in tags if t.startswith("miejsce-") and t[len("miejsce-"):] not in supported]
+    if stale:
+        doc.tags = ",".join(t for t in tags if t not in stale)
+    return stale
+
+
 def _reclassify_as_organization(session, doc, ent: DocumentEntity) -> None:
     """Retype a place entity used metonymically for the institution housed
     there (doc #9345's "Na Kremlu rozumieją, że..." — Russia's leadership,
@@ -573,7 +613,10 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                 resolved_names.append(resolved_name)
 
         candidates = [ent for ent in candidates if id(ent) not in unavailable_ids]
+        before_merge = candidates
         candidates = _canonicalize_and_merge_places(session, candidates, existing=entities)
+        # Rows merged into another one are deleted: they must not keep a tag alive at the end.
+        merged_away = {id(ent) for ent in before_merge} - {id(ent) for ent in candidates}
 
         # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
         groups: dict[str, dict] = {}
@@ -709,8 +752,14 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                         len(organization_texts), doc.id, organization_texts,
                     )
 
+        pruned: list[str] = []
+        if not unavailable_ids:
+            # With the geocoder down some rows are unresolved only for now: their canonical tag may be missing
+            # from the supported set, so a pruning pass would delete good tags. Retried on the next refresh.
+            pruned = prune_unsupported_place_tags(doc, [ent for ent in entities if id(ent) not in merged_away])
+
         logger.info(
-            "place verification doc=%s: %d geocoded, %d resolved, tags: %s",
-            doc.id, checked, len(resolved_names), tagged or "-",
+            "place verification doc=%s: %d geocoded, %d resolved, tags: %s, pruned: %s",
+            doc.id, checked, len(resolved_names), tagged or "-", pruned or "-",
         )
         return {"checked": checked, "resolved": resolved_names, "tagged": tagged}
