@@ -280,6 +280,8 @@ const ChapterEventsPanel = ({
   const headers = React.useMemo(() => ({ "x-api-key": apiKey }), [apiKey]);
   const modelState = useChapterModel(apiUrl, apiKey);
   const [busy, setBusy] = React.useState(false);
+  // "Analogie historyczne": the model may supply the year of an event the text only names ("Monachium 38").
+  const [knowledge, setKnowledge] = React.useState(false);
   const [events, setEvents] = React.useState<EventProposal[] | null>(null);
   const [registrySources, setRegistrySources] = React.useState<RegistrySource[]>([]);
   const [note, setNote] = React.useState("");
@@ -345,10 +347,10 @@ const ChapterEventsPanel = ({
     try {
       const { data } = await axios.post<{
         events: EventProposal[]; model: string; rejected_without_quote: number; rejected_without_date: number;
-        publications_as_sources?: number; skipped_ignored?: number;
+        publications_as_sources?: number; skipped_ignored?: number; knowledge_dates?: number;
       }>(
         `${apiUrl}/document/${docId}/chapter/${position}/detect_events`,
-        modelState.model ? { model: modelState.model } : {},
+        { ...(modelState.model ? { model: modelState.model } : {}), ...(knowledge ? { knowledge: true } : {}) },
         { headers, timeout: 240000 },
       );
       // The new proposals replace the earlier ones of this chapter; dismissed ones are kept (the server leaves them).
@@ -363,6 +365,8 @@ const ChapterEventsPanel = ({
           ? `; ${publications} publikacji zapisano jako źródła informacji do potwierdzenia, bo to nie wydarzenia`
           : "")
         + ((data.skipped_ignored ?? 0) > 0 ? `; pominięto ${data.skipped_ignored} zignorowanych fragmentów` : "")
+        + ((data.knowledge_dates ?? 0) > 0
+          ? `; ${data.knowledge_dates} lat ustalił model z własnej wiedzy (oznaczone w opisie, sprawdź je)` : "")
         + ".");
     } catch (err) {
       setError(describeRequestError(err, `Wykrywanie wydarzeń w rozdziale ${position}`, {
@@ -408,6 +412,15 @@ const ChapterEventsPanel = ({
             Twojej zgodzie doda je do rejestru wydarzeń.
           </SkillHint>
           <ChapterModelPicker state={modelState} summary="Model wykrywania" disabled={busy} />
+          <label style={{ display: "block", margin: "4px 0" }}
+            title="Tekst często tylko nazywa wydarzenie historyczne („Monachium 38”, „kongres westfalski”). W tym trybie model może podać jego rok ze swojej wiedzy; taki wpis ma to zaznaczone w opisie.">
+            <input type="checkbox" checked={knowledge} disabled={busy}
+              onChange={(event) => setKnowledge(event.target.checked)} />
+            {" "}Analogie historyczne (rok z wiedzy modelu)
+            <small style={{ display: "block", color: "#64748b" }}>
+              Najlepiej z modelem frontier wybranym w „Model wykrywania”; mały model może pomylić rok.
+            </small>
+          </label>
           {note && <p role="status" style={{ color: "#166534", margin: "4px 0" }}>{note}</p>}
           {error && (
             <div role="alert" style={{ color: "#a33" }}>

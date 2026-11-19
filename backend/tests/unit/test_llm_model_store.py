@@ -124,6 +124,18 @@ def _removed_model_ids():
     return {row[0] for row in module.REMOVED}
 
 
+def _added_models():
+    """(model_id, label) pairs the allowlist gained after the seed migrations were written (d8a2f5c1e963)."""
+    path = next(pathlib.Path(__file__).resolve().parents[2].glob("alembic/versions/d8a2f5c1e963_*.py"))
+    spec = importlib.util.spec_from_file_location("llm_models_added_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError:
+        pytest.skip("alembic is not installed")
+    return list(module.ADDED)
+
+
 def test_removed_models_are_gone_from_the_code_seed():
     assert not _removed_model_ids() & {m.model_id for m in store.SEED_MODELS}
 
@@ -140,6 +152,7 @@ def test_migration_seed_matches_the_code_seed():
                            datetime.date.fromisoformat(retires_on) if retires_on else None, note)
                 for model_id, label, provider, external, verified, status, retires_on, note in module.SEED
                 if model_id not in _removed_model_ids()]
+    migrated += [ModelEntry(model_id, label, "openrouter", external=True) for model_id, label in _added_models()]
     # The first migration predates the token limits (added by a4c8e2f6b913): compare everything else.
     without_limits = [ModelEntry(m.model_id, m.label, m.provider, m.external, m.verified, m.status, m.retires_on, m.note)
                       for m in store.SEED_MODELS]

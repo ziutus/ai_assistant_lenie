@@ -393,3 +393,107 @@ def test_document_events_endpoint(monkeypatch):
             "ignored": False,
         }
     ]
+
+
+# --- knowledge mode: the model supplies the year of a historical event the text only names -------------------------
+
+MUNICH_FRAGMENT = "Wall Street Journal proponuje raczej Monachium 38, czyli porozumienie Londynu, Paryża i Berlina."
+
+
+def _ask_returning(monkeypatch, items):
+    prompts = []
+
+    def fake_ask(prompt, *_args, **_kwargs):
+        prompts.append(prompt)
+        return SimpleNamespace(response_text=json.dumps(items), usage=fake_usage())
+
+    monkeypatch.setattr(timeline_events, "ai_ask", fake_ask)
+    return prompts
+
+
+def _munich(**extra):
+    return {
+        "type": "event", "date_text": "Monachium 38", "description": "Porozumienie monachijskie.",
+        "quote": "proponuje raczej Monachium 38", **extra,
+    }
+
+
+def test_default_prompt_forbids_outside_knowledge_and_has_no_year_field():
+    prompt = timeline_events._timeline_prompt("Tekst.")
+
+    assert "Nie dodawaj wiedzy zewnętrznej ani nie zgaduj dat." in prompt
+    assert '"year"' not in prompt
+    assert timeline_events.KNOWLEDGE_RULE not in prompt
+
+
+def test_knowledge_prompt_allows_the_year_from_the_model_and_asks_for_the_field():
+    prompt = timeline_events._timeline_prompt("Tekst.", knowledge=True)
+
+    assert timeline_events.KNOWLEDGE_RULE in prompt
+    assert '"year": 1938 lub null' in prompt
+    assert "Nie dodawaj wiedzy zewnętrznej ani nie zgaduj dat." not in prompt
+    assert "Poza ustalaniem roku" in prompt
+
+
+def test_without_knowledge_mode_a_named_event_without_a_year_is_rejected(monkeypatch):
+    _ask_returning(monkeypatch, [_munich(year=1938)])
+
+    events, report = timeline_events.extract_fragment_events(MUNICH_FRAGMENT, 1, "model")
+
+    assert events == []
+    assert report["rejected_without_date"] == 1 and report["knowledge_dates"] == 0
+
+
+def test_knowledge_mode_takes_the_year_from_the_model_and_says_so(monkeypatch):
+    prompts = _ask_returning(monkeypatch, [_munich(year=1938)])
+
+    events, report = timeline_events.extract_fragment_events(MUNICH_FRAGMENT, 1, "model", knowledge=True)
+
+    assert timeline_events.KNOWLEDGE_RULE in prompts[0]
+    assert len(events) == 1
+    event = events[0]
+    assert event["sort_year"] == 1938 and event["date_precision"] == "year"
+    assert event["event_date"] == datetime.date(1938, 1, 1) and event["event_date_end"] == datetime.date(1938, 12, 31)
+    assert event["date_text"] == "Monachium 38"  # the wording of the text stays
+    assert event["description"].endswith(timeline_events.KNOWLEDGE_YEAR_NOTE)
+    assert report["knowledge_dates"] == 1 and report["rejected_without_date"] == 0
+
+
+@pytest.mark.parametrize("year", [None, "", "około 1938", 3, 99999, True, 1.5, [1938]])
+def test_knowledge_mode_ignores_an_unusable_year(monkeypatch, year):
+    _ask_returning(monkeypatch, [_munich(year=year)])
+
+    events, report = timeline_events.extract_fragment_events(MUNICH_FRAGMENT, 1, "model", knowledge=True)
+
+    assert events == []
+    assert report["rejected_without_date"] == 1 and report["knowledge_dates"] == 0
+
+
+def test_a_date_read_from_the_text_wins_over_the_models_year(monkeypatch):
+    fragment = "To jest kongres westfalski 1648 rok czy właśnie pokój westfalski."
+    _ask_returning(monkeypatch, [{
+        "type": "event", "date_text": "1648 rok", "description": "Kongres westfalski.",
+        "quote": "kongres westfalski 1648 rok", "year": 1700,
+    }])
+
+    events, report = timeline_events.extract_fragment_events(fragment, 1, "model", knowledge=True)
+
+    assert [e["sort_year"] for e in events] == [1648]
+    assert timeline_events.KNOWLEDGE_YEAR_NOTE not in events[0]["description"]
+    assert report["knowledge_dates"] == 0
+
+
+def test_a_year_from_the_model_still_needs_a_verbatim_quote(monkeypatch):
+    _ask_returning(monkeypatch, [_munich(year=1938, quote="cytat, którego nie ma w tekście")])
+
+    events, report = timeline_events.extract_fragment_events(MUNICH_FRAGMENT, 1, "model", knowledge=True)
+
+    assert events == [] and report["rejected_without_quote"] == 1
+
+
+def test_an_empty_date_text_falls_back_to_the_year_for_display(monkeypatch):
+    _ask_returning(monkeypatch, [_munich(date_text="", year=1938)])
+
+    events, _report = timeline_events.extract_fragment_events(MUNICH_FRAGMENT, 1, "model", knowledge=True)
+
+    assert events[0]["date_text"] == "1938"

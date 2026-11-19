@@ -73,6 +73,9 @@ SEED_MODELS: tuple[ModelEntry, ...] = (
     ),
     ModelEntry("openrouter/google/gemma-3-27b-it", "Gemma 3 27B (OpenRouter)", "openrouter", external=True),
     ModelEntry("openrouter/meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B (OpenRouter)", "openrouter", external=True),
+    # Frontier models for analyses that need the model's own knowledge (migration d8a2f5c1e963).
+    ModelEntry("openrouter/anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5 (OpenRouter)", "openrouter", external=True),
+    ModelEntry("openrouter/anthropic/claude-fable-5.2", "Claude Fable 5.2 (OpenRouter)", "openrouter", external=True),
 )
 
 
