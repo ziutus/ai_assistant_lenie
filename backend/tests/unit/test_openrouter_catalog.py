@@ -108,7 +108,7 @@ def test_registry_reports_unknown_when_catalog_is_unreachable():
     assert mini["input_price_per_million"] is None and mini["listed_by_provider"] is None
 
 
-def test_registry_uses_llm_pricing_rows_for_other_providers():
+def test_registry_uses_llm_pricing_rows_for_other_providers(all_provider_models):
     from library.llm_model_registry import selectable_models
 
     database = {("cloudferro", "Bielik-11B-v3.0-Instruct"): (Decimal("0.56"), Decimal("0.56"), "EUR")}
@@ -120,7 +120,7 @@ def test_registry_uses_llm_pricing_rows_for_other_providers():
     assert items["gpt-4o-mini"]["input_price_per_million"] is None  # no row -> unknown, not a guess
 
 
-def test_registry_flags_json_schema_support_per_provider():
+def test_registry_flags_json_schema_support_per_provider(all_provider_models):
     from library.llm_model_registry import selectable_models
 
     p1, p2, p3 = _registry_with(catalog_module.parse_catalog(PAYLOAD))

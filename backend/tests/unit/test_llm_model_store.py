@@ -112,16 +112,27 @@ class TestCheckModel:
         assert "status" in problem
 
 
-def _removed_model_ids():
-    """Ids dropped from the allowlist after the seed migrations were written (b3f7d1a9c248)."""
-    path = next(pathlib.Path(__file__).resolve().parents[2].glob("alembic/versions/b3f7d1a9c248_*.py"))
-    spec = importlib.util.spec_from_file_location("llm_models_removal_migration", path)
+def _load_migration(revision):
+    path = next(pathlib.Path(__file__).resolve().parents[2].glob(f"alembic/versions/{revision}_*.py"))
+    spec = importlib.util.spec_from_file_location(f"llm_models_migration_{revision}", path)
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
     except ImportError:
         pytest.skip("alembic is not installed")
-    return {row[0] for row in module.REMOVED}
+    return module
+
+
+def _removed_model_ids():
+    """Ids dropped from the allowlist after the seed migrations were written (b3f7d1a9c248, f6b1a9c4d7e2)."""
+    return {row[0] for row in _load_migration("b3f7d1a9c248").REMOVED} | {
+        row[0] for row in _load_migration("f6b1a9c4d7e2").REMOVED
+    }
+
+
+def _retired_model_ids():
+    """Ids hidden (status retired) by f6b1a9c4d7e2: direct providers other than CloudFerro."""
+    return set(_load_migration("f6b1a9c4d7e2").RETIRED)
 
 
 def _added_models():
@@ -136,6 +147,12 @@ def _added_models():
     return list(module.ADDED)
 
 
+def test_only_openrouter_and_cloudferro_models_are_visible_in_the_seed():
+    visible = {m.model_id: m.provider for m in store.SEED_MODELS if m.status != "retired"}
+    assert set(visible.values()) == {"openrouter", "cloudferro"}
+    assert _retired_model_ids() == {m.model_id for m in store.SEED_MODELS if m.status == "retired"}
+
+
 def test_removed_models_are_gone_from_the_code_seed():
     assert not _removed_model_ids() & {m.model_id for m in store.SEED_MODELS}
 
@@ -148,7 +165,9 @@ def test_migration_seed_matches_the_code_seed():
         spec.loader.exec_module(module)
     except ImportError:
         pytest.skip("alembic is not installed")
-    migrated = [ModelEntry(model_id, label, provider, external, verified, status,
+    retired = _retired_model_ids()
+    migrated = [ModelEntry(model_id, label, provider, external, verified,
+                           "retired" if model_id in retired else status,
                            datetime.date.fromisoformat(retires_on) if retires_on else None, note)
                 for model_id, label, provider, external, verified, status, retires_on, note in module.SEED
                 if model_id not in _removed_model_ids()]

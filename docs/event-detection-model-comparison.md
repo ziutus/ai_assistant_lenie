@@ -60,7 +60,9 @@ przywołuje wydarzenie samą nazwą („Monachium 38”, „Jałta”, „kongre
 
 Pięć wpisów z listy wyboru **nie dało się uruchomić**: GPT-4o mini bezpośrednio u OpenAI (brak kredytów), oba Gemini na Vertex AI
 (wygasła autoryzacja `gcloud`), Bielik v2.3 (CloudFerro odpowiada 404) i Qwen 2.5 (wycofany z OpenRouter). Dwa ostatnie usunięto z
-konfiguracji w tej samej zmianie; pozostałe trzy wymagają tylko uzupełnienia kredytów lub logowania.
+konfiguracji w tej samej zmianie. Pozostałe trzy (OpenAI bezpośrednio i oba Gemini na Vertex) ukryto 2026-11-19 (`retired`), a wycofany
+Gemini 2.5 Flash Lite przez OpenRouter usunięto: na razie zostają tylko dostawcy OpenRouter i CloudFerro, żeby łatwiej kontrolować wydatki.
+Przywrócenie któregoś to jedno `PATCH /llm_models/<id>` z `status: active`.
 
 ### Klasy porażek
 
