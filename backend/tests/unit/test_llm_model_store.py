@@ -112,6 +112,22 @@ class TestCheckModel:
         assert "status" in problem
 
 
+def _removed_model_ids():
+    """Ids dropped from the allowlist after the seed migrations were written (b3f7d1a9c248)."""
+    path = next(pathlib.Path(__file__).resolve().parents[2].glob("alembic/versions/b3f7d1a9c248_*.py"))
+    spec = importlib.util.spec_from_file_location("llm_models_removal_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError:
+        pytest.skip("alembic is not installed")
+    return {row[0] for row in module.REMOVED}
+
+
+def test_removed_models_are_gone_from_the_code_seed():
+    assert not _removed_model_ids() & {m.model_id for m in store.SEED_MODELS}
+
+
 def test_migration_seed_matches_the_code_seed():
     path = next(pathlib.Path(__file__).resolve().parents[2].glob("alembic/versions/f2c8a4d6b190_*.py"))
     spec = importlib.util.spec_from_file_location("llm_models_migration", path)
@@ -122,7 +138,8 @@ def test_migration_seed_matches_the_code_seed():
         pytest.skip("alembic is not installed")
     migrated = [ModelEntry(model_id, label, provider, external, verified, status,
                            datetime.date.fromisoformat(retires_on) if retires_on else None, note)
-                for model_id, label, provider, external, verified, status, retires_on, note in module.SEED]
+                for model_id, label, provider, external, verified, status, retires_on, note in module.SEED
+                if model_id not in _removed_model_ids()]
     # The first migration predates the token limits (added by a4c8e2f6b913): compare everything else.
     without_limits = [ModelEntry(m.model_id, m.label, m.provider, m.external, m.verified, m.status, m.retires_on, m.note)
                       for m in store.SEED_MODELS]
@@ -138,7 +155,9 @@ def test_limits_migration_matches_the_code_seed():
     except ImportError:
         pytest.skip("alembic is not installed")
     seeded = {m.model_id: (m.context_length, m.max_output_tokens) for m in store.SEED_MODELS if m.context_length}
-    assert {model_id: (context, output) for model_id, context, output in module.LIMITS} == seeded
+    removed = _removed_model_ids()
+    assert {model_id: (context, output) for model_id, context, output in module.LIMITS
+            if model_id not in removed} == seeded
     # every direct (non-OpenRouter) model of the seed has a window; OpenRouter ones read it from the live catalog
     assert all(m.context_length for m in store.SEED_MODELS if m.provider != "openrouter")
 

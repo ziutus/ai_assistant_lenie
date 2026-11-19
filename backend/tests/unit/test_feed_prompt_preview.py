@@ -41,7 +41,7 @@ def test_cheap_openrouter_models_are_offered_only_while_openrouter_is_enabled(mo
 def test_openrouter_model_without_structured_outputs_is_dropped_unknown_is_kept(monkeypatch):
     monkeypatch.setattr(registry, "_openrouter_enabled", lambda: True)
     monkeypatch.setattr(registry, "_database_prices", lambda _models: {})
-    flags = {"openrouter/meta-llama/llama-3.1-8b-instruct": False, "openrouter/qwen/qwen-2.5-7b-instruct": None}
+    flags = {"openrouter/meta-llama/llama-3.1-8b-instruct": False, "openrouter/google/gemma-3-27b-it": None}
 
     def details(model_id):
         return {**registry._empty_details(), "supports_structured_outputs": flags.get(model_id, True)}
@@ -49,7 +49,7 @@ def test_openrouter_model_without_structured_outputs_is_dropped_unknown_is_kept(
     monkeypatch.setattr(registry, "_openrouter_details", details)
     ids = [item["id"] for item in registry.selectable_models(TASK)]
     assert "openrouter/meta-llama/llama-3.1-8b-instruct" not in ids
-    assert "openrouter/qwen/qwen-2.5-7b-instruct" in ids  # catalog unreachable = unknown, not "unsupported"
+    assert "openrouter/google/gemma-3-27b-it" in ids  # catalog unreachable = unknown, not "unsupported"
     assert "openrouter/meta-llama/llama-3.1-8b-instruct" in [item["id"] for item in registry.selectable_models("tool_tags")]
 
 

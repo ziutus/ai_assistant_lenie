@@ -252,7 +252,7 @@ Supported models:
 - **OpenAI**: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-mini
 - **AWS Bedrock**: amazon.titan-tg1-large, amazon.nova-micro, amazon.nova-pro
 - **Google Vertex AI**: gemini-3.1-flash-lite (cheapest), gemini-3.5-flash-lite
-- **CloudFerro**: Bielik-11B-v2.3-Instruct, Bielik-11B-v3.0-Instruct (Polish)
+- **CloudFerro**: Bielik-11B-v3.0-Instruct (Polish; v2.3 was removed 2026-11-19 — CloudFerro no longer serves it)
 - **ARK Labs**: `arklabs/<model>` (stateless/stateful GPU session variant)
 
 Documents and prompts stay in their source language; there is no automatic translation helper or pipeline.

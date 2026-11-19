@@ -870,9 +870,9 @@ class TestContactAddresses:
         client, *_ = address_api
         ask = MagicMock(return_value=SimpleNamespace(response_text="{}"))
         monkeypatch.setattr("library.address_parsing.ai_ask", ask)
-        monkeypatch.setattr("library.address_parsing.load_config", lambda: {"ADDRESS_PARSE_MODEL": "Bielik-11B-v2.3-Instruct"})
+        monkeypatch.setattr("library.address_parsing.load_config", lambda: {"ADDRESS_PARSE_MODEL": "Bielik-11B-v3.0-Instruct"})
         assert client.post("/addresses/parse", json={"text": "test"}).status_code == 200
-        assert ask.call_args.kwargs["model"] == "Bielik-11B-v2.3-Instruct"
+        assert ask.call_args.kwargs["model"] == "Bielik-11B-v3.0-Instruct"
 
 
 def _make_category(id_=1, name="Osoba prywatna"):

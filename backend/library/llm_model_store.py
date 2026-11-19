@@ -55,8 +55,6 @@ class ModelEntry:
 SEED_MODELS: tuple[ModelEntry, ...] = (
     ModelEntry("Bielik-11B-v3.0-Instruct", "Bielik 11B v3.0 (CloudFerro)", "cloudferro", verified=True,
                context_length=32768),
-    ModelEntry("Bielik-11B-v2.3-Instruct", "Bielik 11B v2.3 (CloudFerro)", "cloudferro", verified=True,
-               context_length=32768),
     ModelEntry("gpt-4o-mini", "GPT-4o mini (OpenAI)", "openai", verified=True,
                context_length=128000, max_output_tokens=16384),
     ModelEntry("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite (Google Vertex)", "google-vertexai", verified=True,
@@ -75,7 +73,6 @@ SEED_MODELS: tuple[ModelEntry, ...] = (
     ),
     ModelEntry("openrouter/google/gemma-3-27b-it", "Gemma 3 27B (OpenRouter)", "openrouter", external=True),
     ModelEntry("openrouter/meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B (OpenRouter)", "openrouter", external=True),
-    ModelEntry("openrouter/qwen/qwen-2.5-7b-instruct", "Qwen 2.5 7B (OpenRouter)", "openrouter", external=True),
 )
 
 
