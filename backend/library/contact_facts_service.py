@@ -1,4 +1,4 @@
-﻿"""Resolve sourced contact facts and project the selected values into legacy caches."""
+"""Resolve sourced contact facts and project the selected values into legacy caches."""
 import datetime as dt
 import hashlib
 import json

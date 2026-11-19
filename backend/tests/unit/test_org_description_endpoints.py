@@ -25,6 +25,8 @@ def _session(entity_type="orgName"):
     document = SimpleNamespace(text_md=TEXT, text=TEXT, title="Dok")
     session = MagicMock()
     session.get.side_effect = lambda model, key: entity if key == 7 else document
+    # The API-key lookup goes through the same session: a key without a deadline (a MagicMock deadline cannot be compared).
+    session.execute.return_value.scalar_one_or_none.return_value.expires_at = None
     return session
 
 

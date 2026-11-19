@@ -12,6 +12,7 @@ transitively imports boto3 via text_detect_language) does not fail
 when botocore/s3transfer are broken or unavailable.
 """
 
+import importlib
 import sys
 from types import ModuleType
 from unittest.mock import MagicMock
@@ -28,8 +29,12 @@ _BOTO_MODS = [
     "botocore", "botocore.exceptions", "botocore.compat",
     "s3transfer",
 ]
+# Only where the real module is not installed: a stub left in sys.modules at collection time replaces the real
+# boto3.dynamodb.conditions for every test collected after this file.
 for _mod_name in _BOTO_MODS:
-    if _mod_name not in sys.modules:
+    try:
+        importlib.import_module(_mod_name)
+    except ImportError:
         _mock_mod = MagicMock(spec=ModuleType)
         if _mod_name == "botocore.exceptions":
             _mock_mod.ClientError = type("ClientError", (Exception,), {})

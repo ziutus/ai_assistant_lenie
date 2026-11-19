@@ -95,8 +95,8 @@ def test_registry_fills_openrouter_limits_and_prices_from_catalog():
     assert mini["context_length"] == 128000 and mini["max_output_tokens"] == 16384
     assert mini["listed_by_provider"] is True
     # Not in the payload -> the catalog no longer knows it.
-    assert items["openrouter/qwen/qwen-2.5-7b-instruct"]["listed_by_provider"] is False
-    assert items["openrouter/qwen/qwen-2.5-7b-instruct"]["input_price_per_million"] is None
+    assert items["openrouter/google/gemma-3-27b-it"]["listed_by_provider"] is False
+    assert items["openrouter/google/gemma-3-27b-it"]["input_price_per_million"] is None
 
 
 def test_registry_reports_unknown_when_catalog_is_unreachable():
@@ -108,7 +108,7 @@ def test_registry_reports_unknown_when_catalog_is_unreachable():
     assert mini["input_price_per_million"] is None and mini["listed_by_provider"] is None
 
 
-def test_registry_uses_llm_pricing_rows_for_other_providers():
+def test_registry_uses_llm_pricing_rows_for_other_providers(all_provider_models):
     from library.llm_model_registry import selectable_models
 
     database = {("cloudferro", "Bielik-11B-v3.0-Instruct"): (Decimal("0.56"), Decimal("0.56"), "EUR")}
@@ -120,7 +120,7 @@ def test_registry_uses_llm_pricing_rows_for_other_providers():
     assert items["gpt-4o-mini"]["input_price_per_million"] is None  # no row -> unknown, not a guess
 
 
-def test_registry_flags_json_schema_support_per_provider():
+def test_registry_flags_json_schema_support_per_provider(all_provider_models):
     from library.llm_model_registry import selectable_models
 
     p1, p2, p3 = _registry_with(catalog_module.parse_catalog(PAYLOAD))
@@ -130,7 +130,7 @@ def test_registry_flags_json_schema_support_per_provider():
     assert items["gpt-4o-mini"]["supports_structured_outputs"] is False  # ai_ask() does not forward a schema there
     assert items["gemini-3.5-flash-lite"]["supports_structured_outputs"] is True  # Vertex: response_json_schema
     assert items["openrouter/openai/gpt-4o-mini"]["supports_structured_outputs"] is True  # from the catalog
-    assert items["openrouter/qwen/qwen-2.5-7b-instruct"]["supports_structured_outputs"] is None  # not in the catalog
+    assert items["openrouter/google/gemma-3-27b-it"]["supports_structured_outputs"] is None  # not in the catalog
 
 
 def test_is_selectable_never_touches_catalog_or_database():

@@ -91,7 +91,7 @@ def test_arena_validates_model_list(client, models):
     assert _arena(client, models, lambda *a, **k: None).status_code == 400
 
 
-def test_arena_runs_all_models_with_one_prompt_and_survives_a_failure(client):
+def test_arena_runs_all_models_with_one_prompt_and_survives_a_failure(client, all_provider_models):
     prompts = []
 
     def ask(prompt, model, **kwargs):

@@ -19,7 +19,7 @@ SUMMARY_MAX_TOKENS = 400
 SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT|ZRODLA|SZUM): ?(.+)$", re.MULTILINE)
 
 _ARKLABS_PREFIX = "arklabs/"
-_SHERLOCK_MODELS = {"Bielik-11B-v2.3-Instruct", "Bielik-11B-v3.0-Instruct"}
+_SHERLOCK_MODELS = {"Bielik-11B-v3.0-Instruct"}
 
 # Sherlock supports strict JSON Schema.  Keeping the corrected transcript in
 # this object means a malformed header cannot be mistaken for transcript text.

@@ -125,9 +125,9 @@ def test_unknown_context_never_calls_model():
 
 @pytest.mark.parametrize("saved, enabled, expected", [
     (None, True, "openrouter/mistralai/mistral-small-3.2-24b-instruct"),
-    (None, False, "gpt-4o-mini"),
+    (None, False, "Bielik-11B-v3.0-Instruct"),  # direct OpenAI is hidden: with OpenRouter off only CloudFerro is left
     ("Bielik-11B-v3.0-Instruct", True, "Bielik-11B-v3.0-Instruct"),
-    ("openrouter/google/gemini-2.5-flash-lite", False, "gpt-4o-mini"),
+    ("openrouter/google/gemma-3-27b-it", False, "Bielik-11B-v3.0-Instruct"),  # a saved external model, OpenRouter off
     ("removed-model", True, "openrouter/mistralai/mistral-small-3.2-24b-instruct"),
 ])
 def test_default_model_respects_allowlist(saved, enabled, expected):

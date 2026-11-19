@@ -25,7 +25,7 @@ def test_chunk_payload_marks_photo_caption_candidates():
         "corrected_text": None, "summary": None, "seg_start": None, "seg_end": None,
         "rewrite_ratio": None, "status": "pending", "split_at_seg": None,
         "split_first_type": None, "split_second_type": None,
-        "obsidian_note_paths": [],
+        "obsidian_note_paths": [], "obsidian_note_not_needed": False, "removed_text_spans": [],
     })()
 
     payload = _chunk_to_dict(chunk)

@@ -22,7 +22,7 @@ def client():
 
 
 def test_relationship_graph_returns_only_stored_links(client):
-    organization = SimpleNamespace(id=31, canonical_name="The Telegraph",)
+    organization = SimpleNamespace(id=31, canonical_name="The Telegraph", description=None)
     source = SimpleNamespace(
         id=12, canonical_name="The Telegraph", organization_id=31,
         organization=organization,
@@ -40,6 +40,7 @@ def test_relationship_graph_returns_only_stored_links(client):
     session.scalars.side_effect = [
         MagicMock(all=lambda: []),
         MagicMock(all=lambda: [provenance]),
+        MagicMock(all=lambda: []),  # confirmed document-to-document links (none here)
     ]
     session.execute.side_effect = [
         MagicMock(all=lambda: [(citation, cited)]),

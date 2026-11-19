@@ -47,7 +47,7 @@ class TestAlembicIniConfig:
 
     def test_no_hardcoded_sqlalchemy_url(self):
         ini_path = os.path.join(BACKEND_DIR, "alembic.ini")
-        with open(ini_path) as f:
+        with open(ini_path, encoding="utf-8") as f:
             content = f.read()
         # There should be no uncommented sqlalchemy.url = ...
         for line in content.splitlines():
@@ -57,7 +57,7 @@ class TestAlembicIniConfig:
 
     def test_script_location_is_alembic(self):
         ini_path = os.path.join(BACKEND_DIR, "alembic.ini")
-        with open(ini_path) as f:
+        with open(ini_path, encoding="utf-8") as f:
             content = f.read()
         assert "script_location" in content
 
@@ -97,7 +97,7 @@ class TestAlembicEnvMetadata:
     @patch.dict("os.environ", ENV_VARS, clear=False)
     def test_target_metadata_is_base_metadata(self):
         env_module_path = os.path.join(BACKEND_DIR, "alembic", "env.py")
-        with open(env_module_path) as f:
+        with open(env_module_path, encoding="utf-8") as f:
             content = f.read()
         assert "target_metadata = Base.metadata" in content, \
             "env.py must set target_metadata = Base.metadata"
@@ -106,7 +106,7 @@ class TestAlembicEnvMetadata:
     def test_env_imports_models(self):
         """env.py must import library.db.models to register on Base.metadata."""
         env_path = os.path.join(BACKEND_DIR, "alembic", "env.py")
-        with open(env_path) as f:
+        with open(env_path, encoding="utf-8") as f:
             content = f.read()
         assert "import library.db.models" in content, \
             "env.py must import library.db.models to register models on Base.metadata"
@@ -115,7 +115,7 @@ class TestAlembicEnvMetadata:
     def test_env_imports_get_engine(self):
         """env.py must import get_engine from library.db.engine."""
         env_path = os.path.join(BACKEND_DIR, "alembic", "env.py")
-        with open(env_path) as f:
+        with open(env_path, encoding="utf-8") as f:
             content = f.read()
         assert "from library.db.engine import get_engine" in content
 
@@ -123,7 +123,7 @@ class TestAlembicEnvMetadata:
     def test_env_has_compare_type(self):
         """env.py must use compare_type=True in context.configure()."""
         env_path = os.path.join(BACKEND_DIR, "alembic", "env.py")
-        with open(env_path) as f:
+        with open(env_path, encoding="utf-8") as f:
             content = f.read()
         assert "compare_type=True" in content
 
@@ -131,7 +131,7 @@ class TestAlembicEnvMetadata:
     def test_env_has_include_object_filter(self):
         """env.py must have include_object filter to exclude indexes."""
         env_path = os.path.join(BACKEND_DIR, "alembic", "env.py")
-        with open(env_path) as f:
+        with open(env_path, encoding="utf-8") as f:
             content = f.read()
         assert "include_object" in content
 
@@ -170,7 +170,7 @@ class TestIncludeObjectFilter:
     def _load_include_object():
         """Load include_object from env.py without executing module-level code."""
         env_path = os.path.join(BACKEND_DIR, "alembic", "env.py")
-        with open(env_path) as f:
+        with open(env_path, encoding="utf-8") as f:
             source = f.read()
         match = re.search(
             r"(def include_object\(.*?\n(?:[ \t]+.*\n|\n)*)",

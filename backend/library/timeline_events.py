@@ -367,10 +367,40 @@ def is_publication_statement(description: str) -> bool:
     return bool(_PUBLICATION_STATEMENT_RE.search(" ".join((description or "").split())))
 
 
+# Optional mode for a model that knows history (a frontier model): the text often only NAMES a historical event as an
+# analogy ("Monachium 38", "kongres westfalski") and gives no usable date, so the year comes from the model. The
+# description and the quote still come from the text, and the proposal says that the year is the model's.
+KNOWLEDGE_RULE = """Tryb z wiedzą historyczną: wydarzenie historyczne przywołane w tekście z nazwy, także jako analogia
+lub porównanie (np. "Monachium 38", "Jałta 45", "kongres westfalski"), jest wydarzeniem do wyodrębnienia, nawet gdy tekst nie
+podaje pełnej daty. W "date_text" zostaw zapis z tekstu. Gdy tekst nie podaje roku wprost (jest sama nazwa wydarzenia albo
+skrót typu "38"), a wiesz, o które wydarzenie historyczne chodzi, wpisz jego rok w polu "year" jako liczbę czterocyfrową.
+Gdy rok da się odczytać z tekstu, "year" ma być null. Nie zgaduj: jeśli nie masz pewności, które to wydarzenie i kiedy się
+odbyło, pomiń je. Pola "description" i "quote" opisują to, co mówi tekst; wiedza służy tylko do ustalenia roku."""
+
+KNOWLEDGE_YEAR_NOTE = " (rok ustalony przez model z jego wiedzy, nie odczytany z tekstu)"
+_KNOWLEDGE_MIN_YEAR = 500
+_KNOWLEDGE_MAX_YEAR = 2100
+
+
+def _knowledge_date(candidate: dict) -> dict | None:
+    """Date of a candidate whose ``year`` the model supplied from its own knowledge; None when it is unusable."""
+    year = candidate.get("year")
+    if isinstance(year, bool) or not isinstance(year, (int, str)):
+        return None
+    try:
+        year = int(str(year).strip())
+    except ValueError:
+        return None
+    if not _KNOWLEDGE_MIN_YEAR <= year <= _KNOWLEDGE_MAX_YEAR:
+        return None
+    return _date_result("year", year, datetime.date(year, 1, 1), datetime.date(year, 12, 31))
+
+
 def _timeline_prompt(
     fragment: str,
     temporal_hints: list[dict] | None = None,
     reference_date: datetime.date | None = None,
+    knowledge: bool = False,
 ) -> str:
     hints = ""
     if temporal_hints:
@@ -389,17 +419,23 @@ opisywać wydarzenie i NER może się mylić.
         "Użyj jej tylko do interpretacji zapisów bez roku; zachowaj oryginalny zapis w date_text.\n"
         if reference_date else ""
     )
+    outside_knowledge = (
+        "Poza ustalaniem roku według reguły wiedzy historycznej poniżej nie dodawaj wiedzy zewnętrznej."
+        if knowledge else "Nie dodawaj wiedzy zewnętrznej ani nie zgaduj dat."
+    )
+    knowledge_block = f"\n\n{KNOWLEDGE_RULE}" if knowledge else ""
+    year_field = '"year": 1938 lub null, ' if knowledge else ""
     return f"""Przeanalizuj poniższy fragment dokumentu i wyodrębnij wyłącznie wydarzenia opisywane w tekście,
-którym tekst przypisuje datę albo okres. Nie dodawaj wiedzy zewnętrznej ani nie zgaduj dat.
+którym tekst przypisuje datę albo okres. {outside_knowledge}
 
-{PUBLICATION_RULE}
+{PUBLICATION_RULE}{knowledge_block}
 {hints}
 {reference}
 
 Zwróć WYŁĄCZNIE poprawny JSON: listę obiektów:
 [
   {{"type": "event lub source", "date_text": "oryginalny zapis daty z tekstu", "description": "jedno rzeczowe zdanie",
-    "quote": "dokładny krótki cytat z fragmentu, maksymalnie około 200 znaków"}}
+    {year_field}"quote": "dokładny krótki cytat z fragmentu, maksymalnie około 200 znaków"}}
 ]
 
 Pole quote musi być dosłownym cytatem obecnym w przekazanym fragmencie. Jeśli nie ma wydarzeń, zwróć [].
@@ -417,17 +453,21 @@ def extract_fragment_events(
     document_id: int | None = None,
     temporal_hints: list[dict] | None = None,
     reference_date: datetime.date | None = None,
+    knowledge: bool = False,
 ) -> tuple[list[dict], dict]:
-    """Make one LLM call and retain only grounded events with normalizable dates."""
+    """Make one LLM call and retain only grounded events with normalizable dates.
+
+    ``knowledge`` lets the model supply the year of a historical event the text only names (see ``KNOWLEDGE_RULE``).
+    """
     response = ai_ask(
-        _timeline_prompt(fragment, temporal_hints, reference_date),
+        _timeline_prompt(fragment, temporal_hints, reference_date, knowledge),
         model=model, temperature=0.1, max_token_count=4000,
         operation="timeline_event_extraction",
         document_id=document_id,
     )
     events: list[dict] = []
     sources: list[dict] = []
-    rejected_quote = rejected_date = 0
+    rejected_quote = rejected_date = knowledge_dates = 0
     candidates, invalid_json = _parse_events_response(response.response_text)
     for candidate in candidates:
         date_text = str(candidate.get("date_text") or "").strip()
@@ -448,6 +488,12 @@ def extract_fragment_events(
             })
             continue
         normalized_date = normalize_date_text(date_text, reference_date)
+        if normalized_date is None and knowledge:
+            normalized_date = _knowledge_date(candidate)
+            if normalized_date is not None:
+                knowledge_dates += 1
+                description += KNOWLEDGE_YEAR_NOTE
+                date_text = date_text or str(normalized_date["sort_year"])
         if normalized_date is None:
             rejected_date += 1
             continue
@@ -461,6 +507,7 @@ def extract_fragment_events(
     return events, {
         "rejected_without_quote": rejected_quote,
         "rejected_without_date": rejected_date,
+        "knowledge_dates": knowledge_dates,
         "publications": len(sources),
         "sources": sources,
         "invalid_json": int(invalid_json),
@@ -521,6 +568,7 @@ def _chapters_for_document(
 
 def extract_document_events(
     session, doc, model: str | None = None, *, chapter_position: int | None = None, editor_numbering: bool = False,
+    knowledge: bool = False,
 ) -> dict:
     """Extract events without mutating the session; return events and per-chapter reports."""
     selected_model = model or load_config().get("TIMELINE_MODEL") or DEFAULT_TIMELINE_MODEL
@@ -550,7 +598,7 @@ def extract_document_events(
             ][:40]
             extracted, report = extract_fragment_events(
                 fragment, chapter["position"], selected_model, document_id=getattr(doc, "id", None),
-                temporal_hints=temporal_hints, reference_date=reference_date,
+                temporal_hints=temporal_hints, reference_date=reference_date, knowledge=knowledge,
             )
             chapter_events.extend(extracted)
             publication_sources.extend(report.get("sources", []))
@@ -562,6 +610,7 @@ def extract_document_events(
             "events": len(chapter_events),
             "rejected_without_quote": sum(r["rejected_without_quote"] for r in fragment_reports),
             "rejected_without_date": sum(r["rejected_without_date"] for r in fragment_reports),
+            "knowledge_dates": sum(r.get("knowledge_dates", 0) for r in fragment_reports),
             "publications": sum(r.get("publications", 0) for r in fragment_reports),
             "invalid_json": sum(r["invalid_json"] for r in fragment_reports),
             "ner_hint_count": sum(r.get("ner_hint_count", 0) for r in fragment_reports),
@@ -603,6 +652,7 @@ def is_ignored_passage(event: dict, ignored_passages: list[str]) -> bool:
 
 def refresh_document_events(
     session, doc, model: str | None = None, *, chapter_position: int | None = None, editor_numbering: bool = False,
+    knowledge: bool = False,
 ) -> dict:
     """Replace stored derived events for a document, or one explicitly selected chapter.
 
@@ -611,6 +661,7 @@ def refresh_document_events(
     """
     result = extract_document_events(
         session, doc, model, chapter_position=chapter_position, editor_numbering=editor_numbering,
+        knowledge=knowledge,
     )
     # Proposals the reader dismissed stay as they are, and a new proposal about the same passage is not stored again.
     ignored = session.scalars(select(DocumentEvent).where(
