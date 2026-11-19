@@ -251,7 +251,7 @@ def test_outline_migration_has_single_head():
     from alembic.script import ScriptDirectory
 
     scripts = ScriptDirectory("alembic")
-    assert scripts.get_heads() == ["c83f0e2a619d"]
+    assert len(scripts.get_heads()) == 1
     assert scripts.get_revision("c83f0e2a619d").down_revision == "a84d921cf607"
 
 

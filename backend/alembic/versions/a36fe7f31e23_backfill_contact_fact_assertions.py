@@ -1,4 +1,4 @@
-﻿"""Preserve existing birthday and education values as pinned legacy assertions.
+"""Preserve existing birthday and education values as pinned legacy assertions.
 
 Revision ID: a36fe7f31e23
 Revises: 1915e3243ed6

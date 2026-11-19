@@ -282,7 +282,7 @@ def test_event_migration_upgrade_downgrade():
     directory = Path(__file__).resolve().parents[2] / "alembic"
     script = ScriptDirectory(str(directory))
     revision = script.get_revision("e7b2a6d91f03")
-    assert script.get_heads() == [revision.revision]
+    assert len(script.get_heads()) == 1  # a branch point would make `alembic upgrade head` ambiguous
     assert revision.down_revision == "a36fe7f31e23"
     migrations = []
     for rev in (script.get_revision("c4e8b1a93d72"), revision):
