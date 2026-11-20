@@ -564,6 +564,15 @@ python imports/create_country_organizations.py            # dry-run (default): c
 python imports/create_country_organizations.py --apply
 ```
 
+### `evaluate_person_context.py`
+
+Runs the real one-word person classifier (`library/person_context_classifier.py`, Bielik via `NER_CONTEXT_MODEL`) on `tests/fixtures/person_context_cases.json` — real contexts of doc #11274, each case labelled `person` / `not_person` — and prints, per run, the real persons it would wrongly drop (`harmful`) and the non-persons it would keep (`missed`). `--shuffle --repeat N` changes the batch composition every run (a verdict depends on the neighbours), `--single-pass` skips the confirming second pass, `--prompt-file F` swaps the system prompt, `--model M` the model, `--verbose` prints the rationale of every wrong verdict. Makes paid LLM calls (usage rows with no document id); no database writes otherwise.
+
+```bash
+cd backend
+PYTHONPATH=. python -X utf8 imports/evaluate_person_context.py --shuffle --repeat 4 --verbose
+```
+
 ### `narrative_trial.py`
 
 Read-only trial of narrative detection (`library/narrative_service.py`): picks public `webpage` documents (explicit `--ids`, newest Russia/Ukraine-related pages, random unrelated controls), scores each against a narrative set seed (`--seed`, default `data/narratives/ru_viedm_2026_10.json`) through Fabryka Basal and writes a JSON report (`--out`). Never writes to the database and never selects private document types (the free Fabryka tier may retain content). ~4 Fabryka calls per 1800-char piece, `--max-pieces` (default 4) pieces per document.
