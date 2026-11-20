@@ -11,6 +11,7 @@ syntetycznych ani płatnych probe'ach.
 | LocationIQ | Weryfikacja nazw miejsc | `library/locationiq_client.py`; `LOCATIONIQ_API_KEY` | Tak, `external_service_events` |
 | Wikidata | Rozróżnianie osób | `library/wikidata_client.py` | Tak, `external_service_events` |
 | Overpass / OpenStreetMap | Geometrie infrastruktury | `library/overpass_client.py` | Tak, `external_service_events` |
+| OpenRouter | Główny dostawca modeli zewnętrznych (Mistral, Claude, Gemma i in.), katalog cen, modele decyzyjne | `library/api/openrouter/`; `OPENROUTER_API_KEY`, flaga `OPENROUTER_ENABLED` (domyślnie wyłączone); [integrations/openrouter.md](integrations/openrouter.md) | Tak, `llm_usage_logs` (LLM) oraz saldo klucza z API (`GET /provider_balances`) |
 | ARK Labs | Alternatywny dostawca LLM | `library/api/arklabs/`; konfiguracja ARK Labs | Tak, `llm_usage_logs` (LLM) |
 | OpenAI | Opcjonalny dostawca LLM i embeddingów | `library/api/openai/`; `OPENAI_API_KEY` | Tak, `llm_usage_logs` (LLM) |
 | AWS Bedrock / Vertex AI | Opcjonalni dostawcy modeli | adaptery `library/api/aws/`, `library/api/google/` | Tak, `llm_usage_logs` (LLM) |
