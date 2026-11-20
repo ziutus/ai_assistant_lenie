@@ -1,8 +1,10 @@
 """Tests for contextual verification of one-word person candidates."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 from library.person_context_classifier import (
+    MAX_CANDIDATES_PER_CALL,
     _candidate_payloads,
     classify_single_word_person_candidates,
 )
@@ -77,4 +79,50 @@ def test_llm_failure_is_fail_open():
         result = classify_single_word_person_candidates(
             "Dostawy Pocisków artyleryjskich.", "", groups, 1
         )
+    assert result == []
+
+
+def _truncating_ai_ask(max_batch):
+    """A fake model whose answer is cut off (invalid JSON) when the batch is larger than `max_batch`."""
+
+    def fake(prompt, **_kwargs):
+        items = json.loads(prompt.split("DANE JSON:\n")[1])
+        if len(items) > max_batch:
+            return MagicMock(response_text='{"results": [{"id": 0, "class": "person", "confidence": "hi')
+        return MagicMock(response_text=json.dumps({"results": [
+            {
+                "id": item["id"],
+                "class": "not_person" if item["candidate"] == "Konstans" else "person",
+                "confidence": "high",
+                "rationale": "test",
+            }
+            for item in items
+        ]}))
+
+    return fake
+
+
+def test_truncated_json_batch_is_split_and_every_candidate_gets_a_verdict():
+    """doc 11274: two of three batches of 20 came back cut off, so "Konstans" never got a verdict."""
+    names = ["Konstans"] + [f"Osoba{i}" for i in range(29)]
+    groups = {("persName", name): {"variants": [name]} for name in names}
+    text = " ".join(f"Wypowiedział się {name} w tej sprawie." for name in names)
+
+    assert MAX_CANDIDATES_PER_CALL <= 8
+    with patch("library.person_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(
+        "library.ai.ai_ask", side_effect=_truncating_ai_ask(max_batch=2)
+    ):
+        results = classify_single_word_person_candidates(text, "Tytuł", groups, 11274)
+
+    assert {result["entity_text"] for result in results} == set(names)
+    konstans = next(result for result in results if result["entity_text"] == "Konstans")
+    assert konstans["dropped"] is True
+
+
+def test_single_candidate_with_unparseable_json_is_retained_without_raising():
+    groups = {("persName", "Konstans"): {"variants": ["Konstans"]}}
+    with patch("library.person_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(
+        "library.ai.ai_ask", side_effect=_truncating_ai_ask(max_batch=0)
+    ):
+        result = classify_single_word_person_candidates("Dodano Konstans do listy.", "", groups, 11274)
     assert result == []

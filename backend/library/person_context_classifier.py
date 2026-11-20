@@ -10,7 +10,9 @@ from library.config_loader import load_config
 
 logger = logging.getLogger(__name__)
 
-MAX_CANDIDATES_PER_CALL = 20
+# 20 candidates need more than the 700-token answer limit (doc #11274: two of three batches of 20
+# came back cut off, the whole batch kept every entity). 8 matches the place classifier.
+MAX_CANDIDATES_PER_CALL = 8
 MAX_SNIPPETS = 2
 SNIPPET_WINDOW = 180
 
@@ -158,6 +160,29 @@ def _classify_batch(batch: list[dict], title: str, document_id: int, model: str)
     return classified
 
 
+def _classify_with_split(batch: list[dict], title: str, document_id: int, model: str) -> list[dict]:
+    """_classify_batch(), halving the batch when the answer is not valid JSON.
+
+    A truncated answer must not cost the verdicts of the whole batch; a single
+    candidate that still cannot be parsed is retained (fail open, like any other
+    classifier failure). Other exceptions propagate to the caller.
+    """
+    try:
+        return _classify_batch(batch, title, document_id, model)
+    except json.JSONDecodeError:
+        if len(batch) == 1:
+            logger.warning(
+                "Person context verdict for %r is not valid JSON (document %s); retaining candidate",
+                batch[0]["entity_text"], document_id,
+            )
+            return []
+        middle = len(batch) // 2
+        return (
+            _classify_with_split(batch[:middle], title, document_id, model)
+            + _classify_with_split(batch[middle:], title, document_id, model)
+        )
+
+
 def classify_single_word_person_candidates(
     text: str,
     title: str,
@@ -173,7 +198,7 @@ def classify_single_word_person_candidates(
     for start in range(0, len(candidates), MAX_CANDIDATES_PER_CALL):
         batch = candidates[start:start + MAX_CANDIDATES_PER_CALL]
         try:
-            results.extend(_classify_batch(batch, title, document_id, model))
+            results.extend(_classify_with_split(batch, title, document_id, model))
         except Exception:
             logger.exception(
                 "Contextual person verification failed for document %s; retaining batch",
