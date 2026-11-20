@@ -6,7 +6,7 @@ a person must not become a Person row. Public API, no key needed; polite
 User-Agent per Wikimedia policy. All failures degrade to an empty result:
 disambiguation is an enhancement, never a reason to fail a pipeline.
 
-See docs/person-ner-plan.md and docs/ner-integration-plan.md (stage 4).
+See docs/adr/adr-037-person-registry-dedicated-tables.md and docs/ner-integration-plan.md (stage 4).
 """
 
 import logging
