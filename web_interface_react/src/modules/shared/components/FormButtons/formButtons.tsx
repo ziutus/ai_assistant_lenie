@@ -1,7 +1,10 @@
 import React from "react";
+import RequestErrorDetails from "../RequestErrorDetails/requestErrorDetails";
 
 interface FormButtonsProps {
   message: string;
+  /** Collapsed technical block under an error message (`useManageLLM().errorDetails`). */
+  errorDetails?: string;
   formik: any;
   isError: boolean;
   isLoading: boolean;
@@ -13,6 +16,7 @@ interface FormButtonsProps {
 
 const FormButtons = ({
   message,
+  errorDetails,
   formik,
   isError,
   isLoading,
@@ -75,6 +79,7 @@ const FormButtons = ({
           {message}
         </p>
       )}
+      {message && isError && errorDetails && <RequestErrorDetails details={errorDetails} />}
     </>
   );
 };

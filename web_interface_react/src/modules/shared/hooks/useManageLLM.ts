@@ -2,21 +2,89 @@ import axios from "axios";
 import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { useNavigate } from "react-router-dom";
+import { describeRequestError } from "../utils/requestError";
+import { probeBackend } from "../utils/backendProbe";
 
+/** Size of what is about to be sent, in units a person can judge ("812 KB"). Never the content itself. */
+const payloadSize = (payload: unknown): string => {
+  try {
+    const bytes = new Blob([JSON.stringify(payload ?? {})]).size;
+    return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(2)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  } catch {
+    return "";
+  }
+};
+
+const looksLikeRequestError = (error: any): boolean =>
+  Boolean(error && (error.isAxiosError || error.config || error.response || error.code));
 
 export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: string; selectedDocumentState: string }) => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
   const [message, setMessage] = React.useState("");
+  // Technical details belong to ONE message; once the message changes they are
+  // stale and `errorDetails` below goes back to "".
+  const [errorInfo, setErrorInfo] = React.useState({ message: "", details: "" });
   const [autoFlowComplete, setAutoFlowComplete] = React.useState(false);
   const { apiKey, apiUrl, apiType } = React.useContext(AuthorizationContext);
   const navigate = useNavigate();
+  const errorDetails = errorInfo.message === message ? errorInfo.details : "";
+
+  /**
+   * One place that turns a failed request into the on-screen message (plain Polish
+   * summary) plus the copyable technical block, so nobody has to ask the user what
+   * the browser console said. When the server never answered, it also probes
+   * `/healthz` to tell "backend/NAS down" from "only this request failed".
+   * Returns the summary. See web_interface_react/AGENTS.md, "Error messages".
+   */
+  const reportRequestError = async (
+    error: any,
+    operation: string,
+    startedAt: number,
+    context: Record<string, string | number | null | undefined> = {},
+  ): Promise<string> => {
+    console.error(operation, error);
+    let summary: string;
+    let details: string;
+    if (looksLikeRequestError(error)) {
+      const status = error?.response?.status;
+      const info = describeRequestError(error, operation, {
+        startedAt,
+        context: {
+          ...context,
+          Wskazówka: status === 400 || status === 401 || status === 403
+            ? "Sprawdź klucz API w /connect (odmowa dostępu lub błędne żądanie)"
+            : undefined,
+        },
+      });
+      summary = info.summary;
+      details = info.details;
+      if (!error.response) {
+        const probe = await probeBackend(String(apiUrl ?? ""));
+        details += `\n${probe.join("\n")}`;
+      }
+    } else {
+      // A failure raised by our own code (e.g. a background job reporting "failed"), not by the network.
+      summary = `${operation}: ${error?.message ?? "nieznany błąd"}`;
+      details = [
+        `Operacja: ${operation}`,
+        ...Object.entries(context)
+          .filter(([, value]) => value !== null && value !== undefined && value !== "")
+          .map(([key, value]) => `${key}: ${value}`),
+        `Komunikat: ${error?.message ?? String(error)}`,
+      ].join("\n");
+    }
+    setMessage(summary);
+    setErrorInfo({ message: summary, details });
+    return summary;
+  };
 
 
   const handleGetLinkByID = async (link_id: string, redirect = false) => {
     setIsLoading(true);
     setAutoFlowComplete(false);
     // setLinkId(link_id);
+    const startedAt = Date.now();
     try {
       const response = await axios.get(`${apiUrl}/website_get`, {
         params: {
@@ -45,16 +113,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
         setIsError(false);
       }
     } catch (error: any) {
-      console.error(error);
-      let message = error.message;
-      if (
-        error.response &&
-        error.response.status &&
-        error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
-      setMessage(`Error on handleGetLinkByID ${message}`);
+      await reportRequestError(error, "Nie udało się pobrać dokumentu", startedAt, { Dokument: link_id });
       setIsLoading(false);
       setIsError(true);
     }
@@ -63,6 +122,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
   const handleGetPageByUrl = async (url: string) => {
     setIsLoading(true);
     if (url.length > 0) {
+      const startedAt = Date.now();
       try {
         const response = await axios.post(
           `${apiUrl}/website_is_paid`,
@@ -106,12 +166,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
             setMessage(response.data.message);
             console.log("end of checking if link handleGetLinkAll");
           } catch (error: any) {
-            console.error("There was an error on handleGetLinkAll!", error);
-            let message = error.message;
-            if (error.response.status === 400) {
-              message += " Check your API key first";
-            }
-            setMessage(`There was an error on handleGetLinkAll. ${message}`);
+            await reportRequestError(error, "Nie udało się pobrać treści strony", startedAt, { Adres: url });
           }
         } else {
           setMessage("Paid website, not downloaded");
@@ -120,19 +175,9 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
         setIsError(false);
         setMessage("");
       } catch (error: any) {
+        await reportRequestError(error, "Nie udało się sprawdzić strony", startedAt, { Adres: url });
         setIsLoading(false);
         setIsError(true);
-
-        console.error("There was an error on handleGetLinkAll!", error);
-        let message = error.message;
-        if (
-          error.response &&
-          error.response.status &&
-          error.response.status === 400
-        ) {
-          message += " Check your API key first";
-        }
-        setMessage(`There was an error on handleGetLinkAll. ${message}`);
       }
     }
   };
@@ -146,26 +191,28 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       text_tmp_md = "";
     }
 
+    const startedAt = Date.now();
+    const savePayload = {
+      id: website.id,
+      url: website.url,
+      tags: website.tags,
+      title: website.title,
+      summary: website.summary,
+      source: website.source,
+      text: text_tmp,
+      text_md: text_tmp_md,
+      language: website.language,
+      document_type: website.document_type,
+      chapter_list: website.chapter_list,
+      outline_md: website.outline_md,
+      byline: website.byline,
+      email_sender: website.email_sender,
+      note: website.note,
+    };
     try {
       const response = await axios.post(
         `${apiUrl}/website_save`,
-        {
-          id: website.id,
-          url: website.url,
-          tags: website.tags,
-          title: website.title,
-          summary: website.summary,
-          source: website.source,
-          text: text_tmp,
-          text_md: text_tmp_md,
-          language: website.language,
-          document_type: website.document_type,
-          chapter_list: website.chapter_list,
-          outline_md: website.outline_md,
-          byline: website.byline,
-          email_sender: website.email_sender,
-          note: website.note,
-        },
+        savePayload,
         {
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -179,18 +226,13 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       setIsLoading(false);
       setIsError(false);
     } catch (error: any) {
+      await reportRequestError(error, "Nie udało się zapisać dokumentu", startedAt, {
+        Dokument: website.id,
+        Typ: website.document_type,
+        "Rozmiar zapisywanych danych": payloadSize(savePayload),
+      });
       setIsLoading(false);
       setIsError(true);
-      console.error("There was an error saving the data!", error);
-      let message = error.message;
-      if (
-        error.response &&
-        error.response.status &&
-        error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
-      setMessage(`There was an error saving the data: ${message}`);
     }
   };
 
@@ -206,6 +248,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       text_tmp = "";
     }
 
+    const startedAt = Date.now();
     try {
       const response = await axios.post(
         `${apiUrl}/website_save`,
@@ -335,18 +378,13 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       setIsLoading(false);
       setIsError(false);
     } catch (error: any) {
-      console.error("There was an error saving the data!", error);
-      let message = error.message;
-      if (
-        error.response &&
-        error.response.status &&
-        error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
+      await reportRequestError(error, "Nie udało się zapisać dokumentu i przejść dalej", startedAt, {
+        Dokument: website.id,
+        Typ: website.document_type,
+        "Rozmiar tekstu": payloadSize({ text: text_tmp, text_md: text_tmp_md }),
+      });
       setIsLoading(false);
       setIsError(true);
-      setMessage(`There was an error saving the data: ${message}`);
     }
   };
 
@@ -357,6 +395,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
 
   const handleNextAfterAutoFlow = async (website: any) => {
     setIsLoading(true);
+    const startedAt = Date.now();
     try {
       const response = await axios.get(`${apiUrl}/website_get_next_to_correct`, {
         params: {
@@ -375,7 +414,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       }
     } catch (error: any) {
       setIsError(true);
-      setMessage(`Nie udało się pobrać następnego dokumentu: ${error.message}`);
+      await reportRequestError(error, "Nie udało się pobrać następnego dokumentu", startedAt, { Dokument: website.id });
     } finally {
       setIsLoading(false);
     }
@@ -391,6 +430,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       document_id = 1;
     }
 
+    const startedAt = Date.now();
     try {
       const response2 = await axios.get(
         `${apiUrl}/website_get_next_to_correct`,
@@ -410,17 +450,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       setIsLoading(false);
       setIsError(false);
     } catch (error: any) {
-      console.error("There was an error on handleGetEntryToReview!");
-      console.error(error);
-      let message = error.message;
-      if (
-        error.response &&
-        error.response.status &&
-        error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
-      setMessage(`There was an error on handleGetEntryToReview: ${message}`);
+      await reportRequestError(error, "Nie udało się pobrać dokumentu do przeglądu", startedAt, { Dokument: document_id });
       setIsLoading(false);
       setIsError(true);
     }
@@ -428,6 +458,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
 
   const handleRemoveNotNeededText = async (website: any) => {
     setIsLoading(true);
+    const startedAt = Date.now();
     try {
       const response = await axios.post(
           `${apiUrl}/website_text_remove_not_needed`,
@@ -449,16 +480,10 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       setIsError(false);
       console.log("end of handleRemoveNotNeededText");
     } catch (error: any) {
-      console.error("There was an error on handleRemoveNotNeededText!", error);
-      let message = error.message;
-      if (
-          error.response &&
-          error.response.status &&
-          error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
-      setMessage(`There was an error on handleRemoveNotNeededText: ${message}`);
+      await reportRequestError(error, "Nie udało się usunąć zbędnego tekstu", startedAt, {
+        Dokument: website.id,
+        "Rozmiar tekstu": payloadSize(website.text),
+      });
       setIsLoading(false);
       setIsError(true);
     }
@@ -467,6 +492,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
   const handleDeleteDocumentNext = async (website: any) => {
     setIsLoading(true);
 
+    const startedAt = Date.now();
     try {
       const response = await axios.delete(
         `${apiUrl}/website_delete`,
@@ -510,18 +536,9 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       setIsLoading(false);
       setIsError(false);
     } catch (error: any) {
-      console.error("There was an error saving the data!", error);
-      let message = error.message;
-      if (
-        error.response &&
-        error.response.status &&
-        error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
+      await reportRequestError(error, "Nie udało się usunąć dokumentu", startedAt, { Dokument: website.id });
       setIsLoading(false);
       setIsError(true);
-      setMessage(`There was an error saving the data: ${message}`);
     }
   };
 
@@ -530,6 +547,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
     options: { localMessage?: boolean } = {},
   ) => {
     setIsLoading(true);
+    const startedAt = Date.now();
     try {
       const response = await axios.post(
         `${apiUrl}/website_youtube_retry_captions`,
@@ -546,10 +564,11 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       setIsError(false);
       return response.data;
     } catch (error: any) {
-      console.error("There was an error on handleYoutubeRetryCaptions!", error);
       const message = error.response?.data?.message || error.message;
-      if (!options.localMessage) {
-        setMessage(`There was an error retrying YouTube captions: ${message}`);
+      if (options.localMessage) {
+        console.error("There was an error on handleYoutubeRetryCaptions!", error);
+      } else {
+        await reportRequestError(error, "Nie udało się ponowić pobierania napisów YouTube", startedAt, { Dokument: document_id });
       }
       setIsLoading(false);
       setIsError(true);
@@ -561,6 +580,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
     setIsLoading(true);
     console.log("Deleting document with id: " + document_id);
 
+    const startedAt = Date.now();
     try {
       const response = await axios.delete(
         `${apiUrl}/website_delete`,
@@ -578,18 +598,9 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
       setIsLoading(false);
       setIsError(false);
     } catch (error: any) {
-      console.error("There was an error saving the data!", error);
-      let message = error.message;
-      if (
-        error.response &&
-        error.response.status &&
-        error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
+      await reportRequestError(error, "Nie udało się usunąć dokumentu", startedAt, { Dokument: document_id });
       setIsLoading(false);
       setIsError(true);
-      setMessage(`There was an error saving the data: ${message}`);
     }
   };
 
@@ -599,6 +610,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
     setIsLoading(true);
     setAutoFlowComplete(false);
     setMessage("");
+    const startedAt = Date.now();
     try {
       await axios.post(
         `${apiUrl}/document/${website.id}/promote_to_webpage`,
@@ -617,15 +629,15 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
     } catch (error: any) {
       setIsError(true);
       const reason = error?.response?.data?.reason;
-      setMessage(
-        reason === "paywall"
-          ? "Nie można pobrać: strona jest za paywallem."
-          : reason === "requires_login"
-          ? "Nie można pobrać: strona wymaga logowania."
-          : reason === "download_failed"
-          ? "Nie udało się pobrać treści strony."
-          : `Nie udało się zmienić w webpage: ${error?.message ?? "błąd"}`,
-      );
+      if (reason === "paywall") {
+        setMessage("Nie można pobrać: strona jest za paywallem.");
+      } else if (reason === "requires_login") {
+        setMessage("Nie można pobrać: strona wymaga logowania.");
+      } else if (reason === "download_failed") {
+        setMessage("Nie udało się pobrać treści strony.");
+      } else {
+        await reportRequestError(error, "Nie udało się zmienić w webpage", startedAt, { Dokument: website.id });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -634,6 +646,7 @@ export const useManageLLM = ({ formik }: { formik: any; selectedDocumentType: st
 
   return {
     message,
+    errorDetails,
     isError,
     isLoading,
     autoFlowComplete,

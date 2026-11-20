@@ -110,6 +110,15 @@ plus "Kopiuj szczegóły"). Do not hand-format `error.message`.
   call), HTTP status and server message or "brak", client error code. The
   duration is diagnostic: a failure after 50 ms never left the browser (CORS,
   wrong host, stale tab), one after the full timeout is a slow or hung backend.
+- **No response at all → probe the backend.** When the server never answered
+  (`ERR_NETWORK`, timeout), `probeBackend(apiUrl)`
+  (`src/modules/shared/utils/backendProbe.ts`) asks the key-exempt `/healthz`
+  and adds one line to the details: backend alive (so only that request failed:
+  oversized body rejected by the proxy, connection cut by a restart, error
+  response without CORS headers), reachable but CORS-blocked, or unreachable
+  (NAS/container down, wrong address, no network). Add the payload size
+  (`"Rozmiar zapisywanych danych": "812 KB"`) for saves — a size, never the
+  content. `useManageLLM` does both in `reportRequestError`; reuse that.
 - **Never include** the API key, request headers, request bodies or document
   text — the details are meant to be pasted into chats and bug reports.
 - **Keep the context where the user is looking:** show the message next to the

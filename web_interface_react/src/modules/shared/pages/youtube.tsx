@@ -53,6 +53,7 @@ const Youtube = () => {
 
   const {
     message,
+    errorDetails,
     isError,
     isLoading,
     handleGetPageByUrl,
@@ -333,6 +334,7 @@ const Youtube = () => {
         />
         <FormButtons
           message={message}
+          errorDetails={errorDetails}
           formik={formik}
           isError={isError}
           isLoading={isLoading || chapterEditorBusy}

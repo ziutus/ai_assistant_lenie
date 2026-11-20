@@ -53,6 +53,7 @@ const Email = () => {
 
   const {
     message,
+    errorDetails,
     isError,
     isLoading,
     handleGetPageByUrl,
@@ -221,6 +222,7 @@ const Email = () => {
 
         <FormButtons
           message={message}
+          errorDetails={errorDetails}
           formik={formik}
           isError={isError}
           isLoading={isLoading}
