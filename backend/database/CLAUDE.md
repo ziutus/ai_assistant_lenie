@@ -158,7 +158,7 @@ Training data for `article_cleaner.py`: lines a human manually removed from a ch
 
 ### Table: `public.document_entities`
 
-Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-integration-plan.md`](../../docs/ner-integration-plan.md). Populated by `library/entity_service.py` from the NER microservice (`ner_service/`, via `library/ner_client.py`). Rows are derived data: a refresh **replaces** the document's rows (unlike `tags`, which accumulates). Deliberately no disambiguation columns — persons get dedicated tables in a later stage ([`docs/person-ner-plan.md`](../../docs/person-ner-plan.md)), places get verification + tags ([ADR-018](../../docs/adr/adr-018-geo-place-ner-locationiq.md)).
+Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-integration-plan.md`](../../docs/ner-integration-plan.md). Populated by `library/entity_service.py` from the NER microservice (`ner_service/`, via `library/ner_client.py`). Rows are derived data: a refresh **replaces** the document's rows (unlike `tags`, which accumulates). Deliberately no disambiguation columns — persons get dedicated tables in a later stage ([ADR-037](../../docs/adr/adr-037-person-registry-dedicated-tables.md)), places get verification + tags ([ADR-018](../../docs/adr/adr-018-geo-place-ner-locationiq.md)).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -406,7 +406,7 @@ Geocoder response cache (NER stage 3, `library/place_verification.py` + `library
 
 ### Tables: `public.persons`, `public.person_aliases`, `public.document_persons`
 
-Person entity model (NER stage 4, `library/person_registry.py` + `library/wikidata_client.py` — see [`docs/person-ner-plan.md`](../../docs/person-ner-plan.md)). A relational model instead of tags because two people can share a name and one person appears under many spelling variants.
+Person entity model (NER stage 4, `library/person_registry.py` + `library/wikidata_client.py` — see [ADR-037](../../docs/adr/adr-037-person-registry-dedicated-tables.md)). A relational model instead of tags because two people can share a name and one person appears under many spelling variants.
 
 - **`persons`** — one row per real person: `uuid` (unique), `canonical_name` (pg_trgm GIN index), `wikidata_qid` (unique, NULL for people without a Wikidata entry), `description` (occupation/known-for — disambiguation context), `created_at`.
 - **`person_aliases`** — spelling variants seen in articles (inflection, initials): `person_id` FK (CASCADE), `alias` (pg_trgm GIN index), UNIQUE `(person_id, alias)`.
