@@ -1,6 +1,6 @@
 """rename sources to discovery_sources, replace web_documents.source with discovery_source_id
 
-Stage 11d of docs/search-rebuild-implementation-plan.md. The old name-based FK
+Stage 11d of docs/search-contract.md. The old name-based FK
 (fk_source, ON UPDATE CASCADE) becomes a plain integer FK to the renamed
 lookup table. Every non-NULL web_documents.source value is guaranteed to have
 a lookup row (fk_source enforced that), so the data move is a pure join. The

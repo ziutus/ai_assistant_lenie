@@ -1,6 +1,6 @@
 """Resolve NER person mentions to canonical Person entities (NER stage 4).
 
-Pipeline per docs/person-ner-plan.md: persName candidates (document_entities)
+Pipeline per docs/adr/adr-037-person-registry-dedicated-tables.md: persName candidates (document_entities)
 → alias match against the internal registry → Wikidata (humans only, P31=Q5)
 with LLM context disambiguation → pg_trgm fuzzy match against the registry →
 document_persons links with a confidence level. Low-confidence links get

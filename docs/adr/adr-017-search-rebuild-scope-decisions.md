@@ -3,7 +3,7 @@
 **Date:** 2026-07-18
 **Status:** Accepted
 **Decision Makers:** Ziutus
-**Plan:** [search-rebuild-implementation-plan.md](../search-rebuild-implementation-plan.md)
+**Contract (successor of the implementation plan):** [search-contract.md](../search-contract.md)
 
 ## Context
 
@@ -16,7 +16,7 @@ behaviour. This ADR closes stage 0 of the plan.
 
 ### 1. Target naming dictionary — approved as proposed
 
-The dictionary in section 3 of the plan is approved without changes
+The dictionary (now in [search-contract.md](../search-contract.md)) is approved without changes
 (`documents`, `document_id`, `published_on`, `byline`, `discovery_source_id`,
 `collection_id`, `subject_period_start/end_year`, `public_id`,
 `processing_status`, `search` endpoint, etc.). New domain names are used in the

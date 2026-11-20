@@ -158,7 +158,7 @@ Training data for `article_cleaner.py`: lines a human manually removed from a ch
 
 ### Table: `public.document_entities`
 
-Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-integration-plan.md`](../../docs/ner-integration-plan.md). Populated by `library/entity_service.py` from the NER microservice (`ner_service/`, via `library/ner_client.py`). Rows are derived data: a refresh **replaces** the document's rows (unlike `tags`, which accumulates). Deliberately no disambiguation columns — persons get dedicated tables in a later stage ([`docs/person-ner-plan.md`](../../docs/person-ner-plan.md)), places get verification + tags ([`docs/geo-place-ner-plan.md`](../../docs/geo-place-ner-plan.md)).
+Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-integration-plan.md`](../../docs/ner-integration-plan.md). Populated by `library/entity_service.py` from the NER microservice (`ner_service/`, via `library/ner_client.py`). Rows are derived data: a refresh **replaces** the document's rows (unlike `tags`, which accumulates). Deliberately no disambiguation columns — persons get dedicated tables in a later stage ([ADR-037](../../docs/adr/adr-037-person-registry-dedicated-tables.md)), places get verification + tags ([ADR-018](../../docs/adr/adr-018-geo-place-ner-locationiq.md)).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -406,7 +406,7 @@ Geocoder response cache (NER stage 3, `library/place_verification.py` + `library
 
 ### Tables: `public.persons`, `public.person_aliases`, `public.document_persons`
 
-Person entity model (NER stage 4, `library/person_registry.py` + `library/wikidata_client.py` — see [`docs/person-ner-plan.md`](../../docs/person-ner-plan.md)). A relational model instead of tags because two people can share a name and one person appears under many spelling variants.
+Person entity model (NER stage 4, `library/person_registry.py` + `library/wikidata_client.py` — see [ADR-037](../../docs/adr/adr-037-person-registry-dedicated-tables.md)). A relational model instead of tags because two people can share a name and one person appears under many spelling variants.
 
 - **`persons`** — one row per real person: `uuid` (unique), `canonical_name` (pg_trgm GIN index), `wikidata_qid` (unique, NULL for people without a Wikidata entry), `description` (occupation/known-for — disambiguation context), `created_at`.
 - **`person_aliases`** — spelling variants seen in articles (inflection, initials): `person_id` FK (CASCADE), `alias` (pg_trgm GIN index), UNIQUE `(person_id, alias)`.
@@ -443,7 +443,7 @@ Discovery-source lookup — how the user found a document (`own`, a newsletter, 
 
 ### Tables: `public.search_interpretation_logs`, `public.llm_pricing`, `public.llm_usage_logs`
 
-Search audit and LLM usage accounting (stage 2 of [docs/search-rebuild-implementation-plan.md](../../docs/search-rebuild-implementation-plan.md); Alembic only, no init scripts — migrations `d3e4f5a6b7c8`, `e4f5a6b7c8d9`; ORM in `library/db/models.py`).
+Search audit and LLM usage accounting (stage 2 of [docs/search-contract.md](../../docs/search-contract.md); Alembic only, no init scripts — migrations `d3e4f5a6b7c8`, `e4f5a6b7c8d9`; ORM in `library/db/models.py`).
 
 - **`search_interpretation_logs`** — one row per attempt to interpret a natural-language search query: `raw_query`, model/parser/prompt versions, raw LLM response, normalised `parsed_query` JSONB, `status` (CHECK: `parsed`/`ambiguous`/`invalid_json`/`validation_error`/`llm_error`/`fallback`), safe error code/message, latencies, result count, user feedback (`feedback_verdict` CHECK: `correct`/`partially_correct`/`incorrect`, comment, `corrected_query` JSONB). Retention per [ADR-017](../../docs/adr/adr-017-search-rebuild-scope-decisions.md): `expires_at NOT NULL DEFAULT now() + 90 days` (indexed; cleanup job to be added later).
 - **`llm_pricing`** — versioned price list, provider-agnostic. Rows are immutable facts: a price change is a NEW row with a new `pricing_version`, never an UPDATE. Partial unique index allows at most one open-ended (`effective_to IS NULL`) row per provider/model. Seeded with confirmed CloudFerro rates: `cloudferro-bielik-2026-07-18` (0.56 EUR/1M in and out) and `cloudferro-bge-2026-07-18` (0.50 PLN net/1M).

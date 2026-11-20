@@ -7,7 +7,7 @@
 
 ### Context
 
-Stage 12 of the search rebuild (`docs/search-rebuild-implementation-plan.md`)
+Stage 12 of the search rebuild (`docs/search-contract.md`)
 measured `EXPLAIN (ANALYZE)` for `POST /search` on NAS production data (9220
 documents, 3062/3048 embeddings) to decide whether the lexical and vector legs
 of `SearchService.search()` need new indexes. Two mechanisms were evaluated
@@ -81,8 +81,6 @@ numeric thresholds that trigger revisiting this decision.
 
 - [search-hybrid.md](../search-hybrid.md) — full measurement table and
   narrative for both decisions
-- [search-rebuild-progress.md](../search-rebuild-progress.md) — Stage 12
-  journal entry (2026-07-19) recording the same decisions inline
 - [ADR-017](adr-017-search-rebuild-scope-decisions.md) — stage-0 scope
   decisions and the `/website_similar` latency baseline this compares against
 - [ADR-009](adr-009-postgresql-search-strategy.md) — original `unaccent` +

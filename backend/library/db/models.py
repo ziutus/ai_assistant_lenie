@@ -2454,7 +2454,7 @@ class Person(Base):
     A relational model instead of tags because two people can share a name and
     one person appears under many spelling variants. wikidata_qid is NULL for
     people without a Wikidata entry (local/less-known figures). See
-    docs/person-ner-plan.md.
+    docs/adr/adr-037-person-registry-dedicated-tables.md.
     """
 
     __tablename__ = "persons"
@@ -3107,7 +3107,7 @@ class ApiKey(Base):
 
 
 # ---------------------------------------------------------------------------
-# Search audit and LLM usage (docs/search-rebuild-implementation-plan.md, stage 2)
+# Search audit and LLM usage (docs/search-contract.md, stage 2)
 # ---------------------------------------------------------------------------
 
 

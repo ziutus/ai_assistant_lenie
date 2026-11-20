@@ -1,6 +1,6 @@
 """rename document_state to processing_status (columns + lookup tables)
 
-Stage 11g part 2a of docs/search-rebuild-implementation-plan.md:
+Stage 11g part 2a of docs/search-contract.md:
 - documents.document_state       -> documents.processing_status
 - documents.document_state_error -> documents.processing_error_code
 - lookup document_status_types        -> processing_status_types

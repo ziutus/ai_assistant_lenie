@@ -1,6 +1,6 @@
 """rename web_documents to documents (with its indexes and constraints)
 
-Stage 11f of docs/search-rebuild-implementation-plan.md. Foreign keys in the
+Stage 11f of docs/search-contract.md. Foreign keys in the
 15 referencing tables (document_chunks, document_entities, ...) follow the
 rename automatically and their constraint names never contained
 "web_documents", so only this table's own objects are renamed. The PG18

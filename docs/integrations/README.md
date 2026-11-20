@@ -12,7 +12,7 @@ jest w [external-services.md](../external-services.md); nie powtarzamy go tutaj.
 | **Z zewnątrz do Lenie** (zbieranie) | wtyczka Chrome, RSS/feedy, Gmail, YouTube, PDF, LinkedIn/Facebook | [web_chrome_extension/CLAUDE.md](../../web_chrome_extension/CLAUDE.md), [feed-and-feed-review-flow.md](../feed-and-feed-review-flow.md), `backend/imports/CLAUDE.md` |
 | **Z Lenie na zewnątrz** (zapis) | notatki Obsidian (`/lenie-obsidian-note`), kontakty Google | [ADR-028](../adr/adr-028-google-contacts-api-sync.md) |
 | **Wzbogacanie danych** (usługi pytane na żądanie) | LocationIQ, Wikidata, Overpass, CEIDG, adresy.app, GitHub, Fabryka AI | [external-services.md](../external-services.md) |
-| **Modele i przetwarzanie** | CloudFerro (Bielik, embeddingi), OpenAI, ARK Labs, AssemblyAI | [ADR-013](../adr/adr-013-custom-llm-abstraction.md), [ADR-011](../adr/adr-011-assemblyai-sole-transcription.md) |
+| **Modele i przetwarzanie** | CloudFerro (Bielik, embeddingi), OpenRouter, OpenAI, ARK Labs, AssemblyAI | [openrouter.md](openrouter.md), [ADR-013](../adr/adr-013-custom-llm-abstraction.md), [ADR-011](../adr/adr-011-assemblyai-sole-transcription.md) |
 | **Infrastruktura** | MinIO/S3, Vault, relay VPN w Google Cloud | [storage.md](../storage.md), [ADR-023](../adr/adr-023-gcloud-vpn-relay-nas-access.md) |
 
 ## Integracje działające
@@ -24,6 +24,8 @@ Szczegóły klienta, klucza i obserwacji statusu: [external-services.md](../exte
 - **Dane o firmach i adresach**: CEIDG (`ceidg_client.py`, `CEIDG_API_KEY`),
   adresy.app (`address_validation_client.py`, `ADRESY_APP_API_KEY`).
 - **Repozytoria**: publiczne statystyki GitHub (`github_repo_stats.py`, bez klucza).
+- **Modele LLM przez pośrednika**: OpenRouter ([openrouter.md](openrouter.md);
+  `library/api/openrouter/`, `OPENROUTER_API_KEY`, flaga `OPENROUTER_ENABLED`).
 - **Decyzje typowane**: Fabryka AI (`fabryka_client.py`, `FABRYKA_API_KEY`).
 - **Obsidian** (w obie strony): [obsidian-sync-folders.md](../deployment/nas/obsidian-sync-folders.md).
 
@@ -33,6 +35,7 @@ Szczegóły klienta, klucza i obserwacji statusu: [external-services.md](../exte
 |---|---|---|
 | Shodan | Bez stałego publicznego IP nie ma sensu; do wznowienia po jego uzyskaniu | [shodan.md](shodan.md) |
 | SignalHire | Odrzucone: 10 darmowych kredytów miesięcznie to za mało, baza zawodowa nie pokrywa prywatnych kontaktów, broker danych (RODO) | [signalhire.md](signalhire.md) |
+| Self-hosting geokodera (Photon), HerBERT-NER, inne API | Odłożone do czasu, gdy darmowy tier LocationIQ lub jakość spaCy przestaną wystarczać | [geocoding-alternatives.md](geocoding-alternatives.md) |
 | Cookidoo (Thermomix) | Odrzucone: brak API, a import po URL przyjmuje tylko domeny Cookidoo i społeczności Vorwerk (test 2026-11-01); przepisy wpisuje się ręcznie | [cookidoo.md](cookidoo.md) |
 
 ## Zasady dla nowych integracji

@@ -3,7 +3,7 @@
 **Date:** 2026-07-10
 **Status:** Accepted
 **Decision Makers:** Ziutus
-**Full analysis:** [geo-place-ner-plan.md](../geo-place-ner-plan.md)
+**Deferred alternatives:** [geocoding-alternatives.md](../integrations/geocoding-alternatives.md)
 
 ### Context
 
@@ -71,7 +71,7 @@ Two axes needed a decision:
 
 ### Related Artifacts
 
-- [geo-place-ner-plan.md](../geo-place-ner-plan.md) — full model/API comparison, hardware requirement tables, hosted-geocoder pricing survey
+- [geocoding-alternatives.md](../integrations/geocoding-alternatives.md) — hosted-geocoder pricing survey, Photon vs Nominatim self-hosting, HerBERT hardware requirements
 - [ner-integration-plan.md](../ner-integration-plan.md) (stage 3) — implementation details: `ner_service/`, `document_entities`/`geocode_cache` tables, `miejsce-*` tags, map markers in `/read/:id`
 - `backend/library/locationiq_client.py`, `backend/library/place_verification.py`, `backend/library/place_context_classifier.py` — implementation
 - `backend/database/init/21-create-document-entities.sql`, `22-create-geocode-cache.sql` — schema

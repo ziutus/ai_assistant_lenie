@@ -1,6 +1,6 @@
 """rename date_from to published_on and date_from_source to published_on_method
 
-Stage 11a of docs/search-rebuild-implementation-plan.md: physical column rename
+Stage 11a of docs/search-contract.md: physical column rename
 only — types, values and CHECK semantics stay identical.
 
 Revision ID: a2b3c4d5e6f7
