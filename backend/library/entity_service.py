@@ -499,6 +499,25 @@ def _apply_state_descriptors(
                 group["variants"].append(variant)
 
 
+def _apply_generic_geo_heads(
+    groups: dict[tuple[str, str], dict], text: str, title: str, document_id: int,
+) -> None:
+    """Fold a bare "Zatoka"/"Morze"/"Cieśnina" into the document's only named feature of that kind.
+
+    The model must confirm it from the sentences around the bare mentions (see library/generic_geo_heads.py);
+    the bare spellings become surface forms of the named feature and its counts grow. Fails open.
+    """
+    from library.generic_geo_heads import merge_confirmed_heads
+
+    try:
+        merged = merge_confirmed_heads(groups, text, title, document_id)
+    except Exception:  # noqa: BLE001 — a classifier failure must never fail the entity refresh
+        logger.warning("Generic geographic head step failed for document %s", document_id, exc_info=True)
+        return
+    for bare, feature in merged:
+        logger.info("NER folded bare %r into %r in doc %s", bare, feature, document_id)
+
+
 def _fold_form(value: str) -> str:
     return unidecode(value or "").strip().casefold()
 
@@ -625,6 +644,8 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         _apply_country_abbreviations(groups, text, getattr(doc, "title", None) or "", document_id)
         # "Królestwo" after "Arabia Saudyjska" in the same chapter is that country (model-confirmed).
         _apply_state_descriptors(groups, text, getattr(doc, "title", None) or "", document_id)
+        # A bare "Zatoka" next to the document's only named "Zatoka Perska" is that feature (model-confirmed).
+        _apply_generic_geo_heads(groups, text, getattr(doc, "title", None) or "", document_id)
         # "Marib" tagged as a person in some sentences and as a place in others is the place.
         for dropped in _drop_persons_named_like_places(groups):
             logger.info("NER dropped persName %r: the same spelling is a place in doc %s", dropped, document_id)
