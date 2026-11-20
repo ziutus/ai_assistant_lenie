@@ -1,6 +1,6 @@
 """Verify NER place candidates and tag documents with miejsce-* (NER stage 3).
 
-Pipeline per docs/ner-integration-plan.md and docs/geo-place-ner-plan.md:
+Pipeline per docs/ner-integration-plan.md and docs/adr/adr-018-geo-place-ner-locationiq.md:
 NER candidates (document_entities, geogName/placeName) → geocoder confirms the
 place exists (LocationIQ + match-quality check, cached in geocode_cache) →
 LLM confirms the mentions are actually about that place, not a homonymous

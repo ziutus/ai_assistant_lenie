@@ -4,7 +4,7 @@
 > łączyć wzmianki tej samej osoby między artykułami (entity resolution) i
 > jak w tym celu przeprojektować bazę danych, żeby dało się wyszukiwać
 > "wszystkie artykuły o osobie X" — analogicznie do istniejącego planu dla
-> miejsc geograficznych ([`docs/geo-place-ner-plan.md`](geo-place-ner-plan.md)),
+> miejsc geograficznych ([ADR-018](adr/adr-018-geo-place-ner-locationiq.md)),
 > ale z dodatkowym, trudniejszym problemem: identyfikacja osoby nie jest
 > faktem deterministycznym (istnieje/nie istnieje), tylko wymaga disambiguacji.
 >

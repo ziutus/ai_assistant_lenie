@@ -3,7 +3,7 @@
 > Plan integracji istniejącego mikroserwisu NER ([`ner_service/`](../ner_service/README.md),
 > spaCy `pl_core_news_lg`) z backendem, bazą danych i interfejsem React tak, aby **przy
 > notatce (dokumencie) było widać wykryte osoby i miejsca**. Spina w całość dwa istniejące
-> plany: [`geo-place-ner-plan.md`](geo-place-ner-plan.md) (miejsca) i
+> plany: [ADR-018](adr/adr-018-geo-place-ner-locationiq.md) (miejsca) i
 > [`person-ner-plan.md`](person-ner-plan.md) (osoby), dodając brakującą warstwę
 > integracyjną i przyrostową kolejność wdrożenia.
 >
@@ -79,7 +79,7 @@ Ograniczenia MVP (świadome):
 
 ## Etap 3 — miejsca: weryfikacja, tagi `miejsce-*`, mapa ✅ (2026-07-10)
 
-Zgodnie z [`geo-place-ner-plan.md`](geo-place-ner-plan.md):
+Zgodnie z [ADR-018](adr/adr-018-geo-place-ner-locationiq.md):
 
 - [`backend/library/locationiq_client.py`](../backend/library/locationiq_client.py) —
   klient LocationIQ (klucz `LOCATIONIQ_API_KEY` z Vault, rate limit 2 zap./s,

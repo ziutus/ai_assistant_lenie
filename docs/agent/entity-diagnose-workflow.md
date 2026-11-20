@@ -92,7 +92,7 @@ złapać istniejąca reguła (a nie złapała — to osobny bug do zdiagnozowani
 
 Pipeline: `library/place_verification.py` (dokumentacja pipeline'u w jego
 module docstring i w `docs/ner-integration-plan.md` /
-`docs/geo-place-ner-plan.md`).
+`docs/adr/adr-018-geo-place-ner-locationiq.md`).
 
 ```sql
 SELECT * FROM geocode_cache WHERE query = 'dokładny_entity_text';
@@ -321,7 +321,7 @@ dziś działają wiersze o PR #535 i #517 w tabelach Etapu 2.
    organizacje) — zaktualizuj ten wiersz w tym pliku: numer PR, plik,
    krótki opis mechanizmu, tak samo jak istniejące wpisy.
 2. Jeśli mechanizm jest opisany też gdzie indziej — osobnym planie
-   (`docs/geo-place-ner-plan.md`, `docs/ner-integration-plan.md`,
+   (`docs/adr/adr-018-geo-place-ner-locationiq.md`, `docs/ner-integration-plan.md`,
    `docs/organization-ner-alias-plan.md`) albo w docstringu modułu
    (`library/place_verification.py`, `library/person_registry.py`,
    `library/organization_registry.py` itd.) — zaktualizuj też tam, nie
