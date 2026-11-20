@@ -3176,7 +3176,7 @@ def website_entities_delete(entity_id: int):
 def organizations_collection():
     """GET: search the global organization registry by name/alias.
     POST: manually create an organization. Body: {"canonical_name": "...", "organization_type": "..."}.
-    See docs/organization-ner-alias-plan.md."""
+    See docs/adr/adr-038-organization-registry-global-aliases.md."""
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
@@ -3698,7 +3698,7 @@ def organization_alias_add(organization_id: int):
 @app.route('/organizations/<int:organization_id>/aliases/<int:alias_id>', methods=['DELETE', 'OPTIONS'])
 def organization_alias_delete(organization_id: int, alias_id: int):
     """Remove a global alias. Does not touch audit history — future NER runs
-    simply stop applying this rule (docs/organization-ner-alias-plan.md)."""
+    simply stop applying this rule (docs/adr/adr-038-organization-registry-global-aliases.md)."""
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
@@ -3753,7 +3753,7 @@ def organization_merge(organization_id: int):
     path from the /organizations registry browser: two Organization rows for
     the same real-world entity, created because organization_registry does
     exact-match resolution only (no fuzzy auto-merge — see
-    docs/organization-ner-alias-plan.md). source is deleted once orphaned
+    docs/adr/adr-038-organization-registry-global-aliases.md). source is deleted once orphaned
     (organization_registry.merge); the response's organization_id is always
     the surviving (target) row, so the frontend can navigate there."""
     if request.method == 'OPTIONS':

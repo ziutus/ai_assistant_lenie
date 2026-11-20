@@ -1,6 +1,6 @@
 """create organizations, organization_aliases, document_organizations
 
-Global organization registry (docs/organization-ner-alias-plan.md):
+Global organization registry (docs/adr/adr-038-organization-registry-global-aliases.md):
 a one-off manual merge of two orgName spellings (e.g. "Interia"/"Interii")
 must apply globally — in the current document, in already-saved documents,
 and on future NER runs. Schema + safe seed only; existing document_entities

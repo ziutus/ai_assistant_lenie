@@ -371,7 +371,7 @@ def _get_or_create_source(session, item: dict) -> InformationSource:
         # organizations registry (library/organization_registry.py) — resolve
         # by that FK, not by name, and don't maintain a second, independent
         # alias set: name variants already live in organization_aliases.
-        # See docs/organization-ner-alias-plan.md, "Ustalenia z review".
+        # See docs/adr/adr-038-organization-registry-global-aliases.md, decision 6.
         source = _find_source_by_organization(session, organization_id)
         if source is None:
             # A source may have been created before the organization registry

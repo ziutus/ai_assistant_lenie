@@ -151,7 +151,7 @@ SELECT * FROM person_aliases WHERE alias ILIKE '%fragment%';
 
 Pipeline: `library/organization_registry.py` — celowo prostszy niż osoby:
 tylko dopasowanie dokładne (alias/kanoniczna nazwa), bez Wikidata/LLM, bez
-fuzzy auto-merge (`docs/organization-ner-alias-plan.md`).
+fuzzy auto-merge (`docs/adr/adr-038-organization-registry-global-aliases.md`).
 
 ```sql
 SELECT do_.id, do_.confidence, o.canonical_name
@@ -322,7 +322,7 @@ dziś działają wiersze o PR #535 i #517 w tabelach Etapu 2.
    krótki opis mechanizmu, tak samo jak istniejące wpisy.
 2. Jeśli mechanizm jest opisany też gdzie indziej — osobnym planie
    (`docs/geo-place-ner-plan.md`, `docs/ner-integration-plan.md`,
-   `docs/organization-ner-alias-plan.md`) albo w docstringu modułu
+   `docs/adr/adr-038-organization-registry-global-aliases.md`) albo w docstringu modułu
    (`library/place_verification.py`, `library/person_registry.py`,
    `library/organization_registry.py` itd.) — zaktualizuj też tam, nie
    tylko w tym workflow. Nie zostawiaj dwóch rozjeżdżających się opisów

@@ -535,7 +535,7 @@ const Organizations = () => {
 
   // Merges `organization` (the row currently open) INTO `targetId`, globally
   // — duplicate cleanup for the exact-match-only registry (no fuzzy
-  // auto-merge, see docs/organization-ner-alias-plan.md). The source row is
+  // auto-merge, see docs/adr/adr-038-organization-registry-global-aliases.md). The source row is
   // deleted once orphaned, so we navigate to the surviving target.
   const mergeInto = async (targetId: number) => {
     if (!organization) return;

@@ -559,7 +559,7 @@ class TestPlaceMentionSupplement:
 
 
 class TestOrganizationMerging:
-    """docs/organization-ner-alias-plan.md reference case: doc 9267, Interia/Interii."""
+    """docs/adr/adr-038-organization-registry-global-aliases.md reference case: doc 9267, Interia/Interii."""
 
     @pytest.mark.parametrize("excluded", [False, True])
     def test_compound_org_merge_precedes_exclusions_and_corrections(self, excluded):

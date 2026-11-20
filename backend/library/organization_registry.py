@@ -1,6 +1,6 @@
 """Global organization registry — canonical orgName resolution (NER).
 
-docs/organization-ner-alias-plan.md: a one-off manual merge of two orgName
+docs/adr/adr-038-organization-registry-global-aliases.md: a one-off manual merge of two orgName
 spellings (e.g. "Interia"/"Interii") must apply globally — in the current
 document, in already-saved documents, and on future NER runs. Deliberately
 simpler than library/person_registry.py: exact-match resolution only, no
@@ -554,7 +554,7 @@ def merge_ner_groups(org_groups: dict[str, dict]) -> dict[str, dict]:
     org_groups: {entity_text: {"count": int, "variants": list[str]}}, orgName
     only. When one group's canonical name shows up as a variant of another
     group (or vice versa), they are the same organization mis-split by
-    lemmatization (docs/organization-ner-alias-plan.md reference case:
+    lemmatization (docs/adr/adr-038-organization-registry-global-aliases.md reference case:
     "Interia"/"Interii"). Uses union-find so three-or-more-way overlaps merge
     transitively. The surviving display name is whichever original group has
     the richer variant set (ties: higher mention count, then name) — the
