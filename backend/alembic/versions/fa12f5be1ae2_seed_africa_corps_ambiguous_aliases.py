@@ -3,7 +3,7 @@
 "Africa Corps" is the modern Russian paramilitary formation's own English
 name, but it is also a plausible English rendering of the WWII German
 "Afrika Korps" — a genuine full-name collision, not just a spelling variant
-(see docs/organization-ner-alias-plan.md). Registers 'africa corps' as an
+(see docs/adr/adr-038-organization-registry-global-aliases.md). Registers 'africa corps' as an
 ambiguous alias of both organizations so entity_service's context-LLM step
 (select_ambiguous_alias_candidate_with_llm) can pick the right one from
 document context instead of always falling through to the deterministic

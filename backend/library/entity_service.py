@@ -760,7 +760,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         # orgName groups: merge same-organization spelling splits within this one
         # NER result (e.g. "Interia"/"Interii" both present as separate lemma
         # groups), then resolve each merged group against the global organizations
-        # registry (docs/organization-ner-alias-plan.md). entity_text for orgName
+        # registry (docs/adr/adr-038-organization-registry-global-aliases.md). entity_text for orgName
         # becomes the registry's canonical_name so /webpage, /read and chapter
         # filtering never show the same organization twice.
         org_keys = [key for key in groups if key[0] == "orgName"]

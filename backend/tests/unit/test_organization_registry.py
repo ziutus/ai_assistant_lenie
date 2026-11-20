@@ -1,6 +1,6 @@
 """Unit tests for library/organization_registry.py — global orgName registry.
 
-docs/organization-ner-alias-plan.md reference case: document 9267, "Interia"
+docs/adr/adr-038-organization-registry-global-aliases.md reference case: document 9267, "Interia"
 (count 2, variants Interii/Interią) + "Interii" (count 2) must merge into one
 organization with mention_count 4.
 """

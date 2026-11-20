@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-off backfill for the global organization registry (docs/organization-ner-alias-plan.md).
+"""One-off backfill for the global organization registry (docs/adr/adr-038-organization-registry-global-aliases.md).
 
 Alembic migration e23a1b2c3d4e creates the organizations/organization_aliases/
 document_organizations tables and seeds Interia (+ inflected aliases) and

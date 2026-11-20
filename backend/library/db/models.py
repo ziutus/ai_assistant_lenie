@@ -2567,7 +2567,7 @@ class InformationSource(Base):
     # Set only when this source IS an organization mentioned via NER (orgName).
     # NULL for URL-domain publisher entries and LLM-extracted sources that
     # never resolved through the organizations registry — see
-    # docs/organization-ner-alias-plan.md.
+    # docs/adr/adr-038-organization-registry-global-aliases.md.
     organization_id: Mapped[int | None] = mapped_column(
         ForeignKey("organizations.id", ondelete="SET NULL"), unique=True,
     )
@@ -2630,7 +2630,7 @@ class Organization(Base):
     """Canonical organization entity — one row per real organization (orgName NER).
 
     Analogous to Person, but deliberately simpler: no Wikidata/LLM
-    disambiguation, no fuzzy auto-merge (docs/organization-ner-alias-plan.md).
+    disambiguation, no fuzzy auto-merge (docs/adr/adr-038-organization-registry-global-aliases.md).
     canonical_name is intentionally not unique — two different organizations
     could share a display name; disambiguation is out of scope for now.
     """
@@ -2713,7 +2713,7 @@ class OrganizationAlias(Base):
     normalized_alias is globally unique (unlike PersonAlias/InformationSourceAlias,
     which are unique only per-owner) — a name-merge decision must apply the same
     way to every future document, so one alias can never point at two different
-    organizations (docs/organization-ner-alias-plan.md, point 3 of the review).
+    organizations (docs/adr/adr-038-organization-registry-global-aliases.md, decision 2).
     """
 
     __tablename__ = "organization_aliases"
@@ -2780,7 +2780,7 @@ class DocumentOrganization(Base):
     """Document<->organization link (M:N).
 
     A pure link, mirroring DocumentPerson — mention_count/variants stay in
-    DocumentEntity, not duplicated here (docs/organization-ner-alias-plan.md,
+    DocumentEntity, not duplicated here (docs/adr/adr-038-organization-registry-global-aliases.md,
     point 2 of the review).
     """
 

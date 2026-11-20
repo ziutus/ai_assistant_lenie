@@ -4,7 +4,7 @@ Regression test for the delete-before-rename fix: renaming the surviving
 row before deleting its duplicates could collide with
 unique(document_id, entity_type, entity_text) when the canonical name
 already belongs to another row in the same document (the "Interia" +
-"Interii" reference case, docs/organization-ner-alias-plan.md).
+"Interii" reference case, docs/adr/adr-038-organization-registry-global-aliases.md).
 """
 
 import os
