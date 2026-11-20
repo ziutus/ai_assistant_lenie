@@ -2,6 +2,7 @@ import React from "react";
 import CollapsibleSection from "../components/CollapsibleSection/collapsibleSection";
 import TranscriptChaptersSuggest from "../components/TranscriptChaptersSuggest/transcriptChaptersSuggest";
 import SkillCommand from "../components/SkillCommand";
+import YoutubeFlowGuide from "../components/YoutubeFlowGuide/youtubeFlowGuide";
 import ChapterBoundariesPanel from "../components/ChapterBoundariesPanel/chapterBoundariesPanel";
 import { renderMarkdown } from "./read";
 import axios from "axios";
@@ -211,6 +212,13 @@ const Youtube = () => {
       </h2>
       {id && <NavLink to={`/llm-costs?document_id=${id}`} style={{ display: "inline-block", marginBottom: 10, fontSize: "0.9em", color: "#0369a1" }}>💰 Koszty i etapy LLM</NavLink>}
       <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
+        {id && (
+          <YoutubeFlowGuide
+            docId={id} apiUrl={apiUrl} apiKey={apiKey ?? ""}
+            transcriptMissing={transcriptMissing} hasChapters={hasMarkdownChapters} hasOutline={hasOutline}
+            refreshKey={`${formik.values.processing_status}|${hasMarkdownChapters}|${transcriptMissing}`}
+          />
+        )}
         {id && (
           <>
           <CollapsibleSection key={String(hasDescription)} title="Opis filmu" defaultOpen={!hasDescription}>

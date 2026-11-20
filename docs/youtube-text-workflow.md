@@ -25,7 +25,14 @@ osobne ślady w bazie: run analizy i chunki, `entities_checked_at`, `enrichment_
 bramką jest lista „Stan przetwarzania” (`GET /document/<id>/readiness`): dla `youtube` wymaga ona
 kroków `content`, `chunks`, `embeddings`, `ner`, `enrichment`, `tags`. Diagram pokazuje **zalecaną**
 kolejność, wynikającą z zależności w kodzie (np. chunki dzielą się wg rozdziałów, NER pomija rozdziały
-nie-TEMAT, więc rozdziały najpierw), a nie sztywny pipeline.
+nie-TEMAT, więc rozdziały najpierw), a nie sztywny pipeline. Gałąź chunków (etapy 4–6) i gałąź encji
+(etapy 7–9) zależą tylko od struktury tekstu i są od siebie niezależne: przycisk zapisu w edytorze
+YouTube („Zapisz i przejdź do przeglądu NER”) prowadzi najpierw do `/ner/:id/1`, a „Przejdź prosto do
+chunków” pomija ten przegląd.
+
+Ta mapa jest podlinkowana ze strony `/youtube/:id` (sekcja „Gdzie jestem w flow pracy z tekstem”), która
+pokazuje bieżący etap dokumentu i odsyła do poniższych sekcji przez kotwice `flow-*`; nie zmieniaj ich
+nazw bez poprawienia `web_interface_react/src/modules/shared/utils/youtubeFlow.ts`.
 
 Dwie zależności, które naprawdę blokują:
 
@@ -36,7 +43,9 @@ Dwie zależności, które naprawdę blokują:
   `entity_review_decisions`.
 - Ponowne wykrywanie zdarzeń, tonu i okresów zastępuje zapisane wyniki **tylko tego rozdziału**.
 
-## 1. Przegląd: dziewięć etapów
+<a id="flow-overview"></a>
+
+## 1. Przegląd: dziesięć etapów
 
 ```mermaid
 flowchart LR
@@ -74,6 +83,8 @@ flowchart LR
 
 Kolor etapu na tym diagramie oznacza **dominujący** mechanizm; w środku większość etapów miesza kilka
 (szczegóły niżej).
+
+<a id="flow-import"></a>
 
 ## 2. Etap 1 — Import (`youtube_processing.process_youtube_url()`)
 
@@ -114,6 +125,8 @@ Znaczniki czasu `[MM:SS]` nie trafiają do `text`; istnieją tylko w `text_raw` 
 pokazywane w widoku chunków, dopóki chunk nie ma `corrected_text` (szczegóły:
 [document-analysis-pipeline.md](document-analysis-pipeline.md), sekcja 5.2).
 
+<a id="flow-corrections"></a>
+
 ## 3. Etap 2 — Poprawki błędów transkrypcji
 
 Poprawki działają na kilku poziomach. Tylko pierwszy zapisuje się automatycznie przy imporcie; reszta
@@ -147,6 +160,8 @@ Różnica, o którą łatwo się potknąć: reguły z `transcript_corrections` *
 transkrypcie literówka zostaje. Spellcheck nie widzi błędu, który dał poprawne słowo („mur” usłyszane
 jako „mój”); to wymaga pełnego przejścia LLM i jest poza zakresem. Zapis poprawki nie przebudowuje
 istniejących chunków, embeddingów ani encji.
+
+<a id="flow-structure"></a>
 
 ## 4. Etap 3 — Struktura tekstu: rozdziały i akapity
 
@@ -183,6 +198,8 @@ znak), używa tego samego dzielnika co edytor rozdziałów i odmawia przy embedd
 analizie. `outline_md` to spis tematyczny i **nie** jest `chapter_list` (ten ma prawdziwe czasy
 `m:ss`); modele nigdy nie wymyślają czasów. Dozwolone modele dla propozycji rozdziałów wybiera
 allowlista `transcript_chapters` (`GET/PUT /transcript_chapters/model`).
+
+<a id="flow-chunks"></a>
 
 ## 5. Etapy 4–6 — Chunki, przegląd i embeddingi (`/chunks/:id`)
 
@@ -228,6 +245,8 @@ jednym takim chunkiem uruchamia generowanie automatycznie w tle. Ponowne uruchom
 embeddingi tego runu i tworzy je od nowa. Kolejny run tego samego zakresu oznacza poprzedni,
 niedokończony jako `superseded`.
 
+<a id="flow-entities"></a>
+
 ## 6. Etap 7 — Encje: osoby, miejsca, organizacje, państwa (`/ner/:id`)
 
 Wywołanie: `POST /website_entities` (przycisk „Wykryj osoby i miejsca”) albo automatycznie w
@@ -267,6 +286,8 @@ flowchart TD
 Węzły D–G mieszają usługi i LLM (np. miejsca: LocationIQ to usługa, klasyfikacja kontekstu to LLM).
 Ręczne decyzje są trwałe: zapisują się w `entity_review_decisions` i są odtwarzane po ponownym NER,
 więc odświeżenie nie cofa poprawek.
+
+<a id="flow-enrichment"></a>
 
 ## 7. Etapy 8–9 — Wzbogacenie per rozdział i rejestry
 
@@ -311,6 +332,8 @@ Wzbogacenie jest liczone jako wykonane (`enrichment_run_at`) po zdarzeniach, ton
 źródła informacji i pytania kontrolne nie ustawiają tej daty, więc o ich wykonaniu mówi tylko
 istnienie wierszy (`GET /document/<id>/enrichment_status`).
 
+<a id="flow-result"></a>
+
 ## 8. Etap 10 — Wynik: czytnik, wyszukiwanie, Obsidian
 
 ```mermaid
@@ -327,6 +350,8 @@ flowchart LR
     class B,C,D,F regex
     class E,G human
 ```
+
+<a id="flow-actions"></a>
 
 ## 9. Tabela wszystkich akcji
 

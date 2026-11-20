@@ -126,6 +126,23 @@ the dated-events block, so tone, period and passages can be judged next to the e
 sentences itself and does not highlight the passages, so the panel omits the highlighting switch there (the page owns
 one `useToneSpans` list and the `toneVersion` that reloads the tone panels).
 
+### YouTube flow guide (`/youtube/:id`)
+
+`components/YoutubeFlowGuide` (a collapsed `CollapsibleSection` "🧭 Gdzie jestem w flow pracy z tekstem" at the top of the
+YouTube editor form; the summary already says "— teraz: <stage>") shows where the document stands in the text workflow
+and what can happen next. It is read-only: it fetches `GET /document/:id/readiness` itself (optional — on failure it
+still draws the stages the editor can work out alone and says so) and never triggers anything. The logic is the pure
+`utils/youtubeFlow.ts` (`youtubeFlowPosition()`): stages import → structure (`##` chapters) → chunks → embeddings →
+entities (NER) → enrichment, plus two stateless optional ones (transcript corrections, registries/notes); the current
+stage is the first unfinished one of that chain. A started analysis counts as "structure done" even without headings;
+the chunk branch and the NER branch are independent, so while both are open the guide says so and lists both (the
+editor's save button leads to NER first). Each stage links to its section of
+[docs/youtube-text-workflow.md](../docs/youtube-text-workflow.md) on GitHub (`YOUTUBE_FLOW_DOC_URL`, public repository,
+new tab) through explicit `<a id="flow-…">` anchors in that file — rename neither side without the other. "Co dalej"
+entries are in-app links (`/ner/:id[/1]`, `/chunks/:id`, `/read/:id`, `/world-events`) or a copyable skill command; the
+page passes `refreshKey` (status, chapters, transcript) so the readiness is reloaded after a save. Tests:
+`utils/youtubeFlow.test.ts`, `components/YoutubeFlowGuide/youtubeFlowGuide.test.tsx`.
+
 ### Skill hints
 
 Where a task is done by a Claude Code skill rather than by the UI, show
