@@ -158,7 +158,7 @@ Training data for `article_cleaner.py`: lines a human manually removed from a ch
 
 ### Table: `public.document_entities`
 
-Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-integration-plan.md`](../../docs/ner-integration-plan.md). Populated by `library/entity_service.py` from the NER microservice (`ner_service/`, via `library/ner_client.py`). Rows are derived data: a refresh **replaces** the document's rows (unlike `tags`, which accumulates). Deliberately no disambiguation columns — persons get dedicated tables in a later stage ([`docs/person-ner-plan.md`](../../docs/person-ner-plan.md)), places get verification + tags ([`docs/geo-place-ner-plan.md`](../../docs/geo-place-ner-plan.md)).
+Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-integration-plan.md`](../../docs/ner-integration-plan.md). Populated by `library/entity_service.py` from the NER microservice (`ner_service/`, via `library/ner_client.py`). Rows are derived data: a refresh **replaces** the document's rows (unlike `tags`, which accumulates). Deliberately no disambiguation columns — persons get dedicated tables in a later stage ([`docs/person-ner-plan.md`](../../docs/person-ner-plan.md)), places get verification + tags ([ADR-018](../../docs/adr/adr-018-geo-place-ner-locationiq.md)).
 
 | Column | Type | Description |
 |--------|------|-------------|

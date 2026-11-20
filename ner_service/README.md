@@ -14,7 +14,7 @@ the internal-only threat model.
 See [`../docs/ner-integration-plan.md`](../docs/ner-integration-plan.md) for
 how this service is wired into the backend (client: `backend/library/ner_client.py`,
 storage: `document_entities` table, UI panel in `web_interface_react`), and
-[`../docs/geo-place-ner-plan.md`](../docs/geo-place-ner-plan.md) /
+[`ADR-018`](../docs/adr/adr-018-geo-place-ner-locationiq.md) /
 [`../docs/person-ner-plan.md`](../docs/person-ner-plan.md) for the broader
 place/person verification plans this service is the first step of.
 
