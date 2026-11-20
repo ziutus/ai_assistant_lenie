@@ -2392,8 +2392,10 @@ def _event_to_dict(row) -> dict:
 def document_chapter_detect_events(doc_id: int, position: int):
     """Detect dated events in ONE chapter and store them as proposals (``document_events``).
 
-    Replaces the stored events of that chapter only. Body: optional ``{"model": "..."}``; the default is
-    the model of the document's latest analysis run, else the timeline default.
+    Replaces the stored events of that chapter only. Body: optional ``{"model": "...", "knowledge": true}``; the
+    default model is the model of the document's latest analysis run, else the timeline default. ``knowledge`` lets
+    the model supply the year of a historical event the text only names ("Monachium 38"): such a proposal says so
+    in its description. Meant for a model that knows history (a frontier model).
     """
     from library.timeline_events import refresh_document_events
 
@@ -2401,6 +2403,9 @@ def document_chapter_detect_events(doc_id: int, position: int):
     model = data.get("model")
     if model is not None and not isinstance(model, str):
         return jsonify({"status": "error", "message": "model must be a string"}), 400
+    knowledge = data.get("knowledge", False)
+    if not isinstance(knowledge, bool):
+        return jsonify({"status": "error", "message": "knowledge must be a boolean"}), 400
 
     session = get_scoped_session()
     doc = session.get(Document, doc_id)
@@ -2411,7 +2416,9 @@ def document_chapter_detect_events(doc_id: int, position: int):
         model = run.model if run else None
 
     try:
-        result = refresh_document_events(session, doc, model or None, chapter_position=position, editor_numbering=True)
+        result = refresh_document_events(
+            session, doc, model or None, chapter_position=position, editor_numbering=True, knowledge=knowledge,
+        )
         session.commit()
     except ValueError:
         session.rollback()
@@ -2432,6 +2439,7 @@ def document_chapter_detect_events(doc_id: int, position: int):
         "events": [{**_event_to_dict(row), "world_events": []} for row in rows],
         "rejected_without_quote": report.get("rejected_without_quote", 0),
         "rejected_without_date": report.get("rejected_without_date", 0),
+        "knowledge_dates": report.get("knowledge_dates", 0),
         "publications_as_sources": report.get("publications", 0),
         "skipped_ignored": result.get("skipped_ignored", 0),
         "publication_sources": result.get("publication_names", []),

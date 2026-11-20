@@ -47,8 +47,10 @@ def test_detects_only_the_requested_chapter_and_returns_proposals(client, monkey
     monkeypatch.setattr(crr, "_latest_run_for_document", lambda s, d: None)
     seen = {}
 
-    def fake_refresh(sess, document, model=None, *, chapter_position=None, editor_numbering=False):
-        seen.update(model=model, chapter_position=chapter_position, editor_numbering=editor_numbering)
+    def fake_refresh(sess, document, model=None, *, chapter_position=None, editor_numbering=False, knowledge=False):
+        seen.update(
+            model=model, chapter_position=chapter_position, editor_numbering=editor_numbering, knowledge=knowledge,
+        )
         return {
             "model": "m1", "rows": [_row()],
             "chapters": [{"rejected_without_quote": 1, "rejected_without_date": 2, "invalid_json": 0}],
@@ -60,7 +62,7 @@ def test_detects_only_the_requested_chapter_and_returns_proposals(client, monkey
 
     body = r.get_json()
     assert r.status_code == 200
-    assert seen == {"model": "m1", "chapter_position": 2, "editor_numbering": True}
+    assert seen == {"model": "m1", "chapter_position": 2, "editor_numbering": True, "knowledge": False}
     assert body["events"][0]["date_text"] == "1 września 1939"
     assert body["events"][0]["event_date"] == "1939-09-01"
     assert body["rejected_without_quote"] == 1 and body["rejected_without_date"] == 2
@@ -88,5 +90,32 @@ def test_model_must_be_a_string(client, monkeypatch):
     monkeypatch.setattr(crr, "get_scoped_session", lambda: _session(Document(id=5)))
 
     r = client.post("/document/5/chapter/1/detect_events", json={"model": 3})
+
+    assert r.status_code == 400
+
+
+def test_knowledge_mode_is_passed_through_and_its_count_reported(client, monkeypatch):
+    session = _session(Document(id=5))
+    monkeypatch.setattr(crr, "get_scoped_session", lambda: session)
+    monkeypatch.setattr(crr, "_latest_run_for_document", lambda s, d: None)
+    seen = {}
+
+    def fake_refresh(sess, document, model=None, *, chapter_position=None, editor_numbering=False, knowledge=False):
+        seen.update(model=model, knowledge=knowledge)
+        return {"model": model, "rows": [], "chapters": [{"knowledge_dates": 2}]}
+
+    monkeypatch.setattr(timeline_events, "refresh_document_events", fake_refresh)
+
+    r = client.post("/document/5/chapter/2/detect_events", json={"model": "openrouter/x/y", "knowledge": True})
+
+    assert r.status_code == 200
+    assert seen == {"model": "openrouter/x/y", "knowledge": True}
+    assert r.get_json()["knowledge_dates"] == 2
+
+
+def test_knowledge_flag_must_be_a_boolean(client, monkeypatch):
+    monkeypatch.setattr(crr, "get_scoped_session", lambda: _session(Document(id=5)))
+
+    r = client.post("/document/5/chapter/1/detect_events", json={"knowledge": "yes"})
 
     assert r.status_code == 400

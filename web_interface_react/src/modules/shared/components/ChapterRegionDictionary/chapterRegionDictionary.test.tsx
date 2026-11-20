@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ChapterRegionDictionary from "./chapterRegionDictionary";
-import type { RegionDictionaryInfo } from "../../utils/regionDictionary";
+import type { PendingDictionaryChange, RegionDictionaryInfo } from "../../utils/regionDictionary";
 
 vi.mock("axios");
 
@@ -32,6 +32,78 @@ const show = (value: RegionDictionaryInfo | null, position = 2, onChanged = vi.f
 
 beforeEach(() => vi.resetAllMocks());
 afterEach(cleanup);
+
+const pendingChanges: PendingDictionaryChange[] = [
+  { rule_id: 3, scope: "region", country_slug: "kraj-jemen", pattern: "huti", replacement: "Huti",
+    occurrences: 4, chapters: [0, 2, 5], wordings: [
+      { original: "huti", replacement: "Huti", occurrences: 3 },
+      { original: "HUTI", replacement: "Huti", occurrences: 1 },
+    ] },
+  { rule_id: 2, scope: "region", country_slug: "kraj-jemen", pattern: "Tais", replacement: "Taiz",
+    occurrences: 2, chapters: [2, 5], wordings: [{ original: "Tais", replacement: "Taiz", occurrences: 2 }] },
+];
+
+const openChangesPreview = async (changes = pendingChanges) => {
+  // A snippet must not override the new list, even when the list is empty.
+  vi.mocked(axios.post).mockResolvedValue({ data: { changes,
+    fields: { text: { snippet: { before: "old snippet", after: "new snippet" } } } } });
+  const onChanged = show(info({ pending_changes: 6 }));
+  fireEvent.click(screen.getByRole("button", { name: "Zastosuj słownik regionu…" }));
+  const preview = await screen.findByRole("group", { name: "Podgląd poprawek słownika regionu" });
+  return { onChanged, preview };
+};
+
+it("lists all pending rules and wordings, selects them by default and saves all without rule_ids", async () => {
+  const { onChanged, preview } = await openChangesPreview();
+  const list = within(preview).getByRole("list", { name: "Oczekujące zmiany słownika regionu" });
+  const rows = within(list).getAllByRole("listitem");
+  expect(rows).toHaveLength(2);
+  expect(rows[0].textContent).toBe("huti → Huti ×3HUTI → Huti ×1(rozdz. wstęp, 2, 5)");
+  expect(rows[1].textContent).toBe("Tais → Taiz ×2(rozdz. 2, 5)");
+  expect(within(list).getAllByRole<HTMLInputElement>("checkbox").every((box) => box.checked)).toBe(true);
+  expect(preview.textContent).not.toContain("old snippet");
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz wybrane zmiany (2 z 2)" }));
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[1][1]).toEqual({ document_id: 11263, dry_run: false });
+  expect(vi.mocked(axios.post).mock.calls[2][0]).toBe("/website_entities");
+  expect(screen.getByText("Poprawki zapisane w tekście, encje odświeżone.")).toBeTruthy();
+});
+
+it.each([true, false])("saves only selected rule ids and reports the subset (refresh entities: %s)", async (refresh) => {
+  const { onChanged } = await openChangesPreview();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Zapisz zmianę huti → Huti" }));
+  if (!refresh) fireEvent.click(screen.getByLabelText(/Odśwież encje po zapisie/));
+  fireEvent.click(screen.getByRole("button", { name: "Zapisz wybrane zmiany (1 z 2)" }));
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(axios.post).mock.calls[1][1]).toEqual({ document_id: 11263, dry_run: false, rule_ids: [2] });
+  const message = screen.getByText(/Zapisano 1 z 2 zmian w tekście. Pozostałe czekają na zastosowanie./);
+  expect(message.textContent).toContain(refresh ? "Encje odświeżone." : "Odśwież encje („Wykryj osoby i miejsca”)");
+  expect(vi.mocked(axios.post)).toHaveBeenCalledTimes(refresh ? 3 : 2);
+});
+
+it("prevents saving an empty selection and can select all again", async () => {
+  const { onChanged } = await openChangesPreview();
+  fireEvent.click(screen.getByRole("button", { name: "Odznacz wszystkie" }));
+  const save = screen.getByRole<HTMLButtonElement>("button", { name: "Zapisz wybrane zmiany (0 z 2)" });
+  expect(save.disabled).toBe(true);
+  expect(screen.getByText("Zaznacz co najmniej jedną zmianę.")).toBeTruthy();
+  fireEvent.click(save);
+  expect(vi.mocked(axios.post)).toHaveBeenCalledTimes(1);
+  expect(onChanged).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Zaznacz wszystkie" }));
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Zapisz wybrane zmiany (2 z 2)" }).disabled).toBe(false);
+  expect(screen.queryByText("Zaznacz co najmniej jedną zmianę.")).toBeNull();
+});
+
+it("shows no save button for an empty changes array, even with a legacy snippet", async () => {
+  const { preview } = await openChangesPreview([]);
+  expect(within(preview).getByText("Brak zmian do zapisania.")).toBeTruthy();
+  expect(within(preview).queryByRole("button", { name: /Zapisz/ })).toBeNull();
+  expect(preview.textContent).not.toContain("old snippet");
+  fireEvent.click(within(preview).getByRole("button", { name: "Anuluj" }));
+  expect(screen.queryByRole("group", { name: "Podgląd poprawek słownika regionu" })).toBeNull();
+  expect(vi.mocked(axios.post)).toHaveBeenCalledTimes(1);
+});
 
 it("lists what the dictionary changed in THIS chapter, merged per wording and most frequent first", () => {
   show(info());

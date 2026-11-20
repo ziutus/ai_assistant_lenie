@@ -186,7 +186,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T20 | Nazwisko odmieniane przymiotnikowo odrzucone przez filtr POS | spaCy oznacza jednowyrazowe nazwisko typu -owa/-ewa/-ski jako `ADJ`, a agregacja odrzuca jednowyrazowe `persName` o POS innym niż `NOUN`/`PROPN` | „Zacharowa”, „Zacharowej”, „Kowalskiej” | E033 |
 | T21 | Miejsce, którego spaCy nie zgłasza w ogóle | nazwa małą literą („królewca”) albo tylko przymiotnik w roli nazwy („obwód kaliningradzki”, „przesmyk suwalski”); żaden gazetteer nie ma czego kanonizować | „królewca”, „obwód kaliningradzki”, „przesmyk suwalski”, „enklawę Kaliningradu” | E034, E038 |
 | T22 | Błąd transkrypcji rozpoznany jako osoba | automatyczne tłumaczenie dźwięku zapisuje zwrot jako nazwę własną; nie ma tabeli poprawek transkrypcji | „Egekwo” (zamiast „ex aequo”) | E035 |
-| T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036, E060 |
+| T23 | Rozsypane warianty jednej nazwy przez błędy transkrypcji kanału | auto-napisy zapisują to samo nazwisko na kilka sposobów; każdy wariant to osobna encja | „Hekset”, „Hexeta”, „He H” → Pete Hegseth | E036, E061 |
 | T24 | Miasto oznaczone przez spaCy jako organizacja | rzadka pisownia + odmiana („Tela Avivwu”) nie przypomina niczego znanego, więc model typuje ją jako `orgName` | „Tela Avivwu” → Tel Awiw | E037 |
 | T25 | Błąd STT w tekście źródłowym (pisownia/odmiana frazy) | transkrypcja zapisuje frazę w złej formie gramatycznej, a tekst trafia bez zmian do czytnika i NER; dotyczy tekstu, nie encji | „pięto Achillesa” zamiast „pięta Achillesa” | E038 |
 | T26 | Reguły NER z obrazu przesłonięte starą kopią w wolumenie | plik reguł w `data/` jest ukryty pod wolumenem `lenie-ai-data` (`/app/data`) ze starą kopią, więc nowy kod czyta stare dane i wzorce z repo nie działają na produkcji | „Polacy”, „Algierczycy” jako osobne miejsca | E039 |
@@ -196,7 +196,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T29 | Nazwa miejsca w związku frazeologicznym / eufemizmie, plus ucięta paczka klasyfikatora | nazwa miejsca jest tylko elementem zwrotu („odsyła do Jerozolimy” = zabija), a klasyfikator kontekstu nie ma takiej reguły; dodatkowo paczka 20 kandydatów przekraczała limit odpowiedzi, JSON się uciął i cała paczka zachowała encje bez werdyktów (fail-open) | „odsyła do Jerozolimy niewinnych cywilów” | E042 |
 
 | T30 | Nazwa kraju odrzucona przez filtr POS | Root poprawnego spanu kraju ma błędny POS, więc wzmianka znika przed kanonikalizacją z gazetteera | „Sri Lanki”, root „Sri” z `POS=X` | E043 |
-| T31 | Miejsce zbieżne z imieniem rozpoznane jako osoba | nazwa miejsca zaczyna się od imienia („Karolina Północna”), spaCy typuje ją jako `persName` ze zepsutym lematem (męski „Północny”); relabel „gazetteer miast → miejsce” obejmował tylko `orgName`, a rejestr osób utrwalał fałszywe osoby | „Karolina Północna / Południowa” (stany USA) | E046, E059 |
+| T31 | Miejsce zbieżne z imieniem rozpoznane jako osoba | nazwa miejsca zaczyna się od imienia („Karolina Północna”), spaCy typuje ją jako `persName` ze zepsutym lematem (męski „Północny”); relabel „gazetteer miast → miejsce” obejmował tylko `orgName`, a rejestr osób utrwalał fałszywe osoby | „Karolina Północna / Południowa” (stany USA) | E046, E060 |
 | T35 | Wykluczenie etnonimu kasuje cały kraj | reguła `ner_exclusions` na etnonim (`Amerykanin`, `placeName`, global) pasowała do lematu włączonego do grupy kraju przez `demonym_patterns`, więc `refresh_document_entities` usuwał całą grupę „Stany Zjednoczone” razem z wzmiankami nazwy kraju | „…na łaskę Stanów Zjednoczonych…” + „Amerykanie” (dok. #11237) | E051 |
 
 | T32 | Kraj odrzucony przez gazetteer krajów: brak wariantu „Republika X”, limit końcówki i niejednoznaczny pień | oficjalna nazwa z członem „Republika” nie ma wzorca, końcówka dłuższa niż 4 znaki przekracza limit `stem*`, a szeroki pień innego kraju (`dominik*`) pasuje też do pełnej nazwy (`dominikan*`), więc wynik jest niejednoznaczny i `canonical_country_name()` zwraca `None`; nazwa idzie do geokodera jak zwykłe miejsce | „Republiki Dominikańskiej”, „Dominikana” (Dominika vs Dominikana) | E047 |
@@ -209,7 +209,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T38 | Awaria geokodera zapisana jako trwały brak trafienia | `geocode()` zwracał `None` zarówno dla czystego braku trafienia (404), jak i dla awarii (timeout, 429, 5xx, brak klucza); `_get_or_create_geocode()` cache'owało każde `None` jako `resolved=false` i nigdy nie pytało ponownie | „Kraków”, „Katowice”, „Łódź”, „Lublin” bez potwierdzenia (cache z 2026-07-13) | E056 |
 | T39 | Przypadek zależny bez mianownika w tekście tworzy nowy wpis rejestru organizacji | gdy dokument ma tylko formy zależne, `aggregate_entities_detailed` bierze formę powierzchniową (ścieżka nr 2), a rejestr dopasowuje tylko dokładnie po aliasie, więc każda nowa odmiana to osobna organizacja; do tego starsze wpisy mają zepsuty lemat jako `canonical_name`, a span ucięty na łączniku („Al-”) i człon rodzajowy („Grupa”) tworzą kolejne wpisy | „Departamentowi Sprawiedliwości” obok „departament sprawiedliwość”; „Polską Partię Socjalistyczną”; „Al-”, „Grupa Al-Kaidy” obok „Al-Kaida” | E057 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T40,
+| T40 | Przezwisko lub skrót osoby w transkrypcji, błędnie dopasowane w Wikidata | autor kanału nazywa osobę własnym przezwiskiem („DJ Vans” dla J.D. Vance'a) i dalej skraca je lub STT przekręca („Wansa”, „VAN”, „VANSAP”); jednowyrazowe „Wansa” przechodzi filtr nazwiska, bo to nazwisko człowieka z Wikidata, a LLM wybiera z zamkniętej listy kandydatów nie tę osobę; glosariusz kanału z wieloczłonową nazwą kanoniczną zostawia wariant „Vance” bez oryginalnych zapisów, więc chip znika z rozdziału | „zwany przeze mnie DJ Vansem”, „wycofał WANsa z negocjacji” | E059 |
+
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T41,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -880,7 +882,18 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Status:** tylko dane bez zmiany kodu. Po odświeżeniu encji `Jerozolima` nie ma, nie ma tagu `miejsce-jerozolima`, `ner_glossary_applications` pokazuje 1 zamianę wpisu 16. Ryzyko: kanał może mieć dalsze formy eufemizmu (np. „odeszli do Jerozolimy” w innym szyku); dopisywać przy kolejnych zgłoszeniach.
 
 
-### E059 — „Gagauzję” (region w Mołdawii) jako osoba (dok. #11263, PR n/d, 2026-11-18)
+### E059 — „Wansa”, „DJ Vansem”, „JD V”, „VAN”, „VANSAP” = J.D. Vance, a „Wansa” trafiła do indonezyjskiego kandydata (dok. #11263, PR n/d, 2026-11-19)
+
+- **Typ encji:** persName
+- **Kategoria:** T40 — przezwisko lub skrót osoby w transkrypcji, błędnie dopasowane w Wikidata.
+- **Zdanie źródłowe:** „W każdym razie najciekawszą oczywiście inicjatywę podjął JD V, zwany przeze mnie DJ Vansem.”; „Trump w ogóle wycofał WANsa z negocjacji.”; „Znaczy cios w VANSAP to jest bardzo, bardzo poważny.”; „…którzy twierdzą, że w ogóle podobno VAN może nie wystartować.”
+- **Objaw:** w `/ner/11263/4` trzy osobne encje `JD V`, `Vansem`, `Wansa` (po 1 wzmiance); „Wansa” połączona z osobą 1466 „H. Lalu Mara Satria Wansa” (Q109702763, indonezyjski kandydat polityczny), „JD V” z osobą 1452 bez QID (`manual_review`). „WANsa”, „VAN” i „VANSAP” nie były encjami w ogóle. Poprawna osoba J.D. Vance (id 213, Q28935729) istniała w rejestrze.
+- **Przyczyna źródłowa:** przezwisko „DJ Vans” wprowadza sam lektor, a potem je skraca i STT je przekręca. W `person_registry.resolve_document_persons` jednowyrazowe „Wansa” idzie do Wikidata + `confirm_person_with_llm`; filtr `is_surname_mention` przepuszcza je, bo to nazwisko człowieka z Wikidata, a LLM wybiera z zamkniętej listy kandydatów (osoba 1466 powstała 2026-11-17, alias „Wansa” id 523). Nie było reguł w `ner_exclusions`, `ner_corrections`, `transcript_corrections` ani glosariuszu kanału. Kod zadziałał zgodnie z projektem; wersji kodu na NAS nie sprawdzano.
+- **Poprawka:** tylko dane. `POST /ner_channel_glossary` dla kanału „Na Wschód od Bliskiego Wschodu” (wpis 22, `fuzzy=false`, aliasy: `DJ Vansem`, `Vansem`, `WANsa`, `Wansa`, `Wansem`, `JD V`, `VANSAP`, `VAN`), potem `POST /website_entities` (dok. #11263 bez embeddingów). Trzy pułapki tej ścieżki: (1) refresh nie przepina starych linków osób, więc `PATCH /document_persons/2083` i `/2060` z `{"action":"reject"}` (usuwa link i osieroconą osobę 1466 / 1452 razem z aliasem 523); nie użyto `merge`, bo `merge_review_link` dopisałby nazwę indonezyjskiego kandydata jako alias Vance'a; (2) jednowyrazowe „Vance” nie dostało linku do osoby 213 (ścieżka Wikidata + LLM), więc `POST /website_entities/<id>/real_name` z `{"name":"J.D. Vance"}` (link 2161 `manual_confirmed`); (3) przy `canonical_name` „J.D. Vance” spaCy oznaczał tylko „Vance”, a `restore_original_variants()` dopisuje oryginalne zapisy tylko do wariantów zawierających całą nazwę zamienną, więc rozdział (filtr po wariantach w transkrypcie) nie widział encji; wpis ustawiono na `canonical_name` = „Vance” (PATCH), po czym encja ma warianty `Vance | DJ Vansem | JD V | VAN | VANSAP | WANsa | Wansa`.
+- **Test regresyjny:** brak — czysto danowa poprawka, wpis 22 w `ner_channel_glossary` dokumentuje przypadek.
+- **Status:** tylko dane bez zmiany kodu. Weryfikacja: `GET /document/11263/chapter_entities` pokazuje w rozdziale 4 „Vance” ×7 → J.D. Vance. Znane ograniczenia, bez kodu: wieloczłonowa nazwa kanoniczna w glosariuszu nie przywraca wariantów, gdy spaCy oznacza tylko ostatni człon; przezwisko autora bez własnej definicji w tekście wymaga ręcznych aliasów kanału.
+
+### E060 — „Gagauzję” (region w Mołdawii) jako osoba (dok. #11263, PR n/d, 2026-11-18)
 
 - **Typ encji:** persName (docelowo placeName)
 - **Kategoria:** T31 — miejsce zbieżne z imieniem rozpoznane jako osoba (tu: region autonomiczny, nie miasto).
@@ -891,7 +904,7 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Test regresyjny:** brak — czysto danowa poprawka; wpis w gazetteerze dokumentuje przypadek. Nie sprawdzono na świeżym odświeżeniu NER, czy relabel `kind=city` faktycznie przemianuje „Gagauzję” (dokument ma tylko ręczną poprawkę).
 - **Status:** tylko dane bez zmiany kodu.
 
-### E060 — „Build” zamiast „Bild” (błąd STT nazwy gazety) jako osobna organizacja i „Bild” jako osoba (dok. #11263, PR n/d, 2026-11-18)
+### E061 — „Build” zamiast „Bild” (błąd STT nazwy gazety) jako osobna organizacja i „Bild” jako osoba (dok. #11263, PR n/d, 2026-11-18)
 
 - **Typ encji:** orgName, persName
 - **Kategoria:** T23 — rozsypane warianty jednej nazwy przez błędy transkrypcji kanału.

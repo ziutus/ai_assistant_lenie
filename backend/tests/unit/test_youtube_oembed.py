@@ -1,5 +1,6 @@
 """Channel-name fallback for YouTube documents (oEmbed) and its use in process_youtube_url()."""
 
+import importlib
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -9,9 +10,14 @@ import pytest
 requests = pytest.importorskip("requests")
 pytest.importorskip("sqlalchemy")
 
+# Stub the AWS modules only where they are not installed (the lightweight uvx environment). A stub put into
+# sys.modules at collection time outlives this file: it used to replace the real boto3.dynamodb.conditions for
+# every test collected after it (test_legacy_aws_pull_service then failed with "cannot import name 'Key'").
 for _mod_name in ["boto3", "boto3.dynamodb", "boto3.dynamodb.conditions", "botocore",
                   "botocore.exceptions", "botocore.compat", "s3transfer"]:
-    if _mod_name not in sys.modules:
+    try:
+        importlib.import_module(_mod_name)
+    except ImportError:
         _mock_mod = MagicMock(spec=ModuleType)
         if _mod_name == "botocore.exceptions":
             _mock_mod.ClientError = type("ClientError", (Exception,), {})

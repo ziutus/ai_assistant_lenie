@@ -180,8 +180,8 @@ class TestWebDocumentColumns:
         "id", "summary", "url", "language", "tags", "text",
         "paywall", "requires_login", "social_platform", "title", "ingested_at", "document_type",
         "discovery_source_id", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
-        "chapter_list", "outline_md", "outline_anchors", "processing_status", "processing_error_code",
-        "text_raw", "transcript_job_id", "ai_summary_needed",
+        "chapter_list", "chapter_types", "chapter_notes", "outline_md", "outline_anchors", "processing_status",
+        "processing_error_code", "text_raw", "transcript_job_id", "ai_summary_needed",
         "byline", "byline_method", "note", "uuid", "collection_id", "text_md",
         "text_extracted", "transcript_needed", "reviewed_at",
         "obsidian_note_paths", "video_description", "ner_unavailable_at",
@@ -190,7 +190,7 @@ class TestWebDocumentColumns:
     }
 
     def test_column_count(self):
-        assert len(_column_names(Document)) == 46
+        assert len(_column_names(Document)) == 48
 
     def test_all_column_names(self):
         assert _column_names(Document) == self.EXPECTED_COLUMNS

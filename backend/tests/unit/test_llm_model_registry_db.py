@@ -73,4 +73,7 @@ def test_openrouter_models_stay_hidden_while_openrouter_is_off(monkeypatch):
 
 def test_unreachable_database_falls_back_to_the_seed(monkeypatch):
     monkeypatch.setattr(registry, "_openrouter_enabled", lambda: False)
-    assert "gpt-4o-mini" in _ids() and "gemini-3.1-flash-lite" in _ids()
+    ids = _ids()
+    assert "Bielik-11B-v3.0-Instruct" in ids
+    # direct OpenAI and Vertex models are hidden in the seed (migration f6b1a9c4d7e2)
+    assert "gpt-4o-mini" not in ids and "gemini-3.1-flash-lite" not in ids

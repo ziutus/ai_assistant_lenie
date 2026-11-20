@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 _TASKS = {
     "organization_description", "tool_tags", "content_group_suggestion", "transcript_chapters", "geopolitics",
     "world_event_web_enrich",
+    "transcript_spellcheck",  # speech-to-text slips found by the dictionary (library/transcript_spellcheck.py)
     "chapter_analysis",  # tone, historical period and dated events of one chapter (library/chapter_analysis_model.py)
 }
 

@@ -55,27 +55,24 @@ class ModelEntry:
 SEED_MODELS: tuple[ModelEntry, ...] = (
     ModelEntry("Bielik-11B-v3.0-Instruct", "Bielik 11B v3.0 (CloudFerro)", "cloudferro", verified=True,
                context_length=32768),
-    ModelEntry("Bielik-11B-v2.3-Instruct", "Bielik 11B v2.3 (CloudFerro)", "cloudferro", verified=True,
-               context_length=32768),
-    ModelEntry("gpt-4o-mini", "GPT-4o mini (OpenAI)", "openai", verified=True,
+    # Direct OpenAI and Google Vertex models are hidden (migration f6b1a9c4d7e2): spending is kept to OpenRouter and
+    # CloudFerro for now. ``PATCH /llm_models/<id>`` with ``status: active`` brings one back.
+    ModelEntry("gpt-4o-mini", "GPT-4o mini (OpenAI)", "openai", verified=True, status="retired",
                context_length=128000, max_output_tokens=16384),
     ModelEntry("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite (Google Vertex)", "google-vertexai", verified=True,
-               context_length=1048576, max_output_tokens=65536),
+               status="retired", context_length=1048576, max_output_tokens=65536),
     ModelEntry("gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite (Google Vertex)", "google-vertexai", verified=True,
-               context_length=1048576, max_output_tokens=65536),
+               status="retired", context_length=1048576, max_output_tokens=65536),
     ModelEntry("openrouter/openai/gpt-4o-mini", "GPT-4o mini (OpenRouter)", "openrouter", external=True),
-    ModelEntry(
-        "openrouter/google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (OpenRouter)", "openrouter", external=True,
-        status="deprecated", retires_on=datetime.date(2026, 10, 20),
-        note="Google wycofał ten model 2026-10-20; OpenRouter nadal go listuje. Ustaw status retired, gdy przestanie działać.",
-    ),
     ModelEntry(
         "openrouter/mistralai/mistral-small-3.2-24b-instruct", "Mistral Small 3.2 24B (OpenRouter)", "openrouter",
         external=True,
     ),
     ModelEntry("openrouter/google/gemma-3-27b-it", "Gemma 3 27B (OpenRouter)", "openrouter", external=True),
     ModelEntry("openrouter/meta-llama/llama-3.1-8b-instruct", "Llama 3.1 8B (OpenRouter)", "openrouter", external=True),
-    ModelEntry("openrouter/qwen/qwen-2.5-7b-instruct", "Qwen 2.5 7B (OpenRouter)", "openrouter", external=True),
+    # Frontier models for analyses that need the model's own knowledge (migration d8a2f5c1e963).
+    ModelEntry("openrouter/anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5 (OpenRouter)", "openrouter", external=True),
+    ModelEntry("openrouter/anthropic/claude-fable-5.2", "Claude Fable 5.2 (OpenRouter)", "openrouter", external=True),
 )
 
 

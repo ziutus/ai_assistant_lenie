@@ -95,6 +95,25 @@ it("sends the model chosen in the picker with the detection", async () => {
   expect(mocked.post.mock.calls[0][1]).toEqual({ model: "gemini-3.1-flash-lite" });
 });
 
+it("asks for the model's historical knowledge only when the box is ticked and reports the years it supplied", async () => {
+  mocked.get.mockResolvedValue({ data: { events: [] } });
+  mocked.post.mockResolvedValue({
+    data: { events: [proposal], model: "m1", rejected_without_quote: 0, rejected_without_date: 0, knowledge_dates: 2 },
+  });
+  render(<ChapterEventsPanel apiUrl="http://api" apiKey="k" docId={5} position={2} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: /Wykryj wydarzenia/ }));
+  await waitFor(() => expect(mocked.post).toHaveBeenCalledTimes(1));
+  expect(mocked.post.mock.calls[0][1]).toEqual({});
+
+  fireEvent.click(screen.getByLabelText(/Analogie historyczne/));
+  fireEvent.click(screen.getByRole("button", { name: /Wykryj wydarzenia/ }));
+
+  await waitFor(() => expect(mocked.post).toHaveBeenCalledTimes(2));
+  expect(mocked.post.mock.calls[1][1]).toEqual({ knowledge: true });
+  expect((await screen.findByRole("status")).textContent).toContain("2 lat ustalił model z własnej wiedzy");
+});
+
 const withId = { ...proposal, id: 77, world_events: [] };
 
 const renderOpen = async () => {

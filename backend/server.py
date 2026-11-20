@@ -50,6 +50,7 @@ from library.topic_routes import bp as topics_bp
 from library.cleanup_rules_routes import bp as cleanup_rules_bp
 from library.document_tags_routes import bp as document_tags_bp
 from library.transcript_corrections_routes import bp as transcript_corrections_bp
+from library.transcript_spellcheck_routes import bp as transcript_spellcheck_bp
 from library.whatsapp_groups_routes import bp as whatsapp_groups_bp
 from library.chat_routes import bp as chat_bp
 from library.whatsapp_sync_routes import bp as whatsapp_sync_bp
@@ -159,6 +160,7 @@ app.register_blueprint(recipes_bp)
 app.register_blueprint(topics_bp)
 app.register_blueprint(cleanup_rules_bp)
 app.register_blueprint(transcript_corrections_bp)
+app.register_blueprint(transcript_spellcheck_bp)
 app.register_blueprint(document_tags_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(whatsapp_groups_bp)
@@ -3870,6 +3872,25 @@ def document_organizations_merge(doc_id: int):
             return {"status": "error", "message": "Target organization not found"}, 404
         if target_organization_id == source_link.organization_id:
             return {"status": "error", "message": "source entity already belongs to this organization"}, 400
+        from library.organization_source_sync import organization_entity_in_document, organization_entity_named
+
+        # The document may already mention the target organization under its own row: then the two rows are
+        # folded like with target_entity_id. Renaming the source row to the canonical name would collide with it
+        # (unique document/type/text) and answer 500.
+        target_entity = organization_entity_in_document(
+            session, doc_id, target_organization_id, exclude_entity_id=source_entity.id,
+        )
+        if target_entity is None:
+            clash = organization_entity_named(
+                session, doc_id, target_organization.canonical_name, exclude_entity_id=source_entity.id,
+            )
+            if clash is not None:
+                return jsonify({
+                    "status": "error",
+                    "message": "Dokument ma już wiersz o nazwie tej organizacji, który nie jest rozpoznaną "
+                               "organizacją — scal z nim wprost (target_entity_id) albo najpierw go rozpoznaj.",
+                    "conflict_entity": {"id": clash.id, "text": clash.entity_text},
+                }), 409
 
     source_entity_text = source_entity.entity_text
     source_entity_variants = list(source_entity.variants or [])

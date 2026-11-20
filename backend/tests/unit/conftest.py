@@ -40,3 +40,23 @@ def no_database_llm_models(monkeypatch):
     llm_model_store.invalidate_cache()
     yield
     llm_model_store.invalidate_cache()
+
+
+@pytest.fixture
+def all_provider_models(monkeypatch):
+    """A model list that offers direct OpenAI and Google Vertex models again.
+
+    The production allowlist keeps only OpenRouter and CloudFerro visible (migration f6b1a9c4d7e2 retires the others),
+    but the registry's provider rules (JSON-schema support, prices from ``llm_pricing``, availability) are still tested
+    against those providers: this gives such a test its own list instead of tying it to what the seed hides.
+    """
+    from dataclasses import replace
+
+    from library import llm_model_store
+
+    models = tuple(
+        replace(m, status="active") if m.provider in ("openai", "google-vertexai") else m
+        for m in llm_model_store.SEED_MODELS
+    )
+    monkeypatch.setattr(llm_model_store, "get_models", lambda: models)
+    return models

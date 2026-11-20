@@ -16,10 +16,10 @@ TASK = pt.TASK_CONTENT_GROUPS
 CATALOG = [{"id": 1, "name": "AI"}]
 
 
-def test_suggestion_models_exclude_providers_without_json_schema(monkeypatch):
+def test_suggestion_models_exclude_providers_without_json_schema(monkeypatch, all_provider_models):
     monkeypatch.setattr(registry, "_openrouter_enabled", lambda: True)
     ids = {item["id"] for item in registry._base_models(TASK)}
-    assert "Bielik-11B-v3.0-Instruct" in ids and "openrouter/google/gemini-2.5-flash-lite" in ids
+    assert "Bielik-11B-v3.0-Instruct" in ids and "openrouter/mistralai/mistral-small-3.2-24b-instruct" in ids
     assert "gpt-4o-mini" not in ids
     assert {"gemini-3.1-flash-lite", "gemini-3.5-flash-lite"} <= ids  # Vertex honours a JSON-schema response_format
     # the other tasks keep the full list
@@ -41,7 +41,7 @@ def test_cheap_openrouter_models_are_offered_only_while_openrouter_is_enabled(mo
 def test_openrouter_model_without_structured_outputs_is_dropped_unknown_is_kept(monkeypatch):
     monkeypatch.setattr(registry, "_openrouter_enabled", lambda: True)
     monkeypatch.setattr(registry, "_database_prices", lambda _models: {})
-    flags = {"openrouter/meta-llama/llama-3.1-8b-instruct": False, "openrouter/qwen/qwen-2.5-7b-instruct": None}
+    flags = {"openrouter/meta-llama/llama-3.1-8b-instruct": False, "openrouter/google/gemma-3-27b-it": None}
 
     def details(model_id):
         return {**registry._empty_details(), "supports_structured_outputs": flags.get(model_id, True)}
@@ -49,7 +49,7 @@ def test_openrouter_model_without_structured_outputs_is_dropped_unknown_is_kept(
     monkeypatch.setattr(registry, "_openrouter_details", details)
     ids = [item["id"] for item in registry.selectable_models(TASK)]
     assert "openrouter/meta-llama/llama-3.1-8b-instruct" not in ids
-    assert "openrouter/qwen/qwen-2.5-7b-instruct" in ids  # catalog unreachable = unknown, not "unsupported"
+    assert "openrouter/google/gemma-3-27b-it" in ids  # catalog unreachable = unknown, not "unsupported"
     assert "openrouter/meta-llama/llama-3.1-8b-instruct" in [item["id"] for item in registry.selectable_models("tool_tags")]
 
 
@@ -86,11 +86,11 @@ def test_preview_route_returns_the_request_without_calling_a_model(monkeypatch):
     monkeypatch.setattr(svc, "ai_ask", ask)
     client = app.test_client()
 
-    response = client.post("/feed_items/5/group-suggestions/preview", json={"model": "openrouter/google/gemini-2.5-flash-lite"})
+    response = client.post("/feed_items/5/group-suggestions/preview", json={"model": "openrouter/mistralai/mistral-small-3.2-24b-instruct"})
     assert response.status_code == 200
     assert response.json["prompt_version"] == "feed_item-builtin"
     assert "TYTUŁ: Starlink news" in response.json["prompt"] and response.json["response_format"] is not None
-    assert (response.json["model"], response.json["structured"], response.json["system_sent"]) == ("openrouter/google/gemini-2.5-flash-lite", True, True)
+    assert (response.json["model"], response.json["structured"], response.json["system_sent"]) == ("openrouter/mistralai/mistral-small-3.2-24b-instruct", True, True)
     ask.assert_not_called()
     session.add.assert_not_called()
 

@@ -86,3 +86,18 @@ export const regionLabel = (info: RegionDictionaryInfo): string => {
   });
   return [...names.values()].join(", ");
 };
+
+// Pending text changes returned by POST /transcript_corrections/apply.
+export type PendingDictionaryChange = {
+  rule_id: number;
+  scope: "global" | "author" | "region";
+  country_slug: string | null;
+  pattern: string;
+  replacement: string;
+  occurrences: number;
+  chapters: number[];
+  wordings: ChapterChange[];
+};
+
+export const formatChapterNumbers = (chapters: number[]): string =>
+  chapters.map((chapter) => chapter === 0 ? "wstęp" : String(chapter)).join(", ");

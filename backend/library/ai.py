@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 OPENAI_MODELS = ("gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o", "gpt-4o-2024-05-13", "gpt-4o-mini")
 BEDROCK_MODELS = ("amazon.titan-tg1-large", "amazon.nova-micro", "amazon.nova-pro", "aws")
-SHERLOCK_MODELS = ("Bielik-11B-v2.3-Instruct", "Bielik-11B-v3.0-Instruct")
+SHERLOCK_MODELS = ("Bielik-11B-v3.0-Instruct",)
 SHERLOCK_VISION_MODELS = ("google/gemma-4-31B-it", "mistralai/Mistral-Small-4-119B-2603")
 GOOGLE_MODELS = ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
 

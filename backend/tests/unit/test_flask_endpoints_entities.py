@@ -1482,13 +1482,14 @@ class TestOrganizationRenameSyncsSource:
         session.rollback.assert_called_once()
         session.commit.assert_not_called()
 
-    def test_unexpected_error_returns_500_with_a_reason_and_rolls_back(self, client):
+    def test_unexpected_error_returns_500_with_a_generic_message_and_rolls_back(self, client):
         resp, _, session = self._patch(
             client, {"canonical_name": "The Telegraph"}, rename_side_effect=RuntimeError("duplicate key"),
         )
 
         assert resp.status_code == 500
-        assert "RuntimeError: duplicate key" in resp.get_json()["message"]
+        assert resp.get_json()["message"] == "Błąd serwera przy zmianie nazwy."
+        assert "duplicate key" not in resp.get_data(as_text=True)  # the exception text stays in the log
         session.rollback.assert_called_once()
         session.commit.assert_not_called()
 

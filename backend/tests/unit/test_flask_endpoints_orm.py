@@ -883,6 +883,7 @@ class TestUrlAdd:
             "message": "Document already exists with ID: 77",
             "document_id": 77,
             "missing_raw_html": False,
+            "existing_document_type": None,
         }
 
     def test_successful_add(self, client):

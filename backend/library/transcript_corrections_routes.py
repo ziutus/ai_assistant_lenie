@@ -165,6 +165,44 @@ def _snippet(before, after):
     return {"before": before[start:index + 100], "after": after[start:index + 100]}
 
 
+def _parse_rule_ids(data):
+    """The optional ``rule_ids`` list of ``apply`` (only these rules may change the text), or ``None``."""
+    if "rule_ids" not in data:
+        return None
+    rule_ids = data["rule_ids"]
+    if "pattern" in data:
+        abort(400, "rule_ids nie łączy się z pattern (zamiana jednorazowa nie używa reguł)")
+    if (not isinstance(rule_ids, list) or not rule_ids or len(rule_ids) > 500
+            or any(type(item) is not int or item <= 0 for item in rule_ids)):
+        abort(400, "rule_ids musi być niepustą listą dodatnich liczb całkowitych (maks. 500)")
+    return set(rule_ids)
+
+
+def _group_changes(changes, rules):
+    """Real changes (``(rule_id, original, replacement, chapter)`` per match) grouped by rule for the review UI."""
+    by_rule = {rule.id: rule for rule in rules}
+    groups = {}
+    for rule_id, original, replacement, chapter in changes:
+        rule = by_rule.get(rule_id)
+        group = groups.setdefault(rule_id, {
+            "rule_id": rule_id, "scope": getattr(rule, "scope", None), "country_slug": getattr(rule, "country_slug", None),
+            "pattern": getattr(rule, "pattern", original), "replacement": getattr(rule, "replacement", replacement),
+            "occurrences": 0, "chapters": set(), "wordings": {},
+        })
+        group["occurrences"] += 1
+        group["chapters"].add(chapter)
+        wording = group["wordings"].setdefault((original, replacement), 0)
+        group["wordings"][(original, replacement)] = wording + 1
+    result = []
+    for group in groups.values():
+        group["chapters"] = sorted(group["chapters"])
+        group["wordings"] = [{"original": original, "replacement": replacement, "occurrences": count}
+                             for (original, replacement), count in sorted(group["wordings"].items(),
+                                                                          key=lambda item: (-item[1], item[0][0]))]
+        result.append(group)
+    return sorted(result, key=lambda group: (group["chapters"][0], group["rule_id"]))
+
+
 def _record_applications(session, document_id, changes) -> None:
     """Audit what really changed: one row per (rule, original wording, replacement, chapter)."""
     for (rule_id, original, replacement, chapter), count in Counter(changes).items():
@@ -231,6 +269,7 @@ def apply_rules():
         abort(400, "document_id musi być dodatnią liczbą całkowitą")
     if type(dry_run) is not bool:
         abort(400, "dry_run musi być wartością logiczną")
+    rule_ids = _parse_rule_ids(data)
     session = get_scoped_session()
     doc = session.get(Document, document_id)
     if doc is None:
@@ -245,6 +284,8 @@ def apply_rules():
         rules = []
     else:
         rules = load_active_rules(session=session)
+        if rule_ids is not None:  # the reviewer ticked only some of the pending changes
+            rules = [rule for rule in rules if rule.id in rule_ids]
     # A region rule fires only for the countries the document is tagged with (kraj-<slug>).
     countries = country_slugs_from_tags(doc.tags)
     hits = Counter()
@@ -274,4 +315,5 @@ def apply_rules():
             _bump_hit_counts(list(hits.items()))
     return jsonify({"status": "success", "document_id": document_id, "dry_run": dry_run, "fields": fields,
                     "countries": sorted(countries),
-                    "hits": [{"rule_id": rule_id, "count": count} for rule_id, count in sorted(hits.items())]})
+                    "hits": [{"rule_id": rule_id, "count": count} for rule_id, count in sorted(hits.items())],
+                    "changes": _group_changes(changes, rules)})

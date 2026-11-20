@@ -112,6 +112,51 @@ class TestCheckModel:
         assert "status" in problem
 
 
+def _load_migration(revision):
+    path = next(pathlib.Path(__file__).resolve().parents[2].glob(f"alembic/versions/{revision}_*.py"))
+    spec = importlib.util.spec_from_file_location(f"llm_models_migration_{revision}", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError:
+        pytest.skip("alembic is not installed")
+    return module
+
+
+def _removed_model_ids():
+    """Ids dropped from the allowlist after the seed migrations were written (b3f7d1a9c248, f6b1a9c4d7e2)."""
+    return {row[0] for row in _load_migration("b3f7d1a9c248").REMOVED} | {
+        row[0] for row in _load_migration("f6b1a9c4d7e2").REMOVED
+    }
+
+
+def _retired_model_ids():
+    """Ids hidden (status retired) by f6b1a9c4d7e2: direct providers other than CloudFerro."""
+    return set(_load_migration("f6b1a9c4d7e2").RETIRED)
+
+
+def _added_models():
+    """(model_id, label) pairs the allowlist gained after the seed migrations were written (d8a2f5c1e963)."""
+    path = next(pathlib.Path(__file__).resolve().parents[2].glob("alembic/versions/d8a2f5c1e963_*.py"))
+    spec = importlib.util.spec_from_file_location("llm_models_added_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError:
+        pytest.skip("alembic is not installed")
+    return list(module.ADDED)
+
+
+def test_only_openrouter_and_cloudferro_models_are_visible_in_the_seed():
+    visible = {m.model_id: m.provider for m in store.SEED_MODELS if m.status != "retired"}
+    assert set(visible.values()) == {"openrouter", "cloudferro"}
+    assert _retired_model_ids() == {m.model_id for m in store.SEED_MODELS if m.status == "retired"}
+
+
+def test_removed_models_are_gone_from_the_code_seed():
+    assert not _removed_model_ids() & {m.model_id for m in store.SEED_MODELS}
+
+
 def test_migration_seed_matches_the_code_seed():
     path = next(pathlib.Path(__file__).resolve().parents[2].glob("alembic/versions/f2c8a4d6b190_*.py"))
     spec = importlib.util.spec_from_file_location("llm_models_migration", path)
@@ -120,9 +165,13 @@ def test_migration_seed_matches_the_code_seed():
         spec.loader.exec_module(module)
     except ImportError:
         pytest.skip("alembic is not installed")
-    migrated = [ModelEntry(model_id, label, provider, external, verified, status,
+    retired = _retired_model_ids()
+    migrated = [ModelEntry(model_id, label, provider, external, verified,
+                           "retired" if model_id in retired else status,
                            datetime.date.fromisoformat(retires_on) if retires_on else None, note)
-                for model_id, label, provider, external, verified, status, retires_on, note in module.SEED]
+                for model_id, label, provider, external, verified, status, retires_on, note in module.SEED
+                if model_id not in _removed_model_ids()]
+    migrated += [ModelEntry(model_id, label, "openrouter", external=True) for model_id, label in _added_models()]
     # The first migration predates the token limits (added by a4c8e2f6b913): compare everything else.
     without_limits = [ModelEntry(m.model_id, m.label, m.provider, m.external, m.verified, m.status, m.retires_on, m.note)
                       for m in store.SEED_MODELS]
@@ -138,7 +187,9 @@ def test_limits_migration_matches_the_code_seed():
     except ImportError:
         pytest.skip("alembic is not installed")
     seeded = {m.model_id: (m.context_length, m.max_output_tokens) for m in store.SEED_MODELS if m.context_length}
-    assert {model_id: (context, output) for model_id, context, output in module.LIMITS} == seeded
+    removed = _removed_model_ids()
+    assert {model_id: (context, output) for model_id, context, output in module.LIMITS
+            if model_id not in removed} == seeded
     # every direct (non-OpenRouter) model of the seed has a window; OpenRouter ones read it from the live catalog
     assert all(m.context_length for m in store.SEED_MODELS if m.provider != "openrouter")
 

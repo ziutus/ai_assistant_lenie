@@ -147,3 +147,57 @@ def test_list_without_limit_returns_everything_with_total(api):
     session.scalars.return_value.all.return_value = []
     data = client.get("/transcript_corrections").get_json()
     assert data["total"] == 0 and data["rules"] == []
+
+
+def _doc(session):
+    session.get.return_value = Document(id=11263, document_type="youtube", byline="Kanał", text=TEXT, text_md=None,
+                                        tags=[YEMEN])
+
+
+def test_apply_lists_pending_changes_grouped_per_rule(api):
+    client, session = api
+    _doc(session)
+    data = client.post("/transcript_corrections/apply", json={"document_id": 11263}).get_json()
+    assert [(c["rule_id"], c["pattern"], c["replacement"], c["occurrences"], c["chapters"]) for c in data["changes"]] == [
+        (1, "Hutik", "Huti", 1, [1]), (2, "Tais", "Taiz", 2, [2]), (3, "huti", "Huti", 1, [2]),
+    ]
+    assert data["changes"][1]["wordings"] == [{"original": "Tais", "replacement": "Taiz", "occurrences": 2}]
+    assert data["changes"][0]["scope"] == "region" and data["changes"][0]["country_slug"] == YEMEN
+    session.add.assert_not_called()  # a preview stores nothing
+
+
+def test_rule_ids_limit_what_is_changed_and_recorded(api):
+    client, session = api
+    _doc(session)
+    body = {"document_id": 11263, "dry_run": False, "rule_ids": [2]}
+    data = client.post("/transcript_corrections/apply", json=body).get_json()
+    assert [c["rule_id"] for c in data["changes"]] == [2]
+    added = [call.args[0] for call in session.add.call_args_list]
+    assert {(r.rule_id, r.original_text) for r in added} == {(2, "Tais")}
+    doc = session.get.return_value
+    assert "Taiz" in doc.text and "Hutik" in doc.text and "huti" in doc.text  # the other rules did not run
+
+
+def test_rule_ids_unknown_id_changes_nothing(api):
+    client, session = api
+    _doc(session)
+    data = client.post("/transcript_corrections/apply",
+                       json={"document_id": 11263, "dry_run": False, "rule_ids": [999]}).get_json()
+    assert data["changes"] == [] and data["fields"]["text"]["changed"] is False
+    session.add.assert_not_called()
+
+
+@pytest.mark.parametrize("rule_ids", [[], "1", [True], [0], [-1], [1.5], [None], list(range(1, 502)), {"a": 1}])
+def test_rule_ids_must_be_a_nonempty_list_of_positive_ints(api, rule_ids):
+    client, session = api
+    _doc(session)
+    response = client.post("/transcript_corrections/apply", json={"document_id": 11263, "rule_ids": rule_ids})
+    assert response.status_code == 400
+    session.commit.assert_not_called()
+
+
+def test_rule_ids_cannot_be_combined_with_a_one_off_pattern(api):
+    client, session = api
+    _doc(session)
+    body = {"document_id": 11263, "pattern": "Tais", "replacement": "Taiz", "rule_ids": [2]}
+    assert client.post("/transcript_corrections/apply", json=body).status_code == 400
