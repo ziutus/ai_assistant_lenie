@@ -30,9 +30,9 @@ nie-TEMAT, więc rozdziały najpierw), a nie sztywny pipeline. Gałąź chunków
 YouTube („Zapisz i przejdź do przeglądu NER”) prowadzi najpierw do `/ner/:id/1`, a „Przejdź prosto do
 chunków” pomija ten przegląd.
 
-Ta mapa jest podlinkowana ze strony `/youtube/:id` (sekcja „Gdzie jestem w flow pracy z tekstem”), która
-pokazuje bieżący etap dokumentu i odsyła do poniższych sekcji przez kotwice `flow-*`; nie zmieniaj ich
-nazw bez poprawienia `web_interface_react/src/modules/shared/utils/youtubeFlow.ts`.
+Ta mapa jest podlinkowana ze strony `/youtube/:id` („📖 Flow pracy z tekstem (dokumentacja)” pod tytułem).
+Każda sekcja ma jawną kotwicę `flow-*`, więc do konkretnego etapu można linkować np.
+`…/youtube-text-workflow.md#flow-structure`.
 
 Dwie zależności, które naprawdę blokują:
 
