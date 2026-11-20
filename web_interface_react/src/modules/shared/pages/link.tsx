@@ -42,6 +42,7 @@ const Link = () => {
 
   const {
     message,
+    errorDetails,
     isError,
     isLoading,
     handleGetPageByUrl,
@@ -70,6 +71,7 @@ const Link = () => {
         <br />
         <FormButtons
           message={message}
+          errorDetails={errorDetails}
           formik={formik}
           isError={isError}
           isLoading={isLoading}

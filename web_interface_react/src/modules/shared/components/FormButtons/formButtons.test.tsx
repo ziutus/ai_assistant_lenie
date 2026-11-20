@@ -46,3 +46,15 @@ it("still has the plain save button", () => {
   fireEvent.click(screen.getByRole("button", { name: "Zapisz" }));
   expect(save).toHaveBeenCalledWith(youtube);
 });
+
+it("shows the technical details under an error message, and hides them for a success message", () => {
+  const props = { isLoading: false, formik: { values: { document_type: "webpage", text: "x" } },
+    handleSaveWebsiteNext: vi.fn(), handleSaveWebsiteToCorrect: vi.fn() };
+  render(<FormButtons {...props} message="Nie udało się zapisać dokumentu: brak odpowiedzi serwera"
+    isError errorDetails={"Operacja: zapis\nOdpowiedź HTTP: brak"} />);
+  expect(screen.getByText("Szczegóły techniczne")).toBeTruthy();
+  expect(screen.getByText(/Odpowiedź HTTP: brak/)).toBeTruthy();
+  cleanup();
+  render(<FormButtons {...props} message="Zapisano" isError={false} errorDetails="stare szczegóły" />);
+  expect(screen.queryByText("Szczegóły techniczne")).toBeNull();
+});

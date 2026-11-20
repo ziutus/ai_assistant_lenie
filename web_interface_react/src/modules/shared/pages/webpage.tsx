@@ -62,6 +62,7 @@ const Webpage = () => {
 
   const {
     message,
+    errorDetails,
     isError,
     isLoading,
     autoFlowComplete,
@@ -247,6 +248,7 @@ const Webpage = () => {
         ) : (
           <FormButtons
             message={message}
+            errorDetails={errorDetails}
             formik={formik}
             isError={isError}
             isLoading={pageBusy}

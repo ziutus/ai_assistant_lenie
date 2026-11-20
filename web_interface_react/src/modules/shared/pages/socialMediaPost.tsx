@@ -46,6 +46,7 @@ const SocialMediaPost = () => {
 
   const {
     message,
+    errorDetails,
     isError,
     isLoading,
     handleGetPageByUrl,
@@ -79,6 +80,7 @@ const SocialMediaPost = () => {
 
         <FormButtons
           message={message}
+          errorDetails={errorDetails}
           formik={formik}
           isError={isError}
           isLoading={isLoading}

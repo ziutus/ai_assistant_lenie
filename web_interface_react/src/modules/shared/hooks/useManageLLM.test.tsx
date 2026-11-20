@@ -46,3 +46,66 @@ it("does not navigate when saving fails", async () => {
   await act(async () => { await result.current.handleSaveWebsiteNext(youtube, "ner"); });
   expect(navigate).not.toHaveBeenCalled();
 });
+
+const networkError = () => Object.assign(new Error("Network Error"), {
+  isAxiosError: true,
+  code: "ERR_NETWORK",
+  config: { method: "post", url: "/website_save" },
+});
+
+it("explains a failed save in Polish with technical details and says the backend is alive", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.mocked(axios.post).mockRejectedValue(networkError());
+  vi.mocked(axios.get).mockResolvedValue({ status: 200 });
+  const { result } = hook();
+  await act(async () => { await result.current.handleSaveWebsiteToCorrect(youtube); });
+  expect(result.current.isError).toBe(true);
+  expect(result.current.message).toMatch(/^Nie udało się zapisać dokumentu: brak odpowiedzi serwera/);
+  expect(result.current.message).not.toContain("There was an error");
+  const details = result.current.errorDetails;
+  expect(details).toContain("Dokument: 42");
+  expect(details).toContain("Rozmiar zapisywanych danych:");
+  expect(details).toContain("Żądanie: POST /website_save");
+  expect(details).toContain("Kod błędu klienta: ERR_NETWORK");
+  expect(details).toContain("Sonda GET /healthz: backend odpowiada");
+  expect(details).not.toContain("test-key");
+  expect(result.current.isLoading).toBe(false);
+});
+
+it("reports an unreachable backend when the probe fails too", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+  vi.mocked(axios.post).mockRejectedValue(networkError());
+  vi.mocked(axios.get).mockRejectedValue(new Error("Network Error"));
+  const { result } = hook();
+  await act(async () => { await result.current.handleSaveWebsiteToCorrect(youtube); });
+  expect(result.current.errorDetails).toContain("backend albo NAS jest nieosiągalny");
+  vi.unstubAllGlobals();
+});
+
+it("does not probe the backend when the server answered with an HTTP error", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.mocked(axios.post).mockRejectedValue(Object.assign(new Error("Request failed with status code 413"), {
+    isAxiosError: true,
+    config: { method: "post", url: "/website_save" },
+    response: { status: 413, statusText: "Payload Too Large", data: "<html>nginx</html>" },
+  }));
+  const { result } = hook();
+  await act(async () => { await result.current.handleSaveWebsiteToCorrect(youtube); });
+  expect(axios.get).not.toHaveBeenCalled();
+  expect(result.current.message).toContain("HTTP 413 (Payload Too Large)");
+  expect(result.current.errorDetails).toContain("Odpowiedź HTTP: 413 Payload Too Large");
+});
+
+it("drops stale details once a newer message replaces the error", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.mocked(axios.post).mockRejectedValueOnce(networkError());
+  vi.mocked(axios.get).mockResolvedValue({ status: 200 });
+  const { result } = hook();
+  await act(async () => { await result.current.handleSaveWebsiteToCorrect(youtube); });
+  expect(result.current.errorDetails).not.toBe("");
+  vi.mocked(axios.post).mockResolvedValueOnce({ data: { message: "Zapisano" } });
+  await act(async () => { await result.current.handleSaveWebsiteToCorrect(youtube); });
+  expect(result.current.message).toBe("Zapisano");
+  expect(result.current.errorDetails).toBe("");
+});

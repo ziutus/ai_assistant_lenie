@@ -43,6 +43,7 @@ const Movie = () => {
 
   const {
     message,
+    errorDetails,
     isError,
     isLoading,
     handleGetPageByUrl,
@@ -74,6 +75,7 @@ const Movie = () => {
 
         <FormButtons
           message={message}
+          errorDetails={errorDetails}
           formik={formik}
           isError={isError}
           isLoading={isLoading}

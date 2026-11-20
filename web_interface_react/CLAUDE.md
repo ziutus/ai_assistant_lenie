@@ -27,8 +27,12 @@ step) plus a collapsed, copyable "Szczegóły techniczne" block: operation, docu
 or entity id, method and target URL, source page, local time, duration, HTTP status
 and client error code — never the API key, headers or request body. Built by
 `describeRequestError()` (`src/modules/shared/utils/requestError.ts`) and
-`components/RequestErrorDetails`; `EntitiesPanel` uses it for every action. The
-full rule for agents lives in [AGENTS.md](AGENTS.md#error-messages-failed-requests);
+`components/RequestErrorDetails`; `EntitiesPanel` uses it for every action, and
+so does `useManageLLM` (save, delete, fetch in the document editors; `FormButtons`
+takes its `errorDetails`). When the server never answered, `probeBackend()`
+(`utils/backendProbe.ts`, `GET /healthz`) adds whether the backend is alive, only
+CORS-blocked, or unreachable, so "Network Error" no longer needs a follow-up
+question. The full rule for agents lives in [AGENTS.md](AGENTS.md#error-messages-failed-requests);
 keep the two in sync.
 
 ### Pagination for collection views
