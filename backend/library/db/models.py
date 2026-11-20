@@ -3107,7 +3107,7 @@ class ApiKey(Base):
 
 
 # ---------------------------------------------------------------------------
-# Search audit and LLM usage (docs/search-rebuild-implementation-plan.md, stage 2)
+# Search audit and LLM usage (docs/search-contract.md, stage 2)
 # ---------------------------------------------------------------------------
 
 

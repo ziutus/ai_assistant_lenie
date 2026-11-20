@@ -1,6 +1,6 @@
 """rename websites_embeddings to document_embeddings and website_id to document_id
 
-Stage 11e of docs/search-rebuild-implementation-plan.md: physical renames only
+Stage 11e of docs/search-contract.md: physical renames only
 — types, FKs semantics and the per-model HNSW partial indexes (idx_emb_*,
 named after models, not the table) stay identical.
 

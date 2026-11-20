@@ -1,7 +1,7 @@
 """Structural validation of the search-query fixture (search rebuild, stage 0).
 
 The fixture backend/tests/fixtures/search_query_cases.json is the evaluation
-corpus for the future SearchQueryParser (plan: docs/search-rebuild-implementation-plan.md).
+corpus for the future SearchQueryParser (plan: docs/search-contract.md).
 These tests pin its schema so later stages (4, 10) can rely on it.
 """
 

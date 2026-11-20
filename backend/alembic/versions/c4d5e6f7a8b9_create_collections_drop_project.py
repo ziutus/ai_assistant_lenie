@@ -1,6 +1,6 @@
 """create collections table, replace web_documents.project with collection_id
 
-Stage 11c of docs/search-rebuild-implementation-plan.md. ADR-017: a document
+Stage 11c of docs/search-contract.md. ADR-017: a document
 belongs to at most one collection (1:N); web_documents.project was 100% NULL
 on production (9220 docs, 2026-07-18), but the data move below is written
 defensively so any value that appeared since is preserved losslessly.

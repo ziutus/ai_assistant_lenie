@@ -443,7 +443,7 @@ Discovery-source lookup — how the user found a document (`own`, a newsletter, 
 
 ### Tables: `public.search_interpretation_logs`, `public.llm_pricing`, `public.llm_usage_logs`
 
-Search audit and LLM usage accounting (stage 2 of [docs/search-rebuild-implementation-plan.md](../../docs/search-rebuild-implementation-plan.md); Alembic only, no init scripts — migrations `d3e4f5a6b7c8`, `e4f5a6b7c8d9`; ORM in `library/db/models.py`).
+Search audit and LLM usage accounting (stage 2 of [docs/search-contract.md](../../docs/search-contract.md); Alembic only, no init scripts — migrations `d3e4f5a6b7c8`, `e4f5a6b7c8d9`; ORM in `library/db/models.py`).
 
 - **`search_interpretation_logs`** — one row per attempt to interpret a natural-language search query: `raw_query`, model/parser/prompt versions, raw LLM response, normalised `parsed_query` JSONB, `status` (CHECK: `parsed`/`ambiguous`/`invalid_json`/`validation_error`/`llm_error`/`fallback`), safe error code/message, latencies, result count, user feedback (`feedback_verdict` CHECK: `correct`/`partially_correct`/`incorrect`, comment, `corrected_query` JSONB). Retention per [ADR-017](../../docs/adr/adr-017-search-rebuild-scope-decisions.md): `expires_at NOT NULL DEFAULT now() + 90 days` (indexed; cleanup job to be added later).
 - **`llm_pricing`** — versioned price list, provider-agnostic. Rows are immutable facts: a price change is a NEW row with a new `pricing_version`, never an UPDATE. Partial unique index allows at most one open-ended (`effective_to IS NULL`) row per provider/model. Seeded with confirmed CloudFerro rates: `cloudferro-bielik-2026-07-18` (0.56 EUR/1M in and out) and `cloudferro-bge-2026-07-18` (0.50 PLN net/1M).
