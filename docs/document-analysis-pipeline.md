@@ -658,6 +658,7 @@ sequenceDiagram
 
 ## Powiązane dokumenty
 
+- [`docs/youtube-text-workflow.md`](youtube-text-workflow.md) — jedna mapa wszystkich akcji na tekście dokumentu YouTube (poprawki, rozdziały, chunki, encje, wzbogacenie, rejestry).
 - [`docs/search-hybrid.md`](search-hybrid.md) — szczegóły scoringu i mergowania wyników lexical/vector.
 - [`docs/ner-integration-plan.md`](ner-integration-plan.md) — architektura mikroserwisu NER.
 - [`docs/deployment/nas/storage-and-jobs-migration-plan.md`](deployment/nas/storage-and-jobs-migration-plan.md) — plan przeniesienia batchowych skryptów na kolejkę jobów.
