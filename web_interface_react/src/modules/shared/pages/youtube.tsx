@@ -2,7 +2,6 @@ import React from "react";
 import CollapsibleSection from "../components/CollapsibleSection/collapsibleSection";
 import TranscriptChaptersSuggest from "../components/TranscriptChaptersSuggest/transcriptChaptersSuggest";
 import SkillCommand from "../components/SkillCommand";
-import YoutubeFlowGuide from "../components/YoutubeFlowGuide/youtubeFlowGuide";
 import ChapterBoundariesPanel from "../components/ChapterBoundariesPanel/chapterBoundariesPanel";
 import { renderMarkdown } from "./read";
 import axios from "axios";
@@ -16,6 +15,8 @@ import ChannelBadge from "../components/ChannelBadge";
 import { AuthorizationContext } from '../context/authorizationContext';
 import { markCaptionsFetching, isCaptionsFetching } from "../utils/youtubeCaptionsFetchStatus";
 
+// Map of every action on a YouTube document's text (docs/youtube-text-workflow.md; the repository is public).
+const TEXT_WORKFLOW_DOC_URL = "https://github.com/ziutus/ai_assistant_lenie/blob/main/docs/youtube-text-workflow.md";
 
 const Youtube = () => {
   const { id } = useParams();
@@ -210,15 +211,13 @@ const Youtube = () => {
       <h2 style={{ marginBottom: "10px" }}>
         Youtube<ChannelBadge channel={formik.values.byline} style={{ marginLeft: 8, verticalAlign: "middle" }} />
       </h2>
-      {id && <NavLink to={`/llm-costs?document_id=${id}`} style={{ display: "inline-block", marginBottom: 10, fontSize: "0.9em", color: "#0369a1" }}>💰 Koszty i etapy LLM</NavLink>}
+      <div style={{ marginBottom: 10, fontSize: "0.9em", display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
+        {id && <NavLink to={`/llm-costs?document_id=${id}`} style={{ color: "#0369a1" }}>💰 Koszty i etapy LLM</NavLink>}
+        <a href={TEXT_WORKFLOW_DOC_URL} target="_blank" rel="noopener noreferrer" style={{ color: "#0369a1" }}>
+          📖 Flow pracy z tekstem (dokumentacja)
+        </a>
+      </div>
       <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
-        {id && (
-          <YoutubeFlowGuide
-            docId={id} apiUrl={apiUrl} apiKey={apiKey ?? ""}
-            transcriptMissing={transcriptMissing} hasChapters={hasMarkdownChapters} hasOutline={hasOutline}
-            refreshKey={`${formik.values.processing_status}|${hasMarkdownChapters}|${transcriptMissing}`}
-          />
-        )}
         {id && (
           <>
           <CollapsibleSection key={String(hasDescription)} title="Opis filmu" defaultOpen={!hasDescription}>
