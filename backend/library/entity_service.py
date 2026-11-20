@@ -616,6 +616,10 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         _add_named_vessels(groups, text)
         _add_pseudonyms(groups, text)
 
+        # "Stanów Zjednoczonych Rosji" (a missing comma) is two countries, not one organization.
+        for glued in _split_country_lists(groups):
+            logger.info("NER split country list %r into separate countries in doc %s", glued, document_id)
+
         # Abbreviations shared with something else ("DRK": Kongo vs the German Red Cross) become the
         # country only when a contextual LLM check confirms it.
         _apply_country_abbreviations(groups, text, getattr(doc, "title", None) or "", document_id)
@@ -1307,6 +1311,74 @@ def split_place_tokens(text: str) -> list[str]:
     return [t for t in _SPLIT_TOKEN.findall(text or "") if t.casefold() not in _SPLIT_CONJUNCTIONS and t != "-"]
 
 
+def country_split_parts(form: str) -> list[tuple[str, str]] | None:
+    """`(canonical country, its words as written)` for a mention that is only a list of countries.
+
+    "Stanów Zjednoczonych Rosji" -> [("Stany Zjednoczone", "Stanów Zjednoczonych"), ("Rosja", "Rosji")].
+    Greedy longest match, so a two-word country ("Korea Południowa") is never cut in half; every
+    token must belong to a country and at least two distinct countries must come out, otherwise None.
+    """
+    from library.country_gazetteer import canonical_country_name
+
+    tokens = split_place_tokens(form)
+    if len(tokens) < 2:
+        return None
+    parts: list[tuple[str, str]] = []
+    index = 0
+    while index < len(tokens):
+        for end in range(len(tokens), index, -1):
+            surface = " ".join(tokens[index:end])
+            name = canonical_country_name(surface)
+            if name is not None:
+                parts.append((name, surface))
+                index = end
+                break
+        else:
+            return None
+    return parts if len({name for name, _surface in parts}) >= 2 else None
+
+
+def _split_country_lists(groups: dict[tuple[str, str], dict]) -> list[str]:
+    """Replace a mention that is only a list of countries by one group per country.
+
+    spaCy reads "przywódców Stanów Zjednoczonych Rosji" (a missing comma in a transcript) as one
+    organization or place. Every word of it belongs to a country, so the split is deterministic: the
+    glued group disappears, its mentions are added to each country's `placeName` group (created when
+    the document has none) and the words as written become that country's surface forms, so the chip
+    still highlights them. Returns the names of the groups that were split.
+    """
+    split: list[str] = []
+    for key in [key for key in groups if key[0] in {"orgName", "placeName", "geogName"}]:
+        parts = country_split_parts(key[1])
+        if parts is None:
+            continue
+        group = groups.pop(key)
+        names = [name for name, _surface in parts]
+        surfaces: dict[str, list[str]] = {name: [] for name in names}
+        for name, surface in parts:
+            surfaces[name].append(surface)
+        for form in group.get("variants", []):
+            other = country_split_parts(form)
+            if other is not None and [name for name, _surface in other] == names:
+                for name, surface in other:
+                    surfaces[name].append(surface)
+        for name in dict.fromkeys(names):
+            target_key = next(
+                (k for k in groups if k[0] in {"placeName", "geogName"} and k[1].casefold() == name.casefold()),
+                None,
+            )
+            if target_key is None:
+                target_key = ("placeName", name)
+                groups[target_key] = {"count": 0, "variants": [], "raw_lemmas": [name]}
+            target = groups[target_key]
+            target["count"] += group["count"]
+            for surface in surfaces[name]:
+                if surface not in target["variants"]:
+                    target["variants"].append(surface)
+        split.append(key[1])
+    return split
+
+
 def suggest_place_split(text: str, variants: list[str] | None = None) -> list[str] | None:
     """Canonical country names when a place mention is only a list of countries.
 
@@ -1315,26 +1387,10 @@ def suggest_place_split(text: str, variants: list[str] | None = None) -> list[st
     to a country and at least two distinct countries must come out, otherwise None.
     Only a suggestion: the reviewer confirms (and may edit) the parts.
     """
-    from library.country_gazetteer import canonical_country_name
-
     for form in [text, *(variants or [])]:
-        tokens = split_place_tokens(form)
-        if len(tokens) < 2:
-            continue
-        parts: list[str] = []
-        index = 0
-        while index < len(tokens):
-            for end in range(len(tokens), index, -1):
-                name = canonical_country_name(" ".join(tokens[index:end]))
-                if name is not None:
-                    parts.append(name)
-                    index = end
-                    break
-            else:
-                parts = []
-                break
-        if len(set(parts)) >= 2:
-            return list(dict.fromkeys(parts))
+        parts = country_split_parts(form)
+        if parts:
+            return list(dict.fromkeys(name for name, _surface in parts))
     return None
 
 
