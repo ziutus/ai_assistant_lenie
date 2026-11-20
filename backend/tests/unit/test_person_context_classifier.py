@@ -119,6 +119,99 @@ def test_truncated_json_batch_is_split_and_every_candidate_gets_a_verdict():
     assert konstans["dropped"] is True
 
 
+def _scripted_ai_ask(first_pass_drops, second_pass_drops, calls):
+    """First call round answers `first_pass_drops` as not_person/high, the next round `second_pass_drops`."""
+
+    def fake(prompt, **_kwargs):
+        items = json.loads(prompt.split("DANE JSON:\n")[1])
+        calls.append([item["candidate"] for item in items])
+        # a pass is over once every distinct candidate has been asked about
+        asked = {name for call in calls[:-1] for name in call}
+        second_round = len(asked) >= 3 and items[0]["candidate"] in asked
+        drops = second_pass_drops if second_round else first_pass_drops
+        return MagicMock(response_text=json.dumps({"results": [
+            {
+                "id": item["id"],
+                "class": "not_person" if item["candidate"] in drops else "person",
+                "confidence": "high",
+                "rationale": "test",
+            }
+            for item in items
+        ]}))
+
+    return fake
+
+
+def _groups(*names):
+    return {("persName", name): {"variants": [name]} for name in names}
+
+
+def test_drop_needs_a_confirming_second_pass_in_a_different_batch_order():
+    """doc 11274: the same mis-heard surname was not_person/high in one batch and person in another."""
+    names = ["Besent", "Konstans", "Rubio"]
+    text = " ".join(f"Wspomniano {name} tutaj." for name in names)
+    calls = []
+    with patch("library.person_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(
+        "library.ai.ai_ask", side_effect=_scripted_ai_ask({"Besent", "Konstans"}, {"Konstans"}, calls)
+    ):
+        results = classify_single_word_person_candidates(text, "", _groups(*names), 1)
+
+    verdicts = {result["entity_text"]: result for result in results}
+    assert verdicts["Konstans"]["dropped"] is True
+    assert verdicts["Besent"]["dropped"] is False
+    assert "niepotwierdzone" in verdicts["Besent"]["rationale"]
+    assert verdicts["Rubio"]["dropped"] is False
+    assert len(calls) == 2
+    assert calls[0] != calls[1]
+
+
+def test_no_second_pass_when_the_first_pass_drops_nothing():
+    calls = []
+    with patch("library.person_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(
+        "library.ai.ai_ask", side_effect=_scripted_ai_ask(set(), set(), calls)
+    ):
+        results = classify_single_word_person_candidates("Wspomniano Rubio i Musk.", "", _groups("Rubio", "Musk"), 1)
+    assert len(calls) == 1
+    assert not any(result["dropped"] for result in results)
+
+
+def test_failed_second_pass_keeps_the_entity():
+    names = ["Konstans", "Rubio"]
+    text = "Wspomniano Konstans i Rubio."
+    responses = iter([
+        MagicMock(response_text=json.dumps({"results": [
+            {"id": 0, "class": "not_person", "confidence": "high", "rationale": "rzecz"},
+            {"id": 1, "class": "person", "confidence": "high", "rationale": "osoba"},
+        ]})),
+    ])
+
+    def fake(prompt, **_kwargs):
+        try:
+            return next(responses)
+        except StopIteration as error:
+            raise RuntimeError("offline") from error
+
+    with patch("library.person_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(
+        "library.ai.ai_ask", side_effect=fake
+    ):
+        results = classify_single_word_person_candidates(text, "", _groups(*names), 1)
+    assert {result["entity_text"] for result in results} == set(names)
+    assert not any(result["dropped"] for result in results)
+
+
+def test_fixture_of_real_contexts_is_well_formed():
+    from pathlib import Path
+
+    fixture = json.loads(
+        (Path(__file__).resolve().parent.parent / "fixtures" / "person_context_cases.json").read_text(encoding="utf-8")
+    )
+    cases = fixture["cases"]
+    assert len(cases) >= 30
+    assert {case["expected"] for case in cases} == {"person", "not_person"}
+    assert len({case["candidate"] for case in cases}) == len(cases)
+    assert all(case["candidate"] and case["context"] for case in cases)
+
+
 def test_single_candidate_with_unparseable_json_is_retained_without_raising():
     groups = {("persName", "Konstans"): {"variants": ["Konstans"]}}
     with patch("library.person_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(

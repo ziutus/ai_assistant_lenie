@@ -183,17 +183,8 @@ def _classify_with_split(batch: list[dict], title: str, document_id: int, model:
         )
 
 
-def classify_single_word_person_candidates(
-    text: str,
-    title: str,
-    groups: dict,
-    document_id: int,
-) -> list[dict]:
-    """Classify candidates in bounded batches; failures retain every entity."""
-    candidates = _candidate_payloads(text, groups)
-    if not candidates:
-        return []
-    model = _model()
+def _classify_all(candidates: list[dict], title: str, document_id: int, model: str) -> list[dict]:
+    """Every candidate in bounded batches; a failed batch retains its candidates (fail open)."""
     results: list[dict] = []
     for start in range(0, len(candidates), MAX_CANDIDATES_PER_CALL):
         batch = candidates[start:start + MAX_CANDIDATES_PER_CALL]
@@ -205,3 +196,44 @@ def classify_single_word_person_candidates(
                 document_id,
             )
     return results
+
+
+def _second_pass_order(candidates: list[dict]) -> list[dict]:
+    """The same candidates with different batch neighbours (reversed, then rotated by half a batch)."""
+    reordered = list(reversed(candidates))
+    shift = (MAX_CANDIDATES_PER_CALL // 2) % len(reordered) if reordered else 0
+    return reordered[shift:] + reordered[:shift]
+
+
+def classify_candidates(candidates: list[dict], title: str, document_id: int | None, model: str) -> list[dict]:
+    """Verdicts for `candidates` ({"entity_text", "context"}); a drop needs two agreeing passes.
+
+    The 11B model's answer depends on the other candidates in its batch: on doc #11274 the same real
+    surname (a mis-heard "Bessent") was `not_person`/`high` in one batch order and `person` in another.
+    So a candidate marked for dropping in the first pass is dropped only when a second pass over the
+    same candidates in a different batch order says the same. Anything unconfirmed, or that failed in the
+    second pass, is kept (an unwanted entity can be deleted by hand, a lost person is silently gone).
+    """
+    results = _classify_all(candidates, title, document_id, model)
+    if not any(result["dropped"] for result in results):
+        return results
+    second = _classify_all(_second_pass_order(candidates), title, document_id, model)
+    confirmed = {result["entity_text"] for result in second if result["dropped"]}
+    for result in results:
+        if result["dropped"] and result["entity_text"] not in confirmed:
+            result["dropped"] = False
+            result["rationale"] = (result["rationale"] + " [niepotwierdzone drugim przebiegiem]")[:500]
+    return results
+
+
+def classify_single_word_person_candidates(
+    text: str,
+    title: str,
+    groups: dict,
+    document_id: int,
+) -> list[dict]:
+    """Classify candidates in bounded batches; failures retain every entity."""
+    candidates = _candidate_payloads(text, groups)
+    if not candidates:
+        return []
+    return classify_candidates(candidates, title, document_id, _model())
