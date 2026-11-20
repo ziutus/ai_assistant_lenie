@@ -1,4 +1,4 @@
-"""Search domain types (stage 1 of docs/search-rebuild-implementation-plan.md).
+"""Search domain types (stage 1 of docs/search-contract.md).
 
 Public surface of the new search subsystem. Types use the target domain
 vocabulary (document_id, published_on, subject_period_*, discovery_source,

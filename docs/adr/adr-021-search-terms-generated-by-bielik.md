@@ -60,7 +60,6 @@ comma-separated set of 3–6 short retrieval phrases.
 ### Related Artifacts
 
 - [search-hybrid.md](../search-hybrid.md#frazy-wyszukiwawcze-search_terms)
-- [search-rebuild-progress.md](../search-rebuild-progress.md)
 - [ADR-020](adr-020-search-indexing-deferred.md)
 - `backend/library/search_terms.py`
 - `backend/library/document_repository.py`

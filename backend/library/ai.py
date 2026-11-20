@@ -1,4 +1,4 @@
-"""LLM provider abstraction (stage 3 of docs/search-rebuild-implementation-plan.md).
+"""LLM provider abstraction (stage 3 of docs/search-contract.md).
 
 ``ai_ask()`` routes a prompt to the provider implied by the model name,
 measures latency, and records exactly one llm_usage_logs row per call

@@ -1,6 +1,6 @@
 """Typed search domain models with construction-time validation.
 
-Stage 1 of docs/search-rebuild-implementation-plan.md: an invalid object
+Stage 1 of docs/search-contract.md: an invalid object
 cannot exist, so an invalid object can never reach SearchService. All
 dataclasses are frozen; every field is validated in __post_init__ and a
 violation raises SearchQueryValidationError naming the offending field.

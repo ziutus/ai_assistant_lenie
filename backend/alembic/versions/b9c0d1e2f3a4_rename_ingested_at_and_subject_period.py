@@ -1,6 +1,6 @@
 """rename documents.created_at to ingested_at; document_time_periods.period_* to subject_period_*
 
-Stage 11g part 2b of docs/search-rebuild-implementation-plan.md. Only the
+Stage 11g part 2b of docs/search-contract.md. Only the
 documents table's created_at is renamed — every other table keeps its own
 created_at (row creation time); ingested_at specifically means "when the
 document entered Lenie", distinct from published_on.

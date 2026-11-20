@@ -1,6 +1,6 @@
 """Tests for library/llm_usage/pricing.py — Decimal-only LLM cost estimation.
 
-Covers the stage-2 requirements from docs/search-rebuild-implementation-plan.md:
+Covers the stage-2 requirements from docs/search-contract.md:
 exact Bielik arithmetic for various input/output token counts, separate
 input/output components, UNKNOWN for non-token pricing, and a hard ban on
 float money.

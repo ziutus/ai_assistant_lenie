@@ -1,6 +1,6 @@
 """rename author to byline and author_source to byline_method
 
-Stage 11b of docs/search-rebuild-implementation-plan.md: physical column rename
+Stage 11b of docs/search-contract.md: physical column rename
 only — types, values and CHECK semantics stay identical. The relational author
 model (document_persons role='author') and ner_exclusions.author are untouched;
 byline is the presentational display cache on the document row.
