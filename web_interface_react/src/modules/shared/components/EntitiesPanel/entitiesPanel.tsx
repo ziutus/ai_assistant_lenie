@@ -537,6 +537,7 @@ const EntitiesPanel = ({
   countries: providedCountries,
   hideCountriesRow = false,
   headerExtra,
+  extraActions,
   refreshKey = 0,
   chapterRenderer,
   onShowInText,
@@ -590,6 +591,9 @@ const EntitiesPanel = ({
   hideCountriesRow?: boolean;
   // Page-owned controls drawn at the end of the header row (e.g. the whole-document / single-chapter switch on /ner/:id).
   headerExtra?: React.ReactNode;
+  // Page-owned action buttons drawn in the same row as "Wykryj …" / "Zaproponuj relacje geopolityczne", just before
+  // "Edytuj" (e.g. "Podziel cały tekst na akapity" on /ner/:id). Unlike headerExtra they sit with the other actions.
+  extraActions?: React.ReactNode;
 }) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
@@ -2172,6 +2176,7 @@ const EntitiesPanel = ({
           onClick={handleProposeGeopolitics}>
           {isProposingGeopolitics ? "Analizuję geopolitykę..." : "Zaproponuj relacje geopolityczne"}
         </button>
+        {extraActions}
         {!isEmpty && (
           <button className={"button"} type="button" onClick={() => { setRenameFor(null); setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setPlaceMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
             {editMode ? "Zakończ edycję" : "Edytuj"}

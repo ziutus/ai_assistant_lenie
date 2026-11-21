@@ -734,7 +734,9 @@ def paragraphize_document_transcript(doc_id: int):
 
     try:
         if position is None:
-            result = paragraphize_transcript(doc.text, document_id=doc_id)
+            result = paragraphize_transcript(
+                doc.text, document_id=doc_id, chapter_types=getattr(doc, "chapter_types", None),
+            )
         else:
             result = paragraphize_chapter(doc.text, position, document_id=doc_id)
     except ValueError as exc:
@@ -751,6 +753,7 @@ def paragraphize_document_transcript(doc_id: int):
         "chapter_count": result.chapter_count,
         "paragraph_count": result.paragraph_count,
         "model_calls": result.model_calls,
+        "skipped_chapters": result.skipped_chapters,
         "text_length": len(result.text),
         **({"position": position} if position is not None else {}),
     })

@@ -14,9 +14,11 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow, headerExtra }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow, headerExtra, extraActions, externalDisabled }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
-      return <div data-testid="panel" data-hide-countries={hideCountriesRow ? "yes" : "no"}>
+      return <div data-testid="panel" data-hide-countries={hideCountriesRow ? "yes" : "no"}
+        data-external-disabled={externalDisabled ? "yes" : "no"}>
+        {extraActions}
         {headerExtra}
         <button onClick={() => onEntitiesChanged?.()}>zmień encje</button>
         {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
@@ -267,6 +269,35 @@ it("paragraphizes one chapter with the model and reloads the chapters", async ()
     { headers: { "x-api-key": "test-key" }, timeout: 240000 }));
   await waitFor(() => expect(sectionCalls()).toBe(before + 1));
   expect(await screen.findByText(/Rozdział 1: 3 akapitów/)).toBeTruthy();
+});
+
+it("paragraphizes the whole text, showing progress and locking the other edits meanwhile", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  let finish: (value: unknown) => void = () => undefined;
+  vi.mocked(axios.post).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/paragraphize_transcript", {},
+    { headers: { "x-api-key": "test-key" }, timeout: 900000 }));
+  const banner = await screen.findByText(/Bielik dzieli cały tekst na akapity/);
+  expect(banner.closest("[role=status]")?.getAttribute("aria-busy")).toBe("true");
+  expect((screen.getByRole("button", { name: "Podziel rozdział 1 na akapity" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Scal rozdział 1 z następnym" }) as HTMLButtonElement).disabled).toBe(true);
+  // The panel's own detection buttons are locked too (the page passes externalDisabled while the text is being rewritten).
+  expect(screen.getByTestId("panel").getAttribute("data-external-disabled")).toBe("yes");
+  expect((screen.getByRole("button", { name: /Dzielę cały tekst na akapity/ }) as HTMLButtonElement).disabled).toBe(true);
+  finish({ data: { status: "success", paragraph_count: 12, model_calls: 4, chapter_count: 3, skipped_chapters: 1 } });
+  expect(await screen.findByText(/Cały tekst: 12 akapitów w 3 rozdziałach.*pominięto 1 rozdz\. typu reklama, szum lub źródła/))
+    .toBeTruthy();
+  expect(screen.queryByText(/Bielik dzieli cały tekst/)).toBeNull();
+  expect((screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("does not split the whole text when it is not confirmed", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }));
+  expect(axios.post).not.toHaveBeenCalled();
 });
 
 it("does not call the model when the paragraph split is not confirmed", async () => {

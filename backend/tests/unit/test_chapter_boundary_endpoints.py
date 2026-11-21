@@ -452,6 +452,28 @@ def test_paragraphize_one_chapter_by_position(setup, monkeypatch):
     session.commit.assert_called_once()
 
 
+def test_paragraphize_whole_document_passes_the_chapter_types_and_reports_skipped(setup, monkeypatch):
+    from library import transcript_paragraphs as tp
+    from library.transcript_paragraphs import ParagraphizeResult
+
+    client, session, doc, _ = setup
+    doc.chapter_types = ["TEMAT", "REKLAMA"]
+    calls = []
+
+    def fake(text, *, document_id, chapter_types=None, **kwargs):
+        calls.append((document_id, chapter_types))
+        return ParagraphizeResult(text=text, chapter_count=2, paragraph_count=3, model_calls=1, skipped_chapters=1)
+
+    monkeypatch.setattr(tp, "paragraphize_transcript", fake)
+    response = client.post("/document/42/paragraphize_transcript", json={})
+    assert response.status_code == 200
+    assert calls == [(42, ["TEMAT", "REKLAMA"])]
+    assert response.json["skipped_chapters"] == 1
+    assert response.json["chapter_count"] == 2
+    assert "position" not in response.json
+    session.commit.assert_called_once()
+
+
 @pytest.mark.parametrize("position", [-1, "1", True, 1.5])
 def test_paragraphize_rejects_invalid_position(setup, position):
     client, session, doc, _ = setup
