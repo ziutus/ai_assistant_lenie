@@ -286,8 +286,9 @@ it("paragraphizes the whole text, showing progress and locking the other edits m
   // The panel's own detection buttons are locked too (the page passes externalDisabled while the text is being rewritten).
   expect(screen.getByTestId("panel").getAttribute("data-external-disabled")).toBe("yes");
   expect((screen.getByRole("button", { name: /Dzielę cały tekst na akapity/ }) as HTMLButtonElement).disabled).toBe(true);
-  finish({ data: { status: "success", paragraph_count: 12, model_calls: 4, chapter_count: 2 } });
-  expect(await screen.findByText(/Cały tekst: 12 akapitów w 2 rozdziałach/)).toBeTruthy();
+  finish({ data: { status: "success", paragraph_count: 12, model_calls: 4, chapter_count: 3, skipped_chapters: 1 } });
+  expect(await screen.findByText(/Cały tekst: 12 akapitów w 3 rozdziałach.*pominięto 1 rozdz\. typu reklama, szum lub źródła/))
+    .toBeTruthy();
   expect(screen.queryByText(/Bielik dzieli cały tekst/)).toBeNull();
   expect((screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }) as HTMLButtonElement).disabled).toBe(false);
 });

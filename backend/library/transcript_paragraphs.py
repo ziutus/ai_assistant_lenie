@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from library.document_analysis_service import DEFAULT_ANALYSIS_MODEL
 from library.text_functions import detect_chapters
+from library.transcript_chapter_boundaries import resolve_chapter_types
 
 MAX_WINDOW_CHARS = 3_500
 MIN_PARAGRAPH_CHARS = 220
@@ -56,6 +57,8 @@ class ParagraphizeResult:
     chapter_count: int
     paragraph_count: int
     model_calls: int
+    # Chapters left untouched because their stored type is not TEMAT (advertisement, noise, sources).
+    skipped_chapters: int = 0
 
 
 def _sentences(text: str) -> list[str]:
@@ -145,9 +148,16 @@ def _paragraphize_body(
 
 def paragraphize_transcript(
     text: str, *, document_id: int, model: str = DEFAULT_ANALYSIS_MODEL,
-    analysis_run_id: int | None = None,
+    analysis_run_id: int | None = None, chapter_types=None,
 ) -> ParagraphizeResult:
-    """Add semantic paragraph spacing to each Markdown H1/H2 source chapter."""
+    """Add semantic paragraph spacing to each Markdown H1/H2 source chapter.
+
+    ``chapter_types`` is the document's stored ``Document.chapter_types`` (one entry per ``##``
+    chapter, as on /ner/:id). A chapter typed anything but TEMAT (advertisement, noise, sources)
+    is copied unchanged and costs no model call; without it every chapter is processed.
+    Text before the first heading (the "(wstęp)" preamble of ``detect_chapters``) has no heading
+    of its own and is split like any other body.
+    """
     chapters = detect_chapters(text)
     if not chapters:
         raise ValueError(
@@ -155,18 +165,38 @@ def paragraphize_transcript(
             "Import source chapter timestamps first, then re-create the transcript."
         )
 
+    # Types are aligned with the "##" sections only; resolve_chapter_types falls back to all-TEMAT when the
+    # stored list does not match their count, so a stale list can never skip the wrong chapter.
+    types = resolve_chapter_types(text, chapter_types) if chapter_types is not None else None
+
     output: list[str] = []
     total_paragraphs = 0
     total_calls = 0
+    skipped = 0
+    headed = 0  # index among the "## " chapters
     for chapter in chapters:
         source = text[chapter["char_start"]:chapter["char_end"]].strip()
+        if chapter["level"] == 2 and source.startswith("## "):
+            chapter_type = types[headed] if types is not None and headed < len(types) else "TEMAT"
+            headed += 1
+            if chapter_type != "TEMAT":
+                output.append(source)
+                skipped += 1
+                continue
         match = _HEADING_RE.match(source)
         if not match:
-            raise ValueError("Transcript chapter does not start with a Markdown heading")
-        body, paragraphs, calls = _paragraphize_body(
-            match.group(2), model=model, document_id=document_id, analysis_run_id=analysis_run_id,
-        )
-        output.append(f"{match.group(1)}\n\n{body.strip()}")
+            if source.startswith("#"):
+                raise ValueError("Transcript chapter does not start with a Markdown heading")
+            # Headless preamble before the first heading: nothing to keep apart from the body.
+            body, paragraphs, calls = _paragraphize_body(
+                source, model=model, document_id=document_id, analysis_run_id=analysis_run_id,
+            )
+            output.append(body.strip())
+        else:
+            body, paragraphs, calls = _paragraphize_body(
+                match.group(2), model=model, document_id=document_id, analysis_run_id=analysis_run_id,
+            )
+            output.append(f"{match.group(1)}\n\n{body.strip()}")
         total_paragraphs += paragraphs
         total_calls += calls
     return ParagraphizeResult(
@@ -174,6 +204,7 @@ def paragraphize_transcript(
         chapter_count=len(chapters),
         paragraph_count=total_paragraphs,
         model_calls=total_calls,
+        skipped_chapters=skipped,
     )
 
 
@@ -239,7 +270,10 @@ def paragraphize_document(document_id: int, *, model: str = DEFAULT_ANALYSIS_MOD
             raise ValueError("Document has no transcript text")
         if document_has_embeddings(session, document_id):
             raise ValueError("Document has embeddings; reopen it for editing first")
-        result = paragraphize_transcript(document.text, document_id=document_id, model=model)
+        result = paragraphize_transcript(
+            document.text, document_id=document_id, model=model,
+            chapter_types=getattr(document, "chapter_types", None),
+        )
         document.text = result.text
         session.commit()
         return result

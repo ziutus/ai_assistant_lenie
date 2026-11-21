@@ -380,11 +380,15 @@ const NerChapters = () => {
     setParagraphNote("");
     const startedAt = Date.now();
     try {
-      const response = await axios.post<{ paragraph_count: number; model_calls: number; chapter_count: number }>(
-        `${base}/paragraphize_transcript`, {}, { headers, timeout: 900000 },
-      );
+      const response = await axios.post<{
+        paragraph_count: number; model_calls: number; chapter_count: number; skipped_chapters?: number;
+      }>(`${base}/paragraphize_transcript`, {}, { headers, timeout: 900000 });
       setSectionsVersion((current) => current + 1);
-      setParagraphNote(`Cały tekst: ${response.data.paragraph_count} akapitów w ${response.data.chapter_count} rozdziałach (${response.data.model_calls} wywołań Bielika).`);
+      const skipped = response.data.skipped_chapters ?? 0;
+      setParagraphNote(
+        `Cały tekst: ${response.data.paragraph_count} akapitów w ${response.data.chapter_count} rozdziałach (${response.data.model_calls} wywołań Bielika)`
+        + (skipped > 0 ? `; pominięto ${skipped} rozdz. typu reklama, szum lub źródła.` : "."),
+      );
     } catch (error) {
       setParagraphError(describeRequestError(error, "Podział całego tekstu na akapity", {
         startedAt, context: { dokument: id },
