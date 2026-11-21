@@ -14,9 +14,11 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow, headerExtra }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow, headerExtra, extraActions, externalDisabled }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
-      return <div data-testid="panel" data-hide-countries={hideCountriesRow ? "yes" : "no"}>
+      return <div data-testid="panel" data-hide-countries={hideCountriesRow ? "yes" : "no"}
+        data-external-disabled={externalDisabled ? "yes" : "no"}>
+        {extraActions}
         {headerExtra}
         <button onClick={() => onEntitiesChanged?.()}>zmień encje</button>
         {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
@@ -281,6 +283,9 @@ it("paragraphizes the whole text, showing progress and locking the other edits m
   expect(banner.closest("[role=status]")?.getAttribute("aria-busy")).toBe("true");
   expect((screen.getByRole("button", { name: "Podziel rozdział 1 na akapity" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Scal rozdział 1 z następnym" }) as HTMLButtonElement).disabled).toBe(true);
+  // The panel's own detection buttons are locked too (the page passes externalDisabled while the text is being rewritten).
+  expect(screen.getByTestId("panel").getAttribute("data-external-disabled")).toBe("yes");
+  expect((screen.getByRole("button", { name: /Dzielę cały tekst na akapity/ }) as HTMLButtonElement).disabled).toBe(true);
   finish({ data: { status: "success", paragraph_count: 12, model_calls: 4, chapter_count: 2 } });
   expect(await screen.findByText(/Cały tekst: 12 akapitów w 2 rozdziałach/)).toBeTruthy();
   expect(screen.queryByText(/Bielik dzieli cały tekst/)).toBeNull();

@@ -711,14 +711,6 @@ const NerChapters = () => {
         </div>
       )}
       {loadError && <p role="alert" style={{ color: "#a33" }}>{loadError}</p>}
-      {sections.some((section) => section.position >= 1) && (
-        <p style={{ margin: "0 0 10px" }}>
-          <button type="button" disabled={merging || paragraphizing !== null} onClick={() => void paragraphizeAll()}
-            title="Bielik wybiera granice akapitów w każdym rozdziale; tekst się nie zmienia">
-            {paragraphizing === "all" ? "⏳ Dzielę cały tekst na akapity…" : "¶ Podziel cały tekst na akapity"}
-          </button>
-        </p>
-      )}
       {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
         <nav aria-label="Rozdziały" style={{ position: "sticky", top: 8, maxHeight: "calc(100vh - 16px)", overflowY: "auto", fontSize: "0.85em" }}>
@@ -820,6 +812,14 @@ const NerChapters = () => {
             docId={id}
             hideCountriesRow={chapterMode}
             headerExtra={scopeSwitch}
+            externalDisabled={paragraphizing !== null}
+            extraActions={sections.some((section) => section.position >= 1) ? (
+              <button className="button" type="button" disabled={merging || paragraphizing !== null}
+                title="Bielik wybiera granice akapitów w każdym rozdziale; tekst się nie zmienia"
+                onClick={() => void paragraphizeAll()}>
+                {paragraphizing === "all" ? "⏳ Dzielę cały tekst na akapity…" : "¶ Podziel cały tekst na akapity"}
+              </button>
+            ) : null}
             refreshKey={panelKey}
             onShowInText={showInText}
             onDescribeEvent={setDescribing}

@@ -995,6 +995,18 @@ it("explains a network error on entity detection with target, source and a copya
   expect(screen.getByRole("button", { name: "Kopiuj szczegóły" })).toBeTruthy();
 });
 
+it("draws page-owned extraActions in the action row between the geopolitics button and Edytuj", async () => {
+  render(<MemoryRouter><EntitiesPanel docId={11205} extraActions={<button type="button">Akcja strony</button>} /></MemoryRouter>);
+  await screen.findByRole("button", { name: place.text });
+  const labels = screen.getAllByRole("button").map((button) => button.textContent);
+  const geopolitics = labels.indexOf("Zaproponuj relacje geopolityczne");
+  const extra = labels.indexOf("Akcja strony");
+  const edit = labels.indexOf("Edytuj");
+  expect(geopolitics).toBeGreaterThan(-1);
+  expect(extra).toBe(geopolitics + 1);
+  expect(edit).toBe(extra + 1);
+});
+
 it("proposes geopolitical events with the default model, reports the cost and keeps the panel busy meanwhile", async () => {
   let finish!: (value: any) => void;
   vi.mocked(axios.post).mockReturnValue(new Promise(resolve => { finish = resolve; }));
