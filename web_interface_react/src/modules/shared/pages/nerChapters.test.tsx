@@ -269,6 +269,31 @@ it("paragraphizes one chapter with the model and reloads the chapters", async ()
   expect(await screen.findByText(/Rozdział 1: 3 akapitów/)).toBeTruthy();
 });
 
+it("paragraphizes the whole text, showing progress and locking the other edits meanwhile", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  let finish: (value: unknown) => void = () => undefined;
+  vi.mocked(axios.post).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/paragraphize_transcript", {},
+    { headers: { "x-api-key": "test-key" }, timeout: 900000 }));
+  const banner = await screen.findByText(/Bielik dzieli cały tekst na akapity/);
+  expect(banner.closest("[role=status]")?.getAttribute("aria-busy")).toBe("true");
+  expect((screen.getByRole("button", { name: "Podziel rozdział 1 na akapity" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Scal rozdział 1 z następnym" }) as HTMLButtonElement).disabled).toBe(true);
+  finish({ data: { status: "success", paragraph_count: 12, model_calls: 4, chapter_count: 2 } });
+  expect(await screen.findByText(/Cały tekst: 12 akapitów w 2 rozdziałach/)).toBeTruthy();
+  expect(screen.queryByText(/Bielik dzieli cały tekst/)).toBeNull();
+  expect((screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("does not split the whole text when it is not confirmed", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }));
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
 it("does not call the model when the paragraph split is not confirmed", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(false);
   await open();

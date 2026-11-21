@@ -225,7 +225,16 @@ const NerChapters = () => {
   const [merging, setMerging] = React.useState(false);
   const [mergeError, setMergeError] = React.useState("");
   // Position of the chapter the model is paragraphizing right now, and the outcome of the last try.
-  const [paragraphizing, setParagraphizing] = React.useState<number | null>(null);
+  // "all" = the whole document is being split. Seconds elapsed feed the progress banner, so a long model run
+  // visibly keeps going instead of looking frozen.
+  const [paragraphizing, setParagraphizing] = React.useState<number | "all" | null>(null);
+  const [paragraphSeconds, setParagraphSeconds] = React.useState(0);
+  React.useEffect(() => {
+    if (paragraphizing === null) return undefined;
+    setParagraphSeconds(0);
+    const timer = window.setInterval(() => setParagraphSeconds((current) => current + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [paragraphizing]);
   const [paragraphError, setParagraphError] = React.useState<RequestErrorInfo | null>(null);
   const [paragraphNote, setParagraphNote] = React.useState("");
   const headers = React.useMemo(() => ({ "x-api-key": apiKey ?? "" }), [apiKey]);
@@ -354,6 +363,31 @@ const NerChapters = () => {
     } catch (error) {
       setParagraphError(describeRequestError(error, `Podział rozdziału ${target} na akapity`, {
         startedAt, context: { dokument: id, rozdział: target },
+      }));
+    } finally {
+      setParagraphizing(null);
+    }
+  };
+
+  // The same split for the WHOLE transcript (no `position`): the model walks through every chapter, one call per
+  // window of sentences, so it can take minutes. The banner and the disabled buttons show that work is going on.
+  const paragraphizeAll = async () => {
+    if (paragraphizing !== null || !window.confirm(
+      "Podzielić cały tekst na akapity tematyczne przy użyciu Bielika? To może potrwać kilka minut. Tekst nie będzie parafrazowany.",
+    )) return;
+    setParagraphizing("all");
+    setParagraphError(null);
+    setParagraphNote("");
+    const startedAt = Date.now();
+    try {
+      const response = await axios.post<{ paragraph_count: number; model_calls: number; chapter_count: number }>(
+        `${base}/paragraphize_transcript`, {}, { headers, timeout: 900000 },
+      );
+      setSectionsVersion((current) => current + 1);
+      setParagraphNote(`Cały tekst: ${response.data.paragraph_count} akapitów w ${response.data.chapter_count} rozdziałach (${response.data.model_calls} wywołań Bielika).`);
+    } catch (error) {
+      setParagraphError(describeRequestError(error, "Podział całego tekstu na akapity", {
+        startedAt, context: { dokument: id },
       }));
     } finally {
       setParagraphizing(null);
@@ -591,11 +625,11 @@ const NerChapters = () => {
           onClick={() => setEventsDetect((current) => ({ position: section.position, nonce: (current?.nonce ?? 0) + 1 }))} />
       )}
       {section.position >= 2 && (
-        <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z poprzednim`}
+        <button type="button" disabled={merging || paragraphizing !== null} aria-label={`Scal rozdział ${section.position} z poprzednim`}
           onClick={() => void mergeChapter(section.position, "ten rozdział z poprzednim")}>⇡ Scal z poprzednim</button>
       )}
       {section.position >= 1 && section.position < lastPosition && (
-        <button type="button" disabled={merging} aria-label={`Scal rozdział ${section.position} z następnym`}
+        <button type="button" disabled={merging || paragraphizing !== null} aria-label={`Scal rozdział ${section.position} z następnym`}
           onClick={() => void mergeChapter(section.position + 1, "ten rozdział z następnym")}>⇣ Scal z następnym</button>
       )}
       {type === "TEMAT" && section.position >= 1 && (
@@ -607,7 +641,7 @@ const NerChapters = () => {
         </button>
       )}
       {type === "TEMAT" && section.position >= 1 && (
-        <button type="button" disabled={merging || loadingEntities} aria-label={`Oznacz rozdział ${section.position} jako szum`}
+        <button type="button" disabled={merging || loadingEntities || paragraphizing !== null} aria-label={`Oznacz rozdział ${section.position} jako szum`}
           onClick={() => void markAsNoise(section.position, "ten rozdział")}>🗑 Oznacz jako szum</button>
       )}
     </>
@@ -664,7 +698,27 @@ const NerChapters = () => {
         Encje są zapisane dla całego dokumentu: poprawka (nazwa, usunięcie, wykluczenie, scalenie) dotyczy wszystkich
         rozdziałów. Rozdziały typu reklama, szum i źródła są pomijane przez NER (typ ustawisz w edytorze albo przyciskiem „Oznacz jako szum”, który usuwa też encje występujące tylko w tym rozdziale).
       </div>
+      {paragraphizing !== null && (
+        <div role="status" aria-busy="true" style={{ marginBottom: 10, padding: "8px 12px", background: "#e0f2fe",
+          border: "1px solid #38bdf8", borderRadius: 6, position: "sticky", top: 0, zIndex: 5 }}>
+          ⏳ Bielik dzieli {paragraphizing === "all" ? "cały tekst" : `rozdział ${paragraphizing}`} na akapity… {paragraphSeconds} s
+          <div style={{ fontSize: "0.85em", color: "#475569" }}>
+            {paragraphizing === "all"
+              ? "To może potrwać kilka minut. Nie zamykaj tej strony. "
+              : "Nie zamykaj tej strony. "}
+            Scalanie rozdziałów, oznaczanie szumu i kolejne podziały są zablokowane do końca operacji.
+          </div>
+        </div>
+      )}
       {loadError && <p role="alert" style={{ color: "#a33" }}>{loadError}</p>}
+      {sections.some((section) => section.position >= 1) && (
+        <p style={{ margin: "0 0 10px" }}>
+          <button type="button" disabled={merging || paragraphizing !== null} onClick={() => void paragraphizeAll()}
+            title="Bielik wybiera granice akapitów w każdym rozdziale; tekst się nie zmienia">
+            {paragraphizing === "all" ? "⏳ Dzielę cały tekst na akapity…" : "¶ Podziel cały tekst na akapity"}
+          </button>
+        </p>
+      )}
       {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
       <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
         <nav aria-label="Rozdziały" style={{ position: "sticky", top: 8, maxHeight: "calc(100vh - 16px)", overflowY: "auto", fontSize: "0.85em" }}>
