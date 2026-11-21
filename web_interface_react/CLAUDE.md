@@ -69,14 +69,28 @@ header, shown only for `youtube`/`movie` documents) finds speech-to-text slips s
 `POST /document/:id/transcript_spellcheck` (Morfeusz dictionary + a model, default Bielik; see `backend/library/CLAUDE.md`).
 Nothing calls the API until the section is opened (then `GET /transcript_spellcheck/model` loads the model list, shown
 with `modelOptionText`, external-provider warning, "Ustaw jako domyślny" / "Przywróć domyślny serwera" via `PUT`).
-"Znajdź podejrzane słowa" is a `dry_run` preview (no model call: suspects and what was skipped), "Zaproponuj poprawki"
-asks the model. Proposals come back UNCHECKED — the model's `confidence` is `high` even for wrong answers — with an
-editable replacement, the context with the word marked, "Odrzuć" (local) and "Zaznacz wszystkie". "Zastosuj zaznaczone (N)"
-needs an in-place two-step confirmation, then sends the rows one by one to `POST /transcript_corrections/apply`
-(`document_id` as a number, `dry_run: false`, `pattern` + `replacement`: a one-document replacement, no rule stored) and
-stops at the first failure, keeping the remaining rows ticked; `onApplied` reloads the chapters and the entity panel once
-(entities and chunks are NOT rebuilt). Errors go through `describeRequestError` / `RequestErrorDetails`. Tests:
-`transcriptSpellcheckPanel.test.tsx`, plus a visibility test in `nerChapters.test.tsx`.
+"Znajdź podejrzane słowa" is a `dry_run` preview (no model call: suspects, what was skipped, the skipped chapters —
+advertisement / noise / sources are never scanned — and how many words go to the model vs come from the per-channel memory
+vs were rejected before), "Zaproponuj poprawki" asks the model. The transcript is analysed chapter by chapter on the server,
+but the panel shows ONE list (no chapter-by-chapter clicking): rows are ordered by chapter and carry a "wstęp" / "rozdz. N
+„title”" label. Proposals come back UNCHECKED — the model's `confidence` is `high` even for wrong answers — except a pair
+from memory confirmed by several documents (`source: "memory"`, `trusted`: shown as "z pamięci (N dok.), sprawdzone",
+pre-ticked, no model call was spent on it). Each row has an editable replacement, the context with the word marked, "Odrzuć"
+and "Zaznacz wszystkie". "Odrzuć" means "this is not a transcription error": the row leaves the list at once and the rejection
+is remembered for the channel (`POST /document/:id/transcript_spellcheck/decisions`), so the word is neither shown to the
+model again nor proposed again; the collapsed "Pominięte — odrzucone wcześniej (N)" list restores one (`DELETE
+/transcript_spellcheck/memory/:id`). "Przeanalizuj ponownie z większym kontekstem (±N znaków)" re-asks the model about
+every row that is still open (not rejected, not applied, not a trusted memory pair) with `POST .../transcript_spellcheck/reanalyze`:
+the first click reads ±400 characters around the word, the next ±900, then ±1800; the longer context replaces the row's
+context, the model's one-sentence "Co mówca miał na myśli" is shown, a changed proposal loses its tick (read it again), and a
+replacement the reviewer typed is never overwritten — the model's new proposal appears under it with "Użyj". A failed request
+keeps the rows and does not advance the step. "Zastosuj zaznaczone (N)" needs an in-place two-step confirmation, then sends the
+rows one by one to `POST /transcript_corrections/apply` (`document_id` as a number, `dry_run: false`, `pattern` + `replacement`:
+a one-document replacement, no rule stored) and stops at the first failure, keeping the remaining rows ticked; the rows that
+WERE applied are then remembered as approved pairs (`decisions`; a failed save only adds a note, it never hides that the text
+changed); `onApplied` reloads the chapters and the entity panel once (entities and chunks are NOT rebuilt). Errors go through
+`describeRequestError` / `RequestErrorDetails`. Tests: `transcriptSpellcheckPanel.test.tsx`, plus a visibility test in
+`nerChapters.test.tsx`.
 
 ### Vocabulary of events
 
