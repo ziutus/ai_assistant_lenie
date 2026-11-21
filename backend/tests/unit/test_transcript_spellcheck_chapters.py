@@ -344,12 +344,19 @@ class TestRoutes:
         assert record.call_args.kwargs == {"document_id": 1, "author": "Kanał", "decisions": decisions}
         client.session.commit.assert_called_once()
 
-    def test_invalid_decisions_are_400_and_roll_back(self, client):
-        with patch.object(routes.memory, "record_decisions", side_effect=mem.MemoryValidationError("zły wpis")):
+    def test_invalid_decisions_are_400_with_a_fixed_message_and_nothing_is_written(self, client):
+        with patch.object(routes.memory, "record_decisions") as record:
             response = client.post("/document/1/transcript_spellcheck/decisions", json={"decisions": [1]})
-        assert response.status_code == 400 and response.get_json()["message"] == "zły wpis"
-        client.session.rollback.assert_called_once()
+        assert response.status_code == 400 and response.get_json()["message"] == "Decyzja musi być obiektem."
+        record.assert_not_called()
         client.session.commit.assert_not_called()
+
+    def test_a_storage_failure_is_a_generic_500(self, client):
+        decisions = [{"original": "abc", "decision": "rejected"}]
+        with patch.object(routes.memory, "record_decisions", side_effect=RuntimeError("secret detail")):
+            response = client.post("/document/1/transcript_spellcheck/decisions", json={"decisions": decisions})
+        assert response.status_code == 500 and "secret detail" not in response.get_data(as_text=True)
+        client.session.rollback.assert_called_once()
 
     def test_writing_needs_a_user_or_service_key(self, client):
         client.kind["value"] = "reader"

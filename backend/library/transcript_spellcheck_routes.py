@@ -180,13 +180,13 @@ def document_transcript_spellcheck_decisions(doc_id: int):
     body, error = _body()
     if error:
         return error
+    decisions = body.get("decisions")
+    _, problem = memory.prepare_decisions(decisions)
+    if problem:
+        return jsonify(status="error", message=problem), 400
     try:
-        counts = memory.record_decisions(session, document_id=doc_id, author=doc.byline,
-                                         decisions=body.get("decisions"))
+        counts = memory.record_decisions(session, document_id=doc_id, author=doc.byline, decisions=decisions)
         session.commit()
-    except memory.MemoryValidationError as exc:
-        session.rollback()
-        return jsonify(status="error", message=str(exc)), 400
     except Exception:
         session.rollback()
         logger.exception("Saving spellcheck decisions failed for %s", doc_id)

@@ -75,31 +75,46 @@ def lookup(session, author, words) -> dict[str, Remembered]:
     return {key: item for key, (_, item) in best.items()}
 
 
-def _clean(decision) -> tuple[str, str, str | None]:
+def _clean(decision) -> tuple[tuple[str, str, str | None] | None, str | None]:
+    """``((original, decision, replacement), None)``, or ``(None, message)`` saying what is wrong."""
     if not isinstance(decision, dict):
-        raise MemoryValidationError("Decyzja musi być obiektem.")
+        return None, "Decyzja musi być obiektem."
     original, kind = decision.get("original"), decision.get("decision")
     if not isinstance(original, str) or not original.strip() or len(original) > MAX_WORD_LENGTH:
-        raise MemoryValidationError("original musi być niepustym tekstem.")
+        return None, "original musi być niepustym tekstem."
     if kind not in DECISIONS:
-        raise MemoryValidationError("decision musi być accepted albo rejected.")
+        return None, "decision musi być accepted albo rejected."
     original = " ".join(original.split())
     if kind == "rejected":
-        return original, kind, None
+        return (original, kind, None), None
     replacement = decision.get("replacement")
     if not isinstance(replacement, str) or not replacement.strip() or len(replacement) > MAX_REPLACEMENT_LENGTH:
-        raise MemoryValidationError("Zaakceptowana poprawka wymaga niepustego replacement.")
+        return None, "Zaakceptowana poprawka wymaga niepustego replacement."
     replacement = " ".join(replacement.split())
     if replacement.casefold() == original.casefold():
-        raise MemoryValidationError("replacement musi się różnić od original.")
-    return original, kind, replacement
+        return None, "replacement musi się różnić od original."
+    return (original, kind, replacement), None
+
+
+def prepare_decisions(decisions) -> tuple[list | None, str | None]:
+    """The storable decisions of a request, or ``(None, message)``. Returns the problem as a value, not an exception,
+    so a route can answer it without ever putting exception text into a response."""
+    if not isinstance(decisions, list) or not 1 <= len(decisions) <= MAX_DECISIONS:
+        return None, f"decisions musi być listą od 1 do {MAX_DECISIONS} wpisów."
+    cleaned = []
+    for item in decisions:
+        value, problem = _clean(item)
+        if problem:
+            return None, problem
+        cleaned.append(value)
+    return cleaned, None
 
 
 def record_decisions(session, *, document_id: int, author, decisions) -> dict[str, int]:
     """Store the decisions of one panel session (flushes, the caller commits). Returns counts per decision."""
-    if not isinstance(decisions, list) or not 1 <= len(decisions) <= MAX_DECISIONS:
-        raise MemoryValidationError(f"decisions musi być listą od 1 do {MAX_DECISIONS} wpisów.")
-    cleaned = [_clean(item) for item in decisions]
+    cleaned, problem = prepare_decisions(decisions)
+    if problem:
+        raise MemoryValidationError(problem)
     channel = author_key(author)
     counts = {"accepted": 0, "rejected": 0}
     for original, kind, replacement in cleaned:
