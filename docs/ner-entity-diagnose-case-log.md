@@ -210,6 +210,7 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T39 | Przypadek zależny bez mianownika w tekście tworzy nowy wpis rejestru organizacji | gdy dokument ma tylko formy zależne, `aggregate_entities_detailed` bierze formę powierzchniową (ścieżka nr 2), a rejestr dopasowuje tylko dokładnie po aliasie, więc każda nowa odmiana to osobna organizacja; do tego starsze wpisy mają zepsuty lemat jako `canonical_name`, a span ucięty na łączniku („Al-”) i człon rodzajowy („Grupa”) tworzą kolejne wpisy | „Departamentowi Sprawiedliwości” obok „departament sprawiedliwość”; „Polską Partię Socjalistyczną”; „Al-”, „Grupa Al-Kaidy” obok „Al-Kaida” | E057 |
 
 | T40 | Przezwisko lub skrót osoby w transkrypcji, błędnie dopasowane w Wikidata | autor kanału nazywa osobę własnym przezwiskiem („DJ Vans” dla J.D. Vance'a) i dalej skraca je lub STT przekręca („Wansa”, „VAN”, „VANSAP”); jednowyrazowe „Wansa” przechodzi filtr nazwiska, bo to nazwisko człowieka z Wikidata, a LLM wybiera z zamkniętej listy kandydatów nie tę osobę; glosariusz kanału z wieloczłonową nazwą kanoniczną zostawia wariant „Vance” bez oryginalnych zapisów, więc chip znika z rozdziału | „zwany przeze mnie DJ Vansem”, „wycofał WANsa z negocjacji” | E059 |
+| T41 | Skrócona nazwa organizacji jako osobna encja | autor pisze pełną nazwę raz, potem jej początek („Międzynarodowy Trybunał Karny” … „działania Międzynarodowego Trybunału”) albo samo rzeczowe określenie („trybunał”); rejestr organizacji dopasowuje tylko dokładnie, więc każda forma to osobny wiersz `orgName` i osobna organizacja; skrót bywa wieloznaczny w obrębie dokumentu (ICC i ICJ), a ręczne scalenie dopisuje globalny alias, który szkodzi innym dokumentom | „Międzynarodowego Trybunału”, „trybunał” obok „Międzynarodowy Trybunał Karny” | E065 |
 
 Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T41,
 ...) zamiast naciągać istniejącą.
@@ -914,3 +915,47 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — `POST /website_entities/33167/transcription_error` i `…/33129/transcription_error` z `correct_name=Bild` (liczniki zsumowane w 33088 do 4, warianty „Build”/„Bild”, dopisany alias glosariusza kanału „Na Wschód od Bliskiego Wschodu”); `POST /organizations/1566/merge` → 1787 z `make_global_alias=false` (zwykły alias globalny „Build” zamieniałby każde „Build”, np. konferencję Microsoftu, w gazetę); jednorazowa zamiana w tekście `POST /transcript_corrections/apply` (`Build`→`Bild`, tylko ten dokument, 4 trafienia). Zamiast globalnego `ner_exclusions` dla osoby „Bild” użyto `transcription_error`, żeby nie tracić wzmianek.
 - **Test regresyjny:** brak — czysto danowa poprawka. Trwałej reguły `transcript_corrections` nie dodano: walidator odrzuca jednowyrazowe wzorce, a alias glosariusza pokrywa ten kanał w NER.
 - **Status:** tylko dane bez zmiany kodu. Zapis w dokumencie zmienił `text`; rozdziały, chunki i embeddingi nie były przebudowywane (dokument nie miał embeddingów).
+
+### E062 — „zaporoże” i „Hersońszczyzna” bez żadnej encji (dok. #11278, PR #1069, 2026-11-21)
+
+- **Typ encji:** placeName
+- **Kategoria:** T21 — miejsce, którego spaCy nie zgłasza w ogóle
+- **Zdanie źródłowe:** „Bo jeszcze przecież zostało mu zaporoże. Hersońszczyzna to jeszcze sporo do zajmowania jakby chciał.”
+- **Objaw:** w `/ner/11278/4` żadnego z dwóch regionów Ukrainy nie ma wśród encji; w `document_entities` brak wierszy.
+- **Przyczyna źródłowa:** transkrypcja pisze „zaporoże” małą literą (spaCy: `ents=[]`, tag VERB; filtr `surface[0].islower()` w `ner_client.py` odrzuciłby je i tak), a „Hersońszczyzna” dostaje od spaCy tag NOUN bez encji. W starym dokumencie (#9360) „Hersońszczyzna” miała ujemny wpis `geocode_cache` (`resolved=false`, `raw=null`), bo LocationIQ nie zna tej nazwy.
+- **Poprawka:** dane — `POST /ner_gazetteer`: `place_mention` „Obwód Zaporoski” (formy `zaporoze`, `zaporoza`, `zaporozu`, `zaporozem`; nie `zaporoz*`, bo łapie „zaporożec”) i „Hersońszczyzna” (`hersonszczyzn*`), `geocode_alias` „Obwód Zaporoski” → „Zaporizhzhia Oblast” (geokoduje się, `geocode_cache` 1979). Dla „Hersońszczyzny” aliasy „Kherson Oblast”, „Khersonska Oblast”, „Kherson Region” nie dały trafienia przechodzącego ocenę podobieństwa, więc encja zostaje bez współrzędnych (decyzja użytkownika), `source='manual'`. Ujemny wpis `geocode_cache` skasowano (klucze obce `ON DELETE SET NULL`), żeby alias w ogóle był próbowany.
+- **Test regresyjny:** brak — czysto danowa poprawka; wpisy gazetteera dokumentują przypadek.
+- **Status:** tylko dane bez zmiany kodu.
+
+### E063 — „Witkowo”, „Witkow”, „Witko” zamiast Steve'a Witkoffa (dok. #11278, PR #1069, 2026-11-21)
+
+- **Typ encji:** persName
+- **Kategoria:** T23 — rozsypane warianty jednej nazwy przez błędy transkrypcji kanału
+- **Zdanie źródłowe:** „Na spotkanie natomiast, które zwołał Trump przybyli jego wysłannicy, czyli yyy Kuszner i Witkowo”; „…Witko powiedział, że Trump dał nam instrukcję…”
+- **Objaw:** brak osoby Witkoffa; „Witkowo” spaCy typuje jako miasto (`placeName`, POS=ADV), a „Witko”/„Witkow” rejestr osób przypisał do przypadkowego Marcina Witko (Wikidata Q11767860).
+- **Przyczyna źródłowa:** błąd STT nazwiska (Witkoff) + istniejący polski homonim. Glosariusz kanału miał „Kushner” z aliasem „Kuszner”, ale nie miał Witkoffa. W rejestrze osób leżały śmieciowe wpisy z tego samego błędu („Stevem Witkowo”, „Zełenski Steve Witkof”, „Stev Witków”).
+- **Poprawka:** dane — `POST /ner_channel_glossary` (id 68: kanał „Na Wschód od Bliskiego Wschodu”, `Steve Witkoff` ← „Witkowo”, „Witkow”, „Witko”, `fuzzy=false`); osobę 1543 „Stevem Witkowo” przemianowano na „Steve Witkoff” (używały jej tylko dok. 11274 i 11278), powiązanie zatwierdzone, błędne „Witko” → Marcin Witko odrzucone. Otwarte: „Kuszner” rozwiązuje się w tym dokumencie do przypadkowej osoby „Matt J. Kusner” (6 wzmianek) zamiast Jareda Kushnera (osoba 649).
+- **Test regresyjny:** brak — czysto danowa poprawka.
+- **Status:** tylko dane bez zmiany kodu; „Kushner” → „Matt J. Kusner” czeka na decyzję.
+
+### E064 — Kolizja kanonizacji „Kijowa”/„Kijów” przerywa `verify_places` (dok. #11278, PR #1069, 2026-11-22)
+
+- **Typ encji:** placeName
+- **Kategoria:** T12 — kolizja kanonikalizacji w transakcji
+- **Zdanie źródłowe:** wzmianki „w Kijowie” i „Kijowa” (dok. #11278)
+- **Objaw:** zadanie `entity_enrichment` kończy się `needs_intervention`: `UniqueViolation` na `(document_id, entity_type, entity_text)=(11278, placeName, Kijów)`; miejsca dokumentu nie przechodzą pełnej weryfikacji.
+- **Przyczyna źródłowa:** „Kijowa” (geocode 55, „Kijów, gmina Otmuchów… Polska”) ma nazwę kanoniczną „Kijów”, a „Kijów” (geocode 8, „Kijow, Ukraina”) nazwę „Kijow”; obie zmiany nazw trafiają do jednego `flush`, w którym pierwsza wykonuje się, gdy druga encja nadal nosi tekst „Kijów”. Istniejąca ochrona sprawdzała tylko wiersze spoza kandydatów.
+- **Poprawka:** kod — `place_verification._canonicalize_and_merge_places()`: zmiany nazw po scaleniach i `flush`, kolizja z dowolnym żywym wierszem dokumentu (także kandydatem innej grupy) scala wiersz zamiast go przemianowywać. Po odświeżeniu: jeden wiersz „Kijow” (2 wzmianki, geocode 8). Zapis „Kijow” bez diakrytyku to nazwa kanoniczna z geokodera, bez zmiany tego mechanizmu.
+- **Test regresyjny:** `backend/tests/unit/test_place_verification.py::TestCanonicalizeAndMergePlaces::test_canonical_name_occupied_by_another_candidate` (dane z dok. #11278, obie kolejności kandydatów; oblewa na starym kodzie).
+- **Status:** żywy bug naprawiony w kodzie.
+
+### E065 — „Międzynarodowego Trybunału” i „trybunał” jako osobne organizacje obok „Międzynarodowy Trybunał Karny” (dok. #11278, PR #1069, 2026-11-22)
+
+- **Typ encji:** orgName
+- **Kategoria:** T41 — skrócona nazwa organizacji jako osobna encja
+- **Zdanie źródłowe:** „…jest Haga i Międzynarodowy Trybunał Karny. I tutaj wyraźnie powiedziano, żeby ograniczyć działania Międzynarodowego Trybunału, żeby pamiętał o immunitecie głów państw”; „No o tym, żeby ich trybunał nie ścigał.”
+- **Objaw:** jedno ciało rozpada się na kilka wierszy `orgName` i osobne organizacje w rejestrze (1863, 1864); do tego bezsensowny `persName` „Międzowym Trybunłem Sprawiedliwości” (błąd STT).
+- **Przyczyna źródłowa:** osoby mają łączenie wariantów w obrębie dokumentu (`person_registry.find_document_person()`, `merge_entities_of_same_person()`), organizacje celowo tylko dokładne dopasowanie aliasu (`organization_registry.py`). Ten dokument omawia też Międzynarodowy Trybunał Sprawiedliwości (sprawa Rohingjów), więc „Międzynarodowego Trybunału” i gołe „trybunał” są wieloznaczne.
+- **Poprawka:** dane — scalenie wierszy w ICC (`POST /document/11278/organizations/merge`) dopisało globalne aliasy „trybunał”, „Międzynarodowego Trybunału” i „Trybunałów”, które zaszkodziłyby innym dokumentom, więc je usunięto (`DELETE /organizations/1367/aliases/…`); wiersze rozdzielą się przy kolejnym odświeżeniu NER. Bezsensowny `persName` ma wykluczenie `ner_exclusions` w zakresie dokumentu. Kod: mechanizm scalania skróconych nazw organizacji z potwierdzeniem modelu — w przygotowaniu (osobny PR).
+- **Test regresyjny:** brak (jeszcze) — dotyczy przyszłego PR z mechanizmem.
+- **Status:** dane częściowo; luka mechanizmu otwarta.
