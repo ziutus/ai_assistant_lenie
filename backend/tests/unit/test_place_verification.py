@@ -23,6 +23,7 @@ from library.place_verification import (  # noqa: E402
 
 def _entity(text, etype="geogName", geocode_id=None, geocode=None, mention_count=1):
     ent = MagicMock(spec=DocumentEntity)
+    ent.document_id = 1
     ent.entity_text = text
     ent.entity_type = etype
     ent.geocode_id = geocode_id
@@ -711,7 +712,7 @@ class TestVerifyDocumentPlaces:
 
         with patch("library.place_verification._is_country", return_value=False):
             with patch("library.article_tagging.confirm_places_with_llm",
-                       return_value=["Kijów", "Kijowa"]):
+                       return_value=["Kijow"]):
                 summary = verify_document_places(session, doc, "tekst")
 
         assert summary["tagged"] == ["miejsce-kijow"]
@@ -908,6 +909,40 @@ class TestCanonicalizeAndMergePlaces:
     def _session(self):
         session = MagicMock()
         return session
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    @pytest.mark.parametrize("include_candidates_in_existing", [False, True])
+    def test_canonical_name_occupied_by_another_candidate(self, reverse, include_candidates_in_existing):
+        # Doc #11278: "... na Ukrainie ... w Kijowie ... Kijowa ..."
+        # Kijowa -> Kijów, gmina Otmuchów, ... Polska; Kijów -> Kijow, Ukraina.
+        polish = _entity("Kijowa", etype="placeName", geocode_id=55, geocode=_resolved_geocode(
+            "Kijów, gmina Otmuchów, powiat nyski, województwo opolskie, Polska"))
+        ukrainian = _entity("Kijów", etype="placeName", geocode_id=8,
+                            geocode=_resolved_geocode("Kijow, Ukraina"))
+        home = _entity("dom", etype="placeName", geocode_id=19, geocode=_resolved_geocode("Dom"))
+        entities = [home, polish, ukrainian]
+        for ent, entity_id, variants in zip(entities, [39170, 39316, 39317], [["Domu"], ["Kijowa"], ["Kijowie"]]):
+            ent.id, ent.document_id, ent.variants = entity_id, 11278, variants
+            ent.source, ent.place_verification_status = "ner", None
+        candidates = list(reversed(entities)) if reverse else entities
+        session = self._session()
+
+        survivors = _canonicalize_and_merge_places(
+            session, candidates, existing=entities if include_candidates_in_existing else [],
+        )
+
+        session.flush.assert_called()
+        session.delete.assert_called_once_with(polish)
+        live = [ent for ent in entities if ent not in [call.args[0] for call in session.delete.call_args_list]]
+        keys = [(ent.document_id, ent.entity_type, ent.entity_text) for ent in live]
+        assert len(keys) == len(set(keys))
+        assert set(survivors) == set(live) == {home, ukrainian}
+        assert ukrainian.entity_text == "Kijow"
+        assert ukrainian.geocode_id == 8
+        assert ukrainian.mention_count == 2
+        assert set(ukrainian.variants) == {"Kijowa", "Kijowie"}
+        assert home.entity_text == "Dom"
+        assert home.geocode_id == 19 and home.mention_count == 1 and home.variants == ["Domu"]
 
     def test_two_entities_with_same_canonical_name_are_merged(self):
         """'Port Sudan' (placeName) and 'Port Sudanem' (geogName) never
