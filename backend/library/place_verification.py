@@ -511,7 +511,12 @@ def _canonicalize_and_merge_places(
         by_canonical.setdefault(canonical, []).append(ent)
 
     survivors: list[DocumentEntity] = list(unresolved)
+    deleted = set()
+    renames = []
     for canonical, rows in by_canonical.items():
+        rows = [row for row in rows if row not in deleted]
+        if not rows:
+            continue
         # A row already spelled exactly like the canonical form is most
         # likely the one ner_client.py's Faza 1 nominative-preference
         # already got right from the text alone — anchor the merge on it
@@ -525,25 +530,32 @@ def _canonicalize_and_merge_places(
                 continue
             merge_document_entities(row, target, target_source="geocoded")
             session.delete(row)
+            deleted.add(row)
         if target.entity_text != canonical:
-            # A row spelled like the canonical form may already exist OUTSIDE the candidates (a country, a row held
-            # for review): (document, type, text) is unique, so renaming would abort the whole stage
-            # (doc #11263: "Bahrajinu" geocoded to Bahrain while the country row "Bahrajn" existed). Fold into it.
-            clash = next((other for other in existing
-                          if other not in rows and other.entity_type == target.entity_type
+            # Include candidates in other groups, and defer renames so their occupied names
+            # remain visible regardless of group order (doc #11278: Kijowa / Kijów).
+            clash = next((other for other in (*existing, *candidates)
+                          if other not in rows and other not in deleted
+                          and other.document_id == target.document_id and other.entity_type == target.entity_type
                           and other.entity_text == canonical), None)
             if clash is not None:
                 geocode_before = clash.geocode_id
                 merge_document_entities(target, clash, target_source=clash.source or "ner")
                 clash.geocode_id = geocode_before  # a country keeps no place geocode
                 session.delete(target)
+                deleted.add(target)
                 continue
-            target.entity_text = canonical
-            target.source = "geocoded"
+            renames.append((target, canonical))
         survivors.append(target)
     if by_canonical:
+        # Release deleted rows' unique keys before issuing any UPDATEs.
         session.flush()
-    return survivors
+        for target, canonical in renames:
+            if target not in deleted:
+                target.entity_text = canonical
+                target.source = "geocoded"
+        session.flush()
+    return [row for row in survivors if row not in deleted]
 
 
 def verify_document_places(session, doc, text: str, progress_callback=None) -> dict:
