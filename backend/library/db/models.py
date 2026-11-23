@@ -1548,6 +1548,40 @@ class TranscriptCorrectionApplication(Base):
     applied_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
+class TranscriptSpellcheckMemory(Base):
+    """What the reviewer decided about a word the spellcheck panel flagged (library/transcript_spellcheck_memory.py).
+
+    ``accepted`` = the word was a speech-to-text slip and ``replacement`` is the approved spelling; ``rejected`` =
+    the word is not a slip (a term, a name) and is skipped without a model call. ``author_key`` is the normalised
+    channel (``Document.byline``), empty for documents without one. ``document_ids`` are the distinct documents
+    that confirmed the pair: a pair confirmed in several documents is trusted and pre-ticked in the panel.
+    """
+
+    __tablename__ = "transcript_spellcheck_memory"
+    __table_args__ = (
+        CheckConstraint("decision IN ('accepted', 'rejected')", name="ck_transcript_spellcheck_memory_decision"),
+        Index("uq_transcript_spellcheck_memory_key", "author_key", "original_key", "decision", "replacement_key",
+              unique=True),
+        Index("ix_transcript_spellcheck_memory_original", "original_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author_key: Mapped[str] = mapped_column(Text, nullable=False, server_default=sa_text("''"))
+    original_key: Mapped[str] = mapped_column(Text, nullable=False)
+    original: Mapped[str] = mapped_column(Text, nullable=False)
+    replacement: Mapped[str | None] = mapped_column(Text)
+    replacement_key: Mapped[str] = mapped_column(Text, nullable=False, server_default=sa_text("''"))
+    decision: Mapped[str] = mapped_column(String(10), nullable=False)
+    document_ids: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=sa_text("'[]'"),
+    )
+    times: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("1"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now(),
+    )
+
+
 class CleanupRule(Base):
     """Reguła usuwania linii z artykułu wraz z pochodzeniem i licznikiem trafień."""
 

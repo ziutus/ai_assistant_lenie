@@ -135,11 +135,14 @@ to świadome akcje.
 ```mermaid
 flowchart TD
     A["Tekst po imporcie"] --> B["Reguły fraz STT przy zapisie<br/>transcript_corrections: globalne, per kanał, per region"]
-    B --> C["Spellcheck: słownik Morfeusz szuka<br/>słów nieznanych, tag ign<br/>POST /document/id/transcript_spellcheck"]
-    C --> D["LLM proponuje poprawkę dla każdego<br/>podejrzanego słowa, do 80 słów, paczki po 25"]
-    D --> E{"Człowiek zatwierdza<br/>propozycję?"}
+    B --> C["Spellcheck rozdział po rozdziale: słownik Morfeusz<br/>szuka słów nieznanych, tag ign; rozdziały reklama,<br/>szum i źródła pomijane<br/>POST /document/id/transcript_spellcheck"]
+    C --> M["Pamięć decyzji kanału<br/>transcript_spellcheck_memory:<br/>zatwierdzone wracają bez modelu,<br/>odrzucone są pomijane"]
+    M --> D["LLM proponuje poprawkę tylko dla słów, których<br/>jeszcze nie oceniono, do 80 słów, paczki po 25"]
+    D --> R["Opcjonalnie ponowna analiza otwartych propozycji<br/>z coraz większym kontekstem: 400, 900, 1800 znaków<br/>POST /document/id/transcript_spellcheck/reanalyze"]
+    R --> E{"Człowiek zatwierdza<br/>propozycję?"}
     E -- tak --> F["Jednorazowa zamiana w dokumencie<br/>POST /transcript_corrections/apply<br/>pattern + replacement"]
-    E -- nie --> G["Odrzucona, nic się nie zapisuje"]
+    E -- nie --> G["Odrzucona: zapamiętana jako to nie błąd,<br/>słowo nie wraca do modelu dla tego kanału"]
+    F --> N["Zatwierdzona para trafia do pamięci kanału<br/>po dwóch dokumentach jest zaznaczana z góry"]
     A --> H["Ręczna korekta na /ner/id<br/>Popraw błąd w transkrypcji:<br/>reguła stała albo tylko ten dokument"]
     H --> F
     H --> I["Nowa reguła stała, następne<br/>transkrypcje tego kanału poprawią się same"]
@@ -151,9 +154,23 @@ flowchart TD
     classDef svc fill:#dcfce7,stroke:#16a34a,color:#111827
     class B,I,J regex
     class C svc
-    class D llm
+    class M,N regex
+    class D,R llm
     class E,F,G,H human
 ```
+
+Spellcheck czyta tekst rozdział po rozdziale (numeracja jak na `/ner/:id`, 0 = wstęp), ale wynik jest
+jedną listą w jednym panelu, z etykietą rozdziału przy każdej pozycji. Rozdziały typu reklama, szum i
+źródła nie są skanowane i nic nie kosztują; model dostaje tytuł rozdziału jako wskazówkę. Decyzje
+człowieka są pamiętane **per kanał** (`byline`) w `transcript_spellcheck_memory`: zatwierdzona para
+(słowo → pisownia) wraca przy następnym transkrypcie tego kanału bez wywołania modelu, a para
+potwierdzona w dwóch różnych dokumentach jest zaznaczana z góry; słowo odrzucone („to nie błąd”) jest
+pomijane i nie trafia do modelu. Najnowsza decyzja wygrywa, a odrzucone słowo można przywrócić w panelu.
+„Przeanalizuj ponownie z większym kontekstem” wysyła do modelu tylko otwarte propozycje (bez
+odrzuconych, zastosowanych i sprawdzonych par z pamięci) z dłuższym fragmentem tekstu (±400, potem
+±900, potem ±1800 znaków) i prosi o krótkie wyjaśnienie, co mówca miał na myśli. Żadna z tych decyzji
+nie zmienia tekstu: zmienia go dopiero „Zastosuj zaznaczone”. Zapamiętane pary nie są stosowane
+w tle przy imporcie; to osobny, świadomy krok, jeśli kiedyś będzie potrzebny.
 
 Różnica, o którą łatwo się potknąć: reguły z `transcript_corrections` **zmieniają zapisany tekst**
 (`text`, `text_md`), a glosariusz kanału **nie** — poprawia tylko kopię, którą czyta NER, więc w
@@ -368,7 +385,9 @@ Kolumna „Kto” mówi, czy akcja uruchamia się sama (**auto**), czy ją wywo�
 | 6 | Import | Stałe reguły fraz STT przy zapisie | `transcript_corrections.py`, hook `_store_transcript_text` | REGEX | auto |
 | 7 | Poprawki | Zarządzanie regułami fraz (globalne, kanał, region) | `/transcript_corrections` | REGEX | przycisk |
 | 8 | Poprawki | Jednorazowa zamiana w jednym dokumencie | `POST /transcript_corrections/apply` (`pattern` + `replacement`) | REGEX | przycisk |
-| 9 | Poprawki | Spellcheck: podejrzane słowa + propozycje | `POST /document/<id>/transcript_spellcheck`, `transcript_spellcheck.py` | SERWIS (Morfeusz) + LLM | przycisk, człowiek zatwierdza |
+| 9 | Poprawki | Spellcheck po rozdziałach: podejrzane słowa + propozycje (bez reklam i szumu, z pamięcią kanału) | `POST /document/<id>/transcript_spellcheck`, `transcript_spellcheck.py` | SERWIS (Morfeusz) + LLM tylko dla słów jeszcze nieocenionych | przycisk, człowiek zatwierdza |
+| 9a | Poprawki | Ponowna analiza otwartych propozycji z większym kontekstem | `POST /document/<id>/transcript_spellcheck/reanalyze` | LLM | przycisk |
+| 9b | Poprawki | Zapis decyzji (zatwierdzone / odrzucone) w pamięci kanału | `POST /document/<id>/transcript_spellcheck/decisions`, `transcript_spellcheck_memory.py` | brak | auto po zastosowaniu lub odrzuceniu |
 | 10 | Poprawki | Słownik regionu (panel na `/ner/:id`) | reguły z zakresem region | REGEX | przycisk |
 | 11 | Poprawki | Glosariusz kanału (kopia tekstu dla NER) | `/ner_channel_glossary`, `ner_channel_glossary.py` | REGEX | auto przy NER |
 | 12 | Struktura | Propozycja rozdziałów przez AI | `POST /document/<id>/suggest_chapters` | LLM | przycisk |
