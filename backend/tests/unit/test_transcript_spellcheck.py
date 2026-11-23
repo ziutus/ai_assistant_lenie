@@ -142,7 +142,8 @@ def client(monkeypatch):
     from library import transcript_spellcheck_routes as routes
 
     session = MagicMock()
-    session.get.return_value = SimpleNamespace(document_type="youtube", text="Otóż spóromyśliwiec.")
+    session.get.return_value = SimpleNamespace(id=1, document_type="youtube", text="Otóż spóromyśliwiec.", byline="Kanał",
+                                               chapter_types=None)
     monkeypatch.setattr(routes, "get_scoped_session", lambda: session)
     monkeypatch.setattr(sc, "default_model", lambda s: "test")
     monkeypatch.setattr(sc.llm_model_registry, "is_selectable", lambda model, task: model == "test")
@@ -176,7 +177,7 @@ class TestRoutes:
         assert client.post("/document/1/transcript_spellcheck", json=body).status_code == 400
 
     def test_not_a_transcript(self, client):
-        client.session.get.return_value = SimpleNamespace(document_type="webpage", text="x")
+        client.session.get.return_value = SimpleNamespace(id=1, document_type="webpage", text="x", byline=None, chapter_types=None)
         assert client.post("/document/1/transcript_spellcheck", json={}).status_code == 400
 
     def test_unknown_document(self, client):

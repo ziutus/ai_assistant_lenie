@@ -504,6 +504,25 @@ replacement, `validate_one_off()` / `replace_phrase()`): stored rules are not lo
 hit statistic is written, a single word is allowed, the report shows `rule_id` 0. This is the
 "Tylko ten dokument" option of the `/ner/:id` menu.
 
+## Transcript spellcheck (`transcript_spellcheck.py`, `transcript_spellcheck_memory.py`)
+
+Finds speech-to-text slips as words Morfeusz does not know and asks a model (`transcript_spellcheck` task, Bielik by default)
+for a spelling; nothing is written except the reviewer's decisions. The first pass is `analyse_document()`: `chapters_of()`
+splits the transcript into `##` chapters numbered like `/ner/:id` (0 = preamble) and `find_suspects()` reads only the TEMAT ones
+(`Document.chapter_types` aligned through `resolve_chapter_types`, a list of the wrong length means all TEMAT) — advertisement,
+noise and source chapters are skipped and counted in `skipped_chapters`; context is cut inside the chapter and the model sees
+the chapter title. Then `transcript_spellcheck_memory.lookup()` splits the suspects (`split_by_memory()`): a word with an approved
+spelling for the document's channel (`author_key` = normalised `byline`, empty bucket for documents without one, the channel's
+entry wins over the shared bucket) becomes a proposal `source: "memory"` with no model call (`trusted` once
+`TRUSTED_DOCUMENTS` = 2 distinct documents confirmed it), a word rejected before is skipped, only the rest goes to `propose()`.
+`record_decisions()` keeps the newest decision per (channel, word): accepting drops the rejection, rejecting drops the approved
+spellings; `document_ids` makes the document count. `reanalyze()` is the second, optional call on open proposals: a window of
+`context_chars` (steps 400 / 900 / 1800, max 2500) cut at word boundaries, the earlier proposal passed as possibly wrong, a
+one-sentence `reason`; the answer goes through the same `validate_replacement()` (known words only, similar to the original), so an
+invented word keeps the old proposal. Remembered pairs are not applied at import (`_store_transcript_text` is unchanged): a silent
+rewrite of stored text from learned data would need its own audit trail first. Tests: `test_transcript_spellcheck.py`,
+`test_transcript_spellcheck_chapters.py` (in-memory SQLite for the memory table).
+
 **Spellcheck proposals** (`transcript_spellcheck.py` / `transcript_spellcheck_routes.py`, task `transcript_spellcheck`
 in `llm_model_registry`, household default in `app_settings` key `transcript_spellcheck_model`; built-in default
 `Bielik-11B-v3.0-Instruct`, then Mistral Small 3.2 on OpenRouter, then the first available model — on the 66 suspects of
