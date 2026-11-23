@@ -530,6 +530,59 @@ class TestChannelGlossaryInRefresh:
         assert not any("ner_channel_glossary" in str(call.args[0]) for call in session.execute.call_args_list)
 
 
+class TestOrgShortNames:
+    def test_refresh_merges_after_compounds_before_exclusions(self):
+        import json
+
+        from library.org_compound_names import merge_compound_org_names
+
+        short = "Międzynarodowego Trybunału"
+        full = "Międzynarodowy Trybunał Karny"
+        session = _session_with_exclusions([])
+        session.get.return_value.title = "Immunitet"
+        raw = [{"text": name, "lemma": name, "label": "orgName"} for name in [full, short]]
+        stages = []
+
+        def compound(text, groups):
+            stages.append("compound")
+            return merge_compound_org_names(text, groups)
+
+        def ask(*args, **kwargs):
+            assert stages == ["compound"]
+            stages.append("short")
+            assert kwargs["document_id"] == 11278
+            return MagicMock(response_text=json.dumps({
+                "choice": full, "confidence": "high", "rationale": "Immunitet",
+            }))
+
+        def corrections(_session, _document_id, groups, _author):
+            assert stages == ["compound", "short"]
+            assert set(groups) == {("orgName", full)}
+            assert groups[("orgName", full)]["count"] == 2
+            return []
+
+        with patch("library.entity_service.extract_entities", return_value=raw), \
+             patch("library.entity_service.merge_compound_org_names", side_effect=compound), \
+             patch("library.org_short_names._model", return_value="m"), \
+             patch("library.ai.ai_ask", side_effect=ask), \
+             patch("library.ner_corrections.apply_ner_corrections", side_effect=corrections), \
+             patch("library.entity_service.resolve_or_create", return_value=(
+                 MagicMock(id=7, canonical_name=full), "canonical_matched",
+             )):
+            rows = refresh_document_entities(session, 11278, f"{full}. Ograniczyć działania {short}.")
+        assert [(row.entity_text, row.mention_count) for row in rows] == [(full, 2)]
+        assert short in rows[0].variants
+
+    def test_unexpected_short_name_failure_does_not_interrupt_refresh(self):
+        session = _session_with_exclusions([])
+        with patch("library.entity_service.extract_entities", return_value=[
+            {"text": "Kotlinie Kłodzkiej", "label": "geogName", "lemma": "Kotlina Kłodzka"},
+        ]), \
+             patch("library.org_short_names.merge_confirmed_short_names", side_effect=RuntimeError("failure")):
+            rows = refresh_document_entities(session, 42, "Tusk w Kotlinie Kłodzkiej")
+        assert rows
+
+
 class TestPlaceMentionSupplement:
     """Gazetteer-detected places that spaCy never reports (doc #10872)."""
 

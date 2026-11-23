@@ -518,6 +518,21 @@ def _apply_generic_geo_heads(
         logger.info("NER folded bare %r into %r in doc %s", bare, feature, document_id)
 
 
+def _apply_org_short_names(
+    groups: dict[tuple[str, str], dict], text: str, title: str, document_id: int,
+) -> None:
+    """Fold document-local organization prefixes only with contextual model confirmation."""
+    try:
+        from library.org_short_names import merge_confirmed_short_names
+
+        merged = merge_confirmed_short_names(groups, text, title, document_id)
+    except Exception:  # noqa: BLE001 — a classifier failure must never fail the entity refresh
+        logger.warning("Organization short name step failed for document %s", document_id, exc_info=True)
+        return
+    for short, full in merged:
+        logger.info("NER folded organization %r into %r in doc %s", short, full, document_id)
+
+
 def _fold_form(value: str) -> str:
     return unidecode(value or "").strip().casefold()
 
@@ -653,6 +668,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         merged_orgs = merge_compound_org_names(
             strip_content_markers(strip_markdown_emphasis(text)), groups,
         )
+        _apply_org_short_names(groups, text, getattr(doc, "title", None) or "", document_id)
         if merged_orgs:
             logger.info("NER compound organization names merged %d groups for doc %s", len(merged_orgs), document_id)
 
