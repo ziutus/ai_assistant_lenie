@@ -407,6 +407,25 @@ it("shows neither marking button on an advertisement chapter that was already ma
   expect(sponsor.queryByRole("button", { name: /jako reklamę/ })).toBeNull();
 });
 
+it("restores a chapter marked as advertisement or noise to content, after a confirmation that warns about the entities", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  // Only a skipped chapter offers it; a content chapter has the marking buttons instead.
+  expect(within(screen.getByRole("region", { name: "#1 Wstęp" })).queryByRole("button", { name: /Przywróć rozdział/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Przywróć rozdział 2 jako treść" }));
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Wykryj osoby, miejsca i obiekty"));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/chapter_type", { position: 2, type: "TEMAT" },
+    { headers: { "x-api-key": "test-key" } }));
+});
+
+it("does not restore a chapter when the confirmation is declined", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Przywróć rozdział 2 jako treść" }));
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
 it("opens the chip's action menu when a highlighted mention in the text is clicked", async () => {
   await open();
   const marks = [...document.querySelectorAll("mark")];

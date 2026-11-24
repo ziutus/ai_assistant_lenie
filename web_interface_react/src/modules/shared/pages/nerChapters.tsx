@@ -398,6 +398,35 @@ const NerChapters = () => {
     }
   };
 
+  // Undoes "Oznacz jako szum" / "Oznacz jako reklamę": the chapter becomes content again (same endpoint, type TEMAT).
+  // The entities that were removed together with the marking are NOT brought back (they lived only in this chapter),
+  // so the confirmation says so and points to the detection button.
+  const restoreChapter = async (position: number, label: string) => {
+    if (merging) return;
+    if (!window.confirm(
+      `Przywrócić ${label} jako treść? Encje usunięte przy oznaczaniu nie wrócą same — po przywróceniu uruchom „Wykryj osoby, miejsca i obiekty”.`,
+    )) return;
+    setMerging(true);
+    setMergeError("");
+    try {
+      await axios.post(`${base}/chapter_type`, { position, type: "TEMAT" }, { headers });
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      setMergeError(status === 409
+        ? "Nie można zmienić typu: dokument ma embeddingi (otwórz go ponownie do edycji) albo trwa jego analiza."
+        : "Nie udało się przywrócić rozdziału jako treści.");
+      setMerging(false);
+      return;
+    }
+    try {
+      await refreshChapters(position);
+    } catch {
+      setMergeError("Nie udało się odświeżyć rozdziałów.");
+    } finally {
+      setMerging(false);
+    }
+  };
+
   // Marks a content chapter as noise or as an advertisement (same endpoint as the editor's type select) and
   // then drops the entities that were mentioned only there; entities shared with other chapters stay.
   const markChapterAs = async (position: number, label: string, newType: "SZUM" | "REKLAMA") => {
@@ -657,6 +686,12 @@ const NerChapters = () => {
       {type === "TEMAT" && section.position >= 1 && (
         <button type="button" disabled={merging || loadingEntities || paragraphizing !== null} aria-label={`Oznacz rozdział ${section.position} jako reklamę`}
           onClick={() => void markChapterAs(section.position, "ten rozdział", "REKLAMA")}>📢 Oznacz jako reklamę</button>
+      )}
+      {(type === "SZUM" || type === "REKLAMA") && section.position >= 1 && (
+        <button type="button" disabled={merging || paragraphizing !== null}
+          aria-label={`Przywróć rozdział ${section.position} jako treść`}
+          title={`Cofa oznaczenie „${TYPE_LABELS[type]}”; usunięte encje trzeba wykryć ponownie`}
+          onClick={() => void restoreChapter(section.position, "ten rozdział")}>↺ Przywróć jako treść</button>
       )}
     </>
   );
