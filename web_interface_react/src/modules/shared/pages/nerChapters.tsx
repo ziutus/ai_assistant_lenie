@@ -347,7 +347,7 @@ const NerChapters = () => {
   // chooses sentence boundaries, the text is never rephrased. Entities stay as they are (only whitespace
   // is added), so the chapter list is refetched but the entities are not rebuilt.
   const paragraphizeChapter = async (target: number) => {
-    if (paragraphizing !== null || !window.confirm(
+    if (paragraphizing !== null || detectionBusy || !window.confirm(
       "Podzielić ten rozdział na akapity tematyczne przy użyciu Bielika? Tekst nie będzie parafrazowany.",
     )) return;
     setParagraphizing(target);
@@ -372,7 +372,7 @@ const NerChapters = () => {
   // The same split for the WHOLE transcript (no `position`): the model walks through every chapter, one call per
   // window of sentences, so it can take minutes. The banner and the disabled buttons show that work is going on.
   const paragraphizeAll = async () => {
-    if (paragraphizing !== null || !window.confirm(
+    if (paragraphizing !== null || detectionBusy || !window.confirm(
       "Podzielić cały tekst na akapity tematyczne przy użyciu Bielika? To może potrwać kilka minut. Tekst nie będzie parafrazowany.",
     )) return;
     setParagraphizing("all");
@@ -541,6 +541,10 @@ const NerChapters = () => {
   // "Wykryj wydarzenia" sits in the same button bar: a click bumps the nonce, the chapter's panel runs the detection.
   const [eventsDetect, setEventsDetect] = React.useState<{ position: number; nonce: number } | null>(null);
   const [eventsBusyFor, setEventsBusyFor] = React.useState<number | null>(null);
+  // The entities panel is running a detection (NER, countries, geopolitics). The paragraph split rewrites the text
+  // those detections read, so it waits for them (and for event detection) — the server answers 409 otherwise.
+  const [panelBusy, setPanelBusy] = React.useState(false);
+  const detectionBusy = panelBusy || eventsBusyFor !== null;
   const [sourcesVersion, setSourcesVersion] = React.useState(0);
   // Tone passages found on request (ToneSpansPanel); one list for the whole document, filtered per chapter by the panel.
   const [toneSpans, setToneSpans] = useToneSpans(apiUrl, apiKey, id);
@@ -637,9 +641,10 @@ const NerChapters = () => {
           onClick={() => void mergeChapter(section.position + 1, "ten rozdział z następnym")}>⇣ Scal z następnym</button>
       )}
       {type === "TEMAT" && section.position >= 1 && (
-        <button type="button" disabled={merging || paragraphizing !== null}
+        <button type="button" disabled={merging || paragraphizing !== null || detectionBusy}
           aria-label={`Podziel rozdział ${section.position} na akapity`}
-          title="Bielik wybiera granice akapitów; tekst się nie zmienia"
+          title={detectionBusy ? "Poczekaj, aż skończy się wykrywanie w tym dokumencie"
+            : "Bielik wybiera granice akapitów; tekst się nie zmienia"}
           onClick={() => void paragraphizeChapter(section.position)}>
           {paragraphizing === section.position ? "⏳ Dzielę na akapity…" : "¶ Podziel na akapity"}
         </button>
@@ -817,9 +822,11 @@ const NerChapters = () => {
             hideCountriesRow={chapterMode}
             headerExtra={scopeSwitch}
             externalDisabled={paragraphizing !== null}
+            onBusyChange={setPanelBusy}
             extraActions={sections.some((section) => section.position >= 1) ? (
-              <button className="button" type="button" disabled={merging || paragraphizing !== null}
-                title="Bielik wybiera granice akapitów w każdym rozdziale; tekst się nie zmienia"
+              <button className="button" type="button" disabled={merging || paragraphizing !== null || detectionBusy}
+                title={detectionBusy ? "Poczekaj, aż skończy się wykrywanie w tym dokumencie"
+                  : "Bielik wybiera granice akapitów w każdym rozdziale; tekst się nie zmienia"}
                 onClick={() => void paragraphizeAll()}>
                 {paragraphizing === "all" ? "⏳ Dzielę cały tekst na akapity…" : "¶ Podziel cały tekst na akapity"}
               </button>

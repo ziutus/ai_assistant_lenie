@@ -14,13 +14,15 @@ vi.mock("../context/authorizationContext", async () => {
 vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
   const React = await import("react");
   return {
-    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow, headerExtra, extraActions, externalDisabled }: any) => {
+    default: ({ chapterRenderer, onEntitiesChanged, onShowInText, onDescribeEvent, onMergeProducts, mentionMenu, hideCountriesRow, headerExtra, extraActions, externalDisabled, onBusyChange }: any) => {
       React.useEffect(() => { onEntitiesChanged?.(); }, []);
       return <div data-testid="panel" data-hide-countries={hideCountriesRow ? "yes" : "no"}
         data-external-disabled={externalDisabled ? "yes" : "no"}>
         {extraActions}
         {headerExtra}
         <button onClick={() => onEntitiesChanged?.()}>zmień encje</button>
+        <button onClick={() => onBusyChange?.(true)}>panel zajęty</button>
+        <button onClick={() => onBusyChange?.(false)}>panel wolny</button>
         {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
         <button type="button" onClick={() => onShowInText?.(
           { id: 2, text: "Kijów", variants: ["Kijów", "Kijowie"], chapter_variants: ["Kijowie"] }, "place")}>pokaż Kijów</button>
@@ -291,6 +293,24 @@ it("paragraphizes the whole text, showing progress and locking the other edits m
     .toBeTruthy();
   expect(screen.queryByText(/Bielik dzieli cały tekst/)).toBeNull();
   expect((screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("will not start a paragraph split while the panel is running a detection", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  await open();
+  const all = () => screen.getByRole("button", { name: "¶ Podziel cały tekst na akapity" }) as HTMLButtonElement;
+  const chapter = () => screen.getByRole("button", { name: "Podziel rozdział 1 na akapity" }) as HTMLButtonElement;
+  expect(all().disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "panel zajęty" }));
+  expect(all().disabled).toBe(true);
+  expect(chapter().disabled).toBe(true);
+  fireEvent.click(all());
+  fireEvent.click(chapter());
+  expect(confirm).not.toHaveBeenCalled();
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "panel wolny" }));
+  expect(all().disabled).toBe(false);
+  expect(chapter().disabled).toBe(false);
 });
 
 it("does not split the whole text when it is not confirmed", async () => {
