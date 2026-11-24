@@ -211,8 +211,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 
 | T40 | Przezwisko lub skrót osoby w transkrypcji, błędnie dopasowane w Wikidata | autor kanału nazywa osobę własnym przezwiskiem („DJ Vans” dla J.D. Vance'a) i dalej skraca je lub STT przekręca („Wansa”, „VAN”, „VANSAP”); jednowyrazowe „Wansa” przechodzi filtr nazwiska, bo to nazwisko człowieka z Wikidata, a LLM wybiera z zamkniętej listy kandydatów nie tę osobę; glosariusz kanału z wieloczłonową nazwą kanoniczną zostawia wariant „Vance” bez oryginalnych zapisów, więc chip znika z rozdziału | „zwany przeze mnie DJ Vansem”, „wycofał WANsa z negocjacji” | E059 |
 | T41 | Skrócona nazwa organizacji jako osobna encja | autor pisze pełną nazwę raz, potem jej początek („Międzynarodowy Trybunał Karny” … „działania Międzynarodowego Trybunału”) albo samo rzeczowe określenie („trybunał”); rejestr organizacji dopasowuje tylko dokładnie, więc każda forma to osobny wiersz `orgName` i osobna organizacja; skrót bywa wieloznaczny w obrębie dokumentu (ICC i ICJ), a ręczne scalenie dopisuje globalny alias, który szkodzi innym dokumentom | „Międzynarodowego Trybunału”, „trybunał” obok „Międzynarodowy Trybunał Karny” | E065 |
+| T42 | Medium (telewizja, gazeta, portal, agencja) jako miejsce odrzucone, ale bez organizacji | spaCy typuje nazwę medium jako `geogName`; klasyfikator kontekstu słusznie odpowiada `not_place`, lecz prompt traktował media jako „nie miejsce i nie organizacja”, więc werdykt `organization` (jedyny, który kieruje encję do rejestru organizacji) nigdy nie padał; encja zostaje odrzuconym miejscem i nie powstaje `orgName` | „Telewizja satelitarna Almasar poinformowała…”, „RT1”, „Wall Street Journal” | E066 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T41,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T43,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -959,3 +960,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — scalenie wierszy w ICC (`POST /document/11278/organizations/merge`) dopisało globalne aliasy „trybunał”, „Międzynarodowego Trybunału” i „Trybunałów”, które zaszkodziłyby innym dokumentom, więc je usunięto (`DELETE /organizations/1367/aliases/…`); wiersze rozdzielą się przy kolejnym odświeżeniu NER. Bezsensowny `persName` ma wykluczenie `ner_exclusions` w zakresie dokumentu. Kod: `library/org_short_names.py` — skrócona wielowyrazowa nazwa organizacji scalana z pełną nazwą tego samego dokumentu po potwierdzeniu kontekstu przez model (także przy kilku kandydatach: ICC i ICJ), podpięta w `entity_service._apply_org_short_names()` zaraz po `merge_compound_org_names()`, bez globalnych aliasów. Jednowyrazowe skróty („trybunał”) zostają poza zakresem.
 - **Test regresyjny:** `backend/tests/unit/test_org_short_names.py` (zdania z dok. #11278, ICC/ICJ, fail-open) oraz `TestOrgShortNames` w `backend/tests/unit/test_entity_service.py` (podpięcie; oblewa bez wywołania).
 - **Status:** luka mechanizmu naprawiona w kodzie (PR z `org_short_names.py`) dla skrótów wielowyrazowych; gołe „trybunał” otwarte.
+
+### E066 — „Almasar” (telewizja satelitarna) odrzucony jako miejsce, bez organizacji (dok. #11284, PR n/d, 2026-11-24)
+
+- **Typ encji:** geogName (powinien być orgName)
+- **Kategoria:** T42 — medium jako miejsce odrzucone, ale bez organizacji
+- **Zdanie źródłowe:** „Telewizja satelitarna Almasar poinformowała, że siły morskie i powietrzne zniszczyły co najmniej 12 innych dronów morskich u wybrzeży Bengazi.”
+- **Objaw:** w panelu `/ner/11284/4` brak telewizji Almasar; w bazie wiersz `document_entities` 40638 `geogName` „almasar” ze statusem `rejected` / `context_not_place`, geokoder trafił w turecką wieś Almaşar (`resolved=false`).
+- **Przyczyna źródłowa:** `library/place_context_classifier.py`, `_SYSTEM_PROMPT`. Klasyfikator odpowiedział poprawnie `not_place`/`high` („nazwa telewizji satelitarnej”), ale klasa `organization` w prompcie obejmowała tylko metonimię siedziby władzy i blok „Zachód”, a agencja prasowa była wprost wymieniona jako `not_place`. Do rejestru organizacji (`place_verification._reclassify_as_organization`) trafia wyłącznie werdykt `organization`/`high`, więc media (też „RT1”, „Wall Street Journal”) kończyły jako odrzucone miejsca bez `orgName`. Żywy bug (wiersz i werdykt z 2026-11-24, obecny kod).
+- **Poprawka:** kod — prompt: media użyte jako podmiot/źródło informacji to `organization`, nazwisko („Cornin”) zostaje `not_place`, bez nowej klasy i bez zmian w routingu; dane — dok. #11284 (Almasar) oraz wiersze „Wall Street Journal” i „RT1” po wdrożeniu przez odświeżenie NER albo `POST /website_entities/<id>/to_organization`.
+- **Test regresyjny:** `backend/tests/unit/test_place_context_classifier.py` (`test_prompt_classifies_media_information_sources_as_organizations` — oblewa na starym prompcie; `test_media_source_is_marked_for_dropping_and_organization_routing` — zdanie z dok. #11284).
+- **Status:** żywy bug naprawiony w kodzie; naprawa konkretnych rekordów po wdrożeniu.
