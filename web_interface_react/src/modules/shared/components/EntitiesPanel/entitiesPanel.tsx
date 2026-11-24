@@ -2184,6 +2184,22 @@ const EntitiesPanel = ({
         )}
         {headerExtra}
       </div>
+      {/* The result of an action sits right under the buttons that started it: on /ner/:id this panel also holds every
+          chip, so a message at the very bottom was several screens away. The polite live region stays mounted (a region
+          that appears together with its text is often not announced); an error with technical details is a role="alert". */}
+      <div role="status" aria-live="polite">
+        {message && !messageDetails && (
+          <div style={{ marginTop: "6px", color: message.startsWith("Pełna weryfikacja") ? "#2e7d43" : "#a33" }}>
+            {message}
+          </div>
+        )}
+      </div>
+      {message && messageDetails && (
+        <div role="alert" style={{ marginTop: "6px", color: "#a33" }}>
+          {message}
+          <RequestErrorDetails details={messageDetails} />
+        </div>
+      )}
       {docId && <CountryDetectionHistory docId={docId} apiUrl={apiUrl} apiKey={apiKey} detectionId={detectionId} />}
       {nerUnavailableAt && (
         <div style={{
@@ -2826,12 +2842,6 @@ const EntitiesPanel = ({
       {isEmpty && !message && (
         <div style={{ marginTop: "6px", color: "#667" }}>
           Brak zapisanych encji — użyj przycisku, aby je wykryć.
-        </div>
-      )}
-      {message && (
-        <div style={{ marginTop: "6px", color: message.startsWith("Pełna weryfikacja") ? "#2e7d43" : "#a33" }}>
-          {message}
-          <RequestErrorDetails details={messageDetails} />
         </div>
       )}
     </div>
