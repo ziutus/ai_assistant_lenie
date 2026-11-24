@@ -56,6 +56,33 @@ def test_candidate_selection():
     assert [item["entity_text"] for item in result] == ["Aresztowania", "baobabu", "demokrata"]
 
 
+@pytest.mark.parametrize("name,text", [
+    ("demokrata", "Każdy demokrata w Kongresie głosował przeciw."),
+    ("nato", "W tekście zapisano nato małymi literami."),
+])
+def test_lowercase_candidate_bypasses_known_registry_alias(name, text):
+    # Lowercase 'nato' is an ordinary one-word candidate; only uppercase NATO is excluded.
+    with patch("library.organization_registry.resolve_alias", return_value=object()) as resolve:
+        result = _candidate_payloads(MagicMock(), text, groups(name))
+    assert [item["entity_text"] for item in result] == [name]
+    assert result[0]["context"] == text
+    resolve.assert_not_called()
+
+
+def test_capitalized_candidate_with_known_registry_alias_is_skipped():
+    session = MagicMock()
+    with patch("library.organization_registry.resolve_alias", return_value=object()) as resolve:
+        assert _candidate_payloads(session, "Reuters podał wiadomość.", groups("Reuters")) == []
+    resolve.assert_called_once_with(session, "Reuters")
+
+
+def test_lowercase_multiword_candidate_is_skipped():
+    # Starting lowercase does not bypass the single-word requirement.
+    with patch("library.organization_registry.resolve_alias", return_value=object()) as resolve:
+        assert _candidate_payloads(MagicMock(), "radio zet podało wiadomość.", groups("radio zet")) == []
+    resolve.assert_not_called()
+
+
 def test_doc_11284_common_noun_requires_two_confirmations():
     with patch("library.ai.ai_ask", return_value=response()) as ask:
         result = classify()

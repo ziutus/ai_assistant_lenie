@@ -97,6 +97,7 @@ def _snippets(text: str, terms: list[str]) -> list[str]:
 
 
 def _candidate_payloads(session, text: str, groups: dict) -> list[dict]:
+    """Select one-word non-acronyms unknown to the registry or starting lowercase."""
     from library.organization_registry import resolve_alias
 
     candidates = []
@@ -106,12 +107,13 @@ def _candidate_payloads(session, text: str, groups: dict) -> list[dict]:
         if entity_text.isupper() or group.get("pseudonym") or group.get("manual") or group.get("source") == "manual":
             continue
         terms = list(dict.fromkeys([entity_text, *group.get("variants", [])]))
-        try:
-            if any(resolve_alias(session, term) is not None for term in terms):
+        if not entity_text[:1].islower():
+            try:
+                if any(resolve_alias(session, term) is not None for term in terms):
+                    continue
+            except Exception:
+                logger.exception("Organization lookup failed for %r; retaining candidate", entity_text)
                 continue
-        except Exception:
-            logger.exception("Organization lookup failed for %r; retaining candidate", entity_text)
-            continue
         snippets = _snippets(text, terms)
         if snippets:
             candidates.append({
