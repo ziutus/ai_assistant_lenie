@@ -480,6 +480,29 @@ class TestRefreshDocumentEntities:
         assert classification_rows[0].dropped is True
 
 
+def test_ai_inflections_normalized_before_ner_and_original_variants_preserved():
+    text = "No ale czy to jest prawdziwe zdjęcie, czy zrobione w AIU, Photoshopie?"
+    session = _session_with_exclusions([])
+    session.get.return_value.text = text
+
+    def fake_extract(ner_text):
+        spelling = "AIU" if "AIU" in ner_text else "AI"
+        return [{"text": spelling, "label": "orgName", "lemma": spelling}]
+
+    with patch("library.entity_service.extract_entities", side_effect=fake_extract) as extract, patch(
+        "library.entity_service.resolve_or_create", return_value=(None, "unresolved"),
+    ):
+        rows = refresh_document_entities(session, 11284, text)
+
+    extract.assert_called_once_with(text.replace("AIU", "AI"))
+    assert not any(row.entity_type == "orgName" and row.entity_text == "AIU" for row in rows)
+    ai = next(row for row in rows if row.entity_type == "orgName" and row.entity_text == "AI")
+    assert "AIU" in ai.variants
+    assert session.get.return_value.text == text
+    assert not any(type(row).__name__ == "NerGlossaryApplication"
+                   for call in session.add_all.call_args_list for row in call.args[0])
+
+
 class TestChannelGlossaryInRefresh:
     """Doc #10872: one channel's mis-heard names are repaired in the text sent to NER."""
 

@@ -25,6 +25,7 @@ from library.db.models import (
     NerGlossaryApplication,
     NerTemporalCandidate,
 )
+from library.ai_abbreviation_forms import normalize_ai_forms
 from library.ner_channel_glossary import GlossaryEntry, apply_glossary, restore_original_variants
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
 from library.ner_normalization import normalize_ner_text, strip_content_markers, strip_markdown_emphasis
@@ -607,6 +608,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         # Channel glossary: repair known speech-to-text slips in a COPY of the text (the stored
         # transcript is untouched); every later step works on the repaired copy so offsets agree.
         text, glossary_replacements = _apply_channel_glossary(session, document_id, text)
+        text, ai_replacements = normalize_ai_forms(text)
 
         raw = extract_entities(text)
         if not raw:
@@ -627,6 +629,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
 
         groups = aggregate_entities_detailed(raw)
         _record_glossary_replacements(session, document_id, groups, glossary_replacements)
+        restore_original_variants(groups, ai_replacements)
 
         # spaCy can miss outlet names containing digits (for example "France24").
         # Promote only known reporting sources that occur in an explicit grounded

@@ -211,8 +211,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 
 | T40 | Przezwisko lub skrót osoby w transkrypcji, błędnie dopasowane w Wikidata | autor kanału nazywa osobę własnym przezwiskiem („DJ Vans” dla J.D. Vance'a) i dalej skraca je lub STT przekręca („Wansa”, „VAN”, „VANSAP”); jednowyrazowe „Wansa” przechodzi filtr nazwiska, bo to nazwisko człowieka z Wikidata, a LLM wybiera z zamkniętej listy kandydatów nie tę osobę; glosariusz kanału z wieloczłonową nazwą kanoniczną zostawia wariant „Vance” bez oryginalnych zapisów, więc chip znika z rozdziału | „zwany przeze mnie DJ Vansem”, „wycofał WANsa z negocjacji” | E059 |
 | T41 | Skrócona nazwa organizacji jako osobna encja | autor pisze pełną nazwę raz, potem jej początek („Międzynarodowy Trybunał Karny” … „działania Międzynarodowego Trybunału”) albo samo rzeczowe określenie („trybunał”); rejestr organizacji dopasowuje tylko dokładnie, więc każda forma to osobny wiersz `orgName` i osobna organizacja; skrót bywa wieloznaczny w obrębie dokumentu (ICC i ICJ), a ręczne scalenie dopisuje globalny alias, który szkodzi innym dokumentom | „Międzynarodowego Trybunału”, „trybunał” obok „Międzynarodowy Trybunał Karny” | E065 |
+| T43 | Odmiana skrótu zapisana przez STT jak osobne słowo (`AIU` zamiast `AI-u`) | polski miejscownik/dopełniacz skrótu AI jest zapisany przez transkrypcję jako jeden wyraz wielkimi literami; spaCy typuje go jako `orgName`, a rejestr organizacji tworzy osobną organizację zamiast liczyć wzmiankę jako „AI” | „zrobione w AIU, Photoshopie”, „w AIU, znaczy w Open AI” | E067 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T41,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T44,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -959,3 +960,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** dane — scalenie wierszy w ICC (`POST /document/11278/organizations/merge`) dopisało globalne aliasy „trybunał”, „Międzynarodowego Trybunału” i „Trybunałów”, które zaszkodziłyby innym dokumentom, więc je usunięto (`DELETE /organizations/1367/aliases/…`); wiersze rozdzielą się przy kolejnym odświeżeniu NER. Bezsensowny `persName` ma wykluczenie `ner_exclusions` w zakresie dokumentu. Kod: `library/org_short_names.py` — skrócona wielowyrazowa nazwa organizacji scalana z pełną nazwą tego samego dokumentu po potwierdzeniu kontekstu przez model (także przy kilku kandydatach: ICC i ICJ), podpięta w `entity_service._apply_org_short_names()` zaraz po `merge_compound_org_names()`, bez globalnych aliasów. Jednowyrazowe skróty („trybunał”) zostają poza zakresem.
 - **Test regresyjny:** `backend/tests/unit/test_org_short_names.py` (zdania z dok. #11278, ICC/ICJ, fail-open) oraz `TestOrgShortNames` w `backend/tests/unit/test_entity_service.py` (podpięcie; oblewa bez wywołania).
 - **Status:** luka mechanizmu naprawiona w kodzie (PR z `org_short_names.py`) dla skrótów wielowyrazowych; gołe „trybunał” otwarte.
+
+### E067 — „AIU” (miejscownik skrótu AI zapisany przez STT) jako organizacja (dok. #11284, PR n/d, 2026-11-24)
+
+- **Typ encji:** orgName
+- **Kategoria:** T43 — odmiana skrótu zapisana przez STT jak osobne słowo
+- **Zdanie źródłowe:** „No ale czy to jest prawdziwe zdjęcie, czy zrobione w AIU, Photoshopie?”
+- **Objaw:** w panelu encji organizacja „AIU” (wiersz 40923, organizacja 1263 w rejestrze); „AIU” w tym znaczeniu występuje w 13 dokumentach korpusu, m.in. „co się wydarzyło w AIU, znaczy w Open AI” (dok. #10805).
+- **Przyczyna źródłowa:** żadna reguła nie znała tej odmiany: `ner_exclusions`, `transcript_corrections` i glosariusz kanału były puste dla tej frazy, a `transcript_corrections` odrzuca pojedyncze słowo globalnie.
+- **Poprawka:** kod — `library/ai_abbreviation_forms.py`: zamknięta, case-sensitive lista odmian (`AIU`, `AI-u`, `AI-em`, `AI-a`, `AI-owi`) normalizowana na KOPII tekstu przed NER, wpięta w `entity_service.refresh_document_entities()` zaraz po glosariuszu kanału; oryginalne zapisy wracają jako warianty chipu „AI”; dane — globalna reguła `ner_exclusions` dla `orgName` „AIU”, odświeżenie NER dok. #11284 i #11139, osierocona organizacja 1263 do usunięcia. Tekst dokumentu bez zmian (decyzja użytkownika), „AI” jako `conceptName` poza zakresem.
+- **Test regresyjny:** `backend/tests/unit/test_ai_abbreviation_forms.py` oraz `test_ai_inflections_normalized_before_ner_and_original_variants_preserved` w `backend/tests/unit/test_entity_service.py` (oblewa bez podpięcia).
+- **Status:** żywy bug naprawiony w kodzie.
