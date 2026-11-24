@@ -151,3 +151,21 @@ def test_split_truncated_batches_and_reorder_second_pass():
     assert completed[:len(names)] == names
     assert completed[len(names):] != names
     assert set(completed[len(names):]) == set(names)
+
+
+def test_doc_11284_lowercase_lemma_with_capitalized_variant_checks_registry():
+    text = "## Historyczna przewaga Demokratów\nJeffriesowi, demokrata z Nowego Jorku."
+    candidates = {("orgName", "demokrata"): {"variants": ["Demokratów"]}}
+    session = MagicMock()
+    with patch("library.organization_registry.resolve_alias", return_value=object()) as resolve:
+        assert _candidate_payloads(session, text, candidates) == []
+    resolve.assert_called_once_with(session, "demokrata")
+
+
+@pytest.mark.parametrize("name", ["demokrata", "baobabu"])
+@pytest.mark.parametrize("group", [{}, {"variants": []}])
+def test_lowercase_candidate_without_variants_bypasses_known_registry_alias(name, group):
+    with patch("library.organization_registry.resolve_alias", return_value=object()) as resolve:
+        result = _candidate_payloads(MagicMock(), name, {("orgName", name): group})
+    assert [item["entity_text"] for item in result] == [name]
+    resolve.assert_not_called()

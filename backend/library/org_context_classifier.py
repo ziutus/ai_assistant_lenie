@@ -97,7 +97,10 @@ def _snippets(text: str, terms: list[str]) -> list[str]:
 
 
 def _candidate_payloads(session, text: str, groups: dict) -> list[dict]:
-    """Select one-word non-acronyms unknown to the registry or starting lowercase."""
+    """Select one-word non-acronyms unknown to the registry or exclusively lowercase-initial.
+
+    A lowercase-initial lemma bypasses the registry only if no variant starts uppercase.
+    """
     from library.organization_registry import resolve_alias
 
     candidates = []
@@ -106,8 +109,9 @@ def _candidate_payloads(session, text: str, groups: dict) -> list[dict]:
             continue
         if entity_text.isupper() or group.get("pseudonym") or group.get("manual") or group.get("source") == "manual":
             continue
-        terms = list(dict.fromkeys([entity_text, *group.get("variants", [])]))
-        if not entity_text[:1].islower():
+        variants = group.get("variants", [])
+        terms = list(dict.fromkeys([entity_text, *variants]))
+        if not (entity_text[:1].islower() and not any(v[:1].isupper() for v in variants)):
             try:
                 if any(resolve_alias(session, term) is not None for term in terms):
                     continue
