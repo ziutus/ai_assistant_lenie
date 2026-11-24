@@ -961,7 +961,7 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Test regresyjny:** `backend/tests/unit/test_org_short_names.py` (zdania z dok. #11278, ICC/ICJ, fail-open) oraz `TestOrgShortNames` w `backend/tests/unit/test_entity_service.py` (podpięcie; oblewa bez wywołania).
 - **Status:** luka mechanizmu naprawiona w kodzie (PR z `org_short_names.py`) dla skrótów wielowyrazowych; gołe „trybunał” otwarte.
 
-### E066 — „Almasar” (telewizja satelitarna) odrzucony jako miejsce, bez organizacji (dok. #11284, PR n/d, 2026-11-24)
+### E066 — „Almasar” (telewizja satelitarna) odrzucony jako miejsce, bez organizacji (dok. #11284, PR #1075, 2026-11-24)
 
 - **Typ encji:** geogName (powinien być orgName)
 - **Kategoria:** T42 — medium jako miejsce odrzucone, ale bez organizacji
@@ -970,4 +970,4 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Przyczyna źródłowa:** `library/place_context_classifier.py`, `_SYSTEM_PROMPT`. Klasyfikator odpowiedział poprawnie `not_place`/`high` („nazwa telewizji satelitarnej”), ale klasa `organization` w prompcie obejmowała tylko metonimię siedziby władzy i blok „Zachód”, a agencja prasowa była wprost wymieniona jako `not_place`. Do rejestru organizacji (`place_verification._reclassify_as_organization`) trafia wyłącznie werdykt `organization`/`high`, więc media (też „RT1”, „Wall Street Journal”) kończyły jako odrzucone miejsca bez `orgName`. Żywy bug (wiersz i werdykt z 2026-11-24, obecny kod).
 - **Poprawka:** kod — prompt: media użyte jako podmiot/źródło informacji to `organization`, nazwisko („Cornin”) zostaje `not_place`, bez nowej klasy i bez zmian w routingu; dane — dok. #11284 (Almasar) oraz wiersze „Wall Street Journal” i „RT1” po wdrożeniu przez odświeżenie NER albo `POST /website_entities/<id>/to_organization`.
 - **Test regresyjny:** `backend/tests/unit/test_place_context_classifier.py` (`test_prompt_classifies_media_information_sources_as_organizations` — oblewa na starym prompcie; `test_media_source_is_marked_for_dropping_and_organization_routing` — zdanie z dok. #11284).
-- **Status:** żywy bug naprawiony w kodzie; naprawa konkretnych rekordów po wdrożeniu.
+- **Status:** żywy bug naprawiony w kodzie i wdrożony na NAS 2026-11-24. Dane: dok. #11284 po `POST /website_entities` (zadanie `entity_enrichment` dało `organization/high`, organizacja 1960 „Almasar”, nazwa kanoniczna poprawiona przez `PATCH /organizations/1960`); „Wall Street Journal” (dok. #10866, #11265, #11274 → organizacja 40) i „RT1” (dok. #11283 → organizacja 1961) przez `POST /website_entities/<id>/to_organization`.
