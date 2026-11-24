@@ -212,8 +212,9 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T40 | Przezwisko lub skrót osoby w transkrypcji, błędnie dopasowane w Wikidata | autor kanału nazywa osobę własnym przezwiskiem („DJ Vans” dla J.D. Vance'a) i dalej skraca je lub STT przekręca („Wansa”, „VAN”, „VANSAP”); jednowyrazowe „Wansa” przechodzi filtr nazwiska, bo to nazwisko człowieka z Wikidata, a LLM wybiera z zamkniętej listy kandydatów nie tę osobę; glosariusz kanału z wieloczłonową nazwą kanoniczną zostawia wariant „Vance” bez oryginalnych zapisów, więc chip znika z rozdziału | „zwany przeze mnie DJ Vansem”, „wycofał WANsa z negocjacji” | E059 |
 | T41 | Skrócona nazwa organizacji jako osobna encja | autor pisze pełną nazwę raz, potem jej początek („Międzynarodowy Trybunał Karny” … „działania Międzynarodowego Trybunału”) albo samo rzeczowe określenie („trybunał”); rejestr organizacji dopasowuje tylko dokładnie, więc każda forma to osobny wiersz `orgName` i osobna organizacja; skrót bywa wieloznaczny w obrębie dokumentu (ICC i ICJ), a ręczne scalenie dopisuje globalny alias, który szkodzi innym dokumentom | „Międzynarodowego Trybunału”, „trybunał” obok „Międzynarodowy Trybunał Karny” | E065 |
 | T42 | Medium (telewizja, gazeta, portal, agencja) jako miejsce odrzucone, ale bez organizacji | spaCy typuje nazwę medium jako `geogName`; klasyfikator kontekstu słusznie odpowiada `not_place`, lecz prompt traktował media jako „nie miejsce i nie organizacja”, więc werdykt `organization` (jedyny, który kieruje encję do rejestru organizacji) nigdy nie padał; encja zostaje odrzuconym miejscem i nie powstaje `orgName` | „Telewizja satelitarna Almasar poinformowała…”, „RT1”, „Wall Street Journal” | E066 |
+| T43 | Odmiana skrótu zapisana przez STT jak osobne słowo (`AIU` zamiast `AI-u`) | polski miejscownik/dopełniacz skrótu AI jest zapisany przez transkrypcję jako jeden wyraz wielkimi literami; spaCy typuje go jako `orgName`, a rejestr organizacji tworzy osobną organizację zamiast liczyć wzmiankę jako „AI” | „zrobione w AIU, Photoshopie”, „w AIU, znaczy w Open AI” | E067 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T43,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T44,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -971,3 +972,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — prompt: media użyte jako podmiot/źródło informacji to `organization`, nazwisko („Cornin”) zostaje `not_place`, bez nowej klasy i bez zmian w routingu; dane — dok. #11284 (Almasar) oraz wiersze „Wall Street Journal” i „RT1” po wdrożeniu przez odświeżenie NER albo `POST /website_entities/<id>/to_organization`.
 - **Test regresyjny:** `backend/tests/unit/test_place_context_classifier.py` (`test_prompt_classifies_media_information_sources_as_organizations` — oblewa na starym prompcie; `test_media_source_is_marked_for_dropping_and_organization_routing` — zdanie z dok. #11284).
 - **Status:** żywy bug naprawiony w kodzie i wdrożony na NAS 2026-11-24. Dane: dok. #11284 po `POST /website_entities` (zadanie `entity_enrichment` dało `organization/high`, organizacja 1960 „Almasar”, nazwa kanoniczna poprawiona przez `PATCH /organizations/1960`); „Wall Street Journal” (dok. #10866, #11265, #11274 → organizacja 40) i „RT1” (dok. #11283 → organizacja 1961) przez `POST /website_entities/<id>/to_organization`.
+
+### E067 — „AIU” (miejscownik skrótu AI zapisany przez STT) jako organizacja (dok. #11284, PR n/d, 2026-11-24)
+
+- **Typ encji:** orgName
+- **Kategoria:** T43 — odmiana skrótu zapisana przez STT jak osobne słowo
+- **Zdanie źródłowe:** „No ale czy to jest prawdziwe zdjęcie, czy zrobione w AIU, Photoshopie?”
+- **Objaw:** w panelu encji organizacja „AIU” (wiersz 40923, organizacja 1263 w rejestrze); „AIU” w tym znaczeniu występuje w 13 dokumentach korpusu, m.in. „co się wydarzyło w AIU, znaczy w Open AI” (dok. #10805).
+- **Przyczyna źródłowa:** żadna reguła nie znała tej odmiany: `ner_exclusions`, `transcript_corrections` i glosariusz kanału były puste dla tej frazy, a `transcript_corrections` odrzuca pojedyncze słowo globalnie.
+- **Poprawka:** kod — `library/ai_abbreviation_forms.py`: zamknięta, case-sensitive lista odmian (`AIU`, `AI-u`, `AI-em`, `AI-a`, `AI-owi`) normalizowana na KOPII tekstu przed NER, wpięta w `entity_service.refresh_document_entities()` zaraz po glosariuszu kanału; oryginalne zapisy wracają jako warianty chipu „AI”; dane — globalna reguła `ner_exclusions` dla `orgName` „AIU”, odświeżenie NER dok. #11284 i #11139, osierocona organizacja 1263 do usunięcia. Tekst dokumentu bez zmian (decyzja użytkownika), „AI” jako `conceptName` poza zakresem.
+- **Test regresyjny:** `backend/tests/unit/test_ai_abbreviation_forms.py` oraz `test_ai_inflections_normalized_before_ner_and_original_variants_preserved` w `backend/tests/unit/test_entity_service.py` (oblewa bez podpięcia).
+- **Status:** żywy bug naprawiony w kodzie.

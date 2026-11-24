@@ -168,6 +168,7 @@ SELECT * FROM organization_ambiguous_aliases WHERE alias ILIKE '%fragment%';
 
 | Objaw | Przyczyna | Gdzie naprawić |
 |---|---|---|
+| Skrót AI w odmianie zapisany przez STT jako `AIU` jest organizacją | spaCy typuje odmianę jako `orgName`, rejestr tworzy osobną organizację | `ai_abbreviation_forms.normalize_ai_forms` na kopii tekstu przed NER; stare dane: odświeżenie NER dokumentu, osierocona organizacja przez `DELETE /organizations/<id>` |
 | Dwie nazwy w jednym spanie, np. „Departamentu Obrony na Departament Wojny” | spaCy skleja opis zmiany nazwy przez „na” | Wąski podział przed agregacją w `ner_client._split_rename_org_spans`: jedno małe „ na ”, wielkie litery obu części i całe krótsze pierwsze słowo jako prefiks dłuższego (min. 6 znaków); T18/E030 |
 | Pierwsze wystąpienie nowej organizacji, brak opisu | Oczekiwane — rejestr rośnie z każdym nowym dokumentem | `PATCH /organizations/<id>` żeby dopisać opis, nie bug |
 | Ten sam skrót oznacza różne organizacje w różnych dokumentach (np. "SAF") | Skrót niejednoznaczny kontekstowo | `organization_ambiguous_aliases` + `select_ambiguous_alias_candidate_with_llm()` — sprawdź czy skrót ma tam wpis, jeśli nie, to feature do dodania, nie fix |
