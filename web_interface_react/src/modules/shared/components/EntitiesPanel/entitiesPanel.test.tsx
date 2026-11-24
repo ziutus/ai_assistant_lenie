@@ -253,6 +253,24 @@ it("announces completion after watching a job go from running to done", async ()
   expect(await screen.findByText("Pełna weryfikacja encji zakończona.", {}, { timeout: 6000 })).toBeTruthy();
 }, 10000);
 
+it("puts the result message in a live region right under the action buttons, not at the bottom", async () => {
+  let jobCalls = 0;
+  vi.mocked(axios.get).mockImplementation(async (url) => {
+    if (!url.endsWith("enrichment_job")) return { data: { entities: emptyEntities } };
+    jobCalls += 1;
+    return { data: { job: { id: "j", status: jobCalls === 1 ? "running" : "done", progress: null } } };
+  });
+  render(<MemoryRouter><EntitiesPanel docId={10753} /></MemoryRouter>);
+  // The polite region is mounted before any text arrives, otherwise screen readers often skip the announcement.
+  const region = screen.getByRole("status");
+  expect(region.textContent).toBe("");
+  await waitFor(() => expect(region.textContent).toBe("Pełna weryfikacja encji zakończona."), { timeout: 6000 });
+  const detect = screen.getByRole("button", { name: "Wykryj osoby, miejsca i obiekty" });
+  expect(detect.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // ...and it is the first thing after the button row, so nothing but the action row separates them.
+  expect(region.previousElementSibling).toBe(detect.parentElement);
+}, 10000);
+
 it("shows read-only place tags under Miejsca only when the document has them", async () => {
   vi.mocked(axios.get).mockImplementation(async (url) => ({ data: url.endsWith("enrichment_job")
     ? { job: null }
