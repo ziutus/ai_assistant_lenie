@@ -242,6 +242,39 @@ class TestNamedVessels:
 
 
 class TestRefreshDocumentEntities:
+    def test_common_noun_org_is_dropped_before_registry_creation(self):
+        import json
+
+        from library.db.models import NerContextClassification
+        from library.org_context_classifier import classify_suspicious_org_candidates
+
+        session = _session_with_exclusions([])
+        raw = [{"text": name, "label": "orgName", "lemma": name} for name in ["Aresztowania", "Reuters"]]
+        known = MagicMock(id=123, canonical_name="Reuters")
+        answer = MagicMock(response_text=json.dumps({"results": [
+            {"id": 0, "class": "common_noun", "confidence": "high", "rationale": "Zdarzenie."},
+        ]}))
+        with patch("library.entity_service.extract_entities", return_value=raw), patch(
+            "library.org_context_classifier.classify_suspicious_org_candidates",
+            side_effect=classify_suspicious_org_candidates,
+        ), patch("library.organization_registry.resolve_alias", side_effect=lambda s, n: (
+            known if n == "Reuters" else None
+        )), patch("library.org_context_classifier._model", return_value="test-model"), patch(
+            "library.ai.ai_ask", return_value=answer,
+        ) as ask, patch("library.entity_service.resolve_or_create", return_value=(known, "exact")) as resolve:
+            rows = refresh_document_entities(session, 11284, "Aresztowania zapoczątkowały walkę. Reuters podał wiadomość.")
+
+        assert [(row.entity_type, row.entity_text) for row in rows] == [("orgName", "Reuters")]
+        assert [call.args[1] for call in resolve.call_args_list] == ["Reuters"]
+        assert ask.call_count == 2
+        saved = [row for call in session.add_all.call_args_list for row in call.args[0]
+                 if isinstance(row, NerContextClassification)]
+        assert len(saved) == 1
+        assert saved[0].entity_type == "orgName"
+        assert saved[0].entity_text == "Aresztowania"
+        assert saved[0].predicted_class == "common_noun"
+        assert saved[0].dropped is True
+
     def test_temporal_candidates_keep_type_position_and_context(self):
         text = "Wstęp. 17 września 1939 rozpoczęła się wojna o godzinie 4:45."
         raw = [

@@ -4,6 +4,17 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def no_org_context_model_in_service_tests(request, monkeypatch):
+    """Service unit tests opt into organization model calls explicitly."""
+    if (request.module.__name__.endswith("test_org_context_classifier")
+            or request.node.name == "test_common_noun_org_is_dropped_before_registry_creation"):
+        return
+    from library import org_context_classifier
+
+    monkeypatch.setattr(org_context_classifier, "classify_suspicious_org_candidates", lambda *args, **kwargs: [])
+
+
+@pytest.fixture(autouse=True)
 def no_database_gazetteer_entries(monkeypatch):
     """Keep unit tests off the database: the NER gazetteer store returns no extra entries.
 

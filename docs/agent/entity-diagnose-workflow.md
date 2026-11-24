@@ -168,6 +168,7 @@ SELECT * FROM organization_ambiguous_aliases WHERE alias ILIKE '%fragment%';
 
 | Objaw | Przyczyna | Gdzie naprawić |
 |---|---|---|
+| Rzeczownik pospolity z wielkiej litery (np. „Aresztowania”) jest `orgName` i tworzy organizację w rejestrze | Brak weryfikacji kontekstu organizacji, rejestr dopasowuje tylko po aliasie | `org_context_classifier` (tylko podejrzane: jednowyrazowe, nie akronim, nie w rejestrze); stare dane: `ner_exclusions` + `DELETE /website_entities/<id>` + `DELETE /organizations/<id>` |
 | Skrót AI w odmianie zapisany przez STT jako `AIU` jest organizacją | spaCy typuje odmianę jako `orgName`, rejestr tworzy osobną organizację | `ai_abbreviation_forms.normalize_ai_forms` na kopii tekstu przed NER; stare dane: odświeżenie NER dokumentu, osierocona organizacja przez `DELETE /organizations/<id>` |
 | Dwie nazwy w jednym spanie, np. „Departamentu Obrony na Departament Wojny” | spaCy skleja opis zmiany nazwy przez „na” | Wąski podział przed agregacją w `ner_client._split_rename_org_spans`: jedno małe „ na ”, wielkie litery obu części i całe krótsze pierwsze słowo jako prefiks dłuższego (min. 6 znaków); T18/E030 |
 | Pierwsze wystąpienie nowej organizacji, brak opisu | Oczekiwane — rejestr rośnie z każdym nowym dokumentem | `PATCH /organizations/<id>` żeby dopisać opis, nie bug |
