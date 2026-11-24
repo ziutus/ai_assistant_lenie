@@ -487,3 +487,33 @@ def test_paragraphize_unknown_chapter_is_a_400(setup):
     response = client.post("/document/42/paragraphize_transcript", json={"position": 9})
     assert response.status_code == 400
     session.commit.assert_not_called()
+
+
+def test_paragraphize_is_refused_while_the_document_is_held_by_another_operation(setup, monkeypatch):
+    from library import transcript_paragraphs as tp
+    from library.document_busy import claim_document
+
+    client, session, doc, _ = setup
+    called = []
+    monkeypatch.setattr(tp, "paragraphize_transcript", lambda *a, **k: called.append(1))
+    with claim_document(42, "wykrywanie encji (NER)"):
+        response = client.post("/document/42/paragraphize_transcript", json={})
+    assert response.status_code == 409
+    assert response.json["busy_with"] == "wykrywanie encji (NER)"
+    assert called == [] and doc.text == TEXT
+    session.commit.assert_not_called()
+
+
+def test_paragraphize_releases_the_document_when_the_model_fails(setup, monkeypatch):
+    from library import transcript_paragraphs as tp
+    from library.document_busy import claim_document
+
+    client, _, _, _ = setup
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr(tp, "paragraphize_transcript", boom)
+    assert client.post("/document/42/paragraphize_transcript", json={}).status_code == 502
+    with claim_document(42, "again"):  # not left claimed after the failure
+        pass
