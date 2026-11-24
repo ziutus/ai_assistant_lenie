@@ -801,6 +801,37 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                     [key[1] for key in dropped_by_context],
                 )
 
+        from library.org_context_classifier import classify_suspicious_org_candidates
+
+        org_classifications = classify_suspicious_org_candidates(
+            session, text, getattr(doc, "title", None) or "", groups, document_id,
+        )
+        if org_classifications:
+            session.add_all([
+                NerContextClassification(
+                    document_id=document_id,
+                    entity_type="orgName",
+                    entity_text=result["entity_text"],
+                    predicted_class=result["predicted_class"],
+                    confidence=result["confidence"],
+                    rationale=result["rationale"],
+                    context_excerpt=result["context"][:2000],
+                    model=result["model"],
+                    dropped=result["dropped"],
+                )
+                for result in org_classifications
+            ])
+            dropped_by_context = [result["key"] for result in org_classifications if result["dropped"]]
+            for key in dropped_by_context:
+                groups.pop(key, None)
+            if dropped_by_context:
+                logger.info(
+                    "Context verification dropped %d false organization entities for doc %s: %s",
+                    len(dropped_by_context),
+                    document_id,
+                    [key[1] for key in dropped_by_context],
+                )
+
         # orgName groups: merge same-organization spelling splits within this one
         # NER result (e.g. "Interia"/"Interii" both present as separate lemma
         # groups), then resolve each merged group against the global organizations

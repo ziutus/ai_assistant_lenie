@@ -213,8 +213,10 @@ kodzie (zamiast kolejnej ręcznej reguły).
 | T41 | Skrócona nazwa organizacji jako osobna encja | autor pisze pełną nazwę raz, potem jej początek („Międzynarodowy Trybunał Karny” … „działania Międzynarodowego Trybunału”) albo samo rzeczowe określenie („trybunał”); rejestr organizacji dopasowuje tylko dokładnie, więc każda forma to osobny wiersz `orgName` i osobna organizacja; skrót bywa wieloznaczny w obrębie dokumentu (ICC i ICJ), a ręczne scalenie dopisuje globalny alias, który szkodzi innym dokumentom | „Międzynarodowego Trybunału”, „trybunał” obok „Międzynarodowy Trybunał Karny” | E065 |
 | T42 | Medium (telewizja, gazeta, portal, agencja) jako miejsce odrzucone, ale bez organizacji | spaCy typuje nazwę medium jako `geogName`; klasyfikator kontekstu słusznie odpowiada `not_place`, lecz prompt traktował media jako „nie miejsce i nie organizacja”, więc werdykt `organization` (jedyny, który kieruje encję do rejestru organizacji) nigdy nie padał; encja zostaje odrzuconym miejscem i nie powstaje `orgName` | „Telewizja satelitarna Almasar poinformowała…”, „RT1”, „Wall Street Journal” | E066 |
 | T43 | Odmiana skrótu zapisana przez STT jak osobne słowo (`AIU` zamiast `AI-u`) | polski miejscownik/dopełniacz skrótu AI jest zapisany przez transkrypcję jako jeden wyraz wielkimi literami; spaCy typuje go jako `orgName`, a rejestr organizacji tworzy osobną organizację zamiast liczyć wzmiankę jako „AI” | „zrobione w AIU, Photoshopie”, „w AIU, znaczy w Open AI” | E067 |
+| T44 | Nazwa miejsca przekręcona przez STT, nieznana geokoderowi | transkrypcja zapisuje zagraniczną nazwę fonetycznie („Głasaw”, „Gasaw Sinaloa” zamiast Guasave); spaCy i klasyfikator kontekstu słusznie widzą miejsce, ale geokoder go nie zna (`resolved=false`), więc brak punktu na mapie i tagu `miejsce-*` | „operacji w Gasaw Sinaloa” | E068 |
+| T45 | Rzeczownik pospolity z wielkiej litery jako organizacja, bez weryfikacji kontekstu | spaCy bierze wielką literę na początku zdania za nazwę własną i typuje `orgName`; w odróżnieniu od osób i miejsc organizacje nie miały oceny kontekstu, a rejestr tworzy organizację z każdej nowej nazwy | „Aresztowania zapoczątkowały walkę…”, „baobabu”, „demokrata” | E069 |
 
-Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T44,
+Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T46,
 ...) zamiast naciągać istniejącą.
 
 ## Szablon wpisu
@@ -983,3 +985,25 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — `library/ai_abbreviation_forms.py`: zamknięta, case-sensitive lista odmian (`AIU`, `AI-u`, `AI-em`, `AI-a`, `AI-owi`) normalizowana na KOPII tekstu przed NER, wpięta w `entity_service.refresh_document_entities()` zaraz po glosariuszu kanału; oryginalne zapisy wracają jako warianty chipu „AI”; dane — globalna reguła `ner_exclusions` dla `orgName` „AIU”, odświeżenie NER dok. #11284 i #11139, osierocona organizacja 1263 do usunięcia. Tekst dokumentu bez zmian (decyzja użytkownika), „AI” jako `conceptName` poza zakresem.
 - **Test regresyjny:** `backend/tests/unit/test_ai_abbreviation_forms.py` oraz `test_ai_inflections_normalized_before_ner_and_original_variants_preserved` w `backend/tests/unit/test_entity_service.py` (oblewa bez podpięcia).
 - **Status:** żywy bug naprawiony w kodzie.
+
+### E068 — „Głasaw” / „Gasaw Sinaloa” zamiast Guasave (dok. #11284, PR n/d, 2026-11-24)
+
+- **Typ encji:** placeName
+- **Kategoria:** T44 — nazwa miejsca przekręcona przez STT, nieznana geokoderowi
+- **Zdanie źródłowe:** „Dwóch innych przywódców kartelu, zastępca dowódcy i operator finansowy grupy zostali również aresztowani podczas operacji w Gasaw Sinaloa.”
+- **Objaw:** dwie encje miejsc („Głasaw”, „Gasaw Sinaloa”) z `geocode_cache.resolved=false`, bez punktu na mapie i bez tagu `miejsce-*`; pytanie, czy to kraj.
+- **Przyczyna źródłowa:** STT zapisał Guasave (miasto w stanie Sinaloa, Meksyk) fonetycznie. Klasyfikator kontekstu poprawnie uznał to za miejsce w Meksyku, ale geokoder nie zna zapisu „Głasaw”. Dane pod działającym mechanizmem, nie żywy bug kodu; identyfikację potwierdziło geokodowanie „Guasave” (Guasave, Sinaloa, Meksyk).
+- **Poprawka:** dane — `PATCH /website_entities/41331` (`text: "Guasave"`, bez `fix_text`), scalenie „Gasaw Sinaloa” przez `POST /document/11284/places/merge`, `POST /document/11284/countries/detect` (tagi `meksyk`, `guasave`), wpis w `ner_channel_glossary` kanału „Na Wschód od Bliskiego Wschodu” (id 69: `Głasaw`, `Gasaw` → Guasave) dla kolejnych odcinków.
+- **Test regresyjny:** brak — czysto danowa poprawka, wpis w glosariuszu kanału dokumentuje przypadek.
+- **Status:** tylko dane bez zmiany kodu.
+
+### E069 — „Aresztowania” jako organizacja (dok. #11284, PR n/d, 2026-11-24)
+
+- **Typ encji:** orgName
+- **Kategoria:** T45 — rzeczownik pospolity z wielkiej litery jako organizacja, bez weryfikacji kontekstu
+- **Zdanie źródłowe:** „Aresztowania zapoczątkowały walkę o kontrolę nad kartelem, w której zresztą przeciwstawne grupy regularnie blokują ulice, podpalają…”
+- **Objaw:** `orgName` „Aresztowania” (wiersz 41216) i organizacja 1959 w rejestrze; w tym samym dokumencie także „baobabu” i „demokrata” (lemat małą literą).
+- **Przyczyna źródłowa:** organizacje jako jedyne nie miały oceny kontekstu (osoby: `person_context_classifier`, miejsca: `place_context_classifier`); `organization_registry` dopasowuje tylko po aliasie i tworzy organizację z każdej nowej nazwy. Żywy bug kodu.
+- **Poprawka:** kod — `library/org_context_classifier.py`: tylko podejrzani kandydaci (jednowyrazowe `orgName`, nie same wielkie litery, nierozwiązywalne w rejestrze przez `resolve_alias`); model (`NER_CONTEXT_MODEL`) odpowiada `organization` / `common_noun` / `other_entity` / `uncertain`; encja jest usuwana tylko przy `common_noun` z pewnością `high` potwierdzonym drugim przebiegiem w innej kolejności paczki, każdy błąd zostawia encję; wpięte w `entity_service.refresh_document_entities()` po weryfikacji osób, przed rejestrem; dane — `ner_exclusions` 37 (`orgName` „Aresztowania”, globalnie), usunięty wiersz 41216 i organizacja 1959. Kandydatem jest też jednowyrazowy `orgName` zapisany WYŁĄCZNIE małą literą (żaden wariant nie zaczyna się wielką), niezależnie od rejestru (wpisy rejestru z lematem, np. „demokrata”, nie omijają już klasyfikatora). Sprzątanie rejestru: usunięto tylko organizację 1773 „demokraty” (dok. #11263, zwykły rzeczownik); organizacji 149 „demokrata” (12 dokumentów) NIE usunięto, bo pod lematem stoją „Demokratów”/„Demokraci” z wielkiej litery, czyli realna grupa polityczna, a „baobabu” (1953) wygląda na nazwę własną („pod Baobabem”). Pierwsza wersja reguły małych liter usunęła w dok. #11284 grupę „demokrata” z wariantem „Demokratów” (model zobaczył też „demokrata z Nowego Jorku” i uznał całość za rzeczownik pospolity); poprawka: grupa z wariantem pisanym wielką literą przechodzi zwykłe sprawdzenie rejestru (test „Historyczna przewaga Demokratów”).
+- **Test regresyjny:** `backend/tests/unit/test_org_context_classifier.py` oraz `test_common_noun_org_is_dropped_before_registry_creation` w `backend/tests/unit/test_entity_service.py` (zdanie z dok. #11284; oblewa bez podpięcia).
+- **Status:** żywy bug naprawiony w kodzie; dane dok. #11284 naprawione.
