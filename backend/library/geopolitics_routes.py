@@ -432,9 +432,15 @@ def detect_document_geopolitics(doc_id: int):
     model = data.get("model")
     if model is not None and (not isinstance(model, str) or not is_selectable(model, TASK)):
         return jsonify({"status": "error", "message": "Model is not available"}), 400
+    from library.document_busy import DocumentBusy, busy_response, claim_document
+
     try:
-        summary = detect_for_document(session, doc_id, model=model, user_id=_user_id())
-        session.commit()
+        with claim_document(doc_id, "analiza geopolityczna"):
+            summary = detect_for_document(session, doc_id, model=model, user_id=_user_id())
+            session.commit()
+    except DocumentBusy as busy:
+        body, status = busy_response(busy)
+        return jsonify(body), status
     except GeopoliticsError as exc:
         session.rollback()
         return _error(exc)

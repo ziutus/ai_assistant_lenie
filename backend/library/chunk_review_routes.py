@@ -732,21 +732,29 @@ def paragraphize_document_transcript(doc_id: int):
     if active is not None:
         return jsonify({"status": "error", "message": "Document analysis is currently running"}), 409
 
+    from library.document_busy import DocumentBusy, busy_response, claim_document
+
+    # The model run takes minutes and ends by replacing Document.text; NER and the other
+    # detections read that text, so they exclude each other per document (409 for the loser).
     try:
-        if position is None:
-            result = paragraphize_transcript(
-                doc.text, document_id=doc_id, chapter_types=getattr(doc, "chapter_types", None),
-            )
-        else:
-            result = paragraphize_chapter(doc.text, position, document_id=doc_id)
+        with claim_document(doc_id, "podział na akapity"):
+            if position is None:
+                result = paragraphize_transcript(
+                    doc.text, document_id=doc_id, chapter_types=getattr(doc, "chapter_types", None),
+                )
+            else:
+                result = paragraphize_chapter(doc.text, position, document_id=doc_id)
+            doc.text = result.text
+            session.commit()
+    except DocumentBusy as busy:
+        body, status = busy_response(busy)
+        return jsonify(body), status
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
     except Exception:
         logger.exception("Transcript paragraphization failed for document %s", doc_id)
         return jsonify({"status": "error", "message": "Paragraphization by the language model failed"}), 502
 
-    doc.text = result.text
-    session.commit()
     return jsonify({
         "status": "success",
         "doc_id": doc_id,

@@ -750,9 +750,14 @@ def detect_countries_for_document(doc_id: int):
 
     from library.document_countries import detect_document_countries
 
+    from library.document_busy import DocumentBusy, busy_response, claim_document
+
     session = get_scoped_session()
     try:
-        result = detect_document_countries(session, doc_id)
+        with claim_document(doc_id, "wykrywanie państw"):
+            result = detect_document_countries(session, doc_id)
+    except DocumentBusy as busy:
+        return busy_response(busy)
     except LookupError as exc:
         return {"status": "error", "message": str(exc)}, 404
     except ValueError as exc:
@@ -865,8 +870,13 @@ def website_entities_refresh():
             "message": "Document has embeddings. Reopen it for editing before refreshing entities.",
         }, 409
 
+    from library.document_busy import DocumentBusy, busy_response, claim_document
+
     try:
-        rows = refresh_document_entities(session, doc_id, text)
+        with claim_document(doc_id, "wykrywanie encji (NER)"):
+            rows = refresh_document_entities(session, doc_id, text)
+    except DocumentBusy as busy:
+        return busy_response(busy)
     except NERServiceUnavailable:
         # refresh_document_entities already committed doc.ner_unavailable_at.
         return {
