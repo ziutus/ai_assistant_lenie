@@ -388,6 +388,44 @@ it("marks a chapter as noise and deletes only the entities found nowhere else", 
     { headers: { "x-api-key": "test-key" }, data: { decision: "deleted", reason_code: "irrelevant" } });
 });
 
+it("marks a chapter as an advertisement the same way, with its own wording and type", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  vi.mocked(axios.delete).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  await waitFor(() => expect(within(screen.getByRole("region", { name: "#1 Wstęp" })).getByText("2 zdań · 2 encji")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Oznacz rozdział 1 jako reklamę" }));
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("jako reklamę"));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/chapter_type", { position: 1, type: "REKLAMA" },
+    { headers: { "x-api-key": "test-key" } }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalled());
+});
+
+it("shows neither marking button on an advertisement chapter that was already marked", async () => {
+  await open();
+  const sponsor = within(screen.getByRole("region", { name: "#2 Sponsor" }));
+  expect(sponsor.queryByRole("button", { name: /jako reklamę/ })).toBeNull();
+});
+
+it("restores a chapter marked as advertisement or noise to content, after a confirmation that warns about the entities", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(axios.post).mockResolvedValue({ data: { status: "success" } });
+  await open();
+  // Only a skipped chapter offers it; a content chapter has the marking buttons instead.
+  expect(within(screen.getByRole("region", { name: "#1 Wstęp" })).queryByRole("button", { name: /Przywróć rozdział/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Przywróć rozdział 2 jako treść" }));
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Wykryj osoby, miejsca i obiekty"));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/document/42/chapter_type", { position: 2, type: "TEMAT" },
+    { headers: { "x-api-key": "test-key" } }));
+});
+
+it("does not restore a chapter when the confirmation is declined", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Przywróć rozdział 2 jako treść" }));
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
 it("opens the chip's action menu when a highlighted mention in the text is clicked", async () => {
   await open();
   const marks = [...document.querySelectorAll("mark")];
@@ -891,7 +929,7 @@ it("keeps every chapter button in ONE bar at the top of the right-hand column", 
   const bar = chapter.getByLabelText("Przyciski rozdziału 1");
   const inBar = within(bar);
   for (const name of [/Uzupełnij brakujące opisy/, /Wykryj wydarzenia/, "Scal rozdział 1 z następnym",
-    "Podziel rozdział 1 na akapity", "Oznacz rozdział 1 jako szum"]) {
+    "Podziel rozdział 1 na akapity", "Oznacz rozdział 1 jako szum", "Oznacz rozdział 1 jako reklamę"]) {
     expect(inBar.getByRole("button", { name })).toBeTruthy();
   }
   expect(bar.style.flexWrap).toBe("wrap");
