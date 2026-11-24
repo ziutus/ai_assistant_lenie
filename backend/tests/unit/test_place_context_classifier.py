@@ -40,6 +40,39 @@ def test_prompt_limits_political_bloc_to_the_west_and_keeps_countries_as_places(
         assert phrase in organization.split("blok dotyczy tylko")[1]
 
 
+def test_prompt_classifies_media_information_sources_as_organizations():
+    organization = " ".join(_SYSTEM_PROMPT.split("- organization:")[1].split("- not_place:")[0].split())
+    not_place = " ".join(_SYSTEM_PROMPT.split("- not_place:")[1].split("- part_of_name:")[0].split())
+    for phrase in ("telewizja", "gazeta", "portal", "agencja prasowa"):
+        assert phrase in organization.lower()
+    assert "agencja prasowa" not in not_place.lower()
+
+
+def test_media_source_is_marked_for_dropping_and_organization_routing():
+    """dok. 11284: „Telewizja satelitarna [[Almasar]] poinformowała, że siły morskie
+    i powietrzne zniszczyły co najmniej 12 innych dronów morskich u wybrzeży Bengazi.”
+    """
+    groups = {"Almasar": {"surface": "Almasar"}}
+    text = (
+        "Telewizja satelitarna [[Almasar]] poinformowała, że siły morskie i powietrzne "
+        "zniszczyły co najmniej 12 innych dronów morskich u wybrzeży Bengazi."
+    )
+    response = MagicMock()
+    response.response_text = (
+        '{"results":[{"id":0,"class":"organization","confidence":"high",'
+        '"rationale":"Almasar jest telewizją satelitarną będącą źródłem informacji."}]}'
+    )
+    with patch("library.place_context_classifier._model", return_value="Bielik-11B-v3.0-Instruct"), patch(
+        "library.ai.ai_ask", return_value=response
+    ) as ask:
+        result = classify_place_context_candidates(text, "", groups, 11284)
+
+    assert result[0]["organization"] is True
+    assert result[0]["dropped"] is True
+    assert result[0]["predicted_class"] == "organization"
+    assert ask.call_args.kwargs["document_id"] == 11284
+
+
 def test_snippets_match_whole_words_and_use_actual_variants():
     groups = {"Huta": {"surface": "Huta", "variants": ["huty"]}}
     assert _candidate_payloads("Hutach i huty", groups)[0]["surfaces"] == ["huty"]
