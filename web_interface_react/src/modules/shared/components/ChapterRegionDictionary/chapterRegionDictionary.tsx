@@ -69,7 +69,7 @@ const ChapterRegionDictionary = ({ documentId, position, info, apiUrl, apiKey, o
         { document_id: Number(documentId), dry_run: false, ...(subset ? { rule_ids: selectedRuleIds } : {}) }, { headers });
       if (refreshEntities) {
         await axios.post(`${apiUrl}/website_entities`, new URLSearchParams({ id: documentId }),
-          { headers: { "x-api-key": apiKey }, timeout: 150000 });
+          { headers: { "x-api-key": apiKey }, timeout: 600000 });
       }
       setPreviewOpen(false);
       setMessage(subset

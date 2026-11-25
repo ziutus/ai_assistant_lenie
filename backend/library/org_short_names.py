@@ -14,9 +14,13 @@ from unidecode import unidecode
 
 from library.article_tagging import DEFAULT_TAGGING_MODEL
 from library.config_loader import load_config
+from library.llm_parallel import map_llm_calls
 
 logger = logging.getLogger(__name__)
 MAX_CANDIDATES = 12
+# A normal answer takes under 200 tokens. The model sometimes repeats itself inside "rationale" until the
+# limit (doc #11287); such a cut answer is no verdict, even when its "choice" is readable (it was wrong there).
+MAX_RESPONSE_TOKENS = 400
 MAX_SNIPPETS = 3
 SNIPPET_WINDOW = 200
 
@@ -117,7 +121,7 @@ def _verify(candidate: dict, title: str, document_id: int | None) -> tuple[str, 
             "title": title, "short_name": candidate["short_key"][1],
             "candidates": names, "context": candidate["context"],
         }, ensure_ascii=False),
-        model=_model(), temperature=0.0, max_token_count=900, system_prompt=_SYSTEM_PROMPT,
+        model=_model(), temperature=0.0, max_token_count=MAX_RESPONSE_TOKENS, system_prompt=_SYSTEM_PROMPT,
         response_format=schema, operation="ner_org_short_name_verification", document_id=document_id,
     )
     result = json.loads(response.response_text)
@@ -133,13 +137,20 @@ def merge_confirmed_short_names(
     groups: dict[tuple[str, str], dict], text: str, title: str = "", document_id: int | None = None,
 ) -> list[tuple[str, str]]:
     """Merge verified prefixes, preserving counts, variants and raw lemmas; failures retain the groups."""
-    merged = []
-    for candidate in find_candidates(groups, text):
+
+    def verify(candidate: dict) -> tuple[str, str] | None:
         try:
-            target_key = _verify(candidate, title, document_id)
+            return _verify(candidate, title, document_id)
+        except json.JSONDecodeError:
+            logger.warning("Organization short name verdict for %r is not valid JSON (document %s); not merging",
+                           candidate["short_key"][1], document_id)
         except (Exception, SystemExit):  # noqa: BLE001 — config loading may exit on backend failure
             logger.warning("Organization short name check failed for document %s", document_id, exc_info=True)
-            continue
+        return None
+
+    merged = []
+    candidates = find_candidates(groups, text)
+    for candidate, target_key in zip(candidates, map_llm_calls(verify, candidates)):
         short_key = candidate["short_key"]
         if target_key is None or short_key not in groups or target_key not in groups:
             continue
