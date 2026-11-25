@@ -7,6 +7,7 @@ import logging
 
 from library.article_tagging import DEFAULT_TAGGING_MODEL
 from library.config_loader import load_config
+from library.llm_parallel import map_llm_calls
 
 logger = logging.getLogger(__name__)
 
@@ -184,18 +185,23 @@ def _classify_with_split(batch: list[dict], title: str, document_id: int, model:
 
 
 def _classify_all(candidates: list[dict], title: str, document_id: int, model: str) -> list[dict]:
-    """Every candidate in bounded batches; a failed batch retains its candidates (fail open)."""
-    results: list[dict] = []
-    for start in range(0, len(candidates), MAX_CANDIDATES_PER_CALL):
-        batch = candidates[start:start + MAX_CANDIDATES_PER_CALL]
+    """Every candidate in bounded batches, several at a time; a failed batch retains its candidates (fail open)."""
+
+    def classify(batch: list[dict]) -> list[dict]:
         try:
-            results.extend(_classify_with_split(batch, title, document_id, model))
+            return _classify_with_split(batch, title, document_id, model)
         except Exception:
             logger.exception(
                 "Contextual person verification failed for document %s; retaining batch",
                 document_id,
             )
-    return results
+            return []
+
+    batches = [
+        candidates[start:start + MAX_CANDIDATES_PER_CALL]
+        for start in range(0, len(candidates), MAX_CANDIDATES_PER_CALL)
+    ]
+    return [result for results in map_llm_calls(classify, batches) for result in results]
 
 
 def _second_pass_order(candidates: list[dict]) -> list[dict]:

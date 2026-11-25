@@ -900,12 +900,12 @@ const EntitiesPanel = ({
     setMessage("");
     const startedAt = Date.now();
     try {
-      // First call after an ner_service restart loads the spaCy model (~90s) —
-      // hence the generous timeout.
+      // A long transcript needs minutes of server work (NER, LLM checks), and the first
+      // call after an ner_service restart also loads the spaCy model (~90s).
       const response = await axios.post(
         `${apiUrl}/website_entities`,
         { id: docId },
-        { headers, timeout: 150000 },
+        { headers, timeout: 600000 },
       );
       setEntities(response.data.entities);
       setEnrichmentJob(response.data.enrichment_job ?? null);
