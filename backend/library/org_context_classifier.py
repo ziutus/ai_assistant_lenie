@@ -8,6 +8,7 @@ import logging
 from library.article_tagging import DEFAULT_TAGGING_MODEL
 from library.config_loader import load_config
 from library.llm_parallel import map_llm_calls
+from library.org_descriptors import identity_variants
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def _candidate_payloads(session, text: str, groups: dict) -> list[dict]:
             continue
         if entity_text.isupper() or group.get("pseudonym") or group.get("manual") or group.get("source") == "manual":
             continue
-        variants = group.get("variants", [])
+        variants = identity_variants(group)
         terms = list(dict.fromkeys([entity_text, *variants]))
         if not (entity_text[:1].islower() and not any(v[:1].isupper() for v in variants)):
             try:

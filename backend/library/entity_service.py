@@ -26,6 +26,7 @@ from library.db.models import (
     NerTemporalCandidate,
 )
 from library.ai_abbreviation_forms import normalize_ai_forms
+from library.org_descriptors import identity_variants
 from library.ner_channel_glossary import GlossaryEntry, apply_glossary, restore_original_variants
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
 from library.ner_normalization import normalize_ner_text, strip_content_markers, strip_markdown_emphasis
@@ -534,6 +535,21 @@ def _apply_org_short_names(
         logger.info("NER folded organization %r into %r in doc %s", short, full, document_id)
 
 
+def _apply_org_descriptors(
+    groups: dict[tuple[str, str], dict], text: str, title: str, document_id: int,
+) -> None:
+    """Fold document-local organization descriptors only with contextual model confirmation."""
+    try:
+        from library.org_descriptors import merge_confirmed_descriptors
+
+        merged = merge_confirmed_descriptors(groups, text, title, document_id)
+    except (Exception, SystemExit):  # noqa: BLE001 — a classifier failure must never fail the entity refresh
+        logger.warning("Organization descriptor step failed for document %s", document_id, exc_info=True)
+        return
+    for short, full in merged:
+        logger.info("NER folded organization %r into %r in doc %s", short, full, document_id)
+
+
 def _fold_form(value: str) -> str:
     return unidecode(value or "").strip().casefold()
 
@@ -672,6 +688,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             strip_content_markers(strip_markdown_emphasis(text)), groups,
         )
         _apply_org_short_names(groups, text, getattr(doc, "title", None) or "", document_id)
+        _apply_org_descriptors(groups, text, getattr(doc, "title", None) or "", document_id)
         if merged_orgs:
             logger.info("NER compound organization names merged %d groups for doc %s", len(merged_orgs), document_id)
 
@@ -727,7 +744,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                     key[0],
                     key[1],
                     author,
-                    raw_terms=[*group.get("raw_lemmas", []), *group.get("variants", [])],
+                    raw_terms=[*group.get("raw_lemmas", []), *identity_variants(group)],
                     document_id=document_id,
                 )
             ]
@@ -862,7 +879,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                 # often still inflected ("Kongresie"), so the curated alias is looked
                 # up under the name AND every surface variant.
                 ambiguous_form, candidates = ambiguous_alias_candidates_for_forms(
-                    session, [name, *group["variants"]],
+                    session, [name, *identity_variants(group)],
                 )
                 organization = select_ambiguous_alias_candidate_with_llm(
                     text, getattr(doc, "title", "") or "", ambiguous_form or name, candidates,
@@ -876,7 +893,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                     logger.info("Organization %r left unresolved in doc %s: ambiguous alias %r",
                                 name, document_id, ambiguous_form)
                 elif organization is None:
-                    organization, confidence = resolve_or_create(session, name, group["variants"])
+                    organization, confidence = resolve_or_create(session, name, identity_variants(group))
                 canonical_name = organization.canonical_name if organization is not None else name
                 merged_key = ("orgName", canonical_name)
                 existing = groups.get(merged_key)
@@ -893,6 +910,11 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                         value for value in surface_forms if value.casefold() != canonical_name.casefold()
                     )
                     groups[merged_key] = {"count": group["count"], "variants": list(distinct_variants)}
+                if group.get("descriptor_variants"):
+                    result = groups[merged_key]
+                    result["descriptor_variants"] = list(dict.fromkeys([
+                        *result.get("descriptor_variants", []), *group["descriptor_variants"],
+                    ]))
                 if organization is not None:
                     organization_confidence.setdefault(canonical_name, (organization.id, confidence))
 
@@ -916,7 +938,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         colliding_keys = [
             key for key in groups
             if key[1].casefold() in manual_keys_by_type.get(key[0], set())
-            or any(v.casefold() in manual_keys_by_type.get(key[0], set()) for v in groups[key]["variants"])
+            or any(v.casefold() in manual_keys_by_type.get(key[0], set()) for v in identity_variants(groups[key]))
         ]
         for key in colliding_keys:
             del groups[key]

@@ -15,6 +15,8 @@ from difflib import SequenceMatcher
 from sqlalchemy import func, select
 from unidecode import unidecode
 
+from library.org_descriptors import identity_variants, is_descriptor
+
 from library.db.models import (
     DocumentOrganization,
     Organization,
@@ -260,6 +262,8 @@ def _observe_variant(session, organization: Organization, alias: str) -> None:
     it is skipped (unlike add_alias(), which is the explicit/manual path and
     does raise on conflict).
     """
+    if is_descriptor(alias):
+        return
     normalized = normalize_alias(alias)
     if not normalized or normalized == normalize_alias(organization.canonical_name):
         return
@@ -301,7 +305,7 @@ def resolve_or_create(session, canonical_name: str, variants: list[str] | None =
     fresh Organization with no aliases beyond what's passed in — canonical_name
     itself needs no alias row (resolve_alias() checks canonical_name directly).
     """
-    variants = variants or []
+    variants = [value for value in (variants or []) if not is_descriptor(value)]
     names_to_try = [canonical_name, *variants]
     organization: Organization | None = None
     confidence = CONFIDENCE_CANONICAL_MATCHED
@@ -576,7 +580,7 @@ def merge_ner_groups(org_groups: dict[str, dict]) -> dict[str, dict]:
 
     key_to_name: dict[str, str] = {}
     for name, group in org_groups.items():
-        for key in {name.casefold(), *(v.casefold() for v in group.get("variants", []))}:
+        for key in {name.casefold(), *(v.casefold() for v in identity_variants(group))}:
             if key in key_to_name:
                 union(name, key_to_name[key])
             else:
@@ -590,7 +594,7 @@ def merge_ner_groups(org_groups: dict[str, dict]) -> dict[str, dict]:
     for members in clusters.values():
         def sort_key(member_name: str) -> tuple:
             group = org_groups[member_name]
-            return (len(set(group.get("variants", []))), group.get("count", 0), member_name)
+            return (len(set(identity_variants(group))), group.get("count", 0), member_name)
 
         canonical_member = max(members, key=sort_key)
         total_count = sum(org_groups[m].get("count", 0) for m in members)
@@ -602,4 +606,9 @@ def merge_ner_groups(org_groups: dict[str, dict]) -> dict[str, dict]:
         canonical_key = canonical_member.casefold()
         variant_set.pop(canonical_key, None)
         merged[canonical_member] = {"count": total_count, "variants": list(variant_set.values())}
+        descriptors = list(dict.fromkeys(
+            value for member in members for value in org_groups[member].get("descriptor_variants", [])
+        ))
+        if descriptors:
+            merged[canonical_member]["descriptor_variants"] = descriptors
     return merged

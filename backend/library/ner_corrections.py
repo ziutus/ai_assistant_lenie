@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 
 from library.db.models import NerCorrection, NerCorrectionApplication, NerExclusion
 from library.ner_normalization import normalize_ner_text
+from library.org_descriptors import identity_variants
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ def _candidate_keys(entity_text: str, group: dict) -> set[str]:
     """
     return {
         normalize_ner_text(value).casefold()
-        for value in [entity_text, *group.get("raw_lemmas", []), *group.get("variants", [])]
+        for value in [entity_text, *group.get("raw_lemmas", []), *identity_variants(group)]
         if normalize_ner_text(value)
     }
 
@@ -93,6 +94,10 @@ def apply_ner_corrections(session, document_id: int, groups: dict[tuple[str, str
             target["count"] += group["count"]
             target["variants"] = list(dict.fromkeys([*target.get("variants", []), *group.get("variants", [])]))
             target["raw_lemmas"] = list(dict.fromkeys([*target.get("raw_lemmas", []), *group.get("raw_lemmas", [])]))
+            if group.get("descriptor_variants"):
+                target["descriptor_variants"] = list(dict.fromkeys([
+                    *target.get("descriptor_variants", []), *group["descriptor_variants"],
+                ]))
         else:
             groups[new_key] = group
 
