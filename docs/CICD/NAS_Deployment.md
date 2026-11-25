@@ -37,10 +37,16 @@ Full Lenie stack running on a local QNAP NAS for personal use and testing.
 | Vault | `lenie-vault` | `192.168.200.7:5005/hashicorp/vault:1.21.3` | 8210 | HashiCorp Vault secrets manager |
 | NER service | `lenie-ner-service` | `192.168.200.7:5005/lenie-ner-service` | — | spaCy Polish NER (internal-only, `http://lenie-ner-service:8090`) |
 | Obsidian sync | `obsidian-headless-sync` | `192.168.200.7:5005/obsidian-headless-sync:0.0.14` | — | Sync vaulta Obsidian (Epic 42 reimport) |
+| WhatsApp bridge | `lenie-whatsapp-bridge` | `192.168.200.7:5005/lenie-whatsapp-bridge` | 8095 (loopback only) | Receive-only WhatsApp companion device for the live chat sync ([ADR-031](../adr/adr-031-whatsapp-live-sync-bridge.md), [runbook](../deployment/nas/whatsapp-sync.md)). Internal API on `lenie-net` (`http://lenie-whatsapp-bridge:8095`, bearer token); the loopback port serves pairing over an SSH tunnel |
+| MCP server | `lenie-mcp` | `192.168.200.7:5005/lenie-mcp` | 8765 (container 8000) | Streamable HTTP MCP server for Claude Code / Codex: creates Obsidian notes from Lenie documents ([ADR-030](../adr/adr-030-mcp-server-notes-from-documents.md), [README](../../lenie_mcp/README.md)). Bearer token required except `/healthz` |
 | Registry UI | `lenie-registry-ui` | `joxit/docker-registry-ui:latest` | 8550 | Web UI for Docker registry |
 | **Registry** | `lenie-registry` | `registry:2` | 5005 | Private Docker registry (infra) |
 
-Slack Bot (`lenie-ai-slack-bot`) został usunięty 2026-07-22 wraz z serwerem MCP i nie jest już częścią stacka.
+`lenie-minio-init` has no `container_name` in `compose.nas.yaml`, so `docker ps -a` shows it under a Compose-generated name.
+
+`minio`, `ner-service`, `whatsapp-bridge`, `lenie-mcp` and `obsidian-headless-sync` are not in the default deploy set — name them explicitly in `nas-deploy.sh`. Deploy `whatsapp-bridge` only through that script: it injects the bridge token from Vault at `compose up` time.
+
+Slack Bot (`lenie-ai-slack-bot`) i pierwszy prototyp serwera MCP (oparty na ORM) zostały usunięte 2026-07-22 i nie są już częścią stacka. Obecny `lenie-mcp` to osobna, nowsza implementacja korzystająca z REST API (ADR-030).
 
 All application services are orchestrated via `docker compose` using `compose.nas.yaml`.
 Registry and registry UI are included in the NAS compose file; their existing containers and persistent registry volume are retained across application deployments.
@@ -58,6 +64,7 @@ From any device on the local network:
 - **Vault UI:** http://192.168.200.7:8210/ui
 - **Registry UI:** http://192.168.200.7:8550
 - **Registry catalog:** http://192.168.200.7:5005/v2/_catalog
+- **MCP endpoint:** http://192.168.200.7:8765/mcp (bearer token, for MCP clients — not a web page)
 
 ## Prerequisites
 
