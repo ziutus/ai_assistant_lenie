@@ -37,6 +37,9 @@ class LenieService:
         self.store = pr.ProposalStore()
 
     # ---- Lenie reads -------------------------------------------------
+    def company_registry_check(self, nip: str | None = None, krs: str | None = None) -> dict:
+        return wrap(self.client.company_registry_check(nip=nip, krs=krs))
+
     def _doc_meta(self, doc_id: int) -> dict:
         return self.client.get("/website_get", id=doc_id, include_text=0)
 
