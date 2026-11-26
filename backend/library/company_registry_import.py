@@ -10,6 +10,7 @@ from library import organization_registry as registry
 from library.company_registry_service import normalize_name
 from library.db.models import Organization, OrganizationAlias
 from library.organization_identifier_sync import registry_sources, reported_numbers, sources_disagree
+from library.organization_seat import apply_seat
 
 ERRORS = {
     "input": "Podaj dokładnie jeden poprawny NIP lub KRS.",
@@ -162,4 +163,7 @@ def store_company(session, result, data):
             if not owner or owner.id == org.id:
                 raise
             warnings.append("Pełna nazwa jest już aliasem innej organizacji; aliasu nie dodano.")
-    return {"organization": brief(org), "created": created, "identifiers": saved, "warnings": warnings}
+    # The user chose this organization for this company, so the seat needs no name check.
+    seat = apply_seat(session, org, result)
+    return {"organization": brief(org), "created": created, "identifiers": saved, "warnings": warnings,
+            "seat": seat}

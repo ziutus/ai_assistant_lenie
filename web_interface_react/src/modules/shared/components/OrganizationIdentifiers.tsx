@@ -12,8 +12,8 @@ export type IdentifierInput = {
 type Identifier = IdentifierInput & { id: number };
 type Conflict = { id: number; canonical_name: string };
 
-export default function OrganizationIdentifiers({ organizationId, apiUrl, headers }: {
-  organizationId: number; apiUrl: string; headers: Record<string, string>;
+export default function OrganizationIdentifiers({ organizationId, apiUrl, headers, onOrganizationChanged }: {
+  organizationId: number; apiUrl: string; headers: Record<string, string>; onOrganizationChanged?: () => void;
 }) {
   const [rows, setRows] = React.useState<Identifier[]>([]);
   const [country, setCountry] = React.useState("PL");
@@ -117,6 +117,7 @@ export default function OrganizationIdentifiers({ organizationId, apiUrl, header
     {rows.some(row => row.country_code === "PL" && ["nip", "krs"].includes(row.identifier_type))
       && <CompanyRegistryPanel apiUrl={apiUrl} headers={stableHeaders} organizationId={organizationId}
       identifiers={rows} onAddIdentifier={add} savingIdentifier={busy}
+      onOrganizationChanged={onOrganizationChanged}
       onIdentifiersChanged={() => {
         const startedAt = Date.now();
         void refresh().catch(cause => report(cause, "Nie udało się pobrać numerów rejestrowych", startedAt));

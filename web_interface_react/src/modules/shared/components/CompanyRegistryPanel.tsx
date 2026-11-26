@@ -7,10 +7,10 @@ import { probeBackend } from "../utils/backendProbe";
 import type { IdentifierInput } from "./OrganizationIdentifiers";
 
 export default function CompanyRegistryPanel({ apiUrl, headers, organizationId,
-  identifiers = [], onAddIdentifier, onIdentifiersChanged, savingIdentifier }: {
+  identifiers = [], onAddIdentifier, onIdentifiersChanged, onOrganizationChanged, savingIdentifier }: {
   apiUrl: string; headers: Record<string, string>; organizationId: number;
   identifiers?: IdentifierInput[]; onAddIdentifier?: (input: IdentifierInput) => Promise<boolean>; savingIdentifier?: boolean;
-  onIdentifiersChanged?: () => void;
+  onIdentifiersChanged?: () => void; onOrganizationChanged?: () => void;
 }) {
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<Result | null>(null);
@@ -24,6 +24,7 @@ export default function CompanyRegistryPanel({ apiUrl, headers, organizationId,
         { headers: { ...headers, "Content-Type": "application/json" }, timeout: 180000 });
       setResult(response.data);
       if (response.data.identifier_sync?.added.length) onIdentifiersChanged?.();
+      if (response.data.seat?.country_added || response.data.seat?.address_added) onOrganizationChanged?.();
     } catch (cause) {
       const info = describeRequestError(cause, "Nie udało się sprawdzić rejestrów", { startedAt });
       console.error(info.summary, info.details);

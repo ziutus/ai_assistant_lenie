@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import CollapsibleSection from "./CollapsibleSection/collapsibleSection";
 import type { IdentifierInput } from "./OrganizationIdentifiers";
+import SeatNotice, { type Seat } from "./SeatNotice";
 
 type Filing = {
   reference: string; is_current: boolean; presented_from: string; presented_to: string;
@@ -15,6 +16,7 @@ export type Result = {
     reason_message?: string; conflict_organization?: { id: number; canonical_name: string };
   })[];
   identifier_sync?: { added: IdentifierInput[] };
+  seat?: Seat;
   warnings: { code: string; message: string }[];
   crbr: { status: string; message: string; filings: Filing[] };
   krs: { status: string; message: string; name?: string; state_as_of?: string;
@@ -44,6 +46,7 @@ export default function CompanyRegistryResult({ result, identifiers = [], onAddI
         <ul>{result.warnings.map(w => <li key={w.code}>{w.message}</li>)}</ul></div>}
       {!!result.identifier_sync?.added.length && <p role="status">Dodano z rejestrów:{" "}
         {result.identifier_sync.added.map(row => `${row.identifier_type.toUpperCase()} ${row.value}`).join(", ")}.</p>}
+      <SeatNotice seat={result.seat} />
       {([['VAT — biała lista', result.vat, result.vat?.subject], ['CEIDG', result.ceidg, result.ceidg?.company]] as const)
         .map(([title, section, fields]) => section && <section key={title}>
           <h4>{title}</h4><p>{section.message}</p>

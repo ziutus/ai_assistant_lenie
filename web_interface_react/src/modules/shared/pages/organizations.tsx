@@ -342,6 +342,19 @@ const Organizations = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // After the registry check wrote a seat: refresh the details and countries, keeping the page as it is.
+  const reloadSeat = async (organizationId: number) => {
+    try {
+      const response = await axios.get(`${apiUrl}/organizations/${organizationId}`, { headers });
+      setOrganization(response.data);
+      await reloadCountries(organizationId);
+    } catch (error) {
+      console.error("Error reloading the organization seat", error);
+      setIsError(true);
+      setMessage("Zapisano siedzibę, ale nie udało się odświeżyć strony. Odśwież ją ręcznie.");
+    }
+  };
+
   const reloadCountries = async (organizationId: number) => {
     const response = await axios.get(`${apiUrl}/organizations/${organizationId}/countries`, { headers });
     setCountryTies(response.data.countries ?? []);
@@ -746,7 +759,8 @@ const Organizations = () => {
             </div>
           )}
 
-          <OrganizationIdentifiers key={organization.id} organizationId={organization.id} apiUrl={apiUrl} headers={headers} />
+          <OrganizationIdentifiers key={organization.id} organizationId={organization.id} apiUrl={apiUrl} headers={headers}
+            onOrganizationChanged={() => void reloadSeat(organization.id)} />
 
           {(mapMarkers.length > 0 || countryTies.length > 0) && (
             <div style={{ marginTop: 12 }}>

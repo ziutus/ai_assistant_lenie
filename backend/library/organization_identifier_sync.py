@@ -9,6 +9,7 @@ Only identifiers are stored - never beneficiaries, shareholders or any other reg
 from library import organization_identifiers as identifiers
 from library.company_registry_service import check_company, normalize_name
 from library.db.models import Organization
+from library.organization_seat import apply_seat
 
 AUTO_TYPES = ("krs", "regon")
 
@@ -104,4 +105,5 @@ def check_and_store(session, organization_id):
                           **({"conflict_organization": conflict} if conflict else {})})
     result["suggested_identifiers"] = remaining
     result["identifier_sync"] = {"added": added}
+    result["seat"] = apply_seat(session, organization, result, own_names)
     return result
