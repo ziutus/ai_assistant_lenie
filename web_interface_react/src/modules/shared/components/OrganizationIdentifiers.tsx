@@ -57,7 +57,8 @@ export default function OrganizationIdentifiers({ organizationId, apiUrl, header
     const startedAt = Date.now();
     setBusy(true); setError(null); setConflict(null);
     try {
-      await axios.post(endpoint, input, { headers: stableHeaders });
+      // The page sends form-encoded headers by default; this endpoint reads JSON.
+      await axios.post(endpoint, input, { headers: { ...stableHeaders, "Content-Type": "application/json" } });
       await refresh();
       return true;
     } catch (cause) {

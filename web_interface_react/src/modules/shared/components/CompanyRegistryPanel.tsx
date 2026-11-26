@@ -43,9 +43,10 @@ export default function CompanyRegistryPanel({ apiUrl, headers, organizationId, 
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<Result | null>(null);
   const [error, setError] = React.useState<RequestErrorInfo | null>(null);
+  const [failedSuggestion, setFailedSuggestion] = React.useState<string | null>(null);
 
   async function check(useOrganization = false) {
-    setBusy(true); setError(null); setResult(null);
+    setBusy(true); setError(null); setResult(null); setFailedSuggestion(null);
     const startedAt = Date.now();
     try {
       const response = await axios.get<Result>(`${apiUrl}/company_registry/check`, {
@@ -91,7 +92,13 @@ export default function CompanyRegistryPanel({ apiUrl, headers, organizationId, 
         row.country_code === suggestion.country_code && row.identifier_type === suggestion.identifier_type && row.value === suggestion.value))
         .map(suggestion => <p key={`${suggestion.identifier_type}:${suggestion.value}`}>
           {suggestion.identifier_type.toUpperCase()}: {suggestion.value}{" "}
-          <button disabled={savingIdentifier} onClick={() => void onAddIdentifier(suggestion)}>Dodaj do organizacji</button>
+          <button disabled={savingIdentifier} onClick={async () => {
+            const key = `${suggestion.identifier_type}:${suggestion.value}`;
+            setFailedSuggestion(null);
+            if (!await onAddIdentifier(suggestion)) setFailedSuggestion(key);
+          }}>Dodaj do organizacji</button>
+          {failedSuggestion === `${suggestion.identifier_type}:${suggestion.value}` && <span role="status">
+            {" "}Nie udało się dodać numeru. Szczegóły są w sekcji „Numery rejestrowe” powyżej.</span>}
         </p>)}
       <h4>Aktualni beneficjenci CRBR</h4><p>{result.crbr.message}</p>
       <Filings filings={result.crbr.filings.filter(f => f.is_current)} />
