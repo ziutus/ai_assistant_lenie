@@ -48,7 +48,9 @@ class LenieClient:
     def post(self, path: str, payload: dict):
         return self._request("POST", path, json=payload)
 
-    def company_registry_check(self, nip: str | None = None, krs: str | None = None):
+    def company_registry_check(self, nip: str | None = None, krs: str | None = None, organization_id: int | None = None):
+        if sum(v is not None for v in (nip, krs, organization_id)) != 1:
+            raise ValueError("Provide exactly one of nip, krs, organization_id")
         return self._request("GET", "/company_registry/check",
-                             params={k: v for k, v in {"nip": nip, "krs": krs}.items() if v is not None},
+                             params={k: v for k, v in {"nip": nip, "krs": krs, "organization_id": organization_id}.items() if v is not None},
                              timeout=httpx.Timeout(180.0, connect=10.0))

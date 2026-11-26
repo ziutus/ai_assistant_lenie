@@ -1,0 +1,45 @@
+"""Registry identifiers; standard server authentication and CORS apply."""
+
+import logging
+
+from flask import Blueprint, request
+
+from library import organization_identifiers as service
+from library.db.engine import get_scoped_session
+from library.db.models import Organization, OrganizationIdentifier
+
+organization_identifiers_bp = Blueprint("organization_identifiers", __name__)
+logger = logging.getLogger(__name__)
+
+
+@organization_identifiers_bp.route("/organizations/<int:organization_id>/identifiers", methods=["GET", "POST", "OPTIONS"])
+@organization_identifiers_bp.route("/organizations/<int:organization_id>/identifiers/<int:row_id>", methods=["DELETE", "OPTIONS"])
+def identifiers(organization_id, row_id=None):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}
+    session = get_scoped_session()
+    if session.get(Organization, organization_id) is None:
+        return {"message": "Nie znaleziono organizacji."}, 404
+    if request.method == "GET":
+        return {"identifiers": service.list_identifiers(session, organization_id)}
+    try:
+        if request.method == "DELETE":
+            row = session.get(OrganizationIdentifier, row_id)
+            if row is None or row.organization_id != organization_id:
+                return {"message": "Nie znaleziono numeru organizacji."}, 404
+            session.delete(row)
+            session.commit()
+            return {"status": "success"}
+        row, created = service.add_identifier(session, organization_id, request.get_json(silent=True))
+        session.commit()
+        return {"identifier": row}, 201 if created else 200
+    except service.IdentifierConflict as exc:
+        session.rollback()
+        return {"message": str(exc), "conflict_organization": exc.conflict_organization}, 409
+    except ValueError as exc:
+        session.rollback()
+        return {"message": str(exc)}, 400
+    except Exception:
+        logger.exception("Organization identifier change failed")
+        session.rollback()
+        return {"message": "Nie udało się zapisać zmiany w bazie."}, 500

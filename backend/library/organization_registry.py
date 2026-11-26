@@ -443,6 +443,7 @@ def delete_unused_organization(session, organization: Organization) -> dict[str,
             "Do organizacji jest przypisane źródło informacji. Najpierw je odłącz lub scal.", information_source_id=source_id,
         )
     removed = {
+        "identifiers": len(organization.identifiers),
         "aliases": session.execute(
             select(func.count()).select_from(OrganizationAlias).where(OrganizationAlias.organization_id == organization.id)
         ).scalar() or 0,
@@ -469,7 +470,7 @@ def _delete_organization_if_orphaned(session, organization_id: int) -> bool:
     if remaining:
         return False
     organization = session.get(Organization, organization_id)
-    if organization is None:
+    if organization is None or organization.identifiers:
         return False
     session.delete(organization)
     return True

@@ -10,6 +10,9 @@ company_registry_bp = Blueprint("company_registry", __name__)
 @company_registry_bp.get("/company_registry/check")
 def company_registry_check():
     try:
-        return check_company(nip=request.args.get("nip"), krs=request.args.get("krs"))
+        return check_company(nip=request.args.get("nip"), krs=request.args.get("krs"),
+                             organization_id=request.args.get("organization_id"))
+    except LookupError as exc:
+        return {"message": str(exc)}, 404
     except ValueError as exc:
         return {"message": str(exc)}, 400

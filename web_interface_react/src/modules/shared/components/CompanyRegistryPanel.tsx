@@ -4,6 +4,7 @@ import CollapsibleSection from "./CollapsibleSection/collapsibleSection";
 import RequestErrorDetails from "./RequestErrorDetails/requestErrorDetails";
 import { describeRequestError, type RequestErrorInfo } from "../utils/requestError";
 import { probeBackend } from "../utils/backendProbe";
+import type { IdentifierInput } from "./OrganizationIdentifiers";
 
 type Filing = {
   reference: string; is_current: boolean; presented_from: string; presented_to: string;
@@ -11,6 +12,9 @@ type Filing = {
 };
 type Shareholder = { name: string; shares: string; added_at: string | null; removed_at: string | null };
 type Result = {
+  vat?: { status: string; message: string; subject?: Record<string, string> };
+  ceidg?: { status: string; message: string; company?: Record<string, string> };
+  suggested_identifiers?: IdentifierInput[];
   warnings: { code: string; message: string }[];
   crbr: { status: string; message: string; filings: Filing[] };
   krs: { status: string; message: string; name?: string; state_as_of?: string;
@@ -29,20 +33,23 @@ function Filings({ filings }: { filings: Filing[] }) {
   </div>)}</>;
 }
 
-export default function CompanyRegistryPanel({ apiUrl, headers }: { apiUrl: string; headers: Record<string, string> }) {
+export default function CompanyRegistryPanel({ apiUrl, headers, organizationId, hasRegistryNumber,
+  identifiers = [], onAddIdentifier, savingIdentifier }: {
+  apiUrl: string; headers: Record<string, string>; organizationId?: number; hasRegistryNumber?: boolean;
+  identifiers?: IdentifierInput[]; onAddIdentifier?: (input: IdentifierInput) => Promise<boolean>; savingIdentifier?: boolean;
+}) {
   const [kind, setKind] = React.useState("nip");
   const [identifier, setIdentifier] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<Result | null>(null);
   const [error, setError] = React.useState<RequestErrorInfo | null>(null);
 
-  async function check(event: React.FormEvent) {
-    event.preventDefault();
+  async function check(useOrganization = false) {
     setBusy(true); setError(null); setResult(null);
     const startedAt = Date.now();
     try {
       const response = await axios.get<Result>(`${apiUrl}/company_registry/check`, {
-        headers, params: { [kind]: identifier }, timeout: 180000,
+        headers, params: useOrganization ? { organization_id: organizationId } : { [kind]: identifier }, timeout: 180000,
       });
       setResult(response.data);
     } catch (cause) {
@@ -56,8 +63,10 @@ export default function CompanyRegistryPanel({ apiUrl, headers }: { apiUrl: stri
     } finally { setBusy(false); }
   }
 
-  return <CollapsibleSection title="Rejestry: CRBR i KRS">
-    <form onSubmit={check} style={{ marginTop: 12 }}>
+  return <CollapsibleSection title="Rejestry (CRBR, KRS, VAT, CEIDG)">
+    {organizationId && hasRegistryNumber && <button disabled={busy || savingIdentifier}
+      onClick={() => void check(true)}>Sprawdź organizację</button>}
+    <form onSubmit={event => { event.preventDefault(); void check(); }} style={{ marginTop: 12 }}>
       <label>Rodzaj identyfikatora <select value={kind} disabled={busy} onChange={e => setKind(e.target.value)}>
         <option value="nip">NIP</option><option value="krs">KRS</option>
       </select></label>{" "}
@@ -68,6 +77,22 @@ export default function CompanyRegistryPanel({ apiUrl, headers }: { apiUrl: stri
     {result && <div aria-live="polite">
       {result.warnings.length > 0 && <div role="status"><h4>Wskazówki do weryfikacji</h4>
         <ul>{result.warnings.map(w => <li key={w.code}>{w.message}</li>)}</ul></div>}
+      {([['VAT — biała lista', result.vat, result.vat?.subject], ['CEIDG', result.ceidg, result.ceidg?.company]] as const)
+        .map(([title, section, fields]) => section && <section key={title}>
+          <h4>{title}</h4><p>{section.message}</p>
+          {fields && <dl>{Object.entries(fields).filter(([, value]) => value).map(([key, value]) =>
+            <React.Fragment key={key}><dt>{({ name: "Nazwa", nip: "NIP", krs: "KRS", regon: "REGON",
+              statusVat: "Status VAT", status: "Status", residenceAddress: "Adres zamieszkania", workingAddress: "Adres działalności",
+              registrationLegalDate: "Data rejestracji", removalDate: "Data wykreślenia", start_date: "Data rozpoczęcia",
+              suspension_date: "Data zawieszenia", removal_date: "Data wykreślenia", city: "Miasto", postal_code: "Kod pocztowy",
+            } as Record<string, string>)[key] || key}</dt><dd>{value}</dd></React.Fragment>)}</dl>}
+        </section>)}
+      {onAddIdentifier && result.suggested_identifiers?.filter(suggestion => !identifiers.some(row =>
+        row.country_code === suggestion.country_code && row.identifier_type === suggestion.identifier_type && row.value === suggestion.value))
+        .map(suggestion => <p key={`${suggestion.identifier_type}:${suggestion.value}`}>
+          {suggestion.identifier_type.toUpperCase()}: {suggestion.value}{" "}
+          <button disabled={savingIdentifier} onClick={() => void onAddIdentifier(suggestion)}>Dodaj do organizacji</button>
+        </p>)}
       <h4>Aktualni beneficjenci CRBR</h4><p>{result.crbr.message}</p>
       <Filings filings={result.crbr.filings.filter(f => f.is_current)} />
       <h4>Wspólnicy KRS {result.krs.name}</h4><p>{result.krs.message}</p>

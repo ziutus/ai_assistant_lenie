@@ -286,6 +286,8 @@ def absorb_organization(session, source: Organization, target: Organization) -> 
     target's empty headquarters/website/note fields are filled from the source —
     the target's own values always win.
     """
+    for identifier in list(source.identifiers):
+        identifier.organization = target
     existing = {
         (c.country_slug, c.relation)
         for c in session.execute(

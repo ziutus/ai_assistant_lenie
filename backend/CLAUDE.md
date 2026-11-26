@@ -64,6 +64,7 @@ LLM audit: `GET /llm_usage/<int:usage_id>/payload` requires a user/service API k
 
 | Category | Endpoints |
 |----------|----------|
+| **Organization identifiers / registries** | `GET/POST /organizations/<id>/identifiers`, `DELETE /organizations/<id>/identifiers/<row_id>` (user/service keys; duplicate owner: 409). `GET /company_registry/check` accepts exactly one of `nip`, `krs`, `organization_id`; CRBR/KRS/VAT/CEIDG results and identifier suggestions are read-only. |
 | **Feed review reasons** | `GET/POST /feed_review_reasons`, `PATCH/DELETE /feed_review_reasons/<code>` — editable skip-reason catalog; service-key writes, usage counts, protected system reasons. |
 | **Document CRUD** | `/url_add`, `/website_list`, `/website_get`, `/website_save`, `/website_delete` |
 | **AI Operations** | `/ai_get_embedding` (legacy `/website_similar` removed in stage 12 — `POST /search` is the only search endpoint) |

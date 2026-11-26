@@ -1,4 +1,4 @@
-"""Transient comparison of public CRBR filings and KRS shareholder history."""
+"""Read-only CRBR/KRS/VAT/CEIDG comparison and registry-number suggestions."""
 
 import logging
 import re
@@ -6,6 +6,8 @@ import unicodedata
 from datetime import datetime, timezone
 
 from library import company_registry_client as client
+from library import company_registry_vat as vat_client
+from library import ceidg_client
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +56,54 @@ def _warnings(filings, krs):
     return warnings
 
 
-def check_company(nip=None, krs=None):
-    if (nip is None) == (krs is None):
-        raise ValueError("Podaj dokładnie jeden identyfikator: NIP albo KRS.")
+def check_company(nip=None, krs=None, organization_id=None):
+    if sum(v is not None for v in (nip, krs, organization_id)) != 1:
+        raise ValueError("Podaj dokładnie jeden identyfikator: NIP, KRS albo organization_id.")
+    stored = []
+    if organization_id is not None:
+        from library.db.engine import get_scoped_session
+        from library.db.models import Organization
+        from library.organization_identifiers import list_identifiers
+        if isinstance(organization_id, bool) or not re.fullmatch(r"[1-9][0-9]*", str(organization_id)):
+            raise ValueError("organization_id musi być dodatnią liczbą całkowitą.")
+        organization_id = int(organization_id)
+        session = get_scoped_session()
+        if session.get(Organization, organization_id) is None:
+            raise LookupError("Nie znaleziono organizacji.")
+        stored = list_identifiers(session, organization_id)
+        numbers = {}
+        for kind in ("nip", "krs"):
+            values = {row["value"] for row in stored if row["country_code"] == "PL" and row["identifier_type"] == kind}
+            if len(values) > 1:
+                raise ValueError(f"Organizacja ma kilka różnych numerów {kind.upper()}; podaj jeden numer ręcznie.")
+            numbers[kind] = next(iter(values), None)
+        nip, krs = numbers["nip"], numbers["krs"]
+        if nip is None and krs is None:
+            raise ValueError("Organizacja nie ma polskiego numeru NIP ani KRS.")
     nip = normalize_nip(nip) if nip is not None else None
     krs = normalize_krs(krs) if krs is not None else None
     result = {"query": {"nip": nip, "krs": krs}, "checked_at": datetime.now(timezone.utc).isoformat(),
               "warnings": [], "source_urls": {"crbr": client.CRBR_URL, "krs": client.KRS_URL}}
+    if organization_id is not None:
+        result["query"]["organization_id"] = organization_id
+    result["source_urls"].update(vat=vat_client.VAT_URL, ceidg=vat_client.CEIDG_URL)
+    result["vat"] = {"status": "skipped", "message": "Brak NIP do sprawdzenia w wykazie VAT."}
+    if nip:
+        result["source_urls"]["vat"] = f"{vat_client.VAT_URL}/{nip}?date={datetime.now().date().isoformat()}"
+        try:
+            subject = vat_client.get_vat(nip)
+            result["vat"] = {"status": "ok" if subject else "not_found", "message":
+                             "Pobrano dane VAT." if subject else "Brak podmiotu w wykazie VAT.", "subject": subject}
+            if krs is None and subject and subject.get("krs"):
+                try:
+                    krs = normalize_krs(subject["krs"])
+                except ValueError:
+                    pass
+        except Exception as exc:
+            logger.warning("VAT lookup failed: %s", type(exc).__name__)
+            result["vat"] = {"status": "error", "message": vat_client.LIMIT_MESSAGE}
     try:
-        filings = client.get_crbr(nip=nip, krs=krs)
+        filings = client.get_crbr(nip=nip, krs=None if nip else krs)
         result["crbr"] = {"status": "ok" if filings else "not_found", "message":
                           "Pobrano zgłoszenia CRBR." if filings else "Brak informacji w CRBR.", "filings": filings}
     except Exception as exc:
@@ -91,5 +132,34 @@ def check_company(nip=None, krs=None):
         except Exception as exc:
             logger.warning("KRS lookup failed: %s", type(exc).__name__)
             result["krs"] = {"status": "error", "message": "Nie udało się pobrać lub odczytać KRS."}
+    result["ceidg"] = {"status": "skipped", "message": "CEIDG sprawdzamy tylko dla NIP bez ustalonego KRS."}
+    if nip and krs is None:
+        result["source_urls"]["ceidg"] = f"{vat_client.CEIDG_URL}?nip={nip}"
+        try:
+            company = ceidg_client.get_company_by_nip(nip)
+            result["ceidg"] = {"status": "ok" if company else "unavailable", "message":
+                               "Pobrano dane CEIDG." if company else
+                               "Brak wyniku CEIDG: brak wpisu, klucza API lub błąd pobrania.",
+                               "company": vat_client.parse_ceidg(company) if company else None}
+        except Exception as exc:
+            logger.warning("CEIDG lookup failed: %s", type(exc).__name__)
+            result["ceidg"] = {"status": "error", "message": "Nie udało się pobrać danych CEIDG."}
+    if organization_id is not None:
+        from library.organization_identifiers import normalize_identifier
+        known = {(row["country_code"], row["identifier_type"], row["value"]) for row in stored}
+        suggestions = []
+        sources = [(result["vat"].get("subject") or {}, "vat"), (result["krs"], "krs")]
+        sources.extend((filing, "crbr") for filing in result["crbr"]["filings"])
+        for source, name in sources:
+            for kind in ("nip", "krs", "regon"):
+                try:
+                    key = normalize_identifier("PL", kind, source.get(kind))
+                except ValueError:
+                    continue
+                if key not in known:
+                    suggestions.append(dict(zip(("country_code", "identifier_type", "value"), key),
+                                            source_url=result["source_urls"][name]))
+                    known.add(key)
+        result["suggested_identifiers"] = suggestions
     result["warnings"] = _warnings(result["crbr"]["filings"], result["krs"])
     return result

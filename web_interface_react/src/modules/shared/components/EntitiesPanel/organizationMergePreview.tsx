@@ -15,6 +15,7 @@ export interface MergeOrganizationSummary {
   organization_type: string | null;
   description: string | null;
   aliases: string[];
+  identifiers?: { country_code: string; identifier_type: string; value: string }[];
   document_count: number;
   information_source: MergeSourceSummary | null;
 }
@@ -43,6 +44,8 @@ const sourceLine = (source: MergeSourceSummary | null) => {
 };
 
 const cellStyle: React.CSSProperties = { padding: "3px 8px", verticalAlign: "top", borderTop: "1px solid #dde" };
+const identifiersLine = (organization: MergeOrganizationSummary) => organization.identifiers?.map(
+  row => `${row.country_code} ${row.identifier_type.toUpperCase()}: ${row.value}`).join(", ") || dash;
 
 /** Side-by-side comparison of two organizations and what merging the first into the second does. */
 const OrganizationMergePreview = ({
@@ -63,10 +66,12 @@ const OrganizationMergePreview = ({
     ["Opis", source.description ?? dash, target.description ?? dash],
     ["Aliasy", source.aliases.length ? source.aliases.join(", ") : dash, target.aliases.length ? target.aliases.join(", ") : dash],
     ["Dokumenty", source.document_count, target.document_count],
+    ["Numery rejestrowe", identifiersLine(source), identifiersLine(target)],
     ["Źródło informacji", sourceLine(source.information_source), sourceLine(target.information_source)],
     ["Opis źródła", source.information_source?.description ?? dash, target.information_source?.description ?? dash],
   ];
   const changes: string[] = [];
+  if (source.identifiers?.length) changes.push(`Numery rejestrowe przejdą do „${target.canonical_name}”; jej własne numery zostaną zachowane.`);
   if (effects.alias_added) changes.push(`„${effects.alias_added}” zostanie aliasem „${target.canonical_name}” (przyszłe wykrycia trafią do niej automatycznie).`);
   if (effects.aliases_moved.length) changes.push(`Aliasy przeniesione do „${target.canonical_name}”: ${effects.aliases_moved.join(", ")}.`);
   if (effects.documents_moved) changes.push(`${effects.documents_moved} dok. zostanie powiązanych z „${target.canonical_name}”.`);

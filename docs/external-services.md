@@ -6,6 +6,8 @@ syntetycznych ani płatnych probe'ach.
 
 | Usługa | Zastosowanie | Klient / konfiguracja | Obserwacja statusu |
 |---|---|---|---|
+| VAT — biała lista | Sprawdzenie organizacji po NIP; ścisła lista dozwolonych pól, bez kont i danych osób; adres bez KRS ograniczony do kodu i miasta | `library/company_registry_vat.py`, bez klucza; dzienny limit zapytań | `external_service_events`, `vat_whitelist`, tylko metadane |
+| CEIDG | Wzbogacanie kontaktów oraz sprawdzenie rejestrów organizacji po NIP bez KRS; w sprawdzeniu tylko nazwa, status, daty, miasto i kod | `library/ceidg_client.py`; `CEIDG_API_KEY` | `external_service_events`, `ceidg` |
 | CRBR / KRS | Publiczne API beneficjentów i historii wspólników, bez klucza; CRBR SOAP `2022/12/01` (stary adres `2022/02/01` zwraca HTTP 500), KRS REST `OdpisPelny` | `library/company_registry_client.py` | Tak, `external_service_events`, wyłącznie metadane wyniku, bez treści odpowiedzi |
 | CloudFerro Sherlock | LLM Bielik i embeddingi BGE/E5 | `library/ai.py`, `library/embedding.py`; `CLOUDFERRO_SHERLOCK_KEY` | Tak, `llm_usage_logs` |
 | Webshare | Rotujące proxy oraz autoryzacja adresu IP | `library/webshare_ip_auth.py`; `WEBSHARE_API_KEY` | Tak, `external_service_events` |

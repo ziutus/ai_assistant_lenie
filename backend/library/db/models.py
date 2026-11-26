@@ -2709,8 +2709,32 @@ class Organization(Base):
         back_populates="organization", cascade="all, delete-orphan",
     )
 
+    identifiers: Mapped[list["OrganizationIdentifier"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         return f"Organization(id={self.id!r}, canonical_name={self.canonical_name!r})"
+
+
+class OrganizationIdentifier(Base):
+    """Normalized registry number, globally unique within a country/type namespace."""
+
+    __tablename__ = "organization_identifiers"
+    __table_args__ = (UniqueConstraint("country_code", "identifier_type", "value",
+                                      name="uq_organization_identifiers_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    identifier_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    organization: Mapped["Organization"] = relationship(back_populates="identifiers")
 
 
 class OrganizationCountry(Base):
