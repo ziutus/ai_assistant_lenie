@@ -1265,3 +1265,12 @@ it("folds several persons into one target from a single merge dialog", async () 
     { source_entity_id: 3, target_entity_id: 1 }, { headers: expect.any(Object) });
   expect(await screen.findByText(/Połączono 2 osoby/)).toBeTruthy();
 });
+
+it("keeps the document-level extras under the chapters on the review page", async () => {
+  vi.mocked(axios.get).mockImplementation(async (url: string) => ({ data: url.endsWith("/website_entities")
+    ? { entities: { facility: [{ text: "Nord Stream", count: 1 }] }, countries: [], place_tags: ["miejsce-aden"] }
+    : { job: null } }));
+  render(<MemoryRouter><EntitiesPanel docId={10753} chapterRenderer={() => <div />} /></MemoryRouter>);
+  expect(await screen.findByText(/Tagi miejsc: miejsce-aden/)).toBeTruthy();
+  expect(screen.getByText("Nord Stream")).toBeTruthy();
+});
