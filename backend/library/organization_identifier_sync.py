@@ -21,14 +21,34 @@ REASONS = {
 }
 
 
-def _registry_records(result):
-    """(registry name, record with numbers) for every source that answered about the company."""
-    vat = result.get("vat", {}).get("subject") or {}
-    krs = result.get("krs", {})
-    records = [(vat.get("name"), vat), (krs.get("name"), krs)]
-    records.extend((filing.get("name"), filing) for filing in result.get("crbr", {}).get("filings", [])
+def registry_sources(result):
+    """Named sources used by both explicit imports and automatic identifier sync."""
+    sources = [("vat", result.get("vat", {}).get("subject") or {}),
+               ("krs", result.get("krs", {}))]
+    sources.extend(("crbr", filing) for filing in result.get("crbr", {}).get("filings", [])
                    if filing.get("is_current"))
-    return records
+    company = result.get("ceidg", {}).get("company")
+    if company:
+        sources.append(("ceidg", {**company, "nip": result.get("query", {}).get("nip")}))
+    return sources
+
+
+def _registry_records(result):
+    return [(record.get("name"), record) for _, record in registry_sources(result)]
+
+
+def reported_numbers(records, kind):
+    reported = {}
+    for name, record in records:
+        number = _normalized(kind, record.get(kind))
+        if number:
+            reported.setdefault(number, []).append(name)
+    return reported
+
+
+def sources_disagree(records, kind, expected=None):
+    reported = set(reported_numbers(records, kind))
+    return len(reported | ({expected} if expected else set())) > 1
 
 
 def _normalized(kind, value):
@@ -39,13 +59,8 @@ def _normalized(kind, value):
 
 
 def _reason(kind, value, records, own_names, stored, nip):
-    reported = {}
-    for name, record in records:
-        number = _normalized(kind, record.get(kind))
-        if number:
-            reported.setdefault(number, []).append(name)
-    reported_nips = {_normalized("nip", record.get("nip")) for _, record in records} - {None}
-    if len(reported) > 1 or (nip and reported_nips - {nip}):
+    reported = reported_numbers(records, kind)
+    if sources_disagree(records, kind) or (nip and sources_disagree(records, "nip", nip)):
         return "sources_disagree"
     if any(row["country_code"] == "PL" and row["identifier_type"] == kind and row["value"] != value for row in stored):
         return "has_other"

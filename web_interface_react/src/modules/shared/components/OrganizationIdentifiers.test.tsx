@@ -76,7 +76,7 @@ it("checks stored numbers without retyping and saves a suggestion only on click"
   expect(await screen.findByText("Firma VAT")).toBeTruthy();
   expect(screen.getByText("Pominięto CEIDG")).toBeTruthy();
   expect(axios.post).toHaveBeenCalledWith("/api/organizations/7/identifiers/sync", {},
-    { headers: pageHeaders, timeout: 180000 });
+    { ...jsonHeaders, timeout: 180000 });
   expect(screen.getByText(/Nazwa nie pasuje/)).toBeTruthy();
   expect(axios.post).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByText("Dodaj do organizacji"));

@@ -29,6 +29,7 @@ import NerGazetteer from "./modules/shared/pages/nerGazetteer";
 import NerChannelGlossary from "./modules/shared/pages/nerChannelGlossary";
 import Dictionaries from "./modules/shared/pages/dictionaries";
 import NerDecisions from "./modules/shared/pages/nerDecisions";
+import CompanyRegistry from "./modules/shared/pages/companyRegistry";
 import Organizations from "./modules/shared/pages/organizations";
 import ToolRecommendations from "./modules/shared/pages/toolRecommendations";
 import Tools from "./modules/shared/pages/tools";
@@ -117,6 +118,7 @@ function App() {
                   <Route path="/ner-glossary" element={<NerChannelGlossary />} />
                   <Route path="/dictionaries" element={<Dictionaries />} />
                   <Route path="/ner-decisions" element={<NerDecisions />} />
+                  <Route path="/company-registry" element={<CompanyRegistry />} />
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/places" element={<Places />} />
                   <Route path="/world-events" element={<WorldEvents />} />

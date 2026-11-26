@@ -138,6 +138,9 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         >
           Organizations
         </NavLink>
+        <NavLink to="/company-registry" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          Rejestr firm
+        </NavLink>
         <NavLink to="/places" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           Miejsca
         </NavLink>
