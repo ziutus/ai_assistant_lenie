@@ -2,7 +2,7 @@
 
 import logging
 
-from flask import Blueprint, request
+from flask import Blueprint, jsonify, request
 
 from library import organization_identifiers as service
 from library.db.engine import get_scoped_session
@@ -24,7 +24,7 @@ def sync_identifiers(organization_id):
     try:
         result = check_and_store(session, organization_id)
         session.commit()
-        return result
+        return jsonify(result)
     except ValueError:
         session.rollback()
         return {"message": "Organizacja potrzebuje dokładnie jednego polskiego numeru NIP lub KRS."}, 400
