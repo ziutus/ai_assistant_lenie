@@ -37,9 +37,9 @@ function Filings({ filings }: { filings: Filing[] }) {
   </div>)}</>;
 }
 
-export default function CompanyRegistryPanel({ apiUrl, headers, organizationId, hasRegistryNumber,
+export default function CompanyRegistryPanel({ apiUrl, headers, organizationId,
   identifiers = [], onAddIdentifier, onIdentifiersChanged, savingIdentifier }: {
-  apiUrl: string; headers: Record<string, string>; organizationId?: number; hasRegistryNumber?: boolean;
+  apiUrl: string; headers: Record<string, string>; organizationId?: number;
   identifiers?: IdentifierInput[]; onAddIdentifier?: (input: IdentifierInput) => Promise<boolean>; savingIdentifier?: boolean;
   onIdentifiersChanged?: () => void;
 }) {
@@ -74,16 +74,17 @@ export default function CompanyRegistryPanel({ apiUrl, headers, organizationId, 
     } finally { setBusy(false); }
   }
 
-  return <CollapsibleSection title="Rejestry (CRBR, KRS, VAT, CEIDG)">
-    {organizationId && hasRegistryNumber && <button disabled={busy || savingIdentifier}
-      onClick={() => void check(true)}>Sprawdź organizację</button>}
-    <form onSubmit={event => { event.preventDefault(); void check(); }} style={{ marginTop: 12 }}>
+  // An organization is checked by its own stored numbers; typing a number is for use outside one.
+  const content = <>
+    {organizationId ? <button disabled={busy || savingIdentifier} onClick={() => void check(true)}>
+      {busy ? "Sprawdzanie…" : "🔎 Sprawdź w rejestrach (CRBR, KRS, VAT, CEIDG)"}</button>
+    : <form onSubmit={event => { event.preventDefault(); void check(); }} style={{ marginTop: 12 }}>
       <label>Rodzaj identyfikatora <select value={kind} disabled={busy} onChange={e => setKind(e.target.value)}>
         <option value="nip">NIP</option><option value="krs">KRS</option>
       </select></label>{" "}
       <label>Identyfikator <input value={identifier} disabled={busy} onChange={e => setIdentifier(e.target.value)} /></label>{" "}
       <button disabled={busy || !identifier.trim()}>{busy ? "Sprawdzanie…" : "Sprawdź"}</button>
-    </form>
+    </form>}
     {error && <div role="alert"><p>{error.summary}</p><RequestErrorDetails details={error.details} /></div>}
     {result && <div aria-live="polite">
       {result.warnings.length > 0 && <div role="status"><h4>Wskazówki do weryfikacji</h4>
@@ -129,5 +130,8 @@ export default function CompanyRegistryPanel({ apiUrl, headers, organizationId, 
         <Filings filings={result.crbr.filings.filter(f => !f.is_current)} />
       </CollapsibleSection>}
     </div>}
-  </CollapsibleSection>;
+  </>;
+
+  return organizationId ? <div style={{ marginTop: 12 }}>{content}</div>
+    : <CollapsibleSection title="Rejestry (CRBR, KRS, VAT, CEIDG)">{content}</CollapsibleSection>;
 }

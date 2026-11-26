@@ -30,12 +30,14 @@ it("loads identifiers, adds a custom type and confirms deletion inline", async (
   fireEvent.click(screen.getByText("Usuń"));
   fireEvent.click(screen.getByText("Potwierdź usunięcie"));
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith("/api/organizations/7/identifiers/1", { headers: pageHeaders }));
-  await waitFor(() => expect((screen.getByText("Dodaj numer") as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect((screen.getByText("➕ Dodaj numer") as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByLabelText("Kraj")).toBeNull();
+  fireEvent.click(screen.getByText("➕ Dodaj numer"));
   fireEvent.change(screen.getByLabelText("Kraj"), { target: { value: "MT" } });
   fireEvent.change(screen.getByLabelText("Typ numeru"), { target: { value: "other" } });
   fireEvent.change(screen.getByLabelText("Nazwa typu"), { target: { value: "company_number" } });
   fireEvent.change(screen.getByLabelText("Numer"), { target: { value: "C 123" } });
-  fireEvent.click(screen.getByText("Dodaj numer"));
+  fireEvent.click(screen.getByText("Zapisz numer"));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/organizations/7/identifiers",
     { country_code: "MT", identifier_type: "company_number", value: "C 123", source_url: "", note: "" }, jsonHeaders));
 });
@@ -47,8 +49,9 @@ it("shows the owning organization and request URL on conflict", async () => {
     conflict_organization: { id: 42, canonical_name: "Inna firma" } } },
     config: { method: "post", url: "/api/organizations/7/identifiers" } });
   show();
+  fireEvent.click(screen.getByText("➕ Dodaj numer"));
   fireEvent.change(screen.getByLabelText("Numer"), { target: { value: "5260250995" } });
-  fireEvent.click(screen.getByText("Dodaj numer"));
+  fireEvent.click(screen.getByText("Zapisz numer"));
   expect((await screen.findByRole("alert")).textContent).toContain("Numer jest już przypisany.");
   expect(screen.getByRole("alert").textContent).toContain("/api/organizations/7/identifiers");
   expect(screen.getByRole("link", { name: "Inna firma" }).getAttribute("href")).toBe("/organizations/42");
@@ -68,8 +71,8 @@ it("checks stored numbers without retyping and saves a suggestion only on click"
   });
   show();
   await screen.findByText(/PL NIP/);
-  fireEvent.click(screen.getByText("Rejestry (CRBR, KRS, VAT, CEIDG)"));
-  fireEvent.click(screen.getByText("Sprawdź organizację"));
+  expect(screen.queryByLabelText("Identyfikator")).toBeNull();
+  fireEvent.click(screen.getByText(/Sprawdź w rejestrach/));
   expect(await screen.findByText("Firma VAT")).toBeTruthy();
   expect(screen.getByText("Pominięto CEIDG")).toBeTruthy();
   expect(axios.post).toHaveBeenCalledWith("/api/organizations/7/identifiers/sync", {},
@@ -92,8 +95,8 @@ it("says next to a suggestion that adding it failed", async () => {
     config: { method: "post", url: "/api/organizations/7/identifiers" } });
   show();
   await screen.findByText(/PL NIP/);
-  fireEvent.click(screen.getByText("Rejestry (CRBR, KRS, VAT, CEIDG)"));
-  fireEvent.click(screen.getByText("Sprawdź organizację"));
+  expect(screen.queryByLabelText("Identyfikator")).toBeNull();
+  fireEvent.click(screen.getByText(/Sprawdź w rejestrach/));
   fireEvent.click(await screen.findByText("Dodaj do organizacji"));
   expect(await screen.findByText(/Nie udało się dodać numeru\. Szczegóły/)).toBeTruthy();
 });
@@ -107,9 +110,18 @@ it("shows what the registry check stored and reloads the numbers", async () => {
   } }; });
   show();
   await screen.findByText(/PL NIP/);
-  fireEvent.click(screen.getByText("Rejestry (CRBR, KRS, VAT, CEIDG)"));
-  fireEvent.click(screen.getByText("Sprawdź organizację"));
+  expect(screen.queryByLabelText("Identyfikator")).toBeNull();
+  fireEvent.click(screen.getByText(/Sprawdź w rejestrach/));
   expect(await screen.findByText(/Dodano z rejestrów/)).toBeTruthy();
   expect(await screen.findByText(/PL KRS: 0000000001/)).toBeTruthy();
   expect(screen.queryByText("Dodaj do organizacji")).toBeNull();
+});
+
+it("offers no registry check for an organization without a Polish NIP or KRS", async () => {
+  vi.mocked(axios.get).mockResolvedValue({ data: { identifiers: [
+    { id: 3, country_code: "MT", identifier_type: "company_number", value: "C 123" },
+  ] } });
+  show();
+  await screen.findByText(/MT COMPANY_NUMBER/);
+  expect(screen.queryByText(/Sprawdź w rejestrach/)).toBeNull();
 });

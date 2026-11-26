@@ -23,6 +23,7 @@ export default function OrganizationIdentifiers({ organizationId, apiUrl, header
   const [sourceUrl, setSourceUrl] = React.useState("");
   const [note, setNote] = React.useState("");
   const [confirmId, setConfirmId] = React.useState<number | null>(null);
+  const [adding, setAdding] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<RequestErrorInfo | null>(null);
   const [conflict, setConflict] = React.useState<Conflict | null>(null);
@@ -89,10 +90,11 @@ export default function OrganizationIdentifiers({ organizationId, apiUrl, header
         <button disabled={busy} onClick={() => setConfirmId(null)}>Anuluj</button>
       </> : <button disabled={busy} onClick={() => setConfirmId(row.id)}>Usuń</button>}
     </li>)}</ul>}
-    <form onSubmit={async event => {
+    {!adding && <button type="button" onClick={() => setAdding(true)}>➕ Dodaj numer</button>}
+    {adding && <form onSubmit={async event => {
       event.preventDefault();
       if (await add({ country_code: country, identifier_type: kind === "other" ? customKind : kind,
-        value, source_url: sourceUrl, note })) { setValue(""); setSourceUrl(""); setNote(""); }
+        value, source_url: sourceUrl, note })) { setValue(""); setSourceUrl(""); setNote(""); setAdding(false); }
     }}>
       <fieldset disabled={busy}>
         <label>Kraj <input value={country} maxLength={2} required onChange={e => setCountry(e.target.value)} /></label>{" "}
@@ -105,18 +107,19 @@ export default function OrganizationIdentifiers({ organizationId, apiUrl, header
         <label>Numer <input required value={value} onChange={e => setValue(e.target.value)} /></label>{" "}
         <label>Adres źródła (opcjonalnie) <input type="url" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} /></label>{" "}
         <label>Notatka (opcjonalnie) <input value={note} onChange={e => setNote(e.target.value)} /></label>{" "}
-        <button>Dodaj numer</button>
+        <button>Zapisz numer</button>{" "}
+        <button type="button" onClick={() => { setAdding(false); setError(null); setConflict(null); }}>Anuluj</button>
       </fieldset>
-    </form>
+    </form>}
     {error && <div role="alert"><p>{error.summary}</p>
       {conflict && <Link to={`/organizations/${conflict.id}`}>{conflict.canonical_name}</Link>}
       <RequestErrorDetails details={error.details} /></div>}
-    <CompanyRegistryPanel apiUrl={apiUrl} headers={stableHeaders} organizationId={organizationId}
-      hasRegistryNumber={rows.some(row => row.country_code === "PL" && ["nip", "krs"].includes(row.identifier_type))}
+    {rows.some(row => row.country_code === "PL" && ["nip", "krs"].includes(row.identifier_type))
+      && <CompanyRegistryPanel apiUrl={apiUrl} headers={stableHeaders} organizationId={organizationId}
       identifiers={rows} onAddIdentifier={add} savingIdentifier={busy}
       onIdentifiersChanged={() => {
         const startedAt = Date.now();
         void refresh().catch(cause => report(cause, "Nie udało się pobrać numerów rejestrowych", startedAt));
-      }} />
+      }} />}
   </section>;
 }
