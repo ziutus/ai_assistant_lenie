@@ -56,34 +56,39 @@ it("shows the owning organization and request URL on conflict", async () => {
 
 it("checks stored numbers without retyping and saves a suggestion only on click", async () => {
   let added = false;
-  vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith("/check") ? {
-    warnings: [], crbr: { message: "Brak CRBR", filings: [] }, krs: { message: "Brak KRS" },
-    vat: { status: "ok", message: "Pobrano VAT", subject: { name: "Firma VAT" } },
-    ceidg: { status: "skipped", message: "Pominięto CEIDG" }, suggested_identifiers: [krs],
-  } : { identifiers: added ? [nip, { ...krs, id: 2 }] : [nip] } }));
-  vi.mocked(axios.post).mockImplementation(async () => { added = true; return { data: {} }; });
+  vi.mocked(axios.get).mockImplementation(async () => ({ data: { identifiers: added ? [nip, { ...krs, id: 2 }] : [nip] } }));
+  vi.mocked(axios.post).mockImplementation(async url => {
+    if (!String(url).endsWith("/sync")) { added = true; return { data: {} }; }
+    return { data: {
+      warnings: [], crbr: { message: "Brak CRBR", filings: [] }, krs: { message: "Brak KRS" },
+      vat: { status: "ok", message: "Pobrano VAT", subject: { name: "Firma VAT" } },
+      ceidg: { status: "skipped", message: "Pominięto CEIDG" }, identifier_sync: { added: [] },
+      suggested_identifiers: [{ ...krs, reason_message: "Nazwa nie pasuje." }],
+    } };
+  });
   show();
   await screen.findByText(/PL NIP/);
   fireEvent.click(screen.getByText("Rejestry (CRBR, KRS, VAT, CEIDG)"));
   fireEvent.click(screen.getByText("Sprawdź organizację"));
   expect(await screen.findByText("Firma VAT")).toBeTruthy();
   expect(screen.getByText("Pominięto CEIDG")).toBeTruthy();
-  expect(axios.get).toHaveBeenCalledWith("/api/company_registry/check", {
-    headers: pageHeaders, params: { organization_id: 7 }, timeout: 180000,
-  });
-  expect(axios.post).not.toHaveBeenCalled();
+  expect(axios.post).toHaveBeenCalledWith("/api/organizations/7/identifiers/sync", {},
+    { headers: pageHeaders, timeout: 180000 });
+  expect(screen.getByText(/Nazwa nie pasuje/)).toBeTruthy();
+  expect(axios.post).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByText("Dodaj do organizacji"));
-  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/organizations/7/identifiers", krs, jsonHeaders));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/organizations/7/identifiers",
+    { ...krs, reason_message: "Nazwa nie pasuje." }, jsonHeaders));
   expect(await screen.findByText(/PL KRS: 0000000001/)).toBeTruthy();
   expect(screen.queryByText("Dodaj do organizacji")).toBeNull();
 });
 
 it("says next to a suggestion that adding it failed", async () => {
-  vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith("/check") ? {
-    warnings: [], crbr: { message: "Brak CRBR", filings: [] }, krs: { message: "Brak KRS" }, suggested_identifiers: [krs],
-  } : { identifiers: [nip] } }));
+  vi.mocked(axios.get).mockResolvedValue({ data: { identifiers: [nip] } });
   vi.mocked(axios.isAxiosError).mockReturnValue(true);
-  vi.mocked(axios.post).mockRejectedValue({ response: { status: 400, data: { message: "Zły numer." } },
+  vi.mocked(axios.post).mockResolvedValueOnce({ data: {
+    warnings: [], crbr: { message: "Brak CRBR", filings: [] }, krs: { message: "Brak KRS" }, suggested_identifiers: [krs],
+  } }).mockRejectedValue({ response: { status: 400, data: { message: "Zły numer." } },
     config: { method: "post", url: "/api/organizations/7/identifiers" } });
   show();
   await screen.findByText(/PL NIP/);
@@ -91,4 +96,20 @@ it("says next to a suggestion that adding it failed", async () => {
   fireEvent.click(screen.getByText("Sprawdź organizację"));
   fireEvent.click(await screen.findByText("Dodaj do organizacji"));
   expect(await screen.findByText(/Nie udało się dodać numeru\. Szczegóły/)).toBeTruthy();
+});
+
+it("shows what the registry check stored and reloads the numbers", async () => {
+  let stored = false;
+  vi.mocked(axios.get).mockImplementation(async () => ({ data: { identifiers: stored ? [nip, { ...krs, id: 2 }] : [nip] } }));
+  vi.mocked(axios.post).mockImplementation(async () => { stored = true; return { data: {
+    warnings: [], crbr: { message: "Brak CRBR", filings: [] }, krs: { message: "Brak KRS" },
+    suggested_identifiers: [], identifier_sync: { added: [krs] },
+  } }; });
+  show();
+  await screen.findByText(/PL NIP/);
+  fireEvent.click(screen.getByText("Rejestry (CRBR, KRS, VAT, CEIDG)"));
+  fireEvent.click(screen.getByText("Sprawdź organizację"));
+  expect(await screen.findByText(/Dodano z rejestrów/)).toBeTruthy();
+  expect(await screen.findByText(/PL KRS: 0000000001/)).toBeTruthy();
+  expect(screen.queryByText("Dodaj do organizacji")).toBeNull();
 });

@@ -113,6 +113,10 @@ export default function OrganizationIdentifiers({ organizationId, apiUrl, header
       <RequestErrorDetails details={error.details} /></div>}
     <CompanyRegistryPanel apiUrl={apiUrl} headers={stableHeaders} organizationId={organizationId}
       hasRegistryNumber={rows.some(row => row.country_code === "PL" && ["nip", "krs"].includes(row.identifier_type))}
-      identifiers={rows} onAddIdentifier={add} savingIdentifier={busy} />
+      identifiers={rows} onAddIdentifier={add} savingIdentifier={busy}
+      onIdentifiersChanged={() => {
+        const startedAt = Date.now();
+        void refresh().catch(cause => report(cause, "Nie udało się pobrać numerów rejestrowych", startedAt));
+      }} />
   </section>;
 }

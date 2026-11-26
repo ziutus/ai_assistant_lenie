@@ -7,9 +7,31 @@ from flask import Blueprint, request
 from library import organization_identifiers as service
 from library.db.engine import get_scoped_session
 from library.db.models import Organization, OrganizationIdentifier
+from library.organization_identifier_sync import check_and_store
 
 organization_identifiers_bp = Blueprint("organization_identifiers", __name__)
 logger = logging.getLogger(__name__)
+
+
+@organization_identifiers_bp.route("/organizations/<int:organization_id>/identifiers/sync", methods=["POST", "OPTIONS"])
+def sync_identifiers(organization_id):
+    """Registry check that also stores the safe KRS / REGON (GET /company_registry/check stays read-only)."""
+    if request.method == "OPTIONS":
+        return {"status": "OK"}
+    session = get_scoped_session()
+    if session.get(Organization, organization_id) is None:
+        return {"message": "Nie znaleziono organizacji."}, 404
+    try:
+        result = check_and_store(session, organization_id)
+        session.commit()
+        return result
+    except ValueError:
+        session.rollback()
+        return {"message": "Organizacja potrzebuje dokładnie jednego polskiego numeru NIP lub KRS."}, 400
+    except Exception:
+        logger.exception("Registry check with identifier saving failed")
+        session.rollback()
+        return {"message": "Nie udało się sprawdzić rejestrów i zapisać numerów."}, 500
 
 
 @organization_identifiers_bp.route("/organizations/<int:organization_id>/identifiers", methods=["GET", "POST", "OPTIONS"])
