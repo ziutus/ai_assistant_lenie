@@ -639,6 +639,83 @@ class TestOrgShortNames:
         assert rows
 
 
+class TestOrgDescriptors:
+    @pytest.mark.parametrize("choice", ["NATO", "none"])
+    @pytest.mark.parametrize("excluded", ["sojusz", "Sojuszu", "NATO", "Natowskie"])
+    def test_doc_11287_exclusions_and_registry(self, choice, excluded):
+        import json
+
+        from library.db.models import OrganizationAlias
+
+        session = _session_with_exclusions([
+            NerExclusion(entity_text=term, entity_type="orgName", scope="global")
+            for term in {excluded, "sojusz", "Sojuszu"}
+        ])
+        original_execute = session.execute.side_effect
+
+        def execute(statement, *args, **kwargs):
+            result = original_execute(statement, *args, **kwargs)
+            result.scalars.return_value.first.return_value = None
+            return result
+
+        session.execute.side_effect = execute
+        session.get.return_value.title = "Estonia"
+        raw = [{"text": surface, "lemma": lemma, "label": "orgName"}
+               for surface, lemma in [("NATO", "NATO"), ("Natowskie", "NATO"),
+                                      ("Sojusz", "sojusz"), ("Sojuszu", "sojusz")]]
+        organization = MagicMock(id=7, canonical_name="NATO")
+        with patch("library.entity_service.extract_entities", return_value=raw), \
+             patch("library.org_descriptors._model", return_value="m"), \
+             patch("library.ai.ai_ask", return_value=MagicMock(response_text=json.dumps({
+                 "choice": choice, "confidence": "high",
+             }))), \
+             patch("library.organization_registry.resolve_alias", return_value=organization), \
+             patch("library.entity_service.ambiguous_alias_candidates_for_forms", return_value=("", [])) as ambiguous:
+            rows = refresh_document_entities(session, 11287, "NATO. sojusz monitoruje sytuację. Sojuszu dotyczy.")
+        if excluded in {"NATO", "Natowskie"}:
+            assert all(row.entity_text != "NATO" for row in rows)
+            return
+        assert [(row.entity_text, row.mention_count) for row in rows] == [("NATO", 4 if choice == "NATO" else 2)]
+        assert ("sojusz" in {v.casefold() for v in rows[0].variants}) == (choice == "NATO")
+        assert not {"sojusz", "sojuszu"} & {form.casefold() for form in ambiguous.call_args.args[1]}
+        aliases = [call.args[0].alias for call in session.add.call_args_list
+                   if isinstance(call.args[0], OrganizationAlias)]
+        assert "Natowskie" in aliases
+        assert not {"sojusz", "sojuszu"} & {alias.casefold() for alias in aliases}
+
+    def test_descriptor_correction_and_manual_collision_do_not_drop_target(self):
+        from library.db.models import NerCorrection
+
+        session = _session_with_exclusions([])
+        original_execute = session.execute.side_effect
+
+        def execute(statement, *args, **kwargs):
+            result = original_execute(statement, *args, **kwargs)
+            if "FROM ner_corrections" in str(statement):
+                result.scalars.return_value.all.return_value = [NerCorrection(
+                    id=1, match_lemma="sojusz", match_entity_type="orgName", scope="global",
+                    corrected_text="Relacja", corrected_entity_type="geogName",
+                )]
+            return result
+
+        session.execute.side_effect = execute
+        session.get.return_value.title = "Estonia"
+        session.query.return_value.filter.return_value.all.return_value = [
+            MagicMock(entity_text="sojusz", entity_type="orgName", variants=[]),
+        ]
+        raw = [{"text": name, "lemma": name, "label": "orgName"} for name in ["NATO", "Sojusz"]]
+        with patch("library.entity_service.extract_entities", return_value=raw), \
+             patch("library.org_descriptors._model", return_value="m"), \
+             patch("library.ai.ai_ask", return_value=MagicMock(
+                 response_text='{"choice":"NATO","confidence":"high"}',
+             )), \
+             patch("library.entity_service.resolve_or_create", return_value=(
+                 MagicMock(id=7, canonical_name="NATO"), "canonical_matched",
+             )):
+            rows = refresh_document_entities(session, 11287, "NATO. sojusz monitoruje sytuację.")
+        assert [(row.entity_type, row.entity_text, row.mention_count) for row in rows] == [("orgName", "NATO", 2)]
+
+
 class TestPlaceMentionSupplement:
     """Gazetteer-detected places that spaCy never reports (doc #10872)."""
 

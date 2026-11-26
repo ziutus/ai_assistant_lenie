@@ -1007,3 +1007,36 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** kod — `library/org_context_classifier.py`: tylko podejrzani kandydaci (jednowyrazowe `orgName`, nie same wielkie litery, nierozwiązywalne w rejestrze przez `resolve_alias`); model (`NER_CONTEXT_MODEL`) odpowiada `organization` / `common_noun` / `other_entity` / `uncertain`; encja jest usuwana tylko przy `common_noun` z pewnością `high` potwierdzonym drugim przebiegiem w innej kolejności paczki, każdy błąd zostawia encję; wpięte w `entity_service.refresh_document_entities()` po weryfikacji osób, przed rejestrem; dane — `ner_exclusions` 37 (`orgName` „Aresztowania”, globalnie), usunięty wiersz 41216 i organizacja 1959. Kandydatem jest też jednowyrazowy `orgName` zapisany WYŁĄCZNIE małą literą (żaden wariant nie zaczyna się wielką), niezależnie od rejestru (wpisy rejestru z lematem, np. „demokrata”, nie omijają już klasyfikatora). Sprzątanie rejestru: usunięto tylko organizację 1773 „demokraty” (dok. #11263, zwykły rzeczownik); organizacji 149 „demokrata” (12 dokumentów) NIE usunięto, bo pod lematem stoją „Demokratów”/„Demokraci” z wielkiej litery, czyli realna grupa polityczna, a „baobabu” (1953) wygląda na nazwę własną („pod Baobabem”). Pierwsza wersja reguły małych liter usunęła w dok. #11284 grupę „demokrata” z wariantem „Demokratów” (model zobaczył też „demokrata z Nowego Jorku” i uznał całość za rzeczownik pospolity); poprawka: grupa z wariantem pisanym wielką literą przechodzi zwykłe sprawdzenie rejestru (test „Historyczna przewaga Demokratów”).
 - **Test regresyjny:** `backend/tests/unit/test_org_context_classifier.py` oraz `test_common_noun_org_is_dropped_before_registry_creation` w `backend/tests/unit/test_entity_service.py` (zdanie z dok. #11284; oblewa bez podpięcia).
 - **Status:** żywy bug naprawiony w kodzie; dane dok. #11284 naprawione.
+
+### E070 — „Estroni” jako osobne miejsce obok „Estonia” (dok. #11287, PR n/d, 2026-11-25)
+
+- **Typ encji:** placeName
+- **Kategoria:** T23 — rozsypane warianty jednej nazwy przez błędy transkrypcji kanału
+- **Zdanie źródłowe:** „W Estroni trzeba pamiętać mieszka liczna etniczna ludność rosyjska.”
+- **Objaw:** w `/ner/11287/2` osobne miejsce „Estroni” (wiersz 42433, 1 wzmianka) obok „Estonia” (wiersz 42226, 16 wzmianek); `geocode_cache` 2097 `resolved=false`.
+- **Przyczyna źródłowa:** literówka w transkrypcji; spaCy uznał słowo za miejsce, ale go nie zlemmatyzował, a gazetteer krajów nie zna tej formy. Klasyfikator kontekstu odpowiedział `place` z dopiskiem „pełna nazwa: Estonia”, co nie scala encji. Dane, nie żywy bug rozpoznawania.
+- **Poprawka:** dane — dwie jednorazowe zamiany `POST /transcript_corrections/apply` („Estroni” → „Estonii” oraz „również Estonii o” → „również Estonię o”), potem `POST /document/11287/places/merge` (42433 → 42226; „Estonia” ma 17 wzmianek). Uwaga: scalenie przejmuje `geocode_id` źródła, gdy cel go nie ma, więc „Estonia” wskazuje nierozwiązany wpis 2097 (`merge_document_entities()`); widok kraju w API się nie zmienia.
+- **Test regresyjny:** brak — czysto danowa poprawka.
+- **Status:** tylko dane bez zmiany kodu.
+
+### E071 — „Berlinie”, „Talinie”, „Talin” rozsypane na miejsce, osobę i organizację (dok. #11287, PR #1080, 2026-11-25)
+
+- **Typ encji:** placeName / persName / orgName
+- **Kategoria:** T3 — brak mianownika w tekście / rzadka nazwa obcojęzyczna
+- **Zdanie źródłowe:** „…przeciwko niemu, czyli przeciwko Talinowi, nie tylko w Talinie, ale także jego sojuszników z Unii Europejskiej i NATO.” oraz „Sekretarz generalny Narto Mark Rutte przemawiając w Berlinie powiedział…”
+- **Objaw:** miejsca „Berlinie” i „Talinie” bez geokodowania, osoba „Talin” (4 wzmianki) i organizacja „Talin” (2).
+- **Przyczyna źródłowa:** formy zależne zostały jako nazwy encji, a `city_gazetteer` nie znał Berlina ani Tallina; transkrypcja pisze „Talin” przez jedno „l”. Dopisek klasyfikatora „pełna nazwa: …” nie zmienia nazwy ani nie scala encji.
+- **Poprawka:** dane — `POST /ner_gazetteer` `kind=city` (id 28 Berlin, id 29 Tallin, zamknięte listy form), odświeżenie NER dokumentu. Wynik: „Berlin” (2) i „Tallinn” (7), bez osoby i organizacji „Talin”.
+- **Test regresyjny:** brak — czysto danowa poprawka, wpisy gazetteera dokumentują przypadek.
+- **Status:** tylko dane bez zmiany kodu.
+
+### E072 — „sojusz” jako osobna organizacja zamiast NATO (dok. #11287, PR #1080, 2026-11-25)
+
+- **Typ encji:** orgName
+- **Kategoria:** T45 — rzeczownik pospolity jako organizacja, bez skutecznej weryfikacji kontekstu
+- **Zdanie źródłowe:** „…powiedział, że sojusz monitoruje sytuację w Estonii…”
+- **Objaw:** `orgName` „sojusz” w 4 dokumentach (#10738, #10774, #11142, #11287) obok „NATO”, organizacja 761 w rejestrze i źródło informacji 223; w #11287 także „Zachodniego Sojuszu Wojskowego”.
+- **Przyczyna źródłowa:** w dok. #11287 klasyfikator organizacji nie wydał werdyktu dla tej nazwy (prawdopodobnie dlatego, że rejestr już ją znał); brakowało mechanizmu przypisującego opisowe określenie do organizacji z tego samego dokumentu.
+- **Poprawka:** oba. Dane — `ner_exclusions` 38 i 39 (`orgName` „sojusz”, „Sojuszu”, globalnie), usunięte wiersze 14298, 21997, 24101, 42373, w SQL powiązanie 739 i źródło 223, organizacja 761 przez `DELETE /organizations/761`. Kod — `library/org_descriptors.py`: zamknięta lista form, model wybiera organizację z dokumentu albo nic, bez globalnych aliasów; potwierdzone określenia nie uruchamiają wykluczeń ani korekt.
+- **Test regresyjny:** `backend/tests/unit/test_org_descriptors.py`, `TestOrgDescriptors` w `backend/tests/unit/test_entity_service.py`.
+- **Status:** żywy bug naprawiony w kodzie; dane naprawione.
