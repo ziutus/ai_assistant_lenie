@@ -422,7 +422,7 @@ def delete_unused_organization(session, organization: Organization) -> dict[str,
     identity must not disappear). Otherwise its aliases, country ties and ambiguous-alias rows go with it
     (``ON DELETE CASCADE``); returns how many of each were removed. Queues the delete without committing.
     """
-    from library.db.models import InformationSource, OrganizationCountry
+    from library.db.models import InformationSource, OrganizationCountry, OrganizationRelation
 
     if organization.organization_type == COUNTRY_ORGANIZATION_TYPE:
         raise OrganizationInUseError("To organizacja-państwo (typ country) i nie można jej usunąć.")
@@ -443,6 +443,8 @@ def delete_unused_organization(session, organization: Organization) -> dict[str,
             "Do organizacji jest przypisane źródło informacji. Najpierw je odłącz lub scal.", information_source_id=source_id,
         )
     removed = {
+        "relations": session.scalar(select(func.count()).select_from(OrganizationRelation).where(
+            OrganizationRelation.organization_id == organization.id)) or 0,
         "identifiers": len(organization.identifiers),
         "aliases": session.execute(
             select(func.count()).select_from(OrganizationAlias).where(OrganizationAlias.organization_id == organization.id)

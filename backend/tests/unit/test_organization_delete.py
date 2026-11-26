@@ -24,6 +24,7 @@ def source_result(source_id):
 
 def session_with(documents=0, source_id=None, aliases=0, countries=0, ambiguous=0):
     session = MagicMock()
+    session.scalar.return_value = 0
     session.execute.side_effect = [
         scalar_result(documents), source_result(source_id),
         scalar_result(aliases), scalar_result(countries), scalar_result(ambiguous),
@@ -35,7 +36,7 @@ def test_unused_organization_is_deleted_and_removed_counts_are_reported():
     organization = Organization(id=1152, canonical_name="Departamentu Obrony na Departament Wojny")
     session = session_with(aliases=2, countries=1, ambiguous=0)
 
-    assert delete_unused_organization(session, organization) == {"aliases": 2, "countries": 1, "ambiguous_aliases": 0, "identifiers": 0}
+    assert delete_unused_organization(session, organization) == {"aliases": 2, "countries": 1, "ambiguous_aliases": 0, "identifiers": 0, "relations": 0}
     session.delete.assert_called_once_with(organization)
 
 

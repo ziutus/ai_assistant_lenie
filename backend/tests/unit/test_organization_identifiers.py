@@ -105,7 +105,7 @@ def test_migration_head_and_model():
     from alembic.script import ScriptDirectory
     from sqlalchemy import UniqueConstraint
     script = ScriptDirectory(str(Path(__file__).parents[2] / "alembic"))
-    assert script.get_heads() == ["c82e6f904ab1"]
+    assert script.get_heads() == ["d91f7a6b203e"]
     assert script.get_revision("c82e6f904ab1").down_revision == "a7d3c5e9b214"
     table = OrganizationIdentifier.__table__
     assert table.c.organization_id.index

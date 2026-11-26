@@ -2737,6 +2737,37 @@ class OrganizationIdentifier(Base):
     organization: Mapped["Organization"] = relationship(back_populates="identifiers")
 
 
+class OrganizationRelation(Base):
+    """Registry evidence; only explicit user actions persist a subject link."""
+
+    __tablename__ = "organization_relations"
+    __table_args__ = (
+        Index("uq_org_relation_dated", "organization_id", "role", "source", "subject_key", "valid_from",
+              unique=True, postgresql_where=sa_text("valid_from IS NOT NULL"),
+              sqlite_where=sa_text("valid_from IS NOT NULL")),
+        Index("uq_org_relation_undated", "organization_id", "role", "source", "subject_key",
+              unique=True, postgresql_where=sa_text("valid_from IS NULL"),
+              sqlite_where=sa_text("valid_from IS NULL")),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    person_id: Mapped[int | None] = mapped_column(ForeignKey("persons.id", ondelete="SET NULL"))
+    related_organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL"), index=True)
+    link_rejected: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"), default=False)
+    subject_name: Mapped[str] = mapped_column(Text)
+    subject_krs: Mapped[str | None] = mapped_column(String(10), index=True)
+    subject_key: Mapped[str] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(String(30))
+    details: Mapped[str | None] = mapped_column(Text)
+    valid_from: Mapped[datetime.date | None] = mapped_column(Date)
+    valid_to: Mapped[datetime.date | None] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(10))
+    source_url: Mapped[str | None] = mapped_column(Text)
+    checked_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class OrganizationCountry(Base):
     """Country an organization is tied to, with the kind of tie.
 

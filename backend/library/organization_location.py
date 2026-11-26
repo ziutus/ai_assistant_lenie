@@ -288,6 +288,9 @@ def absorb_organization(session, source: Organization, target: Organization) -> 
     """
     for identifier in list(source.identifiers):
         identifier.organization = target
+    from library.organization_relations import absorb_relations
+    session.flush()
+    absorb_relations(session, source.id, target.id)
     existing = {
         (c.country_slug, c.relation)
         for c in session.execute(

@@ -24,7 +24,7 @@ export default function CompanyRegistryPanel({ apiUrl, headers, organizationId,
         { headers: { ...headers, "Content-Type": "application/json" }, timeout: 180000 });
       setResult(response.data);
       if (response.data.identifier_sync?.added.length) onIdentifiersChanged?.();
-      if (response.data.seat?.country_added || response.data.seat?.address_added) onOrganizationChanged?.();
+      if (response.data.relations || response.data.seat?.country_added || response.data.seat?.address_added) onOrganizationChanged?.();
     } catch (cause) {
       const info = describeRequestError(cause, "Nie udało się sprawdzić rejestrów", { startedAt });
       console.error(info.summary, info.details);
