@@ -130,3 +130,24 @@ wywołań się nie powiodło). Jeden przebieg na model.
 Pozostałe artykuły nie są jeszcze porównywalne: limit płatnego dostawcy wyczerpał się w trakcie, a wyniki zaniża
 dopasowywanie nazw w odmianie i zbyt wąski kierunek ról płatniczych we wzorcu.
 \n
+
+### Przeliczenie na wzorcu v2 i podpowiedź v2, 2026-11-26
+
+Wzorzec v2: płatności i umowy liczone w obu kierunkach, dopisane pominięte zależności jako opcjonalne; nazwy w
+odmianie dopasowywane automatycznie. Cztery artykuły, 57 wymaganych zależności. Zapisane odpowiedzi modeli
+przeliczono bez nowych wywołań (`--rescore`).
+
+| Model (podpowiedź v1) | Znalezione | Precyzja | Zaprzeczone | Uwagi |
+|---|---|---|---|---|
+| Claude Sonnet 5.5 | 40/57 | 0,54 | 0 | komplet wywołań |
+| Bielik 11B v3.0 | 34/57 | 0,23 | 2 | komplet wywołań |
+| Claude Fable 5.2 | 33/57 | 0,47 | 1 | 12 wywołań nieudanych |
+| Gemma 3 27B | 32/57 | 0,25 | 0 | 7 wywołań nieudanych |
+| Mistral Small 3.2 | 22/57 | 0,43 | 3 | 17 wywołań nieudanych |
+| Llama 3.1 8B | 9/57 | 0,36 | 0 | komplet wywołań |
+
+Bielik z podpowiedzią v2 (trzy przebiegi): średnio 35/57, precyzja 0,23, 1,7 zaprzeczonej zależności na przebieg.
+Na artykule, na którego błędach powstała podpowiedź, wynik wzrósł z 19/27 do 22-24/27 i zniknęły zaprzeczone
+zależności; na pozostałych nie ma poprawy, więc to dopasowanie do jednego tekstu. Bielik nadal nie rozpoznaje
+informacji od anonimowych źródeł i potrafi wymyślić pokrewieństwo na podstawie wspólnego nazwiska.
+

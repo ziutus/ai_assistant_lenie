@@ -9,7 +9,7 @@ from collections import Counter
 from library.company_registry_service import normalize_name
 from library.llm_usage.report import combine_usage_reports, usage_report
 
-PROMPT_VERSION = "relations-pl-v1"
+PROMPT_VERSION = "relations-pl-v2"
 ROLE_DESCRIPTIONS = {
     "udzialowiec": "bezpośrednio posiada udziały w",
     "byly_udzialowiec": "dawniej bezpośrednio posiadał udziały w",
@@ -41,7 +41,16 @@ anonimowe_zrodlo (anonimowy informator), deklaracja_strony (twierdzenie zaintere
 zaprzeczenie (strona zaprzecza). Zarzut nie jest ustalonym faktem.
 Negacja, np. fikcyjna osoba Ada Brzask NIE jest udziałowcem fikcyjnej spółki Lunoria,
 nie może tworzyć pozytywnej relacji udzialowiec. Własność pośrednia nie jest bezpośrednią.
-Użyj podanych nazw kanonicznych, gdy pasują. quote musi być ciągłym cytatem z tekstu.
+Udział pośredni: jeśli Ada Brzask ma udziały w spółce Lunoria, a Lunoria ma udziały w spółce Mokradło,
+zapisz dwie relacje (Ada Brzask udzialowiec Lunoria; Lunoria udzialowiec Mokradło) i NIE zapisuj
+Ada Brzask udzialowiec Mokradło - także gdy tekst mówi, że "przez spółkę" ma udział w Mokradle.
+Pokrewieństwo i powinowactwo (żona, mąż, syn, córka, brat, siostra, szwagier, teść) to rola rodzina
+między dwiema osobami. Przykład: "prezes Iwo Dąb to szwagier Ady Brzask" daje Iwo Dąb rodzina Ada Brzask.
+Przejęcie udziałów: "udziały spółki Lunoria w Mokradle objął Iwo Dąb" daje Iwo Dąb udzialowiec Mokradło
+oraz Lunoria byly_udzialowiec Mokradło.
+Informacja "według naszych rozmówców" to anonimowe_zrodlo, a "według kontrolerów" lub prokuratury to
+zarzut_instytucji, nigdy fakt.
+Użyj podanych nazw kanonicznych, gdy pasują. Nazwy podawaj w mianowniku. quote musi być ciągłym cytatem z tekstu.
 Format: {"relations":[{"subject":"...","subject_type":"osoba","relation":"pracownik",
 "object":"...","object_type":"organizacja","claim":"fakt","quote":"...","date":null}]}.
 date jest opcjonalną datą wskazaną w tekście; nie zgaduj.
@@ -188,6 +197,23 @@ def response_schema(verify=False):
                   "required": list(fields), "additionalProperties": False}}}}}}
 
 
+def split_indirect_ownership(relations):
+    """Set aside "A holds shares in C" when A holds shares in B and B holds shares in C.
+
+    Only for a person A: such a pair is almost always the same holding counted twice. The rows are not
+    discarded - the caller gets them separately, for a human to decide.
+    """
+    holds = {(normalized(r["subject"]), normalized(r["object"])) for r in relations
+             if r["relation"] in ("udzialowiec", "byly_udzialowiec")}
+    direct, indirect = [], []
+    for row in relations:
+        a, c = normalized(row["subject"]), normalized(row["object"])
+        through = row["relation"] == "udzialowiec" and row["subject_type"] == "osoba" and any(
+            first == a and middle != c and (middle, c) in holds for first, middle in holds)
+        (indirect if through else direct).append(row)
+    return direct, indirect
+
+
 def extract_relations(text, entities, model, *, ask, chunk_chars=3500, verify=True,
                       document_id=None, system_supported=True, structured_output=False):
     """No persistence or capability lookup here; even the model call is injected."""
@@ -286,9 +312,13 @@ def extract_relations(text, entities, model, *, ask, chunk_chars=3500, verify=Tr
             target["quotes"].append(row["quote"])
         target["evidence"].append(evidence)
         target["unverified"] = target["unverified"] or row["unverified"]
+    relations, indirect = split_indirect_ownership(list(deduped.values()))
+    if indirect:
+        rejected["possibly_indirect"] += len(indirect)
     report = combine_usage_reports(usages)
     report.update(calls=len(usages), unreadable_answers=unreadable, failed_calls=failures,
                   rejected=dict(rejected), elapsed_seconds=time.monotonic() - started,
                   system_prompt_mode="system" if system_supported else "user_instructions",
                   structured_output=structured_output)
-    return {"relations": list(deduped.values()), "report": report, "prompt_version": PROMPT_VERSION}
+    return {"relations": relations, "possibly_indirect": indirect, "report": report,
+            "prompt_version": PROMPT_VERSION}

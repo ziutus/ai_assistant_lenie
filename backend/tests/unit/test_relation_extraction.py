@@ -189,3 +189,14 @@ def test_registry_name_absent_from_the_document_is_not_used():
     ])
     assert names.resolve("Adam Z.", "osoba") == "Adam Z."
     assert names.resolve("Brzaska", "osoba") == "Brzask"
+
+
+def test_indirect_ownership_of_a_person_is_set_aside():
+    from library.relation_extraction import split_indirect_ownership
+
+    def row(subject, obj, kind="osoba"):
+        return {"subject": subject, "object": obj, "relation": "udzialowiec", "subject_type": kind}
+
+    rows = [row("Ada Brzask", "Lunoria"), row("Lunoria", "Mokradło", "organizacja"), row("Ada Brzask", "Mokradło")]
+    direct, indirect = split_indirect_ownership(rows)
+    assert indirect == [rows[2]] and direct == rows[:2]

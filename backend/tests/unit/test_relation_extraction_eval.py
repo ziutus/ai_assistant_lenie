@@ -117,3 +117,31 @@ def test_cli_with_gold_writes_metrics_and_unknown_cost(tmp_path):
     assert result["metrics"]["recall"] == 0
     assert result["metrics"]["missed"] == [relation()]
     assert result["report"]["llm_cost_amount"] is None
+
+
+def test_inflected_names_match_but_different_names_do_not():
+    from imports.relation_extraction_eval import same_name
+
+    assert same_name("lunorii", "lunoria") and same_name("ady brzask", "ada brzaska")
+    assert not same_name("ada brzask", "iwo brzask") and not same_name("brzask", "ada brzask")
+    assert not same_name("lunoria", "lunapark")
+
+
+def test_symmetric_gold_entry_and_rescore(tmp_path):
+    import json
+
+    from imports.relation_extraction_eval import rescore
+
+    gold = tmp_path / "gold"
+    out = tmp_path / "out"
+    gold.mkdir()
+    out.mkdir()
+    (gold / "1.json").write_text(json.dumps({"relations": [
+        {"subject": "Lunoria", "relation": "platnosc", "object": "Mokradło", "claim": "fakt", "symmetric": True}]}),
+        encoding="utf-8")
+    report = {"rejected": {}, "calls": 1, "llm_tokens": 1, "llm_cost_amount": None, "llm_cost_currency": None,
+              "elapsed_seconds": 1}
+    (out / "1-a-1.json").write_text(json.dumps({"document_id": 1, "run": 1, "model": "m", "report": report, "relations": [
+        {"subject": "Mokradło", "relation": "platnosc", "object": "Lunorii", "claim": "fakt"}]}), encoding="utf-8")
+    assert rescore(out, gold) == 1
+    assert json.loads((out / "1-a-1.json").read_text(encoding="utf-8"))["metrics"]["correct"] == 1
