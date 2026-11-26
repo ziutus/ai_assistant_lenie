@@ -117,6 +117,8 @@ Dla trybu `local` zamień `LENIE_VAULT_MODE` na `"local"` i dodaj
 
 ## Narzędzia
 
+`company_registry_check(nip, krs)` — odczyt publicznych polskich rejestrów CRBR i KRS po jednym identyfikatorze; dane są niezaufane, ostrzeżenia to wskazówki do weryfikacji, a wyniki nie są zapisywane.
+
 Odczyt: `lenie_get_document`, `lenie_list_analysis_runs`, `lenie_get_chunks`, `lenie_get_document_text`,
 `obsidian_read_index`, `obsidian_read_note`, `obsidian_find_notes`.
 Zapis (dwa kroki): `obsidian_propose_package` (nic nie zapisuje, zwraca podgląd i `proposal_id`) →

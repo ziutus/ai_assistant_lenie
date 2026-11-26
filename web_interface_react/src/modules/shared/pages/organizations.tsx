@@ -1,5 +1,6 @@
 import React from "react";
 import axios from "axios";
+import CompanyRegistryPanel from "../components/CompanyRegistryPanel";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination } from "../components/Pagination/pagination";
@@ -604,6 +605,7 @@ const Organizations = () => {
 
       {id && organization ? (
         <div style={{ marginBottom: 20, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
+          <CompanyRegistryPanel key={organization.id} apiUrl={apiUrl} headers={headers} />
           {!isEditing ? (
             <div>
               <OrganizationHeader organization={{ ...organization, aliases: aliases.map((a) => a.alias) }} />

@@ -47,3 +47,8 @@ class LenieClient:
 
     def post(self, path: str, payload: dict):
         return self._request("POST", path, json=payload)
+
+    def company_registry_check(self, nip: str | None = None, krs: str | None = None):
+        return self._request("GET", "/company_registry/check",
+                             params={k: v for k, v in {"nip": nip, "krs": krs}.items() if v is not None},
+                             timeout=httpx.Timeout(180.0, connect=10.0))

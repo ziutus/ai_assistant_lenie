@@ -234,6 +234,8 @@ Docelową ścieżkę pliku i tytuł proponuje model w kroku 5; nie ustalamy ich 
 
 ## Pytania otwarte
 
+Uzupełnienie (2026-11-26): serwer udostępnia również odczyt `company_registry_check` przez REST `/company_registry/check` (publiczne CRBR i KRS), bez zapisu wyników; odpowiedź jest opakowana jako niezaufane dane, a ostrzeżenia są tylko wskazówkami do weryfikacji.
+
 1. ~~`proposal_id` czy elicitation~~ — rekomendacja (Codex): `proposal_id` plus potwierdzenie użytkownika związane
    z dokładnym pakietem; MCP elicitation, jeśli klient je wspiera, inaczej jawna kontrola po stronie klienta.
 2. ~~Prefiksy zapisu~~ — rekomendacja: tylko `02-wiedza/`, ze specjalną obsługą `_index.md`.
