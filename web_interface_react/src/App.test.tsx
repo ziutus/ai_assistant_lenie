@@ -41,6 +41,30 @@ describe("App", () => {
       </AuthorizationProvider>,
     );
     expect(container.querySelector(".App")).toBeTruthy();
+    const registryLink = container.querySelector('a[href="/company-registry"]');
+    expect(registryLink?.textContent).toBe("Rejestr firm");
+    expect(registryLink?.previousElementSibling?.getAttribute("href")).toBe("/organizations");
     localStorage.clear();
+  });
+
+  it("opens the company registry inside the authenticated layout", () => {
+    localStorage.setItem("lenie_apiKey", btoa("test-key"));
+    const { container } = render(
+      <AuthorizationProvider><MemoryRouter initialEntries={["/company-registry"]}>
+        <App />
+      </MemoryRouter></AuthorizationProvider>,
+    );
+    expect(container.querySelector('[aria-label="Rejestr firm"] h1')?.textContent).toBe("Rejestr firm");
+    localStorage.clear();
+  });
+
+  it("requires authentication for the company registry", () => {
+    localStorage.clear();
+    const { container } = render(
+      <AuthorizationProvider><MemoryRouter initialEntries={["/company-registry"]}>
+        <App />
+      </MemoryRouter></AuthorizationProvider>,
+    );
+    expect(container.querySelector("h2")?.textContent).toBe("Connect to Lenie Backend");
   });
 });

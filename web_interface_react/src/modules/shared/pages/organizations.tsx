@@ -575,6 +575,7 @@ const Organizations = () => {
   return (
     <div>
       <h2 style={{ marginBottom: "10px" }}>Organizacje</h2>
+      {!id && <NavLink to="/company-registry">Rejestr firm - sprawdź po NIP lub KRS</NavLink>}
 
       <form
         onSubmit={(e) => {
