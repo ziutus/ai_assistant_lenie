@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import InputsForAllExceptLink from "./InputsForAllExceptLink";
 
-vi.mock("../EntitiesPanel/entitiesPanel", () => ({ default: () => null }));
+vi.mock("axios", () => ({ default: { get: vi.fn(() => new Promise(() => {})), post: vi.fn() } }));
 vi.mock("../ArticlePreparationPanel/articlePreparationPanel", () => ({ default: () => null }));
 vi.mock("../MarkdownLineEditor/markdownLineEditor", () => ({ default: () => null }));
 vi.mock("../ArticleSourceComparison/articleSourceComparison", () => ({ default: () => null }));
@@ -22,7 +22,7 @@ it.each([undefined, false, true])("hides only the text input when hideText=%s wi
   expect(formik.handleChange).not.toHaveBeenCalled();
 });
 
-it("links the stage 2 panel to the NER review page of the document", () => {
+it("links the stage 2 summary to the NER review page of the document", () => {
   const withId = { ...formik, values: { ...formik.values, id: 11239 } };
   render(<MemoryRouter><InputsForAllExceptLink formik={withId} isLoading={false} handleRemoveNotNeededText={vi.fn()} /></MemoryRouter>);
   expect(screen.getByRole("link", { name: /Przegląd NER/ }).getAttribute("href")).toBe("/ner/11239");

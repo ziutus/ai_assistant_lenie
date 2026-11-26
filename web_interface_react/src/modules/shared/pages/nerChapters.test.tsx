@@ -26,7 +26,7 @@ vi.mock("../components/EntitiesPanel/entitiesPanel", async () => {
         {mentionMenu && <div data-testid="mention-menu">{`${mentionMenu.kind}:${mentionMenu.item.text}:${mentionMenu.item.id}`}</div>}
         <button type="button" onClick={() => onShowInText?.(
           { id: 2, text: "Kijów", variants: ["Kijów", "Kijowie"], chapter_variants: ["Kijowie"] }, "place")}>pokaż Kijów</button>
-        {chapterRenderer((source: any) => (
+        {chapterRenderer?.((source: any) => (
         <ul aria-label="Encje rozdziału">
           {[...(source?.persName ?? []), ...(source?.geogName ?? []), ...(source?.orgName ?? [])]
             .map((item: any) => <li key={item.id}>{item.text}</li>)}
@@ -353,14 +353,6 @@ it("starts a new paragraph where the server marks a paragraph start", async () =
   const breaks = chapter.querySelectorAll('div[aria-hidden="true"]');
   expect(breaks).toHaveLength(1);
   expect(breaks[0].nextElementSibling?.textContent).toContain("Trzecie zdanie.");
-});
-
-it("explains a document without transcript text", async () => {
-  const error = Object.assign(new Error("bad"), { isAxiosError: true, response: { data: { message: "Document has no transcript text" } } });
-  vi.mocked(axios.isAxiosError).mockReturnValue(true);
-  mockApi({ "/document/42/chapter_sections": error });
-  render(<MemoryRouter initialEntries={["/ner/42"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
-  expect(await screen.findByText("Dokument nie ma tekstu transkrypcji.")).toBeTruthy();
 });
 
 it("keeps working when the entity request fails", async () => {
@@ -956,4 +948,32 @@ it("a skipped chapter keeps only its merge buttons in the header row", async () 
   expect(skipped.getByRole("button", { name: "Scal rozdział 2 z poprzednim" })).toBeTruthy();
   expect(skipped.queryByRole("button", { name: /Uzupełnij brakujące opisy|Wykryj wydarzenia/ })).toBeNull();
   expect(skipped.queryByLabelText("Przyciski rozdziału 2")).toBeNull();
+});
+
+it("shows an article without headings as one text, without the chapter navigation", async () => {
+  mockApi({
+    "/document/42/chapter_sections": { sections: [{ position: 0, title: "", type: "TEMAT", is_preamble: true,
+      sentence_count: 1, sentences: [{ index: 1, text: "Tusk był w Kijowie." }] }] },
+    "/website_get": { title: "Artykuł", document_type: "webpage" },
+  });
+  render(<MemoryRouter initialEntries={["/ner/42"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
+  await screen.findByRole("region", { name: "Cały tekst" });
+  expect(screen.getByRole("heading", { name: "Przegląd NER" })).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "Rozdziały" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Zakres widoku" })).toBeNull();
+  expect(screen.queryByLabelText("Tylko rozdziały z encjami")).toBeNull();
+  expect(screen.queryByRole("link", { name: /Tylko ten rozdział/ })).toBeNull();
+});
+
+it("leaves the document-level entity list to the panel when the document has no plain text", async () => {
+  const noText = Object.assign(new Error("400"), {
+    isAxiosError: true, response: { status: 400, data: { message: "Document has no transcript text" } },
+  });
+  mockApi({ "/document/42/chapter_sections": noText, "/document/42/chapter_entities": noText });
+  vi.mocked(axios.isAxiosError).mockReturnValue(true);
+  render(<MemoryRouter initialEntries={["/ner/42"]}><Routes><Route path="/ner/:id" element={<NerChapters />} /></Routes></MemoryRouter>);
+  expect(await screen.findByText(/Dokument nie ma zwykłego tekstu/)).toBeTruthy();
+  expect(screen.queryByRole("list", { name: "Encje rozdziału" })).toBeNull();
+  expect(screen.queryByText("Nie udało się pobrać encji rozdziałów.")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
 });

@@ -216,6 +216,8 @@ const NerChapters = () => {
   const [entityData, setEntityData] = React.useState<EntityResponse | null>(null);
   const [entityError, setEntityError] = React.useState(false);
   const [loadError, setLoadError] = React.useState("");
+  // Without plain text there is nothing to show per chapter; the panel then lists the whole document's entities.
+  const [noText, setNoText] = React.useState(false);
   const [doc, setDoc] = React.useState<{ title?: string; document_type?: string; byline?: string } | null>(null);
   const [version, setVersion] = React.useState(0);
   const [kinds, setKinds] = React.useState<Set<HighlightKind>>(new Set(KINDS));
@@ -244,14 +246,14 @@ const NerChapters = () => {
     if (!id) return;
     let cancelled = false;
     setLoadError("");
+    setNoText(false);
     axios.get<{ sections: Section[] }>(`${base}/chapter_sections`, { headers, params: chapterMode ? { position } : { with_sentences: 1 } })
       .then((response) => { if (!cancelled) setSections(response.data.sections); })
       .catch((error) => {
         if (cancelled) return;
         const message = axios.isAxiosError(error) ? error.response?.data?.message : "";
-        setLoadError(message === "Document has no transcript text"
-          ? "Dokument nie ma tekstu transkrypcji."
-          : "Nie udało się pobrać rozdziałów dokumentu.");
+        if (message === "Document has no transcript text") setNoText(true);
+        else setLoadError("Nie udało się pobrać rozdziałów dokumentu.");
       });
     return () => { cancelled = true; };
   }, [id, base, headers, sectionsVersion, chapterMode, position]);
@@ -695,6 +697,9 @@ const NerChapters = () => {
       )}
     </>
   );
+  // An article without `##` headings is one section: the chapter list, scope switch and chapter links say nothing then.
+  const headless = sections.length === 1 && sections[0].position === 0;
+  const chaptered = !headless && !noText;
   // With a filter active only content chapters that still have matching entities stay listed;
   // without one every chapter is shown, skipped (ad/noise/source) chapters included.
   const loadingEntities = entityData === null && !entityError;
@@ -733,7 +738,7 @@ const NerChapters = () => {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 4 }}>NER per rozdział</h2>
+      <h2 style={{ marginBottom: 4 }}>{chaptered ? "NER per rozdział" : "Przegląd NER"}</h2>
       <div style={{ color: "#475569", marginBottom: 8 }}>
         {doc?.title ? <strong>{doc.title}</strong> : `Dokument ${id}`}
         {doc?.byline?.trim() && <>{" "}<ChannelBadge channel={doc.byline} /></>}
@@ -743,10 +748,13 @@ const NerChapters = () => {
       </div>
       {(doc?.document_type === "youtube" || doc?.document_type === "movie") &&
         <TranscriptSpellcheckPanel key={id} docId={id} onApplied={() => { setPanelKey((c) => c + 1); setVersion((c) => c + 1); }} />}
-      <div style={{ fontSize: "0.85em", color: "#64748b", marginBottom: 10 }}>
+      {chaptered && <div style={{ fontSize: "0.85em", color: "#64748b", marginBottom: 10 }}>
         Encje są zapisane dla całego dokumentu: poprawka (nazwa, usunięcie, wykluczenie, scalenie) dotyczy wszystkich
         rozdziałów. Rozdziały typu reklama, szum i źródła są pomijane przez NER (typ ustawisz w edytorze albo przyciskiem „Oznacz jako szum” albo „Oznacz jako reklamę”, które usuwają też encje występujące tylko w tym rozdziale).
-      </div>
+      </div>}
+      {noText && (
+        <p style={{ color: "#92400e" }}>Dokument nie ma zwykłego tekstu, więc encje są pokazane bez podświetleń w treści.</p>
+      )}
       {paragraphizing !== null && (
         <div role="status" aria-busy="true" style={{ marginBottom: 10, padding: "8px 12px", background: "#e0f2fe",
           border: "1px solid #38bdf8", borderRadius: 6, position: "sticky", top: 0, zIndex: 5 }}>
@@ -760,9 +768,9 @@ const NerChapters = () => {
         </div>
       )}
       {loadError && <p role="alert" style={{ color: "#a33" }}>{loadError}</p>}
-      {entityError && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
-      <div style={{ display: "grid", gridTemplateColumns: "230px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
-        <nav aria-label="Rozdziały" style={{ position: "sticky", top: 8, maxHeight: "calc(100vh - 16px)", overflowY: "auto", fontSize: "0.85em" }}>
+      {entityError && !noText && <p role="status" style={{ color: "#92400e" }}>Nie udało się pobrać encji rozdziałów.</p>}
+      <div style={{ display: "grid", gridTemplateColumns: chaptered ? "230px minmax(0, 1fr)" : "minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
+        {chaptered && <nav aria-label="Rozdziały" style={{ position: "sticky", top: 8, maxHeight: "calc(100vh - 16px)", overflowY: "auto", fontSize: "0.85em" }}>
           {(chapterMode ? chapters : visible).map(({ section, type, count }) => (
             <div key={section.position} style={{ marginBottom: 6 }}>
               {chapterMode ? <Link to={`/ner/${id}/${section.position}`}
@@ -777,27 +785,27 @@ const NerChapters = () => {
               </span>
             </div>
           ))}
-        </nav>
+        </nav>}
         <main style={{ minWidth: 0 }}>
-          {chapterMode && <nav aria-label="Nawigacja rozdziału" style={{ display: "flex", gap: 16, marginBottom: 12 }}>
+          {chapterMode && chaptered && <nav aria-label="Nawigacja rozdziału" style={{ display: "flex", gap: 16, marginBottom: 12 }}>
             {previous && <Link to={`/ner/${id}/${previous.position}`}>← Poprzedni</Link>}
             <Link to={`/ner/${id}`}>Wszystkie rozdziały</Link>
             {next && <Link to={`/ner/${id}/${next.position}`}>Następny →</Link>}
           </nav>}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginBottom: 8 }}>
+          {!noText && <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginBottom: 8 }}>
             {KINDS.map((kind) => (
               <label key={kind}>
                 <input type="checkbox" checked={kinds.has(kind)} onChange={() => toggleKind(kind)} />{" "}
                 <span style={{ background: KIND_COLORS[kind], padding: "0 4px", borderRadius: 3 }}>{KIND_LABELS[kind]}</span>
               </label>
             ))}
-            <label>
+            {chaptered && <label>
               <input type="checkbox" checked={onlyWithEntities} onChange={(event) => setOnlyWithEntities(event.target.checked)} />{" "}
               Tylko rozdziały z encjami
-            </label>
+            </label>}
             <input type="search" value={query} placeholder="Szukaj encji…" aria-label="Szukaj encji"
               onChange={(event) => setQuery(event.target.value)} style={{ padding: "3px 8px" }} />
-          </div>
+          </div>}
           {focus && (
             <div role="status" style={{ marginBottom: 8, padding: "4px 10px", background: "#fef9c3", border: "1px solid #facc15", borderRadius: 6, fontSize: "0.9em" }}>
               🔎 Podświetlono w tekście: <strong>{focus.label}</strong>{" "}
@@ -860,7 +868,7 @@ const NerChapters = () => {
           <EntitiesPanel
             docId={id}
             hideCountriesRow={chapterMode}
-            headerExtra={scopeSwitch}
+            headerExtra={chaptered ? scopeSwitch : null}
             externalDisabled={paragraphizing !== null}
             onBusyChange={setPanelBusy}
             extraActions={sections.some((section) => section.position >= 1) ? (
@@ -880,7 +888,7 @@ const NerChapters = () => {
             mentionMenu={mentionMenu}
             onMentionMenuClose={closeMentionMenu}
             onEntitiesChanged={() => setVersion((current) => current + 1)}
-            chapterRenderer={(renderGroups) => (
+            chapterRenderer={noText ? undefined : (renderGroups) => (
               <div>
                 {entityData?.has_entities === false && (
                   <p style={{ color: "#667" }}>Brak zapisanych encji — użyj przycisku „Wykryj osoby, miejsca i obiekty”.</p>
@@ -894,11 +902,12 @@ const NerChapters = () => {
                   </div>
                 )}
                 {visible.map(({ section, type, entities, count, countries, countryHighlights, groups }) => (
-                  <section key={section.position} id={`ner-chapter-${section.position}`} aria-label={chapterTitle(section)}
+                  <section key={section.position} id={`ner-chapter-${section.position}`}
+                    aria-label={headless ? "Cały tekst" : chapterTitle(section)}
                     style={{ marginTop: 12, padding: 10, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-                      <strong>{chapterTitle(section)}</strong>
-                      {!chapterMode && <Link to={`/ner/${id}/${section.position}`} style={{ fontSize: "0.85em" }}>
+                      <strong>{headless ? "Cały tekst" : chapterTitle(section)}</strong>
+                      {!chapterMode && !headless && <Link to={`/ner/${id}/${section.position}`} style={{ fontSize: "0.85em" }}>
                         Tylko ten rozdział →
                       </Link>}
                       {type !== "TEMAT" && (

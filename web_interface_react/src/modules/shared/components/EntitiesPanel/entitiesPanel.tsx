@@ -2265,6 +2265,7 @@ const EntitiesPanel = ({
           )}
           {editMode && editActions("placeName")(item)}
         </>} />
+      </>}
       <RejectedPlaces key={docId} docId={docId} items={rejectedPlaces} />
       {docId && (
         <div style={{ marginTop: 4, fontSize: "0.85em", color: "#667" }}>
@@ -2299,7 +2300,6 @@ const EntitiesPanel = ({
         </div>
       )}
       <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
-      </>}
 
       <div style={chapterRenderer ? { position: "sticky", bottom: 0, zIndex: 5, maxHeight: "50vh", overflowY: "auto" } : undefined}>
       {mergeHint && (
