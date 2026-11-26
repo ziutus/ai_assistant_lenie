@@ -17,6 +17,7 @@ export type Result = {
   })[];
   identifier_sync?: { added: IdentifierInput[] };
   seat?: Seat;
+  relations?: { added: number; updated: number; message: string | null };
   warnings: { code: string; message: string }[];
   crbr: { status: string; message: string; filings: Filing[] };
   krs: { status: string; message: string; name?: string; state_as_of?: string;

@@ -105,6 +105,8 @@ def _active(value):
 
 
 def _value(item, key, current):
+    if isinstance(item.get(key), str):
+        return redact(item[key])
     values = _history(item, key)
     candidates = [v for v in values if _active(v)] if current else values
     value = max(candidates, key=lambda v: _entry(v.get("nrWpisuWprow")), default={}).get(key, "")
@@ -134,19 +136,34 @@ def parse_krs(payload):
         names = _history(item, "nazwa") or _history(item, "nazwisko")
         if not names:
             continue
-        is_current = any(_active(v) for v in names)
-        added = min((_entry(v.get("nrWpisuWprow")) for v in names), default=0)
-        removed = max((_entry(v.get("nrWpisuWykr")) for v in names), default=0) if not is_current else 0
-        row = {
-            "name": _value(item, "nazwa", is_current) or " ".join(filter(None, (
-                _value(item, "imiona", is_current), _value(item, "nazwisko", is_current)))),
-            "is_company": bool(_history(item, "nazwa")), "krs": _value(item, "krs", is_current),
-            "shares": _value(item, "posiadaneUdzialy", is_current),
-            "added_entry": added, "added_at": entries.get(added), "added_by_correction": added in corrections,
-            "removed_entry": removed or None, "removed_at": entries.get(removed),
-            "removed_by_correction": removed in corrections,
-        }
-        (current if is_current else former).append(row)
+        # Adjacent name changes belong to one tenure; a gap means left and returned.
+        periods = []
+        for value in sorted(names, key=lambda v: _entry(v.get("nrWpisuWprow"))):
+            start = _entry(value.get("nrWpisuWprow"))
+            end = _entry(value.get("nrWpisuWykr")) or None
+            if periods and (periods[-1][1] is None or start <= periods[-1][1]):
+                previous_end = periods[-1][1]
+                periods[-1][1] = max(previous_end, end) if previous_end and end else None
+            else:
+                periods.append([start, end])
+        for added, removed in periods:
+            is_current = removed is None
+            snapshot = dict(item)
+            for key in ("nazwa", "nazwisko", "imiona", "krs", "posiadaneUdzialy"):
+                if isinstance(item.get(key), list):
+                    snapshot[key] = [v for v in _history(item, key)
+                                     if (removed is None or _entry(v.get("nrWpisuWprow")) < removed)
+                                     and (not v.get("nrWpisuWykr") or _entry(v.get("nrWpisuWykr")) > added)]
+            row = {
+                "name": _value(snapshot, "nazwa", is_current) or " ".join(filter(None, (
+                    _value(snapshot, "imiona", is_current), _value(snapshot, "nazwisko", is_current)))),
+                "is_company": bool(_history(item, "nazwa")), "krs": _value(snapshot, "krs", is_current),
+                "shares": _value(snapshot, "posiadaneUdzialy", is_current),
+                "added_entry": added, "added_at": entries.get(added), "added_by_correction": added in corrections,
+                "removed_entry": removed, "removed_at": entries.get(removed),
+                "removed_by_correction": removed in corrections,
+            }
+            (current if is_current else former).append(row)
     company = section.get("danePodmiotu", {})
     name = _value(company, "nazwa", True) if isinstance(company.get("nazwa"), list) else redact(company.get("nazwa"))
     identifiers = company.get("identyfikatory", {})

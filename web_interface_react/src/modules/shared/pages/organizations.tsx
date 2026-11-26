@@ -1,6 +1,7 @@
 import React from "react";
 import axios from "axios";
 import OrganizationIdentifiers from "../components/OrganizationIdentifiers";
+import RelatedCompanies from "../components/RelatedCompanies";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { Pagination } from "../components/Pagination/pagination";
@@ -343,7 +344,9 @@ const Organizations = () => {
   }, [id]);
 
   // After the registry check wrote a seat: refresh the details and countries, keeping the page as it is.
+  const [relationsRefresh, setRelationsRefresh] = React.useState(0);
   const reloadSeat = async (organizationId: number) => {
+    setRelationsRefresh(value => value + 1);
     try {
       const response = await axios.get(`${apiUrl}/organizations/${organizationId}`, { headers });
       setOrganization(response.data);
@@ -854,6 +857,9 @@ const Organizations = () => {
               </div>
             )}
           </div>
+
+          <RelatedCompanies key={`relations-${organization.id}`} organizationId={organization.id}
+            apiUrl={apiUrl} headers={headers} refreshKey={relationsRefresh} />
 
           {relatedPersons.length > 0 && (
             <div style={{ marginTop: 12 }}>

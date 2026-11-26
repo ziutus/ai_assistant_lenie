@@ -12,6 +12,10 @@ To re-initialize the database, delete the named volume (`lenie-ai-db-data-3`) an
 
 PostgreSQL 18 with the **pgvector** extension for vector similarity search.
 
+### Table: `public.organization_relations`
+
+Company-only KRS shareholder evidence with dates, source and check time; nullable person FK is reserved. Migration `d91f7a6b203e` (parent `c82e6f904ab1`) uses dated/undated unique indexes per organization/role/source/subject, manual subject links with rejection, owner CASCADE and subject SET NULL.
+
 ### Table: `public.organization_identifiers`
 
 Human-entered registry numbers: `id`, indexed `organization_id` (FK → `organizations.id`, ON DELETE CASCADE), `country_code` varchar(2), `identifier_type` varchar(30), `value` text, optional `source_url`/`note`, `created_at`. Unique `(country_code, identifier_type, value)`; multiple numbers per organization are allowed, merges transfer them, splits retain them on the original and automatic orphan deletion preserves their owner (migration `c82e6f904ab1`, parent `a7d3c5e9b214`).

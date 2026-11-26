@@ -3,13 +3,14 @@
 The human decision is attaching the first number to an organization. The numbers that follow from it are
 saved without another click, unless something does not fit: the registry name differs from the organization,
 registers disagree, the organization already has another number of that type, or another organization owns it.
-Only identifiers are stored - never beneficiaries, shareholders or any other registry content.
+Company shareholders and seat evidence are also stored; natural persons are never stored.
 """
 
 from library import organization_identifiers as identifiers
 from library.company_registry_service import check_company, normalize_name
 from library.db.models import Organization
 from library.organization_seat import apply_seat
+from library.organization_relations import record_company_shareholders
 
 AUTO_TYPES = ("krs", "regon")
 
@@ -106,4 +107,5 @@ def check_and_store(session, organization_id):
     result["suggested_identifiers"] = remaining
     result["identifier_sync"] = {"added": added}
     result["seat"] = apply_seat(session, organization, result, own_names)
+    result["relations"] = record_company_shareholders(session, organization, result, own_names)
     return result

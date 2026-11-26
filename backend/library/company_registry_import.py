@@ -11,6 +11,7 @@ from library.company_registry_service import normalize_name
 from library.db.models import Organization, OrganizationAlias
 from library.organization_identifier_sync import registry_sources, reported_numbers, sources_disagree
 from library.organization_seat import apply_seat
+from library.organization_relations import name_candidates, record_company_shareholders
 
 ERRORS = {
     "input": "Podaj dokładnie jeden poprawny NIP lub KRS.",
@@ -85,16 +86,7 @@ def match_company(session, result):
                        for n in item["identifiers"]):
                 item["identifiers"].append(number)
     names = {normalize_name(name) for name, _ in records if name} - {""}
-    candidate_ids = set()
-    # No persisted registry-normalized name exists. Stream scalar names, and load only
-    # matching organizations. A LIKE prefilter would miss diacritics/punctuation variants.
-    if names:
-        for model, id_column, name_column in ((Organization, Organization.id, Organization.canonical_name),
-                                               (OrganizationAlias, OrganizationAlias.organization_id, OrganizationAlias.alias)):
-            for org_id, name in session.execute(select(id_column, name_column).select_from(model)
-                                                .execution_options(yield_per=500)):
-                if org_id not in owners and normalize_name(name) in names:
-                    candidate_ids.add(org_id)
+    candidate_ids = name_candidates(session, names) - owners.keys()
     candidates = []
     for org_id in sorted(candidate_ids):
         org = session.get(Organization, org_id)
@@ -166,4 +158,4 @@ def store_company(session, result, data):
     # The user chose this organization for this company, so the seat needs no name check.
     seat = apply_seat(session, org, result)
     return {"organization": brief(org), "created": created, "identifiers": saved, "warnings": warnings,
-            "seat": seat}
+            "seat": seat, "relations": record_company_shareholders(session, org, result)}
