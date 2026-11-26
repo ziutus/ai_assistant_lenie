@@ -156,17 +156,17 @@ def test_grouped_entities_and_batched_verification_schema():
             return json.dumps({"relations": [proposal(), dict(proposal(), relation="doradca")]})
         raise RuntimeError("verifier failed")
 
-    entities = {"persName": [{"text": "Ada Brzask", "canonical_name": "Adela Brzask"}],
+    entities = {"persName": [{"text": "Ada Brzask", "canonical_name": "Ada Brzask"}],
                 "orgName": [{"text": "Lunoria", "variants": ["Lunorii"]}],
                 "placeName": [{"text": "Mgliste"}]}
     result = extract_relations(TEXT, entities, "mock", ask=ask, structured_output=True)
     assert len(calls) == 2
     assert [p["id"] for p in calls[1][0]["proposals"]] == [0, 1]
-    assert calls[0][0]["known_entities"][0]["name"] == "Adela Brzask"
+    assert calls[0][0]["known_entities"][0]["name"] == "Ada Brzask"
     assert len(calls[0][0]["known_entities"]) == 2
     assert calls[0][1]["response_format"]["type"] == "json_schema"
     assert calls[1][1]["response_format"]["json_schema"]["name"] == "verdicts"
-    assert all(r["unverified"] and r["subject"] == "Adela Brzask" for r in result["relations"])
+    assert all(r["unverified"] and r["subject"] == "Ada Brzask" for r in result["relations"])
     assert result["report"]["failed_calls"] == 1
 
 
@@ -178,3 +178,14 @@ def test_quote_must_be_in_its_chunk_and_empty_response_does_not_abort():
     assert result["report"]["calls"] == 2
     assert result["report"]["unreadable_answers"] == 1
     assert result["report"]["rejected"] == {"quote_not_found": 1}
+
+
+def test_registry_name_absent_from_the_document_is_not_used():
+    from library.relation_extraction import Names
+
+    names = Names([
+        {"entity_type": "persName", "text": "Adam Z.", "variants": ["Adam Z."], "canonical_name": "Adam Zmyślony"},
+        {"entity_type": "persName", "text": "Brzaska", "variants": ["Brzaska"], "canonical_name": "Brzask"},
+    ])
+    assert names.resolve("Adam Z.", "osoba") == "Adam Z."
+    assert names.resolve("Brzaska", "osoba") == "Brzask"

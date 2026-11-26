@@ -113,3 +113,20 @@ a metryki jakości pozostają nieznane. JSON zawiera również listę pominięty
 
 ## Wyniki
 
+### Pierwszy przebieg, 2026-11-26 (wzorzec roboczy, przed poprawką nazw)
+
+Jeden artykuł z 27 wymaganymi zależnościami, na którym wszystkie modele odpowiedziały (u jednego modelu 1 z 10
+wywołań się nie powiodło). Jeden przebieg na model.
+
+| Model | Znalezione z wymaganych | Precyzja (nieprzejrzany wzorzec) | Zależności zaprzeczone w tekście |
+|---|---|---|---|
+| Claude Sonnet 5.5 | 25/27 | 0,60 | 0 |
+| Claude Fable 5.2 | 22/27 | 0,55 | 1 |
+| Mistral Small 3.2 | 22/27 | 0,43 | 3 |
+| Bielik 11B v3.0 | 19/27 | 0,46 | 2 |
+| Gemma 3 27B | 17/27 | 0,37 | 0 |
+| Llama 3.1 8B | 8/27 | 0,50 | 0 |
+
+Pozostałe artykuły nie są jeszcze porównywalne: limit płatnego dostawcy wyczerpał się w trakcie, a wyniki zaniża
+dopasowywanie nazw w odmianie i zbyt wąski kierunek ról płatniczych we wzorcu.
+\n

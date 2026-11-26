@@ -120,6 +120,17 @@ def parse_answer(text, key="relations"):
     return objects, True
 
 
+def _supported_by_text(name, forms):
+    """Every word of ``name`` also occurs (allowing a Polish ending) in a form found in the document."""
+    seen = [word for form in forms for word in re.findall(r"\w+", normalized(form))]
+
+    def found(word):
+        stem = word[:max(2, len(word) - 2)]
+        return any(other.startswith(stem) or word.startswith(other) and len(other) >= 3 for other in seen)
+
+    return all(found(word) for word in re.findall(r"\w+", normalized(name)))
+
+
 class Names:
     def __init__(self, entities):
         self.entries = []
@@ -131,9 +142,13 @@ class Names:
             kind = {"persName": "osoba", "orgName": "organizacja"}.get(kind, kind)
             name = entity.get("canonical_name") or entity.get("name") or entity.get("text")
             if kind in ("osoba", "organizacja") and isinstance(name, str):
-                variants = entity.get("variants") or []
-                self.entries.append((kind, name, [name] + [v for v in [entity.get("text"), *variants]
-                                                          if isinstance(v, str) and v.strip()]))
+                forms = [v for v in [entity.get("text"), *(entity.get("variants") or [])]
+                         if isinstance(v, str) and v.strip()]
+                # A registry may link a person to the wrong namesake: never put a name into a
+                # relation that the document itself does not contain.
+                if kind == "osoba" and forms and not _supported_by_text(name, forms):
+                    name = entity.get("text") or forms[0]
+                self.entries.append((kind, name, [name] + forms))
 
     def resolve(self, name, kind):
         exact = {canonical for typ, canonical, variants in self.entries if typ == kind
