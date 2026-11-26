@@ -33,12 +33,14 @@ def identifiers(organization_id, row_id=None):
         row, created = service.add_identifier(session, organization_id, request.get_json(silent=True))
         session.commit()
         return {"identifier": row}, 201 if created else 200
-    except service.IdentifierConflict as exc:
+    except service.IdentifierConflict:
         session.rollback()
-        return {"message": str(exc), "conflict_organization": exc.conflict_organization}, 409
-    except ValueError as exc:
+        owner = service.find_owner(session, request.get_json(silent=True))
+        return {"message": "Ten numer jest już przypisany do innej organizacji.",
+                "conflict_organization": owner and {"id": owner.id, "canonical_name": owner.canonical_name}}, 409
+    except service.IdentifierError as exc:
         session.rollback()
-        return {"message": str(exc)}, 400
+        return {"message": service.ERRORS.get(exc.code, "Nieprawidłowe dane numeru.")}, 400
     except Exception:
         logger.exception("Organization identifier change failed")
         session.rollback()
