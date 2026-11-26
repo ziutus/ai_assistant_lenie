@@ -160,7 +160,13 @@ def parse_krs(payload):
     # KRS pads a 9-digit REGON to the 14-digit field with zeros.
     if re.fullmatch(r"[0-9]{9}00000", numbers["regon"]):
         numbers["regon"] = numbers["regon"][:9]
+    addresses = [v for v in _history(section.get("siedzibaIAdres") or {}, "adres") if _active(v)]
+    seat = max(addresses, key=lambda v: _entry(v.get("nrWpisuWprow")), default={})
+    address = {target: redact(seat.get(source)) for source, target in (
+        ("ulica", "street"), ("nrDomu", "house"), ("nrLokalu", "flat"), ("kodPocztowy", "postal_code"),
+        ("miejscowosc", "city"), ("kraj", "country"))}
     return {"name": name, "state_as_of": redact(header.get("stanZDnia")), **numbers,
+            "legal_form": _value(company, "formaPrawna", True), "address": address,
             "current_shareholders": current, "former_shareholders": former}
 
 

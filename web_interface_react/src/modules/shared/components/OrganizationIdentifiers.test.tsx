@@ -125,3 +125,18 @@ it("offers no registry check for an organization without a Polish NIP or KRS", a
   await screen.findByText(/MT COMPANY_NUMBER/);
   expect(screen.queryByText(/Sprawdź w rejestrach/)).toBeNull();
 });
+
+it("shows the seat taken from the register and asks the page to reload", async () => {
+  vi.mocked(axios.get).mockResolvedValue({ data: { identifiers: [nip] } });
+  vi.mocked(axios.post).mockResolvedValue({ data: {
+    warnings: [], crbr: { message: "Brak CRBR", filings: [] }, krs: { message: "KRS" },
+    seat: { country_added: true, address_added: "ul. Testowa 1, 00-001 Warszawa", message: null },
+  } });
+  const changed = vi.fn();
+  render(<MemoryRouter><OrganizationIdentifiers organizationId={7} apiUrl="/api" headers={pageHeaders}
+    onOrganizationChanged={changed} /></MemoryRouter>);
+  fireEvent.click(await screen.findByText(/Sprawdź w rejestrach/));
+  expect(await screen.findByText(/siedziba w: Polska/)).toBeTruthy();
+  expect(screen.getByText(/ul. Testowa 1/)).toBeTruthy();
+  expect(changed).toHaveBeenCalledTimes(1);
+});

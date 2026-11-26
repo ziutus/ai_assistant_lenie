@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import CompanyRegistryResult, { type Result } from "../components/CompanyRegistryResult";
 import type { IdentifierInput } from "../components/OrganizationIdentifiers";
+import SeatNotice, { type Seat } from "../components/SeatNotice";
 import RequestErrorDetails from "../components/RequestErrorDetails/requestErrorDetails";
 import { describeRequestError, type RequestErrorInfo } from "../utils/requestError";
 import { probeBackend } from "../utils/backendProbe";
@@ -14,7 +15,9 @@ type Match = {
   registry_name: string; suggested_name: string; sole_proprietor: boolean;
 };
 type Check = Result & { lenie_match: Match };
-type Saved = { organization: Organization; created: boolean; identifiers: IdentifierInput[]; warnings: string[] };
+type Saved = {
+  organization: Organization; created: boolean; identifiers: IdentifierInput[]; warnings: string[]; seat?: Seat;
+};
 
 export default function CompanyRegistry() {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
@@ -115,7 +118,8 @@ export default function CompanyRegistry() {
     </form>
     {error && <div role="alert"><p>{error.summary}</p><RequestErrorDetails details={error.details} /></div>}
     {saved && <section role="status"><p>Zapisano organizację: <Link to={`/organizations/${saved.organization.id}`}>
-      {saved.organization.canonical_name}</Link></p>{saved.warnings.map((warning, i) => <p key={i}>{warning}</p>)}</section>}
+      {saved.organization.canonical_name}</Link></p>{saved.warnings.map((warning, i) => <p key={i}>{warning}</p>)}
+      <SeatNotice seat={saved.seat} /></section>}
     {match && <section aria-label="W Lenie">
       <h2>W Lenie</h2>
       {!saved && (match.owners.length ? match.owners.map(owner => <p key={owner.id}>
