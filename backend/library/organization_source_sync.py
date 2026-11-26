@@ -315,7 +315,9 @@ def _document_ids(session, organization_id: int) -> set[int]:
 
 
 def _organization_summary(session, organization: Organization, document_ids: set[int]) -> dict:
+    from library.organization_identifiers import serialize
     return {
+        "identifiers": [serialize(row) for row in organization.identifiers],
         "id": organization.id, "canonical_name": organization.canonical_name,
         "organization_type": organization.organization_type, "description": organization.description,
         "aliases": [alias.alias for alias in organization.aliases], "document_count": len(document_ids),

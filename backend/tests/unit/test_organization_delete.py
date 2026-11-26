@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from library.db.models import Organization  # noqa: E402
+from library.db.models import Organization, OrganizationIdentifier  # noqa: E402
 from library.organization_registry import OrganizationInUseError, delete_unused_organization  # noqa: E402
 
 
@@ -35,7 +35,15 @@ def test_unused_organization_is_deleted_and_removed_counts_are_reported():
     organization = Organization(id=1152, canonical_name="Departamentu Obrony na Departament Wojny")
     session = session_with(aliases=2, countries=1, ambiguous=0)
 
-    assert delete_unused_organization(session, organization) == {"aliases": 2, "countries": 1, "ambiguous_aliases": 0}
+    assert delete_unused_organization(session, organization) == {"aliases": 2, "countries": 1, "ambiguous_aliases": 0, "identifiers": 0}
+    session.delete.assert_called_once_with(organization)
+
+
+def test_explicit_delete_reports_human_entered_identifiers():
+    organization = Organization(id=9, canonical_name="One", identifiers=[
+        OrganizationIdentifier(country_code="PL", identifier_type="krs", value="0000000001")])
+    session = session_with()
+    assert delete_unused_organization(session, organization)["identifiers"] == 1
     session.delete.assert_called_once_with(organization)
 
 

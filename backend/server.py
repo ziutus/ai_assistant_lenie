@@ -22,6 +22,7 @@ from library.models.stalker_document_type import StalkerDocumentType
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.api_key_routes import bp as api_key_bp
 from library.company_registry_routes import company_registry_bp
+from library.organization_identifier_routes import organization_identifiers_bp
 from library.auth import is_read_only_request_allowed, resolve_api_key
 from library.chunk_review_routes import bp as chunk_review_bp, start_analysis_worker
 from library.llm_cost_routes import bp as llm_cost_bp
@@ -140,6 +141,7 @@ app.register_blueprint(provider_balance_bp)
 app.register_blueprint(service_status_bp)
 app.register_blueprint(reader_bp)
 app.register_blueprint(api_key_bp)
+app.register_blueprint(organization_identifiers_bp)
 app.register_blueprint(company_registry_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(stats_bp)

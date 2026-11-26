@@ -359,6 +359,7 @@ const mergePreviewPayload = {
   status: "success",
   source: {
     id: 842, canonical_name: "telegrapha", organization_type: null, description: null, aliases: [],
+    identifiers: [{ country_code: "PL", identifier_type: "krs", value: "0000000001" }],
     document_count: 3,
     information_source: { id: 200, canonical_name: "telegrapha", source_type: "organization", domain: null,
       description: null, document_count: 3 },
@@ -402,6 +403,8 @@ it("turns a taken organization name into a merge with a side-by-side preview and
   expect(axios.get).toHaveBeenCalledWith("/organizations/842/merge_preview",
     { params: { target_id: 281 }, headers: expect.any(Object) });
   expect(screen.getByText("Państwo w Azji")).toBeTruthy();
+  expect(screen.getByText("PL KRS: 0000000001")).toBeTruthy();
+  expect(screen.getByText(/Numery rejestrowe przejdą/)).toBeTruthy();
   expect(screen.getByText(/2 dok\. zostanie powiązanych/)).toBeTruthy();
   expect(screen.getByText(/1 dok\. ma obie organizacje/)).toBeTruthy();
   expect(screen.getByText(/3 encji w dokumentach zmieni nazwę/)).toBeTruthy();

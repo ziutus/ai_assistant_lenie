@@ -276,7 +276,7 @@ class TestMerge:
             merge(session, 1, 1)
 
     def test_country_cannot_be_merged_into_non_country(self):
-        source = MagicMock(id=1, canonical_name="Iran", organization_type="country", aliases=[])
+        source = MagicMock(identifiers=[], id=1, canonical_name="Iran", organization_type="country", aliases=[])
         target = MagicMock(id=2, canonical_name="Irańczycy", organization_type=None)
         session = MagicMock()
         session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
@@ -291,7 +291,7 @@ class TestMerge:
             merge(session, 1, 2)
 
     def test_repoints_links_and_deletes_orphaned_source(self):
-        source = MagicMock(id=1, canonical_name="Interii", aliases=[])
+        source = MagicMock(identifiers=[], id=1, canonical_name="Interii", aliases=[])
         target = MagicMock(id=2, canonical_name="Interia")
         session = MagicMock()
         session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
@@ -325,7 +325,7 @@ class TestMerge:
         # live (org 277 -> 186 dropped 277's only correct alias). The fix
         # reassigns through alias.organization = target instead.
         alias = MagicMock(normalized_alias="siły zbrojne sudanu", organization_id=1)
-        source = MagicMock(id=1, canonical_name="Siła Zbrojny Sudan", aliases=[alias])
+        source = MagicMock(identifiers=[], id=1, canonical_name="Siła Zbrojny Sudan", aliases=[alias])
         target = MagicMock(id=2, canonical_name="Siły Zbrojne Sudanu")
         session = MagicMock()
         session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
@@ -343,7 +343,7 @@ class TestMerge:
         session.delete.assert_called_with(source)
 
     def test_duplicate_document_link_is_dropped_not_repointed(self):
-        source = MagicMock(id=1, canonical_name="Interii", aliases=[])
+        source = MagicMock(identifiers=[], id=1, canonical_name="Interii", aliases=[])
         target = MagicMock(id=2, canonical_name="Interia")
         session = MagicMock()
         session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]

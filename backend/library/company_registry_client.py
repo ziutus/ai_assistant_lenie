@@ -149,7 +149,18 @@ def parse_krs(payload):
         (current if is_current else former).append(row)
     company = section.get("danePodmiotu", {})
     name = _value(company, "nazwa", True) if isinstance(company.get("nazwa"), list) else redact(company.get("nazwa"))
-    return {"name": name, "state_as_of": redact(header.get("stanZDnia")),
+    identifiers = company.get("identyfikatory", {})
+    if isinstance(identifiers, list):
+        identifiers = max((v for v in identifiers if _active(v)),
+                          key=lambda v: _entry(v.get("nrWpisuWprow")), default={})
+        identifiers = identifiers.get("identyfikatory", identifiers)
+    identifiers = identifiers if isinstance(identifiers, dict) else {}
+    numbers = {key: redact(identifiers.get(key)) if isinstance(identifiers.get(key), str) else ""
+               for key in ("nip", "regon")}
+    # KRS pads a 9-digit REGON to the 14-digit field with zeros.
+    if re.fullmatch(r"[0-9]{9}00000", numbers["regon"]):
+        numbers["regon"] = numbers["regon"][:9]
+    return {"name": name, "state_as_of": redact(header.get("stanZDnia")), **numbers,
             "current_shareholders": current, "former_shareholders": former}
 
 
@@ -162,6 +173,7 @@ def get_krs(krs):
             continue
         response.raise_for_status()
         result = parse_krs(response.json())
+        result["krs"] = krs
         result["source_url"] = f"{KRS_URL}/{krs}?rejestr={register}&format=json"
         return result
     return None

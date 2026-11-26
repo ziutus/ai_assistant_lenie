@@ -78,10 +78,10 @@ def get_company_by_nip(nip: str) -> dict | None:
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
-        logger.warning("CEIDG request failed for NIP %s: %s", clean_nip, e)
+        logger.warning("CEIDG request failed for NIP %s: %s", clean_nip, type(e).__name__)
         return None
     except ValueError as e:
-        logger.warning("CEIDG returned invalid JSON for NIP %s: %s", clean_nip, e)
+        logger.warning("CEIDG returned invalid JSON for NIP %s: %s", clean_nip, type(e).__name__)
         return None
 
     firma = data.get("firma") if isinstance(data, dict) else None

@@ -18,7 +18,7 @@ it("starts collapsed, fetches only on demand and shows warnings and source resul
   const { container } = render(<CompanyRegistryPanel apiUrl="/api" headers={{ "x-api-key": "test" }} />);
   expect(container.querySelector("details")?.open).toBe(false);
   expect(axios.get).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText("Rejestry: CRBR i KRS"));
+  fireEvent.click(screen.getByText("Rejestry (CRBR, KRS, VAT, CEIDG)"));
   fireEvent.change(screen.getByLabelText("Rodzaj identyfikatora"), { target: { value: "krs" } });
   fireEvent.change(screen.getByLabelText("Identyfikator"), { target: { value: "123" } });
   fireEvent.click(screen.getByText("Sprawdź"));
@@ -35,7 +35,7 @@ it("shows a request failure with technical URL details", async () => {
   vi.mocked(axios.get).mockRejectedValue({ response: { status: 400, data: { message: "Nieprawidłowy NIP." } },
     config: { method: "get", url: "/api/company_registry/check" } });
   render(<CompanyRegistryPanel apiUrl="/api" headers={{}} />);
-  fireEvent.click(screen.getByText("Rejestry: CRBR i KRS"));
+  fireEvent.click(screen.getByText("Rejestry (CRBR, KRS, VAT, CEIDG)"));
   fireEvent.change(screen.getByLabelText("Identyfikator"), { target: { value: "bad" } });
   fireEvent.click(screen.getByText("Sprawdź"));
   expect((await screen.findByRole("alert")).textContent).toContain("Nieprawidłowy NIP.");

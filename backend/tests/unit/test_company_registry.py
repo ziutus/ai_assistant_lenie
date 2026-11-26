@@ -9,6 +9,12 @@ from library import company_registry_service as service
 from library.company_registry_routes import company_registry_bp
 
 
+@pytest.fixture(autouse=True)
+def no_new_network(monkeypatch):
+    monkeypatch.setattr(service.vat_client, "get_vat", lambda nip: None)
+    monkeypatch.setattr(service.ceidg_client, "get_company_by_nip", lambda nip: None)
+
+
 def xml(filings="", status="IstniejaInformacje"):
     return f'<Response xmlns="{client.CRBR_NS}"><Status>{status}</Status>{filings}</Response>'
 
@@ -73,6 +79,16 @@ def test_invalid_input(kwargs):
 def test_normalization():
     assert service.normalize_nip("PL 526-025-09-95") == "5260250995"
     assert service.normalize_krs("123") == "0000000123"
+
+
+def test_krs_company_identifiers_are_allowlisted():
+    payload = krs_payload()
+    payload["odpis"]["dane"]["dzial1"]["danePodmiotu"]["identyfikatory"] = [
+        {"identyfikatory": {"nip": "5260250995", "regon": "012345675", "pesel": "12345678901"}, "nrWpisuWprow": 1}]
+    result = client.parse_krs(payload)
+    assert result["nip"] == "5260250995"
+    assert result["regon"] == "012345675"
+    assert "12345678901" not in json.dumps(result)
 
 
 def test_independent_failures_and_discovery(monkeypatch):
