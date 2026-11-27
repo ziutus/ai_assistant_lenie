@@ -780,3 +780,5 @@ reaching for `--apply`.
 - Document creation goes through `DocumentService.import_document(skip_if_exists=True)` (`library/document_service.py`), which handles duplicate detection via `Document.get_by_url()`.
 - Bulk import runs from the remaining CLI tools are recorded in the `import_logs` table via `ImportLogTracker` (`library/import_log_tracker.py`). `dynamodb_sync.py` uses the latest successful run's UTC `started_at` as its exact automatic watermark. Legacy `since_date`/`until_date` remain day-level reporting fields; the exact UTC watermark and selected timezone are stored in `parameters`.
 - `control_questions.py` and `freedom_house_import.py` are standalone tools that never touch the database.
+
+- `relation_extraction_eval.py` — compares relation models/runs using GET-only REST inputs or local JSON and optional gold; writes JSON and Markdown only outside Git repositories. Only `ai_ask` usage logging persists to the DB. See `docs/relation-extraction-model-comparison.md`.
