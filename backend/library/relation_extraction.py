@@ -215,7 +215,7 @@ def split_indirect_ownership(relations):
 
 
 def extract_relations(text, entities, model, *, ask, chunk_chars=3500, verify=True,
-                      document_id=None, system_supported=True, structured_output=False):
+                      document_id=None, system_supported=True, structured_output=False, max_tokens=4096):
     """No persistence or capability lookup here; even the model call is injected."""
     started = time.monotonic()
     names, rejected, usages, proposals = Names(entities), Counter(), [], []
@@ -226,7 +226,7 @@ def extract_relations(text, entities, model, *, ask, chunk_chars=3500, verify=Tr
         system = VERIFY_PROMPT if verification else SYSTEM_PROMPT
         query = json.dumps({"text": chunk, **payload}, ensure_ascii=False)
         kwargs = {"operation": "relation_extraction", "document_id": document_id,
-                  "temperature": 0, "max_token_count": 4096}
+                  "temperature": 0, "max_token_count": max_tokens}
         if system_supported:
             kwargs["system_prompt"] = system
         else:

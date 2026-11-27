@@ -151,3 +151,21 @@ Na artykule, na którego błędach powstała podpowiedź, wynik wzrósł z 19/27
 zależności; na pozostałych nie ma poprawy, więc to dopasowanie do jednego tekstu. Bielik nadal nie rozpoznaje
 informacji od anonimowych źródeł i potrafi wymyślić pokrewieństwo na podstawie wspólnego nazwiska.
 
+### Modele z otwartymi wagami, 2026-11-27 (podpowiedź v2, wzorzec v2, `--max-tokens 8000`)
+
+Cztery artykuły, 57 wymaganych zależności, jeden przebieg na model u zdalnego dostawcy (precyzja wag nieznana).
+Czas i koszt dotyczą wywołań zdalnych dla wszystkich czterech artykułów.
+
+| Model | Znalezione | Precyzja | Zaprzeczone | Czas | Koszt | Uwagi |
+|---|---|---|---|---|---|---|
+| Gemma 4 31B | 50/57 | 0,51 | 1 | 3 min | 0,02 USD | |
+| Qwen 3.5 122B | 44/57 | 0,36 | 0 | 20 min | 0,41 USD | |
+| Gemma 3 27B | 41/57 | 0,26 | 0 | 12 min | 0,02 USD | |
+| Mistral Small 3.2 24B | 40/57 | 0,37 | 0 | 19 min | 0,02 USD | 2 odpowiedzi nieczytelne |
+| gpt-oss 120B | 40/57 | 0,48 | 1 | 10 min | 0,04 USD | |
+| Llama 3.3 70B | 30/57 | 0,39 | 0 | 10 min | 0,08 USD | |
+| Qwen 3.8 27B | nieoceniony | - | - | 13 min | 0,31 USD | 15 z 27 odpowiedzi nieczytelnych |
+
+Bielik 11B z tą samą podpowiedzią: średnio 35/57 (trzy przebiegi). Wniosek roboczy: najlepszy wynik dała Gemma 4
+31B; modele ok. 120B nie były lepsze. Przed decyzją: powtórzyć Gemma 4 kilka razy i zatwierdzić wzorzec.
+

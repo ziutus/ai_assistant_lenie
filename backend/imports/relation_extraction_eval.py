@@ -191,6 +191,8 @@ def main(argv=None, *, ask=None, capabilities=None):
     parser.add_argument("--chunk-chars", type=positive, default=3500)
     parser.add_argument("--runs", type=positive, default=1)
     parser.add_argument("--no-verify", action="store_true")
+    parser.add_argument("--max-tokens", type=positive, default=4096,
+                        help="Answer limit per call; reasoning models need more")
     args = parser.parse_args(argv)
     try:
         out = validate_output_path(args.out)
@@ -227,7 +229,8 @@ def main(argv=None, *, ask=None, capabilities=None):
             gold = json.loads(gold_path.read_text(encoding="utf-8")) if gold_path and gold_path.exists() else None
             for run in range(1, args.runs + 1):
                 result = extract_relations(doc["text"], doc["entities"], model, ask=ask, document_id=doc["id"],
-                                           chunk_chars=args.chunk_chars, verify=not args.no_verify, **options)
+                                           chunk_chars=args.chunk_chars, verify=not args.no_verify,
+                                           max_tokens=args.max_tokens, **options)
                 metrics = score_relations(result["relations"], gold) if gold is not None else {"found": len(result["relations"])}
                 result.update(document_id=doc["id"], model=model, run=run, metrics=metrics)
                 (out / f"{doc['id']}-{model_key}-{run}.json").write_text(
