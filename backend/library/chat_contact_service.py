@@ -4,7 +4,9 @@ The live WhatsApp sync resolves a sender to a contact only through a phone numbe
 already in the book; everybody else stays a bare ``+48…`` / push-name label. Here the owner
 adds such a person on purpose: the contact gets the WhatsApp nickname (``display_label``),
 the phone number, the profile picture (fetched through the bridge, best effort) and the
-provenance — a contact group named after the chat and a note saying where the two met.
+provenance — a contact group named after the chat and a note saying where the two met. A chat
+that belongs to a WhatsApp community names the community too: channel names such as
+"Announcements" repeat between communities.
 All other still-unresolved messages of the same sender are attached to the new contact.
 """
 
@@ -15,7 +17,9 @@ import re
 from sqlalchemy import and_, or_, select, update
 
 from library.contact_change_log import record_contact_change
-from library.db.models import ChatConversation, ChatMessage, Contact, ContactCategory, ContactGroup
+from library.db.models import (
+    ChatConversation, ChatMessage, Contact, ContactCategory, ContactGroup, WhatsappGroup, WhatsappSyncChat,
+)
 from library.whatsapp_parser import is_phone_number, load_contact_phone_index, split_display_name
 from library.whatsapp_sync_service import BridgeError, phone_from_jid
 
@@ -76,8 +80,36 @@ def link_sender_messages(session, message: ChatMessage, contact_id: int) -> int:
     return result.rowcount or 0
 
 
-def _channel_group(session, conversation: ChatConversation) -> ContactGroup:
-    name = f"WhatsApp: {conversation.display_name}"[:100]
+def group_community_name(session, group: WhatsappGroup | None) -> str | None:
+    """Name of the community a WhatsApp group belongs to; None for a standalone group and for the
+    community's own umbrella group."""
+    if group is None or group.is_community or not group.parent_jid:
+        return None
+    return session.scalar(select(WhatsappGroup.name).where(
+        WhatsappGroup.jid == group.parent_jid, WhatsappGroup.is_community.is_(True))) or None
+
+
+def conversation_community_name(session, conversation_id: int) -> str | None:
+    """Community of a synced conversation; None when it has none (or was only imported from a file)."""
+    group = session.scalars(
+        select(WhatsappGroup).join(WhatsappSyncChat, WhatsappSyncChat.jid == WhatsappGroup.jid)
+        .where(WhatsappSyncChat.conversation_id == conversation_id).order_by(WhatsappSyncChat.id).limit(1)
+    ).first()
+    return group_community_name(session, group)
+
+
+def channel_group_name(channel: str, community: str | None = None) -> str:
+    """Contact group of a channel. A long channel name is cut, never the community that tells it apart."""
+    suffix = f" ({community[:60]})" if community else ""
+    return f"WhatsApp: {channel}"[:100 - len(suffix)] + suffix
+
+
+def channel_change_note(channel: str, community: str | None = None) -> str:
+    return f"Kanał WhatsApp: {channel}" + (f" (społeczność: {community})" if community else "")
+
+
+def _channel_group(session, channel: str, community: str | None) -> ContactGroup:
+    name = channel_group_name(channel, community)
     group = session.scalars(select(ContactGroup).where(ContactGroup.name == name)).first()
     if group is None:
         group = ContactGroup(name=name, description="Osoby poznane z tego kanału WhatsApp")
@@ -171,29 +203,32 @@ def create_contact_from_message(session, message: ChatMessage, *, bridge=None, d
         session.flush()
         created = True
 
+    community = conversation_community_name(session, conversation.id)
     group, photo = enrich_whatsapp_contact(
-        session, contact, conversation, message, phone, nickname, bridge=bridge, fetch_photo=fetch_photo,
+        session, contact, conversation.display_name, message, phone, nickname, community=community,
+        bridge=bridge, fetch_photo=fetch_photo,
     )
     linked = link_sender_messages(session, message, contact.id)
     # the message itself may already be attached to this very contact id by a previous run
     message.contact_id = contact.id
     record_contact_change(
         session, contact, "other", changed_fields=["created_from_whatsapp" if created else "linked_to_whatsapp"],
-        note=f"Kanał WhatsApp: {conversation.display_name}",
+        note=channel_change_note(conversation.display_name, community),
     )
     return {"contact_id": contact.id, "created": created, "existing": not created, "photo": photo,
             "linked_messages": linked, "group": group.name}
 
 
-def enrich_whatsapp_contact(session, contact, conversation, message, phone, nickname, *,
+def enrich_whatsapp_contact(session, contact, channel, message, phone, nickname, *, community=None,
                             bridge=None, fetch_photo=False):
     """Shared channel provenance and optional photo for message and membership contacts."""
-    note = f"Poznany(-a) z kanału WhatsApp „{conversation.display_name}”."
+    origin = f" (społeczność „{community}”)" if community else ""
+    note = f"Poznany(-a) z kanału WhatsApp „{channel}”{origin}."
     if nickname and nickname != contact.display_label:
         note += f" Pseudonim w WhatsApp: {nickname}."
     if note not in (contact.notes or ""):
         contact.notes = f"{contact.notes}\n{note}" if contact.notes else note
-    group = _channel_group(session, conversation)
+    group = _channel_group(session, channel, community)
     if group not in contact.groups:
         contact.groups.append(group)
     if phone and not contact.phone_number:
