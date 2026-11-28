@@ -455,6 +455,10 @@ python imports/strip_webpage_images_backfill.py --only-base64 --apply # the wors
 - `--only-base64` — restrict to documents with a `data:image` URI in `text_md`
 - `--delay SECONDS` — sleep after each commit, to go easy on the NAS (default: 0.2)
 
+### `backfill_webpage_text_from_md.py`
+
+Fills the empty `text` of `webpage` documents from `text_md` (the same derivation as an editor save), for documents the `document_prepare` worker processed while it stored only Markdown. Writes only `text`; dry-run by default, `--apply` writes, `--id N` limits to one document.
+
 ### `rebuild_image_catalog_from_extracted.py`
 
 One-off pilot: reconstructs missing URL-sourced `document_images` from the original raw markdown in `text_extracted`, using `library.article_cleaner.extract_inline_images()`. Discards the transformed text and never modifies `text_md` or `text_extracted`; no source HTML is fetched or re-extracted. Processes exactly one required document ID. Refuses missing documents, types other than `webpage`/`link`, empty snapshots, existing image rows with `storage_key IS NULL`, or any `document_analysis_runs`, `document_chunks`, or `document_embeddings` for that document. Analysis data requires a separate reviewed procedure. Refusal returns exit code `1`; a successful dry-run/write or a snapshot with no images returns `0`. Storage-backed image rows are left untouched.

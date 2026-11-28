@@ -13,6 +13,7 @@ from library.article_pipeline import extract_article
 from library.article_cleaner import clean_article_text
 from library.db.models import Document, Job
 from library.job_queue import enqueue, heartbeat
+from library.lenie_markdown import md_remove_markdown
 from library.storage import ObjectStorage
 
 
@@ -156,6 +157,9 @@ class DocumentProcessingService:
 
         document.text_extracted = article
         document.text_md = cleaned["text"]
+        # Same derivation as an editor save: views such as the NER chapter
+        # review read the plain text.
+        document.text = md_remove_markdown(cleaned["text"])
         if cleaned.get("info_sources"):
             from library.information_provenance import refresh_rule_based_sources
 
