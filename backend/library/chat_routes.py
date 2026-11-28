@@ -29,6 +29,8 @@ from library import chat_avatars
 from library.chat_contact_service import (
     SenderError,
     bridge_name,
+    channel_group_name,
+    conversation_community_name,
     create_contact_from_message,
     sender_nickname,
     sender_phone,
@@ -305,7 +307,9 @@ def list_chat_senders(conversation_id: int):
     limit = max(1, min(500, request.args.get("limit", default=200, type=int)))
     result = list_senders(session, conversation_id, status=status, q=request.args.get("q", ""),
                           offset=offset, limit=limit)
-    return jsonify({"status": "success", "conversation": _conversation_dict(conversation), **result})
+    group_name = channel_group_name(conversation.display_name, conversation_community_name(session, conversation_id))
+    return jsonify({"status": "success", "conversation": _conversation_dict(conversation),
+                    "contact_group_name": group_name, **result})
 
 
 @bp.route("/chat_conversations/<int:conversation_id>/senders/add_contacts", methods=["POST"])

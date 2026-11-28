@@ -223,6 +223,18 @@ def test_contact_creation_provenance_nickname_and_exact_link(session):
     assert svc.create_contact_from_member(session, unknown)["outcome"] == "skipped"
 
 
+def test_contact_from_a_community_member_names_the_community(session):
+    sync(session, snapshot(participant(1)))
+    member = members(session)[0]
+    session.get(WhatsappGroup, member.group_id).parent_jid = "community@g.us"
+    session.add(WhatsappGroup(jid="community@g.us", name="Męski Krąg", is_community=True))
+    session.flush()
+    created = session.get(Contact, svc.create_contact_from_member(session, member)["contact_id"])
+    name = session.get(WhatsappGroup, member.group_id).name
+    assert f"„{name}” (społeczność „Męski Krąg”)" in created.notes
+    assert created.groups[0].name == f"WhatsApp: {name} (Męski Krąg)"
+
+
 def test_contact_without_nickname_keeps_phone_as_last_name(session):
     sync(session, snapshot(participant(1)))
     result = svc.create_contact_from_member(session, members(session)[0])

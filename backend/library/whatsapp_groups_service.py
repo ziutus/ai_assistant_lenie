@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from sqlalchemy import or_, select, text, update
 
 from library.chat_contact_service import (
-    _default_category_id, enrich_whatsapp_contact, sender_nickname,
+    _default_category_id, channel_change_note, enrich_whatsapp_contact, group_community_name, sender_nickname,
 )
 from library.contact_change_log import record_contact_change
 from library.contact_phones import phone_search_digits
@@ -251,9 +251,9 @@ def create_contact_from_member(session, member, *, category_id=None, fetch_photo
     session.add(contact)
     session.flush()
     group = session.get(WhatsappGroup, member.group_id)
-    conversation = SimpleNamespace(display_name=group.name)
+    community = group_community_name(session, group)
     message = SimpleNamespace(wa_sender_jid=member.jid)
-    enrich_whatsapp_contact(session, contact, conversation, message, member.phone, nickname,
+    enrich_whatsapp_contact(session, contact, group.name, message, member.phone, nickname, community=community,
                             bridge=bridge, fetch_photo=fetch_photo)
     session.execute(update(ChatMessage).where(
         ChatMessage.contact_id.is_(None), ChatMessage.is_from_me.is_not(True),
@@ -261,7 +261,7 @@ def create_contact_from_member(session, member, *, category_id=None, fetch_photo
     ).values(contact_id=contact.id))
     member.contact_id = contact.id
     record_contact_change(session, contact, "other", changed_fields=["created_from_whatsapp"],
-                          note=f"Kanał WhatsApp: {group.name}")
+                          note=channel_change_note(group.name, community))
     return {"outcome": "created", "contact_id": contact.id}
 
 
