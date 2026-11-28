@@ -13,6 +13,7 @@ from library.db.engine import get_scoped_session
 from library.db.models import (
     Contact, ContactCategory, WhatsappGroup, WhatsappGroupMember, WhatsappGroupMemberEvent, WhatsappSyncChat,
 )
+from library.chat_contact_service import channel_group_name, group_community_name
 from library.whatsapp_groups_service import (
     ContactIndex, contact_dict, create_contact_from_member, group_dict, iso, member_dict, member_summary,
 )
@@ -157,7 +158,9 @@ def list_members(group_id):
         )):
             continue
         result.append(row)
+    contact_group = channel_group_name(group.name, group_community_name(session, group))
     return jsonify(status="success", group=group_dict(group, groups, members, index, events),
+                   contact_group_name=contact_group,
                    members=result[offset:offset + limit], total=len(result),
                    summary=member_summary(members, index), offset=offset, limit=limit)
 

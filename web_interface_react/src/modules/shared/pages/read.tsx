@@ -11,6 +11,7 @@ import {
 import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
 import EntitiesPanel, { EntityItem } from "../components/EntitiesPanel/entitiesPanel";
+import { entityDescription, KIND_COLORS, KIND_LABELS, type HighlightKind } from "../utils/entityHighlight";
 import ChannelBadge from "../components/ChannelBadge";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
@@ -118,8 +119,28 @@ interface ChapterScope {
   organizations: EntityItem[];
   placeItems: EntityItem[];
   facilities: EntityItem[];
+  marked: MarkedEntities;
   markers: PlaceMarker[];
   countries: CountryTag[];
+}
+
+// Hand-marked entity types the reader sidebar does not list; they only colour the text.
+interface MarkedEntities {
+  events: EntityItem[];
+  products: EntityItem[];
+  concepts: EntityItem[];
+}
+
+const NO_MARKED_ENTITIES: MarkedEntities = { events: [], products: [], concepts: [] };
+
+const markedEntities = (entities: any): MarkedEntities => ({
+  events: entities?.eventName ?? [], products: entities?.productName ?? [], concepts: entities?.conceptName ?? [],
+});
+
+const READER_ENTITY_COLORS_KEY = "lenie_readerEntityColors";
+
+function loadReaderEntityColors(): boolean {
+  try { return localStorage.getItem(READER_ENTITY_COLORS_KEY) === "1"; } catch { return false; }
 }
 
 interface InformationSourceLink {
@@ -513,6 +534,28 @@ interface EntityDescriptions {
   descriptionByTerm: Map<string, string>; // key: term.toLowerCase()
   // Channel glossary: the author's wording shown as the glossary name (key: wording.toLowerCase()).
   glossary?: { terms: string[]; byTerm: Map<string, { canonical: string; hint: string }> };
+  // "Show entities in the text": every mention coloured by type, as on /ner/:id (key: term.toLowerCase()).
+  colored?: { terms: string[]; byTerm: Map<string, { kind: HighlightKind; title: string }> };
+}
+
+function buildEntityColors(
+  groups: [HighlightKind, EntityItem[]][],
+): NonNullable<EntityDescriptions["colored"]> {
+  const terms: string[] = [];
+  const byTerm = new Map<string, { kind: HighlightKind; title: string }>();
+  groups.forEach(([groupKind, items]) => items.forEach(item => {
+    if (item.place_verification_status === "rejected") return;
+    const kind: HighlightKind = item.is_country ? "country" : groupKind;
+    const description = entityDescription(item);
+    const title = `${item.canonical_name ?? item.text} (${KIND_LABELS[kind]})${description ? ` — ${description}` : ""}`;
+    entityHighlightTerms(item).forEach(term => {
+      const key = term.toLowerCase();
+      if (byTerm.has(key)) return;
+      terms.push(term);
+      byTerm.set(key, { kind, title });
+    });
+  }));
+  return { terms, byTerm };
 }
 
 function buildEntityDescriptions(
@@ -609,14 +652,22 @@ function renderParagraphWithNotes(
   described?: EntityDescriptions,
   onWikiLinkClick?: (targetId: number) => void,
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null; timelineTint: boolean; timelineFound: boolean } {
-  type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline" | "described" | "glossary"; note?: UserNote; description?: string;
-    canonical?: string };
+  type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline" | "described" | "glossary" | "colored";
+    note?: UserNote; description?: string; canonical?: string; entityKind?: HighlightKind };
   const noteMatches: Match[] = notes
     .map(n => ({ note: n, idx: text.indexOf(n.anchor_quote), len: n.anchor_quote.length, kind: "note" as const }))
     .filter(m => m.idx >= 0);
   const entityMatches: Match[] = findEntityMatches(text, highlightTerms ?? [])
     .map(m => ({ ...m, kind: "entity" as const }));
-  const describedMatches: Match[] = described
+  const colored = described?.colored;
+  const coloredMatches: Match[] = colored
+    ? findEntityMatches(text, colored.terms).flatMap(m => {
+        const entry = colored.byTerm.get(text.slice(m.idx, m.idx + m.len).toLowerCase());
+        return entry ? [{ ...m, kind: "colored" as const, entityKind: entry.kind, description: entry.title }] : [];
+      })
+    : [];
+  // A coloured mention already carries the description, so the dotted underline is not drawn then.
+  const describedMatches: Match[] = described && !colored
     ? findEntityMatches(text, described.terms).map(m => ({
         ...m, kind: "described" as const,
         description: described.descriptionByTerm.get(text.slice(m.idx, m.idx + m.len).toLowerCase()),
@@ -634,7 +685,7 @@ function renderParagraphWithNotes(
     : [];
   // A key sentence may sit inside an outlier passage; highlights cannot nest, so the outlier is cut around it.
   const matches = splitOutliersAroundKeys(
-    [...timelineMatches, ...noteMatches, ...glossaryMatches, ...entityMatches, ...describedMatches].sort((a, b) => a.idx - b.idx),
+    [...timelineMatches, ...noteMatches, ...glossaryMatches, ...entityMatches, ...coloredMatches, ...describedMatches].sort((a, b) => a.idx - b.idx),
   );
   const paragraphTint = notes.find(n =>
     text.indexOf(n.anchor_quote) < 0
@@ -696,6 +747,17 @@ function renderParagraphWithNotes(
           {m.canonical}
         </mark>
       );
+    } else if (m.kind === "colored" && m.entityKind) {
+      nodes.push(
+        <mark
+          key={`col-${i}`}
+          className="entity-colored"
+          title={m.description}
+          style={{ background: KIND_COLORS[m.entityKind], padding: "0 2px", borderRadius: 3, cursor: "help" }}
+        >
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
+        </mark>
+      );
     } else if (m.kind === "described") {
       nodes.push(
         <span
@@ -711,7 +773,9 @@ function renderParagraphWithNotes(
         <mark
           key={`ent-${i}`}
           className="entity-highlight"
-          style={{ background: "#bfdbfe", padding: "0 1px" }}
+          // Blue means "person" when all entities are shown, so the chosen one turns yellow then.
+          style={{ background: colored ? "#fde047" : "#bfdbfe", padding: "0 1px" }}
+          title={colored?.byTerm.get(quoted.toLowerCase())?.title}
         >
           {renderInline(quoted, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
         </mark>
@@ -1160,6 +1224,13 @@ const Read: React.FC = () => {
   // sidebar chip click mode: highlight the entity in the chapter text (default)
   // vs the previous behaviour of navigating to /persons/:id or a search
   const [highlightMode, setHighlightMode] = React.useState(true);
+  // every entity mention coloured by type (off by default, remembered per browser)
+  const [entityColors, setEntityColors] = React.useState(loadReaderEntityColors);
+  const [markedItems, setMarkedItems] = React.useState<MarkedEntities>(NO_MARKED_ENTITIES);
+  const toggleEntityColors = (on: boolean) => {
+    setEntityColors(on);
+    try { localStorage.setItem(READER_ENTITY_COLORS_KEY, on ? "1" : "0"); } catch { /* storage blocked */ }
+  };
   // terms to <mark> in the chapter text — seeded from ?highlight= (set by the
   // persons page's document links, using the document's raw_mention) or a
   // sidebar chip click (which supplies the entity's known surface variants)
@@ -1359,6 +1430,7 @@ const Read: React.FC = () => {
       setOrganizationItems(data.entities?.orgName ?? []);
       setPlaceItems(items);
       setFacilityItems(data.entities?.facility ?? []);
+      setMarkedItems(markedEntities(data.entities));
       setNerUnavailableAt(data.ner_unavailable_at ?? null);
       setEntitiesCheckedAt(data.entities_checked_at ?? null);
       setPlaces(
@@ -1406,6 +1478,7 @@ const Read: React.FC = () => {
           organizations: data.entities?.orgName ?? [],
           placeItems: items,
           facilities: data.entities?.facility ?? [],
+          marked: markedEntities(data.entities),
           markers: items
             .filter((it: any) => it.relevance !== "figurative" && it.verified === true && it.place_verification_status !== "needs_review" && it.lat != null && it.lon != null)
             .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon, relevance: it.relevance })),
@@ -1866,12 +1939,27 @@ const Read: React.FC = () => {
   const shownPersons = scoped ? scoped.persons : personItems;
   const shownOrganizations = scoped ? scoped.organizations : organizationItems;
   const shownFacilities = scoped ? scoped.facilities : facilityItems;
+  const shownMarked = scoped ? scoped.marked : markedItems;
+  const allPlaceItems = scoped ? scoped.placeItems : placeItems;
   // Surface forms with a stored profile are rendered as a dotted-underline
-  // hover tooltip directly on the chapter text.
+  // hover tooltip directly on the chapter text; with "show entities" on, every
+  // mention is coloured by type instead.
   const entityDescriptions = React.useMemo(
-    () => buildEntityDescriptions(shownPersons, shownOrganizations, shownFacilities,
-      showOriginalWording ? null : glossary, documentType),
-    [shownPersons, shownOrganizations, shownFacilities, glossary, showOriginalWording, documentType],
+    (): EntityDescriptions => {
+      const described = buildEntityDescriptions(shownPersons, shownOrganizations, shownFacilities,
+        showOriginalWording ? null : glossary, documentType);
+      if (!entityColors) return described;
+      return {
+        ...described,
+        colored: buildEntityColors([
+          ["persName", shownPersons], ["orgName", shownOrganizations],
+          ["place", [...allPlaceItems, ...shownFacilities]], ["event", shownMarked.events],
+          ["product", shownMarked.products], ["concept", shownMarked.concepts],
+        ]),
+      };
+    },
+    [shownPersons, shownOrganizations, shownFacilities, allPlaceItems, shownMarked, entityColors,
+      glossary, showOriginalWording, documentType],
   );
   const shownPlaceItems = (scoped ? scoped.placeItems : placeItems)
     .filter(item => item.relevance !== "figurative" && item.place_verification_status !== "rejected");
@@ -2115,6 +2203,13 @@ const Read: React.FC = () => {
             starve the right column of the space it's supposed to grow into. */}
         <div ref={contentRef} style={{ flex: "0 1 760px", minWidth: 0 }}>
           {navButtons}
+          <label style={{
+            display: "flex", width: "fit-content", alignItems: "center", gap: 6, margin: "0 0 12px",
+            fontSize: "0.85em", color: "#334155", cursor: "pointer",
+          }}>
+            <input type="checkbox" checked={entityColors} onChange={e => toggleEntityColors(e.target.checked)} />
+            Pokaż encje w tekście
+          </label>
           {highlightTerms.length > 0 && (
             <div style={{
               display: "flex", alignItems: "center", gap: 8, margin: "0 0 12px", fontSize: "0.85em",

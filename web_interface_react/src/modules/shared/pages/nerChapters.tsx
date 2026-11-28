@@ -20,7 +20,9 @@ import EventRegistryDialog from "../components/EventRegistryDialog/eventRegistry
 import ConceptRegistryDialog from "../components/ConceptRegistryDialog/conceptRegistryDialog";
 import RequestErrorDetails from "../components/RequestErrorDetails/requestErrorDetails";
 import { describeRequestError, type RequestErrorInfo } from "../utils/requestError";
-import { splitByEntities, type HighlightEntry, type HighlightKind } from "../utils/entityHighlight";
+import {
+  entityDescription, KIND_COLORS, KIND_LABELS, splitByEntities, type HighlightEntry, type HighlightKind,
+} from "../utils/entityHighlight";
 
 type ChapterType = "TEMAT" | "REKLAMA" | "SZUM" | "ZRODLA";
 // Events (eventName), products/systems (productName) and concepts (conceptName) are added by hand from selected
@@ -46,14 +48,6 @@ interface EntityResponse {
 }
 
 const TYPE_LABELS: Record<ChapterType, string> = { TEMAT: "Treść", REKLAMA: "Reklama", SZUM: "Szum", ZRODLA: "Źródła" };
-const KIND_LABELS: Record<HighlightKind, string> = {
-  persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Nazwy wydarzeń",
-  product: "Produkty i systemy", concept: "Pojęcia i ideologie", glossary: "Słownik kanału",
-};
-const KIND_COLORS: Record<HighlightKind, string> = {
-  persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a", event: "#fbcfe8",
-  product: "#ddd6fe", concept: "#fed7aa", glossary: "#bae6fd",
-};
 const KINDS: HighlightKind[] = ["persName", "place", "orgName", "country", "event", "product", "concept"];
 
 const isShown = (item: EntityItem) => !item.is_country && item.place_verification_status !== "rejected";
@@ -77,10 +71,13 @@ function filterEntities(entities: ChapterEntities | undefined, kinds: Set<Highli
 }
 
 function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
-  const entry = (kind: HighlightKind) => (item: EntityItem): HighlightEntry => ({
-    kind, label: itemName(item), variants: item.chapter_variants?.length ? item.chapter_variants : [item.text],
-    ...(item.description ? { hint: item.description } : {}),
-  });
+  const entry = (kind: HighlightKind) => (item: EntityItem): HighlightEntry => {
+    const hint = entityDescription(item);
+    return {
+      kind, label: itemName(item), variants: item.chapter_variants?.length ? item.chapter_variants : [item.text],
+      ...(hint ? { hint } : {}),
+    };
+  };
   return [
     ...(entities.persName ?? []).map(entry("persName")),
     ...(entities.orgName ?? []).map(entry("orgName")),
@@ -90,6 +87,15 @@ function highlightEntries(entities: ChapterEntities): HighlightEntry[] {
     ...(entities.productName ?? []).map(entry("product")),
     ...(entities.conceptName ?? []).map(entry("concept")),
   ];
+}
+
+// The highlighted entity goes first so that it wins the match; it keeps the tooltip of its regular entry.
+function withFocus(
+  focus: { kind: HighlightKind; label: string; variants: string[] } | null, entries: HighlightEntry[],
+): HighlightEntry[] {
+  if (!focus) return entries;
+  const hint = entries.find((entry) => entry.kind === focus.kind && entry.label === focus.label)?.hint;
+  return [{ kind: focus.kind, label: focus.label, variants: focus.variants, ...(hint ? { hint } : {}) }, ...entries];
 }
 
 // Country mentions stay out of the chip lists (they belong to the kraj-* pipeline) but the
@@ -933,10 +939,9 @@ const NerChapters = () => {
                             <React.Fragment key={sentence.index}>
                             {sentence.paragraph_start && <div aria-hidden="true" style={{ height: "0.8em" }} />}
                             <span>
-                              {splitByEntities(sentence.text, [
-                                ...(focus ? [{ kind: focus.kind, label: focus.label, variants: focus.variants }] : []),
-                                ...highlightEntries(entities), ...countryHighlights, ...glossaryHighlights.entries,
-                              ]).map((segment, index) => {
+                              {splitByEntities(sentence.text, withFocus(focus,
+                                [...highlightEntries(entities), ...countryHighlights, ...glossaryHighlights.entries],
+                              )).map((segment, index) => {
                                 if (!segment.kind) return <React.Fragment key={index}>{segment.text}</React.Fragment>;
                                 // Glossary wording is shown as the glossary name (also inside an entity chip).
                                 const swapped = glossaryHighlights.hints.get(segment.text.toLowerCase());

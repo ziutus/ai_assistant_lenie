@@ -5,6 +5,24 @@
 
 export type HighlightKind = "persName" | "place" | "orgName" | "country" | "event" | "product" | "concept" | "glossary";
 
+export const KIND_LABELS: Record<HighlightKind, string> = {
+  persName: "Osoby", place: "Miejsca", orgName: "Organizacje", country: "Państwa", event: "Nazwy wydarzeń",
+  product: "Produkty i systemy", concept: "Pojęcia i ideologie", glossary: "Słownik kanału",
+};
+export const KIND_COLORS: Record<HighlightKind, string> = {
+  persName: "#bfdbfe", place: "#bbf7d0", orgName: "#e2e8f0", country: "#fde68a", event: "#fbcfe8",
+  product: "#ddd6fe", concept: "#fed7aa", glossary: "#bae6fd",
+};
+
+// The stored description of an entity, whichever registry it comes from (used by mention tooltips).
+export function entityDescription(item: {
+  description?: string | null; person_description?: string | null;
+  organization_description?: string | null; facility_description?: string | null;
+}): string | undefined {
+  return item.description || item.person_description || item.organization_description
+    || item.facility_description || undefined;
+}
+
 export interface HighlightEntry {
   variants: string[];
   kind: HighlightKind;
