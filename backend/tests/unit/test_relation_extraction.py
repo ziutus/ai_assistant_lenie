@@ -73,10 +73,11 @@ def test_rejected_verification(verdict):
 
 
 def test_verification_correction_and_swap():
-    result = run([proposal()], [{"id": 0, "verdict": "potwierdza", "relation": "doradca",
+    result = run([dict(proposal(), object="Iwo Dąb", object_type="osoba")],
+                 [{"id": 0, "verdict": "potwierdza", "relation": "doradca",
                                 "claim": "deklaracja_strony", "direction_ok": False}])
     row = result["relations"][0]
-    assert (row["subject"], row["subject_type"], row["object"]) == ("Lunoria", "organizacja", "Ada Brzask")
+    assert (row["subject"], row["subject_type"], row["object"]) == ("Iwo Dąb", "osoba", "Ada Brzask")
     assert row["relation"] == "doradca" and row["claim"] == "deklaracja_strony"
     assert row["unverified"] is False
 

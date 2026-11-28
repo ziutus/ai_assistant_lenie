@@ -1,3 +1,4 @@
+import { RegistryRelations } from "../components/EntityRelations/relationPanels";
 import React from "react";
 import axios from "axios";
 import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -449,6 +450,7 @@ const Persons = () => {
               </div>
             </div>
           )}
+          {!editing && <RegistryRelations key={id} entity={{ type: "person", id: Number(id) }} wikidataQid={person.wikidata_qid} apiUrl={apiUrl} apiKey={apiKey ?? ""} />}
           {!editing && <PersonTerritories personId={Number(id)} apiUrl={apiUrl} apiKey={apiKey ?? ""} />}
           <h3 style={{ margin: "12px 0 6px" }}>Artykuły autora ({authoredDocuments.length})</h3>
           {!authoredDocuments.length && <div style={{ color: "#667" }}>Brak dokumentów oznaczonych jako autorstwa tej osoby.</div>}

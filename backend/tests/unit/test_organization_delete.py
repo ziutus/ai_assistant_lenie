@@ -24,7 +24,7 @@ def source_result(source_id):
 
 def session_with(documents=0, source_id=None, aliases=0, countries=0, ambiguous=0):
     session = MagicMock()
-    session.scalar.return_value = 0
+    session.scalar.side_effect = [None, 0]  # no entity relation, no legacy relations
     session.execute.side_effect = [
         scalar_result(documents), source_result(source_id),
         scalar_result(aliases), scalar_result(countries), scalar_result(ambiguous),

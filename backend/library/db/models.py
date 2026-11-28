@@ -5265,3 +5265,59 @@ class ConceptMentionLink(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="confirmed")
     decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     decided_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class EntityRelation(Base):
+    """Global, human-reviewed relation; ownership of a projection is explicit."""
+
+    __tablename__ = "entity_relations"
+    __table_args__ = (
+        CheckConstraint("(CASE WHEN subject_person_id IS NULL THEN 0 ELSE 1 END + "
+                        "CASE WHEN subject_organization_id IS NULL THEN 0 ELSE 1 END) = 1",
+                        name="ck_entity_relations_subject"),
+        CheckConstraint("(CASE WHEN object_person_id IS NULL THEN 0 ELSE 1 END + "
+                        "CASE WHEN object_organization_id IS NULL THEN 0 ELSE 1 END + "
+                        "CASE WHEN object_country_slug IS NULL THEN 0 ELSE 1 END) = 1",
+                        name="ck_entity_relations_object"),
+        CheckConstraint("valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from",
+                        name="ck_entity_relations_dates"),
+        CheckConstraint("status IN ('proposed', 'confirmed', 'rejected')", name="ck_entity_relations_status"),
+        CheckConstraint("detection_method IN ('llm', 'wikidata', 'manual')", name="ck_entity_relations_method"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject_person_id: Mapped[int | None] = mapped_column(ForeignKey("persons.id", ondelete="CASCADE"), index=True)
+    subject_organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    object_person_id: Mapped[int | None] = mapped_column(ForeignKey("persons.id", ondelete="CASCADE"), index=True)
+    object_organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    object_country_slug: Mapped[str | None] = mapped_column(String(80), index=True)
+    relation: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str | None] = mapped_column(String(200))
+    valid_from: Mapped[datetime.date | None] = mapped_column(Date)
+    valid_to: Mapped[datetime.date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), default="proposed", server_default="proposed", index=True)
+    detection_method: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    projected_table: Mapped[str | None] = mapped_column(String(40))
+    projected_row_id: Mapped[int | None] = mapped_column(Integer)
+    evidence: Mapped[list["EntityRelationEvidence"]] = relationship(cascade="all, delete-orphan")
+
+
+class EntityRelationEvidence(Base):
+    """Idempotent source passages; deleting a document preserves its evidence."""
+
+    __tablename__ = "entity_relation_evidence"
+    __table_args__ = (UniqueConstraint("relation_id", "content_hash", name="uq_entity_relation_evidence_hash"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    relation_id: Mapped[int] = mapped_column(ForeignKey("entity_relations.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"), index=True)
+    quote: Mapped[str | None] = mapped_column(Text)
+    claim: Mapped[str | None] = mapped_column(String(30))
+    source_url: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(120))
+    prompt_version: Mapped[str | None] = mapped_column(String(40))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())

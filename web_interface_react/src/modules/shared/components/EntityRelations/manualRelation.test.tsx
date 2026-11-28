@@ -1,0 +1,30 @@
+﻿import axios from "axios";
+import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import ManualRelation from "./manualRelation";
+vi.mock("axios");
+afterEach(() => { cleanup(); vi.resetAllMocks(); });
+it("filters valid incoming pairs, searches real registry and sends canonical endpoints", async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).includes("vocabulary") ? { vocabulary: [{ value: "pracownik", label: "pracuje w", inverse_label: "zatrudnia", pairs: [{ subject: "person", object: "organization" }], symmetric: false }] } : { persons: [{ id: 7, canonical_name: "Ada" }] } }));
+  vi.mocked(axios.post).mockResolvedValue({ data: {} });
+  const changed = vi.fn(); render(<ManualRelation apiUrl="" apiKey="k" entity={{ type: "organization", id: 2 }} onAdded={changed} disabled={false} />);
+  await waitFor(() => expect(axios.get).toHaveBeenCalled());
+  expect(screen.queryByRole("option", { name: /pracuje/ })).toBeNull();
+  fireEvent.change(screen.getByLabelText("Kierunek"), { target: { value: "in" } });
+  await screen.findByRole("option", { name: "zatrudnia (osoba)" });
+  fireEvent.change(screen.getByLabelText("Relacja"), { target: { value: "pracownik:person" } });
+  fireEvent.change(screen.getByLabelText("Szukaj w rejestrze"), { target: { value: "Ada" } });
+  await screen.findByRole("option", { name: "Ada" });
+  expect(axios.get).toHaveBeenCalledWith("/persons", { headers: { "x-api-key": "k" }, params: { q: "Ada", limit: 20, offset: 0 } });
+  fireEvent.change(screen.getByLabelText("Drugi podmiot"), { target: { value: "7" } }); fireEvent.click(screen.getByText("Dodaj powiązanie"));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/entity_relations", { subject: { type: "person", id: 7 }, object: { type: "organization", id: 2 }, relation: "pracownik", title: null, valid_from: null, valid_to: null }, expect.anything()));
+  expect(changed).toHaveBeenCalledOnce();
+});
+it("reads organizations from the `entries` list of the registry", async () => {
+  vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).includes("vocabulary") ? { vocabulary: [{ value: "pracownik", label: "pracuje w", inverse_label: "zatrudnia", pairs: [{ subject: "person", object: "organization" }], symmetric: false }] } : { entries: [{ id: 3, canonical_name: "Ministerstwo" }] } }));
+  render(<ManualRelation apiUrl="" apiKey="k" entity={{ type: "person", id: 2 }} onAdded={vi.fn()} disabled={false} />);
+  await screen.findByRole("option", { name: "pracuje w (organizacja)" });
+  fireEvent.change(screen.getByLabelText("Relacja"), { target: { value: "pracownik:organization" } });
+  fireEvent.change(screen.getByLabelText("Szukaj w rejestrze"), { target: { value: "Min" } });
+  expect(await screen.findByRole("option", { name: "Ministerstwo" })).toBeTruthy();
+});

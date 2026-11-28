@@ -33,14 +33,16 @@ def test_relationship_graph_returns_only_stored_links(client):
     citation = SimpleNamespace(id=61)
     document_organization = SimpleNamespace(id=71)
     publisher = SimpleNamespace(id=4, canonical_name="gazeta.pl")
-    document = SimpleNamespace(id=9377, title="Artykuł", publisher=publisher)
+    document = SimpleNamespace(id=9377, title="Artykuł", publisher=publisher, published_on=None)
     session = MagicMock()
-    session.get.return_value = document
+    session.get.side_effect = lambda model, identifier: document if identifier == 9377 else organization
     # Source-chain relations are queried before direct provenance links.
     session.scalars.side_effect = [
         MagicMock(all=lambda: []),
         MagicMock(all=lambda: [provenance]),
         MagicMock(all=lambda: []),  # confirmed document-to-document links (none here)
+        [], [],  # no document person/organization endpoints for the extension
+        MagicMock(all=lambda: []), MagicMock(all=lambda: []),  # no global relations or country ties for provenance organization
     ]
     session.execute.side_effect = [
         MagicMock(all=lambda: [(citation, cited)]),

@@ -426,6 +426,9 @@ def delete_unused_organization(session, organization: Organization) -> dict[str,
 
     if organization.organization_type == COUNTRY_ORGANIZATION_TYPE:
         raise OrganizationInUseError("To organizacja-państwo (typ country) i nie można jej usunąć.")
+    from library.entity_relations_service import has_relations
+    if has_relations(session, "organization", organization.id):
+        raise OrganizationInUseError("Organizacja ma nieodrzucone relacje. Najpierw ją scal lub usuń relacje.")
     documents = session.execute(
         select(func.count()).select_from(DocumentOrganization)
         .where(DocumentOrganization.organization_id == organization.id)
@@ -470,6 +473,9 @@ def _delete_organization_if_orphaned(session, organization_id: int) -> bool:
         .where(DocumentOrganization.organization_id == organization_id)
     ).scalar()
     if remaining:
+        return False
+    from library.entity_relations_service import has_relations
+    if has_relations(session, "organization", organization_id):
         return False
     organization = session.get(Organization, organization_id)
     if organization is None or organization.identifiers:

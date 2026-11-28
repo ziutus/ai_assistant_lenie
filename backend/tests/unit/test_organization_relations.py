@@ -178,7 +178,8 @@ def test_migration_upgrade_and_downgrade_in_memory_only():
 
     script = ScriptDirectory("alembic")
     revision = script.get_revision("d91f7a6b203e")
-    assert script.get_heads() == [revision.revision]
+    assert script.get_heads() == ["e4b8c2a79061"]
+    assert script.get_revision("e4b8c2a79061").down_revision == revision.revision
     assert revision.down_revision == "c82e6f904ab1"
     engine = create_engine("sqlite://")
     with engine.begin() as connection:

@@ -301,6 +301,7 @@ class TestRejectReviewLink:
         link = _review_link()
         person = _person()
         session = MagicMock()
+        session.scalar.return_value = None  # no global relations / no remaining links
         session.execute.return_value.scalar.return_value = 0  # no remaining links
         session.get.return_value = person
 
@@ -313,6 +314,7 @@ class TestRejectReviewLink:
     def test_keeps_person_with_other_links(self):
         link = _review_link()
         session = MagicMock()
+        session.scalar.return_value = None  # no global relations / no remaining links
         session.execute.return_value.scalar.return_value = 2  # person still linked elsewhere
 
         result = reject_review_link(session, link)
@@ -328,6 +330,7 @@ class TestMergeReviewLink:
         source = _person(person_id=7, name="Jimmy Ruston (source)")
         target = _person(person_id=9, name="Jimmy Rushton")
         session = MagicMock()
+        session.scalar.return_value = None  # no global relations / no remaining links
         session.get.side_effect = lambda model, pid: {7: source}.get(pid)
         # duplicate-link check -> None, orphan check -> 0 remaining
         session.execute.return_value.scalars.return_value.first.return_value = None
@@ -348,6 +351,7 @@ class TestMergeReviewLink:
         target = _person(person_id=9)
         existing = MagicMock(spec=DocumentPerson)
         session = MagicMock()
+        session.scalar.return_value = None  # no global relations / no remaining links
         session.get.side_effect = lambda model, pid: {7: _person(person_id=7)}.get(pid)
         session.execute.return_value.scalars.return_value.first.return_value = existing
         session.execute.return_value.scalar.return_value = 1  # source still linked elsewhere

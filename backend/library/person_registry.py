@@ -561,6 +561,9 @@ def _delete_person_if_orphaned(session, person_id: int) -> bool:
     ).scalar()
     if remaining:
         return False
+    from library.entity_relations_service import has_relations
+    if has_relations(session, "person", person_id):
+        return False
     person = session.get(Person, person_id)
     if person is None:
         return False
@@ -615,6 +618,11 @@ def merge_review_link(session, link: DocumentPerson, target: Person) -> dict:
         link.person_id = target.id
         link.confidence = CONFIDENCE_MANUAL_CONFIRMED
     session.flush()
+    remaining = session.scalar(select(func.count()).select_from(DocumentPerson).where(
+        DocumentPerson.person_id == source_person_id))
+    if not remaining:
+        from library.entity_relations_service import absorb_relations
+        absorb_relations(session, "person", source_person_id, target.id)
     person_deleted = _delete_person_if_orphaned(session, source_person_id)
     return {"action": "merge", "link_id": link_id, "person_id": target.id,
             "source_person_id": source_person_id, "person_deleted": person_deleted,

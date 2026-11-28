@@ -284,6 +284,8 @@ event keeps counts and spellings; an event's approved description is not carried
 
 ### Graphs
 
+EntityRelations provides Polish relation review/manual entry and extraction panels; RelationshipGraph styles proposals and period mismatches and hides isolated nodes by default when relation edges exist.
+
 Interactive graphs use **vis-network** (`vis-network/standalone`, `^10.1.2`): the `/read/:id` relationship graph is
 `components/RelationshipGraph/relationshipGraph.tsx`. Mermaid is not a dependency. [Pele](https://pele.run/)
 (Mermaid → themeable SVG, MIT) was evaluated and deferred for static diagrams — see
