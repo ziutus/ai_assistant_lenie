@@ -320,7 +320,8 @@ def test_event_migration_upgrade_downgrade():
     assert sql.index("DELETE FROM topic_items") < sql.rindex("DROP CONSTRAINT")
 
 
-def test_topic_people_from_event_channel_and_manual_items():
+def test_topic_people_from_event_channel_and_manual_items(monkeypatch):
+    monkeypatch.setattr(svc, "conversation_community_name", lambda session, conversation_id: None)
     ann, bob, cid, dan = (Contact(id=i, first_name=n) for i, n in enumerate(("Ann", "Bob", "Cid", "Dan"), 1))
     event = ContactGroupEvent(id=12, title="Jam #1", event_date=date(2026, 10, 29), participants=[ann, bob])
     conversation = ChatConversation(id=3, display_name="Jam")

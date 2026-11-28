@@ -16,6 +16,7 @@ interface Sender {
   can_add: boolean;
 }
 interface SenderList {
+  contact_group_name?: string;
   senders: Sender[];
   total: number;
   summary: { senders: number; in_contacts: number; missing: number };
@@ -126,7 +127,7 @@ export default function ChatSendersPanel({ id, channel, apiUrl, apiKey, onSender
               Dodaj zaznaczonych do kontaktów ({selected.length})</button>
           </div>
           {confirm && <div style={{ padding: 16, marginTop: 16, background: "#eef6ff" }}>
-            <p>Dodać {selected.length} osób? Powstaną kontakty z grupy „WhatsApp: {channel}”.</p>
+            <p>Dodać {selected.length} osób? Powstaną kontakty z grupy „{data?.contact_group_name ?? `WhatsApp: ${channel}`}”.</p>
             <p>Numer już istniejący w książce zostanie tylko powiązany. Zdjęcia nie są pobierane.</p>
             <button type="button" className="button" disabled={disabled} onClick={() => void add()}>{busy ? "Dodaję…" : "Potwierdź dodanie"}</button>{" "}
             <button type="button" className="button" disabled={busy} onClick={() => setConfirm(false)}>Anuluj</button>

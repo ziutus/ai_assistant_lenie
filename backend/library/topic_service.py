@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
+from library.chat_contact_service import channel_group_name, conversation_community_name
 from library.contact_names import contact_display_name
 from library.db.models import (
     ChatConversation, ChatMessage, Contact, ContactGroup, ContactGroupEvent, Document, Topic, TopicItem,
@@ -218,9 +219,10 @@ def get_topic_people(session, topic_id) -> list[dict] | None:
         conversations = session.scalars(select(ChatConversation)
                                         .where(ChatConversation.id.in_(ids("chat_conversation")))).all()
         for conversation in conversations:
-            # Same naming rule as chat_contact_service._channel_group, which fills the group.
+            group_name = channel_group_name(conversation.display_name,
+                                            conversation_community_name(session, conversation.id))
             group = session.scalars(select(ContactGroup).options(selectinload(ContactGroup.contacts))
-                                    .where(ContactGroup.name == f"WhatsApp: {conversation.display_name}"[:100])).first()
+                                    .where(ContactGroup.name == group_name)).first()
             members = {contact.id: contact for contact in (group.contacts if group else [])}
             counts = dict(session.execute(
                 select(ChatMessage.contact_id, func.count()).where(

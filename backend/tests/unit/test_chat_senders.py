@@ -14,6 +14,7 @@ from library import chat_routes
 from library.chat_contact_service import SenderError
 from library.db.models import (
     ChatConversation, ChatMessage, Contact, ContactCategory, ContactChangeLog, ContactGroup, ContactGroupMembership,
+    WhatsappGroup, WhatsappSyncChat,
 )
 
 
@@ -21,7 +22,7 @@ from library.db.models import (
 def api(monkeypatch):
     metadata = MetaData()
     for model in (ChatConversation, ChatMessage, Contact, ContactCategory, ContactChangeLog,
-                  ContactGroup, ContactGroupMembership):
+                  ContactGroup, ContactGroupMembership, WhatsappGroup, WhatsappSyncChat):
         model.__table__.to_metadata(metadata)
     for table in metadata.tables.values():
         for constraint in list(table.foreign_key_constraints):
@@ -113,7 +114,7 @@ def test_aggregation_identity_latest_name_and_frequent_contact(api):
     event.listen(session.bind, "before_cursor_execute", track)
     result = client.get("/chat_conversations/1/senders").json
     event.remove(session.bind, "before_cursor_execute", track)
-    assert len(queries) == 2  # Conversation and a single aggregate query, independent of author count.
+    assert len(queries) == 3  # Conversation, one aggregate and the community lookup, independent of author count.
     assert result["summary"] == {"senders": 3, "in_contacts": 1, "missing": 2}
     first = result["senders"][0]
     assert first["key"] == "123@lid" and first["name"] == latest_name.sender_name_raw
@@ -204,6 +205,29 @@ def test_bulk_real_creation_linking_and_skips(api):
     assert session.scalar(select(func.count()).select_from(Contact)) == 2
     assert session.scalar(select(ContactGroup.name)) == "WhatsApp: Sąsiedzi"
     assert session.scalar(select(func.count()).select_from(ContactChangeLog)) == 2
+
+
+def test_community_names_the_group_note_and_history(api):
+    client, session = api
+    session.add_all([
+        WhatsappGroup(id=1, jid="c@g.us", name="Męski Krąg", is_community=True),
+        WhatsappGroup(id=2, jid="s@g.us", name="Sąsiedzi", parent_jid="c@g.us"),
+        WhatsappSyncChat(id=1, jid="s@g.us", display_name="Sąsiedzi", conversation_id=1),
+    ])
+    row = message(session, "Nowa osoba")
+    session.commit()
+    expected = "WhatsApp: Sąsiedzi (Męski Krąg)"
+    assert client.get("/chat_conversations/1/senders").json["contact_group_name"] == expected
+    client.post("/chat_conversations/1/senders/add_contacts", json={"message_ids": [row.id]})
+    created = session.scalars(select(Contact)).one()
+    assert created.notes.startswith("Poznany(-a) z kanału WhatsApp „Sąsiedzi” (społeczność „Męski Krąg”).")
+    assert created.groups[0].name == expected
+    assert session.scalars(select(ContactChangeLog)).one().note == "Kanał WhatsApp: Sąsiedzi (społeczność: Męski Krąg)"
+
+
+def test_long_channel_name_keeps_the_community():
+    name = chat_routes.channel_group_name("x" * 200, "Społeczność")
+    assert len(name) == 100 and name.endswith(" (Społeczność)")
 
 
 @pytest.mark.parametrize("exception", [SenderError("private details"), RuntimeError("private details")])

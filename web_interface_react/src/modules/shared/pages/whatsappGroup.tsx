@@ -24,6 +24,7 @@ interface GroupEvent extends Person {
   previous_synced_at: string | null;
 }
 interface MembersResponse {
+  contact_group_name?: string;
   group: WhatsappGroupInfo;
   members: Member[];
   total: number;
@@ -165,7 +166,7 @@ function GroupDetails({ id }: { id: string }) {
         <button type="button" className="button" disabled={disabled || !selected.length} onClick={() => setConfirming(true)}>Dodaj zaznaczonych do kontaktów ({selected.length})</button>
       </div>
       {confirming && <div style={{ padding: 20, margin: "20px 0", border: "1px solid #ccd", borderRadius: 6 }}>
-        <p>Dodać {selected.length} osób? Powstaną kontakty z grupy „WhatsApp: {data.group.name}”.</p>
+        <p>Dodać {selected.length} osób? Powstaną kontakty z grupy „{data.contact_group_name ?? `WhatsApp: ${data.group.name}`}”.</p>
         <p>Numer już w książce zostanie tylko powiązany. Zdjęcia nie są pobierane.</p>
         <div style={controlsStyle}>
           <button type="button" className="button" disabled={disabled} onClick={() => void addContacts()}>{busy ? "Dodaję…" : "Potwierdź dodanie"}</button>
