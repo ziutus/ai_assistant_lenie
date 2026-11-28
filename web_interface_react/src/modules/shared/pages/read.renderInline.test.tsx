@@ -126,3 +126,29 @@ describe("renderMarkdown — heading not sharing a blank line with the text belo
     expect(h?.contains(link)).toBe(false);
   });
 });
+
+describe("renderMarkdown — entities shown in the text", () => {
+  const colored = {
+    terms: ["Frontu Ludowego"],
+    byTerm: new Map([["frontu ludowego", { kind: "orgName" as const, title: "Front Ludowy (Organizacje) — Koalicja" }]]),
+  };
+  const show_ = (highlight?: string[]) => render(
+    <MemoryRouter>
+      <div>{renderMarkdown("Mianem Frontu Ludowego.", [], undefined, highlight, null,
+        undefined, undefined, undefined, { terms: [], descriptionByTerm: new Map(), colored })}</div>
+    </MemoryRouter>);
+
+  it("colours a mention by entity type with its description as the tooltip", () => {
+    const { container } = show_();
+    const mark = container.querySelector("mark.entity-colored");
+    expect(mark?.textContent).toBe("Frontu Ludowego");
+    expect(mark?.getAttribute("title")).toBe("Front Ludowy (Organizacje) — Koalicja");
+  });
+
+  it("lets the chosen chip highlight win over the type colour and keeps the tooltip", () => {
+    const { container } = show_(["Frontu Ludowego"]);
+    expect(container.querySelector("mark.entity-colored")).toBeNull();
+    expect(container.querySelector("mark.entity-highlight")?.getAttribute("title"))
+      .toBe("Front Ludowy (Organizacje) — Koalicja");
+  });
+});
