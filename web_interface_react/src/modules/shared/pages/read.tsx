@@ -1,3 +1,4 @@
+import { DocumentRelations } from "../components/EntityRelations/relationPanels";
 import { listNavigationParams } from "../utils/listNavigationParams";
 import SkillHint from "../components/SkillHint";
 import React from "react";
@@ -1123,6 +1124,7 @@ const Read: React.FC = () => {
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [informationSources, setInformationSources] = React.useState<InformationSourceLink[]>([]);
   const [citedPublications, setCitedPublications] = React.useState<CitedPublicationLink[]>([]);
+  const [relationsRevision, setRelationsRevision] = React.useState(0);
   const [relationshipGraph, setRelationshipGraph] = React.useState<RelationshipGraphData | null>(null);
   const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
   const [readiness, setReadiness] = React.useState<DocumentReadiness | null>(null);
@@ -1299,15 +1301,17 @@ const Read: React.FC = () => {
   }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
+    let active = true;
     setRelationshipGraph(null);
     (async () => {
       try {
         const response = await fetch(`${apiUrl}/document/${id}/relationship_graph`, { headers });
         const data = await response.json();
-        if (data.status === "success") setRelationshipGraph({ nodes: data.nodes ?? [], edges: data.edges ?? [] });
+        if (active && data.status === "success") setRelationshipGraph({ nodes: data.nodes ?? [], edges: data.edges ?? [] });
       } catch { /* The graph is optional reader enrichment. */ }
     })();
-  }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { active = false; };
+  }, [apiUrl, id, apiKey, relationsRevision]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     (async () => {
@@ -2339,6 +2343,7 @@ const Read: React.FC = () => {
               </div>
             )}
             {relationshipGraph && <RelationshipGraph data={relationshipGraph} />}
+            <DocumentRelations key={id} documentId={Number(id)} apiUrl={apiUrl} apiKey={apiKey ?? ""} onChange={() => setRelationsRevision(n => n + 1)} />
             {(shownCountries.length > 0 || shownMarkers.length > 0 || shownPipelines.length > 0) && (
               <React.Suspense fallback={null}>
                 <CountryMap countries={shownCountries} places={shownMarkers} pipelines={shownPipelines} />

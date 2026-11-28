@@ -28,7 +28,12 @@ def extend_relationship_graph(session, doc, nodes, edges):
             nodes.append(node)
             by_id[node_id] = node
         else:
-            by_id[node_id].update(node)
+            existing = by_id[node_id]
+            # A cited source keeps its link to the information source; a context node gains its registry page.
+            if existing.get("linked_to_source"):
+                node.pop("href")
+            existing.update(node)
+            existing.pop("context_only", None)
         if kind == "organization":
             organizations.add(identifier)
         return node_id

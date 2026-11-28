@@ -23,7 +23,7 @@ export interface ChapterModelState {
  * Model choice for the per-chapter analyses (tone, historical period, dated events): `GET/PUT /chapter_analysis/model`.
  * The list is fetched lazily (when the picker is opened), so a page with many chapters does not ask for it on load.
  */
-export const useChapterModel = (apiUrl: string, apiKey: string | undefined): ChapterModelState => {
+export const useChapterModel = (apiUrl: string, apiKey: string | undefined, endpoint = "/chapter_analysis/model"): ChapterModelState => {
   const headers = React.useMemo(() => ({ "x-api-key": apiKey ?? "" }), [apiKey]);
   const [models, setModels] = React.useState<ModelOption[]>([]);
   const [model, setModel] = React.useState("");
@@ -39,7 +39,7 @@ export const useChapterModel = (apiUrl: string, apiKey: string | undefined): Cha
     setError(null);
     setLoading(true);
     const startedAt = Date.now();
-    axios.get(`${apiUrl}/chapter_analysis/model`, { headers })
+    axios.get(`${apiUrl}${endpoint}`, { headers })
       .then((response) => {
         setModels(Array.isArray(response.data?.models) ? response.data.models : []);
         setDefaultModel(response.data?.default_model ?? "");
@@ -51,20 +51,23 @@ export const useChapterModel = (apiUrl: string, apiKey: string | undefined): Cha
         setError(describeRequestError(err, "Pobieranie listy modeli", { startedAt }));
       })
       .finally(() => setLoading(false));
-  }, [apiUrl, headers]);
+  }, [apiUrl, headers, endpoint]);
 
   const saveDefault = React.useCallback(async (value: string | null) => {
     setError(null);
+    setLoading(true);
     const startedAt = Date.now();
     try {
-      const response = await axios.put(`${apiUrl}/chapter_analysis/model`, { model: value }, { headers });
+      const response = await axios.put(`${apiUrl}${endpoint}`, { model: value }, { headers });
       setDefaultModel(response.data?.default_model ?? "");
       setSaved(Boolean(response.data?.saved));
       setModel(response.data?.default_model ?? "");
     } catch (err) {
       setError(describeRequestError(err, "Zapis domyślnego modelu", { startedAt }));
+    } finally {
+      setLoading(false);
     }
-  }, [apiUrl, headers]);
+  }, [apiUrl, headers, endpoint]);
 
   return { models, model, setModel, defaultModel, saved, loading, error, load, saveDefault };
 };
@@ -74,13 +77,14 @@ interface PickerProps {
   /** Text of the collapsed summary, e.g. "Model". */
   summary?: string;
   disabled?: boolean;
+  ariaLabel?: string;
 }
 
 /**
  * Collapsed model chooser: every option shows its price per 1 mln tokens and its context window, so a reviewer can
  * weigh a larger or cheaper model against Bielik (the built-in default) before running an analysis.
  */
-const ChapterModelPicker: React.FC<PickerProps> = ({ state, summary = "Model", disabled }) => {
+const ChapterModelPicker: React.FC<PickerProps> = ({ state, summary = "Model", disabled, ariaLabel = "Model do analizy rozdziału" }) => {
   const { models, model, setModel, defaultModel, saved, loading, error, load, saveDefault } = state;
   const current = models.find((option) => option.id === model);
   return (
@@ -90,7 +94,7 @@ const ChapterModelPicker: React.FC<PickerProps> = ({ state, summary = "Model", d
       </summary>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 4 }}>
         <select
-          aria-label="Model do analizy rozdziału"
+          aria-label={ariaLabel}
           value={model}
           onChange={(event) => setModel(event.target.value)}
           disabled={disabled || loading || models.length === 0}
@@ -103,10 +107,10 @@ const ChapterModelPicker: React.FC<PickerProps> = ({ state, summary = "Model", d
             </option>
           ))}
         </select>
-        <button type="button" disabled={disabled || !model || (model === defaultModel && saved)} onClick={() => void saveDefault(model)}>
+        <button type="button" disabled={disabled || loading || !model || (model === defaultModel && saved)} onClick={() => void saveDefault(model)}>
           Ustaw jako domyślny
         </button>
-        {saved && <button type="button" disabled={disabled} onClick={() => void saveDefault(null)}>Przywróć domyślny serwera</button>}
+        {saved && <button type="button" disabled={disabled || loading} onClick={() => void saveDefault(null)}>Przywróć domyślny serwera</button>}
       </div>
       {current?.external && (
         <small style={{ color: "#b45309" }}>⚠ Zewnętrzny dostawca: tekst rozdziału zostanie do niego wysłany.</small>

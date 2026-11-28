@@ -1,3 +1,4 @@
+import { RegistryRelations } from "../components/EntityRelations/relationPanels";
 import React from "react";
 import axios from "axios";
 import OrganizationIdentifiers from "../components/OrganizationIdentifiers";
@@ -858,6 +859,7 @@ const Organizations = () => {
             )}
           </div>
 
+          <RegistryRelations key={`entity-relations-${organization.id}`} entity={{ type: "organization", id: organization.id }} apiUrl={apiUrl} apiKey={apiKey ?? ""} />
           <RelatedCompanies key={`relations-${organization.id}`} organizationId={organization.id}
             apiUrl={apiUrl} headers={headers} refreshKey={relationsRefresh} />
 
