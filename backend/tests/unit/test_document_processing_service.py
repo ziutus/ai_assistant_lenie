@@ -54,7 +54,7 @@ def test_execute_materializes_html_runs_pipeline_and_uploads_artifacts(tmp_path)
         def execute(self, statement):
             return None
 
-    clean_text = "CLEAN " * 60  # a realistic-length article, well above the empty-page floor
+    clean_text = "## Title\n\n" + "CLEAN " * 60  # a realistic-length article, well above the empty-page floor
 
     def fake_extract(doc, cache_dir, **kwargs):
         Path(cache_dir, "artifact.json").write_text("{}", encoding="utf-8")
@@ -76,6 +76,7 @@ def test_execute_materializes_html_runs_pipeline_and_uploads_artifacts(tmp_path)
     assert result["artifacts_uploaded"] == 2  # materialized HTML + fake artifact
     assert document.text_extracted == "ARTICLE"
     assert document.text_md == clean_text
+    assert document.text == "Title\n\n" + "CLEAN " * 60
     assert storage.objects["cache/markdown/12/12.html"] == b"<p>HTML</p>"
 
 
