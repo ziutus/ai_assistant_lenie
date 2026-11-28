@@ -365,6 +365,8 @@ Supported models:
 
 ### Other Modules
 
+- **`entity_relations_service.py`, `entity_relation_vocabulary.py`, `entity_relations_detect.py`, `wikidata_relations.py`, `entity_relation_routes.py`, `entity_relations_graph.py`** — global person/organization/country relations with evidence and human decisions; owned projections to country truth tables, merge preservation, bounded LLM extraction and Wikidata proposals. Reader graph adds person → organization → country chains. API contract: `.codex-api-shapes.md`; ADR-039.
+
 - **`company_registry_client.py`, `company_registry_vat.py`, `company_registry_service.py`, `company_registry_routes.py`** — CRBR/KRS/VAT/CEIDG przez `GET /company_registry/check` po dokładnie jednym NIP, KRS lub `organization_id`; wyniki i propozycje numerów bez zapisu, ścisłe listy pól, maskowanie 11 cyfr i ograniczenie adresu VAT bez KRS do kodu i miasta.
 - **`organization_relations.py`, `organization_relation_routes.py`** ? company-only KRS shareholder history, idempotent per subject and tenure; sync guards registry names, import follows the chosen organization. Read-time KRS resolution, explicit manual links/rejections, shared normalized name candidates, merge collision handling; split retains evidence on the original, deletion cascades owned rows without changing orphan rules.
 

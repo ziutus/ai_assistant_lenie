@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+from library.entity_relations_detect import model_capabilities
 from library.relation_extraction import SYMMETRIC, extract_relations, normalized
 
 
@@ -124,16 +125,6 @@ def read_documents(ids, input_dir, *, get=None):
         documents.append({"id": doc_id, "text": doc.get("text") or doc.get("text_md") or "",
                           "entities": entities["entities"]})
     return documents
-
-
-def model_capabilities(model):
-    from library.ai import GOOGLE_MODELS, SHERLOCK_MODELS, SHERLOCK_VISION_MODELS, _registry_provider
-    from library.entity_description_batch import supports_structured_output
-
-    system = (model.startswith(("arklabs/", "openrouter/"))
-              or model in GOOGLE_MODELS + SHERLOCK_MODELS + SHERLOCK_VISION_MODELS
-              or _registry_provider(model) in ("cloudferro", "arklabs", "openrouter", "google-vertexai"))
-    return {"system_supported": system, "structured_output": supports_structured_output(model)}
 
 
 def positive(value):

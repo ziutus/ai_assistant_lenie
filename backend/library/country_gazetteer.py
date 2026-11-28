@@ -38,7 +38,7 @@ from unidecode import unidecode
 # a hyphen between them, e.g. "Papua-Nowa Gwinea").
 _COUNTRY_DATA: list[tuple[str, tuple[str, ...]]] = [
     # --- Europa ---
-    ("Polska", ("polsk*",)),
+    ("Polska", ("polsk*", "polsc*")),
     ("Niemcy", ("niemc*", "niemiec*")),
     ("Francja", ("franc*",)),
     ("Wielka Brytania", ("wielk* brytani*", "brytyj*", "zjednoczon* krolestw*")),

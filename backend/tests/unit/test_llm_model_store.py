@@ -144,7 +144,7 @@ def _added_models():
         spec.loader.exec_module(module)
     except ImportError:
         pytest.skip("alembic is not installed")
-    return list(module.ADDED)
+    return list(module.ADDED) + list(_load_migration("e4b8c2a79061").ADDED)
 
 
 def test_only_openrouter_and_cloudferro_models_are_visible_in_the_seed():

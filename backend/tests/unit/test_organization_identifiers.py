@@ -88,6 +88,7 @@ def test_merge_moves_relationship_and_orphan_guard(session):
     service.add_identifier(session, 2, dict(country_code="PL", identifier_type="krs", value="2"))
     source, target = session.get(Organization, 1), session.get(Organization, 2)
     mock = MagicMock()
+    mock.scalar.return_value = None  # no global entity relations
     mock.execute.return_value.scalar.return_value = 0
     mock.get.return_value = source
     assert _delete_organization_if_orphaned(mock, 1) is False
@@ -105,7 +106,8 @@ def test_migration_head_and_model():
     from alembic.script import ScriptDirectory
     from sqlalchemy import UniqueConstraint
     script = ScriptDirectory(str(Path(__file__).parents[2] / "alembic"))
-    assert script.get_heads() == ["d91f7a6b203e"]
+    assert script.get_heads() == ["e4b8c2a79061"]
+    assert script.get_revision("e4b8c2a79061").down_revision == "d91f7a6b203e"
     assert script.get_revision("c82e6f904ab1").down_revision == "a7d3c5e9b214"
     table = OrganizationIdentifier.__table__
     assert table.c.organization_id.index

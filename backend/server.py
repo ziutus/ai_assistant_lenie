@@ -64,6 +64,7 @@ from library.llm_model_routes import bp as llm_models_bp
 from library.tone_span_routes import bp as tone_spans_bp
 from library.feed_review_reason_routes import bp as feed_review_reasons_bp
 from library.ner_gazetteer_routes import bp as ner_gazetteer_bp
+from library.entity_relation_routes import bp as entity_relation_bp
 from library.youtube_processing import process_youtube_url, parse_chapters_from_description
 from library.stalker_youtube_file import StalkerYoutubeFile
 from library.storage import storage_from_config
@@ -158,6 +159,7 @@ app.register_blueprint(llm_analysis_bp)
 app.register_blueprint(contact_bp)
 app.register_blueprint(document_links_bp)
 app.register_blueprint(geopolitics_bp)
+app.register_blueprint(entity_relation_bp)
 app.register_blueprint(world_events_bp)
 app.register_blueprint(document_sources_bp)
 app.register_blueprint(concepts_bp)
@@ -1691,6 +1693,8 @@ def document_relationship_graph(doc_id: int):
             "relation": link.relation,
         })
 
+    from library.entity_relations_graph import extend_relationship_graph
+    extend_relationship_graph(session, doc, nodes, edges)
     return {"status": "success", "nodes": nodes, "edges": edges}, 200
 
 

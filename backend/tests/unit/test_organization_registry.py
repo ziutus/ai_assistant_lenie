@@ -272,6 +272,7 @@ class TestAddAlias:
 class TestMerge:
     def test_source_and_target_must_differ(self):
         session = MagicMock()
+        session.scalar.return_value = None  # no global entity relations
         with pytest.raises(ValueError):
             merge(session, 1, 1)
 
@@ -279,6 +280,7 @@ class TestMerge:
         source = MagicMock(identifiers=[], id=1, canonical_name="Iran", organization_type="country", aliases=[])
         target = MagicMock(id=2, canonical_name="Irańczycy", organization_type=None)
         session = MagicMock()
+        session.scalar.return_value = None  # no global entity relations
         session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
         with pytest.raises(ValueError, match="country"):
             merge(session, 1, 2)
@@ -286,6 +288,7 @@ class TestMerge:
 
     def test_missing_organization_raises_lookup_error(self):
         session = MagicMock()
+        session.scalar.return_value = None  # no global entity relations
         session.get.side_effect = [None, MagicMock()]
         with pytest.raises(LookupError):
             merge(session, 1, 2)
@@ -294,6 +297,7 @@ class TestMerge:
         source = MagicMock(identifiers=[], id=1, canonical_name="Interii", aliases=[])
         target = MagicMock(id=2, canonical_name="Interia")
         session = MagicMock()
+        session.scalar.return_value = None  # no global entity relations
         session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
 
         link = MagicMock(document_id=42, organization_id=1)
@@ -328,6 +332,7 @@ class TestMerge:
         source = MagicMock(identifiers=[], id=1, canonical_name="Siła Zbrojny Sudan", aliases=[alias])
         target = MagicMock(id=2, canonical_name="Siły Zbrojne Sudanu")
         session = MagicMock()
+        session.scalar.return_value = None  # no global entity relations
         session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
         session.execute.side_effect = [
             _execute_result(first=None),   # add_alias(target, source.canonical_name): no conflict
@@ -346,6 +351,7 @@ class TestMerge:
         source = MagicMock(identifiers=[], id=1, canonical_name="Interii", aliases=[])
         target = MagicMock(id=2, canonical_name="Interia")
         session = MagicMock()
+        session.scalar.return_value = None  # no global entity relations
         session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
 
         source_link = MagicMock(document_id=42, organization_id=1)

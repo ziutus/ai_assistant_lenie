@@ -286,6 +286,8 @@ def absorb_organization(session, source: Organization, target: Organization) -> 
     target's empty headquarters/website/note fields are filled from the source —
     the target's own values always win.
     """
+    from library.entity_relations_service import absorb_relations as absorb_entity_relations
+    absorb_entity_relations(session, "organization", source.id, target.id)
     for identifier in list(source.identifiers):
         identifier.organization = target
     from library.organization_relations import absorb_relations
