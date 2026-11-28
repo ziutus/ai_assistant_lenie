@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitByEntities, type HighlightEntry } from "./entityHighlight";
+import { entityDescription, splitByEntities, type HighlightEntry } from "./entityHighlight";
 
 const person: HighlightEntry = { kind: "persName", label: "Donald Tusk", variants: ["Donald Tusk", "Tuska"] };
 const place: HighlightEntry = { kind: "place", label: "Kijów", variants: ["Kijów", "Kijowa"] };
@@ -41,5 +41,14 @@ describe("splitByEntities", () => {
   it("escapes regular-expression characters in names", () => {
     const company: HighlightEntry = { kind: "orgName", label: "A+B (SA)", variants: ["A+B (SA)"] };
     expect(splitByEntities("Spółka A+B (SA) ogłosiła.", [company]).filter(segment => segment.kind)).toHaveLength(1);
+  });
+});
+
+describe("entityDescription", () => {
+  it("takes the description from whichever registry holds it", () => {
+    expect(entityDescription({ organization_description: "Koalicja" })).toBe("Koalicja");
+    expect(entityDescription({ person_description: "Premier" })).toBe("Premier");
+    expect(entityDescription({ description: "Szczyt", organization_description: "inne" })).toBe("Szczyt");
+    expect(entityDescription({ organization_description: null })).toBeUndefined();
   });
 });
